@@ -18,9 +18,13 @@ import type { ReactNode } from 'react';
 
 import VideoLibraryPage from './page';
 
+const standaloneProps: Array<{ allowedRoles: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles: string[] }) => {
+    standaloneProps.push({ allowedRoles });
+    return <div>{children}</div>;
+  },
 }));
 
 // Shaped like a getResearchLibrary row (src/server/pilot/publication.ts).
@@ -125,10 +129,10 @@ test('the tag list is built from the clips loaded, without inventing any', async
   expect(options).toEqual(['', 'defence', 'footwork', 'jab']);
 });
 
-test('a refusal shows the refusal and no cards', async () => {
+test('a server refusal shows no cards and is not read as an empty shelf', async () => {
   respond = async () => ({ status: 403, body: { error: 'Forbidden' } });
   await mount();
-  expect(screen.getByRole('alert').textContent).toContain('not available to your account');
+  expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
   expect(document.body.textContent).not.toContain('No published clips');
 });
@@ -143,6 +147,8 @@ test('a failed load reads as unavailable, never as an empty shelf', async () => 
 test('only what the route returned is shown: an entry it withholds cannot appear', async () => {
   // The server drops retracted and consent-suppressed entries
   // (suppressed_at is null) before answering; the page adds nothing back.
+  // This is NOT the retraction coverage: that is the server filter, pinned in
+  // src/server/pilot/publication.test.ts.
   respond = async () => ({ status: 200, body: { items: [row(1)] } });
   await mount();
   expect(screen.getAllByRole('listitem')).toHaveLength(1);
@@ -222,5 +228,57 @@ test('a lapsed sign-in (401) reads as not loaded, not as a refusal', async () =>
   respond = async () => ({ status: 401, body: { error: 'Unauthorized' } });
   await mount();
   expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
-  expect(document.body.textContent).not.toContain('not available to your account');
+});
+
+test('the page admits the route\'s own audience: coach, admin and athlete, never parent', async () => {
+  await mount();
+  const roles = standaloneProps[standaloneProps.length - 1].allowedRoles;
+  expect([...roles].sort()).toEqual(['admin', 'athlete', 'coach']);
+});
+
+test('the door to the page is shown to the same roles as the page', async () => {
+  const { BUILDING } = await import('@/components/buildingMap');
+  const door = BUILDING.find((d) => d.href === '/coach/video-publications/library');
+  expect([...(door?.roles ?? [])].sort()).toEqual(['admin', 'athlete', 'coach']);
+});
+
+test('a later page that comes back empty says there are no more clips and keeps Previous', async () => {
+  respond = async (url) => {
+    const offset = Number(new URL(url, 'http://x').searchParams.get('offset'));
+    return { status: 200, body: { items: offset === 0 ? Array.from({ length: 21 }, (_, i) => row(i + 1)) : [] } };
+  };
+  await mount();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Next' })); });
+  expect(document.body.textContent).toContain('No more clips.');
+  expect(document.body.textContent).not.toContain('No published clips yet.');
+  expect(screen.getByRole('button', { name: 'Previous' })).toBeTruthy();
+});
+
+test('a late answer to an earlier request for the same page never overwrites a newer one', async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let unfiltered = 0;
+  respond = async (url) => {
+    if (!new URL(url, 'http://x').searchParams.get('tags')) {
+      unfiltered += 1;
+      if (unfiltered === 1) {
+        await held;
+        return { status: 200, body: { items: [row(1, ['jab']), row(2, ['jab'])] } };
+      }
+      return { status: 200, body: { items: [row(1, ['jab'])] } };
+    }
+    return { status: 200, body: { items: [row(9, ['jab'])] } };
+  };
+  render(<VideoLibraryPage />);
+  await act(async () => {});
+  const select = screen.getByLabelText('Tag') as HTMLSelectElement;
+  const option = document.createElement('option');
+  option.value = 'jab';
+  select.appendChild(option);
+  await act(async () => { fireEvent.change(select, { target: { value: 'jab' } }); });
+  await act(async () => { fireEvent.change(select, { target: { value: '' } }); });
+  await act(async () => { release(); });
+  // The newer unfiltered answer (one clip, say after Clip 2 was retracted) stands.
+  expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  expect(screen.queryByRole('heading', { name: 'Clip 2' })).toBeNull();
 });

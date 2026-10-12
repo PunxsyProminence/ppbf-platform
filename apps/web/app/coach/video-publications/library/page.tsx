@@ -11,8 +11,9 @@ import { formatGymDay } from '@/src/lib/gymTime';
  *
  * Gym-wide by owner ruling (OD-2026-10-08-004: "everyone signed in at the gym
  * can browse every published clip, as built"). The audience is the route's
- * own: GET /api/pilot/publications/library admits coach, organization admin
- * and athlete, so this page lists exactly those roles and no others.
+ * own: GET /api/pilot/publications/library admits coach, admin (and its
+ * organization_admin alias) and athlete, so this page lists exactly those
+ * roles and no others; parents are not on it (N7-02-Q1, default B).
  *
  * WHAT A CARD SHOWS. Title, description, tags and the date it was published.
  * Nothing else the route returns is rendered: the publication and video ids
@@ -22,9 +23,13 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * playback link goes out without the consent it depends on (OD-2026-10-05-016).
  *
  * WHAT IS ON THE SHELF is decided by the server: retracted and
- * consent-suppressed entries (suppressed_at), archived ones and a deleted
- * athlete's footage never come back from getResearchLibrary. This page renders
- * what it is given.
+ * consent-suppressed entries (suppressed_at), shelf rows marked archived and a
+ * deleted athlete's footage never come back from getResearchLibrary. This page
+ * renders what it is given.
+ *
+ * TAGS. The route has no tag list, so the filter offers the tags seen on the
+ * pages loaded so far; a tag only on later clips appears once its page has
+ * been loaded.
  *
  * PAGING. The route returns no total. Each page asks for one row more than it
  * shows, and "Next" appears only when that extra row came back.
@@ -35,12 +40,12 @@ interface LibraryItem {
   title: string;
   description: string | null;
   tags: string[] | null;
-  published_at: string | null;
+  published_at: string;
 }
 
 const PAGE_SIZE = 20;
 
-type LoadState = 'loading' | 'loaded' | 'refused' | 'unavailable';
+type LoadState = 'loading' | 'loaded' | 'unavailable';
 
 export default function VideoLibraryPage() {
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -51,30 +56,25 @@ export default function VideoLibraryPage() {
   // Tags seen on any page loaded so far: the route has no tag list of its own.
   const [knownTags, setKnownTags] = useState<string[]>([]);
 
-  // The request whose answer may be shown. An answer to an earlier request
-  // (a slow page the reader has already moved past) is dropped.
-  const latest = useRef('');
+  // Each load is numbered; only the latest may set state. An answer to an
+  // earlier request (a slow page the reader has already moved past, even one
+  // asking for the same page) is dropped.
+  const latest = useRef(0);
 
   const load = useCallback(async (nextOffset: number, nextTag: string) => {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE + 1), offset: String(nextOffset) });
     if (nextTag) params.set('tags', nextTag);
     const key = params.toString();
-    latest.current = key;
+    const request = ++latest.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/publications/library?${key}`, {
         method: 'GET',
         credentials: 'include',
       });
-      if (latest.current !== key) return;
-      if (response.status === 403) {
-        setItems([]);
-        setHasMore(false);
-        setState('refused');
-        return;
-      }
+      if (latest.current !== request) return;
       if (!response.ok) throw new Error('library');
       const payload = (await response.json()) as { items?: LibraryItem[] };
-      if (latest.current !== key) return;
+      if (latest.current !== request) return;
       const rows = payload.items ?? [];
       setItems(rows.slice(0, PAGE_SIZE));
       setHasMore(rows.length > PAGE_SIZE);
@@ -85,7 +85,7 @@ export default function VideoLibraryPage() {
       });
       setState('loaded');
     } catch {
-      if (latest.current !== key) return;
+      if (latest.current !== request) return;
       setItems([]);
       setHasMore(false);
       setState('unavailable');
@@ -139,11 +139,6 @@ export default function VideoLibraryPage() {
           </div>
 
           {state === 'loading' && <p className="t-body">Loading…</p>}
-          {state === 'refused' && (
-            <p role="alert" className="t-body text-[color:var(--restricted-ink)]">
-              The video library is not available to your account.
-            </p>
-          )}
           {state === 'unavailable' && (
             <p role="alert" className="t-body text-[color:var(--restricted-ink)]">
               The library could not be loaded. Reload and try again.
@@ -161,7 +156,7 @@ export default function VideoLibraryPage() {
                   <h2 className="font-semibold text-[length:var(--t-md)]">{item.title}</h2>
                   {item.description ? <p className="t-body mt-[var(--s1)]">{item.description}</p> : null}
                   <p className="mt-[var(--s1)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                    {item.published_at ? `Published ${formatGymDay(item.published_at) ?? item.published_at}` : 'Publish date not recorded'}
+                    Published {formatGymDay(item.published_at) ?? item.published_at}
                     {item.tags && item.tags.length > 0 ? ` · ${item.tags.join(', ')}` : ''}
                   </p>
                 </li>
