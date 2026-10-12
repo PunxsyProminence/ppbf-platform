@@ -247,6 +247,9 @@ export default function ExternalCompetitionPlatformPage() {
       await reloadEntries(selectedCompetitionId);
       setErrorMessage(null);
     } catch (error) {
+      // Re-read first, so a row another screen already re-entered is not left under Withdrawn
+      // beside the server's answer.
+      await reloadEntries(selectedCompetitionId).catch(() => undefined);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to re-enter the athlete.');
     } finally {
       setBusy(false);
@@ -456,13 +459,13 @@ export default function ExternalCompetitionPlatformPage() {
                           <div className="mt-[var(--s4)]"><span className="working">Loading entries...</span></div>
                         ) : (
                           <div className="mt-[var(--s4)]">
-                            <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Entries</h3>
+                            <h3 id="entries-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Entries</h3>
                             {entriesFailed ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>The entry list could not be loaded just now.</p>
                             ) : enteredEntries.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes entered.</p>
                             ) : (
-                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Entered athletes">
+                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="entries-heading">
                                 {enteredEntries.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
@@ -525,12 +528,13 @@ export default function ExternalCompetitionPlatformPage() {
                                 ))}
                               </ul>
                             )}
-                            {/* Withdrawn athletes are not competitors: they leave the Entries list
-                                and keep their history here, result and lesson included. */}
+                            {/* Withdrawn athletes are not competitors: they leave the Entries list and
+                                show their history here, result and lesson included. Re-enter reopens
+                                the entry, and the server clears that result and lesson when it does. */}
                             {!entriesFailed && withdrawnEntries.length > 0 && (
                               <div className="mt-[var(--s3)]">
-                                <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Withdrawn</h3>
-                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Withdrawn athletes">
+                                <h3 id="withdrawn-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Withdrawn</h3>
+                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="withdrawn-heading">
                                   {withdrawnEntries.map((entry) => (
                                     <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                       <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">

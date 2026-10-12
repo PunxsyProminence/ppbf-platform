@@ -277,13 +277,13 @@ export default function WrestlingLeagueManagementPage() {
     }
   };
 
-  const handleAddRosterEntry = async () => {
-    if (!selectedSeasonId || !rosterAthleteId) return;
+  const handleAddRosterEntry = async (athleteId: string) => {
+    if (!selectedSeasonId || !athleteId) return;
     setBusy(true);
     try {
       await postJson('/api/pilot/operations/wrestling-league/roster', {
         season_id: selectedSeasonId,
-        athlete_id: rosterAthleteId,
+        athlete_id: athleteId,
       });
       setRosterAthleteId('');
       await reloadAfterWrite(selectedSeasonId);
@@ -338,6 +338,9 @@ export default function WrestlingLeagueManagementPage() {
   // refuses both today (a roster entry is unique per season), so offering them would only fail.
   const rostered = new Set(detailKnown ? detail.roster.map((entry) => entry.athlete_id) : []);
   const pickableAthletes = athletes.filter((athlete) => !rostered.has(athlete.athlete_id));
+  // A choice made under another season is dropped once it is no longer offered here, so the button
+  // never sends an athlete the picker does not show.
+  const pickedAthleteId = pickableAthletes.some((athlete) => athlete.athlete_id === rosterAthleteId) ? rosterAthleteId : '';
   const detailUnknownLine = (
     <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Unable to load the season detail.</p>
   );
@@ -492,13 +495,13 @@ export default function WrestlingLeagueManagementPage() {
                           </section>
 
                           <section>
-                            <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Roster</h3>
+                            <h3 id="roster-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Roster</h3>
                             {/* Active members and the inactive ones apart (N8-03-Q1 A): an inactive
                                 member is history, not a current competitor, and stays listed as such. */}
                             {!detailKnown ? detailUnknownLine : activeRoster.length === 0 ? (
-                              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes on this season roster.</p>
+                              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No active athletes on this season roster.</p>
                             ) : (
-                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Active roster">
+                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="roster-heading">
                                 {activeRoster.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
@@ -514,8 +517,8 @@ export default function WrestlingLeagueManagementPage() {
                             )}
                             {detailKnown && inactiveRoster.length > 0 && (
                               <div className="mt-[var(--s3)]">
-                                <h4 className="t-label">Inactive</h4>
-                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Inactive roster">
+                                <h4 id="roster-inactive-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Inactive</h4>
+                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="roster-inactive-heading">
                                   {inactiveRoster.map((entry) => (
                                     <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                       {entry.athlete_name} · inactive
@@ -527,7 +530,7 @@ export default function WrestlingLeagueManagementPage() {
                             <div className="mt-[var(--s3)] grid gap-[var(--s2)]">
                               <div className="field">
                                 <label className="t-label" htmlFor="roster-athlete">Add athlete</label>
-                                <select id="roster-athlete" className="select" value={rosterAthleteId}
+                                <select id="roster-athlete" className="select" value={pickedAthleteId}
                                   onChange={(e) => setRosterAthleteId(e.target.value)}>
                                   <option value="">Select an athlete…</option>
                                   {pickableAthletes.map((athlete) => (
@@ -536,7 +539,7 @@ export default function WrestlingLeagueManagementPage() {
                                 </select>
                               </div>
                               <div>
-                                <button type="button" className="btn" disabled={busy || !rosterAthleteId} onClick={() => void handleAddRosterEntry()}>
+                                <button type="button" className="btn" disabled={busy || !pickedAthleteId} onClick={() => void handleAddRosterEntry(pickedAthleteId)}>
                                   Add to roster
                                 </button>
                               </div>

@@ -44,7 +44,12 @@ function mockFetch(options: {
   failCompetitions?: boolean;
   failEntries?: boolean;
   entries?: Array<Record<string, unknown>>;
+  /** What the entry list reads once an entry POST has been answered, kept or refused. */
+  entriesAfterPost?: Array<Record<string, unknown>>;
+  /** Holds every entry POST until it resolves. */
+  postGate?: Promise<void>;
 }) {
+  let posted = false;
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === 'PATCH') {
@@ -53,6 +58,8 @@ function mockFetch(options: {
     }
     if (init?.method === 'POST') {
       options.capture?.posts.push({ url, body: JSON.parse(String(init.body)) });
+      if (url.includes('/entries') && options.postGate) await options.postGate;
+      if (url.includes('/entries')) posted = true;
       if (url.includes('/entries') && options.entryPostStatus) {
         return {
           ok: false,
@@ -68,7 +75,8 @@ function mockFetch(options: {
     }
     if (url.includes('/external-competition/entries')) {
       if (options.failEntries) return { ok: false, status: 500, json: async () => ({}) } as Response;
-      return { ok: true, json: async () => ({ items: options.entries ?? [ENTRY] }) } as Response;
+      const items = posted && options.entriesAfterPost ? options.entriesAfterPost : options.entries ?? [ENTRY];
+      return { ok: true, json: async () => ({ items }) } as Response;
     }
     if (url.includes('/athletes/list')) {
       return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
@@ -264,11 +272,11 @@ test('a withdrawn entry is listed under Withdrawn with its history, not among th
   global.fetch = mockFetch({ entries: [ENTRY, WITHDRAWN] });
   await openEntries();
 
-  const entered = await screen.findByRole('list', { name: 'Entered athletes' });
+  const entered = await screen.findByRole('list', { name: 'Entries' });
   expect(within(entered).getByText(/Jordan Little/)).toBeTruthy();
   expect(within(entered).queryByText(/Riley Shaw/)).toBeNull();
 
-  const withdrawn = screen.getByRole('list', { name: 'Withdrawn athletes' });
+  const withdrawn = screen.getByRole('list', { name: 'Withdrawn' });
   expect(within(withdrawn).getByText(/Riley Shaw · withdrawn/)).toBeTruthy();
   expect(within(withdrawn).getByText('lost')).toBeTruthy();
   expect(within(withdrawn).getByText('Lesson: Keep the hands up late.')).toBeTruthy();
@@ -281,7 +289,7 @@ test('with every entry withdrawn, the page says no athletes are entered and keep
   await openEntries();
 
   expect(await screen.findByText('No athletes entered.')).toBeTruthy();
-  expect(screen.getByRole('list', { name: 'Withdrawn athletes' })).toBeTruthy();
+  expect(screen.getByRole('list', { name: 'Withdrawn' })).toBeTruthy();
 });
 
 test('Re-enter posts the same entry link as adding an athlete', async () => {
@@ -310,5 +318,50 @@ test('a refused re-entry shows the server message and the row stays withdrawn', 
   });
 
   expect(await screen.findByText('Medical clearance is not current.')).toBeTruthy();
-  expect(within(screen.getByRole('list', { name: 'Withdrawn athletes' })).getByText(/Riley Shaw · withdrawn/)).toBeTruthy();
+  expect(within(screen.getByRole('list', { name: 'Withdrawn' })).getByText(/Riley Shaw · withdrawn/)).toBeTruthy();
+});
+
+test('a kept re-entry moves the athlete back to Entries', async () => {
+  global.fetch = mockFetch({ entries: [WITHDRAWN], entriesAfterPost: [{ ...WITHDRAWN, status: 'entered', result: null, lesson_note: '' }] });
+  await openEntries();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Re-enter' }));
+  });
+
+  expect(within(await screen.findByRole('list', { name: 'Entries' })).getByText(/Riley Shaw/)).toBeTruthy();
+  expect(screen.queryByRole('list', { name: 'Withdrawn' })).toBeNull();
+});
+
+test('a refused re-entry re-reads the list, so a row another screen re-entered leaves Withdrawn', async () => {
+  global.fetch = mockFetch({
+    entries: [WITHDRAWN],
+    entriesAfterPost: [{ ...WITHDRAWN, status: 'entered' }],
+    entryPostStatus: 409,
+    entryPostError: 'This athlete is already entered in this competition.',
+  });
+  await openEntries();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Re-enter' }));
+  });
+
+  expect(await screen.findByText('This athlete is already entered in this competition.')).toBeTruthy();
+  expect(within(screen.getByRole('list', { name: 'Entries' })).getByText(/Riley Shaw/)).toBeTruthy();
+  expect(screen.queryByRole('list', { name: 'Withdrawn' })).toBeNull();
+});
+
+test('Re-enter cannot be pressed twice while the first press is in flight', async () => {
+  let open: () => void = () => {};
+  const postGate = new Promise<void>((resolve) => { open = resolve; });
+  global.fetch = mockFetch({ entries: [WITHDRAWN], postGate });
+  await openEntries();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Re-enter' }));
+  });
+  expect((screen.getByRole('button', { name: 'Re-enter' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => {
+    open();
+  });
 });
