@@ -293,7 +293,7 @@ describe('session run plain migration against real Postgres', () => {
 
   test('the runner refuses a result that is missing a guard, and commits nothing', async () => {
     const withoutNoCursor = plainSql.replace(
-      /alter table pilot\.session_script_runs\s+add constraint pilot_ssrun_plain_no_cursor[\s\S]*?;\n/,
+      /alter table pilot\.session_script_runs\s+add constraint pilot_ssrun_plain_no_cursor[\s\S]*?;\r?\n/,
       '',
     );
     expect(withoutNoCursor).not.toBe(plainSql);
