@@ -362,6 +362,9 @@ export default function AthleteProgressionIntelligencePage() {
   const [logReps, setLogReps] = useState('');
   const [logNotes, setLogNotes] = useState('');
   const [logBusy, setLogBusy] = useState(false);
+  // One log per press (#1529): a ref, because two presses in one tick both
+  // read the same `logBusy` and both got through.
+  const logBusyRef = useRef(false);
   // The drill opened from one assignment, if any. GET only -- see useDrillOpener.
   const drillOpener = useDrillOpener();
   const assignmentContextRef = useRef<HTMLElement | null>(null);
@@ -452,7 +455,8 @@ export default function AthleteProgressionIntelligencePage() {
   }, [athleteId, reloadToken]);
 
   const handleLogCompletion = async (assignmentId: string) => {
-    if (!athleteId) return;
+    if (!athleteId || logBusyRef.current) return;
+    logBusyRef.current = true;
     setLogBusy(true);
     try {
       const body: Record<string, unknown> = {
@@ -487,6 +491,7 @@ export default function AthleteProgressionIntelligencePage() {
       // screen were read fine and stay exactly where they are.
       setErrorMessage(LOG_DID_NOT_SAVE);
     } finally {
+      logBusyRef.current = false;
       setLogBusy(false);
     }
   };

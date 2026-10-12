@@ -2241,6 +2241,15 @@ export default function AthleteWorkspace() {
        nothing is sent to SHADOW from here. */
   };
 
+  /* One pain report, one save (#1529). The ref stops a second press in the
+     same tick. The report's id lives until the report is confirmed saved, so
+     a retry -- or a press the ref could not see -- reaches the observations
+     route with the same idempotency key, and the server's own de-duplication
+     holds. The answers are in the key, so a changed answer is a new report
+     rather than an idempotency conflict. */
+  const painSavingRef = useRef(false);
+  const painReportIdRef = useRef<string | null>(null);
+
   const handleSavePainReport = async () => {
     /* A-FIN-07. An incomplete pain report is not a quiet partial save: it is
        no write at all. Location, type and severity must each be the athlete's
@@ -2251,10 +2260,17 @@ export default function AthleteWorkspace() {
     if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
       return;
     }
+    if (painSavingRef.current) {
+      return;
+    }
+    painSavingRef.current = true;
 
     const now = new Date();
+    if (painReportIdRef.current === null) {
+      painReportIdRef.current = `pain_${Date.now()}`;
+    }
     const newPainLogEntry: PainLogEntry = {
-      id: `pain_${Date.now()}`,
+      id: painReportIdRef.current,
       location: selectedPainLocation,
       type: currentPainType,
       severity: currentPainSeverity,
@@ -2298,7 +2314,7 @@ export default function AthleteWorkspace() {
             injuryFlag: true,
           },
           observedAt: now.toISOString(),
-          idempotencyKey: `${newPainLogEntry.id}-pain_report`,
+          idempotencyKey: `${newPainLogEntry.id}-${selectedPainLocation}-${currentPainType}-${currentPainSeverity}-pain_report`,
         }),
       });
 
@@ -2361,6 +2377,8 @@ export default function AthleteWorkspace() {
       setPainSaveMessage('Logged, and flagged for a coach to look at.');
 
       setShowPainModal(false);
+      // Saved and confirmed: the next report is a new one.
+      painReportIdRef.current = null;
       /* A-FIN-07. The stored answers go with the modal. Leaving them set made
          the NEXT report open pre-filled with the last one -- a different way
          of putting words in the athlete's mouth, and a harder one to notice
@@ -2377,6 +2395,7 @@ export default function AthleteWorkspace() {
         ? error.message
         : 'That pain report did not save. Report it again, and tell a coach in person.');
     } finally {
+      painSavingRef.current = false;
       setIsSavingPain(false);
     }
   };

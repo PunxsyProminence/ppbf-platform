@@ -846,6 +846,42 @@ describe('a failure speaks to the athlete, not to the developer', () => {
     expect(alert.textContent).toContain('That log did not save');
     expect(loggedCause('athlete-progression-log-failed')).toEqual({ status: 502, detail: {} });
   });
+
+  test('two presses of Save log in the same tick send one log (#1529)', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (url.includes('/progression/assignments')) {
+        return { ok: true, json: async () => ({ items: [ASSIGNMENT] }) } as Response;
+      }
+      if (url.includes('/progression/completions') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<AthleteProgressionIntelligencePage />);
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Log completion' }));
+    const save = screen.getByRole('button', { name: 'Save log' });
+
+    await act(async () => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
+    await act(async () => {
+      finish?.({ ok: true, json: async () => ({ ok: true }) } as Response);
+    });
+
+    const posts = fetchMock.mock.calls.filter(([url, init]) =>
+      String(url).includes('/progression/completions') && (init as RequestInit | undefined)?.method === 'POST');
+    expect(posts).toHaveLength(1);
+  });
 });
 
 // W-D4B (OD-2026-09-19-001): the drill a piece of assigned work was issued

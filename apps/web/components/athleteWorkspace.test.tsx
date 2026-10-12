@@ -711,6 +711,36 @@ describe('athlete safety reporting', () => {
       }));
     });
 
+    test('two presses of Save in the same tick send one pain report (#1529)', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      const save = screen.getByRole('button', { name: 'Save' });
+
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+
+      await screen.findByText(/flagged for a coach to look at/);
+      expect(painObservations()).toHaveLength(1);
+    });
+
+    test('a retry of the same report carries the same idempotency key, so the server can drop a duplicate (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      await screen.findByText(/did not save|was not saved/i);
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, second] = painObservations();
+      expect(second!.body.idempotencyKey).toBe(first!.body.idempotencyKey);
+      expect(second!.body.contextId).toBe(first!.body.contextId);
+    });
+
     test('the next report does not inherit the last one', async () => {
       painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
       await openPainReport({ type: 'Burning', severity: 9 });
