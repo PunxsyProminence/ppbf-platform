@@ -7,7 +7,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
-import LibraryTextIntakePanel, { SHELF_WORDS } from './LibraryTextIntakePanel';
+import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
@@ -92,6 +92,8 @@ interface LibrarySourceOption {
   title: string;
   source_type: string;
   metadata?: { general_research?: boolean; classification_domain?: string };
+  /** Passed through to the intake panel (#1468). */
+  excerpt_budget?: LibraryTextIntakeSource['excerpt_budget'];
 }
 
 // The sources route returns at most this many rows per request.
@@ -1034,6 +1036,7 @@ export default function ResearchIntakePage() {
             sources={curatorSources}
             shelf={onPlatformShelf ? 'platform' : 'gym'}
             truncated={curatorSourcesTruncated}
+            onSaved={() => void refreshCuratorSources()}
           />
         ) : null}
       </div>
