@@ -361,23 +361,12 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  if (count === 0 && !atLeast) {
-    return null;
-  }
-
-  // A full page with none refused in it has not established "none": older
-  // clips were not read. Said quietly, never as silence (R1 #1).
+  // Silent at zero (plan, #1445). KNOWN LIMIT of the capped read: a refused
+  // clip older than the newest REFUSED_READ_LIMIT is not seen, so a full page
+  // with none refused in it also renders nothing. A count-only route would
+  // close that; it is outside this lane's allowlist (PR body, LANE QUESTION).
   if (count === 0) {
-    return (
-      <ChromeLink
-        href="/admin/video-review"
-        className={CONTROL_QUIET}
-        aria-label={`No refused team clip among the newest ${REFUSED_READ_LIMIT} clips. Older clips were not read. Open video review.`}
-        title={`Only the newest ${REFUSED_READ_LIMIT} clips were read. This is not a statement that there are none.`}
-      >
-        Clips: 0 of newest {REFUSED_READ_LIMIT}
-      </ChromeLink>
-    );
+    return null;
   }
 
   const shown = `${count}${atLeast ? '+' : ''}`;

@@ -177,7 +177,7 @@ test('an organization admin posts a standard once, however fast the button is pr
   await act(async () => {
     render(<BehaviorStandardsPage />);
   });
-  fireEvent.change(await screen.findByLabelText('Standard', { selector: '#post-name' }), { target: { value: '  Shake hands after sparring ' } });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: '  Shake hands after sparring ' } });
   fireEvent.change(screen.getByLabelText('Recognition that evidences it'), { target: { value: 'good_partner' } });
   fireEvent.change(screen.getByLabelText('Description (optional)'), { target: { value: 'every round' } });
 
@@ -199,7 +199,7 @@ test('an organization admin posts a standard once, however fast the button is pr
 
   expect(await screen.findByText('Standard posted.')).toBeTruthy();
   expect(reads).toBe(readsBefore + 1);
-  expect((screen.getByLabelText('Standard', { selector: '#post-name' }) as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Standard name') as HTMLInputElement).value).toBe('');
 });
 
 test('a coach sees no posting form and no retire control', async () => {
@@ -238,7 +238,7 @@ test('a post without a name or a recognition sends nothing and says what is miss
   await act(async () => {
     render(<BehaviorStandardsPage />);
   });
-  fireEvent.change(await screen.findByLabelText('Standard', { selector: '#post-name' }), { target: { value: 'Shake hands' } });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: 'Shake hands' } });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post standard' }));
   });
@@ -262,7 +262,7 @@ test('a post the server refuses shows the server reason and keeps what was typed
   await act(async () => {
     render(<BehaviorStandardsPage />);
   });
-  fireEvent.change(await screen.findByLabelText('Standard', { selector: '#post-name' }), { target: { value: 'Shake hands' } });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: 'Shake hands' } });
   fireEvent.change(screen.getByLabelText('Recognition that evidences it'), { target: { value: 'good_partner' } });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post standard' }));
@@ -270,7 +270,7 @@ test('a post the server refuses shows the server reason and keeps what was typed
 
   expect(screen.getByText('Forbidden: role not allowed')).toBeTruthy();
   expect(screen.queryByText('Standard posted.')).toBeNull();
-  expect((screen.getByLabelText('Standard', { selector: '#post-name' }) as HTMLInputElement).value).toBe('Shake hands');
+  expect((screen.getByLabelText('Standard name') as HTMLInputElement).value).toBe('Shake hands');
 });
 
 test('the organization admin retires a standard through retire_standard', async () => {
@@ -281,10 +281,12 @@ test('the organization admin retires a standard through retire_standard', async 
   await act(async () => {
     render(<BehaviorStandardsPage />);
   });
+  fireEvent.change(await screen.findByLabelText('Standard', { selector: '#rec-standard' }), { target: { value: 's1' } });
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Retire Reset after frustration' }));
   });
 
+  expect((screen.getByLabelText('Standard', { selector: '#rec-standard' }) as HTMLSelectElement).value).toBe('');
   expect(capture.posts).toEqual([{ action: 'retire_standard', standard_id: 's1' }]);
   expect(await screen.findByText(/Standard retired/)).toBeTruthy();
 });

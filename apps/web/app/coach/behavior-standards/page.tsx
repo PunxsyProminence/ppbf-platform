@@ -159,6 +159,8 @@ export default function BehaviorStandardsPage() {
   const handleRetire = async (standardId: string) => {
     const result = await send({ action: 'retire_standard', standard_id: standardId }, 'Unable to retire the standard.');
     if (!result) return;
+    // The picker must not keep a standard that is no longer offered.
+    setRecognizeForm((f) => (f.standard_id === standardId ? { ...f, standard_id: '' } : f));
     setNotice('Standard retired. Recognitions already recorded against it stay.');
     await reload().catch(() => undefined);
   };
@@ -333,7 +335,7 @@ export default function BehaviorStandardsPage() {
                 <h2 id="post-standard-heading" className="t-label mb-[var(--s3)]">Post a standard</h2>
                 <div className="grid gap-[var(--s3)] md:grid-cols-3">
                   <div className="field">
-                    <label className="t-label" htmlFor="post-name">Standard</label>
+                    <label className="t-label" htmlFor="post-name">Standard name</label>
                     <input id="post-name" className="input" value={postForm.standard_name}
                       onChange={(e) => setPostForm((f) => ({ ...f, standard_name: e.target.value }))} />
                   </div>
@@ -355,7 +357,7 @@ export default function BehaviorStandardsPage() {
                 </div>
                 <div className="mt-[var(--s3)]">
                   <button type="button" className="btn" disabled={busy} onClick={() => void handlePost()}>
-                    {busy ? 'Posting…' : 'Post standard'}
+                    Post standard
                   </button>
                 </div>
               </section>

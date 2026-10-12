@@ -488,14 +488,6 @@ describe('refused team clips are counted on the organization admin bar', () => {
     expect(link.textContent).toContain('3+ refused team clips');
   });
 
-  test('a full page with none refused in it is said quietly, never as silence', async () => {
-    installRouted(Array.from({ length: 100 }, (_, index) => clip({ video_session_id: `v${index}`, scan_state: 'clean', status: 'ready' })));
-    await renderFor('admin');
-
-    const link = await screen.findByRole('link', { name: /No refused team clip among the newest 100 clips\. Older clips were not read/ });
-    expect(link.textContent).toBe('Clips: 0 of newest 100');
-  });
-
   test('an organization admin with an open escalation and a refused clip sees both counts', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes('/api/pilot/video/list')) {
