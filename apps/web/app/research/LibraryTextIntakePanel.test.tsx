@@ -357,3 +357,127 @@ describe('LibraryTextIntakePanel on the platform shelf', () => {
     expect(screen.getByText(/Only the newest 2 are listed/)).toBeTruthy();
   });
 });
+
+// Issue #1468 (A-Q12, "Keep, show real limit"): a non-owned source is held to
+// 20 passages and 30,000 characters in all. The screen states it and checks
+// a text against it before sending anything.
+describe('LibraryTextIntakePanel: the excerpt limit of a non-owned source', () => {
+  const parts = splitIntakeText(TEXT);
+  const characters = parts.reduce((sum, part) => sum + Array.from(part.text.trim()).length, 0);
+
+  function sourcesWith(held: { passages: number; characters: number } | null) {
+    return [
+      SOURCES[0],
+      {
+        ...SOURCES[1],
+        excerpt_budget: held === null
+          ? null
+          : { max_passages: 20, max_characters: 30_000, held_passages: held.passages, held_characters: held.characters },
+      },
+    ];
+  }
+
+  it('states the limit and what the source holds now, and only for a limited source', () => {
+    installFetch(() => created);
+    const { rerender } = render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 3, characters: 3_600 })} />);
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_b' } });
+
+    expect(screen.getByTestId('excerpt-limit').textContent).toBe(
+      'This source may hold 20 passages and 30,000 characters in all. Saved so far: 3 passages, 3,600 characters.',
+    );
+
+    rerender(<LibraryTextIntakePanel sources={sourcesWith(null)} />);
+    expect(screen.queryByTestId('excerpt-limit')).toBeNull();
+  });
+
+  it('refuses before sending when the text would pass the passage limit', async () => {
+    const calls = installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 21 - parts.length, characters: 0 })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(0);
+    expect(screen.getByText(/over its limit of 20 passages and 30,000 characters\. Nothing was sent\./)).toBeTruthy();
+  });
+
+  it('refuses before sending when the text would pass the character limit', async () => {
+    const calls = installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 0, characters: 30_001 - characters })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(0);
+    expect(screen.getByText(/would bring the source to .* 30,001 characters/)).toBeTruthy();
+  });
+
+  it('sends a text that brings the source exactly to its limit', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 20 - parts.length, characters: 30_000 - characters })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+  });
+
+  it('an owned or open source is not checked against the limit', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sourcesWith(null)} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+  });
+});
+
+describe('LibraryTextIntakePanel: the limit after a save in the same session', () => {
+  const parts = splitIntakeText(TEXT);
+  const characters = parts.reduce((sum, part) => sum + Array.from(part.text.trim()).length, 0);
+  const sources = [{
+    ...SOURCES[1],
+    excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 20 - 2 * parts.length + 1, held_characters: 0 },
+  }];
+
+  it('counts what it just saved, so a second text over the limit only with the first is refused before sending, and asks the page for a fresh list', async () => {
+    const onSaved = jest.fn();
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sources} onSaved={onSaved} />);
+    fillForm();
+    await click('Save to Library as pending');
+    expect(calls).toHaveLength(1 + parts.length);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('excerpt-limit').textContent).toContain(
+      `Saved so far: ${20 - parts.length + 1} passages, ${new Intl.NumberFormat('en-US').format(characters)} characters.`,
+    );
+
+    fireEvent.change(screen.getByLabelText('Excerpt label'), { target: { value: 'Results' } });
+    fireEvent.change(screen.getByLabelText('Where in the source'), { target: { value: 'pp. 7-9' } });
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: TEXT } });
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+    expect(screen.getByText(/over its limit of 20 passages/)).toBeTruthy();
+  });
+
+  it('a limited source shows its own limit, not the 48,000-character counter', () => {
+    installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sources} />);
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_b' } });
+
+    expect(screen.queryByText(/of 48,000 characters/)).toBeNull();
+  });
+});
+
+it('a fresh sources list replaces what the panel counted itself, so nothing is counted twice', async () => {
+  const parts = splitIntakeText(TEXT);
+  const before = [{ ...SOURCES[1], excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 2, held_characters: 100 } }];
+  installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+  const { rerender } = render(<LibraryTextIntakePanel sources={before} />);
+  fillForm();
+  await click('Save to Library as pending');
+  expect(screen.getByTestId('excerpt-limit').textContent).toContain(`Saved so far: ${2 + parts.length} passages`);
+
+  const fresh = [{ ...SOURCES[1], excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 2 + parts.length, held_characters: 100 } }];
+  rerender(<LibraryTextIntakePanel sources={fresh} />);
+
+  expect(screen.getByTestId('excerpt-limit').textContent).toContain(`Saved so far: ${2 + parts.length} passages`);
+});

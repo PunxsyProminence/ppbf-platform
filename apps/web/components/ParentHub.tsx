@@ -15,7 +15,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
@@ -79,6 +79,27 @@ function formatDueDate(value: string): string {
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
+}
+
+/* THE GYM'S WEEK, Monday to Sunday on the gym's calendar (America/New_York,
+   gymDayIso), as the two bare dates that bound it. A due date is a bare
+   calendar date too ('2026-10-20'), so membership is a string comparison
+   between like things. The arithmetic runs on UTC midnight of the gym's
+   today, which has no daylight-saving edge to fall off. */
+/** A due date the week can be judged by: the bare 'YYYY-MM-DD' the route
+ *  sends. Anything else is shown as typed and judged by nobody. */
+function isCalendarDay(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function gymWeekBounds(nowMs: number): { start: string; end: string } | null {
+  const today = gymDayIso(nowMs);
+  if (!today) return null;
+  const midnight = Date.parse(`${today}T00:00:00Z`);
+  const sinceMonday = (new Date(midnight).getUTCDay() + 6) % 7;
+  const day = 24 * 60 * 60 * 1000;
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  return { start: iso(midnight - sinceMonday * day), end: iso(midnight + (6 - sinceMonday) * day) };
 }
 
 interface AttendanceEntry {
@@ -220,6 +241,26 @@ export default function ParentHub() {
   // grounds that its empty state was "fine either way"; it is the same claim
   // as the tile's zero, in words.)
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  // The clock reading the Parent Floor's week is judged against. Taken as the
+  // messages land, then again each minute and whenever the page comes back
+  // into view, so a hub left open past Sunday midnight moves to the new week
+  // rather than going on calling last week "this week". Render must not read
+  // the clock itself (react-hooks/purity).
+  const [floorClockMs, setFloorClockMs] = useState(0);
+  useEffect(() => {
+    const tick = () => setFloorClockMs(Date.now());
+    const interval = window.setInterval(tick, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -233,6 +274,7 @@ export default function ParentHub() {
         // The route sends task: null, never omits it; an item without the
         // key (an older answer, a stub) is read as "no task", not as a crash.
         setMessages((payload.items ?? []).map((item) => ({ ...item, task: item.task ?? null })));
+        setFloorClockMs(Date.now());
         setMessagesLoaded(true);
       } catch {
         // Messages tab falls back to its empty state; the summary tile shows
@@ -248,11 +290,20 @@ export default function ParentHub() {
      ANSWER, not from the click: the box shows what the server holds, and a
      refused or dropped write leaves it where it was and says so in words. */
   const [taskBusy, setTaskBusy] = useState<Set<string>>(() => new Set());
-  const [taskNotice, setTaskNotice] = useState<string>('');
+  // A failed tick's notice carries the child the task is about, so the
+  // Parent Floor shows it only under that child -- including when the write
+  // fails after the guardian has switched to a sibling. The Messages tab
+  // lists every child's messages and shows it whichever child is selected.
+  const [taskNotice, setTaskNotice] = useState<{ athleteId: string; text: string } | null>(null);
+  // Tasks ticked or unticked on this visit. A carry-forward task ticked off
+  // stays on the Parent Floor, ticked, until the page is next loaded, so a
+  // wrong tick can be undone where it was made instead of vanishing.
+  const [tasksTouched, setTasksTouched] = useState<Set<string>>(() => new Set());
 
   async function handleTaskToggle(noteId: string, completed: boolean) {
     if (taskBusy.has(noteId)) return;
-    setTaskNotice('');
+    setTaskNotice(null);
+    const aboutAthlete = messages.find((message) => message.note_id === noteId)?.athlete_id ?? '';
     setTaskBusy((held) => new Set(held).add(noteId));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent/messages`, {
@@ -267,13 +318,15 @@ export default function ParentHub() {
         throw new Error(typeof payload?.error === 'string' && payload.error ? payload.error : 'The tick did not save.');
       }
       const task = payload.task;
+      setTasksTouched((held) => new Set(held).add(noteId));
       setMessages((held) =>
         held.map((message) => (message.note_id === noteId ? { ...message, task } : message)),
       );
     } catch (error) {
-      setTaskNotice(
-        `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
-      );
+      setTaskNotice({
+        athleteId: aboutAthlete,
+        text: `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
+      });
     } finally {
       setTaskBusy((held) => {
         const next = new Set(held);
@@ -698,6 +751,45 @@ export default function ParentHub() {
     : 'Unavailable';
 
   const activeChild = children.find(c => c.id === activeChildId);
+
+  /* PARENT FLOOR TASKS (WO-PH-02). The selected child's parent-support tasks,
+     cut from the one messages read the Messages tab and the Home Tasks tile
+     also use, so a tick in either place moves all three. "This week" is every
+     task due in the gym's current week, done or not; "Still open" is every
+     unticked task due before it or with no due date, so an unfinished task
+     does not drop out because Sunday passed (Q1 = B), plus any of those ticked
+     on this visit. A task ticked off on an earlier visit, or due after this
+     week, is on Messages. */
+  /* No child selected (the roster failed or is still loading) is an unknown,
+     not an empty week: the card says it cannot show the list. */
+  const weekBounds = messagesLoaded && activeChildId ? gymWeekBounds(floorClockMs) : null;
+  const activeChildTasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
+  const byDueDate = (a: ParentMessage, b: ParentMessage) =>
+    (a.task?.due_date ?? '').localeCompare(b.task?.due_date ?? '');
+  const thisWeekTasks = weekBounds
+    ? activeChildTasks
+      .filter((message) => {
+        const due = message.task?.due_date;
+        return isCalendarDay(due) && due >= weekBounds.start && due <= weekBounds.end;
+      })
+      .sort(byDueDate)
+    : [];
+  const earlierOpenTasks = weekBounds
+    ? activeChildTasks
+      .filter((message) => {
+        const due = message.task?.due_date ?? null;
+        const before = !isCalendarDay(due) || due < weekBounds.start;
+        return before && (isOpenTask(message) || tasksTouched.has(message.note_id));
+      })
+      // Dated ones oldest first; undated after them.
+      .sort((a, b) => {
+        const dueA = a.task?.due_date ?? null;
+        const dueB = b.task?.due_date ?? null;
+        if (dueA === null || dueB === null) return dueA === dueB ? 0 : dueA === null ? 1 : -1;
+        return dueA.localeCompare(dueB);
+      })
+    : [];
+  const thisWeekDone = thisWeekTasks.filter((message) => !isOpenTask(message)).length;
   // Only the card that was read for the child now selected. See the note on
   // the childCard state for why the match happens here.
   const shownCard = childCard.athleteId === activeChildId ? childCard.card : null;
@@ -799,6 +891,39 @@ export default function ParentHub() {
     if (status === 'Present') return '✓';
     if (status === 'Excused') return '▲';
     return '✕';
+  }
+
+  /* One parent-support task on the Parent Floor: the coach's words, when it is
+     due, and the same Done box the Messages tab carries, through the same
+     handleTaskToggle -- the box shows what the server holds. */
+  function renderParentTask(message: ParentMessage) {
+    const task = message.task;
+    if (!task) return null;
+    const done = task.completed_at !== null;
+    return (
+      <li key={message.note_id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
+        <p className="t-body" id={`floor-task-${message.note_id}`}>{message.note_text}</p>
+        <p className="t-muted mt-[var(--s2)]">
+          {`From ${message.sender_role === 'coach' ? 'Coach' : 'Admin'} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}
+        </p>
+        <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+          <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
+            <input
+              type="checkbox"
+              className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+              checked={done}
+              aria-describedby={`floor-task-${message.note_id}`}
+              disabled={taskBusy.has(message.note_id)}
+              onChange={(event) => void handleTaskToggle(message.note_id, event.target.checked)}
+            />
+            <span className="t-body">
+              {done ? `Done ${formatGymDateTimeShort(task.completed_at) ?? ''}`.trim() : 'Done'}
+            </span>
+          </label>
+          {!done && <span className="t-muted">Still to do</span>}
+        </div>
+      </li>
+    );
   }
 
   return (
@@ -1186,21 +1311,20 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Floor"
-                description="Your at-home support tasks. Track drills, assignments, and parent verification items."
+                description="The things your child's coach has asked you to do, and a way to tell the coach what is getting in the way."
                 usage={[
-                  'Review this week\'s parent support tasks',
-                  'Help with assigned home drills',
-                  'Track completion status',
-                  'Report progress back to coaches'
+                  'Review what the gym has asked of you this week',
+                  'Tick a task Done when it is done (a wrong tick can be unticked)',
+                  'Check what is still open from earlier weeks',
+                  'Report a barrier at home or with getting here'
                 ]}
                 mistakes={[
-                  'Forgetting to review home assignments',
-                  'Not providing dedicated practice time',
-                  'Missing reporting deadlines'
+                  'Leaving a finished task unticked, so it keeps showing as open',
+                  'Waiting until the due date to say something is in the way'
                 ]}
               />
 
-              {/* #95/#96: the one real, working thing on this tab today. */}
+              {/* #95/#96: the guardian's barrier report. */}
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">Report a Barrier</h3>
                 <p className="t-body">
@@ -1239,20 +1363,35 @@ export default function ParentHub() {
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
-                {/* Not-built-yet is a statement of fact, not a refusal or a
-                    safety state, so it wears the label voice — never
-                    --locked, the safety gate's mark (Law 2). */}
-                <p className="t-label max-w-[520px]">
-                  PLANNED | NOT YET IMPLEMENTED
-                </p>
-                <p className="t-body">
-                  Anything your child&apos;s coach has asked you to do by a date is on the Messages tab, with a box to
-                  tick when it is done; the Home Tasks count at the top of this page is how many are still open.
-                  A separate weekly checklist is not built yet. The checklist and progress bar previously shown
-                  here were hardcoded example data, not real tasks -- they have been removed rather than left
-                  showing fake completion status. Home assignments from your child&apos;s coach are on the
-                  Assignments tab.
-                </p>
+                {!weekBounds ? (
+                  <p className="t-muted">
+                    Unavailable - your tasks could not be shown. This is not an empty list.
+                  </p>
+                ) : (
+                  <>
+                    <p className="t-body">
+                      {thisWeekTasks.length === 0
+                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
+                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
+                    </p>
+                    {taskNotice && taskNotice.athleteId === activeChildId && (
+                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
+                    )}
+                    {thisWeekTasks.length > 0 && (
+                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
+                        {thisWeekTasks.map((message) => renderParentTask(message))}
+                      </ul>
+                    )}
+                    {earlierOpenTasks.length > 0 && (
+                      <>
+                        <h4 className="t-label">Still open: earlier or no due date</h4>
+                        <ul className="space-y-[var(--s3)]" aria-label="Still open: earlier or no due date">
+                          {earlierOpenTasks.map((message) => renderParentTask(message))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1411,7 +1550,7 @@ export default function ParentHub() {
                   claim a failure nobody has observed either. "Unavailable" is
                   the tile's own word for exactly this, and it covers both. */}
               {taskNotice && (
-                <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice}</p>
+                <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
               )}
 
               {!messagesLoaded ? (

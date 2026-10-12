@@ -1014,6 +1014,7 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
       resolvedByRole: 'organization_admin',
       metadata: { note },
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
     expect(resolved).toBe(true);
   }
@@ -1086,6 +1087,7 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
       expect(covered.status).toBe('resolved');
       expect(covered.metadata).toEqual(expect.objectContaining({
         note: 'Source on order.',
+        closing_note: 'Closed in test.',
         resolved_by_account_id: ADMIN_ID,
         covered_after_resolution_at: expect.any(String),
       }));
@@ -1103,6 +1105,10 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
       expect(tickets[0].metadata).not.toHaveProperty('resolved_by_account_id');
       expect(tickets[0].metadata).not.toHaveProperty('resolved_by_role');
       expect(tickets[0].metadata).not.toHaveProperty('covered_after_resolution_at');
+      // The closing record goes with the closure (#1467): a reopened ticket
+      // carries no closing note from the last time it was closed.
+      expect(tickets[0].metadata).not.toHaveProperty('closing_note');
+      expect(tickets[0].metadata).not.toHaveProperty('closing_submission_id');
       expect(tickets[0].metadata.reopened_after_resolution_at).toEqual(expect.any(String));
       expect(tickets[0].metadata.coverage_state).toBe('uncovered');
       expect(await gapEventCount(client, 'cap-recurs')).toBe(eventsBefore + 1);
