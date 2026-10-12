@@ -23,9 +23,10 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * playback link goes out without the consent it depends on (OD-2026-10-05-016).
  *
  * WHAT IS ON THE SHELF is decided by the server: retracted and
- * consent-suppressed entries (suppressed_at), shelf rows marked archived and a
- * deleted athlete's footage never come back from getResearchLibrary. This page
- * renders what it is given.
+ * consent-suppressed entries (suppressed_at), shelf rows marked archived, a
+ * deleted athlete's footage and any entry whose source video is no longer
+ * 'ready' (archived, for one) never come back from getResearchLibrary. This
+ * page renders what it is given.
  *
  * TAGS. The route has no tag list, so the filter offers the tags seen on the
  * pages loaded so far; a tag only on later clips appears once its page has
