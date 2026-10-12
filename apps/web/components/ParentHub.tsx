@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import ParentAssignmentList from './ParentAssignmentList';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
@@ -33,14 +34,6 @@ interface Child {
   accountId: string | null;
   initials: string;
   photoAvailable: boolean;
-}
-
-interface HomeAssignment {
-  id: string;
-  title: string;
-  dueDate: string;
-  status: 'Pending' | 'In Progress' | 'Completed';
-  description: string;
 }
 
 interface ParentObservation {
@@ -164,18 +157,6 @@ interface SafetySummary {
    tone below is mixed against paper, and every state pairs its colour with a
    glyph and an uppercase label via the .badge component (Law 3). */
 
-function assignmentCardTone(status: HomeAssignment['status']): string {
-  if (status === 'Completed') return 'bg-[color-mix(in_srgb,var(--cleared)_10%,var(--paper))] border-[color:var(--cleared)]';
-  if (status === 'In Progress') return 'bg-[color-mix(in_srgb,var(--monitor)_10%,var(--paper))] border-[color:var(--monitor)]';
-  return 'bg-[var(--paper)] border-[color:rgba(0,0,0,.18)]';
-}
-
-function assignmentBadge(status: HomeAssignment['status']): { className: string; glyph: string } {
-  if (status === 'Completed') return { className: 'badge badge--cleared', glyph: '✓' };
-  if (status === 'In Progress') return { className: 'badge badge--monitor', glyph: '◉' };
-  return { className: 'badge badge--restricted', glyph: '▲' };
-}
-
 /* Selected tab / selected child: a control in the "on" position is brass
    chassis, never a status colour (Laws 1 and 2). */
 /* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
@@ -220,8 +201,6 @@ export default function ParentHub() {
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
-
-  const [homeAssignments] = useState<HomeAssignment[]>([]);
 
   const [parentObservations] = useState<ParentObservation[]>([]);
 
@@ -1209,40 +1188,23 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Home Assignments"
-                description="Coach-assigned work for home practice. Videos, drills, reflections, and skill development."
+                description="What your child's coach has set them to work on: drills, and workouts in the coach's order."
                 usage={[
-                  'Review assignment details and due dates',
-                  'Support your child with execution',
-                  'Upload evidence if requested',
-                  'Mark completion status'
+                  'Review what is being worked on now and when it is due',
+                  'Make time and space for the practice at home',
+                  'Open the full progression record for the logged work'
                 ]}
                 mistakes={[
-                  'Missing assignment deadlines',
-                  'Not understanding assignment goals',
-                  'Skipping optional evidence uploads'
+                  'Missing a due date',
+                  'Not asking the coach when a drill is unclear'
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for home assignments yet, so this
-                list is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)]">
-                {homeAssignments.map(assignment => {
-                  const badge = assignmentBadge(assignment.status);
-                  return (
-                    <div key={assignment.id} className={`border-2 p-[var(--s4)] rounded-[var(--r-md)] ${assignmentCardTone(assignment.status)}`}>
-                      <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
-                        <h4 className="t-body font-semibold">{assignment.title}</h4>
-                        <span className={badge.className}><i>{badge.glyph}</i>{assignment.status}</span>
-                      </div>
-                      <p className="t-body mb-[var(--s3)]">{assignment.description}</p>
-                      <p className="t-muted">Due: {assignment.dueDate}</p>
-                    </div>
-                  );
-                })}
-              </div>
+              {activeChildId ? (
+                <ParentAssignmentList athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - choose a child to see their assignments.</p>
+              )}
             </div>
           )}
 
