@@ -201,19 +201,23 @@ export async function configureRoundTimer(
 
 export type RoundTimerAction = 'start' | 'pause' | 'resume' | 'end';
 
-// Each action names the one state it moves from, so a repeated tap is refused rather than applied
-// twice (a second "pause" must not restart the pause instant).
-const TRANSITIONS: Record<RoundTimerAction, { from: readonly RoundTimerState[]; set: string }> = {
-  start: { from: ['ready'], set: `state = 'running', started_at = now()` },
-  pause: { from: ['running'], set: `state = 'paused', paused_at = now()` },
+// Each action names the states it moves from and the state it lands in. An action asking for the
+// state the timer is already in (a retried or second-screen tap) answers with the timer as it is and
+// writes nothing -- as the run's own pause is idempotent -- so a second "pause" can never restart the
+// pause instant. Any other move from the wrong state is refused.
+const TRANSITIONS: Record<RoundTimerAction, { from: readonly RoundTimerState[]; to: RoundTimerState; set: string }> = {
+  start: { from: ['ready'], to: 'running', set: `state = 'running', started_at = now()` },
+  pause: { from: ['running'], to: 'paused', set: `state = 'paused', paused_at = now()` },
   resume: {
     from: ['paused'],
+    to: 'running',
     set: `state = 'running',
           paused_seconds = t.paused_seconds + greatest(0, floor(extract(epoch from (now() - t.paused_at)))::int),
           paused_at = null`,
   },
   end: {
     from: ['ready', 'running', 'paused'],
+    to: 'ended',
     set: `state = 'ended',
           ended_at = greatest(now(), coalesce(t.started_at, now())),
           paused_seconds = t.paused_seconds
@@ -234,6 +238,9 @@ export async function moveRoundTimer(
     const existing = await readLocked(client, organizationId, runId);
     if (!existing) {
       throw new SessionScriptRunError('ROUND_TIMER_NOT_SET', 409);
+    }
+    if (existing.state === transition.to) {
+      return deriveRoundTimer(existing);
     }
     if (!transition.from.includes(existing.state)) {
       throw new SessionScriptRunError(`ROUND_TIMER_${existing.state.toUpperCase()}`, 409);

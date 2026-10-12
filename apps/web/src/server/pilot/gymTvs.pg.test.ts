@@ -1021,14 +1021,18 @@ describe('the round timer (WO-N1-03)', () => {
     expect(row.rows).toEqual([{ state: 'ready', started_at: null }]);
   });
 
-  it('start, pause, resume and end move it once each; a repeated tap is refused, not applied twice', async () => {
+  it('start, pause, resume and end move it once each; a repeated tap answers the timer as it is and writes nothing', async () => {
     await liveRunWithTimer();
     expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).toMatchObject({ state: 'running', phase: 'work', round: 1 });
-    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_RUNNING' });
+    const startedAt = (await client.query(`select started_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].started_at;
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).toMatchObject({ state: 'running' });
+    expect((await client.query(`select started_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].started_at).toEqual(startedAt);
     expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause')).toMatchObject({ state: 'paused', is_paused: true });
     const pausedAt = (await client.query(`select paused_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].paused_at;
-    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_PAUSED' });
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause')).toMatchObject({ state: 'paused' });
     expect((await client.query(`select paused_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].paused_at).toEqual(pausedAt);
+    // A move from the wrong state is still refused: a paused timer cannot be started again.
+    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_PAUSED' });
     await expect(configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 60, restSeconds: 0, roundsTotal: 1 }))
       .rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_RUNNING' });
     expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'resume')).toMatchObject({ state: 'running', is_paused: false });
