@@ -109,8 +109,10 @@ export default function AthleteAchievements({
   // Save truth (WO-N5-02): a press that is saving says so, and one the server did not keep says
   // that, instead of leaving the screen as if nothing had been pressed. Success is the screen
   // itself changing after the server answers.
-  const [programSave, setProgramSave] = useState<'idle' | 'saving' | 'failed'>('idle');
-  const [milestoneSave, setMilestoneSave] = useState<'idle' | 'saving' | 'failed'>('idle');
+  const [programSave, setProgramSave] = useState<SaveState>('idle');
+  // Keyed by athlete and milestone, so the line sits on the card that was pressed, one card's
+  // answer never overwrites another's, and a kiosk switched to another athlete shows none of them.
+  const [milestoneSave, setMilestoneSave] = useState<Readonly<Record<string, SaveState>>>({});
 
   const isFamily = audience === 'family';
 
@@ -235,7 +237,8 @@ export default function AthleteAchievements({
 
   const markMilestone = useCallback(async (milestone: Milestone) => {
     if (!athleteId || isFamily) return;
-    setMilestoneSave('saving');
+    const key = `${athleteId}:${milestone.key}`;
+    setMilestoneSave((now) => ({ ...now, [key]: 'saving' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'POST',
@@ -245,13 +248,13 @@ export default function AthleteAchievements({
       });
       if (response.ok) {
         await load();
-        setMilestoneSave('idle');
+        setMilestoneSave((now) => withoutKey(now, key));
       } else {
-        setMilestoneSave('failed');
+        setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
       }
     } catch {
-      // The milestone stays unmarked, which is the truth, and the line below says so.
-      setMilestoneSave('failed');
+      // The milestone stays unmarked, which is the truth, and its card says so.
+      setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
     }
   }, [athleteId, isFamily, load]);
 
@@ -405,8 +408,6 @@ export default function AthleteAchievements({
       {/* THE PATH. Only the tracks this program includes — a track that is    */}
       {/* not part of somebody's programme is absent, never greyed out.       */}
       {/* ------------------------------------------------------------------ */}
-      <SaveNote state={milestoneSave} />
-
       <div className="mt-[var(--s5)] space-y-[var(--s5)]">
         {tracks.map((track) => (
           <TrackPanel
@@ -414,6 +415,7 @@ export default function AthleteAchievements({
             track={track}
             isFamily={isFamily}
             pressedKey={pressed}
+            saveOf={(milestoneKey) => milestoneSave[`${athleteId}:${milestoneKey}`]}
             onMark={isFamily ? undefined : markMilestone}
           />
         ))}
@@ -453,11 +455,21 @@ export default function AthleteAchievements({
   );
 }
 
-/** One quiet line for a press that is saving or was not kept. Nothing at rest. */
-export function SaveNote({ state }: { state: 'idle' | 'saving' | 'failed' }) {
-  if (state === 'idle') return null;
+export type SaveState = 'idle' | 'saving' | 'failed';
+
+/** The same record without `key`: a kept press leaves no line behind. */
+export function withoutKey(saves: Readonly<Record<string, SaveState>>, key: string): Record<string, SaveState> {
+  const next = { ...saves };
+  delete next[key];
+  return next;
+}
+
+/** One quiet line for a press that is saving or was not kept. Nothing at rest. Floor-sized: this is
+    read on the gym kiosk (AGENT_KERNEL rule 2). */
+export function SaveNote({ state }: { state: SaveState | undefined }) {
+  if (!state || state === 'idle') return null;
   return (
-    <p className="tcard-sub mt-[var(--s3)]" role="status">
+    <p className="mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]" role="status">
       {state === 'saving' ? 'Saving...' : 'That did not save. Try it again.'}
     </p>
   );
@@ -489,11 +501,13 @@ function TrackPanel({
   track,
   isFamily,
   pressedKey,
+  saveOf,
   onMark,
 }: {
   track: TrackProgress;
   isFamily: boolean;
   pressedKey: string | null;
+  saveOf: (milestoneKey: string) => SaveState | undefined;
   onMark?: (milestone: Milestone) => void;
 }) {
   const total = track.earned.length + track.ahead.length;
@@ -552,6 +566,7 @@ function TrackPanel({
                 Did it
               </button>
             )}
+            <SaveNote state={saveOf(milestone.key)} />
           </li>
         ))}
       </ul>

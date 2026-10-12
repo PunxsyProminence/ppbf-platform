@@ -8,7 +8,7 @@
 // line appears for it.
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { resetAchievementCeremonyMemory } from './achievementCeremony';
 import AthleteAchievements from './AthleteAchievements';
@@ -119,5 +119,34 @@ describe('marking a milestone yourself', () => {
     });
     await waitFor(() => expect(screen.queryByText('Saving...')).toBeNull());
     expect(screen.queryByText('That did not save. Try it again.')).toBeNull();
+  });
+
+  test('the line sits on the milestone that was pressed, at floor size', async () => {
+    write = 'refused';
+    await renderPanel();
+    const buttons = screen.getAllByRole('button', { name: 'Did it' });
+    const pressed = buttons[buttons.length - 1];
+    await act(async () => {
+      fireEvent.click(pressed);
+    });
+    const card = pressed.closest('li') as HTMLElement;
+    const note = within(card).getByText('That did not save. Try it again.');
+    expect(note.className).toContain('text-[length:var(--t-md)]');
+    expect(screen.getAllByText('That did not save. Try it again.')).toHaveLength(1);
+  });
+
+  test('a kept retry clears the line', async () => {
+    write = 'refused';
+    await renderPanel();
+    const didIt = screen.getAllByRole('button', { name: 'Did it' })[0];
+    await act(async () => {
+      fireEvent.click(didIt);
+    });
+    expect(screen.getByText('That did not save. Try it again.')).toBeInTheDocument();
+    write = 'ok';
+    await act(async () => {
+      fireEvent.click(didIt);
+    });
+    await waitFor(() => expect(screen.queryByText('That did not save. Try it again.')).toBeNull());
   });
 });

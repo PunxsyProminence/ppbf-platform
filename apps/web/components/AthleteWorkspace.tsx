@@ -50,7 +50,7 @@ type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
 
 /**
- * The six task-oriented groups the eleven surfaces sit under, approved by the
+ * The five task-oriented groups the eleven surfaces sit under, approved by the
  * owner on 2026-08-16 (see docs/design/ATHLETE_WORKSPACE_IA_MOCKUP.md).
  *
  * Grouping is the whole change: every panel below still renders off its own
@@ -1267,7 +1267,7 @@ export default function AthleteWorkspace() {
      tasks, and it must not block any other tool or capability).
 
      So this gates the FLOOR AND NOTHING ELSE. Dashboard, Goals, Drills,
-     Rabbit Holes, Schedule, Messages and SHADOW stay open all day, checked in
+     Rabbit Holes, Schedule and SHADOW (Ask SHADOW with it) stay open all day, checked in
      or not -- including the pain report, which a child must be able to reach
      without first filling in a form.
 
@@ -2534,7 +2534,7 @@ export default function AthleteWorkspace() {
               Athlete workspace · {activeTabLabel}
             </p>
             {/* The standing description of the workspace, kept on Today only.
-                Under "SHADOW" or "Messages" it would be describing a screen
+                Under "SHADOW" or "Schedule" it would be describing a screen
                 the athlete is not looking at. */}
             {activeGroup === 'today' && (
               <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
@@ -2614,7 +2614,7 @@ export default function AthleteWorkspace() {
             Quick Actions -- including Check-In -- below the fold. */}
 
         {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels.
-            Six groups an athlete can hold in their head, each opening onto the
+            Five groups an athlete can hold in their head, each opening onto the
             surfaces it owns. A group with one surface has no second row: there
             is nothing to choose between, so nothing is drawn. */}
         <div className="mat-leather rounded-[var(--r-md)]">

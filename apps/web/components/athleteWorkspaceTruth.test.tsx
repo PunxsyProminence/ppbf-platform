@@ -10,7 +10,7 @@
 //             stored (the AI provider was down; the server answered 200 with
 //             state 'degraded' and wrote no row).
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 
 jest.mock('next/link', () => ({
@@ -169,10 +169,12 @@ describe('SHADOW-01: "Saved" is said only when the server stored the exchange', 
 
   async function ask(): Promise<HTMLTextAreaElement> {
     await renderWorkspace();
-    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    // The question lives under SHADOW, as the "Ask SHADOW" tab (WO-N5-02).
+    fireEvent.click(screen.getByRole('button', { name: 'SHADOW' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
     const box = (await screen.findByLabelText('Your Question')) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'What should I work on?' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+    fireEvent.click(within(box.closest('form') as HTMLFormElement).getByRole('button', { name: 'Ask SHADOW' }));
     await waitFor(() => expect(posted('/api/pilot/athlete/chat')).toHaveLength(1));
     return box;
   }

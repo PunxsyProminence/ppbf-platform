@@ -475,11 +475,10 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
 
 describe('athlete workspace honesty', () => {
   test('the summary row claims no message count while no feed measures one', async () => {
-    // "Messages 0" was a hardcoded zero: the athlete's Messages tab is
+    // "Messages 0" was a hardcoded zero: the athlete's question box is
     // write-only Ask-SHADOW, so no unread count exists to render, and a tile
     // saying 0 told a child nobody had written to them as if that had been
-    // measured. The nav group is still allowed to say Messages -- a door is
-    // not a measurement -- so the assertion targets stat tiles specifically.
+    // measured. The assertion targets stat tiles specifically.
     await renderWorkspace();
 
     expect(screen.getByText('Open Coach Work')).toBeTruthy();
