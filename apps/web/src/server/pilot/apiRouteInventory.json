@@ -9304,6 +9304,31 @@
     }
   },
   {
+    "id": "app/api/pilot/profile/card/coach-photo/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/profile/card/coach-photo",
+    "gate": "requirePrincipal + assertViewerMayReachSubject (card subject, then coach) + resolveRelationship + decidePortrait",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Streams the portrait of the coach of record on a fight card, addressed by the card's subject (account_id or athlete_id, as /profile/card) so a family's card needs no coach account id (OD-2026-10-06-025 ruling 2). The card subject is gated exactly as /profile/card (assertViewerMayReachSubject; relationship none -> 404); the coach is resolved on the server and gated from the viewer's standpoint by resolveRelationship + decidePortrait, as profile/photo/[accountId]. All refusals hiddenNotFound.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertViewerMayReachSubject"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/profile/me/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/profile/me",
@@ -13806,7 +13831,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes or other coach-written text; issue #1475).",
+    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes or other coach-written text; issue #1475). The detail read also carries untested_drills (drills no coach of this gym has floor-tested) for coach and organization admin only (issue #1473).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

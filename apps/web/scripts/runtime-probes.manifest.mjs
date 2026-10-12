@@ -364,7 +364,9 @@ export const MANIFEST = [
   {
     item: 'PR-238q',
     title: 'Progression hold visibility',
-    probes: [pageRenders('PR-238q', '/coach/review-queue')],
+    // The hold banner lives on the coach progression page (its HOLD notice);
+    // /coach/review-queue, probed here before, was a placeholder and is deleted.
+    probes: [pageRenders('PR-238q', '/coach/progression-intelligence')],
     acceptanceProbeOutstanding:
       'The banner only appears for an athlete under an active hold, so it needs the same held '
       + 'fixture as PR-238f.',

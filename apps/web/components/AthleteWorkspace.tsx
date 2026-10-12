@@ -35,7 +35,7 @@ import { fromAthleteDrillDetail, type DrillDetailView } from './drills/drillDeta
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
-import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDateTime, formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
 import {
   readIssuedWorkouts,
   sectionAssignedWork,
@@ -431,6 +431,165 @@ const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 },
 const POST_SESSION_MINUTES_QUESTION = 'How many minutes did you train?';
 const POST_SESSION_MINUTES_MIN = 1;
 const POST_SESSION_MINUTES_MAX = 300;
+
+/* ---------------------------------------------------------- schedule tab --- */
+
+/**
+ * THE SCHEDULE TAB'S READ (WO-N5-01, OD-2026-10-08-009 D13).
+ *
+ * The unified scheduler stays the booking authority: this view books nothing,
+ * it reads GET /api/pilot/scheduler -- the same call /schedule makes -- and
+ * draws two lists. The route already scopes what an athlete gets: every class
+ * in the gym (the catalogue), and only this athlete's own registrations, each
+ * through the family projection with no staff account id (scheduler route,
+ * filterStateForActor and familyClass / familyRegistration). Nothing here
+ * widens that; the view draws only fields the route sends a family reader.
+ */
+export interface ScheduleClassRow {
+  class_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location: string;
+  capacity: number;
+  status: 'open' | 'full' | 'cancelled';
+  registered_count: number;
+}
+
+export interface ScheduleRegistrationRow {
+  registration_id: string;
+  class_id: string;
+  status: 'registered' | 'waitlisted' | 'cancelled';
+}
+
+const BOOKING_WORD: Record<'registered' | 'waitlisted', string> = {
+  registered: 'Booked',
+  waitlisted: 'Waitlisted',
+};
+
+/** The two lists, from one scheduler read: booked first, the rest of the upcoming catalogue after. */
+export function scheduleLists(
+  classes: ScheduleClassRow[],
+  registrations: ScheduleRegistrationRow[],
+  now: number,
+): {
+  booked: Array<{ registration: ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }; item: ScheduleClassRow }>;
+  available: ScheduleClassRow[];
+} {
+  const upcoming = classes
+    .filter((item) => item.status !== 'cancelled' && Date.parse(item.start_at) > now)
+    .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  // A booked session stays listed until its class ENDS, so one in progress is
+  // still there; and a booked class the gym cancelled stays, labelled as such,
+  // rather than vanishing from the athlete's list.
+  const byId = new Map(
+    classes.filter((item) => Date.parse(item.end_at) > now).map((item) => [item.class_id, item]),
+  );
+  const booked: Array<{ registration: ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }; item: ScheduleClassRow }> = [];
+  const bookedIds = new Set<string>();
+  for (const registration of registrations) {
+    if (registration.status !== 'registered' && registration.status !== 'waitlisted') continue;
+    const item = byId.get(registration.class_id);
+    if (!item || bookedIds.has(item.class_id)) continue;
+    bookedIds.add(item.class_id);
+    booked.push({ registration: registration as ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }, item });
+  }
+  booked.sort((a, b) => Date.parse(a.item.start_at) - Date.parse(b.item.start_at));
+  return { booked, available: upcoming.filter((item) => !bookedIds.has(item.class_id)) };
+}
+
+function classWhen(item: ScheduleClassRow): string {
+  return formatGymDateTime(item.start_at) ?? item.start_at;
+}
+
+/** The Schedule tab's lists. Reads once when mounted -- the tab mounts it only while open. */
+export function AthleteScheduleView() {
+  const [read, setRead] = useState<
+    | { state: 'loading' }
+    | { state: 'failed' }
+    | { state: 'ready'; classes: ScheduleClassRow[]; registrations: ScheduleRegistrationRow[]; readAt: number }
+  >({ state: 'loading' });
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
+        const payload = (await response.json().catch(() => null)) as
+          | { ok?: boolean; classes?: ScheduleClassRow[]; registrations?: ScheduleRegistrationRow[] }
+          | null;
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
+          throw new Error('unreadable');
+        }
+        // "Upcoming" is measured from the moment of the read, not re-taken on every render.
+        if (live) setRead({ state: 'ready', classes: payload.classes, registrations: payload.registrations, readAt: Date.now() });
+      } catch {
+        if (live) setRead({ state: 'failed' });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (read.state === 'loading') {
+    return <p className="t-body text-[color:var(--bone-300)]" role="status">Loading your schedule...</p>;
+  }
+  if (read.state === 'failed') {
+    // Never an empty list: an unread schedule and an empty one mean opposite things.
+    return <p className="t-body" role="status">Your schedule could not be loaded.</p>;
+  }
+
+  const { booked, available } = scheduleLists(read.classes, read.registrations, read.readAt);
+  return (
+    <div className="space-y-[var(--s5)]">
+      <section className={`${PANEL_RAISED} space-y-[var(--s3)]`} aria-label="Your sessions">
+        <h3 className="t-label">Your sessions</h3>
+        {booked.length === 0 ? (
+          <p className="t-body text-[color:var(--bone-300)]">You have no booked sessions.</p>
+        ) : (
+          <ul className="space-y-[var(--s3)]">
+            {booked.map(({ registration, item }) => (
+              <li key={registration.registration_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
+                <div className="min-w-0">
+                  <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
+                  <p className="t-body text-[color:var(--bone-300)]">
+                    {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
+                  </p>
+                </div>
+                <span className="t-label">{item.status === 'cancelled' ? 'Class cancelled' : BOOKING_WORD[registration.status]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className={`${PANEL_RAISED} space-y-[var(--s3)]`} aria-label="Upcoming classes">
+        <h3 className="t-label">Upcoming classes</h3>
+        {available.length === 0 ? (
+          <p className="t-body text-[color:var(--bone-300)]">No upcoming classes are scheduled.</p>
+        ) : (
+          <ul className="space-y-[var(--s3)]">
+            {available.map((item) => {
+              const left = Math.max(0, item.capacity - item.registered_count);
+              const full = item.status === 'full' || left === 0;
+              return (
+                <li key={item.class_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
+                    </p>
+                  </div>
+                  <span className="t-label">{full ? 'Full' : `${left} ${left === 1 ? 'spot' : 'spots'} left`}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
 
 /**
  * The minutes box as check-out reads it: empty is "not answered" (null), a
@@ -3610,18 +3769,19 @@ export default function AthleteWorkspace() {
                   Open Unified Scheduler
                 </Link>
               </div>
+              {/* The athlete's classes and bookings, read in place (WO-N5-01).
+                  Booking stays in the unified scheduler above (N5-01-Q1 A). */}
+              <AthleteScheduleView />
               {/* This tab was a "NOT BUILT YET" wrapper around a link to a
-                  scheduler that IS built. A tab whose whole content is an
-                  apology for itself teaches an athlete to stop opening tabs;
-                  what it actually holds is the door to the real thing, so it
-                  says that and gets out of the way. The scheduler owns
-                  classes, booking and eligibility -- nothing here duplicates
-                  them. */}
+                  scheduler that IS built. It now also lists the athlete's
+                  classes and bookings in place (AthleteScheduleView, below),
+                  read from the same route; the scheduler still owns booking
+                  and eligibility, and nothing here duplicates them. */}
               <HelpPanel
                 title="Schedule Session"
-                description="Classes and sign-ups live in the unified scheduler. This is the door to it."
+                description="Your classes and bookings are listed here. Sign-ups happen in the unified scheduler."
                 usage={[
-                  'Open the unified scheduler to see live classes'
+                  'Open the unified scheduler to sign up for a class'
                 ]}
                 /* "Readiness RED may limit contact work" and "Booking contact
                    work with RED readiness" stood in these two lists until

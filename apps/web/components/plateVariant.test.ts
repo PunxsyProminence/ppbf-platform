@@ -513,7 +513,9 @@ describe('the same route resolves to the same variant, every time', () => {
      */
     const PINNED: ReadonlyArray<readonly [string, string]> = [
       ['/dashboard', '1of2 3of3 1of4 5of5 3of6 5of7 1of8'],
-      ['/coach/review-queue', '2of2 3of3 2of4 1of5 6of6 5of7 6of8'],
+      // /coach/review-queue was pinned here until lane N4-04 deleted that page;
+      // /coach/drills replaces it with its current value. The hash is unchanged.
+      ['/coach/drills', '2of2 2of3 4of4 1of5 2of6 1of7 8of8'],
       ['/wall', '2of2 1of3 4of4 1of5 4of6 3of7 4of8'],
       ['/names', '1of2 3of3 3of4 1of5 3of6 5of7 3of8'],
       ['/admin/attendance', '1of2 1of3 1of4 2of5 1of6 5of7 1of8'],
@@ -558,7 +560,7 @@ describe('the same route resolves to the same variant, every time', () => {
   });
 
   it('emits one well-formed token per split and nothing else', () => {
-    const tokens = plateVariantTokens('/coach/review-queue')!.split(' ');
+    const tokens = plateVariantTokens('/coach/drills')!.split(' ');
     expect(tokens).toHaveLength(PLATE_SPLITS.length);
     tokens.forEach((token, index) => {
       const count = PLATE_SPLITS[index];

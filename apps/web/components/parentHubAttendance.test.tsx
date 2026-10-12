@@ -122,8 +122,10 @@ describe('the Attendance tab reads the real schedule', () => {
     expect(container.textContent ?? '').toContain('Present');
     // The sibling's row is in the same payload and belongs to the other child.
     // Rendering it here is the sibling-leak this tab could most easily have
-    // shipped.
-    expect(container.textContent ?? '').not.toContain('Absent');
+    // shipped. (The summary tile prints the word "Absent" beside the child's
+    // own count, so the check is on the tab's row: the glyph and the word.)
+    expect(container.textContent ?? '').not.toMatch(/✕\s*Absent/);
+    expect(container.textContent ?? '').toContain('Present 1 · Excused 0 · Absent 0');
   });
 
   it('says Unavailable when the read fails, and does not call that an empty record', async () => {
