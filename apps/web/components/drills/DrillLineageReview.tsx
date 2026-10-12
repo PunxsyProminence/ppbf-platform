@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { gymDayIso } from '@/src/lib/gymTime';
 import type { DrillLineageResponse } from '@/app/api/pilot/drills/lineage/route';
 import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
 import type { DrillChangeProposalReviewResponse } from '@/app/api/pilot/drills/proposals/review/route';
@@ -31,8 +32,9 @@ const OUTCOMES = {
   unknownUnread: "It is not known whether this was saved, and this drill's versions and proposals could not be read again. Reload the page before trying again.",
 };
 
+/** The gym's own calendar day for an instant, so a late-evening review is not dated tomorrow. */
 function day(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : 'a date not recorded';
+  return gymDayIso(iso) ?? 'a date not recorded';
 }
 
 function shown(value: unknown): string {

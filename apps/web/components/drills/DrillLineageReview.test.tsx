@@ -169,7 +169,7 @@ describe('DrillLineageReview', () => {
       versions: twoVersions(),
       items: [stale],
       review: (body) => {
-        server.items = [{ ...stale, review_state: 'declined', review_note: body.review_note ?? null, reviewed_at: '2026-10-04T00:00:00.000Z' }];
+        server.items = [{ ...stale, review_state: 'declined', review_note: body.review_note ?? null, reviewed_at: '2026-10-04T12:00:00.000Z' }];
         const answer: DrillChangeProposalReviewResponse = { ok: true, organization_id: 'org-1', proposal: server.items[0] };
         return json(answer);
       },
@@ -216,7 +216,8 @@ describe('DrillLineageReview', () => {
       review: () => {
         const v3 = version(3, { active: true, name: 'Jab snap' });
         server.versions = [version(1), version(2), v3];
-        server.items = [{ ...onCurrent, review_state: 'adopted', resulting_drill_id: 'jab-3', reviewed_at: '2026-10-05T00:00:00.000Z', current_drill_id: 'jab-3' }];
+        server.items = [{ ...onCurrent, review_state: 'adopted', resulting_drill_id: 'jab-3', // 00:00 UTC on the 5th is the evening of the 4th at the gym, and is dated that way.
+        reviewed_at: '2026-10-05T00:00:00.000Z', current_drill_id: 'jab-3' }];
         const answer: DrillChangeProposalReviewResponse = { ok: true, organization_id: 'org-1', proposal: server.items[0], drill: v3 };
         return json(answer);
       },
@@ -225,7 +226,7 @@ describe('DrillLineageReview', () => {
 
     fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: 'Adopt' }));
 
-    expect(await screen.findByText('Adopted on 2026-10-05. Became version 3.')).toBeInTheDocument();
+    expect(await screen.findByText('Adopted on 2026-10-04. Became version 3.')).toBeInTheDocument();
     expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
     expect(within(proposalItem('Rationale p-current.')).queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
   });

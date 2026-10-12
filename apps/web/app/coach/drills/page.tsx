@@ -9,6 +9,7 @@ import DrillLineageReview from '@/components/drills/DrillLineageReview';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
+import { gymDayIso } from '@/src/lib/gymTime';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 import { requiresFloorValidation } from '@/src/lib/drillFloorValidation';
 import type { DrillFloorValidation } from '@/src/server/pilot/drillFloorValidations';
@@ -1134,7 +1135,7 @@ function CoachDrillLibrary() {
                     <p className="t-body">
                       {drillName}: {proposal.rationale}
                       <span className="t-label ml-[var(--s2)] text-[color:var(--bone-300)]">
-                        {proposal.review_state === 'under_review' ? 'Under review' : 'Proposed'} {proposal.created_at.slice(0, 10)}
+                        {proposal.review_state === 'under_review' ? 'Under review' : 'Proposed'} {gymDayIso(proposal.created_at)}
                       </span>
                     </p>
                     <button
