@@ -872,6 +872,30 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
       expect(((await response.json()) as { error: string }).error).toMatch(/no longer a submission reviewed responsive/);
     });
 
+    test('a note with a submission that does not qualify is refused, not closed on the note', async () => {
+      mockSubmissionCloses.mockResolvedValue(false);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_note: 'Also a note.', closing_submission_id: 'sub-unreviewed' }));
+
+      expect(response.status).toBe(400);
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test('a write that misses for another reason, with the submission still responsive, stays "not found"', async () => {
+      mockResolve.mockResolvedValue(false);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_submission_id: 'sub-7' }));
+
+      expect(response.status).toBe(404);
+    });
+
+    test('a note of exactly 2000 characters is accepted', async () => {
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_note: 'x'.repeat(2000) }));
+
+      expect(response.status).toBe(200);
+      expect(mockResolve).toHaveBeenCalled();
+    });
+
     test('refuses a note over 2000 characters', async () => {
       const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_note: 'x'.repeat(2001) }));
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -39,7 +39,7 @@ interface ShadowResearchRequirement {
   status: 'open' | 'resolved';
   created_at: string;
   /** The closing record the server wrote on resolve (#1467). */
-  metadata?: { closing_note?: string; closing_submission_id?: string };
+  metadata?: { closing_note?: string | null; closing_submission_id?: string | null };
 }
 
 /* Only coaches and organization admins close a research requirement (Jason
@@ -130,7 +130,14 @@ export default function ResearchIntakePage() {
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   /* Closing needs a note (OD-2026-10-08-005 A-Q13): "Mark Resolved" opens
      one note field for that requirement; Resolve sends it. */
-  const [closingId, setClosingId] = useState<number | null>(null);
+  const [closingId, setClosingIdState] = useState<number | null>(null);
+  // Mirrors closingId for the async resolve: it settles against the row
+  // that is open THEN, not the one that was open when it started.
+  const closingIdRef = useRef<number | null>(null);
+  const setClosingId = (id: number | null) => {
+    closingIdRef.current = id;
+    setClosingIdState(id);
+  };
   const [closingNote, setClosingNote] = useState('');
   const [closingError, setClosingError] = useState<string | null>(null);
   // Issue #345 slice 2: the computed ladder per requirement, the curator's
@@ -501,11 +508,16 @@ export default function ResearchIntakePage() {
             : requirement,
         ),
       );
-      setClosingId(null);
-      setClosingNote('');
+      // Only this row's note field: another row may have been opened since.
+      if (closingIdRef.current === researchRequirementId) {
+        setClosingId(null);
+        setClosingNote('');
+      }
       setSubmitMessage('Research requirement resolved.');
     } catch (error) {
-      setClosingError(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      if (closingIdRef.current === researchRequirementId) {
+        setClosingError(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      }
     } finally {
       setResolvingId(null);
     }
@@ -808,7 +820,7 @@ export default function ResearchIntakePage() {
                         value={closingNote}
                         onChange={(event) => setClosingNote(event.target.value)}
                       />
-                      {closingError ? <p className="t-body text-[color:var(--restricted)]">{closingError}</p> : null}
+                      {closingError ? <p className="t-body text-[color:var(--restricted)]" role="alert">{closingError}</p> : null}
                       <div className="flex flex-wrap gap-[var(--s2)]">
                         <button
                           type="button"
@@ -839,7 +851,8 @@ export default function ResearchIntakePage() {
                         setClosingNote('');
                         setClosingError(null);
                       }}
-                      className="btn btn--ghost mt-[var(--s4)]"
+                      disabled={resolvingId !== null}
+                      className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Mark Resolved
                     </button>

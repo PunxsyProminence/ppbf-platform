@@ -770,3 +770,35 @@ describe('closing a requirement with a note', () => {
     expect(resolves).toHaveLength(0);
   });
 });
+
+test('while one requirement is resolving, no other row opens a note field', async () => {
+  let finish: (() => void) | null = null;
+  const base = mockFetch({ curator: false, requirements: [REQUIREMENT, SECOND_REQUIREMENT] });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/research-requirements') && init?.method === 'POST') {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Mark Resolved' }))[0]);
+  fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: 'Answered.' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+  });
+
+  expect(screen.getByRole('button', { name: 'Resolving...' })).toBeTruthy();
+  const others = screen.getAllByRole('button', { name: 'Mark Resolved' });
+  expect(others).toHaveLength(1);
+  expect((others[0] as HTMLButtonElement).disabled).toBe(true);
+
+  await act(async () => {
+    finish?.();
+  });
+  expect(await screen.findByText('Closing note: Answered.')).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Mark Resolved' }) as HTMLButtonElement).disabled).toBe(false);
+});
