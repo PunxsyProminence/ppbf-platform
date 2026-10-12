@@ -45,6 +45,28 @@ import LibrarySourcePicker from './LibrarySourcePicker';
 export interface LibraryTextIntakeSource {
   source_id: string;
   title: string;
+  /** The excerpt limit a non-owned source is held to and what it holds now,
+   *  from the sources list (null or absent: no limit). Issue #1468, A-Q12. */
+  excerpt_budget?: {
+    max_passages: number;
+    max_characters: number;
+    held_passages: number;
+    held_characters: number;
+  } | null;
+}
+
+// A-Q12 (OD-2026-10-08-005, "Keep, show real limit"): the screen states the
+// excerpt limit a non-owned source is actually held to.
+export const EXCERPT_LIMIT_WORDS = {
+  limit: (maxPassages: string, maxCharacters: string, heldPassages: string, heldCharacters: string) =>
+    `This source may hold ${maxPassages} passages and ${maxCharacters} characters in all. Saved so far: ${heldPassages} passages, ${heldCharacters} characters.`,
+  over: (passages: string, characters: string, maxPassages: string, maxCharacters: string) =>
+    `This text would bring the source to ${passages} passages and ${characters} characters, over its limit of ${maxPassages} passages and ${maxCharacters} characters. Nothing was sent. Shorten the text, or save it to another source.`,
+};
+
+/** Characters as the server counts them: code points of each trimmed part. */
+function serverCharacterCount(text: string): number {
+  return Array.from(text.trim()).length;
 }
 
 // RINT-05b words for the platform shelf. Approved by Jason in the RINT-05b
@@ -130,6 +152,21 @@ export default function LibraryTextIntakePanel({
   }, [draft.text]);
   const locked = busy || resume !== null;
 
+  const budget = sources.find((source) => source.source_id === draft.sourceId)?.excerpt_budget ?? null;
+  // What this text would bring the source to, in the server's own units. Not
+  // asked while finishing a partly saved document: its saved parts are
+  // already in held_*, so counting them again would refuse a valid finish.
+  const afterSave = useMemo(() => {
+    if (!budget || partCount === 0) return null;
+    const parts = splitIntakeText(draft.text);
+    return {
+      passages: budget.held_passages + parts.length,
+      characters: budget.held_characters + parts.reduce((sum, part) => sum + serverCharacterCount(part.text), 0),
+    };
+  }, [budget, partCount, draft.text]);
+  const overBudget = resume === null && budget !== null && afterSave !== null
+    && (afterSave.passages > budget.max_passages || afterSave.characters > budget.max_characters);
+
   // The page the excerpt is tied to, while it is tied to one.
   const linkedPage = useMemo(
     () => (draft.pdfPageNum === null ? null : (pdf?.pages.find((page) => page.num === draft.pdfPageNum) ?? null)),
@@ -191,6 +228,18 @@ export default function LibraryTextIntakePanel({
       const invalid = validateIntakeInput(intakeInput());
       if (invalid) {
         setOutcome({ kind: 'refused', message: invalid });
+        return;
+      }
+      if (overBudget && budget && afterSave) {
+        setOutcome({
+          kind: 'refused',
+          message: EXCERPT_LIMIT_WORDS.over(
+            formatIntakeCount(afterSave.passages),
+            formatIntakeCount(afterSave.characters),
+            formatIntakeCount(budget.max_passages),
+            formatIntakeCount(budget.max_characters),
+          ),
+        });
         return;
       }
     }
@@ -310,6 +359,16 @@ export default function LibraryTextIntakePanel({
             {formatIntakeCount(textLength)} of {formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)} characters
             {partCount > 0 ? ` · saved as ${partCount} ${partCount === 1 ? 'part' : 'parts'}, in order` : ''}
           </p>
+          {budget ? (
+            <p className="t-muted" data-testid="excerpt-limit">
+              {EXCERPT_LIMIT_WORDS.limit(
+                formatIntakeCount(budget.max_passages),
+                formatIntakeCount(budget.max_characters),
+                formatIntakeCount(budget.held_passages),
+                formatIntakeCount(budget.held_characters),
+              )}
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-[var(--s4)]">
             <button type="button" className="btn" disabled={busy} onClick={() => void handleSubmit()}>

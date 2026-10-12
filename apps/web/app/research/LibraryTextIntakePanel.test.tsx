@@ -357,3 +357,74 @@ describe('LibraryTextIntakePanel on the platform shelf', () => {
     expect(screen.getByText(/Only the newest 2 are listed/)).toBeTruthy();
   });
 });
+
+// Issue #1468 (A-Q12, "Keep, show real limit"): a non-owned source is held to
+// 20 passages and 30,000 characters in all. The screen states it and checks
+// a text against it before sending anything.
+describe('LibraryTextIntakePanel: the excerpt limit of a non-owned source', () => {
+  const parts = splitIntakeText(TEXT);
+  const characters = parts.reduce((sum, part) => sum + Array.from(part.text.trim()).length, 0);
+
+  function sourcesWith(held: { passages: number; characters: number } | null) {
+    return [
+      SOURCES[0],
+      {
+        ...SOURCES[1],
+        excerpt_budget: held === null
+          ? null
+          : { max_passages: 20, max_characters: 30_000, held_passages: held.passages, held_characters: held.characters },
+      },
+    ];
+  }
+
+  it('states the limit and what the source holds now, and only for a limited source', () => {
+    installFetch(() => created);
+    const { rerender } = render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 3, characters: 3_600 })} />);
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_b' } });
+
+    expect(screen.getByTestId('excerpt-limit').textContent).toBe(
+      'This source may hold 20 passages and 30,000 characters in all. Saved so far: 3 passages, 3,600 characters.',
+    );
+
+    rerender(<LibraryTextIntakePanel sources={sourcesWith(null)} />);
+    expect(screen.queryByTestId('excerpt-limit')).toBeNull();
+  });
+
+  it('refuses before sending when the text would pass the passage limit', async () => {
+    const calls = installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 21 - parts.length, characters: 0 })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(0);
+    expect(screen.getByText(/over its limit of 20 passages and 30,000 characters\. Nothing was sent\./)).toBeTruthy();
+  });
+
+  it('refuses before sending when the text would pass the character limit', async () => {
+    const calls = installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 0, characters: 30_001 - characters })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(0);
+    expect(screen.getByText(/would bring the source to .* 30,001 characters/)).toBeTruthy();
+  });
+
+  it('sends a text that brings the source exactly to its limit', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 20 - parts.length, characters: 30_000 - characters })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+  });
+
+  it('an owned or open source is not checked against the limit', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sourcesWith(null)} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+  });
+});
