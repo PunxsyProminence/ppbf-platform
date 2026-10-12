@@ -17,9 +17,13 @@ import type { ReactNode } from 'react';
 
 import CoachPassbookPage from './page';
 
+const standaloneProps: Array<{ allowedRoles: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles: string[] }) => {
+    standaloneProps.push({ allowedRoles });
+    return <div>{children}</div>;
+  },
 }));
 
 // Shaped like AthletePassbook for a staff reader (src/server/pilot/passbook.ts).
@@ -259,4 +263,17 @@ test('a late failure from an earlier pick never hides a newer book for the same 
   await act(async () => { release(); });
   expect(screen.getByRole('heading', { name: 'Ana Boxer' })).toBeTruthy();
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('the page is for staff only: coach and admin, never athlete or parent', async () => {
+  render(<CoachPassbookPage />);
+  await act(async () => {});
+  const roles = standaloneProps[standaloneProps.length - 1].allowedRoles;
+  expect([...roles].sort()).toEqual(['admin', 'coach']);
+});
+
+test('the door to the page is shown to the same roles as the page', async () => {
+  const { BUILDING } = await import('@/components/buildingMap');
+  const door = BUILDING.find((d) => d.href === '/coach/passbook');
+  expect([...(door?.roles ?? [])].sort()).toEqual(['admin', 'coach']);
 });
