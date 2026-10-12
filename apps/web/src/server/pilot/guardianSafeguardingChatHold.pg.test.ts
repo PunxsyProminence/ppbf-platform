@@ -76,8 +76,13 @@ interface PurgeEvent {
   blocked_by?: Record<string, number>;
 }
 
-/** Runs scripts/pilot-cleanup-deleted-data.mjs; apply false is its dry run, which rolls everything back. */
-async function purge(apply: boolean): Promise<PurgeEvent> {
+/**
+ * Runs scripts/pilot-cleanup-deleted-data.mjs. 'dry' is its dry run, which
+ * rolls everything back; 'apply' is the APPLY dispatch; 'nightly' is the
+ * scheduled inquiries-only mode, which never touches people's records.
+ */
+async function purge(mode: boolean | 'nightly'): Promise<PurgeEvent> {
+  const apply = mode === true;
   const output = await new Promise<string>((resolve, reject) => {
     execFile(
       process.execPath,
@@ -90,6 +95,7 @@ async function purge(apply: boolean): Promise<PurgeEvent> {
           PPBF_EXPECTED_POSTGRES_DATABASE: PG_DATABASE,
           PPBF_POSTGRES_DISABLE_SSL: 'true',
           ...(apply ? { PPBF_RETENTION_APPLY: 'true' } : {}),
+          ...(mode === 'nightly' ? { PPBF_RETENTION_APPLY_INQUIRIES: 'true' } : {}),
         },
       },
       (error, stdout, stderr) => (error ? reject(new Error(`${stdout}${stderr}`)) : resolve(`${stdout}${stderr}`)),
@@ -222,6 +228,13 @@ test('a flagged guardian deleted 13 months ago is held; 25 months ago, or unflag
   expect(dry.guardians_held_for_safeguarding_chats).toBe(1);
   expect(await present(unflagged.account, null)).toEqual({ account: 1, reviews: 0, conversation: 0 });
   expect(await present(past.account, past.conversation)).toEqual({ account: 1, reviews: 1, conversation: 1 });
+
+  // The nightly run, the one that actually runs every night: it reports the
+  // hold too, and removes nobody.
+  const nightly = await purge('nightly');
+  expect(nightly.guardians_held_for_safeguarding_chats).toBe(1);
+  expect(await present(held.account, held.conversation)).toEqual({ account: 1, reviews: 1, conversation: 1 });
+  expect(await present(unflagged.account, null)).toEqual({ account: 1, reviews: 0, conversation: 0 });
 
   const applied = await purge(true);
   expect(applied.accounts).toBe(2);

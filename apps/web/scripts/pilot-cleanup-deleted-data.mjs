@@ -1011,10 +1011,20 @@ async function main() {
        shadow_rows_follow_account trigger, which spares only a row with
        subject_deleted_at set, and nothing sets it). So the account itself
        waits: any review-queue row naming the guardian, whatever its status,
-       holds the whole account -- the conversations it points at, the
-       sessions and the guardian record -- until deleted_at + 2 years, when it
-       is purged like any other. Purged, not de-identified: the de-identifying
-       sweep the ruling also asks for is not built (docs/DATA_RETENTION.md).
+       holds the account -- the review entries, the guardian's own
+       conversations and the guardian record -- until deleted_at + 2 years,
+       when it is purged like any other. Purged, not de-identified: the
+       de-identifying sweep the ruling also asks for is not built
+       (docs/DATA_RETENTION.md).
+
+       WHAT THIS DOES NOT HOLD: a flagged conversation that is ABOUT a child
+       (shadow_chat_sessions.athlete_id set) also goes with that child: the
+       session's athlete key cascades (or, after shadow-deidentify-keys,
+       shadow_rows_follow_athlete deletes it) when the child is purged at the
+       child's own deleted_at + 2 years, which can come before the guardian's
+       hold ends. The review entry itself stays with the held guardian.
+       Holding a child's record for a guardian's chat is not decided here.
+
        Guarded like the other optional tables, so a database without SHADOW
        purges as before. */
     const reviewQueue = (await client.query(
@@ -1097,6 +1107,7 @@ async function main() {
           videos,
           inquiries,
           total,
+          guardians_held_for_safeguarding_chats: heldGuardians,
           max_rows: maxRows,
         }));
         process.exitCode = 1;
@@ -1107,6 +1118,7 @@ async function main() {
         mode,
         athletes,
         accounts,
+        guardians_held_for_safeguarding_chats: heldGuardians,
         max_rows: maxRows,
         note: 'People\'s records are not touched by this mode. A full APPLY of these would be refused as BLAST_RADIUS_EXCEEDED; a human must look.',
       }));
