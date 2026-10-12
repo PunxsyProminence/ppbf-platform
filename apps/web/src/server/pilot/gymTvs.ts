@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
 import { PilotError } from './errors';
+import { ROUND_TIMER_FIELDS, deriveRoundTimer, type RoundTimerRow, type RoundTimerView } from './roundTimers';
 import { createOpaqueToken, hashToken } from './security';
 import type { WallBoard, WallNameMode } from './wallDisplay';
 import { loadWallBoard } from './wallDisplayDb';
@@ -483,18 +484,21 @@ export async function sendRunToGymTv(
 
 // Take the session off a TV. Idempotent on a TV showing nothing. The same in-use rule as sending:
 // only the coach whose live session is on the TV may clear it; once that run has ended or been
-// switched off, any staff member may clear the leftover pointer. Both columns are cleared together
-// -- set_by means nothing without a run.
+// switched off, any staff member may clear the leftover pointer. An organization admin may clear
+// a live run of any coach (O17b, OD-2026-10-08-007: "organization admin can take a session off a
+// TV"). Either way only the TV's pointer goes: the run, its timer and its record stay as they
+// were. Both columns are cleared together -- set_by means nothing without a run.
 export async function takeRunOffGymTv(
   organizationId: string,
   accountId: string,
   tvId: string,
+  options: { organizationAdmin?: boolean } = {},
 ): Promise<GymTvListItem> {
   return withTransaction(async (client) => {
     const tv = await lockGymTv(client, organizationId, tvId);
     if (tv.current_run_id) {
       const occupant = await liveRunOnTv(client, organizationId, tvId);
-      if (occupant && occupant.delivered_by_account_id !== accountId) {
+      if (occupant && occupant.delivered_by_account_id !== accountId && !options.organizationAdmin) {
         throw new GymTvError(409, 'TV_IN_USE');
       }
       await client.query(
@@ -543,6 +547,7 @@ export const GYM_TV_SESSION_FIELDS = [
   'current_block',
   'next_block',
   'blocks',
+  'timer',
 ] as const;
 
 export interface GymTvSessionBlock {
@@ -575,6 +580,11 @@ export interface GymTvSession {
   current_block: (GymTvSessionBlock & { seconds_to_scheduled_end: number }) | null;
   next_block: GymTvSessionBlock | null;
   blocks: GymTvSessionBlock[];
+  /**
+   * The run's round clock (WO-N1-03), read with the same database clock as server_time; null when
+   * the coach has set none. Built from ROUND_TIMER_FIELDS only, so no account id reaches the TV.
+   */
+  timer: RoundTimerView | null;
 }
 
 export interface GymTvRead {
@@ -666,10 +676,14 @@ async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
             (r.paused_at is not null) as is_paused,
             greatest(0,
               floor(extract(epoch from (coalesce(r.paused_at, now()) - r.started_at)))::int
-              - coalesce(r.paused_seconds, 0)) as elapsed_seconds
+              - coalesce(r.paused_seconds, 0)) as elapsed_seconds,
+            rt.run_id is not null as has_timer, rt.round_seconds, rt.rest_seconds, rt.rounds_total,
+            rt.state as timer_state, rt.started_at as timer_started_at, rt.paused_at as timer_paused_at,
+            rt.paused_seconds as timer_paused_seconds
        from pilot.gym_tvs t
        join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
        join pilot.session_scripts s on s.organization_id = r.organization_id and s.script_id = r.script_id
+       left join pilot.round_timers rt on rt.organization_id = r.organization_id and rt.run_id = r.run_id
       where t.organization_id = $1 and t.tv_id = $2`,
     [tv.organization_id, tv.tv_id],
   );
@@ -705,8 +719,23 @@ async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
         : null,
       next_block: next,
       blocks,
+      timer: run.has_timer === true ? pickTimer(run) : null,
     },
   };
+}
+
+function pickTimer(run: Record<string, unknown>): RoundTimerView {
+  const view = deriveRoundTimer({
+    round_seconds: Number(run.round_seconds),
+    rest_seconds: Number(run.rest_seconds),
+    rounds_total: Number(run.rounds_total),
+    state: String(run.timer_state) as RoundTimerRow['state'],
+    started_at: (run.timer_started_at as Date | string | null) ?? null,
+    paused_at: (run.timer_paused_at as Date | string | null) ?? null,
+    paused_seconds: Number(run.timer_paused_seconds),
+    server_time: run.server_time as Date | string,
+  });
+  return Object.fromEntries(ROUND_TIMER_FIELDS.map((field) => [field, view[field]])) as unknown as RoundTimerView;
 }
 
 // The TV read's budget: fixed windows, no memory of failure, no escalation. In-memory and per

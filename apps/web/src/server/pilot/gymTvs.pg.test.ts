@@ -49,6 +49,7 @@ import {
   sendRunToGymTv,
   takeRunOffGymTv,
 } from './gymTvs';
+import { configureRoundTimer, moveRoundTimer, readOwnRoundTimer } from './roundTimers';
 import { hashToken } from './security';
 
 jest.setTimeout(180_000);
@@ -122,6 +123,8 @@ const PREREQUISITES = [
   'pilot_slice_postgres_session_run_show_on_wall_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_gym_tvs_migration.sql';
+// After the TV table: the TV read joins a run's round timer (WO-N1-03).
+const ROUND_TIMERS_FILE = 'pilot_slice_postgres_round_timers_migration.sql';
 const RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-gym-tvs-migration.mjs');
 
 const ORG_A = 'org-tv-a';
@@ -216,6 +219,7 @@ beforeAll(async () => {
   await applyMigration(client, migrationSql);
   // Idempotent: a second application passes its own gate.
   await applyMigration(client, migrationSql);
+  await client.query(await fs.readFile(path.join(INFRA_DIR, ROUND_TIMERS_FILE), 'utf8'));
 
   for (const [org, coach] of [[ORG_A, COACH_A], [ORG_B, COACH_B]]) {
     await client.query(
@@ -708,6 +712,32 @@ describe('sending a session to a TV (S2b, coach side)', () => {
     expect(cleared.current_run_set_by_account_id).toBeNull();
   });
 
+  it("O17b: an organization admin takes another coach's live session off a TV; the run and its timer stay", async () => {
+    const { minted } = await pairedTv();
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-org-admin','organization_admin',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    await seedLiveRun(ORG_A, COACH_A, 'run-a', { showOnWall: true });
+    await configureRoundTimer(ORG_A, COACH_A, 'run-a', { roundSeconds: 120, restSeconds: 30, roundsTotal: 4 });
+    await moveRoundTimer(ORG_A, COACH_A, 'run-a', 'start');
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-a');
+
+    // Without the admin flag the old rule holds.
+    await expect(takeRunOffGymTv(ORG_A, 'acct-tv-org-admin', minted.tv_id)).rejects.toMatchObject({ status: 409, code: 'TV_IN_USE' });
+
+    const off = await takeRunOffGymTv(ORG_A, 'acct-tv-org-admin', minted.tv_id, { organizationAdmin: true });
+    expect(off.current_run_id).toBeNull();
+    expect(off.current_run_set_by_account_id).toBeNull();
+    const run = await client.query(`select run_state, show_on_wall from pilot.session_script_runs where run_id = 'run-a'`);
+    expect(run.rows).toEqual([{ run_state: 'in_progress', show_on_wall: true }]);
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-a')).toMatchObject({ state: 'running', rounds_total: 4 });
+
+    // The flag reaches only its own gym: another gym's TV id is still a 404.
+    await expect(takeRunOffGymTv(ORG_B, 'acct-tv-org-admin', minted.tv_id, { organizationAdmin: true })).rejects.toMatchObject({ status: 404 });
+  });
+
   it('a run that settles while the send is in flight is refused, never stored (run row lock + atomic re-check)', async () => {
     const { minted } = await pairedTv();
     await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
@@ -794,7 +824,7 @@ describe('the TV read (S2b, TV side)', () => {
     // this list, so the two cannot drift apart silently either.
     const SESSION_FIELDS = [
       'blocks', 'current_block', 'elapsed_seconds', 'is_paused', 'next_block', 'run_id',
-      'script_name', 'server_time', 'started_at', 'total_minutes',
+      'script_name', 'server_time', 'started_at', 'timer', 'total_minutes',
     ];
     const BLOCK_FIELDS = [
       'block_id', 'block_kind', 'block_label', 'block_order', 'drill_name', 'end_offset_min',
@@ -817,6 +847,7 @@ describe('the TV read (S2b, TV side)', () => {
       is_paused: false,
       current_block: { block_id: 'blk-run-1-2', block_order: 2, block_kind: 'drill_round', drill_name: 'Drill for run-1', scale_level: 'B', start_offset_min: 10, end_offset_min: 20 },
       next_block: { block_id: 'blk-run-1-3', block_order: 3 },
+      timer: null,
     });
     // 12 minutes in, block 2 ends at 20: about 8 minutes to its scheduled end, off the database
     // clock. The window is wide because the seed and the read are separate statements on a loaded
@@ -971,5 +1002,116 @@ describe("the runner's readiness gate", () => {
       `select 1 from pg_constraint where conname = 'pilot_gym_tvs_run_only_when_paired'`,
     );
     expect(c.rows.length).toBe(1);
+  });
+});
+
+describe('the round timer (WO-N1-03)', () => {
+  async function liveRunWithTimer() {
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    return configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 180, restSeconds: 60, roundsTotal: 3 });
+  }
+
+  it('configures to ready, and nothing starts it until the coach does', async () => {
+    const ready = await liveRunWithTimer();
+    expect(ready).toEqual({
+      state: 'ready', phase: 'ready', round: 0, rounds_total: 3, round_seconds: 180, rest_seconds: 60,
+      seconds_left: 0, is_paused: false,
+    });
+    const row = await client.query(`select state, started_at from pilot.round_timers where run_id = 'run-1'`);
+    expect(row.rows).toEqual([{ state: 'ready', started_at: null }]);
+  });
+
+  it('start, pause, resume and end move it once each; a repeated tap is refused, not applied twice', async () => {
+    await liveRunWithTimer();
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).toMatchObject({ state: 'running', phase: 'work', round: 1 });
+    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_RUNNING' });
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause')).toMatchObject({ state: 'paused', is_paused: true });
+    const pausedAt = (await client.query(`select paused_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].paused_at;
+    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_PAUSED' });
+    expect((await client.query(`select paused_at from pilot.round_timers where run_id = 'run-1'`)).rows[0].paused_at).toEqual(pausedAt);
+    await expect(configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 60, restSeconds: 0, roundsTotal: 1 }))
+      .rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_RUNNING' });
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'resume')).toMatchObject({ state: 'running', is_paused: false });
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'end')).toMatchObject({ state: 'ended', phase: 'ended' });
+    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'resume')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_ENDED' });
+    // After an end the coach may set up another set, which is ready again.
+    expect(await configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 60, restSeconds: 0, roundsTotal: 1 }))
+      .toMatchObject({ state: 'ready', round_seconds: 60, rounds_total: 1 });
+  });
+
+  it('the server clock decides the round: a resumed timer has the paused time taken off', async () => {
+    await liveRunWithTimer();
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    // 200 seconds ago it started, paused 150 seconds ago, resumed now: 50 seconds of work counted.
+    await client.query(
+      `update pilot.round_timers
+          set state = 'paused', started_at = now() - interval '200 seconds', paused_at = now() - interval '150 seconds'
+        where run_id = 'run-1'`,
+    );
+    const resumed = await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'resume');
+    expect(resumed).toMatchObject({ state: 'running', phase: 'work', round: 1 });
+    expect(resumed.seconds_left).toBeGreaterThanOrEqual(128);
+    expect(resumed.seconds_left).toBeLessThanOrEqual(131);
+  });
+
+  it("two screens of the coach read the same state, and it survives a re-read; another coach's run reads as missing", async () => {
+    await liveRunWithTimer();
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause');
+    const [one, two] = await Promise.all([
+      readOwnRoundTimer(ORG_A, COACH_A, 'run-1'),
+      readOwnRoundTimer(ORG_A, COACH_A, 'run-1'),
+    ]);
+    expect(one).toEqual(two);
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-1')).toEqual(one);
+
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    for (const call of [
+      () => readOwnRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1'),
+      () => moveRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1', 'resume'),
+      () => configureRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1', { roundSeconds: 1, restSeconds: 0, roundsTotal: 1 }),
+      () => readOwnRoundTimer(ORG_B, COACH_B, 'run-1'),
+      () => moveRoundTimer(ORG_B, COACH_B, 'run-1', 'end'),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ status: 404, message: 'SESSION_RUN_NOT_FOUND' });
+    }
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-1')).toMatchObject({ state: 'paused' });
+  });
+
+  it('a settled run takes no timer change, and a run with no timer reads null', async () => {
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-1')).toBeNull();
+    await expect(moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start')).rejects.toMatchObject({ status: 409, message: 'ROUND_TIMER_NOT_SET' });
+    await settleRun('run-1');
+    await expect(configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 60, restSeconds: 0, roundsTotal: 1 }))
+      .rejects.toMatchObject({ status: 409, message: 'SESSION_RUN_NOT_LIVE' });
+  });
+
+  it('the TV shows the timer as allowlisted fields only, off the same database clock, and a refreshed TV reads it again', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await liveRunWithTimer();
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    await client.query(`update pilot.round_timers set started_at = now() - interval '200 seconds' where run_id = 'run-1'`);
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+
+    const timer = (await readGymTvSession(redeemed.device_key))!.session!.timer!;
+    expect(Object.keys(timer).sort()).toEqual(
+      ['is_paused', 'phase', 'rest_seconds', 'round', 'round_seconds', 'rounds_total', 'seconds_left', 'state'],
+    );
+    // 200 seconds in: round 1's 180 seconds are done, 20 of 60 rest gone.
+    expect(timer).toMatchObject({ state: 'running', phase: 'rest', round: 1, rounds_total: 3 });
+    expect(timer.seconds_left).toBeGreaterThanOrEqual(38);
+    expect(timer.seconds_left).toBeLessThanOrEqual(40);
+
+    const again = (await readGymTvSession(redeemed.device_key))!.session!.timer!;
+    expect(again).toMatchObject({ state: 'running', phase: 'rest', round: 1 });
+    const serialized = JSON.stringify(again);
+    for (const forbidden of ['account', 'configured', 'coach', 'organization', COACH_A, ORG_A]) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 });

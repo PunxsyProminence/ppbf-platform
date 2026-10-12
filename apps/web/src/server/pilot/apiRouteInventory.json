@@ -7591,7 +7591,7 @@
     "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#DELETE",
     "method": "DELETE",
     "path": "/api/pilot/gym-tvs/[tvId]/session",
-    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId and another coach's live session refused in takeRunOffGymTv",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId and another coach's live session refused in takeRunOffGymTv unless the caller is an organization admin (O17b)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -7603,7 +7603,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Gym TV (S2b). Takes the session off a TV: gymTvs.ts takeRunOffGymTv clears current_run_id and set_by together; only the coach whose live session is on the TV may clear it while it is live (409 TV_IN_USE otherwise); once the run has ended or been switched off, any staff member may clear the leftover pointer. Idempotent on an empty TV. No athlete data.",
+    "notes": "Gym TV (S2b). Takes the session off a TV: gymTvs.ts takeRunOffGymTv clears current_run_id and set_by together; while a run is live only the coach whose session is on the TV, or an organization admin (O17b, OD-2026-10-08-007), may clear it (409 TV_IN_USE otherwise); once the run has ended or been switched off, any staff member may clear the leftover pointer. Never deletes the run or its round timer. Idempotent on an empty TV. No athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10384,6 +10384,64 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/runs/[runId]/timer/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/session-scripts/runs/[runId]/timer",
+    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts readOwnRoundTimer (delivering coach only, 404 otherwise)",
+    "writes": false,
+    "notes": "Round timer (WO-N1-03). The delivering coach's screens read the run's round timer: configuration, state and the round, phase and seconds left derived from the database clock. ROUND_TIMER_FIELDS only; no account id. No athlete data.",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/runs/[runId]/timer/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/session-scripts/runs/[runId]/timer",
+    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts lockOwnLiveRun (delivering coach only, live run, 404 otherwise)",
+    "writes": true,
+    "notes": "Round timer (WO-N1-03). One named action per request: configure (round, rest, round count, bounded) or start/pause/resume/end. The client never sends a time or state; instants are written with the database's now(). Writes pilot.round_timers only. No athlete data.",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
