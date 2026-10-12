@@ -60,7 +60,6 @@ export default function VideoLibraryPage() {
     if (nextTag) params.set('tags', nextTag);
     const key = params.toString();
     latest.current = key;
-    setState('loading');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/publications/library?${key}`, {
         method: 'GET',
@@ -93,13 +92,17 @@ export default function VideoLibraryPage() {
     }
   }, []);
 
+  // The first page. Later pages and filters are loaded from the control that
+  // asks for them (go, below), which also shows the loading line.
   useEffect(() => {
-    void load(offset, tag);
-  }, [load, offset, tag]);
+    void load(0, '');
+  }, [load]);
 
-  function chooseTag(next: string) {
-    setTag(next);
-    setOffset(0);
+  function go(nextOffset: number, nextTag: string) {
+    setOffset(nextOffset);
+    setTag(nextTag);
+    setState('loading');
+    void load(nextOffset, nextTag);
   }
 
   return (
@@ -125,7 +128,7 @@ export default function VideoLibraryPage() {
             <select
               id="libraryTag"
               value={tag}
-              onChange={(event) => chooseTag(event.target.value)}
+              onChange={(event) => go(0, event.target.value)}
               className="select"
             >
               <option value="">All tags</option>
@@ -172,13 +175,13 @@ export default function VideoLibraryPage() {
                 type="button"
                 className="btn btn--ghost"
                 disabled={state === 'loading'}
-                onClick={() => setOffset(Math.max(offset - PAGE_SIZE, 0))}
+                onClick={() => go(Math.max(offset - PAGE_SIZE, 0), tag)}
               >
                 Previous
               </button>
             )}
             {state === 'loaded' && hasMore && (
-              <button type="button" className="btn btn--ghost" onClick={() => setOffset(offset + PAGE_SIZE)}>
+              <button type="button" className="btn btn--ghost" onClick={() => go(offset + PAGE_SIZE, tag)}>
                 Next
               </button>
             )}
