@@ -38,6 +38,8 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  /** The closing record the server wrote on resolve (#1467). */
+  metadata?: { closing_note?: string; closing_submission_id?: string };
 }
 
 /* Only coaches and organization admins close a research requirement (Jason
@@ -126,6 +128,11 @@ export default function ResearchIntakePage() {
   });
   const [submitMessage, setSubmitMessage] = useState('');
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  /* Closing needs a note (OD-2026-10-08-005 A-Q13): "Mark Resolved" opens
+     one note field for that requirement; Resolve sends it. */
+  const [closingId, setClosingId] = useState<number | null>(null);
+  const [closingNote, setClosingNote] = useState('');
+  const [closingError, setClosingError] = useState<string | null>(null);
   // Issue #345 slice 2: the computed ladder per requirement, the curator's
   // source list (null until the sources read succeeds -- a 403 simply leaves
   // the Answer-a-Gap panel unrendered, matching the POST's own gate), and
@@ -463,8 +470,11 @@ export default function ResearchIntakePage() {
     }
   }
 
-  async function handleResolveRequirement(researchRequirementId: number) {
+  async function handleResolveRequirement(researchRequirementId: number, note: string) {
+    const trimmed = note.trim();
+    if (!trimmed) return;
     setResolvingId(researchRequirementId);
+    setClosingError(null);
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
@@ -474,24 +484,28 @@ export default function ResearchIntakePage() {
         body: JSON.stringify({
           action: 'resolve',
           research_requirement_id: researchRequirementId,
+          closing_note: trimmed,
           metadata: { resolved_from: 'research_page' },
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Unable to resolve SHADOW research requirement.');
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to resolve SHADOW research requirement.');
       }
 
       setRequirements((current) =>
         current.map((requirement) =>
           requirement.research_requirement_id === researchRequirementId
-            ? { ...requirement, status: 'resolved' }
+            ? { ...requirement, status: 'resolved', metadata: { ...requirement.metadata, closing_note: trimmed } }
             : requirement,
         ),
       );
+      setClosingId(null);
+      setClosingNote('');
       setSubmitMessage('Research requirement resolved.');
     } catch (error) {
-      setSubmitMessage(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      setClosingError(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
     } finally {
       setResolvingId(null);
     }
@@ -777,15 +791,59 @@ export default function ResearchIntakePage() {
                     );
                   })()
                 ) : null}
+                {requirement.status === 'resolved' && requirement.metadata?.closing_note ? (
+                  <p className="t-body mt-[var(--s3)]">Closing note: {requirement.metadata.closing_note}</p>
+                ) : null}
                 {requirement.status === 'open' && mayOfferResolve(session.role) ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
-                    disabled={resolvingId === requirement.research_requirement_id}
-                    className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
-                  </button>
+                  closingId === requirement.research_requirement_id ? (
+                    <div className="mt-[var(--s4)] space-y-[var(--s2)]">
+                      <label className="t-label block" htmlFor={`closing-note-${requirement.research_requirement_id}`}>
+                        Closing note
+                      </label>
+                      <textarea
+                        id={`closing-note-${requirement.research_requirement_id}`}
+                        className="textarea w-full"
+                        rows={2}
+                        maxLength={2000}
+                        value={closingNote}
+                        onChange={(event) => setClosingNote(event.target.value)}
+                      />
+                      {closingError ? <p className="t-body text-[color:var(--restricted)]">{closingError}</p> : null}
+                      <div className="flex flex-wrap gap-[var(--s2)]">
+                        <button
+                          type="button"
+                          onClick={() => void handleResolveRequirement(requirement.research_requirement_id, closingNote)}
+                          disabled={!closingNote.trim() || resolvingId === requirement.research_requirement_id}
+                          className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Resolve'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => {
+                            setClosingId(null);
+                            setClosingNote('');
+                            setClosingError(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClosingId(requirement.research_requirement_id);
+                        setClosingNote('');
+                        setClosingError(null);
+                      }}
+                      className="btn btn--ghost mt-[var(--s4)]"
+                    >
+                      Mark Resolved
+                    </button>
+                  )
                 ) : null}
                 {/* Not for the platform owner: requirements are the gym's, and a
                     gym-shelf submission from it is refused (D3). */}

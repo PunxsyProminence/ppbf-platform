@@ -9,6 +9,7 @@ import {
   getShadowResearchRequirementById,
   listShadowResearchRequirements,
   resolveShadowResearchRequirement,
+  submissionClosesRequirement,
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
@@ -37,6 +38,7 @@ jest.mock('@/src/server/pilot/shadowResearch', () => {
     getShadowResearchRequirementById: jest.fn(),
     listShadowResearchRequirements: jest.fn(),
     resolveShadowResearchRequirement: jest.fn(),
+    submissionClosesRequirement: jest.fn(),
   };
 });
 
@@ -56,6 +58,7 @@ const mockList = listShadowResearchRequirements as jest.MockedFunction<typeof li
 const mockGuardianAthleteIds = guardianAthleteIds as jest.MockedFunction<typeof guardianAthleteIds>;
 const mockGetById = getShadowResearchRequirementById as jest.MockedFunction<typeof getShadowResearchRequirementById>;
 const mockResolve = resolveShadowResearchRequirement as jest.MockedFunction<typeof resolveShadowResearchRequirement>;
+const mockSubmissionCloses = submissionClosesRequirement as jest.MockedFunction<typeof submissionClosesRequirement>;
 const mockDeletedAmong = deletedAthleteIdsAmong as jest.MockedFunction<typeof deletedAthleteIdsAmong>;
 
 function principal(role: PilotPrincipal['role'] = 'organization_admin'): PilotPrincipal {
@@ -426,7 +429,7 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
 
 // ---------------------------------------------------------------------------
-// POST { action: 'resolve' } -- the athlete scope on the WRITE
+// POST { action: 'resolve', closing_note: 'Answered in the Library.' } -- the athlete scope on the WRITE
 // ---------------------------------------------------------------------------
 //
 // THE BUG. The resolve branch set an athlete scope for exactly ONE of the
@@ -531,7 +534,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
       mockRequirePrincipal.mockResolvedValue({ ...principal(role), athleteId: role === 'athlete' ? 'ath-mine' : null });
       mockAssertAthlete.mockRejectedValue(REFUSED);
 
-      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+      const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
       expect(response.status).toBe(404);
       expect(mockResolve).not.toHaveBeenCalled();
@@ -553,7 +556,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockGetById.mockResolvedValue(storedLegacy());
     mockAssertAthlete.mockRejectedValue(REFUSED);
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4172 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4172 }));
 
     expect(response.status).toBe(404);
     expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-other');
@@ -566,12 +569,12 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   test('a refusal is indistinguishable from an id that does not exist', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockAssertAthlete.mockRejectedValue(REFUSED);
-    const refused = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const refused = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     jest.clearAllMocks();
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockGetById.mockResolvedValue(null);
-    const absent = await POST(postRequest({ action: 'resolve', research_requirement_id: 999999 }));
+    const absent = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 999999 }));
 
     expect(absent.status).toBe(refused.status);
     expect(await absent.json()).toEqual(await refused.json());
@@ -588,7 +591,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockAssertAthlete.mockRejectedValue(REFUSED);
 
-    const lapsed = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const lapsed = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(lapsed.status).toBe(404);
     expect(mockResolve).not.toHaveBeenCalled();
@@ -598,7 +601,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockAssertAthlete.mockReset();
     mockAssertAthlete.mockResolvedValue(undefined);
 
-    const covered = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const covered = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(covered.status).toBe(200);
     expect(mockResolve).toHaveBeenCalledTimes(1);
@@ -610,7 +613,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   test('the authorized owner is carried into the write', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
 
-    await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(mockResolve).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -625,7 +628,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockGetById.mockResolvedValue(storedLegacy());
 
-    await POST(postRequest({ action: 'resolve', research_requirement_id: 4172 }));
+    await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4172 }));
 
     expect(mockResolve).toHaveBeenCalledWith(
       expect.objectContaining({ expectedSubjectAthleteId: 'ath-other' }),
@@ -641,7 +644,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
 
     const response = await POST(postRequest({
-      action: 'resolve',
+      action: 'resolve', closing_note: 'Answered in the Library.',
       research_requirement_id: 4171,
       metadata: { athlete_id: 'ath-mine' },
     }));
@@ -655,7 +658,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockGetById.mockResolvedValue(storedLegacy());
 
     const response = await POST(postRequest({
-      action: 'resolve',
+      action: 'resolve', closing_note: 'Answered in the Library.',
       research_requirement_id: 4172,
       metadata: { athlete_id: null },
     }));
@@ -672,7 +675,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockAssertAthlete.mockRejectedValue(REFUSED);
 
     const response = await POST(postRequest({
-      action: 'resolve',
+      action: 'resolve', closing_note: 'Answered in the Library.',
       research_requirement_id: 4171,
       metadata: { athlete_id: 'ath-mine' },
     }));
@@ -686,7 +689,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
 
     const response = await POST(postRequest({
-      action: 'resolve',
+      action: 'resolve', closing_note: 'Answered in the Library.',
       research_requirement_id: 4171,
       metadata: { subject_id: 'ath-other', resolved_from: 'research_page' },
     }));
@@ -706,7 +709,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
 
     const response = await POST(postRequest({
-      action: 'resolve',
+      action: 'resolve', closing_note: 'Answered in the Library.',
       research_requirement_id: 4171,
       metadata: { resolved_from: 'research_page' },
     }));
@@ -720,7 +723,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
     mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(response.status).toBe(403);
     expect(mockResolve).not.toHaveBeenCalled();
@@ -732,7 +735,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
     mockAssertAthlete.mockRejectedValue(REFUSED);
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(response.status).toBe(404);
     expect(mockResolve).not.toHaveBeenCalled();
@@ -757,7 +760,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   test('an organization admin still resolves a requirement in their organization', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(response.status).toBe(200);
     expect(mockResolve).toHaveBeenCalledWith(
@@ -772,13 +775,105 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockGetById.mockResolvedValue(storedOrgWide());
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
 
     expect(response.status).toBe(200);
     expect(mockAssertAthlete).not.toHaveBeenCalled();
     expect(mockResolve).toHaveBeenCalledWith(
       expect.objectContaining({ expectedSubjectAthleteId: null }),
     );
+  });
+
+  // OD-2026-10-08-005 A-Q13 (#1467): "closing a research requirement needs a
+  // closing note or an approved submission".
+  describe('closing needs a note or an approved submission', () => {
+    beforeEach(() => {
+      mockRequirePrincipal.mockResolvedValue(principal('coach'));
+      mockGetById.mockResolvedValue(storedOrgWide());
+      mockSubmissionCloses.mockResolvedValue(true);
+    });
+
+    test('closes with a closing note, which reaches the write trimmed', async () => {
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_note: '  Covered by the 2025 rest-interval review.  ' }));
+
+      expect(response.status).toBe(200);
+      expect(mockResolve).toHaveBeenCalledWith(expect.objectContaining({
+        closing: { note: 'Covered by the 2025 rest-interval review.', submissionId: null },
+      }));
+      expect(mockSubmissionCloses).not.toHaveBeenCalled();
+    });
+
+    test('closes with a submission reviewed responsive on this requirement', async () => {
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_submission_id: 'sub-7' }));
+
+      expect(response.status).toBe(200);
+      expect(mockSubmissionCloses).toHaveBeenCalledWith('org-real', 10, 'sub-7');
+      expect(mockResolve).toHaveBeenCalledWith(expect.objectContaining({
+        closing: { note: null, submissionId: 'sub-7' },
+      }));
+    });
+
+    test.each([
+      ['nothing', {}],
+      ['a blank note', { closing_note: '   ' }],
+      ['a blank submission id', { closing_submission_id: '  ' }],
+      ['null for both', { closing_note: null, closing_submission_id: null }],
+    ])('refuses to close with %s, and writes nothing', async (_label, extra) => {
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, ...extra }));
+
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toMatch(/closing note or an approved submission/);
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test('refuses a submission that is not reviewed responsive on this requirement', async () => {
+      mockSubmissionCloses.mockResolvedValue(false);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_submission_id: 'sub-unreviewed' }));
+
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toMatch(/not a submission reviewed responsive/);
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test('refuses a note over 2000 characters', async () => {
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_note: 'x'.repeat(2001) }));
+
+      expect(response.status).toBe(400);
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test.each([['closing_note', { closing_note: 42 }], ['closing_submission_id', { closing_submission_id: 7 }]])(
+      'refuses a non-string %s',
+      async (_label, extra) => {
+        const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, ...extra }));
+
+        expect(response.status).toBe(400);
+        expect(mockResolve).not.toHaveBeenCalled();
+      },
+    );
+
+    test.each(['closing_note', 'closing_submission_id'])('refuses %s smuggled in through metadata', async (key) => {
+      const response = await POST(postRequest({
+        action: 'resolve',
+        research_requirement_id: 10,
+        closing_note: 'A real note.',
+        metadata: { [key]: 'forged' },
+      }));
+
+      expect(response.status).toBe(400);
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test('an unentitled caller is still told only "not found", whatever closing it sent', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('volunteer'));
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10 }));
+
+      expect(response.status).toBe(404);
+      expect(mockSubmissionCloses).not.toHaveBeenCalled();
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
   });
 
   // Preserved exactly as it was: a guardian's athleteIds scope has only ever
@@ -790,7 +885,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockGetById.mockResolvedValue(storedOrgWide());
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
 
     expect(response.status).toBe(404);
     expect(mockResolve).not.toHaveBeenCalled();
@@ -800,7 +895,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue([]);
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(response.status).toBe(404);
     expect(mockGetById).not.toHaveBeenCalled();
@@ -810,7 +905,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   test('a missing research_requirement_id is still a 400', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
 
-    const response = await POST(postRequest({ action: 'resolve' }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.' }));
 
     expect(response.status).toBe(400);
     expect(mockResolve).not.toHaveBeenCalled();
@@ -821,7 +916,7 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   test('platform_owner cannot resolve at all', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
 
-    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 4171 }));
 
     expect(response.status).toBe(403);
     expect(mockGetById).not.toHaveBeenCalled();
@@ -1011,7 +1106,7 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
     mockResolve.mockResolvedValue(true);
     return POST(
       postRequest({
-        action: 'resolve',
+        action: 'resolve', closing_note: 'Answered in the Library.',
         research_requirement_id: stored.research_requirement_id,
         ...(metadata ? { metadata } : {}),
       }),
@@ -1118,7 +1213,7 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockGetById.mockResolvedValue(CAPABILITY_GAP);
 
-    const resolve = await POST(postRequest({ action: 'resolve', research_requirement_id: 33, metadata }));
+    const resolve = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 33, metadata }));
     const create = await POST(postRequest({ ...validBody, metadata }));
 
     expect(resolve.status).toBe(400);

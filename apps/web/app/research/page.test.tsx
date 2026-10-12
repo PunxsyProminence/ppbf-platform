@@ -684,3 +684,89 @@ describe('the picker at the cap', () => {
     expect((screen.getByLabelText('Registered source') as HTMLSelectElement).options).toHaveLength(1 + 202);
   });
 });
+
+// OD-2026-10-08-005 A-Q13 (#1467): closing a research requirement needs a
+// closing note or an approved submission. The page closes with a note.
+describe('closing a requirement with a note', () => {
+  function captureResolves(response: { ok: boolean; status?: number; body?: Record<string, unknown> } = { ok: true }) {
+    const resolves: Array<Record<string, unknown>> = [];
+    const base = mockFetch({ curator: false });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/research-requirements') && init?.method === 'POST') {
+        resolves.push(JSON.parse(String(init.body)));
+        return { ok: response.ok, status: response.status ?? 200, json: async () => response.body ?? { ok: true } } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    return resolves;
+  }
+
+  test('Mark Resolved asks for a note, and Resolve sends it once there is one', async () => {
+    const resolves = captureResolves();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    const resolve = screen.getByRole('button', { name: 'Resolve' });
+    expect((resolve as HTMLButtonElement).disabled).toBe(true);
+    expect(resolves).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: '  Covered by the RPE review in the Library.  ' } });
+    expect((resolve as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(resolve);
+    });
+
+    expect(resolves).toEqual([expect.objectContaining({
+      action: 'resolve',
+      research_requirement_id: 7,
+      closing_note: 'Covered by the RPE review in the Library.',
+    })]);
+    expect(await screen.findByText('Closing note: Covered by the RPE review in the Library.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+  });
+
+  test('a refused close shows the server reason and keeps the note and the row open', async () => {
+    captureResolves({ ok: false, status: 400, body: { error: 'missing closing_note or closing_submission_id: a requirement closes with a closing note or an approved submission' } });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: 'Answered.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    });
+
+    expect(screen.getByText(/a requirement closes with a closing note or an approved submission/)).toBeTruthy();
+    expect((screen.getByLabelText('Closing note') as HTMLTextAreaElement).value).toBe('Answered.');
+    expect(screen.queryByText(/^Closing note:/)).toBeNull();
+  });
+
+  test('a resolved requirement shows the closing note it was closed with', async () => {
+    global.fetch = mockFetch({
+      curator: false,
+      requirements: [{ ...REQUIREMENT, status: 'resolved', metadata: { closing_note: 'No reliable data under 14; revisit next year.' } }],
+    });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    expect(await screen.findByText('Closing note: No reliable data under 14; revisit next year.')).toBeTruthy();
+  });
+
+  test('Cancel closes the note field without sending anything', async () => {
+    const resolves = captureResolves();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: 'half written' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByLabelText('Closing note')).toBeNull();
+    expect(resolves).toHaveLength(0);
+  });
+});

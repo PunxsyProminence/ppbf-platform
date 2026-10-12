@@ -20,6 +20,9 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { closePool } from './db';
+import { resolveShadowResearchRequirement, submissionClosesRequirement } from './shadowResearch';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -302,5 +305,139 @@ describe('shadow research submissions runner readiness assertion', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+// OD-2026-10-08-005 A-Q13 (#1467): "closing a research requirement needs a
+// closing note or an approved submission". Against the real tables: only a
+// submission reviewed 'responsive' on THIS requirement closes it, and the
+// closing record is the server's to write.
+describe('closing a requirement with a note or an approved submission, against real Postgres', () => {
+  const CLOSING_DB = 'research_closing';
+  let client: Client;
+  let previousConnectionString: string | undefined;
+  let previousDisableSsl: string | undefined;
+  let entitySeq = 0;
+
+  async function requirement(): Promise<number> {
+    entitySeq += 1;
+    const result = await client.query(
+      `insert into pilot.shadow_research_requirements
+         (organization_id, source_event_name, source_entity_type, source_entity_id,
+          research_requirement, knowledge_gap, source_status, source_confidence_tier,
+          source_verification_state, created_by_account_id, created_by_role)
+       values ($1, 'manual_review', 'manual', $3, 'Is RPE reliable at age 12?',
+               'adolescent RPE reliability', 'observed', 'LIMITED', 'unverified', $2, 'coach')
+       returning research_requirement_id`,
+      [ORG_ID, ADMIN_ID, `closing-${entitySeq}`],
+    );
+    return Number(result.rows[0].research_requirement_id);
+  }
+
+  async function review(submissionId: string, state: string) {
+    await client.query(
+      `update pilot.shadow_research_submissions
+       set applicability_state = $3, reviewed_by_account_id = $2, reviewed_at = now()
+       where organization_id = $1 and submission_id = $4`,
+      [ORG_ID, ADMIN_ID, state, submissionId],
+    );
+  }
+
+  async function rowOf(id: number) {
+    const row = await client.query<{ status: string; metadata: Record<string, unknown> }>(
+      'select status, metadata from pilot.shadow_research_requirements where research_requirement_id = $1',
+      [id],
+    );
+    return row.rows[0];
+  }
+
+  function close(id: number, closing: { note: string | null; submissionId: string | null }, metadata: Record<string, unknown> = {}) {
+    return resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: id,
+      resolvedByAccountId: ADMIN_ID,
+      resolvedByRole: 'organization_admin',
+      expectedSubjectAthleteId: null,
+      metadata,
+      closing,
+    });
+  }
+
+  beforeAll(async () => {
+    client = await freshDatabase(CLOSING_DB);
+    await client.query(migrationSql);
+    previousConnectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    previousDisableSsl = process.env.PPBF_POSTGRES_DISABLE_SSL;
+    process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(CLOSING_DB);
+    process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+  });
+
+  afterAll(async () => {
+    await closePool();
+    if (previousConnectionString === undefined) delete process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    else process.env.AZURE_POSTGRES_CONNECTION_STRING = previousConnectionString;
+    if (previousDisableSsl === undefined) delete process.env.PPBF_POSTGRES_DISABLE_SSL;
+    else process.env.PPBF_POSTGRES_DISABLE_SSL = previousDisableSsl;
+    await client.end();
+  });
+
+  test('a closing note closes it, stored as written by the server, not as caller metadata says', async () => {
+    const id = await requirement();
+
+    await expect(close(id, { note: '  Covered by the 2025 review.  ', submissionId: null }, { closing_note: 'forged', resolved_from: 'research_page' }))
+      .resolves.toBe(true);
+
+    const row = await rowOf(id);
+    expect(row.status).toBe('resolved');
+    expect(row.metadata).toEqual(expect.objectContaining({
+      closing_note: 'Covered by the 2025 review.',
+      resolved_from: 'research_page',
+      resolved_by_account_id: ADMIN_ID,
+    }));
+    expect(row.metadata).not.toHaveProperty('closing_submission_id');
+  });
+
+  test('a submission reviewed responsive on this requirement closes it and is recorded', async () => {
+    const id = await requirement();
+    await insertSubmission(client, id, `sub-ok-${id}`);
+    await review(`sub-ok-${id}`, 'responsive');
+
+    expect(await submissionClosesRequirement(ORG_ID, id, `sub-ok-${id}`)).toBe(true);
+    await expect(close(id, { note: null, submissionId: `sub-ok-${id}` })).resolves.toBe(true);
+
+    const row = await rowOf(id);
+    expect(row.status).toBe('resolved');
+    expect(row.metadata.closing_submission_id).toBe(`sub-ok-${id}`);
+  });
+
+  test.each(['unreviewed', 'partially_responsive', 'not_responsive', 'duplicate'])(
+    'a submission still %s closes nothing',
+    async (state) => {
+      const id = await requirement();
+      await insertSubmission(client, id, `sub-${state}-${id}`);
+      if (state !== 'unreviewed') await review(`sub-${state}-${id}`, state);
+
+      expect(await submissionClosesRequirement(ORG_ID, id, `sub-${state}-${id}`)).toBe(false);
+      await expect(close(id, { note: null, submissionId: `sub-${state}-${id}` })).resolves.toBe(false);
+      expect((await rowOf(id)).status).toBe('open');
+    },
+  );
+
+  test('a responsive submission on another requirement closes nothing here', async () => {
+    const answered = await requirement();
+    const other = await requirement();
+    await insertSubmission(client, answered, `sub-elsewhere-${answered}`);
+    await review(`sub-elsewhere-${answered}`, 'responsive');
+
+    expect(await submissionClosesRequirement(ORG_ID, other, `sub-elsewhere-${answered}`)).toBe(false);
+    await expect(close(other, { note: null, submissionId: `sub-elsewhere-${answered}` })).resolves.toBe(false);
+    expect((await rowOf(other)).status).toBe('open');
+  });
+
+  test('neither a note nor a submission closes nothing, and writes nothing', async () => {
+    const id = await requirement();
+
+    await expect(close(id, { note: '   ', submissionId: null })).rejects.toThrow(/closing note or an approved submission/);
+    expect((await rowOf(id)).status).toBe('open');
   });
 });

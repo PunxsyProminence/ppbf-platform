@@ -128,6 +128,7 @@ describe('resolveShadowResearchRequirement', () => {
       // authorized is one that names no athlete -- null. The two assertions
       // below (no athlete scope in the SQL) are untouched.
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(true);
@@ -152,6 +153,7 @@ describe('resolveShadowResearchRequirement', () => {
       // Fixture repair: the stored row is about a child outside this
       // guardian's scope, which is exactly what the case is describing.
       expectedSubjectAthleteId: 'athlete-not-theirs',
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(false);
@@ -172,6 +174,7 @@ describe('resolveShadowResearchRequirement', () => {
       athleteIds: ['athlete-theirs'],
       // Fixture repair: this guardian's own child is the row's subject.
       expectedSubjectAthleteId: 'athlete-theirs',
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(true);
@@ -198,6 +201,7 @@ describe('resolveShadowResearchRequirement', () => {
       resolvedByAccountId: 'coach-account-1',
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: 'athlete-authorized',
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     const [sql, params = []] = mockQuery.mock.calls[0];
@@ -226,6 +230,7 @@ describe('resolveShadowResearchRequirement', () => {
       resolvedByAccountId: 'coach-account-1',
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     const [, params = []] = mockQuery.mock.calls[0];
@@ -252,6 +257,7 @@ describe('resolveShadowResearchRequirement', () => {
         resolved_by_role: 'organization_admin',
         resolved_from: 'research_page',
       },
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     const [, params = []] = mockQuery.mock.calls[0];
