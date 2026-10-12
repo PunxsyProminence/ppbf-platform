@@ -278,9 +278,17 @@ export default function SchedulerPage() {
         // is in front of them without hunting through the picker (#1524).
         const isFamilyReader = !roleCanOverrideAttendance(auth.role);
         const todayIso = gymDayIso(Date.now());
-        const todays = isFamilyReader
-          ? scheduler.classes.find((item) => gymDayIso(item.start_at) === todayIso)
-          : undefined;
+        const todaysClasses = isFamilyReader
+          ? scheduler.classes.filter((item) => item.status !== 'cancelled' && gymDayIso(item.start_at) === todayIso)
+          : [];
+        // An athlete's own registered class first; a parent's children are
+        // picked separately, so any of today's classes will do for them.
+        const mine = new Set(
+          (scheduler.registrations || [])
+            .filter((row) => row.athlete_id === auth.athlete_id && row.status === 'registered')
+            .map((row) => row.class_id),
+        );
+        const todays = todaysClasses.find((item) => mine.has(item.class_id)) ?? todaysClasses[0];
         const firstClassId = (todays ?? scheduler.classes[0]).class_id;
         setSelectedClassId((current) => current || firstClassId);
       }
