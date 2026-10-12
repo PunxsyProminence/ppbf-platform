@@ -4,7 +4,7 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
-import ParentProgressSummary from './ParentProgressSummary';
+import ParentProgressSummary, { type SupportTasks } from './ParentProgressSummary';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
@@ -234,6 +234,9 @@ export default function ParentHub() {
   // grounds that its empty state was "fine either way"; it is the same claim
   // as the tile's zero, in words.)
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  // Kept apart from "not loaded yet" for the one reader that says the two
+  // differently (the Progress tab's support-task line).
+  const [messagesFailed, setMessagesFailed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -242,7 +245,10 @@ export default function ParentHub() {
           method: 'GET',
           credentials: 'include',
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setMessagesFailed(true);
+          return;
+        }
         const payload = (await response.json()) as { items?: Array<Omit<ParentMessage, 'task'> & { task?: ParentMessageTask | null }> };
         // The route sends task: null, never omits it; an item without the
         // key (an older answer, a stub) is read as "no task", not as a crash.
@@ -251,6 +257,7 @@ export default function ParentHub() {
       } catch {
         // Messages tab falls back to its empty state; the summary tile shows
         // Unavailable because messagesLoaded stays false.
+        setMessagesFailed(true);
       }
     })();
   }, []);
@@ -708,15 +715,15 @@ export default function ParentHub() {
       // panel, so the standing is shown rather than flattened away.
       standing: registration.status === 'waitlisted' ? 'Waitlisted' : 'Registered',
     }));
-  /* The selected child's parent-support tasks, done of all, for the Progress
-     tab's summary: from the messages read, so it is Unavailable until that
-     read answered and a child is selected. */
-  const activeSupportTasks = messagesLoaded && activeChildId
+  /* The selected child's parent-support tasks, done of all set so far, for
+     the Progress tab's summary, from the messages read: reading while that
+     read is out, Unavailable when it failed. */
+  const activeSupportTasks: SupportTasks = messagesLoaded
     ? (() => {
       const tasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
-      return { done: tasks.filter((message) => !isOpenTask(message)).length, total: tasks.length };
+      return { state: 'loaded', done: tasks.filter((message) => !isOpenTask(message)).length, total: tasks.length };
     })()
-    : null;
+    : messagesFailed ? { state: 'failed' } : { state: 'loading' };
 
   /* Attendance outcomes on canvas take the -deep rungs (the text weights the
      sheet ships for the warm ground) and always carry their glyph. */
@@ -1538,8 +1545,15 @@ export default function ParentHub() {
 
               {activeChildId ? (
                 <ParentProgressSummary athleteId={activeChildId} supportTasks={activeSupportTasks} />
+              ) : childrenLoading ? (
+                <p className="working">Reading...</p>
               ) : (
-                <p className="t-muted">Unavailable - no child selected.</p>
+                <>
+                  <p className="t-muted">Unavailable - no child selected.</p>
+                  <Link href="/parent/progression-visibility" className="btn btn--ghost">
+                    Open the full progression record
+                  </Link>
+                </>
               )}
             </div>
           )}
