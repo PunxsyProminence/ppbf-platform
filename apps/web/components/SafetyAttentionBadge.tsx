@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
 import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
@@ -46,6 +47,7 @@ interface EscalationSummaryRow {
   escalation_id: string;
   severity: 'low' | 'moderate' | 'high' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved';
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -89,6 +91,11 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
 function EscalationBadge({ role }: { readonly role: string | null }) {
   const [criticalCount, setCriticalCount] = useState(0);
   const [highCount, setHighCount] = useState(0);
+  // Pain-report escalations, counted on their own line (#1528 Q3): no
+  // severity word is attached to a pain report, here or on its record.
+  const [painCount, setPainCount] = useState(0);
+  // Whether a pain-report escalation holds the critical rung.
+  const [painCritical, setPainCritical] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
 
   const serves = role !== null && ESCALATION_ROLES.has(role);
@@ -110,8 +117,13 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
          resolved, and the row's own severity is the one the ladder recorded.
          Nothing is re-derived here -- a second opinion about how serious a
          safeguarding record is would be a second answer to that question. */
-      setCriticalCount(rows.filter((row) => row.severity === 'critical').length);
-      setHighCount(rows.filter((row) => row.severity === 'high').length);
+      const severe = rows.filter((row) => row.severity === 'critical' || row.severity === 'high');
+      const pain = severe.filter((row) => isPainReportEscalation(row.metadata));
+      const others = severe.filter((row) => !isPainReportEscalation(row.metadata));
+      setCriticalCount(others.filter((row) => row.severity === 'critical').length);
+      setHighCount(others.filter((row) => row.severity === 'high').length);
+      setPainCount(pain.length);
+      setPainCritical(pain.some((row) => row.severity === 'critical'));
       setReadState('loaded');
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') {
@@ -121,6 +133,8 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       // A failed request has not earned it.
       setCriticalCount(0);
       setHighCount(0);
+      setPainCount(0);
+      setPainCritical(false);
       setReadState('unavailable');
     }
   }, []);
@@ -168,7 +182,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  const total = criticalCount + highCount;
+  const total = criticalCount + highCount + painCount;
   if (total === 0) {
     return null;
   }
@@ -179,7 +193,9 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      the design system's own ladder and matches what /admin/escalations puts on
      the individual rows, so the summary and the record cannot describe the
      same escalation at two different severities. */
-  const critical = criticalCount > 0;
+  // The rung is the worst stored severity across every open escalation, a
+  // pain report's included: its tone and alerting are unchanged (#1528 Q3).
+  const critical = criticalCount > 0 || painCritical;
   const rung = critical ? 'badge--locked' : 'badge--restricted';
   const glyph = critical ? '✕' : '▲';
   /* The worst severity as one word, taken off the SAME predicate that chose
@@ -188,10 +204,16 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      says HIGH, and the two would then be describing one set of escalations at
      two different severities -- the thing the paragraph above exists to
      prevent between this summary and /admin/escalations. */
-  const worst = critical ? 'CRITICAL' : 'HIGH';
-  const label = critical
-    ? `${criticalCount} critical${highCount > 0 ? `, ${highCount} high` : ''}`
-    : `${highCount} high`;
+  // When only pain reports hold the worst rung, the word names them instead
+  // of a severity (#1528 Q3); the same predicate still chose the rung.
+  const worst = critical
+    ? (criticalCount > 0 ? 'CRITICAL' : 'PAIN REPORT')
+    : (highCount > 0 ? 'HIGH' : 'PAIN REPORT');
+  const label = [
+    criticalCount > 0 ? `${criticalCount} critical` : null,
+    highCount > 0 ? `${highCount} high` : null,
+    painCount > 0 ? `${painCount} pain report${painCount === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(', ');
 
   /* NO FIXED WIDTH CAN BE CLAIMED FOR THIS BADGE, at either density or any
      breakpoint. Both summaries below are composed from counts fetched at

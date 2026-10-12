@@ -158,8 +158,9 @@ test('a queue that would not load is not stamped as a medical emergency', async 
 // The list under the tiles already said "unavailable, not empty" after a failed
 // read. The three tiles above it did not: the catch empties `items`, so they
 // counted that empty array and read Critical 0 / High 0 / Total 0.
+// Pain reports have their own tile (#1528 Q3).
 function tileValues() {
-  return ['Critical (this view)', 'High (this view)', 'Total (this view)'].map(
+  return ['Critical (this view)', 'High (this view)', 'Pain reports (this view)', 'Total (this view)'].map(
     (label) => screen.getByText(label).parentElement?.textContent?.replace(label, ''),
   );
 }
@@ -182,7 +183,7 @@ test.each<[string, () => Promise<Response>]>([
   render(<EscalationsPage />);
 
   expect(await screen.findByText('Escalations could not be loaded')).toBeTruthy();
-  expect(tileValues()).toEqual(['Unavailable', 'Unavailable', 'Unavailable']);
+  expect(tileValues()).toEqual(['Unavailable', 'Unavailable', 'Unavailable', 'Unavailable']);
   expect(screen.queryByText('Nothing in this view')).toBeNull();
 });
 
@@ -192,7 +193,7 @@ test('the count tiles still read zero when the read succeeded and nothing is ope
   render(<EscalationsPage />);
 
   expect(await screen.findByText('Nothing in this view')).toBeTruthy();
-  expect(tileValues()).toEqual(['0', '0', '0']);
+  expect(tileValues()).toEqual(['0', '0', '0', '0']);
 });
 
 test('the count tiles count what was read', async () => {
@@ -201,7 +202,7 @@ test('the count tiles count what was read', async () => {
   render(<EscalationsPage />);
 
   await screen.findByText('Reported pain in the same joint three sessions running.');
-  expect(tileValues()).toEqual(['1', '0', '1']);
+  expect(tileValues()).toEqual(['1', '0', '0', '1']);
 });
 
 describe('a pain-report escalation reads "Pain report", not a severity word (#1528)', () => {
@@ -269,5 +270,16 @@ describe('a pain-report escalation reads "Pain report", not a severity word (#15
     fireEvent.click(within(row(OTHER.reason)).getByRole('button', { name: 'Resolve' }));
     dialog = await screen.findByRole('dialog');
     expect((dialog.querySelector('.t-eyebrow') as HTMLElement).textContent).toMatch(/· moderate$/);
+  });
+
+  test('the tiles count pain reports on their own, not inside Critical or High (#1528 Q3)', async () => {
+    const CRITICAL_OTHER = { ...OTHER, escalation_id: 'esc-crit', severity: 'critical' as const, reason: 'Head contact without clearance.' };
+    mockAdminFetch({ escalations: [FROM_NEAR_MISS, REPEATED, OTHER, CRITICAL_OTHER] });
+
+    render(<EscalationsPage />);
+    await screen.findByText(FROM_NEAR_MISS.reason);
+
+    // Critical 1 (not 2), High 0 (not 1), Pain reports 2, Total every row.
+    expect(tileValues()).toEqual(['1', '0', '2', '4']);
   });
 });

@@ -41,6 +41,7 @@ interface EscalationFixture {
   athlete_id?: string;
   reason?: string;
   source_type?: string;
+  metadata?: Record<string, unknown>;
 }
 
 function escalation(overrides: Partial<EscalationFixture> = {}): EscalationFixture {
@@ -529,5 +530,54 @@ describe('isRefusedTeamClip', () => {
     [{ athlete_id: null, scan_state: 'infected', status: 'infected' }, false],
   ])('%o -> %s', (row, expected) => {
     expect(isRefusedTeamClip(row)).toBe(expected);
+  });
+});
+
+describe('a pain report is counted on its own line, never under a severity word (#1528 Q3)', () => {
+  const PAIN = { trigger: 'athlete_pain_report', near_miss_id: 'nm_1' };
+
+  test('a single critical pain report reads as a pain report, on the top rung', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'critical', metadata: PAIN })] });
+
+    expect(screen.getByText('Safety 1 pain report')).toBeTruthy();
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    // The stored rung still sets the tone: the badge is not quieter for it.
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    expect(link.getAttribute('aria-label')).toContain('1 pain report');
+    expect(link.getAttribute('aria-label')).not.toMatch(/critical|high/i);
+  });
+
+  test('pain reports are counted apart from the critical and high escalations beside them', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'critical' }),
+        escalation({ escalation_id: 'e2', severity: 'high' }),
+        escalation({ escalation_id: 'e3', severity: 'critical', metadata: PAIN }),
+        escalation({ escalation_id: 'e4', severity: 'high', metadata: { trigger_key: 'athlete_pain_report' } }),
+      ],
+    });
+
+    expect(screen.getByText('Safety 1 critical, 1 high, 2 pain reports')).toBeTruthy();
+    // A critical escalation that is not a pain report holds the top rung, so it names it.
+    expect(screen.getByText('SAFETY 4 · CRITICAL')).toBeTruthy();
+  });
+
+  test('a critical pain report beside an ordinary high names the pain report on the top rung', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'high' }),
+        escalation({ escalation_id: 'e2', severity: 'critical', metadata: PAIN }),
+      ],
+    });
+
+    const compact = screen.getByText('SAFETY 2 · PAIN REPORT');
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    expect(screen.getByText('Safety 1 high, 1 pain report')).toBeTruthy();
+  });
+
+  test('a moderate pain escalation still does not raise the badge', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'moderate', metadata: PAIN })] });
+    expect(screen.queryByRole('link', { name: /Safety escalations needing acknowledgement/i })).toBeNull();
   });
 });

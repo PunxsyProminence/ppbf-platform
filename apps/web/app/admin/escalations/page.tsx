@@ -157,9 +157,13 @@ export default function EscalationsPage() {
 
   const counts = useMemo(() => {
     const source = items ?? [];
+    // Pain-report escalations are counted on their own tile, not inside
+    // Critical or High (#1528 Q3); Total still counts every row.
+    const others = source.filter((item) => !isPainReportEscalation(item.metadata));
     return {
-      critical: source.filter((item) => item.severity === 'critical').length,
-      high: source.filter((item) => item.severity === 'high').length,
+      critical: others.filter((item) => item.severity === 'critical').length,
+      high: others.filter((item) => item.severity === 'high').length,
+      pain: source.length - others.length,
       total: source.length,
     };
   }, [items]);
@@ -298,7 +302,7 @@ export default function EscalationsPage() {
             {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
           </header>
 
-          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
+          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-4">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Critical (this view)</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.critical}</p>
@@ -306,6 +310,10 @@ export default function EscalationsPage() {
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">High (this view)</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.high}</p>
+            </article>
+            <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+              <p className="t-eyebrow">Pain reports (this view)</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.pain}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Total (this view)</p>
