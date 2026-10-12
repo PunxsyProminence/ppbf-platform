@@ -189,6 +189,15 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   if (/update pilot\.intervention_executions set status = \$3/.test(sql)) {
     return updateStatus(sql, params, 'intervention_executions', 'execution_id', params[2] as string);
   }
+  // A reopen clears the end time it copied (#1481, Codex P2 on #1507).
+  if (/update pilot\.intervention_executions set actual_end = null/.test(sql)) {
+    applyChecked((candidate) => {
+      for (const row of candidate.intervention_executions) {
+        if (row.organization_id === params[0] && row.execution_id === params[1]) row.actual_end = null;
+      }
+    });
+    return [];
+  }
 
   /* ---- what a correction carries onto the new version ---- */
   const carried = /update pilot\.(intervention_evidence_links|intervention_outcome_reviews) set execution_id = \$3/.exec(sql);
