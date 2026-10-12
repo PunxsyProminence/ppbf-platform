@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { RECOGNITION_KINDS } from '@/src/shared/achievementPaths';
 
 // Behavior standards (module 125). Two paths, and the page keeps them
 // visibly apart because that separation is the whole design:
@@ -33,6 +35,8 @@ interface AthleteOption {
 
 const SEVERITIES = ['low', 'moderate', 'high', 'critical'] as const;
 
+const EMPTY_POST_FORM = { standard_name: '', recognition_kind: '', description: '' };
+
 export default function BehaviorStandardsPage() {
   const [standards, setStandards] = useState<StandardRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -47,6 +51,11 @@ export default function BehaviorStandardsPage() {
 
   const [recognizeForm, setRecognizeForm] = useState({ standard_id: '', athlete_id: '', note: '' });
   const [concernForm, setConcernForm] = useState({ athlete_id: '', reason: '', severity: 'moderate' });
+  const [postForm, setPostForm] = useState(EMPTY_POST_FORM);
+  /* One POST per press. `busy` disables the buttons, but only after a render;
+     a double-click lands both clicks before that, so the in-flight mark is a
+     ref (#1445: duplicate submission). */
+  const inFlight = useRef(false);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -90,6 +99,8 @@ export default function BehaviorStandardsPage() {
   }, [reload]);
 
   const send = async (body: Record<string, unknown>, failure: string) => {
+    if (inFlight.current) return null;
+    inFlight.current = true;
     setBusy(true);
     setNotice(null);
     try {
@@ -109,6 +120,7 @@ export default function BehaviorStandardsPage() {
       setErrorMessage(error instanceof Error ? error.message : failure);
       return null;
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -122,6 +134,35 @@ export default function BehaviorStandardsPage() {
     if (!result) return;
     setRecognizeForm({ standard_id: '', athlete_id: '', note: '' });
     setNotice('Recognition recorded — it is in that athlete’s own record, in your name.');
+  };
+
+  // The organization admin posts the gym's standards (OD-2026-10-07-010).
+  // The server's post_standard is gated to the org admin; this form only
+  // saves the trip for anyone else by not being shown.
+  const handlePost = async () => {
+    if (!postForm.standard_name.trim() || !postForm.recognition_kind) {
+      setErrorMessage('A standard needs a name and the recognition that evidences it.');
+      return;
+    }
+    const result = await send({
+      action: 'post_standard',
+      standard_name: postForm.standard_name.trim(),
+      recognition_kind: postForm.recognition_kind,
+      description: postForm.description.trim() || undefined,
+    }, 'Unable to post the standard.');
+    if (!result) return;
+    setPostForm(EMPTY_POST_FORM);
+    setNotice('Standard posted.');
+    await reload().catch(() => undefined);
+  };
+
+  const handleRetire = async (standardId: string) => {
+    const result = await send({ action: 'retire_standard', standard_id: standardId }, 'Unable to retire the standard.');
+    if (!result) return;
+    // The picker must not keep a standard that is no longer offered.
+    setRecognizeForm((f) => (f.standard_id === standardId ? { ...f, standard_id: '' } : f));
+    setNotice('Standard retired. Recognitions already recorded against it stay.');
+    await reload().catch(() => undefined);
   };
 
   const handleConcern = async () => {
@@ -200,6 +241,13 @@ export default function BehaviorStandardsPage() {
                       {standard.description ? (
                         <span className="t-body" style={{ fontSize: 'var(--t-sm)' }}>{standard.description}</span>
                       ) : null}
+                      <OrgAdminOnly>
+                        <button type="button" className="btn btn--ghost" disabled={busy}
+                          aria-label={`Retire ${standard.standard_name}`}
+                          onClick={() => void handleRetire(standard.standard_id)}>
+                          Retire
+                        </button>
+                      </OrgAdminOnly>
                     </li>
                   ))}
                 </ul>
@@ -281,6 +329,41 @@ export default function BehaviorStandardsPage() {
             </>
           )}
 
+          {!loading && (
+            <OrgAdminOnly>
+              <section className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s4)]" aria-labelledby="post-standard-heading">
+                <h2 id="post-standard-heading" className="t-label mb-[var(--s3)]">Post a standard</h2>
+                <div className="grid gap-[var(--s3)] md:grid-cols-3">
+                  <div className="field">
+                    <label className="t-label" htmlFor="post-name">Standard name</label>
+                    <input id="post-name" className="input" value={postForm.standard_name}
+                      onChange={(e) => setPostForm((f) => ({ ...f, standard_name: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label className="t-label" htmlFor="post-kind">Recognition that evidences it</label>
+                    <select id="post-kind" className="select" value={postForm.recognition_kind}
+                      onChange={(e) => setPostForm((f) => ({ ...f, recognition_kind: e.target.value }))}>
+                      <option value="">Select…</option>
+                      {RECOGNITION_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>{kind.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="t-label" htmlFor="post-description">Description (optional)</label>
+                    <input id="post-description" className="input" value={postForm.description}
+                      onChange={(e) => setPostForm((f) => ({ ...f, description: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="mt-[var(--s3)]">
+                  <button type="button" className="btn" disabled={busy} onClick={() => void handlePost()}>
+                    Post standard
+                  </button>
+                </div>
+              </section>
+            </OrgAdminOnly>
+          )}
+
           <div className="mt-[var(--s5)]">
             <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
           </div>
@@ -288,4 +371,11 @@ export default function BehaviorStandardsPage() {
       </main>
     </RoleSessionGate>
   );
+}
+
+/** Rendered for the organization admin only (client role 'admin'; the server
+ *  gates the same writes to organization_admin/admin). Read inside the
+ *  RoleSessionGate, as admin/video-review reads its session. */
+function OrgAdminOnly({ children }: Readonly<{ children: ReactNode }>) {
+  return getRoleSessionSnapshot()?.role === 'admin' ? <>{children}</> : null;
 }
