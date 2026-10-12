@@ -2313,7 +2313,7 @@
     "id": "app/api/pilot/announcements/get/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/announcements/get",
-    "gate": "requirePrincipal; requireRole only on view=authoring",
+    "gate": "requirePrincipal; requireRole only on view=authoring; the live read checks the placement against a per-role table",
     "rolesAdmitted": [
       "any-authenticated"
     ],
@@ -2321,9 +2321,9 @@
     "writes": false,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Live-announcement read (no view param) has no role check, so every signed-in role incl. board/parent/athlete reaches it; board gets a projected shape (route.ts:23-28, 92). Looks intentional.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "POST is a read (mechanical writesLikely=true is wrong): lists gym announcements (not athlete data). view=authoring is gated to platform_owner/organization_admin/admin/coach/board at route.ts:44; otherwise only live notices (route.ts:79-83).",
+    "notes": "POST is a read (mechanical writesLikely=true is wrong): lists gym announcements (not athlete data). view=authoring is gated to platform_owner/organization_admin/admin/coach/board. Otherwise only live notices, and each role may ask only for its own placements (LIVE_PLACEMENTS_BY_ROLE in route.ts, issue #1475 Part B): a placement outside the role's row answers as an unknown placement, before any read. Every signed-in role reaches gym_notices and everywhere; board gets a projected shape.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6847,7 +6847,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Read-only drill reference library (coaching content, no athlete data; org-scoped). Reader list at coachingContentAccess.ts:93-102 excludes board. Athletes get a narrowed projection (route.ts:75-111); authors also get lifecycle data.",
+    "notes": "Read-only drill reference library (coaching content, no athlete data; org-scoped). Reader list at coachingContentAccess.ts:93-102 excludes board. Every reader who is not a coach or organization admin (athlete, parent, volunteer, staff, platform owner) gets the adopted-only, athlete-safe projection, which carries no author account id (issue #1475 Part D); authors get the coach shapes and lifecycle data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10354,7 +10354,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "coachingContentAccess.ts:93 lists every role except board. Reads the gym's session-script (practice plan) library; no athlete identifiers.",
+    "notes": "coachingContentAccess.ts:93 lists every role except board. Reads the gym's session-script (practice plan) library; no athlete identifiers. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in sessionScriptProjection.ts (no author account id, source document or coach teaching text; issue #1475).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13750,7 +13750,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data.",
+    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes; issue #1475).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

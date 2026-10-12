@@ -425,3 +425,48 @@ describe('the aggregate SHADOW timeline (CL-B7)', () => {
     expect(timeline[0].actor_account_id).toBe('acct-reviewing-coach');
   });
 });
+
+/**
+ * Issue #1475 Part C. The same `select *` on pilot.coach_observations as
+ * intake/domain-get carried, served by intake/cases/get to the athlete and
+ * the guardian: each note arrived with coach_account_id, the author's account
+ * id. Same reader split as the tables above.
+ */
+describe('the aggregate coach-observation projection', () => {
+  test.each(FAMILY_READERS)('%s receives the note and not the account that wrote it', async (role) => {
+    await run(role);
+
+    expect(selectListFor('from pilot.coach_observations')).toEqual([
+      'note_id',
+      'athlete_id',
+      'note_type',
+      'note_text',
+      'created_at',
+    ]);
+  });
+
+  test.each(STAFF_READERS)('%s keeps every column of the note', async (role) => {
+    await run(role);
+
+    expect([...selectListFor('from pilot.coach_observations')].sort()).toEqual([
+      'athlete_id',
+      'author_role',
+      'coach_account_id',
+      'created_at',
+      'note_id',
+      'note_text',
+      'note_type',
+      'organization_id',
+      'updated_at',
+    ]);
+  });
+
+  test('a call with no reader named falls to the note alone', async () => {
+    await run();
+
+    const columns = selectListFor('from pilot.coach_observations');
+    expect(columns).not.toContain('*');
+    expect(columns).not.toContain('coach_account_id');
+    expect(columns).not.toContain('author_role');
+  });
+});

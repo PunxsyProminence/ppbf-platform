@@ -183,15 +183,17 @@ describe('who may read the v3 drill library', () => {
     // reader roles are still let through the gate, board is still refused
     // below, and COACHING_CONTENT_READER_ROLES was not edited. What W-D2
     // changed is which READ an admitted caller reaches -- an athlete gets the
-    // promoted-only, athlete-safe library; everyone else gets the corpus they
-    // always got. Asserting the branch here rather than only in the athlete
-    // cases keeps the two halves of the partition visible in one place.
+    // promoted-only, athlete-safe library. Issue #1475 Part D moved the other
+    // four non-author readers (parent, volunteer, staff, platform owner) onto
+    // that read too: the coach shapes carry created_by_account_id, a staff
+    // account id, and they had been receiving it. The authors get the corpus
+    // they always got. Asserting the branch here rather than only in the
+    // athlete cases keeps the two halves of the partition visible in one place.
     //
-    // W-D4C's lifecycle read does NOT follow this athlete/non-athlete line: it
-    // is an author read, which cuts the admitted roles three and five rather
-    // than one and seven. It is swept on its own partition in the block
-    // "only the authoring roles receive the lifecycle" below.
-    if (role === 'athlete') {
+    // W-D4C's lifecycle read follows the same author line, three and five. It
+    // is swept in the block "only the authoring roles receive the lifecycle"
+    // below.
+    if (!AUTHOR_ROLES.some((author) => author === role)) {
       expect(mockAthleteList).toHaveBeenCalledWith('org-1');
       expect(mockList).not.toHaveBeenCalled();
     } else {
@@ -237,10 +239,14 @@ describe('who may read the v3 drill library', () => {
     // not about the route: measured, it stayed green both when the policy was
     // mutated to admit board and when it was mutated to drop platform_owner --
     // the two changes it is named after. It calls the route now.
+    //
+    // Admitted is not the same as reading the coach shapes: since issue #1475
+    // Part D the platform owner reads the adopted, athlete-safe library.
     mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
-    mockList.mockResolvedValue([]);
+    mockAthleteList.mockResolvedValue([]);
     expect((await GET(getRequest())).status).toBe(200);
-    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+    expect(mockAthleteList).toHaveBeenCalledWith('org-1');
+    expect(mockList).not.toHaveBeenCalled();
 
     jest.clearAllMocks();
 
@@ -756,15 +762,11 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(body).toEqual({ drills: [{ drill_id: 'drl-9' }] });
       expect(mockLifecycles).not.toHaveBeenCalled();
       expect(mockFloorTested).not.toHaveBeenCalled();
-      // Still the read this role always reached -- the repair moved the
-      // lifecycle, not the library.
-      if (role === 'athlete') {
-        expect(mockAthleteList).toHaveBeenCalledWith('org-session-7');
-        expect(mockList).not.toHaveBeenCalled();
-      } else {
-        expect(mockList).toHaveBeenCalledWith('org-session-7', expect.any(Object));
-        expect(mockAthleteList).not.toHaveBeenCalled();
-      }
+      // Every non-author reads the adopted, athlete-safe library and never
+      // the coach shapes, which carry the author's account id (issue #1475
+      // Part D; it was the athlete alone before).
+      expect(mockAthleteList).toHaveBeenCalledWith('org-session-7');
+      expect(mockList).not.toHaveBeenCalled();
     });
 
     it('reads detail in the shape it had before W-D4C, and the lifecycle is never read', async () => {
@@ -778,13 +780,8 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' } });
       expect(mockLifecycles).not.toHaveBeenCalled();
       expect(mockFloorTested).not.toHaveBeenCalled();
-      if (role === 'athlete') {
-        expect(mockAthleteDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
-        expect(mockDetail).not.toHaveBeenCalled();
-      } else {
-        expect(mockDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
-        expect(mockAthleteDetail).not.toHaveBeenCalled();
-      }
+      expect(mockAthleteDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
+      expect(mockDetail).not.toHaveBeenCalled();
     });
   });
 

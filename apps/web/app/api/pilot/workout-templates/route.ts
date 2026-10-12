@@ -4,6 +4,10 @@ import { requireRole } from '@/src/server/pilot/access';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  projectWorkoutTemplateDetailForReader,
+  projectWorkoutTemplatesForReader,
+} from '@/src/server/pilot/workoutTemplateProjection';
+import {
   getWorkoutTemplateWithItems,
   listWorkoutTemplates,
   type WorkoutTemplateDifficulty,
@@ -29,6 +33,11 @@ export const runtime = 'nodejs';
 // The gate sits ABOVE the query parse deliberately. Below it, the answer to
 // "may I read this?" would depend on how well-formed the request was; that was
 // measured on the cue-library sibling rather than argued.
+//
+// WHAT EACH READER RECEIVES is a second question, answered after the gate: a
+// coach or organization admin gets the stored rows, every other admitted role
+// gets them without the author's account id and role or the coach's notes
+// (workoutTemplateProjection.ts). Both branches below go through it.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -42,7 +51,7 @@ export async function GET(request: NextRequest) {
       if (!detail) {
         return NextResponse.json({ error: 'WORKOUT_TEMPLATE_NOT_FOUND' }, { status: 404 });
       }
-      return NextResponse.json(detail);
+      return NextResponse.json(projectWorkoutTemplateDetailForReader(principal.role, detail));
     }
 
     const templates = await listWorkoutTemplates(principal.organizationId, {
@@ -50,7 +59,7 @@ export async function GET(request: NextRequest) {
       difficulty: (searchParams.get('difficulty') as WorkoutTemplateDifficulty | null) ?? undefined,
       ageBand: searchParams.get('age_band') ?? undefined,
     });
-    return NextResponse.json({ templates });
+    return NextResponse.json({ templates: projectWorkoutTemplatesForReader(principal.role, templates) });
   } catch (error) {
     return jsonError(error);
   }

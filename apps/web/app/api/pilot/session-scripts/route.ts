@@ -3,6 +3,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import {
+  projectSessionScriptDetailForReader,
+  projectSessionScriptsForReader,
+} from '@/src/server/pilot/sessionScriptProjection';
 import { getSessionScriptWithDetail, listSessionScripts } from '@/src/server/pilot/sessionScripts';
 
 export const runtime = 'nodejs';
@@ -31,6 +35,12 @@ export const runtime = 'nodejs';
 // What happened on a given night DOES carry athlete data. It lives in
 // pilot.session_script_runs, which this route does not touch and which holds a
 // narrower gate of its own -- a different class, separately decided.
+//
+// WHAT EACH READER RECEIVES is a second question, answered after the gate: a
+// coach or organization admin gets the stored rows, every other admitted role
+// gets them without the author's account id, the source document or the
+// coach's teaching text (sessionScriptProjection.ts). Both branches below go
+// through it.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -44,7 +54,7 @@ export async function GET(request: NextRequest) {
       if (!script) {
         return NextResponse.json({ error: 'SESSION_SCRIPT_NOT_FOUND' }, { status: 404 });
       }
-      return NextResponse.json({ script });
+      return NextResponse.json({ script: projectSessionScriptDetailForReader(principal.role, script) });
     }
 
     const scripts = await listSessionScripts(principal.organizationId, {
@@ -54,7 +64,7 @@ export async function GET(request: NextRequest) {
       authoringState: searchParams.get('authoring_state') ?? undefined,
       includeRetired: searchParams.get('include_retired') === 'true',
     });
-    return NextResponse.json({ scripts });
+    return NextResponse.json({ scripts: projectSessionScriptsForReader(principal.role, scripts) });
   } catch (error) {
     return jsonError(error);
   }

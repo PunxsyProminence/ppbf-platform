@@ -1535,6 +1535,42 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
 }
 
 /**
+ * WHICH COLUMNS OF A COACH OBSERVATION A READER MAY SEE (issue #1475 Part C).
+ *
+ * The last table in the two intake reads still on `select *`. The row filter
+ * above (coachObservationNoteTypesForReader) decides WHICH notes a reader
+ * gets; this decides what of each. A note carries coach_account_id -- the
+ * author's account id, which for a provisioned staff account is the sign-in
+ * email -- and author_role beside it, and the athlete and every linked
+ * guardian reach both reads. OD-2026-10-06-025 ruling 2: families see a
+ * coach's display name, never the internal account id. So they get the note
+ * itself; who filed it and when it was last touched stay with staff, as for
+ * the tables above.
+ */
+export const COACH_OBSERVATION_IDENTITY_COLUMNS = [
+  'note_id',
+  'athlete_id',
+  'note_type',
+  'note_text',
+  'created_at',
+] as const;
+
+export const COACH_OBSERVATION_STAFF_COLUMNS = [
+  'organization_id',
+  'coach_account_id',
+  'author_role',
+  'updated_at',
+] as const;
+
+export function coachObservationColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...COACH_OBSERVATION_IDENTITY_COLUMNS, ...COACH_OBSERVATION_STAFF_COLUMNS];
+  }
+
+  return [...COACH_OBSERVATION_IDENTITY_COLUMNS];
+}
+
+/**
  * WHICH COLUMNS OF AN INTAKE CASE AND ITS DOCUMENTS A READER MAY SEE (CL-B7).
  *
  * The last two reads in getIntakeCaseAggregate still on `select *`. The case
@@ -2092,6 +2128,7 @@ export async function getIntakeCaseAggregate(
   const assessmentColumns = assessmentColumnsForReader(readerRole);
   const readinessColumns = readinessColumnsForReader(readerRole);
   const readableNoteTypes = coachObservationNoteTypesForReader(readerRole);
+  const coachObservationColumns = coachObservationColumnsForReader(readerRole);
   const intakeDocumentColumns = intakeDocumentColumnsForReader(readerRole);
 
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
@@ -2131,7 +2168,7 @@ export async function getIntakeCaseAggregate(
       [organizationId, intakeCase.primary_athlete_id],
     ),
     query(
-      `select * from pilot.coach_observations
+      `select ${coachObservationColumns.join(', ')} from pilot.coach_observations
        where organization_id = $1
          and athlete_id = $2
          and ($3::text[] is null or note_type = any($3::text[]))
