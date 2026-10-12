@@ -15,6 +15,7 @@ import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
+import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -659,11 +660,14 @@ export default function ParentHub() {
   }, [activeChildId]);
   const shownBodyMass = childBodyMass?.athleteId === activeChildId ? childBodyMass : null;
 
-  /* PROGRESS is what the child has earned, not a score (WO-PH-01 Q1 = A): the
-     milestone awards and the completed-session count that
+  /* PROGRESS is what the child has earned, not a score (WO-PH-01 Q1 = A),
+     from the awards and the logged-session count that
      /api/pilot/achievements/milestones already serves a guardian, after the
-     route checks the guardian link to this child. AthleteAchievements on the
-     Progress tab reads the same route, so the two cannot disagree. Keyed by
+     route checks the guardian link to this child. The count is
+     earnedMilestoneKeys, the function AthleteAchievements on the Progress tab
+     counts with: the session-count milestones are earned from the count and
+     have no award row, and an award whose key left the catalogue is not
+     shown there, so a raw row count would disagree with the tab. Keyed by
      athlete like childBodyMass, and the superseded read is aborted, so a
      slow answer for one child never shows under the other's name. 'failed'
      is kept apart from a real zero: a child with nothing earned yet reads 0,
@@ -694,9 +698,12 @@ export default function ParentHub() {
         setChildProgress({
           athleteId: activeChildId,
           state: 'loaded',
-          // One award per milestone per athlete is the table's primary key,
-          // so the rows are the milestones earned.
-          milestonesEarned: payload.items.length,
+          milestonesEarned: earnedMilestoneKeys({
+            completedSessions: payload.completed_sessions,
+            awardedKeys: payload.items
+              .map((item) => (item as { milestone_key?: unknown } | null)?.milestone_key)
+              .filter((key): key is string => typeof key === 'string'),
+          }).length,
           sessionsCompleted: payload.completed_sessions,
         });
       } catch (error) {
@@ -708,7 +715,7 @@ export default function ParentHub() {
   }, [activeChildId]);
   const shownProgress = childProgress?.athleteId === activeChildId ? childProgress : null;
   const progressText = shownProgress?.state === 'loaded'
-    ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} completed`
+    ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} logged`
     : 'Unavailable';
 
   const activeChild = children.find(c => c.id === activeChildId);
@@ -765,20 +772,23 @@ export default function ParentHub() {
       // panel, so the standing is shown rather than flattened away.
       standing: registration.status === 'waitlisted' ? 'Waitlisted' : 'Registered',
     }));
-  /* The summary's attendance and upcoming figures are counts of the rows the
-     Attendance tab lists for the same child, from the same read, so the tile
-     and the tab cannot disagree. Neither exists until that read answered. */
+  /* The summary's attendance figures count the rows the Attendance tab lists
+     for the same child, from the same read. Neither figure exists until that
+     read answered: a schedule still loading is not zero sessions. */
+  // Newest first, so the head of the list is the last mark written. "Marked",
+  // not "attended": checked_in_at is when the mark was written or re-written.
+  const lastAttendanceMark = activeAttendanceEntries[0] ?? null;
   const activeAttendanceTally = schedulerFeedState === 'loaded'
     ? {
       present: activeAttendanceEntries.filter((entry) => entry.status === 'Present').length,
       excused: activeAttendanceEntries.filter((entry) => entry.status === 'Excused').length,
       absent: activeAttendanceEntries.filter((entry) => entry.status === 'Absent').length,
+      lastMarked: lastAttendanceMark?.date ?? null,
     }
     : null;
-  // Newest first, so the head of the list is the last session marked.
-  const lastAttendanceMark = activeAttendanceEntries[0] ?? null;
-  // A waitlist is not a place: the tile counts the sessions the child holds a
-  // place in. The Attendance tab still lists waitlisted ones, marked as such.
+  // A waitlist is not a place, so this count differs from the tab's Upcoming
+  // Sessions list by the waitlisted rows the tab shows marked as such. Judged
+  // against the clock reading taken when the schedule landed, like the list.
   const activeUpcomingPlaces = schedulerFeedState === 'loaded'
     ? activeUpcomingSessions.filter((session) => session.standing === 'Registered').length
     : null;

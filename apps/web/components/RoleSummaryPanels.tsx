@@ -117,7 +117,7 @@ interface ParentSummaryPanelProps {
      the marks record what happened, and nothing records what was expected,
      so no rate a family could read is defined (see the scheduler note in
      ParentHub.tsx). */
-  attendance: { present: number; excused: number; absent: number } | null;
+  attendance: { present: number; excused: number; absent: number; lastMarked: string | null } | null;
   unreadMessages: number | null;
 }
 
@@ -390,6 +390,9 @@ export function ParentSummaryPanel({
           <p className="t-body mt-[var(--s3)]">
             {`Present ${attendance.present} · Excused ${attendance.excused} · Absent ${attendance.absent}`}
           </p>
+          {attendance.lastMarked ? (
+            <p className="t-muted mt-[var(--s2)]">{`Last marked ${attendance.lastMarked}`}</p>
+          ) : null}
         </div>
       )}
 

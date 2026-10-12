@@ -86,7 +86,14 @@ beforeEach(() => {
     statements.push({ text, params });
     if (text.includes('from pilot.athlete_milestones')) {
       const [, athleteId] = params as string[];
-      return awards[athleteId] ?? [];
+      // The stored row carries who awarded it. The fake answers only the
+      // columns the statement selects, as Postgres would, so the account id
+      // reaches the answer only if the route's projection asks for it.
+      const columns = (/^select (.*?) from pilot\.athlete_milestones/.exec(text)?.[1] ?? '')
+        .split(',').map((column) => column.trim());
+      return (awards[athleteId] ?? []).map((row) => Object.fromEntries(
+        columns.map((column) => [column, ({ ...row, awarded_by_account_id: 'acct-coach-1' } as Record<string, string>)[column]]),
+      ));
     }
     throw new Error(`unexpected SQL in this test: ${text}`);
   });

@@ -6,8 +6,8 @@
  * WO-PH-01: the parent hub's summary tiles and status rows, from the records
  * that already exist for the child on screen.
  *
- *   Progress is what the child has earned (milestone awards and completed
- *   sessions, from /api/pilot/achievements/milestones), never a score;
+ *   Progress is what the child has earned (counted as the Progress tab counts
+ *   it, from /api/pilot/achievements/milestones), never a score;
  *
  *   Upcoming and Attendance are counts of the same scheduler rows the
  *   Attendance tab lists, for the same child, and no percentage is derived;
@@ -57,15 +57,25 @@ const SCHEDULE = {
   ],
 };
 
+// Real catalogue keys (src/shared/achievementPaths.ts), because the count is
+// the catalogue's: the session-count milestones are earned from
+// completed_sessions with no award row, and an award whose key is not in the
+// catalogue is not shown on the Progress tab, so it is not counted here.
+//
+// ath_1: 12 sessions earns consistency.first_session and consistency.5; two
+// coach awards; consistency.5 also stored as an award (counted once); one
+// retired key (not counted). 4 earned, as the Progress tab would say.
+// ath_2: 1 session earns consistency.first_session; one award. 2 earned.
 const MILESTONES: Record<string, unknown> = {
   ath_1: {
     ok: true,
     program: 'boxing',
     completed_sessions: 12,
     items: [
-      { athlete_id: 'ath_1', milestone_key: 'cond_mile', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-01T12:00:00.000Z' },
-      { athlete_id: 'ath_1', milestone_key: 'craft_jab', awarded_by_role: 'self', note: '', awarded_at: '2026-10-02T12:00:00.000Z' },
-      { athlete_id: 'ath_1', milestone_key: 'cons_ten', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-03T12:00:00.000Z' },
+      { athlete_id: 'ath_1', milestone_key: 'conditioning.first_full_round', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-01T12:00:00.000Z' },
+      { athlete_id: 'ath_1', milestone_key: 'conditioning.mile_unbroken', awarded_by_role: 'self', note: '', awarded_at: '2026-10-02T12:00:00.000Z' },
+      { athlete_id: 'ath_1', milestone_key: 'consistency.5', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-03T12:00:00.000Z' },
+      { athlete_id: 'ath_1', milestone_key: 'retired.not_in_catalogue', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-04T12:00:00.000Z' },
     ],
   },
   ath_2: {
@@ -73,10 +83,12 @@ const MILESTONES: Record<string, unknown> = {
     program: 'boxing',
     completed_sessions: 1,
     items: [
-      { athlete_id: 'ath_2', milestone_key: 'cond_mile', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-01T12:00:00.000Z' },
+      { athlete_id: 'ath_2', milestone_key: 'conditioning.first_full_round', awarded_by_role: 'coach', note: '', awarded_at: '2026-10-01T12:00:00.000Z' },
     ],
   },
 };
+const FIRST_PROGRESS = '4 milestones earned · 12 sessions logged';
+const SECOND_PROGRESS = '2 milestones earned · 1 session logged';
 
 type MilestoneHandler = (athleteId: string, init?: RequestInit) => Promise<Response>;
 
@@ -148,19 +160,49 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     installFetch();
     await renderHub();
 
-    await waitFor(() => expect(tileValue('Progress')).toBe('3 milestones earned · 12 sessions completed'));
-    expect(statusPanelText()).toContain('3 milestones earned · 12 sessions completed');
+    await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
+    expect(statusPanelText()).toContain(FIRST_PROGRESS);
 
     await selectChild('Second Child');
-    await waitFor(() => expect(tileValue('Progress')).toBe('1 milestone earned · 1 session completed'));
-    expect(statusPanelText()).toContain('1 milestone earned · 1 session completed');
-    expect(statusPanelText()).not.toContain('3 milestones earned');
+    await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
+    expect(statusPanelText()).toContain(SECOND_PROGRESS);
+    expect(statusPanelText()).not.toContain(FIRST_PROGRESS);
   });
 
   test('a real zero is a zero', async () => {
     installFetch({ milestones: async () => jsonResponse({ ok: true, completed_sessions: 0, items: [] }) });
     await renderHub();
-    await waitFor(() => expect(tileValue('Progress')).toBe('0 milestones earned · 0 sessions completed'));
+    await waitFor(() => expect(tileValue('Progress')).toBe('0 milestones earned · 0 sessions logged'));
+  });
+
+  test('sessions earn their milestones with no award row, as the Progress tab counts them', async () => {
+    installFetch({ milestones: async () => jsonResponse({ ok: true, completed_sessions: 13, items: [] }) });
+    await renderHub();
+    // consistency.first_session, consistency.5 and consistency.13.
+    await waitFor(() => expect(tileValue('Progress')).toBe('3 milestones earned · 13 sessions logged'));
+  });
+
+  test('right after a switch, the child left behind’s progress is not shown while the new read is open', async () => {
+    let releaseSecond: (() => void) | null = null;
+    installFetch({
+      milestones: (athleteId) => {
+        if (athleteId === 'ath_1') return Promise.resolve(jsonResponse(MILESTONES.ath_1));
+        return new Promise<Response>((resolve) => {
+          releaseSecond = () => resolve(jsonResponse(MILESTONES.ath_2));
+        });
+      },
+    });
+    await renderHub();
+    await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
+
+    await selectChild('Second Child');
+    expect(tileValue('Progress')).toBe('Unavailable');
+    expect(statusPanelText()).not.toMatch(/milestones? earned/);
+
+    await act(async () => {
+      (releaseSecond as (() => void) | null)?.();
+    });
+    await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
   });
 
   test('a refused or malformed read is Unavailable, never a zero', async () => {
@@ -179,7 +221,7 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
   test('no percentage or score is shown', async () => {
     installFetch();
     const { container } = render(<ParentHub />);
-    await waitFor(() => expect(tileValue('Progress')).toBe('3 milestones earned · 12 sessions completed'));
+    await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
     expect(tileValue('Progress')).not.toContain('%');
     expect(container.textContent ?? '').not.toMatch(/awaiting backend progression feed/);
   });
@@ -189,14 +231,11 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     const fetchMock = installFetch({
       milestones: (athleteId, init) => {
         if (athleteId !== 'ath_1') return Promise.resolve(jsonResponse(MILESTONES[athleteId]));
-        // The first child's read hangs until released, and honours abort the
-        // way fetch does.
-        return new Promise<Response>((resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => {
-            const error = new Error('aborted');
-            error.name = 'AbortError';
-            reject(error);
-          });
+        // The first child's read hangs until released and does NOT reject on
+        // abort: an answer already in the pipe when the guardian switched
+        // still arrives, and only the aborted checks keep it off the screen.
+        void init;
+        return new Promise<Response>((resolve) => {
           releaseFirst = () => resolve(jsonResponse(MILESTONES.ath_1));
         });
       },
@@ -205,7 +244,7 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     expect(tileValue('Progress')).toBe('Unavailable');
 
     await selectChild('Second Child');
-    await waitFor(() => expect(tileValue('Progress')).toBe('1 milestone earned · 1 session completed'));
+    await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
 
     // The first child's request was aborted when the guardian moved on.
     // (ParentDigest reads the same route for its own panel, without a signal;
@@ -219,7 +258,7 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     await act(async () => {
       (releaseFirst as (() => void) | null)?.();
     });
-    expect(tileValue('Progress')).toBe('1 milestone earned · 1 session completed');
+    expect(tileValue('Progress')).toBe(SECOND_PROGRESS);
   });
 });
 
@@ -236,7 +275,15 @@ describe('Upcoming: places the selected child holds in sessions still to come', 
     expect(tileValue('Upcoming')).toBe('2');
   });
 
-  test('Unavailable while the schedule has not answered, and when it fails', async () => {
+  test('Unavailable while the schedule has not answered', async () => {
+    installFetch({ scheduler: () => new Promise<Response>(() => {}) });
+    await renderHub();
+    expect(tileValue('Upcoming')).toBe('Unavailable');
+    expect(tileValue('Attendance')).toBe('Unavailable');
+    expect(statusPanelText()).not.toContain('Present 0');
+  });
+
+  test('Unavailable when the schedule read fails', async () => {
     installFetch({ scheduler: async () => jsonResponse({ error: 'down' }, false) });
     await renderHub();
     await waitFor(() => expect(tileValue('Upcoming')).toBe('Unavailable'));
@@ -247,13 +294,13 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
   test('the tile and status row show this child’s marks, and move with the selection', async () => {
     installFetch();
     await renderHub();
-    await waitFor(() => expect(tileValue('Attendance')).toBe('Present 1 · Excused 1 · Absent 0'));
+    await waitFor(() => expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Last marked Jan 14, 2020/));
     expect(statusPanelText()).toContain('Present 1 · Excused 1 · Absent 0');
     // Newest mark first: the excused one on the 14th.
     expect(statusPanelText()).toMatch(/Last marked Jan 14, 2020/);
 
     await selectChild('Second Child');
-    expect(tileValue('Attendance')).toBe('Present 1 · Excused 0 · Absent 2');
+    expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Last marked Jan 21, 2020/);
     expect(statusPanelText()).toContain('Present 1 · Excused 0 · Absent 2');
     expect(statusPanelText()).toMatch(/Last marked Jan 21, 2020/);
   });
@@ -275,7 +322,7 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
   test('no attendance percentage anywhere on the overview', async () => {
     installFetch();
     const { container } = render(<ParentHub />);
-    await waitFor(() => expect(tileValue('Attendance')).toBe('Present 1 · Excused 1 · Absent 0'));
+    await waitFor(() => expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0/));
     expect(container.textContent ?? '').not.toMatch(/\d+\s*%/);
   });
 });
