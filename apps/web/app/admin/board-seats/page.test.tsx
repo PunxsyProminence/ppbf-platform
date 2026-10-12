@@ -278,3 +278,25 @@ it('keeps a roster that loaded when only the directory read is rejected', async 
   expect(await screen.findAllByText('Unfilled')).toHaveLength(6);
   expect(screen.queryByText(/board roster could not be loaded/i)).toBeNull();
 });
+
+describe('lane N4-02: links and copy that match who is here', () => {
+  it('an organization admin keeps Admin Home', async () => {
+    await renderPage(seatsFetch());
+    await screen.findByText('Board Chair');
+    expect(screen.getByRole('link', { name: 'Admin Home' }).getAttribute('href')).toBe('/admin');
+  });
+
+  it('a board member is not offered Admin Home, which refuses the board role, and keeps the Board Workspace', async () => {
+    await renderPage(seatsFetch(), 'board', 'nils');
+    await screen.findByText('Board Chair');
+    expect(screen.queryByRole('link', { name: 'Admin Home' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Board Workspace' }).getAttribute('href')).toBe('/board');
+  });
+
+  it('says a new board member gets their account from the platform desk, not the People page', async () => {
+    await renderPage(seatsFetch());
+    await screen.findByText('Board Chair');
+    expect(screen.getByText(/needs a board account\s+first; the PPBF platform desk creates it\./)).toBeTruthy();
+    expect(screen.queryByText(/People page/)).toBeNull();
+  });
+});

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
+import { getRoleRoute } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 
 // The safety-flags board (register module 170): the first consumer of the
@@ -43,6 +45,7 @@ const RESOLUTIONS = [
 ] as const;
 
 export default function SafetyFlagsBoardPage() {
+  const session = usePilotSession();
   const [flags, setFlags] = useState<FlagRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -138,8 +141,8 @@ export default function SafetyFlagsBoardPage() {
               Open Safety Flags
             </h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Every open flag in the organization, worst first. Resolving one requires a note —
-              that note is how the system learns which flags were real. External-rule flags can be
+              Every open flag you can act on, worst first. Resolving one requires a note —
+              that note records whether the flag was real. External-rule flags can be
               acknowledged, never bypassed.
             </p>
           </header>
@@ -256,7 +259,11 @@ export default function SafetyFlagsBoardPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            {isOrganizationAdminSessionRole(session.role) ? (
+              <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            ) : session.role === 'coach' ? (
+              <Link href={getRoleRoute('coach')} className="btn btn--ghost">Back to Workspace</Link>
+            ) : null}
           </div>
         </div>
       </main>

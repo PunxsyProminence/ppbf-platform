@@ -5,7 +5,9 @@ import Link from 'next/link';
 
 import { apiBase } from '@/lib/apiBase';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
-import { usePilotSession } from '@/components/usePilotSession';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
+import { getRoleRoute } from '@/components/roleRoutes';
+import { mapPilotRoleToClubRole } from '@/components/roleSession';
 
 type FeedbackKind = 'success' | 'error' | 'info';
 
@@ -311,7 +313,7 @@ export default function PlatformConsole() {
         login_email: email,
         role: inviteRole,
       });
-      showFeedback('success', `${email} invited as ${inviteRole.replace('_', ' ')}. If they're outside your Microsoft tenant, invite them as an Entra guest too.`);
+      showFeedback('success', `${email} can now sign in as ${inviteRole.replace('_', ' ')}. Nothing was emailed; tell them. If they're outside your Microsoft tenant, add them as an Entra guest too.`);
       setInviteEmail('');
     } catch (error) {
       showFeedback('error', error instanceof Error ? error.message : 'Failed to invite');
@@ -516,6 +518,16 @@ export default function PlatformConsole() {
   }
 
   if (!hasPlatformAccess) {
+    // The way back from this refusal is the visitor's own home: /admin for a
+    // gym admin, their workspace for any other signed-in role. A signed-out
+    // visitor, or a platform owner not signed in with Microsoft, has no home
+    // to go to here; Sign In is their way forward.
+    const workspaceHref = getRoleRoute(mapPilotRoleToClubRole(sessionRole));
+    const wayBack = isOrganizationAdminSessionRole(sessionRole)
+      ? { href: '/admin', label: 'Go To Admin Dashboard' }
+      : workspaceHref !== '/login'
+        ? { href: workspaceHref, label: 'Go To My Workspace' }
+        : null;
     return (
       <main className="room room--office room--lit-center grid min-h-screen place-items-center px-[var(--s5)]">
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
@@ -528,9 +540,11 @@ export default function PlatformConsole() {
             <Link href="/login" className="btn">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="btn btn--ghost">
-              Go To Admin Dashboard
-            </Link>
+            {wayBack && (
+              <Link href={wayBack.href} className="btn btn--ghost">
+                {wayBack.label}
+              </Link>
+            )}
           </div>
         </div>
       </main>
@@ -623,9 +637,9 @@ export default function PlatformConsole() {
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Invite Staff Or A Gym Admin</h2>
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add Staff Or A Gym Admin</h2>
           <p className="t-body mt-[var(--s3)]">
-            Sends a Microsoft-authenticated invite into the selected gym.
+            Gives a Microsoft email a role in the selected gym. Nothing is emailed.
           </p>
           <div className="mt-[var(--s4)] space-y-[var(--s4)]">
             <label className="field">
@@ -656,7 +670,7 @@ export default function PlatformConsole() {
               onClick={() => void inviteStaff()}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isBusy ? 'Working...' : 'Send Invite'}
+              {isBusy ? 'Working...' : 'Add To Gym'}
             </button>
           </div>
         </section>
@@ -953,7 +967,7 @@ export default function PlatformConsole() {
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Account Status</h2>
           <p className="t-body mt-[var(--s3)]">
-            Disable or restore any coach, staff, volunteer, board, or admin account in the selected gym.
+            Disable or restore any coach, staff, volunteer, board, parent, or admin account in the selected gym.
             Athlete accounts are refused here by design — that credential belongs to the gym&apos;s own
             admin.
           </p>

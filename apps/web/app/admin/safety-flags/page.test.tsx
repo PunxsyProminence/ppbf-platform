@@ -11,12 +11,35 @@
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
+import { usePilotSession } from '@/components/usePilotSession';
 import SafetyFlagsBoardPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+
+jest.mock('@/components/usePilotSession', () => ({
+  ...jest.requireActual('@/components/usePilotSession'),
+  usePilotSession: jest.fn(),
+}));
+
+const mockUsePilotSession = usePilotSession as jest.Mock;
+
+function sessionAs(role: string | null) {
+  mockUsePilotSession.mockReturnValue({
+    role,
+    organizationId: 'org-punxsy',
+    authProvider: 'ppbf_local',
+    accountId: role ? `${role}-1` : null,
+    mustChangePin: false,
+    loading: false,
+  });
+}
+
+beforeEach(() => {
+  sessionAs('organization_admin');
+});
 
 function flag(overrides: Record<string, unknown> = {}) {
   return {
@@ -159,3 +182,40 @@ test('a failed read is not stamped as a medical emergency', async () => {
   expect(within(alert).getByText('Attention')).toBeTruthy();
 });
 
+
+describe('lane N4-02: the copy matches what the queue does', () => {
+  test('the header says the queue is what you can act on, and the note is a record, not training', async () => {
+    global.fetch = mockFetch({ flags: [] });
+    await act(async () => {
+      render(<SafetyFlagsBoardPage />);
+    });
+    expect(screen.getByText(/Every open flag you can act on, worst first\./)).toBeTruthy();
+    expect(screen.getByText(/that note records whether the flag was real/)).toBeTruthy();
+    expect(screen.queryByText(/in the organization/)).toBeNull();
+    expect(screen.queryByText(/how the system learns/)).toBeNull();
+  });
+
+  test.each([
+    ['organization_admin', 'Back to Admin', '/admin'],
+    ['admin', 'Back to Admin', '/admin'],
+    ['coach', 'Back to Workspace', '/coach/environment/intake-router'],
+  ])('a %s is sent back to a page that admits them', async (role, label, href) => {
+    sessionAs(role);
+    global.fetch = mockFetch({ flags: [] });
+    await act(async () => {
+      render(<SafetyFlagsBoardPage />);
+    });
+    expect(screen.getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  });
+
+  test('a coach is never pointed at /admin, which refuses coaches', async () => {
+    sessionAs('coach');
+    global.fetch = mockFetch({ flags: [] });
+    let container: HTMLElement | undefined;
+    await act(async () => {
+      ({ container } = render(<SafetyFlagsBoardPage />));
+    });
+    const hrefs = [...(container as HTMLElement).querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).not.toContain('/admin');
+  });
+});
