@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertAthleteBelongsToOrganization, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { getInjuryById, linkInjuryToPlan } from '@/src/server/pilot/athleteInjuries';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -31,9 +31,9 @@ const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
  * advance the current step.
  *
  * Who: SHADOW_PHI_ROLES -- coach, organization_admin, admin -- the same gate
- * as coach/injuries, because a plan names one child's injury. A coach reaches
- * only athletes they coach or cover (assertCoachAssignedToAthlete); an
- * organization admin reaches any live athlete in their organization. Every
+ * as coach/injuries, because a plan names one child's injury. A coach, like an
+ * organization admin, reaches any live athlete in their own organization
+ * (2026-10-12, issue #1480). Every
  * action names the athlete, standing is checked on that athlete first, and a
  * plan or step is then accepted only if it is in THAT athlete's list -- so a
  * plan id from another athlete, or another organization, is the same 404 as
@@ -102,12 +102,9 @@ function positiveIntOrNull(value: unknown, field: string, max: number): number |
   return value;
 }
 
+// A coach's reach is the whole gym, as an admin's is (2026-10-12, issue #1480).
 async function assertStanding(principal: PilotPrincipal, athleteId: string): Promise<void> {
-  if (principal.role === 'coach') {
-    await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
-  } else {
-    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
-  }
+  await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
 }
 
 /** The injury, only if this principal has standing with its athlete; otherwise the same 404 as absent. */

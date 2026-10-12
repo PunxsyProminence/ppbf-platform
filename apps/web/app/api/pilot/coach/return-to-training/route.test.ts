@@ -143,10 +143,12 @@ describe.each(['platform_owner', 'board', 'athlete', 'parent', 'volunteer', 'sta
   },
 );
 
-describe('a coach without standing with the athlete', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. A coach
+// is refused only for an athlete outside their gym, by the organization check.
+describe("a coach asking for another gym's athlete", () => {
   beforeEach(() => {
     as('coach');
-    mockCoachAssigned.mockRejectedValue(new Error('Forbidden: coach is not assigned to athlete'));
+    mockBelongs.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
   });
 
   test('cannot read plans', async () => {
@@ -158,7 +160,8 @@ describe('a coach without standing with the athlete', () => {
     const res = await POST(bodyReq('POST', { ...CREATE, athlete_id: 'ATH-1' }));
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ error: 'Injury record not found.' });
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-coach', 'ATH-9', ORG);
+    expect(mockBelongs).toHaveBeenCalledWith(ORG, 'ATH-9');
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(writes()).toBe(0);
   });
 
@@ -170,10 +173,12 @@ describe('a coach without standing with the athlete', () => {
   });
 });
 
-describe('an assigned coach', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Any coach
+// of the athlete's gym, assigned or not, goes through the organization check.
+describe('a coach of the athlete\'s gym, assigned or not', () => {
   beforeEach(() => as('coach', 'acct-coach-1'));
 
-  test('reads the athlete\'s plans with steps in order and the current step, through the assignment gate', async () => {
+  test('reads the athlete\'s plans with steps in order and the current step, through the organization check', async () => {
     const res = await GET(getReq());
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('private, no-store');
@@ -181,8 +186,8 @@ describe('an assigned coach', () => {
       ok: true,
       plans: [{ plan_id: 'plan-1', steps: [STEP1, STEP2, STEP3], current_step_id: 'step-2' }],
     });
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-coach-1', 'ATH-1', ORG);
-    expect(mockBelongs).not.toHaveBeenCalled();
+    expect(mockBelongs).toHaveBeenCalledWith(ORG, 'ATH-1');
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(mockListPlans).toHaveBeenCalledWith(ORG, { athleteId: 'ATH-1' });
     expect(mockListSteps).toHaveBeenCalledWith(ORG, 'plan-1');
   });
@@ -206,7 +211,8 @@ describe('an assigned coach', () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-9', ORG]]);
+    expect(mockBelongs.mock.calls).toEqual([[ORG, 'ATH-9']]);
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(mockCreatePlan).toHaveBeenCalledTimes(1);
     expect(mockCreatePlan.mock.calls[0][0]).toEqual({
       organizationId: ORG,
@@ -292,7 +298,8 @@ describe('an assigned coach', () => {
   test('adds a step to the athlete\'s active plan and audits', async () => {
     const res = await POST(bodyReq('POST', { ...ADD, permitted_contact: 'conditioned', permitted_scale_level: 'B', planned_note: 'Pads, no partner.' }));
     expect(res.status).toBe(200);
-    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-1', ORG]]);
+    expect(mockBelongs.mock.calls).toEqual([[ORG, 'ATH-1']]);
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(mockListPlans).toHaveBeenCalledWith(ORG, { athleteId: 'ATH-1' });
     expect(mockAddStep).toHaveBeenCalledWith({
       organizationId: ORG,
@@ -370,7 +377,8 @@ describe('an assigned coach', () => {
     const res = await PATCH(bodyReq('PATCH', { ...ADVANCE, advancedByAccountId: 'someone-else', advancement_note: '  Completed the week pain-free.  ' }));
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('private, no-store');
-    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-1', ORG]]);
+    expect(mockBelongs.mock.calls).toEqual([[ORG, 'ATH-1']]);
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(mockAdvance).toHaveBeenCalledWith({
       organizationId: ORG,
       stepId: 'step-2',
@@ -407,7 +415,7 @@ describe('an assigned coach', () => {
   });
 
   test('a failure that is not a refusal surfaces, not a 404', async () => {
-    mockCoachAssigned.mockRejectedValue(new Error('connection reset'));
+    mockBelongs.mockRejectedValue(new Error('connection reset'));
     expect((await POST(bodyReq('POST', CREATE))).status).toBe(500);
     expect(writes()).toBe(0);
   });

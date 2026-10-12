@@ -28,14 +28,14 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * the statement asked for. So "which day did the route ask about" is
  * observable, and a read that reverted to the UTC day finds nothing.
  *
- * RELATIONSHIP STATE DECIDES (OD-2026-10-05-024 ruling 2, Jason 2026-10-05,
- * superseding OD-2026-09-25-003 for this read). The fake keeps a
- * pilot.coach_coverage table -- one grant on ath-marisol inside its window
- * and one that has lapsed -- and every athlete row carries a coach_id of
- * record. So the four coach callers below hold four genuinely different
- * relationships to the same child: coach of record, live grant, expired
- * grant, nothing whatever. The first two read the note; the last two are
- * refused before any session is read.
+ * RELATIONSHIP STATE NO LONGER DECIDES (issue #1480, Jason 2026-10-12: "lets
+ * make it coaches to whole gym", replacing OD-2026-10-05-024 ruling 2 for this
+ * read). The fake still keeps a pilot.coach_coverage table -- one grant on
+ * ath-marisol inside its window and one that has lapsed -- and every athlete
+ * row carries a coach_id of record. So the four coach callers below hold four
+ * genuinely different relationships to the same child: coach of record, live
+ * grant, expired grant, nothing whatever. All four read the note; a coach is
+ * refused only for an athlete outside their gym.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -311,17 +311,26 @@ describe('who may read it', () => {
   it.each([
     ['a coach whose coverage grant has lapsed', { accountId: 'coach-lapsed', role: 'coach' }],
     ['a same-organization coach with no relationship at all', { accountId: 'coach-stranger', role: 'coach' }],
-  ])('%s is refused before any session is read', async (_label, caller) => {
+  ])('%s reads the note too: a coach reaches the whole gym', async (_label, caller) => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     const { status, body } = await readAs(caller as Partial<PilotPrincipal>);
+    expect(status).toBe(200);
+    expect(body).toEqual({ today: { note: MARISOL_NOTE } });
+  });
+
+  it("a same-organization coach asking for another gym's athlete is refused before any session is read", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. ath-othergym is live in org-2 and has a note.
+    const { status, body } = await readAs({ accountId: 'coach-stranger', role: 'coach' }, 'athlete_id=ath-othergym');
     expect(status).toBe(403);
     expect(body.today).toBeUndefined();
     expect(sessionReads()).toEqual([]);
   });
 
-  it('a covering coach is admitted through the windowed coverage lookup', async () => {
+  it('a covering coach is admitted by the organization lookup alone, with no coverage read', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     await readAs({ accountId: 'coach-covering', role: 'coach' });
-    expect(coverageReads()).toHaveLength(1);
-    expect(coverageReads()[0]).toContain('expires_at > now()');
+    expect(coverageReads()).toHaveLength(0);
   });
 });
 

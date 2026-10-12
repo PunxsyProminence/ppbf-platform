@@ -229,7 +229,7 @@ function buildQuerySection(queryType: ShadowQueryType): string[] {
 
 function buildAuthoritySection(userRole: PilotRole): string[] {
   const authorityMap: Record<PilotRole, string> = {
-    coach: 'May use records only for athletes currently assigned to this coach; may provide coaching guidance but not medical diagnosis or clearance',
+    coach: 'May use records of athletes in this coach\'s own gym; may provide coaching guidance but not medical diagnosis or clearance',
     admin: 'Organization-scoped administration; athlete records require a separate successful subject authorization check',
     athlete: 'May use only the authenticated athlete’s own record when separately authorized',
     parent: 'May use only records for an athlete linked to this parent when separately authorized',

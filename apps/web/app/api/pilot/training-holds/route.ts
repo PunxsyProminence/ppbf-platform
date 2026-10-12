@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
+  assertCoachReachesAthlete,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
 import { deriveCoachDisplayName } from '@/src/server/pilot/achievements';
@@ -33,10 +33,9 @@ const TEXT_FIELD_MAX = 2000;
 /**
  * Training holds (capability #82).
  *
- * Authority (owner decision, 2026-08-06): a coach may place and lift holds
- * for their own athletes (including athletes they hold an active coverage
- * grant for -- assertCoachAssignedToAthlete admits both); organization
- * admins may place and lift any. Athletes and their guardians read their
+ * Authority: a coach, like an organization admin, may place and lift holds for
+ * any athlete of their own gym (Jason, 2026-10-12: "lets make it coaches to
+ * whole gym", issue #1480; this widens the 2026-08-06 "own athletes" rule). Athletes and their guardians read their
  * OWN hold in an athlete-safe projection -- explanation, lift condition,
  * scope, and now who placed it -- never reason_text, which is staff-facing
  * detail. Board and platform_owner get nothing here: a hold names one
@@ -155,10 +154,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (role === 'coach') {
-      // A coach reads holds per athlete, through the same assignment gate
+      // A coach reads holds per athlete, through the same gym-reach gate
       // every other athlete-scoped read uses -- no org-wide hold roster.
       if (!athleteId) throw new Error('Missing athlete_id');
-      await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
+      await assertCoachReachesAthlete(principal.organizationId, athleteId);
     }
 
     const holds = await listTrainingHolds(principal.organizationId, {
@@ -245,7 +244,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (role === 'coach') {
-        await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
+        await assertCoachReachesAthlete(principal.organizationId, athleteId);
       } else {
         await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
       }
@@ -292,7 +291,7 @@ export async function POST(request: NextRequest) {
       if (!existing) throw new Error('Missing hold record');
       if (role === 'coach') {
         try {
-          await assertCoachAssignedToAthlete(principal.accountId, existing.athlete_id, principal.organizationId);
+          await assertCoachReachesAthlete(principal.organizationId, existing.athlete_id);
         } catch {
           throw new Error('Missing hold record');
         }

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { accessibleAthleteIds, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertCoachReachesAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { NotFoundError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
@@ -35,22 +35,19 @@ const QUEUE_ROLES = ['organization_admin', 'admin', 'coach'] as const;
 // and a medical condition -- raise a flag against any child in the
 // organization, and bypass an open flag on a child they have no standing on.
 //
-// The rule is the one the sibling training-holds route already enforces, and
-// the authority behind it is the same owner decision (2026-08-06): a coach
-// reaches an athlete only through assertCoachAssignedToAthlete, which admits
-// the coach of record AND the holder of an active coverage grant.
-// organization_admin/admin are deliberately NOT scoped that way -- they
-// already see and act across the whole organization, and narrowing them here
-// would break the admin flag board this queue exists to serve.
+// The rule is the one the sibling training-holds route enforces: a coach
+// reaches any live athlete of their own gym through assertCoachReachesAthlete,
+// as an organization admin does (Jason, 2026-10-12: "lets make it coaches to
+// whole gym", issue #1480; this widens the 2026-08-06 "own athletes" rule).
 //
 // Where each surface applies it:
-// - GET names an athlete -> the same explicit assignment gate as
+// - GET names an athlete -> the same explicit gym-reach gate as
 //   training-holds' GET, so a coach probing one child gets a clean 403.
 // - GET without an athlete (the coach's own board) -> the org read is
 //   filtered per row against accessibleAthleteIds, the batched form of the
 //   same gate, mirroring how shadowJobQueue.getJobsForActor narrows a page of
 //   rows to the subjects the actor may see. A coach keeps a working board;
-//   it now contains only their own athletes.
+//   it holds the flags about athletes of their gym.
 // - POST/PATCH -> the gate before the write, with PATCH reporting "not
 //   yours" exactly as it reports "not real".
 function isQueueCoach(principal: PilotPrincipal): boolean {
@@ -62,7 +59,7 @@ function isQueueCoach(principal: PilotPrincipal): boolean {
 
 /**
  * The rows of an organization-wide flag read a coach may actually see:
- * flags whose athlete they are assigned to or hold coverage for, plus flags
+ * flags about any athlete of their gym, plus flags
  * raised about the coach's own account.
  *
  * Person-subject flags about ANYONE ELSE are dropped rather than shown. A
@@ -101,7 +98,7 @@ export async function GET(request: NextRequest) {
     // so silently returning an empty list would misreport "no open flags" for
     // a child who may well have one.
     if (isQueueCoach(principal) && athleteId) {
-      await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
+      await assertCoachReachesAthlete(principal.organizationId, athleteId);
     }
 
     const flags = await listOpenSafetyFlags(principal.organizationId, {
@@ -162,7 +159,7 @@ export async function POST(request: NextRequest) {
     // part of a child's safety record either way.
     if (isQueueCoach(principal)) {
       if (!athleteId) {
-        throw new Error('Missing athlete_id: a coach may only raise a flag against an athlete they are assigned to');
+        throw new Error('Missing athlete_id: a coach raises a flag against an athlete of this gym');
       }
       if (personAccountId) {
         // Refused rather than dropped: a coach naming an athlete they stand on
@@ -170,7 +167,7 @@ export async function POST(request: NextRequest) {
         // account, past a gate that only checked the athlete half.
         throw new Error('Unsupported person_account_id: a coach raises a flag against their athlete, not against an account');
       }
-      await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
+      await assertCoachReachesAthlete(principal.organizationId, athleteId);
     }
 
     // A human raising a flag through this route is always human_entry --
@@ -246,7 +243,7 @@ export async function PATCH(request: NextRequest) {
         throw flagNotFound();
       }
       try {
-        await assertCoachAssignedToAthlete(principal.accountId, existing.athlete_id, principal.organizationId);
+        await assertCoachReachesAthlete(principal.organizationId, existing.athlete_id);
       } catch (error) {
         // Only the gate's own refusal ("Forbidden: coach not assigned to
         // athlete") becomes the hidden 404. A blanket catch here swallowed

@@ -23,21 +23,33 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
 }
 
 /**
- * A coach reaches an athlete two ways, checked in order:
+ * A COACH'S REACH IS THE WHOLE GYM (Jason, 2026-10-12: "lets make it coaches
+ * to whole gym"; issue #1480). A coach reads and acts on every live athlete of
+ * their own organization, assigned to them or not. This replaces
+ * OD-2026-10-05-024 ruling 2 ("the assigned coach only") and makes the R1
+ * gym-wide exception (OD-2026-10-08-003) the rule. Another gym's athlete is
+ * refused exactly as an organization admin's request for one is.
  *
- * 1. They are the athlete's coach_id of record -- the original exact-match,
- *    untouched (T-002's own rule: extend, don't replace).
- * 2. They hold an active coverage grant (pilot.coach_coverage): started and
- *    not yet expired -- a coach substituting for the coach of record,
- *    granted temporary per-athlete access without ever becoming the
- *    coach_id. Expiry is enforced by comparing against now() at read time,
- *    so a lapsed grant needs no cleanup job to stop working, and a revoked
- *    grant (expires_at forced to now()) stops working the same way.
+ * The assigned coach (pilot.athletes.coach_id) and coverage grants still mean
+ * something -- "my athletes" lists, the photo circle, who an admin may book
+ * one-on-one -- but they no longer decide whether a coach may open a record.
+ */
+export async function assertCoachReachesAthlete(organizationId: string, athleteId: string): Promise<void> {
+  await assertAthleteBelongsToOrganization(organizationId, athleteId);
+}
+
+/**
+ * Whether a coach has a RELATIONSHIP with an athlete: the coach of record, or
+ * an active coverage grant (started, not yet expired or revoked).
+ *
+ * Not a reach check any more (see assertCoachReachesAthlete). Its one caller
+ * is the scheduler, which asks it about the coach an ADMIN names for a
+ * one-on-one session with a child -- an adult chosen for a private
+ * arrangement, which the 2026-10-12 ruling did not widen (issue #1480 Q2).
  *
  * Both failures throw the SAME message on purpose: whether a coach has no
  * relationship to this athlete, an expired grant, or a revoked one is not
- * something the error channel should disclose -- and the pre-coverage
- * assertion text stays byte-identical for every existing caller and test.
+ * something the error channel should disclose.
  */
 /* SOFT-DELETED ATHLETES ARE NOT AUTHORIZABLE.
    ------------------------------------------------------------------------
@@ -380,8 +392,10 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
     return;
   }
 
+  // The whole gym (2026-10-12, issue #1480): the same live-athlete-in-this-
+  // organization rule as the admin arm above.
   if (actor.role === 'coach') {
-    await assertCoachAssignedToAthlete(actor.accountId, athleteId, actor.organizationId);
+    await assertCoachReachesAthlete(actor.organizationId, athleteId);
     return;
   }
 
@@ -437,7 +451,10 @@ export async function accessibleAthleteIds(
     return new Set();
   }
 
-  if (isOrganizationAdminRole(actor.role)) {
+  // A coach reaches the whole gym (2026-10-12, issue #1480): the same set an
+  // organization admin gets, which is exactly what assertActorCanAccessAthlete
+  // admits for both.
+  if (isOrganizationAdminRole(actor.role) || actor.role === 'coach') {
     const rows = await query<{ athlete_id: string }>(
       `select athlete_id from pilot.athletes
        where organization_id = $1 and athlete_id = any($2::text[])
@@ -445,58 +462,6 @@ export async function accessibleAthleteIds(
       [actor.organizationId, distinctIds],
     );
     return new Set(rows.map((row) => row.athlete_id));
-  }
-
-  if (actor.role === 'coach') {
-    const assignedRows = await query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes
-       where organization_id = $1 and coach_id = $2 and athlete_id = any($3::text[])
-         and deleted_at is null`,
-      [actor.organizationId, actor.accountId, distinctIds],
-    );
-    const result = new Set(assignedRows.map((row) => row.athlete_id));
-
-    const remaining = distinctIds.filter((id) => !result.has(id));
-    if (remaining.length > 0) {
-      try {
-        // Same rule as the coverage lookup in assertCoachAssignedToAthlete,
-        // and for the same reason: a live grant names an athlete, it does not
-        // prove one is still there. Deleting an athlete writes deleted_at and
-        // ends none of their grants, so the grant table read alone admitted a
-        // deleted athlete here long after the per-candidate gate stopped
-        // admitting them -- and the whole contract of this function is that
-        // `result.has(id)` equals "assertActorCanAccessAthlete would not have
-        // thrown". Joining on BOTH halves of pilot.athletes' composite key
-        // (organization_id, athlete_id) because the same athlete_id can name a
-        // different child in another gym.
-        const coverageRows = await query<{ athlete_id: string }>(
-          `select cc.athlete_id
-           from pilot.coach_coverage cc
-           join pilot.athletes ath
-             on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id
-           where cc.organization_id = $1
-             and cc.covering_coach_id = $2
-             and cc.starts_at <= now()
-             and cc.expires_at > now()
-             and cc.athlete_id = any($3::text[])
-             and ath.deleted_at is null`,
-          [actor.organizationId, actor.accountId, remaining],
-        );
-        for (const row of coverageRows) {
-          result.add(row.athlete_id);
-        }
-      } catch (error) {
-        // Same tolerance as assertCoachAssignedToAthlete: a database that
-        // predates the coach_coverage migration must behave as "no
-        // coverage", not fail every coach's job/session listing outright.
-        const code = (error as { code?: unknown }).code;
-        if (code !== '42P01') {
-          throw error;
-        }
-      }
-    }
-
-    return result;
   }
 
   if (actor.role === 'athlete') {

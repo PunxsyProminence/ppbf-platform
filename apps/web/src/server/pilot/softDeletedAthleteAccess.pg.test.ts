@@ -53,6 +53,7 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 let activeClient: Client | null = null;
 
 jest.mock('./db', () => ({
+  ...jest.requireActual('./db'),
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
     const result = await activeClient.query(text, params);
@@ -63,7 +64,37 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
+  // The route-level cases at the end of this file write through routes.
+  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    await activeClient.query('BEGIN');
+    try {
+      const result = await fn(activeClient);
+      await activeClient.query('COMMIT');
+      return result;
+    } catch (error) {
+      await activeClient.query('ROLLBACK');
+      throw error;
+    }
+  }),
 }));
+
+// The routes take their principal from here; the rest of http stays real.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+
+import { NextRequest } from 'next/server';
+
+import { POST as athletesGetPOST } from '@/app/api/pilot/athletes/get/route';
+import { GET as injuriesGET } from '@/app/api/pilot/coach/injuries/route';
+import { GET as sessionsListGET } from '@/app/api/pilot/sessions/list/route';
+import { GET as goalsListGET } from '@/app/api/pilot/goals/list/route';
+import { POST as safetyFlagsPOST } from '@/app/api/pilot/safety-flags/route';
+import { GET as holdsGET, POST as holdsPOST } from '@/app/api/pilot/training-holds/route';
+import type { PilotPrincipal } from './auth';
+import { requirePrincipal } from './http';
 
 import {
   accessibleAthleteIds,
@@ -620,7 +651,9 @@ describe('a coverage grant is answered by its own organization row, not another 
       // Which gym holds a live row for an id is no more the error channel's
       // to disclose than a deletion or an expired grant is.
       const neverExisted = await refusalOf(assertActorCanAccessAthlete(otherOrgCoachActor, 'ATH-NEVER-EXISTED'));
-      expect(crossOrg.message).toBe('Forbidden: coach not assigned to athlete');
+      // Issue #1480: a coach is refused another gym's athlete with the same
+      // words an organization admin is.
+      expect(crossOrg.message).toBe('Forbidden: athlete does not belong to organization');
       expect(crossOrg.constructor).toBe(neverExisted.constructor);
       expect({ name: crossOrg.name, message: crossOrg.message }).toEqual({
         name: neverExisted.name,
@@ -765,20 +798,25 @@ describe('assertActorCanAccessAthlete, the chokepoint 92 files call', () => {
   // is gone. The refusal must also say nothing the other refusals do not --
   // "this athlete was deleted" is not the error channel's to disclose, any
   // more than "your grant expired" is.
-  test('refuses a covering coach for a deleted athlete, exactly as it refuses no relationship at all', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. A coach
+  // with no relationship to a LIVE athlete of their gym is now admitted; a
+  // deleted athlete is refused every coach, exactly as another gym's athlete
+  // and an athlete that never existed are.
+  test('refuses every coach a deleted athlete, exactly as it refuses another gym\'s athlete', async () => {
     await withDatabase('sda_chokepoint_coverage', async () => {
-      // Control: the same coach, the same kind of grant, a live athlete.
+      // Control: a live athlete of the gym is admitted, covered or not.
       await expect(assertActorCanAccessAthlete(coachActor, COVERED_LIVE_ATHLETE)).resolves.toBeUndefined();
+      // RECORD_COACH is not LIVE_ATHLETE's coach and holds no grant on them.
+      await expect(
+        assertActorCanAccessAthlete({ ...coachActor, accountId: RECORD_COACH }, LIVE_ATHLETE),
+      ).resolves.toBeUndefined();
 
       const deleted = await refusalOf(assertActorCanAccessAthlete(coachActor, COVERED_DELETED_ATHLETE));
-      // RECORD_COACH is not LIVE_ATHLETE's coach and holds no grant on them.
-      const unrelated = await refusalOf(
-        assertActorCanAccessAthlete({ ...coachActor, accountId: RECORD_COACH }, LIVE_ATHLETE),
-      );
+      const otherGym = await refusalOf(assertActorCanAccessAthlete(coachActor, OTHER_ORG_LIVE_ATHLETE));
       const neverExisted = await refusalOf(assertActorCanAccessAthlete(coachActor, 'ATH-NEVER-EXISTED'));
 
-      expect(deleted.message).toBe('Forbidden: coach not assigned to athlete');
-      for (const other of [unrelated, neverExisted]) {
+      expect(deleted.message).toBe('Forbidden: athlete does not belong to organization');
+      for (const other of [otherGym, neverExisted]) {
         expect(deleted.constructor).toBe(other.constructor);
         expect({ name: deleted.name, message: deleted.message }).toEqual({ name: other.name, message: other.message });
       }
@@ -892,6 +930,132 @@ describe('the deleted row is still there, which is the point of a soft delete', 
       );
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].deleted_at).not.toBeNull();
+    });
+  });
+});
+
+/* ISSUE #1480 (Jason, 2026-10-12: "lets make it coaches to whole gym").
+   A coach reads and acts on every live athlete of their own gym, assigned to
+   them or not. Each route below refused a coach who was not the athlete's
+   coach of record (or covering) before this change. Driven through the real
+   route handlers against the embedded database, so the gate, the SQL and the
+   route's own mapping of the refusal are all the real ones. */
+describe('a coach reaches every athlete of their own gym, through the routes', () => {
+  const NEW_COACH = 'acct-coach-unassigned-sda';
+  const mockRequirePrincipal = requirePrincipal as jest.Mock;
+
+  function principal(
+    accountId: string,
+    role: PilotPrincipal['role'],
+    organizationId = ORG_ID,
+    athleteId: string | null = null,
+  ): PilotPrincipal {
+    return { accountId, role, organizationId, athleteId, sessionToken: `token-${accountId}`, authProvider: 'microsoft' } as PilotPrincipal;
+  }
+  const get = (url: string) => new NextRequest(`http://localhost${url}`);
+  const post = (url: string, body: unknown) =>
+    new NextRequest(`http://localhost${url}`, { method: 'POST', body: JSON.stringify(body) });
+
+  async function withUnassignedCoach(run: () => Promise<void>): Promise<void> {
+    await withDatabase('p11_whole_gym', async () => {
+      // A coach of this gym with NO assigned athletes and NO coverage grant.
+      await activeClient!.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'coach', $2, 'microsoft')`,
+        [NEW_COACH, ORG_ID],
+      );
+      const relationships = await activeClient!.query(
+        `select (select count(*)::int from pilot.athletes where organization_id = $1 and coach_id = $2) as assigned,
+                (select count(*)::int from pilot.coach_coverage where organization_id = $1 and covering_coach_id = $2) as covered`,
+        [ORG_ID, NEW_COACH],
+      );
+      expect(relationships.rows[0]).toEqual({ assigned: 0, covered: 0 });
+      mockRequirePrincipal.mockResolvedValue(principal(NEW_COACH, 'coach'));
+      await run();
+    });
+  }
+
+  test('reads a same-gym athlete through five routes that refused before', async () => {
+    await withUnassignedCoach(async () => {
+      const reads: Array<[string, Response]> = [
+        ['athletes/get', await athletesGetPOST(post('/api/pilot/athletes/get', { athlete_id: LIVE_ATHLETE }))],
+        ['sessions/list', await sessionsListGET(get(`/api/pilot/sessions/list?athlete_id=${LIVE_ATHLETE}`))],
+        ['coach/injuries', await injuriesGET(get(`/api/pilot/coach/injuries?athlete_id=${LIVE_ATHLETE}`))],
+        ['training-holds', await holdsGET(get(`/api/pilot/training-holds?athlete_id=${LIVE_ATHLETE}`))],
+        ['goals/list', await goalsListGET(get(`/api/pilot/goals/list?athlete_id=${LIVE_ATHLETE}`))],
+      ];
+      for (const [name, response] of reads) {
+        expect([name, response.status]).toEqual([name, 200]);
+      }
+    });
+  });
+
+  test("writes a same-gym athlete's records: places a training hold and raises a safety flag", async () => {
+    await withUnassignedCoach(async () => {
+      const hold = await holdsPOST(post('/api/pilot/training-holds', {
+        action: 'place',
+        athlete_id: LIVE_ATHLETE,
+        scope: 'contact_only',
+        reason_category: 'fatigue',
+        athlete_explanation: 'No sparring today; we will check again next session.',
+      }));
+      expect(hold.status).toBeLessThan(300);
+      const flag = await safetyFlagsPOST(post('/api/pilot/safety-flags', {
+        flag_class: 'system_guidance',
+        flag_code: 'coach_observation',
+        severity: 'advisory',
+        athlete_id: LIVE_ATHLETE,
+        trigger_detail: 'Looked tired at warm-up.',
+        evidence_basis: 'Coach observation.',
+      }));
+      expect(flag.status).toBeLessThan(300);
+
+      const written = await activeClient!.query(
+        `select (select count(*)::int from pilot.training_holds where organization_id = $1 and athlete_id = $2) as holds,
+                (select count(*)::int from pilot.safety_flags where organization_id = $1 and athlete_id = $2) as flags`,
+        [ORG_ID, LIVE_ATHLETE],
+      );
+      expect(written.rows[0]).toEqual({ holds: 1, flags: 1 });
+    });
+  });
+
+  test("another gym's athlete is refused to the coach, and nothing is written", async () => {
+    await withUnassignedCoach(async () => {
+      const responses = [
+        await athletesGetPOST(post('/api/pilot/athletes/get', { athlete_id: OTHER_ORG_LIVE_ATHLETE })),
+        await sessionsListGET(get(`/api/pilot/sessions/list?athlete_id=${OTHER_ORG_LIVE_ATHLETE}`)),
+        await injuriesGET(get(`/api/pilot/coach/injuries?athlete_id=${OTHER_ORG_LIVE_ATHLETE}`)),
+        await holdsGET(get(`/api/pilot/training-holds?athlete_id=${OTHER_ORG_LIVE_ATHLETE}`)),
+        await holdsPOST(post('/api/pilot/training-holds', {
+          action: 'place',
+          athlete_id: OTHER_ORG_LIVE_ATHLETE,
+          scope: 'contact_only',
+          reason_category: 'fatigue',
+          athlete_explanation: 'No sparring today.',
+        })),
+      ];
+      for (const response of responses) {
+        expect([403, 404]).toContain(response.status);
+      }
+      const written = await activeClient!.query(
+        `select count(*)::int as n from pilot.training_holds where athlete_id = $1`,
+        [OTHER_ORG_LIVE_ATHLETE],
+      );
+      expect(written.rows[0]).toEqual({ n: 0 });
+    });
+  });
+
+  test('a parent and an athlete are refused exactly as before', async () => {
+    await withUnassignedCoach(async () => {
+      // The guardian is linked to LIVE_ATHLETE and DELETED_ATHLETE only.
+      mockRequirePrincipal.mockResolvedValue(principal(GUARDIAN_ACCOUNT, 'parent'));
+      const parentRead = await athletesGetPOST(post('/api/pilot/athletes/get', { athlete_id: COVERED_LIVE_ATHLETE }));
+      expect(parentRead.status).toBe(403);
+
+      // An athlete reads only their own record.
+      mockRequirePrincipal.mockResolvedValue(principal(`acct-${LIVE_ATHLETE}`, 'athlete', ORG_ID, LIVE_ATHLETE));
+      const athleteRead = await athletesGetPOST(post('/api/pilot/athletes/get', { athlete_id: COVERED_LIVE_ATHLETE }));
+      expect(athleteRead.status).toBe(403);
     });
   });
 });
