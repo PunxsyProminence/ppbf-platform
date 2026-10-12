@@ -99,3 +99,39 @@ test('a failed read admits cues may exist, never rendering as an empty library',
   expect(screen.getByText(/Cues may exist that are not shown here/)).toBeTruthy();
   expect(screen.queryByText(/nobody has written any yet/)).toBeNull();
 });
+
+// #1482 item 4: on the live page 258 of 265 buttons and links were under 44px
+// -- one inline drill link per cue (15px, measured in Chromium), which the
+// app's 44px floor skips because it never floors links. A control on this
+// page is tall enough only by one of these, all existing classes:
+//   min-h-[var(--tap)]  the gym-floor height, as the other coach pages use;
+//   btn--tap            ppbf.css's own --tap height for a .btn (a Tailwind
+//                       min-h utility loses to ppbf.css's unlayered .btn rule);
+//   input / select      floored by ppbf.css itself (46px).
+// A control added with none of them fails this.
+const TALL_ENOUGH = ['min-h-[var(--tap)]', 'btn--tap', 'input', 'select'];
+
+test('every control on the page carries a minimum-height class', async () => {
+  global.fetch = mockFetch({
+    items: [
+      CUE,
+      { ...CUE, cue_id: 'cue-2', cue_text: 'Eyes through the target' },
+      { ...CUE, cue_id: 'cue-3', cue_family: 'rhythm', cue_text: 'Breathe out on the punch', drill_name: 'Shadow Rounds' },
+    ],
+  });
+
+  let container!: HTMLElement;
+  await act(async () => {
+    ({ container } = render(<CueLibraryPage />));
+  });
+
+  const controls = Array.from(container.querySelectorAll('main a, main button, main input, main select'));
+  // Three drill links, the search, the focus filter and the footer link.
+  expect(controls).toHaveLength(6);
+  const short = controls.filter((control) => !TALL_ENOUGH.some((name) => control.classList.contains(name)));
+  expect(short.map((control) => control.outerHTML)).toEqual([]);
+  // The drill links are the bulk of the page: each carries the gym-floor height itself.
+  const drillLinks = controls.filter((control) => control.getAttribute('href') === '/coach/drills' && !control.classList.contains('btn'));
+  expect(drillLinks).toHaveLength(3);
+  for (const link of drillLinks) expect(link.classList.contains('min-h-[var(--tap)]')).toBe(true);
+});
