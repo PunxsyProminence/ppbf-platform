@@ -750,7 +750,11 @@ export default function ResearchIntakePage() {
             {requirements.map((requirement) => (
               <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                  <p className="t-body font-bold text-[color:var(--bone-100)]">{requirement.source_event_name}</p>
+                  {/* A question a coach filed from an unanswered SHADOW reply (#1466)
+                      is named in words; every other source keeps its event name. */}
+                  <p className="t-body font-bold text-[color:var(--bone-100)]">
+                    {requirement.source_event_name === 'shadow_unanswered_question' ? 'Asked in SHADOW' : requirement.source_event_name}
+                  </p>
                   {requirement.status === 'open' ? (
                     <span className="badge badge--monitor">
                       <i>◉</i>Open
