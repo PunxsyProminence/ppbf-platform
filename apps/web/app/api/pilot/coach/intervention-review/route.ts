@@ -14,6 +14,7 @@ import {
   learningSignalError,
   linkEvidence,
   listEvidence,
+  listRetiredReviews,
   performanceResultError,
   removeEvidence,
   reviewOutcome,
@@ -73,6 +74,9 @@ export async function GET(request: NextRequest) {
       decision_text: decisionTexts.get(execution.execution_id) ?? null,
       evidence: await listEvidence(principal.organizationId, execution.execution_id),
       review: await getActiveReview(principal.organizationId, execution.execution_id),
+      // Earlier verdicts, kept as history: replaced by a later review, or
+      // retired when the record was reopened (issue #1481).
+      review_history: await listRetiredReviews(principal.organizationId, execution.execution_id),
     })));
     return NextResponse.json({ items });
   } catch (error) {

@@ -600,14 +600,12 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
       );
 
       test('the real gate FAILING, rather than refusing, is a 500 and never the hidden 404', async () => {
-        // A coach who is not the athlete's coach of record falls through to the
-        // coverage read. That read failing is an outage, and access.ts rethrows
-        // it on purpose (only a missing relation means "no coverage"). The
-        // route must pass it on as a fault, not tell the coach the work does
-        // not exist.
+        // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym, so
+        // the coach's one read is the organization roster read. That read
+        // failing is an outage, not a refusal. The route must pass it on as a
+        // fault, not tell the coach the work does not exist.
         mockRequirePrincipal.mockResolvedValueOnce(principalFor('coach'));
         mockQueryOne
-          .mockImplementationOnce(async () => null)
           .mockImplementationOnce(async () => {
             throw Object.assign(new Error('connection terminated unexpectedly'), { code: '57P01' });
           });
@@ -616,7 +614,7 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
 
         expect(res.status).toBe(500);
         expect(await res.json()).toEqual({ error: 'Internal server error' });
-        expect(mockQueryOne).toHaveBeenCalledTimes(2);
+        expect(mockQueryOne).toHaveBeenCalledTimes(1);
         expectNothingDisclosed();
       });
     });
