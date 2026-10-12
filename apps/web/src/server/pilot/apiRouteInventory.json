@@ -5512,7 +5512,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5542,8 +5542,8 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "accessibleAthleteIds",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5573,7 +5573,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5603,7 +5603,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5633,7 +5633,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -10204,7 +10204,7 @@
       "authorizationGates": [
         "requireRole",
         "accessibleAthleteIds",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -10234,7 +10234,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -10264,7 +10264,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -13186,7 +13186,7 @@
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": []
     }
@@ -13213,7 +13213,7 @@
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": []
     }

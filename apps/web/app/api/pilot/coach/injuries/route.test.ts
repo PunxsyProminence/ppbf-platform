@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import {
   accessibleAthleteIds,
+  assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
 } from '@/src/server/pilot/access';
@@ -21,6 +22,11 @@ jest.mock('@/src/server/pilot/access', () => ({
   accessibleAthleteIds: jest.fn(),
   assertAthleteBelongsToOrganization: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
+  // The route asks the chokepoint gate (issue #1480: a coach's reach is the
+  // whole gym, as an admin's is). For both roles the gate is the organization
+  // check, so the double hands it to the mocked organization check and the
+  // assertions below keep reading it.
+  assertActorCanAccessAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -41,6 +47,7 @@ jest.mock('@/src/server/pilot/athleteInjuries', () => ({
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
+const mockGate = assertActorCanAccessAthlete as jest.Mock;
 const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockGetById = getInjuryById as jest.Mock;
 const mockList = listInjuriesForAthlete as jest.Mock;
@@ -88,6 +95,8 @@ beforeEach(() => {
   jest.resetAllMocks();
   mockCoachAssigned.mockResolvedValue(undefined);
   mockBelongs.mockResolvedValue(undefined);
+  mockGate.mockImplementation((principal: { organizationId: string }, athleteId: string) =>
+    mockBelongs(principal.organizationId, athleteId));
   mockList.mockResolvedValue([INJURY]);
   mockCandidates.mockResolvedValue({ holds: [], plans: [], clearances: [], painReports: [] });
   mockRecord.mockResolvedValue(INJURY);

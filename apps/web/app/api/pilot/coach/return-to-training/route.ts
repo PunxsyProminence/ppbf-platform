@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { getInjuryById, linkInjuryToPlan } from '@/src/server/pilot/athleteInjuries';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -102,9 +102,10 @@ function positiveIntOrNull(value: unknown, field: string, max: number): number |
   return value;
 }
 
-// A coach's reach is the whole gym, as an admin's is (2026-10-12, issue #1480).
+// The chokepoint gate: a coach's reach is the whole gym, as an admin's is
+// (2026-10-12, issue #1480); a deleted or another gym's athlete is refused.
 async function assertStanding(principal: PilotPrincipal, athleteId: string): Promise<void> {
-  await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
+  await assertActorCanAccessAthlete(principal, athleteId);
 }
 
 /** The injury, only if this principal has standing with its athlete; otherwise the same 404 as absent. */

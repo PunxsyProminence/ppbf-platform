@@ -138,7 +138,7 @@ function clampOffset(value: number | undefined): number {
 interface AthleteScope {
   // WHICH athlete-tied rows may this actor see?
   // A list: only rows tied to these athlete IDs (athlete: themselves; parent:
-  // their linked athletes; coach: their assigned + actively covered roster).
+  // their linked athletes; coach: every live athlete of their gym, issue #1480).
   // The EMPTY list is a real answer -- "no athlete-tied row at all" -- and is
   // what every role that assertActorCanAccessAthlete refuses outright gets.
   // Null means unrestricted and is reserved for the organization admin, who

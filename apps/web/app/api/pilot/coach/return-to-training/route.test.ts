@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
-import { assertAthleteBelongsToOrganization, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
+import {
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+  assertCoachAssignedToAthlete,
+} from '@/src/server/pilot/access';
 import { getInjuryById, linkInjuryToPlan } from '@/src/server/pilot/athleteInjuries';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -17,6 +21,11 @@ jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertAthleteBelongsToOrganization: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
+  // The route asks the chokepoint gate (issue #1480: a coach's reach is the
+  // whole gym, as an admin's is). For both roles the gate is the organization
+  // check, so the double hands it to the mocked organization check and the
+  // assertions below keep reading it.
+  assertActorCanAccessAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -44,6 +53,7 @@ jest.mock('@/src/server/pilot/safetyFlags', () => ({
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
+const mockGate = assertActorCanAccessAthlete as jest.Mock;
 const mockGetInjury = getInjuryById as jest.Mock;
 const mockLink = linkInjuryToPlan as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -103,6 +113,8 @@ beforeEach(() => {
   jest.resetAllMocks();
   mockCoachAssigned.mockResolvedValue(undefined);
   mockBelongs.mockResolvedValue(undefined);
+  mockGate.mockImplementation((principal: { organizationId: string }, athleteId: string) =>
+    mockBelongs(principal.organizationId, athleteId));
   mockGetInjury.mockResolvedValue(INJURY);
   mockLink.mockImplementation(async ({ planId }) => ({ ...INJURY, linked_rtt_plan_id: planId, expected_return_date: null }));
   mockCreatePlan.mockImplementation(async (input) => ({

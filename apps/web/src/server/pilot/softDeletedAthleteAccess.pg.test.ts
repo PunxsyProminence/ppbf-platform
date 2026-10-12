@@ -1033,15 +1033,24 @@ describe('a coach reaches every athlete of their own gym, through the routes', (
           reason_category: 'fatigue',
           athlete_explanation: 'No sparring today.',
         })),
+        await safetyFlagsPOST(post('/api/pilot/safety-flags', {
+          flag_class: 'system_guidance',
+          flag_code: 'coach_observation',
+          severity: 'advisory',
+          athlete_id: OTHER_ORG_LIVE_ATHLETE,
+          trigger_detail: 'Looked tired at warm-up.',
+          evidence_basis: 'Coach observation.',
+        })),
       ];
       for (const response of responses) {
         expect([403, 404]).toContain(response.status);
       }
       const written = await activeClient!.query(
-        `select count(*)::int as n from pilot.training_holds where athlete_id = $1`,
+        `select (select count(*)::int from pilot.training_holds where athlete_id = $1) as holds,
+                (select count(*)::int from pilot.safety_flags where athlete_id = $1) as flags`,
         [OTHER_ORG_LIVE_ATHLETE],
       );
-      expect(written.rows[0]).toEqual({ n: 0 });
+      expect(written.rows[0]).toEqual({ holds: 0, flags: 0 });
     });
   });
 

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   accessibleAthleteIds,
-  assertAthleteBelongsToOrganization,
+  assertActorCanAccessAthlete,
 } from '@/src/server/pilot/access';
 import {
   getInjuryById,
@@ -73,9 +73,10 @@ function injuryFields(body: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-// A coach's reach is the whole gym, as an admin's is (2026-10-12, issue #1480).
+// The chokepoint gate: a coach's reach is the whole gym, as an admin's is
+// (2026-10-12, issue #1480); a deleted or another gym's athlete is refused.
 async function assertStanding(principal: PilotPrincipal, athleteId: string): Promise<void> {
-  await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
+  await assertActorCanAccessAthlete(principal, athleteId);
 }
 
 /** The injury, only if this principal has standing with its athlete; otherwise the same 404 as absent. */
@@ -122,8 +123,8 @@ export async function POST(request: NextRequest) {
     const action = str(body, 'action');
 
     // Which of the given athletes this principal may open here, so the page
-    // offers only those: the roster a coach reads is the whole gym, and this
-    // route admits only the athletes they coach or cover. A read, sent as a
+    // offers only those: every live athlete of the coach's own gym since issue
+    // #1480 (a deleted athlete is left out). A read, sent as a
     // POST so a long roster never rides in a URL.
     if (action === 'accessible_athletes') {
       const ids = body.athlete_ids;

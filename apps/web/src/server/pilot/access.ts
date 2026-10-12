@@ -56,8 +56,9 @@ export async function assertCoachReachesAthlete(organizationId: string, athleteI
 
    Every query in this file that DECIDES whether an actor may reach an athlete
    now requires a LIVE athlete row (`deleted_at is null`): both branches of
-   assertCoachAssignedToAthlete, both branches of accessibleAthleteIds' coach
-   arm, its org-admin arm, assertAthleteBelongsToOrganization (which is also
+   assertCoachAssignedToAthlete, accessibleAthleteIds' organization arm (which
+   serves coaches and admins alike since issue #1480),
+   assertAthleteBelongsToOrganization (which is also
    what stops grantCoachCoverage issuing a grant on a deleted athlete), and
    both halves of athleteIdsForCoach's union. Coverage grants get no exemption:
    deletion ends none of them, so each of the three authorization queries that

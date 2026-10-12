@@ -245,8 +245,8 @@ export async function PATCH(request: NextRequest) {
       try {
         await assertCoachReachesAthlete(principal.organizationId, existing.athlete_id);
       } catch (error) {
-        // Only the gate's own refusal ("Forbidden: coach not assigned to
-        // athlete") becomes the hidden 404. A blanket catch here swallowed
+        // Only the gate's own refusal (a "Forbidden: ..." message) becomes the
+        // hidden 404. A blanket catch here swallowed
         // every other failure too -- a transient database error inside the
         // gate would have surfaced as "that safety flag does not exist"
         // instead of a 500, hiding an infrastructure fault behind a message
