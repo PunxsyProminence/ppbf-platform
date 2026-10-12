@@ -288,6 +288,16 @@ beforeEach(() => {
       const { kind } = parseBody(init);
       return jsonResponse({ ok: true, announcements: liveAnnouncements.filter((item) => item.kind === kind) });
     }
+    if (/\/api\/pilot\/scheduler$/.test(url)) {
+      return jsonResponse({
+        ok: true,
+        classes: [{
+          class_id: 'cls_far', title: 'Saturday Footwork', start_at: '2099-01-03T15:00:00.000Z',
+          end_at: '2099-01-03T16:00:00.000Z', location: 'Main ring', capacity: 10, status: 'open', registered_count: 2,
+        }],
+        registrations: [],
+      });
+    }
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse(authenticated ? { authenticated: true, athlete_id: 'ath_test' } : { authenticated: false });
     }
@@ -518,6 +528,9 @@ describe('athlete workspace honesty', () => {
     openTab('Schedule');
 
     await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    // The lists render inside the workspace, from that read.
+    expect(await screen.findByText('Saturday Footwork')).toBeTruthy();
+    expect(screen.getByText('8 spots left')).toBeTruthy();
     // Booking stays in the unified scheduler: the tab sends no POST.
     expect(schedulerReads().every((call) => call.method === 'GET')).toBe(true);
   });
@@ -4253,7 +4266,7 @@ describe('the Schedule help claims no readiness restriction', () => {
     });
 
     // Anchored on a line that stays, so the absence cannot pass on a closed panel.
-    expect(screen.getByText('Open the unified scheduler to see live classes')).toBeTruthy();
+    expect(screen.getByText('Open the unified scheduler to sign up for a class')).toBeTruthy();
     expect(screen.queryByText(/Readiness RED may limit contact work/)).toBeNull();
     expect(screen.queryByText(/Booking contact work with RED readiness/)).toBeNull();
     expect(screen.queryAllByText(/readiness/i)).toEqual([]);

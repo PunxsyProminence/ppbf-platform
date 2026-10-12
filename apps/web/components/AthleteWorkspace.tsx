@@ -432,12 +432,6 @@ const POST_SESSION_MINUTES_QUESTION = 'How many minutes did you train?';
 const POST_SESSION_MINUTES_MIN = 1;
 const POST_SESSION_MINUTES_MAX = 300;
 
-/**
- * The minutes box as check-out reads it: empty is "not answered" (null), a
- * whole number in range is the answer, anything else is invalid and check-out
- * waits for it to be fixed or cleared -- it never drops a typed answer
- * silently or guesses what was meant.
- */
 /* ---------------------------------------------------------- schedule tab --- */
 
 /**
@@ -485,7 +479,12 @@ export function scheduleLists(
   const upcoming = classes
     .filter((item) => item.status !== 'cancelled' && Date.parse(item.start_at) > now)
     .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
-  const byId = new Map(upcoming.map((item) => [item.class_id, item]));
+  // A booked session stays listed until its class ENDS, so one in progress is
+  // still there; and a booked class the gym cancelled stays, labelled as such,
+  // rather than vanishing from the athlete's list.
+  const byId = new Map(
+    classes.filter((item) => Date.parse(item.end_at) > now).map((item) => [item.class_id, item]),
+  );
   const booked: Array<{ registration: ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }; item: ScheduleClassRow }> = [];
   const bookedIds = new Set<string>();
   for (const registration of registrations) {
@@ -558,7 +557,7 @@ export function AthleteScheduleView() {
                     {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
                   </p>
                 </div>
-                <span className="t-label">{BOOKING_WORD[registration.status]}</span>
+                <span className="t-label">{item.status === 'cancelled' ? 'Class cancelled' : BOOKING_WORD[registration.status]}</span>
               </li>
             ))}
           </ul>
@@ -592,6 +591,12 @@ export function AthleteScheduleView() {
   );
 }
 
+/**
+ * The minutes box as check-out reads it: empty is "not answered" (null), a
+ * whole number in range is the answer, anything else is invalid and check-out
+ * waits for it to be fixed or cleared -- it never drops a typed answer
+ * silently or guesses what was meant.
+ */
 export function parsePostSessionMinutes(
   draft: string,
 ): { status: 'empty' } | { status: 'valid'; minutes: number } | { status: 'invalid' } {
@@ -3768,17 +3773,15 @@ export default function AthleteWorkspace() {
                   Booking stays in the unified scheduler above (N5-01-Q1 A). */}
               <AthleteScheduleView />
               {/* This tab was a "NOT BUILT YET" wrapper around a link to a
-                  scheduler that IS built. A tab whose whole content is an
-                  apology for itself teaches an athlete to stop opening tabs;
-                  what it actually holds is the door to the real thing, so it
-                  says that and gets out of the way. The scheduler owns
-                  classes, booking and eligibility -- nothing here duplicates
-                  them. */}
+                  scheduler that IS built. It now also lists the athlete's
+                  classes and bookings in place (AthleteScheduleView, below),
+                  read from the same route; the scheduler still owns booking
+                  and eligibility, and nothing here duplicates them. */}
               <HelpPanel
                 title="Schedule Session"
-                description="Classes and sign-ups live in the unified scheduler. This is the door to it."
+                description="Your classes and bookings are listed here. Sign-ups happen in the unified scheduler."
                 usage={[
-                  'Open the unified scheduler to see live classes'
+                  'Open the unified scheduler to sign up for a class'
                 ]}
                 /* "Readiness RED may limit contact work" and "Booking contact
                    work with RED readiness" stood in these two lists until

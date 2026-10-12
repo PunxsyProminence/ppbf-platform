@@ -83,6 +83,36 @@ describe('scheduleLists', () => {
   });
 });
 
+describe('scheduleLists, the booked list', () => {
+  test('is soonest first whatever order the registrations arrive in, and lists a class once', () => {
+    const lists = scheduleLists(
+      [klass('late', 30), klass('early', 4)],
+      [
+        { registration_id: 'r-late', class_id: 'late', status: 'registered' },
+        { registration_id: 'r-early', class_id: 'early', status: 'waitlisted' },
+        { registration_id: 'r-early-again', class_id: 'early', status: 'registered' },
+      ],
+      NOW,
+    );
+    expect(lists.booked.map((entry) => entry.item.class_id)).toEqual(['early', 'late']);
+  });
+
+  test('keeps a booked class that has started but not ended', () => {
+    const lists = scheduleLists([klass('now', -0.5)], [{ registration_id: 'r', class_id: 'now', status: 'registered' }], NOW);
+    expect(lists.booked.map((entry) => entry.item.class_id)).toEqual(['now']);
+    expect(lists.available).toEqual([]);
+  });
+
+  test('keeps a booked class the gym cancelled, so it does not vanish from the athlete\'s list', () => {
+    const lists = scheduleLists(
+      [klass('called-off', 6, { status: 'cancelled' })],
+      [{ registration_id: 'r', class_id: 'called-off', status: 'registered' }],
+      NOW,
+    );
+    expect(lists.booked.map((entry) => entry.item.status)).toEqual(['cancelled']);
+  });
+});
+
 describe('AthleteScheduleView', () => {
   test('reads the unified scheduler once, as the signed-in athlete, and books nothing', async () => {
     fetchMock.mockReturnValue(respond({ ok: true, classes: [], registrations: [] }));
@@ -143,6 +173,19 @@ describe('AthleteScheduleView', () => {
     expect(within(mine).getByText('Waitlisted')).toBeInTheDocument();
     expect(within(mine).queryByText('Dropped Class')).not.toBeInTheDocument();
     expect(within(section('Upcoming classes')).getByText('Dropped Class')).toBeInTheDocument();
+  });
+
+  test('a booked class the gym cancelled reads "Class cancelled" under Your sessions', async () => {
+    fetchMock.mockReturnValue(respond({
+      ok: true,
+      classes: [klass('k', 6, { title: 'Called Off', status: 'cancelled' })],
+      registrations: [{ registration_id: 'r1', class_id: 'k', status: 'registered' }],
+    }));
+    render(<AthleteScheduleView />);
+    const mine = await waitFor(() => section('Your sessions'));
+    expect(within(mine).getByText('Called Off')).toBeInTheDocument();
+    expect(within(mine).getByText('Class cancelled')).toBeInTheDocument();
+    expect(within(mine).queryByText('Booked')).not.toBeInTheDocument();
   });
 
   test('a full class reads "Full", whether marked full or out of spots', async () => {
