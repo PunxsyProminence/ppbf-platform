@@ -114,7 +114,8 @@ test('a rejected request is reported as a failed read, not as no activity', asyn
 test('names no Source Control stage and links nowhere under /source-control', async () => {
   await renderPage(jest.fn(async () => jsonResponse({ ok: true, events: [] })));
 
-  expect(screen.queryByText(/Source Control/)).toBeNull();
-  expect(screen.getByText('None (last stage)')).toBeTruthy();
+  // The stat plaques render upper-case, so both matches ignore case.
+  expect(screen.queryByText(/source control/i)).toBeNull();
+  expect(screen.getByText(/NEXT STAGE: NONE \(LAST STAGE\)/i)).toBeTruthy();
   expect(document.querySelector('a[href^="/source-control"]')).toBeNull();
 });
