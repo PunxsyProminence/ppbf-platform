@@ -6,9 +6,11 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   projectWorkoutTemplateDetailForReader,
   projectWorkoutTemplatesForReader,
+  readsFullWorkoutTemplates,
 } from '@/src/server/pilot/workoutTemplateProjection';
 import {
   getWorkoutTemplateWithItems,
+  listUntestedTemplateDrills,
   listWorkoutTemplates,
   type WorkoutTemplateDifficulty,
 } from '@/src/server/pilot/workoutTemplates';
@@ -52,7 +54,19 @@ export async function GET(request: NextRequest) {
       if (!detail) {
         return NextResponse.json({ error: 'WORKOUT_TEMPLATE_NOT_FOUND' }, { status: 404 });
       }
-      return NextResponse.json(projectWorkoutTemplateDetailForReader(principal.role, detail));
+      const projected = projectWorkoutTemplateDetailForReader(principal.role, detail);
+      // The drills no coach of this gym has floor-tested, for the coach's
+      // confirm step before issuing (issue #1473): the same list the issue
+      // names afterwards. Only the readers who issue workouts receive it, a
+      // coach or an organization admin; nobody else is sent it (Overwatch,
+      // issue #1473 Q1).
+      if (readsFullWorkoutTemplates(principal.role)) {
+        return NextResponse.json({
+          ...projected,
+          untested_drills: await listUntestedTemplateDrills(principal.organizationId, detail.items),
+        });
+      }
+      return NextResponse.json(projected);
     }
 
     const templates = await listWorkoutTemplates(principal.organizationId, {

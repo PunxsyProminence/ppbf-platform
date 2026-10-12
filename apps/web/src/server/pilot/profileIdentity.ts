@@ -21,6 +21,8 @@
  * ---------------------------------------------------------------------------
  */
 
+import type { PilotRole } from './contracts';
+
 /** Red corner, blue corner, or not chosen. 'none' is a real state, not a null. */
 export type CornerChoice = 'red' | 'blue' | 'none';
 
@@ -299,6 +301,7 @@ export interface FightCard {
   readonly program: ProgramChoice;
   readonly programLabel: string;
   readonly coachName: string | null;
+  /** Null for an athlete or parent viewer, always. See isFamilyViewer. */
   readonly coachAccountId: string | null;
   readonly coachPhotoAvailable: boolean;
   readonly coachInitials: string | null;
@@ -317,9 +320,34 @@ export interface FightCardInput {
   readonly coachPhotoAvailable: boolean;
   readonly memberSince: string | Date | null;
   readonly photoAvailable: boolean;
+  /** Who is looking. Decides whether the coach's account id goes out at all. */
+  readonly viewerRole: PilotRole;
+}
+
+/**
+ * FAMILIES SEE A COACH'S NAME, NEVER THE ACCOUNT ID (OD-2026-10-06-025
+ * ruling 2). The same two roles familyRecordView.ts isFamilyRecordCaller
+ * names; restated here rather than imported because this file stays pure and
+ * that one reads the database.
+ *
+ * Two halves. buildFightCard drops the id for these viewers. The NAME a
+ * family is given is the routes' job (coachNameForViewer in
+ * profileCardSubject.ts): it comes from getCoachDisplayName, the reader every
+ * other family screen uses, because the staff name this file is otherwise
+ * handed (profileDb.staffDisplayName) can be the account id, or the id with
+ * its first letter capitalised.
+ *
+ * The card's coach portrait does not need the id: it is fetched by the card's
+ * own subject from /api/pilot/profile/card/coach-photo, which finds the coach
+ * on the server. Staff keep the id they had.
+ */
+export function isFamilyViewer(role: PilotRole): boolean {
+  return role === 'athlete' || role === 'parent';
 }
 
 export function buildFightCard(input: FightCardInput, now: Date): FightCard {
+  const family = isFamilyViewer(input.viewerRole);
+  const coachName = input.coachName;
   return {
     accountId: input.accountId,
     displayName: input.fullName,
@@ -329,10 +357,10 @@ export function buildFightCard(input: FightCardInput, now: Date): FightCard {
     cornerLabel: CORNER_LABEL[input.corner],
     program: input.program,
     programLabel: PROGRAM_LABEL[input.program],
-    coachName: input.coachName,
-    coachAccountId: input.coachAccountId,
+    coachName,
+    coachAccountId: family ? null : input.coachAccountId,
     coachPhotoAvailable: input.coachPhotoAvailable,
-    coachInitials: input.coachName ? initialsFor(input.coachName) : null,
+    coachInitials: coachName ? initialsFor(coachName) : null,
     timeAtGym: timeAtGym(input.memberSince, now),
     photoAvailable: input.photoAvailable,
   };

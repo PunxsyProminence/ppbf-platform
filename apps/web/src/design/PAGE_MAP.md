@@ -81,12 +81,9 @@ the app.
 | `admin/platform/overview` | ink | |
 | `admin/shadow` | ink | 1850 lines, largest file in the app — split before porting |
 | `admin/organizations/test` | ink | |
-| `coach/review-queue` | ink | A queue is a table with one decision per row |
 | `evidence` | ink | Redacted rows carry a static ink stamp (Law 7) |
 | `audit` | ink | Append-only, no row actions; mono voice for timestamps (Law 4) |
 | `schedule` | ink | Session rows use the chalk voice — erasable by definition (Law 4) |
-| `source-control` | ink | |
-| `source-control/publication-workflow` | ink | |
 
 ---
 
@@ -117,7 +114,6 @@ role parameter; build `board/[member]` and the rest are routing.
 | `coach/progression-intelligence` | ink | |
 | `coach/sports-medicine` | ink | |
 | `coach/environment/intake-router` | ink | |
-| `coach/environment/passbook-check` | ink | |
 | `parent/dashboard` | **canvas** | |
 | `parent/progression-visibility` | **canvas** | |
 | `guardian` | **canvas** | |

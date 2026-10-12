@@ -751,8 +751,9 @@ describe('empty states', () => {
 
 describe('it is a display, not an interface', () => {
   // On a PAIRED screen. The unpaired screen carries exactly one control, the
-  // pair box, pinned above; once paired there is nothing to touch.
-  it('renders no control of any kind once paired', async () => {
+  // pair box, pinned above; once paired the only thing to touch is the TV's
+  // sound switch (WO-N1-02, wallSound.test.tsx) -- nothing on the board itself.
+  it('renders no control once paired except the TV sound switch', async () => {
     fetchMock = respondWith({
       ok: true,
       board: board({
@@ -768,6 +769,16 @@ describe('it is a display, not an interface', () => {
     const { container } = render(<WallDisplay />);
     await settle();
 
+    const sound = container.querySelector('[aria-label="TV sound"]');
+    expect(sound).not.toBeNull();
+    // The sound group holds the switch and the test bell and nothing else.
+    const soundControls = Array.from(sound?.querySelectorAll('*') ?? []).filter((el) => el.matches('button, a, input, select, textarea, form, [role="button"], [tabindex]'));
+    expect(soundControls.length).toBeGreaterThan(0);
+    for (const el of soundControls) {
+      expect(el.tagName).toBe('BUTTON');
+      expect(['Sound off', 'Sound waiting', 'Sound on', 'No audio', 'Test bell']).toContain(el.textContent);
+    }
+    sound?.remove();
     for (const selector of ['button', 'a', 'input', 'select', 'textarea', 'form', '[role="button"]', '[tabindex]']) {
       expect({ selector, found: container.querySelectorAll(selector).length }).toEqual({ selector, found: 0 });
     }
