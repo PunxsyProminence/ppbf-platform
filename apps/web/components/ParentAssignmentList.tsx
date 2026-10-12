@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import StepNotes from './IssuedWorkoutStepNotes';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
@@ -9,6 +9,7 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import {
   readDatedIssuedWorkouts,
   sectionAssignedWork,
+  type AssignedWorkSection,
   type DatedIssuedWorkout,
   type IssuedWorkoutStepView,
 } from '@/src/lib/issuedWorkouts';
@@ -40,8 +41,8 @@ interface FamilyAssignment {
   assigned_by_name?: string;
 }
 
+const STATUSES: readonly AssignmentStatus[] = ['assigned', 'in_progress', 'completed', 'incomplete', 'cancelled'];
 const ACTIVE: readonly AssignmentStatus[] = ['assigned', 'in_progress'];
-const FINISHED: readonly AssignmentStatus[] = ['completed', 'incomplete'];
 
 /* Status in words, with a glyph so it is never the colour alone. Not done is
    not a safety state: nothing here wears --locked, which means a medical stop
@@ -50,7 +51,7 @@ const STATUS_MARK: Record<Exclude<AssignmentStatus, 'cancelled'>, { label: strin
   assigned: { label: 'Assigned', className: 'badge badge--monitor', glyph: '◉' },
   in_progress: { label: 'In progress', className: 'badge badge--monitor', glyph: '◉' },
   completed: { label: 'Completed', className: 'badge badge--cleared', glyph: '✓' },
-  incomplete: { label: 'Closed, not completed', className: 'badge', glyph: '–' },
+  incomplete: { label: 'Closed, not completed', className: 'badge badge--filed', glyph: '–' },
 };
 
 type Loaded =
@@ -62,7 +63,8 @@ function isFamilyAssignment(value: unknown): value is FamilyAssignment {
   return row !== null && typeof row === 'object'
     && typeof row.assignment_id === 'string'
     && typeof row.drill_name === 'string'
-    && typeof row.status === 'string';
+    // A status outside the five is not guessed at: the answer is unreadable.
+    && STATUSES.includes(row.status as AssignmentStatus);
 }
 
 function AssignmentCard({ assignment, step }: { assignment: FamilyAssignment; step: IssuedWorkoutStepView | null }) {
@@ -119,20 +121,15 @@ function AssignmentCard({ assignment, step }: { assignment: FamilyAssignment; st
   );
 }
 
-function AssignmentGroup({
-  heading,
-  assignments,
-  workouts,
-}: {
-  heading: string;
-  assignments: FamilyAssignment[];
-  workouts: DatedIssuedWorkout[];
-}) {
-  if (assignments.length === 0) return null;
+type Section = AssignedWorkSection<FamilyAssignment, DatedIssuedWorkout>;
+
+function AssignmentGroup({ heading, sections }: { heading: string; sections: Section[] }) {
+  const headingId = useId();
+  if (sections.length === 0) return null;
   return (
-    <section aria-label={heading} className="space-y-[var(--s4)]">
-      <h3 className="t-label">{heading}</h3>
-      {sectionAssignedWork(assignments, workouts).map((section) => {
+    <section aria-labelledby={headingId} className="space-y-[var(--s4)]">
+      <h3 id={headingId} className="t-label">{heading}</h3>
+      {sections.map((section) => {
         if (section.kind === 'assignment') {
           return (
             <article key={section.key} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" data-testid="assignment">
@@ -141,13 +138,20 @@ function AssignmentGroup({
           );
         }
         const { workout, stepCount } = section;
+        // The steps drawn are the workout's steps still on the record; one the
+        // coach withdrew is not drawn, and the count says so rather than
+        // passing a shorter workout off as the whole of it.
+        const total = workout.steps.length;
+        const steps = stepCount === total
+          ? (total === 1 ? '1 step' : `${total} steps`)
+          : `${stepCount} of ${total} steps`;
         return (
           <article key={section.key} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" data-testid="issued-workout">
             <p className="t-eyebrow">Workout</p>
             <h4 className="t-body mt-[var(--s2)] font-semibold">{workout.template_name}</h4>
             <p className="t-body mt-[var(--s2)]">
               {workout.issued_by_name ? `From: ${workout.issued_by_name} · ` : ''}
-              {formatGymDateNumeric(workout.issued_at)} · {stepCount === 1 ? '1 step' : `${stepCount} steps`}, in this order
+              {formatGymDateNumeric(workout.issued_at)} · {steps}, in this order
             </p>
             <div className="mt-[var(--s4)] space-y-[var(--s4)]">
               {section.parts.map((part) => (part.kind === 'block' ? (
@@ -213,19 +217,29 @@ export default function ParentAssignmentList({ athleteId }: { readonly athleteId
       ) : shown.state === 'failed' ? (
         <p className="t-muted">Unavailable - the assignments could not be read. This is not an empty list.</p>
       ) : (() => {
-        // Withdrawn by the coach: not work to support. It stays on the full record.
-        const active = shown.items.filter((item) => ACTIVE.includes(item.status));
-        const finished = shown.items.filter((item) => FINISHED.includes(item.status));
-        if (active.length === 0 && finished.length === 0) {
-          return <p className="t-body">No assignments from the coach yet.</p>;
+        // Withdrawn by the coach: not work to support. It stays on the full
+        // record. A workout is sectioned ONCE over everything else, so it is
+        // drawn whole, in one place: under "Working on now" while any of its
+        // steps is still open, under "Done or closed" when none is.
+        const sections = sectionAssignedWork(
+          shown.items.filter((item) => item.status !== 'cancelled'),
+          shown.workouts,
+        );
+        if (sections.length === 0) {
+          return <p className="t-body">No assignments from the coach right now.</p>;
         }
+        const isOpen = (section: Section) => (section.kind === 'assignment'
+          ? ACTIVE.includes(section.assignment.status)
+          : section.parts.some((part) => part.kind === 'step' && ACTIVE.includes(part.assignment.status)));
         return (
           <>
-            <AssignmentGroup heading="Working on now" assignments={active} workouts={shown.workouts} />
-            <AssignmentGroup heading="Finished" assignments={finished} workouts={shown.workouts} />
+            <AssignmentGroup heading="Working on now" sections={sections.filter(isOpen)} />
+            <AssignmentGroup heading="Done or closed" sections={sections.filter((section) => !isOpen(section))} />
           </>
         );
       })()}
+      {/* The full record page opens on the first linked child and has its own
+          chooser, so the link does not promise this child. */}
       <Link href="/parent/progression-visibility" className="btn btn--ghost">
         Open the full progression record
       </Link>

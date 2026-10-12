@@ -64,6 +64,13 @@ const FIRST = {
     assignment('a_guard', 'Guard up drill', 'completed'),
     assignment('a_wall', 'Wall slips', 'incomplete'),
     assignment('a_pulled', 'Withdrawn drill', 'cancelled'),
+    // A workout part-way through: step 1 done, step 2 open, step 3 withdrawn.
+    assignment('a_m1', 'Mixed one', 'completed'),
+    assignment('a_m2', 'Mixed two', 'assigned'),
+    assignment('a_m3', 'Mixed three', 'cancelled'),
+    // A workout with every step done.
+    assignment('a_d1', 'Done one', 'completed'),
+    assignment('a_d2', 'Done two', 'incomplete'),
   ],
   // Rope (step 1, warm_up) then Jab (step 2, main), as the coach ordered them.
   workouts: [
@@ -77,6 +84,31 @@ const FIRST = {
       steps: [
         { ordinal: 2, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: 'Slow and sharp.', assignment_id: 'a_jab' },
         { ordinal: 1, block: 'warm_up', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_rope' },
+      ],
+    },
+    {
+      issue_id: 'iss_mixed',
+      athlete_id: 'ath_1',
+      template_name: 'Mixed session',
+      template_version: 1,
+      issued_at: '2026-10-06T12:00:00.000Z',
+      issued_by_name: 'Coach Dee',
+      steps: [
+        { ordinal: 1, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_m1' },
+        { ordinal: 2, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_m2' },
+        { ordinal: 3, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_m3' },
+      ],
+    },
+    {
+      issue_id: 'iss_done',
+      athlete_id: 'ath_1',
+      template_name: 'Finished session',
+      template_version: 1,
+      issued_at: '2026-10-07T12:00:00.000Z',
+      issued_by_name: 'Coach Dee',
+      steps: [
+        { ordinal: 1, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_d1' },
+        { ordinal: 2, block: 'main', scale_level: null, contact_level: 'no_contact', coach_note: null, assignment_id: 'a_d2' },
       ],
     },
   ],
@@ -141,7 +173,7 @@ describe('what the coach set, as it stands', () => {
     expect(active).toHaveTextContent('Rope skipping');
     expect(active).not.toHaveTextContent('Guard up drill');
 
-    const finished = group('Finished') as HTMLElement;
+    const finished = group('Done or closed') as HTMLElement;
     expect(finished).toHaveTextContent('Guard up drill');
     expect(finished).toHaveTextContent('Completed');
     expect(finished).toHaveTextContent('Wall slips');
@@ -168,14 +200,77 @@ describe('what the coach set, as it stands', () => {
     installFetch();
     await renderAssignments();
 
-    const panel = await screen.findByTestId('issued-workout');
+    await screen.findByText('Home footwork');
+    const panel = screen.getByText('Home footwork').closest('[data-testid="issued-workout"]') as HTMLElement;
     expect(panel).toHaveTextContent('Home footwork');
     expect(panel).toHaveTextContent('From: Coach Dee');
     expect(panel).toHaveTextContent('2 steps, in this order');
     const steps = within(panel).getAllByTestId('issued-workout-step').map((step) => step.querySelector('h6')?.textContent);
     expect(steps).toEqual(['Rope skipping', 'Jab on the line']);
-    expect(panel.textContent?.indexOf('warm up')).toBeLessThan(panel.textContent?.indexOf('main') ?? -1);
+    // Block names read as words, in the coach's order.
+    expect(panel).toHaveTextContent('warm up');
+    expect(panel.textContent ?? '').not.toContain('warm_up');
+    expect((panel.textContent ?? '').indexOf('warm up')).toBeLessThan((panel.textContent ?? '').indexOf('main'));
+    const labels = within(panel).getAllByTestId('issued-workout-step').map((step) => within(step).getByText(/^Step \d+$/).textContent);
+    expect(labels).toEqual(['Step 1', 'Step 2']);
     expect(panel).toHaveTextContent('Note: Slow and sharp.');
+    expect(panel).toHaveTextContent(/10\/0?5\/2026/);
+  });
+
+  test('a workout part-way through is drawn once, whole, under what is still open, and says a step was withdrawn', async () => {
+    installFetch();
+    await renderAssignments();
+    await screen.findByText('Mixed session');
+
+    expect(screen.getAllByText('Mixed session')).toHaveLength(1);
+    const active = group('Working on now') as HTMLElement;
+    const panel = within(active).getByText('Mixed session').closest('[data-testid="issued-workout"]') as HTMLElement;
+    expect(panel).toHaveTextContent('2 of 3 steps, in this order');
+    expect(within(panel).getByText('Mixed one')).toBeInTheDocument();
+    expect(within(panel).getByText('Mixed two')).toBeInTheDocument();
+    expect(within(panel).queryByText('Mixed three')).toBeNull();
+    expect(within(group('Done or closed') as HTMLElement).queryByText('Mixed session')).toBeNull();
+  });
+
+  test('a workout with every step done or closed is under "Done or closed"', async () => {
+    installFetch();
+    await renderAssignments();
+    await screen.findByText('Finished session');
+    const done = group('Done or closed') as HTMLElement;
+    const panel = within(done).getByText('Finished session').closest('[data-testid="issued-workout"]') as HTMLElement;
+    expect(panel).toHaveTextContent('2 steps, in this order');
+    expect(within(group('Working on now') as HTMLElement).queryByText('Finished session')).toBeNull();
+  });
+
+  test('each status is a word and a glyph, never colour alone', async () => {
+    installFetch();
+    await renderAssignments();
+    const card = (await screen.findByText('Jab on the line')).closest('[data-testid="issued-workout-step"]') as HTMLElement;
+    const badge = within(card).getByText('In progress');
+    expect(badge).toHaveTextContent('◉');
+    const closed = within(group('Done or closed') as HTMLElement).getByText('Wall slips').closest('[data-testid="assignment"]') as HTMLElement;
+    expect(within(closed).getByText('Closed, not completed')).toHaveTextContent('–');
+  });
+
+  test('a zero the coach set is shown; a field the coach left empty is not drawn; the typed name stands in for a missing display name', async () => {
+    installFetch(async () => jsonResponse({
+      items: [assignment('a_zero', 'Typed name', 'assigned', { drill_display_name: '', drill_display_description: '', rep_count: 0, duration_minutes: null, frequency_per_week: null })],
+      workouts: [],
+    }));
+    await renderAssignments();
+    const card = (await screen.findByText('Typed name')).closest('[data-testid="assignment"]') as HTMLElement;
+    expect(card).toHaveTextContent('Typed name: as written');
+    expect(card).toHaveTextContent('Reps0');
+    expect(card.textContent ?? '').not.toMatch(/null|undefined|Duration|Per week/);
+  });
+
+  test('asks for the selected child, with the session', async () => {
+    const fetchMock = installFetch();
+    await renderAssignments();
+    await screen.findByText('Shadowboxing rounds');
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/progression/assignments'));
+    expect(String(call?.[0])).toContain('/api/pilot/progression/assignments?athlete_id=ath_1');
+    expect((call?.[1] as RequestInit).credentials).toBe('include');
   });
 
   test('read-only: no completion control, no percentage, no account id', async () => {
@@ -264,7 +359,13 @@ describe('a read that did not answer', () => {
     installFetch(async () => jsonResponse({ error: 'Forbidden' }, false));
     await renderAssignments();
     await screen.findByText('Unavailable - the assignments could not be read. This is not an empty list.');
-    expect(screen.queryByText('No assignments from the coach yet.')).toBeNull();
+    expect(screen.queryByText('No assignments from the coach right now.')).toBeNull();
+  });
+
+  test('an assignment with a status outside the five makes the answer unreadable, not an empty list', async () => {
+    installFetch(async () => jsonResponse({ items: [assignment('a_odd', 'Odd drill', 'archived')], workouts: [] }));
+    await renderAssignments();
+    await screen.findByText('Unavailable - the assignments could not be read. This is not an empty list.');
   });
 
   test('workouts that cannot be read make the list unreadable, not loose drills', async () => {
@@ -277,7 +378,7 @@ describe('a read that did not answer', () => {
   test('a real empty list says so, and so does a list of only withdrawn work', async () => {
     installFetch(async () => jsonResponse({ items: [assignment('a_pulled', 'Withdrawn drill', 'cancelled')], workouts: [] }));
     await renderAssignments();
-    await screen.findByText('No assignments from the coach yet.');
+    await screen.findByText('No assignments from the coach right now.');
   });
 
   test('the placeholder is gone', async () => {

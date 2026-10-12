@@ -1176,8 +1176,8 @@ export default function ParentHub() {
                   tick when it is done; the Home Tasks count at the top of this page is how many are still open.
                   A separate weekly checklist is not built yet. The checklist and progress bar previously shown
                   here were hardcoded example data, not real tasks -- they have been removed rather than left
-                  showing fake completion status. Home assignments from your child&apos;s coach appear in the
-                  Assignments tab once that feed is connected.
+                  showing fake completion status. Home assignments from your child&apos;s coach are on the
+                  Assignments tab.
                 </p>
               </div>
             </div>
@@ -1203,7 +1203,7 @@ export default function ParentHub() {
               {activeChildId ? (
                 <ParentAssignmentList athleteId={activeChildId} />
               ) : (
-                <p className="t-muted">Unavailable - choose a child to see their assignments.</p>
+                <p className="t-muted">Unavailable - no child selected.</p>
               )}
             </div>
           )}
