@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDate } from '@/src/lib/gymTime';
 
 // Intervention review (module 026 slice 3): the whole loop on one page --
 // DECISION -> PLANNED -> ACTUAL -> WHAT HAPPENED -> WHAT WE LEARNED.
@@ -51,11 +52,28 @@ interface OutcomeReview {
   learning_notes: string;
 }
 
+/* An earlier verdict, kept as history (issue #1481): replaced by a later
+   review, or retired when the record was reopened. */
+interface RetiredReview extends OutcomeReview {
+  retired_on_reopen: boolean;
+  retired_at: string;
+  reviewed_at: string;
+}
+
 interface ChainItem {
   execution: ExecutionSummary;
   decision_text: string | null;
   evidence: EvidenceLink[];
   review: OutcomeReview | null;
+  review_history?: RetiredReview[];
+}
+
+/* The history line's opening words. Wording PROPOSED for Jason. */
+function retiredLabel(entry: RetiredReview): string {
+  const when = formatGymDate(entry.retired_at) ?? entry.retired_at;
+  return entry.retired_on_reopen
+    ? `Retired when the record was reopened, ${when}`
+    : `Replaced by a later review, ${when}`;
 }
 
 const EVIDENCE_ROLES = [
@@ -275,7 +293,7 @@ export default function InterventionReviewPage() {
               </div>
             ) : (
               <ul className="space-y-[var(--s3)]">
-                {items.map(({ execution, decision_text, evidence, review }) => (
+                {items.map(({ execution, decision_text, evidence, review, review_history: reviewHistory }) => (
                   <li key={execution.execution_id} className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
                       <span className="t-body font-semibold text-[color:var(--bone-100)]">
@@ -370,6 +388,23 @@ export default function InterventionReviewPage() {
                           ) : 'Not yet reviewed by a human.'}
                         </dd>
                       </div>
+                      {reviewHistory && reviewHistory.length > 0 && (
+                        <div>
+                          <dt className="t-label" style={{ fontSize: 'var(--t-xs)' }}>Earlier verdicts</dt>
+                          <dd className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                            <ul className="space-y-[var(--s1)]">
+                              {reviewHistory.map((entry) => (
+                                <li key={entry.review_id}>
+                                  {retiredLabel(entry)}: {words(entry.performance_result)}
+                                  {' — '}{entry.performance_notes}
+                                  {' · '}Hypothesis: {words(entry.hypothesis_result)}
+                                  {' · '}reviewed {formatGymDate(entry.reviewed_at) ?? entry.reviewed_at}.
+                                </li>
+                              ))}
+                            </ul>
+                          </dd>
+                        </div>
+                      )}
                     </dl>
 
                     <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">

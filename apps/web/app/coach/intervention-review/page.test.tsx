@@ -379,3 +379,49 @@ describe('unlinking evidence', () => {
     expect(screen.queryByRole('button', { name: 'Remove link' })).toBeNull();
   });
 });
+
+// Issue #1481 (Jason, 2026-10-12: "6B"): a reopened record shows no standing
+// verdict, and its earlier verdict appears as history, labelled as retired
+// when the record was reopened. Plain text: no alert, no warning.
+test('a reopened record shows no standing verdict and its earlier verdicts as history', async () => {
+  const reopened = {
+    ...CHAIN_ITEM,
+    execution: { ...CHAIN_ITEM.execution, status: 'in_progress' },
+    review: null,
+    review_history: [
+      {
+        review_id: 'rev-2', performance_result: 'improved', performance_notes: 'held through four rounds',
+        hypothesis_result: 'supported', learning_signal: 'prior_belief_strengthened', learning_notes: '',
+        retired_on_reopen: true, retired_at: '2026-10-12T15:00:00.000Z', reviewed_at: '2026-10-10T15:00:00.000Z',
+      },
+      {
+        review_id: 'rev-1', performance_result: 'unchanged', performance_notes: 'too early to tell',
+        hypothesis_result: 'unresolved', learning_signal: 'unresolved', learning_notes: '',
+        retired_on_reopen: false, retired_at: '2026-10-10T15:00:00.000Z', reviewed_at: '2026-10-08T15:00:00.000Z',
+      },
+    ],
+  };
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ items: [reopened] }) }) as Response) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<InterventionReviewPage />);
+  });
+
+  expect(await screen.findByText('Not yet reviewed by a human.')).toBeTruthy();
+  expect(screen.getByText('Earlier verdicts')).toBeTruthy();
+  const items = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
+  const retired = items.filter((text) => text.includes('held through four rounds')).pop();
+  const replaced = items.filter((text) => text.includes('too early to tell')).pop();
+  expect(retired).toMatch(/^Retired when the record was reopened, October 12, 2026: improved/);
+  expect(replaced).toMatch(/^Replaced by a later review, October 10, 2026: unchanged/);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('a record with no history shows no "Earlier verdicts" section', async () => {
+  global.fetch = mockFetch({ posts: [] });
+  await act(async () => {
+    render(<InterventionReviewPage />);
+  });
+  await screen.findByText('Decision');
+  expect(screen.queryByText('Earlier verdicts')).toBeNull();
+});
