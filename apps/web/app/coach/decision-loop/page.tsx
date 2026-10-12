@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
+import { formatGymDate } from '@/src/lib/gymTime';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 /* What the gates act on, as the route reports it beside the stored row: the
@@ -59,6 +60,10 @@ interface DecisionRow {
   decided_by_role: string;
   status: 'active' | 'superseded' | 'reversed';
   decided_at: string;
+  /* The medical status on file when it was recorded (issue #1474), in the
+     route's words ('no_record' for none), and that status's end date. */
+  medical_status_on_file?: string;
+  medical_status_expires_at?: string | null;
 }
 
 interface NearMissRow {
@@ -201,6 +206,30 @@ function readMedicalStatus(
    which not every browser's Date will read. ISO 8601 all of them do. */
 function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
+/* The medical status on file, stated as a fact (issue #1474): the words after
+   "Medical status on file:". Never a warning and never a reason to refuse;
+   the coach makes the assessment (OD-2026-10-10-004 to -007). Wording
+   PROPOSED for Jason's look. */
+function medicalStatusOnFileWords(status: string | null | undefined, expiresAt: string | null | undefined): string {
+  const date = typeof expiresAt === 'string' && expiresAt.trim() !== ''
+    ? formatGymDate(isoInstant(expiresAt)) ?? expiresAt
+    : null;
+  switch (status) {
+    case 'pending':
+      return 'pending';
+    case 'restricted':
+      return 'restricted';
+    case 'not_cleared':
+      return 'not cleared';
+    case 'cleared':
+      return date ? `cleared, expires ${date}` : 'cleared';
+    case 'cleared_expired':
+      return date ? `cleared, expired ${date}` : 'cleared, expired';
+    default:
+      return 'none';
+  }
 }
 
 /* The clock is looked at again at least this often while waiting. One long
@@ -842,9 +871,9 @@ export default function DecisionLoopReviewPage() {
         // reads. This body used to carry a fifth, isMedicallySensitive, off a
         // checkbox the coach could tick; the route never mentioned it, so the
         // control moved nothing in either direction while its label said it
-        // gated the clearance check. The check is not optional -- see the note
-        // above the form -- and a request must not carry a field that claims
-        // otherwise. decisionRequestContract.test.ts holds this shut.
+        // gated a clearance check. No such check refuses a decision now (issue
+        // #1474), and a request must not carry a field that claims one.
+        // decisionRequestContract.test.ts holds this shut.
         body: JSON.stringify({
           athleteId,
           recommendationId: decisionRecommendationId || undefined,
@@ -1157,8 +1186,7 @@ export default function DecisionLoopReviewPage() {
             <p className="t-body max-w-4xl text-[color:var(--bone-300)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.
               Every recommendation starts provisional and stays that way until a human accepts or rejects it — silence
-              never equals acceptance, and medical/sparring-clearance topics are gated by the athlete&apos;s current
-              medical administrative status below.
+              never equals acceptance.
             </p>
           </header>
 
@@ -1204,8 +1232,8 @@ export default function DecisionLoopReviewPage() {
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-command text-[length:var(--t-lg)]">Medical Administrative Status</h2>
                 <p className="t-muted mt-[var(--s2)]">
-                  Read-only gate for medically sensitive recommendations/decisions. Setting a new status never clears an
-                  existing restriction automatically — each change is its own explicit, human-attributed record.
+                  Setting a new status never clears an existing restriction automatically — each change is its own
+                  explicit, human-attributed record.
                 </p>
                 {medicalStatus && !statusUnread ? (
                   <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-sm)]">
@@ -1214,8 +1242,7 @@ export default function DecisionLoopReviewPage() {
                     </p>
                     {medicalStatus.effective_status === 'cleared_expired' && (
                       <p className="t-body text-[color:var(--bone-300)]">
-                        This clearance passed its end date, so it no longer counts. The medical gate blocks
-                        recommendations until a new clearance is recorded.
+                        This clearance passed its end date.
                       </p>
                     )}
                     <p className="t-data text-[color:var(--bone-400)]">
@@ -1326,6 +1353,12 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                         By {decision.decided_by_role} at {decision.decided_at}
                       </p>
+                      {typeof decision.medical_status_on_file === 'string' && (
+                        <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+                          Medical status on file then:{' '}
+                          {medicalStatusOnFileWords(decision.medical_status_on_file, decision.medical_status_expires_at)}
+                        </p>
+                      )}
                       <button
                         type="button"
                         onClick={() => void handleLoadOutcomes(decision.decision_id)}
@@ -1383,16 +1416,17 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
-                  {/* This replaced a "Medically sensitive" checkbox. The box
-                      claimed to switch the clearance check on, and nothing read
-                      it: the server runs that check on every decision, whatever
-                      the wording, and refuses the write when the athlete's
-                      record does not allow one. Saying so is the honest version
-                      of what the checkbox implied. */}
+                  {/* The status on file, as a fact beside the form (issue #1474).
+                      It is recorded with the decision and never refuses it. */}
                   <p className="t-muted">
-                    The athlete&apos;s medical status is checked on every decision recorded here.
-                    There is nothing to switch on: if their record does not allow one, this refuses
-                    and tells you why.
+                    Medical status on file:{' '}
+                    {loadFailed || statusUnread
+                      ? 'could not be read'
+                      : loadState === 'loading'
+                        ? 'reading…'
+                        : medicalStatus
+                          ? medicalStatusOnFileWords(medicalStatus.effective_status, medicalStatus.expires_at)
+                          : 'none'}
                   </p>
                   <button type="submit" className="btn">
                     Record Decision

@@ -3,29 +3,25 @@ jest.mock('./db', () => ({
   queryOne: jest.fn(),
   withTransaction: jest.fn(),
 }));
-jest.mock('./shadowMedicalStatus', () => ({
-  getLatestMedicalAdministrativeStatus: jest.fn(),
-}));
 jest.mock('./shadowRecommendations', () => ({
-  assertMedicalStatusAllowsRecommendation: jest.fn(),
-  MedicalStatusBlockedError: class MedicalStatusBlockedError extends Error {},
+  readMedicalStatusOnFile: jest.fn(),
 }));
 jest.mock('./shadowAuditEntries', () => ({
   writeShadowAuditEntry: jest.fn(),
 }));
 
 import { query, queryOne, withTransaction } from './db';
-import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
-import { assertMedicalStatusAllowsRecommendation, MedicalStatusBlockedError } from './shadowRecommendations';
+import { readMedicalStatusOnFile, type MedicalStatusOnFile } from './shadowRecommendations';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 import { getDecisionAthleteId, listDecisions, recordDecision, RecommendationNotActionableError } from './shadowDecisions';
 
 const mockQuery = jest.mocked(query);
 const mockQueryOne = jest.mocked(queryOne);
 const mockWithTransaction = jest.mocked(withTransaction);
-const mockGetMedicalStatus = jest.mocked(getLatestMedicalAdministrativeStatus);
-const mockAssertMedicalStatusAllows = jest.mocked(assertMedicalStatusAllowsRecommendation);
+const mockOnFile = jest.mocked(readMedicalStatusOnFile);
 const mockWriteAudit = jest.mocked(writeShadowAuditEntry);
+
+const NONE_ON_FILE: MedicalStatusOnFile = { medicalStatusOnFile: 'no_record', medicalStatusId: null, medicalStatusExpiresAt: null };
 
 function decisionRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,78 +40,53 @@ function decisionRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const DECISION = {
+  organizationId: 'org-1',
+  athleteId: 'athlete-1',
+  decisionText: 'Easy skipping only today; recheck next session.',
+  expectedOutcome: 'Calf tightness settles by next session.',
+  decidedByAccountId: 'coach-1',
+  decidedByRole: 'coach',
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockWriteAudit.mockResolvedValue(undefined);
-  mockGetMedicalStatus.mockResolvedValue(null);
+  mockOnFile.mockResolvedValue(NONE_ON_FILE);
 });
 
-describe('recordDecision', () => {
-  // Replaces a test asserting the guard ran ONLY when isMedicallySensitive was
-  // set. That flag came off the HTTP body, so the assertion pinned the hole:
-  // omit the field, skip the clearance check.
-  test('checks the medical status guard on every decision, whatever the topic', async () => {
-    const clientQuery = jest.fn().mockResolvedValue({ rows: [decisionRow()] });
+// Jason, 2026-10-10 and -11 (OD-2026-10-10-004 to -007): the coach makes the
+// assessment; the app records. Issue #1474: a decision is never refused for
+// the athlete's medical status, and the status on file is stored with it.
+describe('recordDecision records whatever the medical status on file says', () => {
+  test.each<[string, MedicalStatusOnFile]>([
+    ['none on file', NONE_ON_FILE],
+    ['pending', { medicalStatusOnFile: 'pending', medicalStatusId: 'status-p', medicalStatusExpiresAt: null }],
+    ['not cleared', { medicalStatusOnFile: 'not_cleared', medicalStatusId: 'status-n', medicalStatusExpiresAt: null }],
+    ['restricted', { medicalStatusOnFile: 'restricted', medicalStatusId: 'status-r', medicalStatusExpiresAt: null }],
+    ['a lapsed clearance', { medicalStatusOnFile: 'cleared_expired', medicalStatusId: 'status-e', medicalStatusExpiresAt: '2026-10-01 16:00:00+00' }],
+    ['cleared', { medicalStatusOnFile: 'cleared', medicalStatusId: 'status-c', medicalStatusExpiresAt: null }],
+  ])('%s: the decision is written, with the status row on it and the status in its audit entry', async (_label, onFile) => {
+    mockOnFile.mockResolvedValue(onFile);
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [decisionRow({ medical_status_snapshot_id: onFile.medicalStatusId })] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
-    await recordDecision({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      decisionText: 'Reduce sparring rounds this week.',
-      expectedOutcome: 'Contact exposure ratio trends back under 1.5 within 7 days.',
-      decidedByAccountId: 'coach-1',
-      decidedByRole: 'coach',
-    });
+    await expect(recordDecision(DECISION)).resolves.toMatchObject({ decision_id: 'dec-1' });
 
-    expect(mockAssertMedicalStatusAllows).toHaveBeenCalledWith('org-1', 'athlete-1');
-  });
-
-  // The guard runs before the transaction opens, so a blocked athlete leaves no
-  // partial write behind -- true for an ordinary decision, not only a
-  // medically-worded one.
-  test('an ordinary decision is blocked, and written, only per the clearance record', async () => {
-    mockAssertMedicalStatusAllows.mockRejectedValueOnce(new MedicalStatusBlockedError('no_record'));
-
-    await expect(recordDecision({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      decisionText: 'Add 10 minutes of footwork drills.',
-      expectedOutcome: 'Work-rate consistency improves next session.',
-      decidedByAccountId: 'coach-1',
-      decidedByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
-  });
-
-  test('propagates MedicalStatusBlockedError before any write when medically sensitive and blocked', async () => {
-    mockAssertMedicalStatusAllows.mockRejectedValueOnce(new MedicalStatusBlockedError('restricted'));
-
-    await expect(recordDecision({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      decisionText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      decidedByAccountId: 'coach-1',
-      decidedByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
+    expect(mockOnFile).toHaveBeenCalledWith('org-1', 'athlete-1');
+    const [, params] = clientQuery.mock.calls[0];
+    expect((params as unknown[])[7]).toBe(onFile.medicalStatusId);
+    expect(mockWriteAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: 'recorded',
+      afterState: expect.objectContaining(onFile),
+    }));
   });
 
   test('throws RecommendationNotActionableError when the referenced recommendation is not provisional or accepted', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [{ status: 'expired' }] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
-    await expect(recordDecision({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationId: 'rec-1',
-      decisionText: 'Act on the expired recommendation.',
-      expectedOutcome: 'Should not happen.',
-      decidedByAccountId: 'coach-1',
-      decidedByRole: 'coach',
-    })).rejects.toBeInstanceOf(RecommendationNotActionableError);
+    await expect(recordDecision({ ...DECISION, recommendationId: 'rec-1' })).rejects.toBeInstanceOf(RecommendationNotActionableError);
   });
 
   test('allows recording a decision against a still-provisional recommendation', async () => {
@@ -124,15 +95,7 @@ describe('recordDecision', () => {
       .mockResolvedValueOnce({ rows: [decisionRow({ recommendation_id: 'rec-1' })] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
-    const result = await recordDecision({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationId: 'rec-1',
-      decisionText: 'Reduce sparring rounds this week.',
-      expectedOutcome: 'Contact exposure ratio trends back under 1.5 within 7 days.',
-      decidedByAccountId: 'coach-1',
-      decidedByRole: 'coach',
-    });
+    const result = await recordDecision({ ...DECISION, recommendationId: 'rec-1' });
 
     expect(result.recommendation_id).toBe('rec-1');
     expect(mockWriteAudit).toHaveBeenCalledTimes(1);
@@ -158,14 +121,44 @@ describe('getDecisionAthleteId', () => {
 });
 
 describe('listDecisions', () => {
-  test('scopes to the given organization and athlete, newest first', async () => {
-    mockQuery.mockResolvedValueOnce([decisionRow()]);
+  test('scopes to the given organization and athlete, newest first, reading the status row in the same gym', async () => {
+    mockQuery.mockResolvedValueOnce([{ ...decisionRow(), snapshot_status: null, snapshot_expires_at: null }]);
 
     const results = await listDecisions('org-1', 'athlete-1');
 
     expect(results).toHaveLength(1);
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(String(sql)).toContain('order by decided_at desc');
+    expect(String(sql)).toContain('order by d.decided_at desc');
+    expect(String(sql)).toContain('s.organization_id = d.organization_id');
     expect(params).toEqual(['org-1', 'athlete-1']);
+  });
+
+  test('each decision carries the status that was on file when it was recorded, as of that moment', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { ...decisionRow({ decision_id: 'none' }), snapshot_status: null, snapshot_expires_at: null },
+      { ...decisionRow({ decision_id: 'pending', medical_status_snapshot_id: 's-p' }), snapshot_status: 'pending', snapshot_expires_at: null },
+      // Cleared until Oct 1; decided Sep 1: it was cleared then, whatever today says.
+      {
+        ...decisionRow({ decision_id: 'cleared-then', medical_status_snapshot_id: 's-c', decided_at: '2026-09-01T10:00:00.000Z' }),
+        snapshot_status: 'cleared',
+        snapshot_expires_at: '2026-10-01 16:00:00+00',
+      },
+      // The same clearance, decided after it ran out.
+      {
+        ...decisionRow({ decision_id: 'lapsed-then', medical_status_snapshot_id: 's-c', decided_at: '2026-10-05T10:00:00.000Z' }),
+        snapshot_status: 'cleared',
+        snapshot_expires_at: '2026-10-01 16:00:00+00',
+      },
+    ]);
+
+    const results = await listDecisions('org-1', 'athlete-1');
+
+    expect(results.map((row) => [row.decision_id, row.medical_status_on_file, row.medical_status_expires_at])).toEqual([
+      ['none', 'no_record', null],
+      ['pending', 'pending', null],
+      ['cleared-then', 'cleared', '2026-10-01 16:00:00+00'],
+      ['lapsed-then', 'cleared_expired', '2026-10-01 16:00:00+00'],
+    ]);
+    expect(results[0]).not.toHaveProperty('snapshot_status');
   });
 });

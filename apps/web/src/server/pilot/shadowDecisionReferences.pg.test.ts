@@ -130,8 +130,8 @@ beforeAll(async () => {
   for (const file of SHADOW_RUNTIME_MIGRATION_FILES) {
     await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, file), 'utf8'));
   }
-  // recordDecision checks the athlete's medical clearance first, and that
-  // read needs expires_at.
+  // recordDecision reads the athlete's medical status to record it with the
+  // decision (issue #1474), and that read needs expires_at.
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_medical_clearance_expiry_migration.sql'), 'utf8'),
   );
@@ -157,8 +157,9 @@ beforeAll(async () => {
   await athlete(ORG_ID, ATHLETE_ID, COACH_ID);
   await athlete(ORG_ID, OTHER_ATHLETE_ID, COACH_ID);
   await athlete(OTHER_ORG_ID, ATHLETE_ID, OTHER_COACH_ID);
-  // Cleared, so a refusal below can only come from the reference check and
-  // never from the clearance gate that runs ahead of it.
+  // A status on file for the reference cases below. The medical status no
+  // longer refuses anything (issue #1474), so a refusal there can only come
+  // from the reference check.
   await migrateClient.query(
     `insert into pilot.shadow_medical_administrative_status
        (organization_id, athlete_id, status, set_by_account_id, set_by_role)
@@ -309,5 +310,124 @@ describe('flagNearMiss: the referenced decision must be about the same athlete',
       detectedByRole: 'coach',
     });
     expect(row.decision_id).toBeNull();
+  });
+});
+
+// Issue #1474 (Jason, OD-2026-10-10-004 to -007: "let the coach make those
+// assements"). A decision, and creating or deciding a recommendation, is never
+// refused for the athlete's medical administrative status. The status on file
+// is stored with the record: the decision row's medical_status_snapshot_id and
+// the audit entry's after_state. Run against real SQL, so the stored snapshot
+// and the joined read-back are the database's, not a mock's.
+describe('the medical status on file is recorded with the decision, never a reason to refuse it', () => {
+  const STATES: Array<[string, string | null, string]> = [
+    // [athlete, stored status (null = none), what was on file]
+    ['ATH-MS-NONE', null, 'no_record'],
+    ['ATH-MS-PENDING', 'pending', 'pending'],
+    ['ATH-MS-NOTCLEARED', 'not_cleared', 'not_cleared'],
+    ['ATH-MS-RESTRICTED', 'restricted', 'restricted'],
+    ['ATH-MS-LAPSED', 'cleared-lapsed', 'cleared_expired'],
+  ];
+  const statusIds = new Map<string, string | null>();
+  let recommendations: typeof import('./shadowRecommendations');
+
+  beforeAll(async () => {
+    recommendations = await import('./shadowRecommendations');
+    for (const [athleteId, stored] of STATES) {
+      await db.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, $2, '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_ID, athleteId, COACH_ID],
+      );
+      if (stored === null) {
+        statusIds.set(athleteId, null);
+        continue;
+      }
+      const row = await db.queryOne<{ status_id: string }>(
+        `insert into pilot.shadow_medical_administrative_status
+           (organization_id, athlete_id, status, set_by_account_id, set_by_role, effective_at, expires_at)
+         values ($1, $2, $3, $4, 'coach', now() - interval '10 days',
+                 case when $5::boolean then now() - interval '1 day' else null end)
+         returning status_id`,
+        [ORG_ID, athleteId, stored === 'cleared-lapsed' ? 'cleared' : stored, COACH_ID, stored === 'cleared-lapsed'],
+      );
+      statusIds.set(athleteId, row?.status_id ?? null);
+    }
+  });
+
+  const auditAfter = async (entityType: string, entityId: string) => (await db.queryOne<{ after_state: Record<string, unknown> }>(
+    `select after_state from pilot.shadow_audit_entries
+     where organization_id = $1 and entity_type = $2 and entity_id = $3
+     order by created_at desc limit 1`,
+    [ORG_ID, entityType, entityId],
+  ))?.after_state;
+
+  test.each(STATES)('%s: the decision is recorded, carrying the status that was on file', async (athleteId, _stored, word) => {
+    const row = await decisions.recordDecision({
+      organizationId: ORG_ID,
+      athleteId,
+      decisionText: 'Easy skipping only today; recheck next session.',
+      expectedOutcome: 'Calf tightness settles by next session.',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    });
+
+    expect(row.medical_status_snapshot_id).toBe(statusIds.get(athleteId));
+    expect(await auditAfter('decision', row.decision_id)).toMatchObject({
+      medicalStatusOnFile: word,
+      medicalStatusId: statusIds.get(athleteId),
+    });
+    const [listed] = await decisions.listDecisions(ORG_ID, athleteId);
+    expect(listed).toMatchObject({ decision_id: row.decision_id, medical_status_on_file: word });
+  });
+
+  test('a recommendation is created and decided for an athlete with no status on file, each audit naming it', async () => {
+    const created = await recommendations.createProvisionalRecommendation({
+      organizationId: ORG_ID,
+      athleteId: 'ATH-MS-NONE',
+      recommendationText: 'Light skipping only.',
+      expectedOutcome: 'No pain next session.',
+      createdByAccountId: COACH_ID,
+      createdByRole: 'coach',
+    });
+    expect(await auditAfter('recommendation', created.recommendation_id)).toMatchObject({ medicalStatusOnFile: 'no_record' });
+
+    const decided = await recommendations.decideOnRecommendation({
+      organizationId: ORG_ID,
+      athleteId: 'ATH-MS-NONE',
+      recommendationId: created.recommendation_id,
+      decision: 'accepted',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    });
+    expect(decided?.status).toBe('accepted');
+    expect(await auditAfter('recommendation', created.recommendation_id)).toMatchObject({
+      status: 'accepted',
+      medicalStatusOnFile: 'no_record',
+    });
+  });
+
+  // Control: something on this path still refuses, so the cases above cannot
+  // pass by nothing ever refusing.
+  test('citing a lapsed recommendation is still refused, and nothing is written', async () => {
+    const lapsed = await db.queryOne<{ recommendation_id: string }>(
+      `insert into pilot.shadow_recommendations
+         (organization_id, athlete_id, recommendation_text, expected_outcome, status, created_by_account_id, expires_at)
+       values ($1, 'ATH-MS-PENDING', 'Old idea', 'n/a', 'expired', $2, now() - interval '1 day')
+       returning recommendation_id`,
+      [ORG_ID, COACH_ID],
+    );
+    const before = await count('shadow_decisions');
+
+    await expect(decisions.recordDecision({
+      organizationId: ORG_ID,
+      athleteId: 'ATH-MS-PENDING',
+      recommendationId: lapsed?.recommendation_id,
+      decisionText: 'Act on the old idea.',
+      expectedOutcome: 'n/a',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    })).rejects.toBeInstanceOf(decisions.RecommendationNotActionableError);
+    expect(await count('shadow_decisions')).toBe(before);
   });
 });

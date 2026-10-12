@@ -137,7 +137,9 @@ test('no clearance record reads as an action state, not as quiet', async () => {
   render(<SportsMedicinePage />);
 
   await screen.findByText('no record');
-  expect(screen.getByText(/medical gate blocks recommendations/)).toBeTruthy();
+  expect(screen.getByText('No clearance record on file. The office sets one during onboarding.')).toBeTruthy();
+  // Recommendations and decisions are not refused for it (issue #1474).
+  expect(screen.queryByText(/gate blocks/)).toBeNull();
 });
 
 test('a failed clearance read says unknown is not cleared', async () => {
@@ -1427,7 +1429,8 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
  * date: OD-2026-10-01-007 section 4.
  */
 describe('a lapsed clearance beside a current one', () => {
-  const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+  // Issue #1474: the sentence no longer claims recommendations are blocked.
+  const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts.';
   const CURRENT = { athlete_id: 'ath-1', full_name: 'Jordan Doe' };
   const LAPSED = { athlete_id: 'ath-2', full_name: 'Sam Roe' };
   const LAPSED_STATUS = {
