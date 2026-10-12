@@ -10354,7 +10354,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "coachingContentAccess.ts:93 lists every role except board. Reads the gym's session-script (practice plan) library; no athlete identifiers. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in sessionScriptProjection.ts (no author account id, source document or coach teaching text; issue #1475).",
+    "notes": "coachingContentAccess.ts:93 lists every role except board. Reads the gym's session-script (practice plan) library; no athlete identifiers. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in sessionScriptProjection.ts (no author account id, source document or coach-written text; issue #1475).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13750,7 +13750,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes; issue #1475).",
+    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes or other coach-written text; issue #1475).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

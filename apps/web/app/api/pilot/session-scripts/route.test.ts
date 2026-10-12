@@ -297,8 +297,8 @@ describe('what each reader receives', () => {
     total_minutes: 90,
     contact_structure: 'controlled',
     target_group: 'Competition team',
-    prerequisite_note: 'Cleared for contact',
-    reset_protocol: 'Two-minute reset',
+    prerequisite_note: `${MARK} prerequisite`,
+    reset_protocol: `${MARK} reset`,
     coach_priorities: `${MARK} priorities`,
     frequent_phrases: `${MARK} phrases`,
     authoring_state: 'approved',
@@ -315,7 +315,7 @@ describe('what each reader receives', () => {
     block_order: 1,
     start_offset_min: 0,
     end_offset_min: 10,
-    block_label: 'Arrival',
+    block_label: `${MARK} label`,
     what_to_say: `${MARK} say`,
     what_to_explain: `${MARK} explain`,
     what_to_watch: `${MARK} watch`,
@@ -360,6 +360,10 @@ describe('what each reader receives', () => {
     'what_to_explain',
     'what_to_watch',
     'what_to_fix',
+    // The coach's other free text (Jason, 2026-10-12: "strip them").
+    'prerequisite_note',
+    'reset_protocol',
+    'block_label',
   ];
 
   const READER_SCRIPT_KEYS = [
@@ -375,8 +379,6 @@ describe('what each reader receives', () => {
     'total_minutes',
     'contact_structure',
     'target_group',
-    'prerequisite_note',
-    'reset_protocol',
     'authoring_state',
     'created_at',
     'updated_at',
@@ -389,7 +391,6 @@ describe('what each reader receives', () => {
     'block_order',
     'start_offset_min',
     'end_offset_min',
-    'block_label',
     'block_kind',
     'drill_id',
     'scale_level',

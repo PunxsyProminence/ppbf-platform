@@ -358,7 +358,7 @@ describe('what each reader receives', () => {
     difficulty: 'intermediate',
     age_band: '13-15',
     duration_minutes: 60,
-    intent: 'Jab defence',
+    intent: `${MARK} intent`,
     coach_notes: `${MARK} coach notes`,
     requires_coach_authorization: false,
     active: true,
@@ -375,7 +375,7 @@ describe('what each reader receives', () => {
     ordinal: 1,
     block: 'warmup',
     drill_id: 'drl-1',
-    free_text_drill: null,
+    free_text_drill: `${MARK} free text drill`,
     scale_level: 'B',
     duration_minutes: 10,
     rep_count: null,
@@ -391,7 +391,16 @@ describe('what each reader receives', () => {
   // coach's screen: a full-row reader gets it, nobody else does.
   const STORED_DETAIL = { template: STORED_TEMPLATE, items: [STORED_ITEM], coach_only_extra: `${MARK} extra` };
 
-  const STAFF_FIELDS = ['created_by_account_id', 'created_by_role', 'coach_notes', 'coach_note'];
+  // The last two are the coach's other free text (Jason, 2026-10-12: "strip
+  // them").
+  const STAFF_FIELDS = [
+    'created_by_account_id',
+    'created_by_role',
+    'coach_notes',
+    'coach_note',
+    'intent',
+    'free_text_drill',
+  ];
 
   const READER_TEMPLATE_KEYS = [
     'organization_id',
@@ -405,7 +414,6 @@ describe('what each reader receives', () => {
     'difficulty',
     'age_band',
     'duration_minutes',
-    'intent',
     'requires_coach_authorization',
     'active',
     'created_at',
@@ -419,7 +427,6 @@ describe('what each reader receives', () => {
     'ordinal',
     'block',
     'drill_id',
-    'free_text_drill',
     'scale_level',
     'duration_minutes',
     'rep_count',
@@ -457,7 +464,7 @@ describe('what each reader receives', () => {
   });
 
   describe.each(REDUCED_ROW_ROLES)('%s', (role) => {
-    test('lists templates without the author, the author role or the coach notes', async () => {
+    test('lists templates without the author, the author role, the coach notes or the intent', async () => {
       mockRequirePrincipal.mockResolvedValue(principal({ role }));
 
       const response = await GET(getRequest());
@@ -474,10 +481,9 @@ describe('what each reader receives', () => {
       expect(text).not.toContain(MARK);
       // What is left is the stored value, not a placeholder.
       expect(body.templates[0].name).toBe('Monday technical');
-      expect(body.templates[0].intent).toBe('Jab defence');
     });
 
-    test('reads one template without them, and its items without the coach note', async () => {
+    test('reads one template without them, and its items without the coach note or the free-text drill', async () => {
       mockRequirePrincipal.mockResolvedValue(principal({ role }));
 
       const response = await GET(getRequest('template_id=tpl-1'));

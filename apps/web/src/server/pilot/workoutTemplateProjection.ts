@@ -19,6 +19,9 @@ import type {
 // internal account id. No family screen reads this route today, so nothing is
 // put in the id's place.
 //
+// The coach's other free text goes with it (Jason, 2026-10-12: "strip them"):
+// a template's intent and an item's free_text_drill are also typed by a coach.
+//
 // Only the types are imported from workoutTemplates.ts, so this file does not
 // load that module (or anything it imports) at runtime.
 
@@ -50,7 +53,6 @@ export type ReaderVisibleWorkoutTemplate = Pick<
   | 'difficulty'
   | 'age_band'
   | 'duration_minutes'
-  | 'intent'
   | 'requires_coach_authorization'
   | 'active'
   | 'created_at'
@@ -65,7 +67,6 @@ export type ReaderVisibleWorkoutTemplateItem = Pick<
   | 'ordinal'
   | 'block'
   | 'drill_id'
-  | 'free_text_drill'
   | 'scale_level'
   | 'duration_minutes'
   | 'rep_count'
@@ -94,7 +95,6 @@ function projectTemplate(template: WorkoutTemplateRow): ReaderVisibleWorkoutTemp
     difficulty: template.difficulty,
     age_band: template.age_band,
     duration_minutes: template.duration_minutes,
-    intent: template.intent,
     requires_coach_authorization: template.requires_coach_authorization,
     active: template.active,
     created_at: template.created_at,
@@ -110,7 +110,6 @@ function projectItem(item: WorkoutTemplateItemWithDrillHead): ReaderVisibleWorko
     ordinal: item.ordinal,
     block: item.block,
     drill_id: item.drill_id,
-    free_text_drill: item.free_text_drill,
     scale_level: item.scale_level,
     duration_minutes: item.duration_minutes,
     rep_count: item.rep_count,

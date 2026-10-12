@@ -21,7 +21,8 @@ import type {
 // internal account id. No family screen reads this route today, so nothing is
 // put in the id's place, and the coach's teaching text is left out with it
 // (Overwatch on #1475): what a family screen shows of a script is decided
-// when one is built.
+// when one is built. The coach's other free text goes too (Jason, 2026-10-12:
+// "strip them"): prerequisite_note, reset_protocol and each block's label.
 //
 // Only the types are imported from sessionScripts.ts, so this file does not
 // load that module at runtime.
@@ -55,15 +56,13 @@ export type ReaderVisibleSessionScript = Pick<
   | 'total_minutes'
   | 'contact_structure'
   | 'target_group'
-  | 'prerequisite_note'
-  | 'reset_protocol'
   | 'authoring_state'
   | 'created_at'
   | 'updated_at'
 >;
 
-// The running order without what_to_say, what_to_explain, what_to_watch and
-// what_to_fix, which are the coach's lines for the floor.
+// The running order without block_label or what_to_say, what_to_explain,
+// what_to_watch and what_to_fix, which are the coach's own words for the floor.
 export type ReaderVisibleSessionScriptBlock = Pick<
   SessionScriptBlockRow,
   | 'organization_id'
@@ -72,7 +71,6 @@ export type ReaderVisibleSessionScriptBlock = Pick<
   | 'block_order'
   | 'start_offset_min'
   | 'end_offset_min'
-  | 'block_label'
   | 'block_kind'
   | 'drill_id'
   | 'scale_level'
@@ -113,8 +111,6 @@ function projectScript(script: SessionScriptRow): ReaderVisibleSessionScript {
     total_minutes: script.total_minutes,
     contact_structure: script.contact_structure,
     target_group: script.target_group,
-    prerequisite_note: script.prerequisite_note,
-    reset_protocol: script.reset_protocol,
     authoring_state: script.authoring_state,
     created_at: script.created_at,
     updated_at: script.updated_at,
@@ -129,7 +125,6 @@ function projectBlock(block: SessionScriptBlockRow): ReaderVisibleSessionScriptB
     block_order: block.block_order,
     start_offset_min: block.start_offset_min,
     end_offset_min: block.end_offset_min,
-    block_label: block.block_label,
     block_kind: block.block_kind,
     drill_id: block.drill_id,
     scale_level: block.scale_level,

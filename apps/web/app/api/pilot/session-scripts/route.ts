@@ -38,8 +38,8 @@ export const runtime = 'nodejs';
 //
 // WHAT EACH READER RECEIVES is a second question, answered after the gate: a
 // coach or organization admin gets the stored rows, every other admitted role
-// gets them without the author's account id, the source document or the
-// coach's teaching text (sessionScriptProjection.ts). Both branches below go
+// gets them without the author's account id, the source document or any of
+// the coach's own text (sessionScriptProjection.ts). Both branches below go
 // through it.
 export async function GET(request: NextRequest) {
   try {

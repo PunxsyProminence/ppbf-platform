@@ -36,8 +36,9 @@ export const runtime = 'nodejs';
 //
 // WHAT EACH READER RECEIVES is a second question, answered after the gate: a
 // coach or organization admin gets the stored rows, every other admitted role
-// gets them without the author's account id and role or the coach's notes
-// (workoutTemplateProjection.ts). Both branches below go through it.
+// gets them without the author's account id and role, the coach's notes or
+// the coach's other free text (workoutTemplateProjection.ts). Both branches
+// below go through it.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);

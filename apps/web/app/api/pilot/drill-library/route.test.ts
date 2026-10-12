@@ -121,8 +121,8 @@ const DENIED_ROLES: PilotRole[] = ['board'];
  * admitted roles. Where a reference stands in this gym -- including what it
  * retired -- is governance for the people who promote, retire and restore:
  * the three authoring roles, the same three /api/pilot/drills shows retired
- * drills to. Every other admitted reader gets the library in exactly the shape
- * it had before W-D4C, and the lifecycle read never runs for them.
+ * drills to. Every other admitted reader gets the adopted, athlete-safe library
+ * (issue #1475 Part D), and the lifecycle read never runs for them.
  *
  * Listed in full for the same reason as the partition above, and checked
  * against the vocabulary parsed out of contracts.ts below: a new role has to
@@ -751,7 +751,7 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
   });
 
   describe.each(PLAIN_READER_ROLES)('%s (not an author)', (role) => {
-    it('lists in the shape it had before W-D4C, and the lifecycle is never read', async () => {
+    it('lists the adopted, athlete-safe library, and the lifecycle is never read', async () => {
       mockRequirePrincipal.mockResolvedValue(sessionOf(role));
 
       const response = await GET(getRequest(HOSTILE));
@@ -769,7 +769,7 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(mockList).not.toHaveBeenCalled();
     });
 
-    it('reads detail in the shape it had before W-D4C, and the lifecycle is never read', async () => {
+    it('reads the athlete-safe detail, and the lifecycle is never read', async () => {
       mockRequirePrincipal.mockResolvedValue(sessionOf(role));
 
       const response = await GET(getRequest(`drill_id=drl-9&${HOSTILE}`));
