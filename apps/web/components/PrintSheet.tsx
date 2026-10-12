@@ -61,8 +61,9 @@ export interface PrintSheetProps {
 }
 
 // The gym's name and address, from its one profile (#1469, N9-01).
-export const GYM_NAME = currentOrganizationProfile().brand;
-export const GYM_ADDRESS = physicalAddressLine(currentOrganizationProfile());
+const GYM = currentOrganizationProfile();
+export const GYM_NAME = GYM.brand;
+export const GYM_ADDRESS = physicalAddressLine(GYM);
 
 export default function PrintSheet({ eyebrow, title, footNote, children, className = '' }: PrintSheetProps) {
   return (
