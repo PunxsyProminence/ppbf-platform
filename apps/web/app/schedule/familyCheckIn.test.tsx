@@ -170,6 +170,20 @@ describe('family check-in on /schedule (#1524)', () => {
     expect(await screen.findByRole('button', { name: "I'm here" })).toBeInTheDocument();
   });
 
+  test("a parent's picker never opens on a cancelled class", async () => {
+    installFetchMock({
+      role: 'parent',
+      classes: [
+        { ...classRow('class-cancelled', 'Called off', -HOUR), status: 'cancelled' },
+        classRow('class-open', 'Open tonight', HOUR),
+      ],
+      registrations: [registration('class-cancelled', 'athlete-1'), registration('class-open', 'athlete-1')],
+    });
+    await renderPage();
+
+    expect(await screen.findByDisplayValue(/^Open tonight/)).toBeInTheDocument();
+  });
+
   test('a class on another day offers nothing to press', async () => {
     installFetchMock({
       role: 'athlete',
