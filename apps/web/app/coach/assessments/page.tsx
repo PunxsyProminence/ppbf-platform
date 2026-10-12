@@ -18,9 +18,11 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * label. Each rating is one family on one date; each jump is one number on
  * one date. The 1-5 wording is Jason's (2026-10-04, option A).
  *
- * RETEST QUEUE (work order N7-01). The open data-collection requests for the
- * chosen athlete, from GET /api/pilot/data-collection-requests, kept to the
- * two kinds this page records (a physical test, a skill rubric). Rows keep the
+ * RETEST QUEUE (work order N7-01), headed "Open test and rating requests"
+ * because a request may be a first test as well as a retest. The open
+ * data-collection requests for the chosen athlete, from
+ * GET /api/pilot/data-collection-requests, kept to the two kinds this page
+ * records (a physical test, a skill rubric). Rows keep the
  * server's order (priority, then due date, then oldest first) and show the
  * stored due date as it is: the server gives no overdue flag, so this page
  * labels nothing overdue (N7-01-Q1, default C). Read-only: saving a jump here
@@ -155,7 +157,13 @@ export default function CoachAssessmentsPage() {
     }
   }, []);
 
+  // Each queue load is numbered; only the latest may set state, so a late
+  // answer to an earlier selection (even of the same athlete) is dropped.
+  const latestQueue = useRef(0);
+
   const loadQueue = useCallback(async (id: string) => {
+    const request = ++latestQueue.current;
+    const stale = () => latestQueue.current !== request;
     setQueue([]);
     if (!id) {
       setQueueState('idle');
@@ -167,13 +175,14 @@ export default function CoachAssessmentsPage() {
         `${apiBase()}/api/pilot/data-collection-requests?athlete_id=${encodeURIComponent(id)}`,
         { method: 'GET', credentials: 'include' },
       );
+      if (stale()) return;
       if (!response.ok) throw new Error('queue');
       const payload = (await response.json()) as { requests?: RetestRequest[] };
-      if (currentAthlete.current !== id) return;
+      if (stale()) return;
       setQueue((payload.requests ?? []).filter((r) => r.athlete_id === id && RETEST_KINDS.has(r.request_kind)));
       setQueueState('loaded');
     } catch {
-      if (currentAthlete.current !== id) return;
+      if (stale()) return;
       setQueueState('unavailable');
     }
   }, []);
@@ -334,11 +343,11 @@ export default function CoachAssessmentsPage() {
 
         {athleteId && queueState !== 'idle' && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]">
-            <h2 className="t-eyebrow">Retest queue{athleteName ? ` for ${athleteName}` : ''}</h2>
+            <h2 className="t-eyebrow">Open test and rating requests{athleteName ? ` for ${athleteName}` : ''}</h2>
             {queueState === 'loading' && <p className="t-body">Loading…</p>}
             {queueState === 'unavailable' && (
               <p role="alert" className="t-body text-[color:var(--restricted-ink)]">
-                The retest queue could not be loaded. Open requests may exist that are not shown here.
+                The open requests could not be loaded. Open requests may exist that are not shown here.
               </p>
             )}
             {queueState === 'loaded' && queue.length === 0 && (

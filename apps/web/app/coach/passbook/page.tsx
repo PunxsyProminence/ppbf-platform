@@ -73,13 +73,15 @@ export default function CoachPassbookPage() {
   const [book, setBook] = useState<Passbook | null>(null);
   const [bookState, setBookState] = useState<BookState>('idle');
 
-  // The athlete whose book is wanted. A response for anyone else (a slow load
-  // for an athlete the coach has since switched away from) is dropped, so one
-  // athlete's book never renders under another's name.
-  const currentAthlete = useRef('');
+  // The latest selection. A response to any earlier one (a slow load for an
+  // athlete the coach has since switched away from, or an older request for
+  // the same athlete) is dropped, so one athlete's book never renders under
+  // another's name and a late failure never hides a newer book.
+  const latestRequest = useRef(0);
 
   const selectAthlete = useCallback(async (id: string) => {
-    currentAthlete.current = id;
+    const request = ++latestRequest.current;
+    const stale = () => latestRequest.current !== request;
     setAthleteId(id);
     setBook(null);
     if (!id) {
@@ -92,8 +94,8 @@ export default function CoachPassbookPage() {
         method: 'GET',
         credentials: 'include',
       });
-      if (currentAthlete.current !== id) return;
-      if (response.status === 401 || response.status === 403) {
+      if (stale()) return;
+      if (response.status === 403) {
         setBookState('refused');
         return;
       }
@@ -103,13 +105,13 @@ export default function CoachPassbookPage() {
       }
       if (!response.ok) throw new Error('passbook');
       const payload = (await response.json()) as { passbook?: Passbook };
-      if (currentAthlete.current !== id) return;
+      if (stale()) return;
       // A book for a different athlete than the one asked for is not shown.
       if (!payload.passbook?.pages || payload.passbook.athlete?.athlete_id !== id) throw new Error('passbook');
       setBook(payload.passbook);
       setBookState('loaded');
     } catch {
-      if (currentAthlete.current !== id) return;
+      if (stale()) return;
       setBookState('unavailable');
     }
   }, []);
@@ -153,7 +155,7 @@ export default function CoachPassbookPage() {
           <p className="t-eyebrow">Records</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Passbook</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            One athlete&apos;s book: attendance, sessions, readiness, goals, their corner and open gaps.
+            One athlete&apos;s book: attendance, sessions, readiness, goals, their corner and progression gaps.
           </p>
         </header>
 
@@ -179,7 +181,7 @@ export default function CoachPassbookPage() {
             </p>
           )}
           {rosterState === 'loaded' && athletes.length === 0 && (
-            <p className="t-body text-[color:var(--bone-300)]">No athletes are on your list.</p>
+            <p className="t-body text-[color:var(--bone-300)]">No athletes are available to choose.</p>
           )}
           {bookState === 'loading' && <p className="t-body">Loading…</p>}
           {bookState === 'refused' && (

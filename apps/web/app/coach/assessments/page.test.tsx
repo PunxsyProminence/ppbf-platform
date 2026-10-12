@@ -216,7 +216,7 @@ test('a truncated history says so', async () => {
 });
 
 function queueSection(name: string) {
-  return screen.getByRole('heading', { name: `Retest queue for ${name}` }).closest('section')!;
+  return screen.getByRole('heading', { name: `Open test and rating requests for ${name}` }).closest('section')!;
 }
 
 test('the retest queue asks for the chosen athlete only and keeps tests and ratings in the server\'s order', async () => {
@@ -243,7 +243,7 @@ test('no request is fetched before an athlete is chosen', async () => {
   render(<CoachAssessmentsPage />);
   await act(async () => {});
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('data-collection-requests'))).toBe(false);
-  expect(screen.queryByRole('heading', { name: /Retest queue/ })).toBeNull();
+  expect(screen.queryByRole('heading', { name: /Open test and rating requests/ })).toBeNull();
 });
 
 test('a request about another athlete is never listed under this one', async () => {
@@ -268,7 +268,7 @@ test('a queue that fails to load is not shown as empty, and a refusal shows noth
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
     });
     const section = queueSection('Ana Boxer');
-    expect(section.textContent).toContain('The retest queue could not be loaded.');
+    expect(section.textContent).toContain('The open requests could not be loaded.');
     expect(section.textContent).not.toContain('No open test or rating requests');
     expect(section.textContent).not.toContain('Retest broad jump');
     view.unmount();
@@ -289,4 +289,26 @@ test('a slow queue for the previous athlete never renders under the new one', as
   await act(async () => { release(); });
   expect(queueSection('Ben Boxer').textContent).toContain('No open test or rating requests for this athlete.');
   expect(document.body.textContent).not.toContain('Retest broad jump');
+});
+
+test('a late failure from an earlier pick never hides the newer queue for the same athlete', async () => {
+  let release!: () => void;
+  holdQueueAna = new Promise<void>((resolve) => { release = resolve; });
+  queueResponse = { status: 500, body: {} };
+  render(<CoachAssessmentsPage />);
+  await act(async () => {});
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+  });
+  holdQueueAna = null;
+  queueResponse = { status: 200, body: { requests: QUEUE } };
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+  });
+  await act(async () => { release(); });
+  expect(queueSection('Ana Boxer').textContent).toContain('Retest broad jump');
+  expect(queueSection('Ana Boxer').textContent).not.toContain('could not be loaded');
 });

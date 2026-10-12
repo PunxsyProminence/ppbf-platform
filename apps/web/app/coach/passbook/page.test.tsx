@@ -42,11 +42,12 @@ function book(athleteId: string, name: string) {
         { attendance_id: 'a1', attendance_date: '2026-10-01', status: 'present', canonical_status: 'present', stamp_code: 'PRESENT', domain_status: 'canonical', notes: 'Came early' },
       ],
       sessions: [
+        // rpe is nullable in the type (session_rpe_semantics migration); kept to pin the 'not recorded' branch.
         { session_id: 's1', date: '2026-10-01', rpe: null, notes: 'Felt slow', completed_flag: true },
         { session_id: 's2', date: '2026-09-28', rpe: 6, completed_flag: false },
       ],
       readiness: [{ readiness_id: 'rd1', score: 72, category: 'green', measured_at: '2026-10-01' }],
-      goals: [],
+      goals: [{ goal_id: 'go1', title: 'Make weight', target_date: '2026-11-15', metric: 'kg', status: 'active' }],
       corner: {
         coach: { account_id: 'coach.login@example.org' },
         guardians: [{ parent_id: 'p1', full_name: 'Pat Parent', relationship_to_athlete: 'mother' }],
@@ -55,7 +56,7 @@ function book(athleteId: string, name: string) {
         ],
       },
       progression_gaps: [
-        { gap_id: 'g1', gap_type: 'attendance_drop', gap_description: 'Missed 3 of the last 4 sessions (rule: 3 in 14 days)', severity: 'high', detected_from: 'attendance', status: 'open', created_at: '2026-10-03T00:00:00.000Z' },
+        { gap_id: 'g1', gap_type: 'endurance', gap_description: 'Missed 3 of the last 4 sessions (rule: 3 in 14 days)', severity: 'high', detected_from: 'attendance', status: 'identified', created_at: '2026-10-03T00:00:00.000Z' },
       ],
     },
   };
@@ -63,13 +64,15 @@ function book(athleteId: string, name: string) {
 
 let passbookResponses: Record<string, { status: number; body: unknown }>;
 let holdAna: Promise<void> | null;
+let holdAnaOnce: Promise<void> | null;
 let fetchMock: jest.Mock;
 
 beforeEach(() => {
   holdAna = null;
+  holdAnaOnce = null;
   passbookResponses = {
     'ath-1': { status: 200, body: { passbook: book('ath-1', 'Ana Boxer') } },
-    'ath-2': { status: 200, body: { passbook: { ...book('ath-2', 'Ben Boxer'), pages: { ...book('ath-2', 'Ben Boxer').pages, attendance: [], sessions: [], readiness: [], progression_gaps: [], corner: { coach: {}, guardians: [], observations: [] } } } } },
+    'ath-2': { status: 200, body: { passbook: { ...book('ath-2', 'Ben Boxer'), pages: { ...book('ath-2', 'Ben Boxer').pages, attendance: [], sessions: [], readiness: [], goals: [], progression_gaps: [], corner: { coach: {}, guardians: [], observations: [] } } } } },
   };
   window.history.replaceState(null, '', '/coach/passbook');
   fetchMock = jest.fn(async (input: RequestInfo | URL) => {
@@ -87,6 +90,12 @@ beforeEach(() => {
       const id = decodeURIComponent(match[1]);
       if (id === 'ath-1' && holdAna) await holdAna;
       const r = passbookResponses[id] ?? { status: 404, body: { error: 'Not found' } };
+      if (id === 'ath-1' && holdAnaOnce) {
+        const wait = holdAnaOnce;
+        holdAnaOnce = null;
+        await wait;
+        return respond(500, {});
+      }
       return respond(r.status, r.body);
     }
     return respond(404, {});
@@ -127,9 +136,12 @@ test('opens one athlete\'s book with exactly one athlete_id', async () => {
   expect(text).toContain('Pat Parent (mother)');
   // Gap text is the server's, shown verbatim, rule numbers and all, for staff.
   expect(text).toContain('Missed 3 of the last 4 sessions (rule: 3 in 14 days)');
+  // Date-only columns render as the stored calendar day, not the day before.
+  expect(text).toContain('October 1, 2026: PRESENT');
+  expect(text).toContain('Make weight · kg · by November 15, 2026');
   // An empty page says so instead of vanishing.
-  const goals = screen.getByRole('heading', { name: 'Goals' }).closest('section')!;
-  expect(goals.textContent).toContain('Nothing recorded.');
+  const readiness = screen.getByRole('heading', { name: 'Readiness' }).closest('section')!;
+  expect(readiness.textContent).not.toContain('Nothing recorded.');
 });
 
 test('account ids and date of birth are not rendered', async () => {
@@ -209,4 +221,42 @@ test('a roster that fails to load is not read as having no athletes', async () =
   await act(async () => {});
   expect(screen.getByRole('alert').textContent).toContain('This is not a statement that you have none');
   expect(document.body.textContent).not.toContain('No athletes are on your list.');
+});
+
+test('an empty page of the book says so', async () => {
+  await open('ath-2');
+  const goals = screen.getByRole('heading', { name: 'Goals' }).closest('section')!;
+  expect(goals.textContent).toContain('Nothing recorded.');
+});
+
+test('while a book loads, it says so and shows no page of any book', async () => {
+  let release!: () => void;
+  holdAna = new Promise<void>((resolve) => { release = resolve; });
+  await open();
+  expect(document.body.textContent).toContain('Loading…');
+  expect(screen.queryByRole('heading', { name: 'Attendance' })).toBeNull();
+  await act(async () => { release(); });
+  expect(screen.getByRole('heading', { name: 'Attendance' })).toBeTruthy();
+});
+
+test('a lapsed sign-in (401) is not told it has no access to the athlete', async () => {
+  passbookResponses['ath-1'] = { status: 401, body: { error: 'Unauthorized' } };
+  await open();
+  expect(screen.getByRole('alert').textContent).toContain('This passbook could not be loaded.');
+  expect(document.body.textContent).not.toContain('You do not have access');
+});
+
+test('a late failure from an earlier pick never hides a newer book for the same athlete', async () => {
+  let release!: () => void;
+  holdAnaOnce = new Promise<void>((resolve) => { release = resolve; });
+  await open('ath-1');
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+  });
+  await act(async () => { release(); });
+  expect(screen.getByRole('heading', { name: 'Ana Boxer' })).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
 });
