@@ -176,8 +176,24 @@ beforeAll(async () => {
      values ($1, 'blk-1', 'scr-1', 1, 0, 10, 'warm-up', 'cue')`,
     [ORG],
   );
-  // A live scripted run from before the migration: it must come through untouched.
+  // Rows from before the migration, one of each shape production can hold: a live scripted run,
+  // a settled scripted run, and a pre-tracking legacy row (run_state NULL). Each must come through
+  // the new checks untouched (review 1 #4).
   await insertRun({ runId: 'run-before', scriptId: 'scr-1', scriptVersion: 1, coach: OTHER_COACH, blockId: 'blk-1' });
+  await client.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id,
+        delivered_on, run_state, started_at, ended_at, current_block_id, paused_seconds)
+     values ($1, 'run-before-settled', 'scr-1', 1, $2, current_date - 1, 'completed',
+             now() - interval '1 day', now() - interval '1 day' + interval '1 hour', null, 0)`,
+    [ORG, COACH],
+  );
+  await client.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on)
+     values ($1, 'run-before-legacy', 'scr-1', 1, $2, current_date - 30)`,
+    [ORG, COACH],
+  );
 });
 
 afterAll(async () => {
@@ -215,8 +231,15 @@ describe('session run plain migration against real Postgres', () => {
       { column_name: 'script_id', is_nullable: 'YES' },
       { column_name: 'script_version', is_nullable: 'YES' },
     ]);
-    const before = await client.query(`select script_id, script_version, run_state, current_block_id from pilot.session_script_runs where run_id = 'run-before'`);
-    expect(before.rows).toEqual([{ script_id: 'scr-1', script_version: 1, run_state: 'in_progress', current_block_id: 'blk-1' }]);
+    const before = await client.query(
+      `select run_id, script_id, script_version, run_state, current_block_id from pilot.session_script_runs
+       where run_id like 'run-before%' order by run_id`,
+    );
+    expect(before.rows).toEqual([
+      { run_id: 'run-before', script_id: 'scr-1', script_version: 1, run_state: 'in_progress', current_block_id: 'blk-1' },
+      { run_id: 'run-before-legacy', script_id: 'scr-1', script_version: 1, run_state: null, current_block_id: null },
+      { run_id: 'run-before-settled', script_id: 'scr-1', script_version: 1, run_state: 'completed', current_block_id: null },
+    ]);
   });
 
   test('a live plain session is stored: no script, no version, no cursor', async () => {
@@ -274,19 +297,21 @@ describe('session run plain migration against real Postgres', () => {
       '',
     );
     expect(withoutNoCursor).not.toBe(plainSql);
+    // Both dropped. The cut-down file re-adds the pair check before readiness refuses, so finding
+    // it still absent afterwards proves the refused attempt rolled back (review 1 #3).
     await client.query('alter table pilot.session_script_runs drop constraint pilot_ssrun_plain_no_cursor');
+    await client.query('alter table pilot.session_script_runs drop constraint pilot_ssrun_script_pair');
 
     await expect(applyPlain(client, withoutNoCursor)).rejects.toThrow('SESSION_RUN_PLAIN_NOT_READY');
 
-    // Rolled back: still missing, until the real file runs.
-    const missing = await client.query(
-      `select count(*)::int as n from pg_constraint where conname = 'pilot_ssrun_plain_no_cursor' and conrelid = to_regclass('pilot.session_script_runs')`,
-    );
-    expect(missing.rows[0].n).toBe(0);
+    const count = async (name: string) => (await client.query(
+      `select count(*)::int as n from pg_constraint where conname = $1 and conrelid = to_regclass('pilot.session_script_runs')`,
+      [name],
+    )).rows[0].n;
+    expect(await count('pilot_ssrun_plain_no_cursor')).toBe(0);
+    expect(await count('pilot_ssrun_script_pair')).toBe(0);
     await applyPlain(client, plainSql);
-    const restored = await client.query(
-      `select count(*)::int as n from pg_constraint where conname = 'pilot_ssrun_plain_no_cursor' and conrelid = to_regclass('pilot.session_script_runs')`,
-    );
-    expect(restored.rows[0].n).toBe(1);
+    expect(await count('pilot_ssrun_plain_no_cursor')).toBe(1);
+    expect(await count('pilot_ssrun_script_pair')).toBe(1);
   });
 });
