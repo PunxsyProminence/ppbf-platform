@@ -490,7 +490,7 @@ export default function SessionScriptLiveDelivery({
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
           reads as a refused session action. */}
-      <RoundTimerControls runId={run.run_id} />
+      <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
 
       {actionError && (
         <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">

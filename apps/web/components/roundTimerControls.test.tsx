@@ -91,7 +91,7 @@ describe('round timer controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Set rounds' }));
     await settle();
     expect(posts()).toEqual([{ action: 'configure', round_seconds: 120, rest_seconds: 30, rounds_total: 5 }]);
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Ready');
     // Setting rounds never starts them.
     expect(screen.getByRole('button', { name: 'Start rounds' })).toBeInTheDocument();
   });
@@ -112,7 +112,7 @@ describe('round timer controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
     await settle();
     expect(posts()).toEqual([{ action: 'start' }]);
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Round 1 of 3 · Work · 3:00 left');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 1 of 3 · Work · 3:00 left');
     expect(screen.getByRole('button', { name: 'Pause rounds' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set rounds' })).toBeNull();
   });
@@ -124,7 +124,7 @@ describe('round timer controls', () => {
     act(() => {
       jest.advanceTimersByTime(2000);
     });
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('0:01 left');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('0:01 left');
     expect(fetchMock.mock.calls.length).toBe(reads);
     held = timer({ state: 'running', phase: 'rest', round: 1, seconds_left: 60 });
     act(() => {
@@ -132,7 +132,7 @@ describe('round timer controls', () => {
     });
     await settle();
     expect(fetchMock.mock.calls.length).toBe(reads + 1);
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Round 1 of 3 · Rest · 1:00 left');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 1 of 3 · Rest · 1:00 left');
     expect(posts()).toEqual([]);
   });
 
@@ -144,7 +144,7 @@ describe('round timer controls', () => {
       jest.advanceTimersByTime(10_000);
     });
     await settle();
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Round 2 of 3 · Work · Paused at 1:30');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 2 of 3 · Work · Paused at 1:30');
     expect(screen.getByRole('button', { name: 'Resume rounds' })).toBeInTheDocument();
   });
 
@@ -174,14 +174,93 @@ describe('round timer controls', () => {
     await settle();
   });
 
-  test('a refusal shows the server code and keeps the last state the server gave', async () => {
+  test('a refusal shows the server code, and the screen re-reads the timer so it matches the server', async () => {
     held = timer();
-    answer = () => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409);
+    answer = () => json({ error: 'ROUND_TIMER_PAUSED' }, 409);
     await renderControls();
+    const reads = fetchMock.mock.calls.length;
+    held = timer({ state: 'paused', phase: 'work', round: 1, seconds_left: 70, is_paused: true });
     fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
     await settle();
-    expect(screen.getByRole('alert')).toHaveTextContent('The server refused: SESSION_RUN_NOT_LIVE');
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Ready');
+    expect(screen.getByRole('alert')).toHaveTextContent('The server refused: ROUND_TIMER_PAUSED');
+    expect(fetchMock.mock.calls.length).toBe(reads + 2);
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Paused at 1:10');
+    expect(screen.getByRole('button', { name: 'Resume rounds' })).toBeInTheDocument();
+  });
+
+  test.each(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND'])('%s on a press hands over to the live screen, not a raw code', async (code) => {
+    const onRunNotLive = jest.fn();
+    held = timer();
+    answer = () => json({ error: code }, code === 'SESSION_RUN_NOT_FOUND' ? 404 : 409);
+    render(<RoundTimerControls runId="ssrun_1" onRunNotLive={onRunNotLive} />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
+    await settle();
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a read answering that the run is no longer live hands over to the live screen', async () => {
+    const onRunNotLive = jest.fn();
+    held = timer({ state: 'running', phase: 'work', round: 1, seconds_left: 50 });
+    render(<RoundTimerControls runId="ssrun_1" onRunNotLive={onRunNotLive} />);
+    await settle();
+    fetchMock.mockImplementation(async () => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409));
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    await settle();
+    expect(onRunNotLive).toHaveBeenCalled();
+  });
+
+  test('at 0:00 the screen asks the server once, and a failing server is not asked every second', async () => {
+    held = timer({ state: 'running', phase: 'work', round: 1, seconds_left: 2 });
+    await renderControls();
+    fetchMock.mockImplementation(async () => json({ error: 'X' }, 503));
+    const reads = fetchMock.mock.calls.length;
+    for (let i = 0; i < 6; i += 1) {
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      await settle();
+    }
+    expect(fetchMock.mock.calls.length).toBe(reads + 1);
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('0:00 left');
+    expect(screen.getByText('Last reading -- the server could not be reached just now.')).toBeInTheDocument();
+  });
+
+  test('a read that started before a Start, and answers after it, does not put "Ready" back', async () => {
+    held = timer();
+    await renderControls();
+    let releaseRead: (value: Response) => void = () => {};
+    fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return json({ timer: timer({ state: 'running', phase: 'work', round: 1, seconds_left: 180 }) });
+      return new Promise<Response>((resolve) => { releaseRead = resolve; });
+    });
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
+    await settle();
+    releaseRead(json({ timer: timer() }));
+    await settle();
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 1 of 3 · Work');
+    expect(screen.queryByRole('button', { name: 'Start rounds' })).toBeNull();
+  });
+
+  test('all rounds done: no Pause, End is offered', async () => {
+    held = timer({ state: 'running', phase: 'done', round: 3, seconds_left: 0 });
+    await renderControls();
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('All rounds done');
+    expect(screen.queryByRole('button', { name: 'Pause rounds' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'End rounds' })).toBeInTheDocument();
+  });
+
+  test('the round and phase are announced politely, without the ticking seconds', async () => {
+    held = timer({ state: 'running', phase: 'rest', round: 2, seconds_left: 40 });
+    await renderControls();
+    expect(screen.getByRole('status')).toHaveTextContent('Round 2 of 3, Rest');
+    expect(screen.getByRole('status').textContent).not.toMatch(/\d:\d\d/);
   });
 
   test('a failed first read says so, never "no rounds set"', async () => {
@@ -195,7 +274,7 @@ describe('round timer controls', () => {
   test('ended: offers Set rounds for another set, and no End', async () => {
     held = timer({ state: 'ended', phase: 'ended' });
     await renderControls();
-    expect(screen.getByLabelText('Round timer status')).toHaveTextContent('Ended');
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Ended');
     expect(screen.getByRole('button', { name: 'Set rounds' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'End rounds' })).toBeNull();
   });
