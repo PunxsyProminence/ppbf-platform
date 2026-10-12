@@ -95,7 +95,7 @@ export default function VideoLibraryPage() {
   // The first page. Later pages and filters are loaded from the control that
   // asks for them (go, below), which also shows the loading line.
   useEffect(() => {
-    void load(0, '');
+    void Promise.resolve().then(() => load(0, ''));
   }, [load]);
 
   function go(nextOffset: number, nextTag: string) {
