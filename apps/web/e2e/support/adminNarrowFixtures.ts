@@ -520,11 +520,19 @@ function pinDirectory() {
 
 /* ------------------------------------------------------------------ export */
 
+/* The global header (components/GlobalRoleHeader.tsx -> SafetyAttentionBadge)
+   reads /api/pilot/escalations?status=open on every admin page. Answering it
+   with the open rows gives the header its real badge, as wide as it gets. */
+const HEADER_ROUTES = {
+  '/api/pilot/escalations': { ok: true, escalations: escalationRows().filter((row) => row.status === 'open') },
+} as const;
+
 export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
   {
     page: 'athlete-consent',
     path: '/admin/athlete-consent',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/admin/athlete-consent': { ok: true, items: athleteConsentItems() },
     },
     expectText: NAMES[0],
@@ -533,6 +541,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'compliance-center',
     path: '/admin/compliance-center',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/compliance/violations': { items: complianceViolations(), limit: 50 },
       '/api/pilot/admin/shadow-data-requests': { ok: true, items: shadowDeletionRequests() },
     },
@@ -542,8 +551,10 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'escalations',
     path: '/admin/escalations',
     routes: {
-      // The page asks for ?status=open on mount. The stub answers every
-      // status at once so all three action states render in one view.
+      ...HEADER_ROUTES,
+      // The page (and the header badge) ask for ?status=open on mount. This
+      // overrides HEADER_ROUTES and answers every status at once, so all three
+      // action states and all nine source labels render in one view.
       '/api/pilot/escalations': { ok: true, escalations: escalationRows() },
     },
     expectText: athleteId(0),
@@ -552,6 +563,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'feedback',
     path: '/admin/feedback',
     routes: {
+      ...HEADER_ROUTES,
       // POST on mount (a read with a body), answered the same way.
       '/api/pilot/feedback/list': {
         ok: true,
@@ -566,6 +578,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'safety-flags',
     path: '/admin/safety-flags',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/safety-flags': { flags: safetyFlags() },
     },
     expectText: FLAG_CODES[0],
@@ -574,6 +587,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'safety-review',
     path: '/admin/safety-review',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/admin/safety-review': safetyReview(),
     },
     expectText: NAMES[0],
@@ -582,6 +596,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'video-compliance',
     path: '/admin/video-compliance',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/admin/video-compliance': videoCompliance(),
     },
     expectText: NAMES[0],
@@ -590,6 +605,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'waiver-status',
     path: '/admin/waiver-status',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/admin/waiver-status': { ok: true, items: waiverItems() },
     },
     expectText: NAMES[0],
@@ -598,6 +614,7 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
     page: 'people',
     path: '/admin/people',
     routes: {
+      ...HEADER_ROUTES,
       '/api/pilot/admin/staff': {
         ok: true,
         organization_id: id('org', 1),
