@@ -8,7 +8,8 @@ import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const REQUIRED_TABLES = ['shadow_decisions', 'shadow_audit_entries'];
+// listDecisions joins the medical status on file at each decision (issue #1474).
+const REQUIRED_TABLES = ['shadow_decisions', 'shadow_audit_entries', 'shadow_medical_administrative_status'];
 
 function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;

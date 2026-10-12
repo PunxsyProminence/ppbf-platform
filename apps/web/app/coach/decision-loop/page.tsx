@@ -672,7 +672,7 @@ export default function DecisionLoopReviewPage() {
 
   /* A CLEARANCE CAN RUN OUT WHILE THIS SCREEN IS OPEN. The badge is what the
      route said at the last read; left alone it would go on saying "cleared"
-     past the end date while the gate refuses. So the medical status of the
+     past the end date while the contact gate counts it as lapsed. So the medical status of the
      athlete on screen is read again when a clearance in force reaches its end
      date, and the panel shows what the route answers. The page does not work
      out the verdict from the date itself.
