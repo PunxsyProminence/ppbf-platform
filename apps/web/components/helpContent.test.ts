@@ -62,7 +62,10 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   // Progress milestones are built (WO-PH-09).
   expect(parent).toMatch(/The Progress tab shows earned milestones/);
   expect(parent).not.toMatch(/progress milestones/);
-  for (const section of ['parent observations', 'family goals', 'resources', 'reply to coach']) {
+  // Parent observations are built (WO-PH-04).
+  expect(parent).toMatch(/Parent observations are written down and read back on the Observations tab/);
+  expect(parent).not.toMatch(/feed yet: [^.]*parent observations/);
+  for (const section of ['family goals', 'resources', 'reply to coach']) {
     expect(parent).toContain(section);
   }
 });

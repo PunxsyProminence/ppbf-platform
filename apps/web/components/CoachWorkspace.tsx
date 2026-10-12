@@ -1068,6 +1068,9 @@ export default function CoachWorkspace() {
      by leaving everyone UNKNOWN; the floor's readings gauge must not, or a
      read that never happened shows as "0 of N". */
   const [readinessFeedState, setReadinessFeedState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  /* Athletes with their own check-in for the gym's today (F-040). A self-report
+     is a reading for the floor's count and chip, never a band. */
+  const [checkedInToday, setCheckedInToday] = useState<ReadonlySet<string>>(new Set());
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   /* Whether the coach PICKED this athlete, as opposed to the roster having
@@ -1350,7 +1353,10 @@ export default function CoachWorkspace() {
      AND took the provenance caveat down with it, since the caveat renders
      inside this branch. "No signal" has to keep meaning no signal. */
   const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN')
-    || contextualReadiness.length > 0;
+    || contextualReadiness.length > 0
+    // F-040: an athlete's own check-in today is a working feed too; without it
+    // the tile said "No fresh readiness check-ins" beside a floor counting them.
+    || checkedInToday.size > 0;
   /* How many readings the feed returned, and how many of those may not be
      presented as measurements.
      Counted from the two sources SEPARATELY, because an unvalidated reading no
@@ -1808,8 +1814,10 @@ export default function CoachWorkspace() {
               reliability_status?: string;
               validity_status?: string;
             }>;
+            checked_in_today?: string[];
           };
           const items = board.items ?? [];
+          setCheckedInToday(new Set(board.checked_in_today ?? []));
           /* ITEM 2: AN UNVALIDATED ROW IS NOT PROMOTED TO A BAND.
              GREEN/YELLOW/RED on this roster is an authoritative reading a coach
              acts on -- it drives the alert count, the dot and the floor-plan
@@ -1851,10 +1859,13 @@ export default function CoachWorkspace() {
           // instead of becoming a stale disclaimer nobody removes.
           setReadinessFeedState('loaded');
         } else {
+          // A failed re-read must not leave an earlier read's check-ins standing.
+          setCheckedInToday(new Set());
           setReadinessFeedState('error');
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+        setCheckedInToday(new Set());
         setReadinessFeedState('error');
       }
 
@@ -1871,6 +1882,7 @@ export default function CoachWorkspace() {
       // The readiness board is read inside this load, so a roster failure is a
       // readiness failure too; left at 'loading' the tile said "No fresh
       // readiness check-ins" about a feed nobody read.
+      setCheckedInToday(new Set());
       setReadinessFeedState('error');
       // Fallback: set empty list but don't block UI
       setAthletes([]);
@@ -2690,6 +2702,7 @@ export default function CoachWorkspace() {
               name: athlete.name,
               readiness: athlete.readiness,
               unvalidatedReading: contextualReadiness.some((entry) => entry.athleteId === athlete.id),
+              checkedInToday: checkedInToday.has(athlete.id),
               // The roster row says "Not your athlete" from the register's
               // coverage; the floor says it from the same place, or from the
               // faces read when that is all there is.
