@@ -10400,7 +10400,7 @@
     "id": "app/api/pilot/session-scripts/runs/[runId]/timer/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/session-scripts/runs/[runId]/timer",
-    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts readOwnRoundTimer (delivering coach only, 404 otherwise)",
+    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts readOwnRoundTimer (delivering coach only, 404 otherwise; 409 if the run is not live)",
     "writes": false,
     "notes": "Round timer (WO-N1-03). The delivering coach's screens read the run's round timer: configuration, state and the round, phase and seconds left derived from the database clock. ROUND_TIMER_FIELDS only; no account id. No athlete data.",
     "rolesAdmitted": [
@@ -10429,7 +10429,7 @@
     "id": "app/api/pilot/session-scripts/runs/[runId]/timer/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/session-scripts/runs/[runId]/timer",
-    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts lockOwnLiveRun (delivering coach only, live run, 404 otherwise)",
+    "gate": "requirePrincipal + requireRole; ownership enforced in roundTimers.ts lockOwnLiveRun (delivering coach only, 404 otherwise; 409 if the run is not live)",
     "writes": true,
     "notes": "Round timer (WO-N1-03). One named action per request: configure (round, rest, round count, bounded) or start/pause/resume/end. The client never sends a time or state; instants are written with the database's now(). Writes pilot.round_timers only. No athlete data.",
     "rolesAdmitted": [

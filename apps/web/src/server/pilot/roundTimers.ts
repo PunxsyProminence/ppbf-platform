@@ -19,6 +19,11 @@ import { SessionScriptRunError } from './sessionScriptRuns';
 // requireOwnLiveRun does. No other rule is added here.
 //
 // A TIMER STARTS ONLY ON THE COACH'S START (N1-03-Q1 A). Configuring writes 'ready'.
+//
+// IT IS AN INDEPENDENT CLOCK. Pausing the session does not pause the rounds, and finishing the run
+// writes nothing here: once the run is not live its timer state means nothing, and no reader shows
+// it (the TV shows only a live run; the coach's read answers 409). A later reader of history must
+// treat a timer on a settled run as ended.
 
 export type RoundTimerState = 'ready' | 'running' | 'paused' | 'ended';
 
@@ -115,17 +120,6 @@ export function deriveRoundTimer(row: RoundTimerRow): RoundTimerView {
 
 const TIMER_COLUMNS = `t.round_seconds, t.rest_seconds, t.rounds_total, t.state, t.started_at, t.paused_at,
   t.paused_seconds, now() as server_time`;
-
-/** The timer of a run, for any reader the caller has already authorised. Null when none is set. */
-export async function readRoundTimer(organizationId: string, runId: string): Promise<RoundTimerView | null> {
-  const rows = await query<RoundTimerRow>(
-    `select ${TIMER_COLUMNS}
-       from pilot.round_timers t
-      where t.organization_id = $1 and t.run_id = $2`,
-    [organizationId, runId],
-  );
-  return rows[0] ? deriveRoundTimer(rows[0]) : null;
-}
 
 interface RunOwnership {
   delivered_by_account_id: string;

@@ -1074,12 +1074,65 @@ describe('the round timer (WO-N1-03)', () => {
       () => readOwnRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1'),
       () => moveRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1', 'resume'),
       () => configureRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-1', { roundSeconds: 1, restSeconds: 0, roundsTotal: 1 }),
-      () => readOwnRoundTimer(ORG_B, COACH_B, 'run-1'),
-      () => moveRoundTimer(ORG_B, COACH_B, 'run-1', 'end'),
     ]) {
       await expect(call()).rejects.toMatchObject({ status: 404, message: 'SESSION_RUN_NOT_FOUND' });
     }
     expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-1')).toMatchObject({ state: 'paused' });
+  });
+
+  it("another gym's coach naming this gym's run id reaches nothing, while their own run of that id is theirs", async () => {
+    await liveRunWithTimer();
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    // Gym B's coach, with no run of that id in gym B: a missing run.
+    await expect(readOwnRoundTimer(ORG_B, COACH_B, 'run-1')).rejects.toMatchObject({ status: 404 });
+    await expect(moveRoundTimer(ORG_B, COACH_B, 'run-1', 'end')).rejects.toMatchObject({ status: 404 });
+    // Gym B gets its own run with the SAME id and its own timer: each gym reads and moves only its own.
+    await seedLiveRun(ORG_B, COACH_B, 'run-1', { showOnWall: true });
+    await configureRoundTimer(ORG_B, COACH_B, 'run-1', { roundSeconds: 60, restSeconds: 0, roundsTotal: 5 });
+    await moveRoundTimer(ORG_B, COACH_B, 'run-1', 'end');
+    expect(await readOwnRoundTimer(ORG_B, COACH_B, 'run-1')).toMatchObject({ state: 'ended', rounds_total: 5 });
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-1')).toMatchObject({ state: 'running', rounds_total: 3 });
+    await expect(readOwnRoundTimer(ORG_A, COACH_B, 'run-1')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('end from ready leaves no start; end from paused banks the open pause and clears it', async () => {
+    await liveRunWithTimer();
+    expect(await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'end')).toMatchObject({ state: 'ended', phase: 'ended' });
+    const fromReady = await client.query(
+      `select started_at, paused_at, ended_at is not null as ended, paused_seconds from pilot.round_timers where run_id = 'run-1'`,
+    );
+    expect(fromReady.rows).toEqual([{ started_at: null, paused_at: null, ended: true, paused_seconds: 0 }]);
+
+    await configureRoundTimer(ORG_A, COACH_A, 'run-1', { roundSeconds: 180, restSeconds: 60, roundsTotal: 3 });
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'pause');
+    await client.query(
+      `update pilot.round_timers
+          set started_at = now() - interval '100 seconds', paused_at = now() - interval '40 seconds', paused_seconds = 5
+        where run_id = 'run-1'`,
+    );
+    await moveRoundTimer(ORG_A, COACH_A, 'run-1', 'end');
+    const fromPaused = await client.query(`select state, paused_at, paused_seconds from pilot.round_timers where run_id = 'run-1'`);
+    expect(fromPaused.rows[0].state).toBe('ended');
+    expect(fromPaused.rows[0].paused_at).toBeNull();
+    expect(fromPaused.rows[0].paused_seconds).toBeGreaterThanOrEqual(44);
+    expect(fromPaused.rows[0].paused_seconds).toBeLessThanOrEqual(47);
+  });
+
+  it('a timer move that waits on a finishing run sees it settled and is refused (run row lock)', async () => {
+    await liveRunWithTimer();
+    await client.query('begin');
+    await client.query(`select 1 from pilot.session_script_runs where run_id = 'run-1' for update`);
+    const starting = moveRoundTimer(ORG_A, COACH_A, 'run-1', 'start');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.query(
+      `update pilot.session_script_runs
+          set run_state = 'completed', ended_at = now(), current_block_id = null, show_on_wall = false
+        where run_id = 'run-1'`,
+    );
+    await client.query('commit');
+    await expect(starting).rejects.toMatchObject({ status: 409, message: 'SESSION_RUN_NOT_LIVE' });
+    expect((await client.query(`select state from pilot.round_timers where run_id = 'run-1'`)).rows).toEqual([{ state: 'ready' }]);
   });
 
   it('a settled run takes no timer change, and a run with no timer reads null', async () => {
