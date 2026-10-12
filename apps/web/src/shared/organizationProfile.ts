@@ -9,9 +9,12 @@
  * this: stop hard-coding PPBF's name and address.
  *
  * ONE GYM TODAY. There is one profile, and every caller gets it. Nothing here
- * onboards, switches or provisions an organization (N9-01-Q1 A). When a
- * second gym is real, this becomes a read keyed by organization; the callers
- * already ask through currentOrganizationProfile(), so they do not change.
+ * onboards, switches or provisions an organization (N9-01-Q1 A). The callers
+ * read it once, at module load (const GYM = currentOrganizationProfile()).
+ * When a second gym is real this becomes a read keyed by organization, and
+ * each caller then reads it per request for the organization it already
+ * resolves (the wall's TV session, the names board's principal, the sign-in
+ * account, SHADOW's request) -- that change is deliberately not made yet.
  *
  * The facts are PPBF's registry facts, moved here from app/page.tsx as they
  * were. Sources: legal name and EIN -- PA Articles of Incorporation (file

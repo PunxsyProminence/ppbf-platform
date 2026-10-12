@@ -3,6 +3,10 @@ import type { PilotRole } from './contracts';
 import { requiredCredentialFor } from './credentialPolicy';
 import { isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { createOpaqueToken, hashToken } from './security';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 /**
  * Single-use sign-in links for coaches, staff, volunteers and parents.
@@ -239,9 +243,9 @@ export async function issueMagicLink(
   try {
     await dependencies.sendMail({
       to: email,
-      subject: 'Your PPBF sign-in link',
+      subject: `Your ${GYM.shortName} sign-in link`,
       body: [
-        'Someone asked to sign in to Punxsy Prominence Boxing and Fitness with this address.',
+        `Someone asked to sign in to ${GYM.legalName} with this address.`,
         '',
         link,
         '',
