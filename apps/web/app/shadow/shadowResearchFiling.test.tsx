@@ -72,6 +72,8 @@ interface ServerOptions {
   role?: string;
   evidenceNotice?: string;
   requirements?: Requirement[] | 'fail';
+  /** Served instead of `requirements` from the second list read on. */
+  laterRequirements?: Requirement[];
   afterCreate?: Requirement[];
   createResponse?: { status: number; body: Record<string, unknown> };
 }
@@ -79,6 +81,8 @@ interface ServerOptions {
 function mockServer(options: ServerOptions = {}) {
   const posts: Record<string, unknown>[] = [];
   let created = false;
+  let listReads = 0;
+  let replies = 0;
   const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     const target = String(url);
     if (target.includes('/api/pilot/auth/session')) {
@@ -91,6 +95,8 @@ function mockServer(options: ServerOptions = {}) {
       };
     }
     if (target.includes('/api/pilot/shadow/chat')) {
+      replies += 1;
+      const messageId = `msg-${replies}`;
       return {
         ok: true,
         status: 200,
@@ -99,7 +105,7 @@ function mockServer(options: ServerOptions = {}) {
           response: 'Rest guidance varies; nothing in the Library covers this.',
           evidenceTier: 'RESEARCH_NEEDED',
           evidenceNotice: options.evidenceNotice ?? 'NO_VERIFIED_EVIDENCE',
-          messageId: 'msg-1',
+          messageId,
         }),
       };
     }
@@ -110,7 +116,12 @@ function mockServer(options: ServerOptions = {}) {
         if (response.status === 200) created = true;
         return { ok: response.status === 200, status: response.status, json: async () => response.body };
       }
-      const rows = created && options.afterCreate ? options.afterCreate : options.requirements ?? [];
+      listReads += 1;
+      const rows = created && options.afterCreate
+        ? options.afterCreate
+        : listReads > 1 && options.laterRequirements
+          ? options.laterRequirements
+          : options.requirements ?? [];
       if (rows === 'fail') return { ok: false, status: 503, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({ ok: true, items: rows }) };
     }
@@ -237,4 +248,25 @@ test('a reply with evidence carries no filing line and reads nothing', async () 
 
   expect(screen.queryByTestId('research-filing')).toBeNull();
   expect(fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('research-requirements'))).toEqual([]);
+});
+
+test('a later unanswered reply reads the list again, so a filing made meanwhile is shown', async () => {
+  const other = 'What should a 12-year-old eat before a bout?';
+  mockServer({
+    requirements: [],
+    laterRequirements: [filedRow({ research_requirement_id: 52, source_entity_id: other.toLowerCase() })],
+  });
+  await askUnansweredQuestion();
+  expect(await screen.findByText('Not filed as research yet.')).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Your question'), { target: { value: other } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+  });
+
+  expect(await screen.findByText(/Filed as research: open\./)).toBeTruthy();
+  const lines = screen.getAllByTestId('research-filing').map((node) => node.textContent ?? '');
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toContain('Not filed as research yet.');
+  expect(lines[1]).toContain('Filed as research: open.');
 });

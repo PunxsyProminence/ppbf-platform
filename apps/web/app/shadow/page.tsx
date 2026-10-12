@@ -658,7 +658,7 @@ function ShadowChatPageContent() {
   const [researchFilingsRead, setResearchFilingsRead] = useState<'idle' | 'loaded' | 'failed'>('idle');
   const [researchFilingBusy, setResearchFilingBusy] = useState<string | null>(null);
   const [researchFilingError, setResearchFilingError] = useState<Record<string, string>>({});
-  const needsResearchLine = messages.some((msg) => msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE');
+  const unansweredReplies = messages.filter((msg) => msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE').length;
 
   async function readResearchFilings(): Promise<Record<string, ResearchFiling>> {
     const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
@@ -673,8 +673,10 @@ function ShadowChatPageContent() {
     return filed;
   }
 
+  // Read again whenever another unanswered reply arrives: another coach may
+  // have filed that question since the last read (R1 #3).
   useEffect(() => {
-    if (!mayFileResearch || !needsResearchLine || researchFilingsRead !== 'idle') return;
+    if (!mayFileResearch || unansweredReplies === 0) return;
     let cancelled = false;
     void readResearchFilings()
       .then((filed) => {
@@ -688,7 +690,7 @@ function ShadowChatPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [mayFileResearch, needsResearchLine, researchFilingsRead]);
+  }, [mayFileResearch, unansweredReplies]);
 
   async function fileAsResearch(question: string) {
     const key = researchKeyForQuestion(question);
@@ -736,8 +738,9 @@ function ShadowChatPageContent() {
     }
   }
 
-  function questionBefore(messageId: string): string {
-    const index = messages.findIndex((msg) => msg.id === messageId);
+  // By position, not by id: the question is the user message just before
+  // this reply in the transcript.
+  function questionBefore(index: number): string {
     for (let i = index - 1; i >= 0; i -= 1) {
       if (messages[i].type === 'user') return messages[i].text;
     }
@@ -1740,7 +1743,7 @@ function ShadowChatPageContent() {
             tabIndex={0}
             className="mb-[var(--s5)] max-h-[550px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]"
           >
-            {messages.map((msg) => (
+            {messages.map((msg, messageIndex) => (
               <div
                 key={msg.id}
                 className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -1799,7 +1802,7 @@ function ShadowChatPageContent() {
                   ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
                     ? (() => {
-                        const question = questionBefore(msg.id);
+                        const question = questionBefore(messageIndex);
                         const key = researchKeyForQuestion(question);
                         if (!key || researchFilingsRead === 'idle') return null;
                         const filed = researchFilings[key];
