@@ -38,7 +38,6 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
 import { listExecutions, correctExecution } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
 import { reviseProtocol } from './interventionProtocols';
@@ -242,7 +241,10 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
     return [{ review_id: params[1] }];
   }
   if (/update pilot\.intervention_outcome_reviews set status = 'superseded'/.test(sql)) {
-    return updateStatus(sql, params, 'intervention_outcome_reviews', 'review_id', 'superseded');
+    // Keyed on the review (a re-review replacing it) or on the execution (a
+    // reopen retiring whatever verdict stands on it, issue #1481).
+    const key = /execution_id = \$2/.test(sql) ? 'execution_id' : 'review_id';
+    return updateStatus(sql, params, 'intervention_outcome_reviews', key, 'superseded');
   }
   if (/update pilot\.intervention_outcome_reviews set status = 'active'/.test(sql)) {
     return updateStatus(sql, params, 'intervention_outcome_reviews', 'review_id', 'active');
@@ -522,30 +524,52 @@ describe('correctExecution', () => {
     expect(store.intervention_executions).toHaveLength(1);
   });
 
-  test('reopening a reviewed execution is refused whole: no new version, and the evidence and review stay put', async () => {
+  // Issue #1481 (Jason, 2026-10-12: "6B"): reopening a reviewed execution
+  // goes through and retires the standing verdict to history.
+  test('reopening a reviewed execution retires its verdict on the new version; the evidence stays', async () => {
+    seedExecution();
+    seedLink();
+    seedReview();
+
+    const reopened = await correctExecution({ ...correction, outcome: 'in_progress' });
+
+    expect(reopened?.status).toBe('in_progress');
+    expect(store.intervention_evidence_links.map((r) => [r.link_id, r.execution_id, r.status])).toEqual([
+      ['link-0', reopened?.execution_id, 'active'],
+    ]);
+    expect(store.intervention_outcome_reviews.map((r) => [r.review_id, r.execution_id, r.status])).toEqual([
+      ['review-0', reopened?.execution_id, 'superseded'],
+    ]);
+  });
+
+  test('a failure while retiring the verdict leaves the evidence, the review and the record where they were', async () => {
     seedExecution();
     seedLink();
     seedReview();
     const before = snapshot();
+    // The links and the review have already been re-pointed when this lands.
+    faultOn = /update pilot\.intervention_outcome_reviews set status = 'superseded'[\s\S]*execution_id = \$2/;
 
-    await expect(correctExecution({ ...correction, outcome: 'in_progress' })).rejects.toBeInstanceOf(ConflictError);
+    await expect(correctExecution({ ...correction, outcome: 'in_progress' })).rejects.toThrow(/connection terminated/);
 
-    // The refusal lands after the links and the review were re-pointed, so
-    // only the rollback puts them back.
     expect(store).toEqual(before);
   });
 
-  test('reopening is refused only while a review stands; kept closed, or never reviewed, the correction goes through', async () => {
+  test('only a reopen retires a verdict: kept closed it stays active, and an already-superseded one is left alone', async () => {
     seedExecution();
     seedReview();
     const kept = await correctExecution({ ...correction, outcome: 'stopped' });
     expect(kept?.status).toBe('stopped');
+    expect(store.intervention_outcome_reviews.map((r) => r.status)).toEqual(['active']);
 
     store = emptyStore();
     seedExecution();
     seedReview({ status: 'superseded' });
     const reopened = await correctExecution({ ...correction, outcome: 'in_progress' });
     expect(reopened?.status).toBe('in_progress');
+    expect(store.intervention_outcome_reviews.map((r) => [r.execution_id, r.status])).toEqual([
+      [reopened?.execution_id, 'superseded'],
+    ]);
   });
 
   test('a second correction that read the same record loses cleanly: null, and nothing stranded', async () => {

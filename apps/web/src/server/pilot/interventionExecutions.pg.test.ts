@@ -948,13 +948,19 @@ describe('the real intervention-execution lifecycle against real rows', () => {
          values ($1, 'rev-odd', 'exec-odd', 'unknown', 'reviewed early', 'unresolved', 'unresolved', 'active', $2)`,
         [ORG_ID, COACH_ID],
       );
-      await expect(correctExecution({
+      const odd = await correctExecution({
         organizationId: ORG_ID,
         executionId: 'exec-odd',
         correctionReason: 'wrong round count',
         actualExposure: { rounds: 4 },
         correctedByAccountId: COACH_ID,
-      })).resolves.toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
+      });
+      expect(odd).toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
+      const oddReview = await client.query(
+        `select execution_id, status from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = 'rev-odd'`,
+        [ORG_ID],
+      );
+      expect(oddReview.rows).toEqual([{ execution_id: odd!.execution_id, status: 'active' }]);
     } finally {
       await client.end();
     }
