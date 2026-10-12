@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { composeObservationText, parseObservationText } from '@/src/shared/parentObservations';
@@ -26,6 +26,7 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -36,6 +37,12 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
+// The transaction's client: its statements go to the same fake table, and
+// are kept apart so a test can see which writes rode in the transaction.
+const transactionClient = { query: jest.fn() };
+let transactionStatements: string[];
+let readBackFails: boolean;
 
 const athletes = [
   { organization_id: 'org-1', athlete_id: 'ath-a', dob: '2013-04-02' },
@@ -77,6 +84,10 @@ beforeEach(() => {
     // A coach's own note and a coach message about ath-a: never a guardian observation.
     { organization_id: 'org-1', note_id: '00000000-0000-0000-0000-00000000c0a1', athlete_id: 'ath-a', coach_account_id: 'acct-coach', author_role: 'coach', note_type: 'coach_observation', note_text: 'Coach-only: watch the left shoulder.', created_at: '2026-10-01 12:00:00+00' },
     { organization_id: 'org-1', note_id: '00000000-0000-0000-0000-00000000c0a2', athlete_id: 'ath-a', coach_account_id: 'acct-coach', author_role: 'coach', note_type: 'parent_message', note_text: 'Bring gloves.', created_at: '2026-10-02 12:00:00+00' },
+    // Guardian a1's own barrier report about ath-a: same author, another type.
+    { organization_id: 'org-1', note_id: '00000000-0000-0000-0000-00000000ba01', athlete_id: 'ath-a', coach_account_id: 'acct-a1', author_role: 'parent', note_type: 'home_barrier', note_text: 'No ride on Thursdays.', created_at: '2026-10-02 13:00:00+00' },
+    // The same ids in another gym: never this gym's record.
+    { organization_id: 'org-2', note_id: '00000000-0000-0000-0000-0000000000f2', athlete_id: 'ath-a', coach_account_id: 'acct-a1', author_role: 'parent', note_type: 'parent_observation', note_text: composeObservationText('energy', 2, 'Another gym.'), created_at: '2026-10-04 12:00:00+00' },
     // The other guardian of ath-a has written one already.
     { organization_id: 'org-1', note_id: '00000000-0000-0000-0000-0000000000a2', athlete_id: 'ath-a', coach_account_id: 'acct-a2', author_role: 'parent', note_type: 'parent_observation', note_text: composeObservationText('motivation', 3, 'Other guardian: a hard week.'), created_at: '2026-10-03 12:00:00+00' },
   ];
@@ -91,8 +102,16 @@ beforeEach(() => {
     }
     throw new Error(`unexpected queryOne in this test: ${text}`);
   });
+  transactionStatements = [];
+  readBackFails = false;
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(transactionClient));
+  transactionClient.query.mockImplementation(async (sql: string, params: unknown[]) => {
+    transactionStatements.push(normalize(sql));
+    return { rows: await mockQuery(sql, params) };
+  });
   mockQuery.mockImplementation(async (sql: string, params: unknown[]) => {
     const text = normalize(sql);
+    if (readBackFails && text.includes('note_id = $5')) throw new Error('read-back lost');
     if (text.startsWith('insert into pilot.coach_observations')) {
       const [organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text] = params as string[];
       clock += 60_000;
@@ -173,16 +192,42 @@ describe('a linked guardian writes and reads back', () => {
     expect(written.payload.item).toMatchObject({ rating: null });
   });
 
-  test('the write is audited without the notes', async () => {
+  test('the note and its audit row are one transaction, and the audit carries no notes', async () => {
     as('acct-a1');
     await post({ athlete_id: 'ath-a', category: 'motivation', rating: 9, notes: 'Keen.' });
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionStatements.some((text) => text.startsWith('insert into pilot.coach_observations'))).toBe(true);
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
       event_type: 'create',
       actor_account_id: 'acct-a1',
       actor_role: 'parent',
       entity_type: 'parent_observation',
       details: { athlete_id: 'ath-a', category: 'motivation', rated: true },
-    }));
+    }), transactionClient);
+  });
+
+  test('a saved entry whose read-back fails is still a save: 201 with no item, never a failure', async () => {
+    as('acct-a1');
+    readBackFails = true;
+    const written = await post({ athlete_id: 'ath-a', category: 'energy', notes: 'Saved anyway.' });
+    expect(written.status).toBe(201);
+    expect(written.payload).toEqual({ ok: true, item: null });
+    expect(table[table.length - 1].note_text).toBe('Energy\n\nSaved anyway.');
+  });
+
+  test('the entry handed back is the one just saved, not another of this guardian’s', async () => {
+    as('acct-a1');
+    await post({ athlete_id: 'ath-a', category: 'energy', notes: 'First.' });
+    const second = await post({ athlete_id: 'ath-a', category: 'motivation', notes: 'Second.' });
+    expect((second.payload.item as { note_id: string }).note_id).toBe(table[table.length - 1].note_id);
+    expect(second.payload.item).toMatchObject({ notes: 'Second.' });
+  });
+
+  test('the history is newest first', async () => {
+    as('acct-a1');
+    await post({ athlete_id: 'ath-a', category: 'energy', notes: 'Older.' });
+    await post({ athlete_id: 'ath-a', category: 'energy', notes: 'Newer.' });
+    expect((await get('ath-a')).payload.items?.map((item) => item.notes)).toEqual(['Newer.', 'Older.']);
   });
 
   test('the answer carries no account id', async () => {
@@ -195,7 +240,7 @@ describe('a linked guardian writes and reads back', () => {
 });
 
 describe('who reads what', () => {
-  test('a guardian reads only their own observations: not the other guardian’s, not a coach’s note or message', async () => {
+  test('a guardian reads only their own observations: not the other guardian’s, not a coach’s note or message, not their own barrier report, not another gym’s', async () => {
     as('acct-a1');
     await post({ athlete_id: 'ath-a', category: 'energy', notes: 'Mine.' });
     const read = await get('ath-a');
@@ -238,12 +283,30 @@ describe('what is refused', () => {
     ['a rating as text', { category: 'energy', rating: '7', notes: 'x' }],
     ['empty notes', { category: 'energy', notes: '   ' }],
     ['notes over 4000 characters', { category: 'energy', notes: 'x'.repeat(4001) }],
+    ['a category that is an Object property', { category: 'toString', notes: 'x' }],
+    ['a category of __proto__', { category: '__proto__', notes: 'x' }],
+    ['an athlete id over 300 characters', { athlete_id: 'a'.repeat(301), category: 'energy', notes: 'x' }],
   ])('%s', async (_label, fields) => {
     as('acct-a1');
     const before = table.length;
     const response = await post({ athlete_id: 'ath-a', ...fields });
     expect(response.status).toBe(400);
     expect(table).toHaveLength(before);
+  });
+
+  test('a body of JSON null is refused as invalid, not a server error', async () => {
+    as('acct-a1');
+    const response = await POST(new NextRequest('http://localhost/api/pilot/parent/observations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'null',
+    }));
+    expect(response.status).toBe(400);
+  });
+
+  test('notes of exactly 4000 characters are accepted', async () => {
+    as('acct-a1');
+    expect((await post({ athlete_id: 'ath-a', category: 'energy', notes: 'x'.repeat(4000) })).status).toBe(201);
   });
 
   test('a rating of 1 and of 10 are accepted', async () => {

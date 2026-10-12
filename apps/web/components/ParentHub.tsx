@@ -1243,12 +1243,12 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
-                description="Tell your child's coach what you notice at home: energy, motivation, sleep and recovery, and how they are developing."
+                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym."
                 usage={[
                   'Pick what it is about and say what you noticed',
                   'Add a rating from 1 to 10 if it helps; it is optional',
                   'Look back at what you have written',
-                  'Use Report a Barrier on the Parent Floor for something in the way of training'
+                  'Something the coach needs to know now: use Report a Barrier on the Parent Floor, or speak to the coach'
                 ]}
                 mistakes={[
                   'Not mentioning a change because it seems small',
@@ -1257,7 +1257,7 @@ export default function ParentHub() {
               />
 
               {activeChildId ? (
-                <ParentObservations athleteId={activeChildId} />
+                <ParentObservations key={activeChildId} athleteId={activeChildId} />
               ) : (
                 <p className="t-muted">Unavailable - no child selected.</p>
               )}

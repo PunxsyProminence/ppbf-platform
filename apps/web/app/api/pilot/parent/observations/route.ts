@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { query } from '@/src/server/pilot/db';
+import { query, withTransaction } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { createCoachObservation } from '@/src/server/pilot/intake';
 import {
@@ -25,12 +25,15 @@ export const runtime = 'nodejs';
  * with author_role recorded from the session and an audit row. No new table,
  * no migration, and intake/domain-upsert's role gate is not widened.
  *
- * WHO READS IT. Coaches and organization admins read every note type through
- * the existing coach surfaces (coachObservationNoteTypesForReader), so the
- * coach sees it with no change there. The athlete does not: their reader set
- * is 'coach_observation' only. A guardian reads, here, the observations THEY
- * wrote about THIS child and nothing else -- not the other guardian's, the
- * same line the barrier report draws for split households (LQ-PH04-1).
+ * WHO READS IT. A guardian reads, here, the observations THEY wrote about
+ * THIS child and nothing else -- not the other guardian's, the same line the
+ * barrier report draws for split households (LQ-PH04-1). The athlete never
+ * does: their reader set is 'coach_observation' only. Staff MAY read every
+ * note type (coachObservationNoteTypesForReader), but NO COACH SCREEN DRAWS
+ * THIS TYPE TODAY: the coach barrier inbox and the passbook both use closed
+ * lists of note types, and neither names it. So the screen that writes these
+ * says they are saved to the child's record, and never that a coach has them.
+ * A coach reader is its own order (LQ-PH04-4 on #1483).
  *
  * THE FORMAT IS WORDS. The table has no rating or category column, and adding
  * one is a migration this order does not make. So the server composes the
@@ -64,8 +67,8 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['parent']);
 
-    const athleteId = request.nextUrl.searchParams.get('athlete_id');
-    if (!athleteId) {
+    const athleteId = (request.nextUrl.searchParams.get('athlete_id') ?? '').trim();
+    if (!athleteId || athleteId.length > 300) {
       throw new Error('Missing athlete_id');
     }
     await assertActorCanAccessAthlete(principal, athleteId);
@@ -85,7 +88,8 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['parent']);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
     const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
     const rating = body.rating === undefined || body.rating === null ? null : body.rating;
     const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
@@ -106,32 +110,46 @@ export async function POST(request: NextRequest) {
 
     await assertActorCanAccessAthlete(principal, athleteId);
 
-    const noteId = await createCoachObservation({
-      organizationId: principal.organizationId,
-      athleteId,
-      coachAccountId: principal.accountId,
-      authorRole: principal.role,
-      noteType: NOTE_TYPE,
-      noteText: composeObservationText(body.category, rating as number | null, notes),
-    });
-
-    await writePilotAuditEvent({
-      event_type: 'create',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'parent_observation',
-      entity_id: noteId,
-      details: { athlete_id: athleteId, category: body.category, rated: rating !== null },
+    const category = body.category;
+    // The note and its audit row are one write: an entry is never saved
+    // without its record of who saved it, and a failure after the note is
+    // stored can never be reported to the family as "did not save".
+    const noteId = await withTransaction(async (client) => {
+      const id = await createCoachObservation({
+        organizationId: principal.organizationId,
+        athleteId,
+        coachAccountId: principal.accountId,
+        authorRole: principal.role,
+        noteType: NOTE_TYPE,
+        noteText: composeObservationText(category, rating as number | null, notes),
+      }, client);
+      await writePilotAuditEvent({
+        event_type: 'create',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'parent_observation',
+        entity_id: id,
+        details: { athlete_id: athleteId, category, rated: rating !== null },
+      }, client);
+      return id;
     });
 
     // Read back as stored, so the screen shows the row the database holds,
-    // its own timestamp included, rather than one assembled here.
-    const [row] = await query<ObservationRow>(
-      `${SELECT_OWN} and note_id = $5::uuid`,
-      [principal.organizationId, athleteId, NOTE_TYPE, principal.accountId, noteId],
-    );
-    return NextResponse.json({ ok: true, item: row ? toItem(row) : null }, { status: 201 });
+    // its own timestamp included. The entry is saved whatever happens here:
+    // a read-back that fails answers 201 with no item, and the screen
+    // re-reads the list rather than calling the save a failure.
+    let item = null;
+    try {
+      const [row] = await query<ObservationRow>(
+        `${SELECT_OWN} and note_id = $5::uuid`,
+        [principal.organizationId, athleteId, NOTE_TYPE, principal.accountId, noteId],
+      );
+      item = row ? toItem(row) : null;
+    } catch {
+      item = null;
+    }
+    return NextResponse.json({ ok: true, item }, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }

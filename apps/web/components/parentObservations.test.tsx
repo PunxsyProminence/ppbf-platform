@@ -100,7 +100,7 @@ async function fillAndSend(fields: { category?: string; rating?: string; notes: 
   }
   fireEvent.change(screen.getByLabelText('What you noticed'), { target: { value: fields.notes } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   });
 }
 
@@ -192,7 +192,7 @@ describe('the form', () => {
     expect((call?.[1] as RequestInit).credentials).toBe('include');
     await within(history()).findByText('Asked to go early every day.');
     expect(within(history()).getAllByRole('listitem')[0]).toHaveTextContent('Motivation · 8 out of 10');
-    expect(screen.getByRole('status')).toHaveTextContent('Sent to the coach.');
+    expect(screen.getByRole('status')).toHaveTextContent('Saved.');
     expect(screen.getByLabelText('What you noticed')).toHaveValue('');
   });
 
@@ -207,9 +207,9 @@ describe('the form', () => {
     const fetchMock = installFetch();
     await renderObservations();
     fireEvent.change(screen.getByLabelText('What you noticed'), { target: { value: '   ' } });
-    expect(screen.getByRole('button', { name: 'Send to Coach' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     await act(async () => {
-      fireEvent.submit(screen.getByRole('button', { name: 'Send to Coach' }).closest('form') as HTMLFormElement);
+      fireEvent.submit(screen.getByRole('button', { name: 'Save' }).closest('form') as HTMLFormElement);
     });
     expect(posts(fetchMock)).toEqual([]);
   });
@@ -220,7 +220,9 @@ describe('the form', () => {
     await within(history()).findByText('Bouncing off the walls.');
     await fillAndSend({ notes: 'Keep me.' });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('That did not save -- Forbidden: parent not linked to athlete. What you wrote is still in the box.');
+    // In words a family can act on, not the server's.
+    expect(await screen.findByRole('alert')).toHaveTextContent('That did not save -- this child is not on your account. What you wrote is still in the box.');
+    expect(screen.getByRole('alert').textContent).not.toContain('Forbidden');
     expect(screen.getByLabelText('What you noticed')).toHaveValue('Keep me.');
     expect(within(history()).getAllByRole('listitem')).toHaveLength(2);
   });
@@ -247,7 +249,67 @@ describe('the form', () => {
       (release as (() => void) | null)?.();
     });
     expect(within(history()).queryByText('For the first child.')).toBeNull();
-    expect(screen.queryByText('Sent to the coach.')).toBeNull();
+    expect(screen.queryByText('Saved.')).toBeNull();
+  });
+
+  test('a refused-as-invalid write says what to fix, in plain words', async () => {
+    installFetch({ post: async () => jsonResponse({ ok: false, error: 'Observation is invalid: athlete_id, a category (energy, motivation, sleep_recovery, general_development)…' }, false, 400) });
+    await renderObservations();
+    await fillAndSend({ notes: 'x' });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('pick what it is about and write what you noticed (up to 4000 characters)');
+    expect(alert.textContent).not.toContain('sleep_recovery');
+  });
+
+  test('a draft typed about one child is not left in the box for the sibling', async () => {
+    const fetchMock = installFetch();
+    await renderObservations();
+    await within(history()).findByText('Bouncing off the walls.');
+    fireEvent.change(screen.getByLabelText('What you noticed'), { target: { value: 'About the first child.' } });
+    fireEvent.change(screen.getByLabelText(/^Rating/), { target: { value: '9' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    expect(screen.getByLabelText('What you noticed')).toHaveValue('');
+    expect(screen.getByLabelText(/^Rating/)).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(posts(fetchMock)).toEqual([]);
+  });
+
+  test('a save whose row could not be read back is still Saved, and the history is read again', async () => {
+    let gets = 0;
+    installFetch({
+      get: async () => {
+        gets += 1;
+        return jsonResponse({ ok: true, items: gets === 1 ? HISTORY.ath_1 : [
+          { note_id: 'o_new', category: 'energy', rating: null, notes: 'Read again.', created_at: '2026-10-12T15:00:00.000Z' },
+          ...HISTORY.ath_1,
+        ] });
+      },
+      post: async () => jsonResponse({ ok: true, item: null }, true, 201),
+    });
+    await renderObservations();
+    await within(history()).findByText('Bouncing off the walls.');
+    await fillAndSend({ notes: 'Read again.' });
+    expect(screen.getByRole('status')).toHaveTextContent('Saved.');
+    await within(history()).findByText('Read again.');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('says it is saved, never that a coach has it', async () => {
+    installFetch();
+    await renderObservations();
+    await fillAndSend({ notes: 'x' });
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Write down what you notice');
+    expect(text).not.toMatch(/Send to Coach|Sent to the coach|Tell the coach what you notice/);
+  });
+
+  test('a category the screen does not know makes the history unreadable rather than crashing', async () => {
+    installFetch({ get: async () => jsonResponse({ ok: true, items: [{ note_id: 'x', category: 'toString', rating: null, notes: 'n', created_at: '2026-10-12T15:00:00.000Z' }] }) });
+    await renderObservations();
+    await within(history()).findByText('Unavailable - your observations could not be read. This is not an empty list.');
   });
 
   test('the placeholder and its percentage bar are gone', async () => {

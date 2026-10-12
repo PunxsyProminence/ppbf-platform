@@ -5,15 +5,24 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import {
   OBSERVATION_CATEGORIES,
+  isObservationCategory,
   type ObservationCategory,
   type ParentObservationItem,
 } from '@/src/shared/parentObservations';
 
-/* THE GUARDIAN'S OBSERVATIONS TAB (WO-PH-04). A form to tell the coach what
-   the family notices at home -- a category, an optional 1-10 rating, and the
-   notes -- and the history of what this guardian has written about this
-   child, from /api/pilot/parent/observations. The rating is optional by
-   design (Q1 = B): "no rating" is the default and a real answer.
+/* THE GUARDIAN'S OBSERVATIONS TAB (WO-PH-04). A form to write down what the
+   family notices at home -- a category, an optional 1-10 rating, and the
+   notes -- saved to the child's record at the gym, and the history of what
+   this guardian has written about this child, from
+   /api/pilot/parent/observations. The rating is optional by design (Q1 = B):
+   "no rating" is the default and a real answer.
+
+   SAVED, NOT "SENT TO THE COACH". No coach screen draws these notes today
+   (see the route), so nothing here says a coach has them. Something a coach
+   needs to know now goes through Report a Barrier, which a coach does read.
+
+   The parent mounts this per child (key = the child's id), so a draft typed
+   about one child is never left in the box, or sent, for the sibling.
 
    The list is this guardian's own entries for the selected child, read per
    child, keyed and aborted on switch like every other per-child read on the
@@ -30,7 +39,7 @@ function isItem(value: unknown): value is ParentObservationItem {
   const row = value as Partial<ParentObservationItem> | null;
   return row !== null && typeof row === 'object'
     && typeof row.note_id === 'string'
-    && typeof row.category === 'string' && row.category in OBSERVATION_CATEGORIES
+    && isObservationCategory(row.category)
     && (row.rating === null || (typeof row.rating === 'number' && Number.isInteger(row.rating)))
     && typeof row.notes === 'string'
     && typeof row.created_at === 'string';
@@ -43,6 +52,9 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
   const [notes, setNotes] = useState('');
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ athleteId: string; tone: 'saved' | 'failed'; text: string } | null>(null);
+  // Bumped to re-read the list when a save went through but its row could
+  // not be read back.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -69,7 +81,7 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
       }
     })();
     return () => controller.abort();
-  }, [athleteId]);
+  }, [athleteId, reloadNonce]);
 
   const shown = loaded?.athleteId === athleteId ? loaded : null;
   const shownMessage = message?.athleteId === athleteId ? message : null;
@@ -94,24 +106,34 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
           notes: notes.trim(),
         }),
       });
-      const payload = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; item?: unknown } | null;
+      const payload = (await response.json().catch(() => null)) as { ok?: boolean; item?: unknown } | null;
       if (!response.ok || payload?.ok !== true) {
-        throw new Error(typeof payload?.error === 'string' && payload.error ? payload.error : 'It did not save.');
+        // In words a family can act on, never the server's own text.
+        throw new Error(response.status === 400
+          ? 'pick what it is about and write what you noticed (up to 4000 characters)'
+          : response.status === 401
+            ? 'you are signed out; sign in again'
+            : response.status === 403 || response.status === 404
+              ? 'this child is not on your account'
+              : 'the gym could not save it just now');
       }
       const item = isItem(payload.item) ? payload.item : null;
       setNotes('');
       setRating('');
-      setMessage({ athleteId: forAthlete, tone: 'saved', text: 'Sent to the coach.' });
+      setMessage({ athleteId: forAthlete, tone: 'saved', text: 'Saved.' });
       if (item) {
+        // Once: a re-read for this child may already have brought it in.
         setLoaded((held) => (held && held.athleteId === forAthlete && held.state === 'loaded'
-          ? { ...held, items: [item, ...held.items] }
+          ? { ...held, items: [item, ...held.items.filter((existing) => existing.note_id !== item.note_id)] }
           : held));
+      } else {
+        setReloadNonce((nonce) => nonce + 1);
       }
     } catch (error) {
       setMessage({
         athleteId: forAthlete,
         tone: 'failed',
-        text: `That did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. What you wrote is still in the box.`,
+        text: `That did not save -- ${error instanceof Error && error.message ? error.message : 'the gym could not be reached'}. What you wrote is still in the box.`,
       });
     } finally {
       setSending(false);
@@ -121,7 +143,7 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
   return (
     <div className="space-y-[var(--s5)]">
       <form onSubmit={handleSubmit} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]">
-        <h3 className="t-label">Tell the coach what you notice</h3>
+        <h3 className="t-label">Write down what you notice</h3>
         <label className="field block">
           <span className="t-label">What it is about</span>
           <select
@@ -161,7 +183,7 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
           </p>
         )}
         <button type="submit" className="btn w-full" disabled={sending || !notes.trim()}>
-          {sending ? 'Sending…' : 'Send to Coach'}
+          {sending ? 'Saving…' : 'Save'}
         </button>
       </form>
 
