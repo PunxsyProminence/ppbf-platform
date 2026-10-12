@@ -661,6 +661,7 @@ describe('through the routes: revise, unlink and correct, and what the next read
     execution: ExecutionItem;
     evidence: LinkItem[];
     review: ReviewItem | null;
+    review_history: Array<ReviewItem & { retired_on_reopen: boolean; retired_at: string }>;
   }
 
   let db: Client;
@@ -919,19 +920,28 @@ describe('through the routes: revise, unlink and correct, and what the next read
     expect(final?.evidence.map((entry) => entry.status)).toEqual(['removed', 'removed']);
     expect(final?.review?.review_id).toBe(reReviewed.review_id);
 
-    // The verdict stands on finished work, so the work cannot be flipped back
-    // to in progress underneath it. Refused whole, with the reason.
-    const beforeReopen = await ledger();
+    // Issue #1481 (Jason, 2026-10-12: "6B"): the work can be reopened under its
+    // verdict. The verdict is retired to history -- the review route shows no
+    // standing verdict and lists the retired one -- and the evidence stays.
     const reopen = await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
       action: 'correct',
       execution_id: current.execution_id,
       correction_reason: 'it had not actually finished',
       outcome: 'in_progress',
     }));
-    expect(reopen.status).toBe(409);
-    expect(((await reopen.json()) as { error: string }).error).toMatch(/outcome review/);
-    expect(await ledger()).toBe(beforeReopen);
-    expect((await chainFor(current.execution_id))?.execution.status).toBe('completed');
+    expect(reopen.status).toBe(200);
+    const reopenedId = ((await reopen.json()) as { item: ExecutionItem }).item.execution_id;
+    const reopenedChain = await chainFor(reopenedId);
+    expect(reopenedChain?.execution.status).toBe('in_progress');
+    expect(reopenedChain?.review).toBeNull();
+    expect(reopenedChain?.evidence.map((entry) => entry.link_id).sort()).toEqual(final!.evidence.map((entry) => entry.link_id).sort());
+    // History, newest first: the re-review's verdict retired on reopening, then
+    // the first verdict the re-review replaced.
+    expect(reopenedChain?.review_history.map((entry) => [entry.review_id, entry.retired_on_reopen])).toEqual([
+      [reReviewed.review_id, true],
+      [reviewed.review_id, false],
+    ]);
+    expect(reopenedChain?.review_history.every((entry) => typeof entry.retired_at === 'string' && entry.retired_at.length > 0)).toBe(true);
 
     // Both attempts are still there.
     const attempts = await db.query(

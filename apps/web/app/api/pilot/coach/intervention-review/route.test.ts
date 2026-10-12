@@ -7,6 +7,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   linkEvidence,
   listEvidence,
+  listRetiredReviews,
   removeEvidence,
   reviewOutcome,
 } from '@/src/server/pilot/interventionEvidence';
@@ -38,6 +39,9 @@ jest.mock('@/src/server/pilot/interventionEvidence', () => {
     reviewOutcome: jest.fn(),
     listEvidence: jest.fn().mockResolvedValue([]),
     getActiveReview: jest.fn().mockResolvedValue(null),
+    // Earlier verdicts (issue #1481); the real read is pinned against real rows
+    // in interventionEvidence.pg.test.ts and interventionExecutions.pg.test.ts.
+    listRetiredReviews: jest.fn().mockResolvedValue([]),
     getDecisionTexts: jest.fn().mockResolvedValue([]),
     getEvidenceLinkOwner: jest.fn(),
   };
@@ -409,4 +413,20 @@ test('an unfiltered review read is scoped to the athletes the caller may reach',
   // The narrative and evidence of an unreachable athlete are never even read.
   expect(mockListEvidence).toHaveBeenCalledTimes(1);
   expect(mockListEvidence).toHaveBeenCalledWith('org-1', 'ex-mine');
+});
+
+// Issue #1481: each item carries its earlier verdicts, read for that execution
+// in the session's organization.
+test("GET carries each execution's earlier verdicts as review_history", async () => {
+  const history = [{ review_id: 'rev-old', status: 'superseded', retired_on_reopen: true, retired_at: '2026-10-12T15:00:00.000Z' }];
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockListExecutions.mockResolvedValueOnce([{ execution_id: 'ex-1', athlete_id: 'ath-1', status: 'in_progress' }]);
+  mockAccessible.mockResolvedValueOnce(new Set(['ath-1']));
+  jest.mocked(listRetiredReviews).mockResolvedValueOnce(history as never);
+  const response = await GET(new NextRequest('http://localhost/api/pilot/coach/intervention-review'));
+  expect(response.status).toBe(200);
+  const payload = (await response.json()) as { items: Array<{ execution: { execution_id: string }; review_history: unknown[] }> };
+  expect(payload.items.length).toBeGreaterThan(0);
+  expect(payload.items[0].review_history).toEqual(history);
+  expect(jest.mocked(listRetiredReviews)).toHaveBeenCalledWith(expect.any(String), payload.items[0].execution.execution_id);
 });
