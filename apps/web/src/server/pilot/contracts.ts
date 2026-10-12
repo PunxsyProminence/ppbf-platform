@@ -62,6 +62,9 @@ export interface PilotGoal {
   progress_percent: number | null;
   created_at: string;
   updated_at: string;
+  // Present on rows read back from pilot.goals ('smart' by default); a write
+  // payload does not carry it. 'own_words' rows come from the personal-goal path.
+  goal_kind?: 'smart' | 'own_words';
 }
 
 export interface PilotSession {
