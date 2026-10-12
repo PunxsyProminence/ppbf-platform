@@ -574,9 +574,6 @@ export default function ResearchIntakePage() {
             <Link href="/evidence" className="btn btn--ghost">
               Evidence Review
             </Link>
-            <Link href="/source-control#publish" className="btn btn--ghost">
-              Publish Stage
-            </Link>
           </div>
         </div>
       </header>

@@ -29,17 +29,21 @@ test('claims no stage is complete, on the page furthest down the pipeline', () =
 });
 
 test('says where you are standing, counted rather than judged', () => {
-  render(<DevelopmentPipelineBanner currentStage="audit" />);
+  render(<DevelopmentPipelineBanner currentStage="simulator" />);
 
-  expect(screen.getByText('Stage 5 of 7: AUDIT TRACE')).toBeTruthy();
-  expect(screen.getByText('Next: SOURCE CONTROL')).toBeTruthy();
+  expect(screen.getByText('Stage 4 of 5: SCENARIO SIMULATOR')).toBeTruthy();
+  expect(screen.getByText('Next: AUDIT TRACE')).toBeTruthy();
 });
 
 test('the last stage is the last stage, not a release announcement', () => {
-  const { container } = render(<DevelopmentPipelineBanner currentStage="publish" />);
+  // Audit Trace is the last stage since lane N4-04 deleted the mock source
+  // control and publish pages; the banner no longer links to either.
+  const { container } = render(<DevelopmentPipelineBanner currentStage="audit" />);
 
   expect(container.textContent).not.toMatch(/Ecosystem Release Complete/);
-  expect(screen.getByText('Next: Publish is the last stage')).toBeTruthy();
+  expect(screen.getByText('Stage 5 of 5: AUDIT TRACE')).toBeTruthy();
+  expect(screen.getByText('Next: this is the last stage')).toBeTruthy();
+  expect(container.querySelector('a[href^="/source-control"]')).toBeNull();
 });
 
 test('every stage link but the current one is drawn the same way', () => {
@@ -48,7 +52,7 @@ test('every stage link but the current one is drawn the same way', () => {
   const { container } = render(<DevelopmentPipelineBanner currentStage="simulator" />);
 
   const links = [...container.querySelectorAll('a')];
-  expect(links).toHaveLength(7);
+  expect(links).toHaveLength(5);
 
   const current = links.filter((link) => link.getAttribute('aria-current') === 'page');
   expect(current).toHaveLength(1);

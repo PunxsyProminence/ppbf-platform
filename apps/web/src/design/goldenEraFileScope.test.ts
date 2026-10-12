@@ -398,7 +398,8 @@ describe('the 010 mockup did not delete or invent research controls', () => {
     for (const label of [
       'Q&amp;A Research Chat',
       'Evidence Review',
-      'Publish Stage',
+      // 'Publish Stage' linked to the mock /source-control page, deleted by
+      // lane N4-04; the button went with it.
       'Move to Evidence',
       'Save Requirement',
       'Cancel',

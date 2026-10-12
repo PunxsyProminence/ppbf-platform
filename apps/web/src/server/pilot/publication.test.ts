@@ -334,6 +334,8 @@ describe('getResearchLibrary serves only the live shelf', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toMatch(/from pilot\.research_library/);
     expect(sql).toMatch(/where organization_id = \$1 and archived_at is null and suppressed_at is null/);
+    // An archived (or otherwise no longer ready) source video takes its entry off the shelf.
+    expect(sql).toMatch(/source_video\.status <> 'ready'/);
     expect(params[0]).toBe('org-1');
   });
 });

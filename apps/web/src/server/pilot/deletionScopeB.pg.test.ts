@@ -825,6 +825,39 @@ describe('before the deletion: every reader shows the athlete (the positive cont
   });
 });
 
+// Not Scope B, but the same shelf read on the same seeded rows: archiving a
+// published video (videoArchive.ts) writes nothing on the shelf, so the read
+// has to ask the source video. Restoring it brings the entry back unchanged.
+describe('the research-library shelf follows its source video', () => {
+  beforeAll(async () => {
+    activeClient = await cloneTemplate('scope_b_shelf_archive');
+  });
+  afterAll(async () => {
+    await activeClient?.end();
+    activeClient = null;
+  });
+
+  test('an archived source video takes its entry off the shelf, and restoring it brings it back', async () => {
+    const { setVideoArchiveState } = await import('./videoArchive');
+    const shelf = async () => (await getResearchLibrary(ORG)).map((row) => row.library_id).sort();
+    expect(await shelf()).toEqual(['lib-ath-sb-gone', 'lib-ath-sb-live']);
+
+    const archived = await setVideoArchiveState({
+      organizationId: ORG, videoSessionId: 'vs-ath-sb-live', action: 'archive',
+      actorAccountId: ADMIN, actorRole: 'organization_admin', reason: 'pulled',
+    });
+    expect(archived?.status).toBe('archived');
+    expect(await shelf()).toEqual(['lib-ath-sb-gone']);
+
+    const restored = await setVideoArchiveState({
+      organizationId: ORG, videoSessionId: 'vs-ath-sb-live', action: 'restore',
+      actorAccountId: ADMIN, actorRole: 'organization_admin',
+    });
+    expect(restored?.status).toBe('ready');
+    expect(await shelf()).toEqual(['lib-ath-sb-gone', 'lib-ath-sb-live']);
+  });
+});
+
 describe('after deleteAthleteRecord(GONE)', () => {
   let result: Awaited<ReturnType<typeof deleteAthleteRecord>>;
   let deletedAt: string;

@@ -120,18 +120,18 @@ describe('CardCatalog', () => {
     render(<CardCatalog />);
     openCatalog();
     const field = screen.getByRole('combobox');
-    fireEvent.change(field, { target: { value: 'review' } });
+    fireEvent.change(field, { target: { value: 'drills' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(push).toHaveBeenCalledWith('/coach/review-queue');
+    expect(push).toHaveBeenCalledWith('/coach/drills');
   });
 
   it('finds a surface by keyword rather than title', () => {
     render(<CardCatalog />);
     openCatalog();
     const field = screen.getByRole('combobox');
-    fireEvent.change(field, { target: { value: 'layer 10' } });
+    fireEvent.change(field, { target: { value: 'countermovement' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(push).toHaveBeenCalledWith('/coach/review-queue');
+    expect(push).toHaveBeenCalledWith('/coach/assessments');
   });
 
   it('moves the cursor with the arrow keys', () => {
@@ -250,10 +250,10 @@ describe('CardCatalog', () => {
 
 describe('Corridor', () => {
   it('names the room you are standing in', () => {
-    pathname = '/coach/review-queue';
+    pathname = '/coach/drills';
     render(<Corridor />);
     expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Gym Floor');
-    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Review Queue');
+    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Drills');
   });
 
   it('opens to the rooms the session can enter, and no others', () => {
@@ -286,17 +286,17 @@ describe('Corridor', () => {
   });
 
   it('marks the current room as where you are', () => {
-    pathname = '/coach/review-queue';
+    pathname = '/coach/drills';
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByText(/you are here/i)).toBeTruthy();
   });
 
   it('marks the current surface with aria-current', () => {
-    pathname = '/coach/review-queue';
+    pathname = '/coach/drills';
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    const link = screen.getByRole('link', { name: 'Review Queue' });
+    const link = screen.getByRole('link', { name: 'Drills' });
     expect(link.getAttribute('aria-current')).toBe('page');
   });
 
