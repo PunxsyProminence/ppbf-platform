@@ -24,7 +24,7 @@ const APPLY_EXPRESSION =
   "${{ (github.event_name == 'schedule' && vars.PPBF_SESSION_CLEANUP_SCHEDULED_APPLY == 'true') || inputs.apply == 'APPLY' }}";
 
 describe('session-token-cleanup.yml', () => {
-  test('runs nightly at 07:50 UTC, after backup.yml and retention-cleanup.yml', () => {
+  test('runs nightly at 07:50 UTC, spaced after backup.yml and retention-cleanup.yml', () => {
     expect(WORKFLOW).toMatch(/^\s+- cron: '50 7 \* \* \*'$/m);
     const cronOf = (file: string) => /- cron: '(\d+) (\d+) /.exec(
       fs.readFileSync(path.resolve(__dirname, `../../../../../.github/workflows/${file}`), 'utf8'),
@@ -52,8 +52,9 @@ describe('session-token-cleanup.yml', () => {
   });
 
   test('runs the session:cleanup script, under pipefail, and masks the connection string', () => {
-    expect(WORKFLOW).toContain('npm --prefix apps/web run session:cleanup | tee session-cleanup-result.json');
-    expect(WORKFLOW).toMatch(/shell: bash\n\s+run: \|\n\s+npm --prefix apps\/web run session:cleanup/);
+    // --silent and 2>&1, so the summary shows the script's line, failure included.
+    expect(WORKFLOW).toContain('npm --silent --prefix apps/web run session:cleanup 2>&1 | tee session-cleanup-result.json');
+    expect(WORKFLOW).toMatch(/shell: bash\n(?:\s+#.*\n)*\s+run: \|\n\s+npm --silent --prefix apps\/web run session:cleanup/);
     expect(WORKFLOW).toContain('echo "::add-mask::$CONN"');
     expect(PACKAGE.scripts['session:cleanup']).toBe('tsx scripts/pilot-cleanup-sessions.ts');
   });

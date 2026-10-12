@@ -17,7 +17,7 @@
 #
 # DRY RUN FIRST. The scheduled run only REPORTS how many tokens are due until
 # an operator sets the repository variable PPBF_SESSION_CLEANUP_SCHEDULED_APPLY
-# to `true`, after reading a few nights of counts. A person can delete at any
+# to `true` (GitHub compares without case), after reading a few nights of counts. A person can delete at any
 # time by dispatching with apply=APPLY. Until the variable is set, nothing is
 # deleted on a schedule.
 #
@@ -31,8 +31,10 @@ name: session-token-cleanup
 
 on:
   schedule:
-    # 07:50 UTC daily -- after backup.yml (07:10) and retention-cleanup.yml
-    # (07:40), so the night's backup exists before anything is deleted.
+    # 07:50 UTC daily -- spaced after backup.yml (07:10) and
+    # retention-cleanup.yml (07:40). Spacing, not a dependency: GitHub can
+    # delay a scheduled run, so this does not guarantee the night's backup
+    # has finished first.
     - cron: '50 7 * * *'
   workflow_dispatch:
     inputs:
@@ -135,15 +137,18 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
       # A scheduled run has no inputs. It deletes only when the repository
-      # variable PPBF_SESSION_CLEANUP_SCHEDULED_APPLY is exactly 'true' (DRY RUN
-      # FIRST, above); a dispatch deletes only when a person typed APPLY.
+      # variable PPBF_SESSION_CLEANUP_SCHEDULED_APPLY is 'true' (DRY RUN FIRST,
+      # above); a dispatch deletes only when a person typed APPLY. GitHub's ==
+      # ignores case, so 'TRUE' or 'apply' count too; an unset variable is ''.
       - name: Delete Expired Session Tokens
         env:
           PPBF_SESSION_CLEANUP_APPLY: ${{ (github.event_name == 'schedule' && vars.PPBF_SESSION_CLEANUP_SCHEDULED_APPLY == 'true') || inputs.apply == 'APPLY' }}
         # `shell: bash` for pipefail, so a failed sweep is not hidden by `tee`.
         shell: bash
+        # --silent and 2>&1: the file holds the script's one JSON line, and on
+        # a failure the failure line (written to stderr), not npm's banner.
         run: |
-          npm --prefix apps/web run session:cleanup | tee session-cleanup-result.json
+          npm --silent --prefix apps/web run session:cleanup 2>&1 | tee session-cleanup-result.json
 
       - name: Record What Ran
         if: always()

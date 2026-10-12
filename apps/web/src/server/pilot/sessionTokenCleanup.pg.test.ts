@@ -239,7 +239,7 @@ test('a window given on the command line is used, and a malformed one refused', 
 test('a database the caller did not name is refused before anything is read or deleted', async () => {
   const result = await run({ PPBF_SESSION_CLEANUP_APPLY: 'true', PPBF_EXPECTED_POSTGRES_DATABASE: 'some_other_db' });
   expect(result.code).not.toBe(0);
-  expect(result.event.event).toBe('session.cleanup.refused');
+  expect(result.event).toEqual({ event: 'session.cleanup.refused', reason: 'POSTGRES_TARGET_MISMATCH' });
   // The refusal names a token, never the connection string.
   expect(`${result.stdout}${result.stderr}`).not.toContain('postgres:postgres@');
   expect(await tokensLeft()).toEqual(ALL);
@@ -252,4 +252,20 @@ test('no token hash or account id reaches the output', async () => {
     expect(output).not.toContain('acct-session-cleanup');
     for (const name of Object.keys(TOKENS)) expect(output).not.toContain(name);
   }
+});
+
+test('the guard runs before any connection: a mismatched target that is also unreachable is refused, not a connection error', async () => {
+  const result = await run({
+    PPBF_SESSION_CLEANUP_APPLY: 'true',
+    AZURE_POSTGRES_CONNECTION_STRING: 'postgres://postgres:postgres@localhost:1/other_db',
+  });
+  expect(result.code).not.toBe(0);
+  expect(result.event).toEqual({ event: 'session.cleanup.refused', reason: 'POSTGRES_TARGET_MISMATCH' });
+});
+
+test('no connection string is a named failure', async () => {
+  const result = await run({ AZURE_POSTGRES_CONNECTION_STRING: '' });
+  expect(result.code).not.toBe(0);
+  expect(result.event).toEqual({ event: 'session.cleanup.failed', reason: 'MISSING_CONNECTION_STRING' });
+  expect(await tokensLeft()).toEqual(ALL);
 });
