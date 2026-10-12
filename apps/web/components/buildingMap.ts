@@ -445,6 +445,9 @@ export const BUILDING: readonly Door[] = [
     hint: 'See where two coaches labelled the same clip differently. It measures the labelling, not a coach or an athlete.' },
   { href: '/coach/video-publications', label: 'Video Publications', room: 'floor',
     roles: ['coach'], keywords: 'publish film share video' },
+  { href: '/coach/video-publications/library', label: 'Video Library', room: 'floor',
+    roles: ['coach', 'admin', 'athlete'], keywords: 'video library published clips film browse research library tags',
+    hint: 'Every clip published to the gym\u2019s library, newest first. Read-only.' },
   { href: '/coach/environment/intake-router', label: 'Intake Router', room: 'floor',
     roles: ['coach'], keywords: 'intake routing new athlete triage' },
   /* "Passbook Check" until 2026-08-19, and the word was doing two jobs. USA
