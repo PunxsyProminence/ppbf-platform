@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import {
   DrillNameTakenError,
+  DrillRestoreRefusedError,
   ReferenceDrillAlreadyPromotedError,
   assertDrillMeetsCueRule,
   isDrillNameCollision,
@@ -525,6 +526,190 @@ export async function updateDrillToReferenceVersion(
     );
 
     return { drill, previous };
+  };
+
+  return client ? run(client) : withTransaction(run);
+}
+
+// REINSTATE AN EARLIER VERSION (#1470). Same meaning of "retired" as the gates
+// above: no version of the lineage is active.
+const REINSTATE_ON_RETIRED_MESSAGE =
+  'This drill is retired, so an earlier version cannot be reinstated. Restore the drill first.';
+const REINSTATE_HEAD_MESSAGE = 'This is already the newest version.';
+const REINSTATE_RACE_MESSAGE = 'This drill changed while it was being reinstated. Reload the page and try again.';
+
+/**
+ * Brings back an earlier version of a gym's drill (`drillId`: the version to
+ * bring back) as the lineage's NEXT version: v(head+1) on the same lineage with
+ * the earlier version's content and its reference_drill_id, the old head
+ * deactivated and superseded. History is never rewritten -- every version
+ * stays, so issued work keeps the instruction it pinned.
+ *
+ * Decided under the lineage lock, each refused with nothing written: retired
+ * (DRILL_RETIRED, checked first), already the newest version, a withdrawn
+ * reference (Restore's own refusal), the cue rule when the cues or category
+ * differ from the head's, and a name clash. Reinstates on one lineage serialize
+ * on that lock. One transaction, the caller's when `client` is given, audit row
+ * included.
+ */
+export async function reinstateDrillVersion(
+  input: {
+    organizationId: string;
+    drillId: string;
+    actorAccountId: string;
+    actorRole: PilotRole;
+  },
+  client?: PoolClient,
+): Promise<{ drill: PilotDrillVersionRow; previous: PilotDrillVersionRow; source: PilotDrillVersionRow }> {
+  const run = async (tx: PoolClient) => {
+    // Every row of the lineage, locked in a statement of its own as Restore and
+    // the D1 update do. Organization-scoped, so another gym's id locks nothing
+    // and reads as not found.
+    const locked = await tx.query(
+      `select 1 from pilot.drills l
+       where l.organization_id = $1
+         and l.lineage_id = (
+           select d.lineage_id from pilot.drills d
+           where d.organization_id = $1 and d.drill_id = $2
+         )
+       for update`,
+      [input.organizationId, input.drillId],
+    );
+    if (locked.rows.length === 0) {
+      throw new Error('DRILL_NOT_FOUND');
+    }
+
+    // The version to bring back, whether any version is in use, and whether its
+    // reference has been withdrawn -- Restore's rule (drills.ts#updateDrill).
+    const sourceResult = await tx.query<PilotDrillVersionRow & { lineage_active: boolean; reference_withdrawn: boolean }>(
+      `select ${DRILL_VERSION_FIELDS.split(', ').map((field) => `s.${field}`).join(', ')},
+              exists (
+                select 1 from pilot.drills a
+                where a.organization_id = s.organization_id and a.lineage_id = s.lineage_id and a.active
+              ) as lineage_active,
+              (
+                s.reference_drill_id is not null
+                and not exists (
+                  select 1 from pilot.drill_library r
+                  where r.organization_id = s.organization_id and r.drill_id = s.reference_drill_id and r.active
+                )
+              ) as reference_withdrawn
+       from pilot.drills s
+       where s.organization_id = $1 and s.drill_id = $2`,
+      [input.organizationId, input.drillId],
+    );
+    const { lineage_active: lineageActive, reference_withdrawn: referenceWithdrawn, ...source } = sourceResult.rows[0];
+
+    const headResult = await tx.query<PilotDrillVersionRow>(
+      `select ${DRILL_VERSION_FIELDS}
+       from pilot.drills
+       where organization_id = $1 and lineage_id = $2
+       order by version desc
+       limit 1`,
+      [input.organizationId, source.lineage_id],
+    );
+    const previous = headResult.rows[0];
+
+    if (!lineageActive) {
+      throw new ConflictError(REINSTATE_ON_RETIRED_MESSAGE, DRILL_RETIRED_CODE);
+    }
+    if (previous.drill_id === source.drill_id) {
+      throw new ConflictError(REINSTATE_HEAD_MESSAGE, 'DRILL_ALREADY_NEWEST_VERSION');
+    }
+    if (referenceWithdrawn) {
+      throw new DrillRestoreRefusedError('reference_withdrawn');
+    }
+
+    // THE CUE RULE ON A NEW VERSION (OD-2026-10-06-026), as adoption applies it:
+    // judged only when the cues or the category differ from the head's.
+    const sameCues = JSON.stringify(source.cues) === JSON.stringify(previous.cues);
+    if (!sameCues || source.category !== previous.category) {
+      await assertDrillMeetsCueRule({
+        organizationId: input.organizationId,
+        name: source.name,
+        category: source.category,
+        cues: source.cues,
+        referenceDrillId: source.reference_drill_id,
+      }, tx);
+    }
+
+    // Every active version deactivated before the insert (one active row per
+    // name), and the head stamped superseded -- as the D1 update does.
+    await tx.query(
+      `update pilot.drills
+       set active = false,
+           superseded_at = case when drill_id = $3 then now() else superseded_at end,
+           updated_at = now()
+       where organization_id = $1 and lineage_id = $2 and (active or drill_id = $3)`,
+      [input.organizationId, previous.lineage_id, previous.drill_id],
+    );
+
+    const newDrillId = randomUUID();
+    let inserted;
+    try {
+      inserted = await tx.query<PilotDrillVersionRow>(
+        `insert into pilot.drills
+           (organization_id, drill_id, name, category, focus, cues, difficulty, active,
+            version, lineage_id, supersedes_drill_id, reference_drill_id)
+         values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10,$11)
+         returning ${DRILL_VERSION_FIELDS}`,
+        [
+          input.organizationId,
+          newDrillId,
+          source.name,
+          source.category,
+          source.focus,
+          source.cues,
+          source.difficulty,
+          previous.version + 1,
+          previous.lineage_id,
+          previous.drill_id,
+          source.reference_drill_id,
+        ],
+      );
+    } catch (error) {
+      if (isDrillNameCollision(error)) {
+        throw new DrillNameTakenError(source.name);
+      }
+      const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
+      if (code === '23505' && constraint === 'pilot_drills_lineage_version_uq') {
+        throw new ConflictError(REINSTATE_RACE_MESSAGE, 'DRILL_VERSION_CONFLICT');
+      }
+      throw error;
+    }
+    const drill = inserted.rows[0];
+
+    await tx.query(
+      `update pilot.drills set superseded_by_drill_id = $3
+       where organization_id = $1 and drill_id = $2`,
+      [input.organizationId, previous.drill_id, newDrillId],
+    );
+
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: input.actorAccountId,
+        actor_role: input.actorRole,
+        organization_id: input.organizationId,
+        entity_type: 'drill',
+        entity_id: drill.drill_id,
+        details: {
+          action: 'reinstate_version',
+          reinstated_from_drill_id: source.drill_id,
+          reinstated_from_version: source.version,
+          from_drill_id: previous.drill_id,
+          version: drill.version,
+          lineage_id: drill.lineage_id,
+          reference_drill_id: drill.reference_drill_id,
+          name: drill.name,
+          category: drill.category,
+          difficulty: drill.difficulty,
+        },
+      },
+      tx,
+    );
+
+    return { drill, previous, source };
   };
 
   return client ? run(client) : withTransaction(run);

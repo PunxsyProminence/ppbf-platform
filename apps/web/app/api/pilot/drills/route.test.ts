@@ -14,6 +14,8 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { queryOne } from '@/src/server/pilot/db';
+import { reinstateDrillVersion } from '@/src/server/pilot/drillVersioning';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -34,6 +36,11 @@ jest.mock('@/src/server/pilot/drills', () => {
   };
 });
 
+jest.mock('@/src/server/pilot/drillVersioning', () => ({
+  ...jest.requireActual('@/src/server/pilot/drillVersioning'),
+  reinstateDrillVersion: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(async () => []),
   queryOne: jest.fn(async () => null),
@@ -51,6 +58,7 @@ const mockUpdateDrill = updateDrill as jest.Mock;
 const mockGetDrill = getDrill as jest.Mock;
 const mockCueRule = assertDrillMeetsCueRule as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockReinstate = reinstateDrillVersion as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -655,5 +663,132 @@ describe('PATCH /api/pilot/drills', () => {
       error: 'This gym already has a drill named "Slip and Lateral Pivot Step"',
     });
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /api/pilot/drills reinstate (#1470)', () => {
+  const v2 = drill({ drill_id: 'drill-v2', active: false });
+  const v3 = drill({ drill_id: 'drill-v3', active: false });
+  const v4 = drill({ drill_id: 'drill-v4', active: true });
+
+  beforeEach(() => {
+    mockReinstate.mockResolvedValue({ drill: v4, previous: v3, source: v2 });
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)(
+    '%s reinstates an earlier version, for the whole gym, and gets the new version back',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role, accountId: `acct-${role}` }));
+
+      const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        ok: true,
+        organization_id: 'org-1',
+        drill: v4,
+        reinstated_from_drill_id: 'drill-v2',
+        previous_drill_id: 'drill-v3',
+      });
+      expect(mockReinstate).toHaveBeenCalledWith({
+        organizationId: 'org-1',
+        drillId: 'drill-v2',
+        actorAccountId: `acct-${role}`,
+        actorRole: role,
+      });
+      // Not an edit: no in-place update and no second audit row from the route.
+      expect(mockUpdateDrill).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner', 'board'] as const)(
+    '%s is refused before anything is read',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role }));
+
+      const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
+
+      expect(res.status).toBe(403);
+      expect(mockReinstate).not.toHaveBeenCalled();
+      expect(mockGetDrill).not.toHaveBeenCalled();
+      expect(queryOne).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    ['name', 'Renamed'],
+    ['category', 'Footwork'],
+    ['focus', 'New focus.'],
+    ['cues', ['A cue']],
+    ['difficulty', 'advanced'],
+    ['active', true],
+    ['active', false],
+  ])('reinstate with %s as well is a 400, and nothing is written', async (field, value) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true, [field]: value }));
+
+    expect(res.status).toBe(400);
+    expect(mockReinstate).not.toHaveBeenCalled();
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test('reinstate must be exactly true', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: 'yes' }));
+
+    expect(res.status).toBe(400);
+    expect(mockReinstate).not.toHaveBeenCalled();
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [new ConflictError('This drill is retired, so an earlier version cannot be reinstated. Restore the drill first.', 'DRILL_RETIRED')],
+    [new ConflictError('This is already the newest version.', 'DRILL_ALREADY_NEWEST_VERSION')],
+    [new ConflictError('This drill changed while it was being reinstated. Reload the page and try again.', 'DRILL_VERSION_CONFLICT')],
+    [new ConflictError('Coaching cue required', 'DRILL_CUE_REQUIRED')],
+  ])('the refusal %p passes through as a 409 with its code', async (error) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockReinstate.mockRejectedValueOnce(error);
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: error.message, code: error.code });
+  });
+
+  test("a withdrawn reference is Restore's own refusal", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockReinstate.mockRejectedValueOnce(new DrillRestoreRefusedError('reference_withdrawn'));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "This drill's reference has been withdrawn, so it cannot be restored.",
+      code: 'reference_withdrawn',
+    });
+  });
+
+  test('a name clash is the name-taken 409', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockReinstate.mockRejectedValueOnce(new DrillNameTakenError('Jab Return'));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This gym already has a drill named "Jab Return"' });
+  });
+
+  test("a drill not in this gym is the edit route's 404", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockReinstate.mockRejectedValueOnce(new Error('DRILL_NOT_FOUND'));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'other-gym-drill', reinstate: true }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
   });
 });

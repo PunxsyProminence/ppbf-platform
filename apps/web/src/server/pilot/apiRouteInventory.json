@@ -7107,7 +7107,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event. Drill content only.",
+    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event; reinstate: true brings back an earlier version as the newest (reinstateDrillVersion, audit row in its transaction). Drill content only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
