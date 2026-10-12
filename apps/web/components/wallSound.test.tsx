@@ -156,6 +156,21 @@ describe('the TV sound control', () => {
     expect(screen.queryByRole('button', { name: 'Test bell' })).toBeNull();
   });
 
+  test.each([
+    ['arming', 'Sound waiting'],
+    ['unavailable', 'No audio'],
+  ] as const)('a %s engine: pressing "%s" turns sound on, never off', async (status, label) => {
+    setSound(status);
+    global.fetch = pairedFetch() as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+    });
+    expect(sound.setEnabled.mock.calls).toEqual([[true]]);
+    expect(sound.play.mock.calls).toEqual([['bell']]);
+  });
+
   test('a poll does not ring anything or touch the sound setting', async () => {
     setSound('on');
     const fetchMock = pairedFetch();

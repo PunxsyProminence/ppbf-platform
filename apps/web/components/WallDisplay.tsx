@@ -17,7 +17,8 @@ import useGymSound from './useGymSound';
  *
  *   - No RoleStandaloneView. That shell brings a session bar, a breadcrumb
  *     trail, an Operations link and a Shadow chat button -- four controls on a
- *     screen with no pointer attached to it. GlobalRoleHeader stands down on
+ *     screen with no pointer attached to it. The only controls here are the
+ *     pair box and, once paired, the sound switch, both worked with the remote. GlobalRoleHeader stands down on
  *     this route for the same reason.
  *   - No hover states and no focus rings, because there is no cursor and no
  *     keyboard. Every element here is text.
@@ -314,7 +315,8 @@ export default function WallDisplay() {
 /* ------------------------------------------------------------- pair box --- */
 
 /**
- * THE ONE CONTROL ON THE WALL, and only while the screen is not paired.
+ * THE ONE CONTROL ON AN UNPAIRED WALL. A paired screen shows only the sound
+ * switch (WallSound, below).
  *
  * A coach presses "Pair a TV" on the dashboard and reads a six-character code
  * off it; somebody types that code here with the TV remote. POST
@@ -446,8 +448,10 @@ function WallSound() {
   const { enabled, status, setEnabled, play } = useGymSound();
 
   async function toggle() {
-    // Inside the press, which is what lets the browser start audio.
-    const live = await setEnabled(!enabled);
+    // Inside the press, which is what lets the browser start audio. Only a
+    // screen whose sound is on turns it off; "Sound waiting" (a reloaded TV)
+    // and "No audio" are a press to start it.
+    const live = await setEnabled(status !== 'on');
     if (live) play('bell');
   }
 

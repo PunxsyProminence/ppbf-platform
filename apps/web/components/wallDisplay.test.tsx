@@ -771,6 +771,13 @@ describe('it is a display, not an interface', () => {
 
     const sound = container.querySelector('[aria-label="TV sound"]');
     expect(sound).not.toBeNull();
+    // The sound group holds the switch and the test bell and nothing else.
+    const soundControls = Array.from(sound?.querySelectorAll('*') ?? []).filter((el) => el.matches('button, a, input, select, textarea, form, [role="button"], [tabindex]'));
+    expect(soundControls.length).toBeGreaterThan(0);
+    for (const el of soundControls) {
+      expect(el.tagName).toBe('BUTTON');
+      expect(['Sound off', 'Sound waiting', 'Sound on', 'No audio', 'Test bell']).toContain(el.textContent);
+    }
     sound?.remove();
     for (const selector of ['button', 'a', 'input', 'select', 'textarea', 'form', '[role="button"]', '[tabindex]']) {
       expect({ selector, found: container.querySelectorAll(selector).length }).toEqual({ selector, found: 0 });
