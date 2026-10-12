@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
+import { SaveNote } from './AthleteAchievements';
 import { apiBase } from '@/lib/apiBase';
 
 /**
@@ -62,6 +63,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
   const [why, setWhy] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [saving, setSaving] = useState(false);
+  // "I did it" says it is saving, and says so if the server did not keep it (WO-N5-02).
+  const [reachSave, setReachSave] = useState<'idle' | 'saving' | 'failed'>('idle');
   const [message, setMessage] = useState('');
 
   const load = useCallback(async () => {
@@ -151,6 +154,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
 
   const markReached = useCallback(async (goalId: string) => {
     if (!athleteId || readOnly) return;
+    setReachSave('saving');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/goals/personal`, {
         method: 'PATCH',
@@ -160,10 +164,14 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       });
       if (response.ok) {
         await load();
+        setReachSave('idle');
+      } else {
+        setReachSave('failed');
       }
     } catch {
-      /* Silent: the goal stays open, which is the truth until the server says
-         otherwise. */
+      // The goal stays open, which is the truth until the server says otherwise,
+      // and the line below says the press was not kept.
+      setReachSave('failed');
     }
   }, [athleteId, readOnly, load]);
 
@@ -260,6 +268,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       {working.length > 0 && (
         <div className="mt-[var(--s5)]">
           <h4 className="t-label">Working on</h4>
+          <SaveNote state={reachSave} />
           <ul className="mt-[var(--s3)] space-y-[var(--s3)]" role="list">
             {working.map((goal) => (
               <li

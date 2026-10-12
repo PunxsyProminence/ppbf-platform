@@ -47,7 +47,7 @@ import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
-type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
+type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
 
 /**
  * The six task-oriented groups the eleven surfaces sit under, approved by the
@@ -134,8 +134,17 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     ],
   },
   { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
-  { id: 'messages', label: 'Messages', tabs: [{ id: 'message-coach', label: 'Messages' }] },
-  { id: 'shadow', label: 'SHADOW', tabs: [{ id: 'shadow', label: 'SHADOW Intel' }] },
+  // Ask SHADOW lives with SHADOW (WO-N5-02, N5-02-Q1 A). It was a "Messages" group of its own,
+  // which read as messaging a coach; the question is answered by SHADOW and reaches no coach.
+  // The tab id stays 'message-coach' so anything that opens it still does.
+  {
+    id: 'shadow',
+    label: 'SHADOW',
+    tabs: [
+      { id: 'shadow', label: 'SHADOW Intel' },
+      { id: 'message-coach', label: 'Ask SHADOW' },
+    ],
+  },
 ];
 
 /** Which group owns a surface. Derived, never stored -- the tab stays the truth. */

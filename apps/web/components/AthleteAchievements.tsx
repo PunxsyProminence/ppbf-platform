@@ -106,6 +106,11 @@ export default function AthleteAchievements({
   const [state, setState] = useState<LoadState>('loading');
   const [recognitionFailed, setRecognitionFailed] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
+  // Save truth (WO-N5-02): a press that is saving says so, and one the server did not keep says
+  // that, instead of leaving the screen as if nothing had been pressed. Success is the screen
+  // itself changing after the server answers.
+  const [programSave, setProgramSave] = useState<'idle' | 'saving' | 'failed'>('idle');
+  const [milestoneSave, setMilestoneSave] = useState<'idle' | 'saving' | 'failed'>('idle');
 
   const isFamily = audience === 'family';
 
@@ -205,6 +210,7 @@ export default function AthleteAchievements({
   const chooseProgram = useCallback(async (next: string) => {
     if (!athleteId || !isProgram(next) || savingProgram) return;
     setSavingProgram(true);
+    setProgramSave('saving');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'PATCH',
@@ -214,10 +220,14 @@ export default function AthleteAchievements({
       });
       if (response.ok) {
         setProgram(next);
+        setProgramSave('idle');
+      } else {
+        setProgramSave('failed');
       }
     } catch {
-      // Leaving the previous program showing is the honest failure: the path
-      // on screen is still the one the server holds.
+      // The previous program stays showing -- the path on screen is still the
+      // one the server holds -- and the line below says the press was not kept.
+      setProgramSave('failed');
     } finally {
       setSavingProgram(false);
     }
@@ -225,6 +235,7 @@ export default function AthleteAchievements({
 
   const markMilestone = useCallback(async (milestone: Milestone) => {
     if (!athleteId || isFamily) return;
+    setMilestoneSave('saving');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'POST',
@@ -234,9 +245,13 @@ export default function AthleteAchievements({
       });
       if (response.ok) {
         await load();
+        setMilestoneSave('idle');
+      } else {
+        setMilestoneSave('failed');
       }
     } catch {
-      /* Silent: the milestone simply stays unmarked, which is the truth. */
+      // The milestone stays unmarked, which is the truth, and the line below says so.
+      setMilestoneSave('failed');
     }
   }, [athleteId, isFamily, load]);
 
@@ -390,6 +405,8 @@ export default function AthleteAchievements({
       {/* THE PATH. Only the tracks this program includes — a track that is    */}
       {/* not part of somebody's programme is absent, never greyed out.       */}
       {/* ------------------------------------------------------------------ */}
+      <SaveNote state={milestoneSave} />
+
       <div className="mt-[var(--s5)] space-y-[var(--s5)]">
         {tracks.map((track) => (
           <TrackPanel
@@ -429,9 +446,20 @@ export default function AthleteAchievements({
               </button>
             ))}
           </div>
+          <SaveNote state={programSave} />
         </div>
       )}
     </section>
+  );
+}
+
+/** One quiet line for a press that is saving or was not kept. Nothing at rest. */
+export function SaveNote({ state }: { state: 'idle' | 'saving' | 'failed' }) {
+  if (state === 'idle') return null;
+  return (
+    <p className="tcard-sub mt-[var(--s3)]" role="status">
+      {state === 'saving' ? 'Saving...' : 'That did not save. Try it again.'}
+    </p>
   );
 }
 
