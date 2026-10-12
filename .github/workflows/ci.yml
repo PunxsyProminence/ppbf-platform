@@ -88,6 +88,7 @@ jobs:
             athleteE2e: false,
             guardianE2e: false,
             activationE2e: false,
+            adminNarrowE2e: false,
             unknownCode: false,
             unclassifiedPaths: [],
           });
@@ -163,6 +164,7 @@ jobs:
             // unauthenticated from end to end, so the client role cache is
             // never consulted during it.
             activationE2e: false,
+            adminNarrowE2e: false,
             unknownCode: false,
             unclassifiedPaths: [],
           });
@@ -198,6 +200,15 @@ jobs:
           // no coverage gained. Same restraint the homepage predicate states.
           assert.equal(classifyPaths(['apps/web/src/server/pilot/pageGuard.ts']).activationE2e, false);
           assert.equal(classifyPaths(['apps/web/components/RoleSessionGate.tsx']).activationE2e, false);
+
+          // THE ADMIN NARROW-WIDTH CHECK (#1482 item 5): its own spec, its
+          // fixtures and each of its nine pages fire it; another admin page
+          // does not.
+          assert.equal(classifyPaths(['apps/web/e2e/admin-narrow-widths.spec.ts']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/e2e/support/adminNarrowFixtures.ts']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/admin/people/page.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/admin/waiver-status/page.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/admin/door-register/page.tsx']).adminNarrowE2e, false);
 
           // The homepage suite was the one journey whose own spec did not fire
           // its flag, so an edit to public-homepage.spec.ts could not run
@@ -466,7 +477,7 @@ jobs:
         run: npm run test:migrations
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.activation_e2e == 'true')
+        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.activation_e2e == 'true' || steps.changes.outputs.admin_narrow_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
@@ -546,6 +557,10 @@ jobs:
       - name: Run activation journey E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.activation_e2e == 'true'
         run: npm --workspace web run test:e2e:activation
+
+      - name: Run admin narrow-width E2E
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.admin_narrow_e2e == 'true'
+        run: npm --workspace web run test:e2e:admin-narrow
 
       # The E2E suites above each start a Next dev server, which writes
       # .next/dev/types/validator.ts; tsconfig.json includes that path, so a copy

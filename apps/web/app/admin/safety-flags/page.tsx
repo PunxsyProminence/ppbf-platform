@@ -131,7 +131,10 @@ export default function SafetyFlagsBoardPage() {
               .mat-wood's lit top edge; see the full note on
               /coach/sports-medicine, which also records that the restatement
               belongs in ppbf.css rather than here. */}
-          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          {/* Never nearer the edge than 73px: the shade is 89px and its pool of
+              light 233px, centred, so 8% alone put the light past a phone's
+              screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Safety</p>
             <h1
