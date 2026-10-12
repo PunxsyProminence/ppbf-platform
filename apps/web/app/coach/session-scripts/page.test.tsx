@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachSessionScriptsPage from './page';
 
@@ -575,8 +575,11 @@ it('a double tap on Start a plain session starts one session', async () => {
 
   const start = await screen.findByRole('button', { name: 'Start a plain session' });
   await waitFor(() => expect(start).not.toBeDisabled());
-  fireEvent.click(start);
-  fireEvent.click(start);
+  // Both taps land before React re-renders, as a real double tap can.
+  await act(async () => {
+    fireEvent.click(start);
+    fireEvent.click(start);
+  });
   finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
 
   expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
