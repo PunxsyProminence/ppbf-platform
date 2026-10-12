@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachSessionScriptsPage from './page';
 
@@ -524,4 +524,81 @@ describe('coach session scripts page', () => {
       );
     });
   });
+});
+
+// Issue #1523 (Jason 2026-10-12, "A: Yes, allow a plain session"): a session needs no plan.
+describe('a plain session', () => {
+  const plainRow = () => liveRunRow({ script_id: null, script_version: null, current_block_id: null });
+
+  it('a gym with no scripts can start one, and it goes live straight away', async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    routedFetch({
+      scripts: (url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [] })),
+      runsPost: (body) => {
+        posts.push(body);
+        return jsonResponse({ run: plainRow() });
+      },
+    });
+    render(<CoachSessionScriptsPage />);
+
+    expect(await screen.findByText('No session scripts yet.')).toBeInTheDocument();
+    const start = await screen.findByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+
+    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    expect(posts).toEqual([{}]);
+  });
+
+  it('is offered beside the scripts when the gym has some', async () => {
+    routedFetch({});
+    render(<CoachSessionScriptsPage />);
+
+    expect(await screen.findByText('Friday sparring')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start a plain session' })).toBeInTheDocument();
+  });
+});
+
+it('a double tap on Start a plain session starts one session', async () => {
+  const posts: Array<Record<string, unknown>> = [];
+  let finish: ((value: Response) => void) | null = null;
+  routedFetch({});
+  const base = global.fetch;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/session-scripts/runs') && init?.method === 'POST') {
+      posts.push(JSON.parse(String(init.body)));
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+  render(<CoachSessionScriptsPage />);
+
+  const start = await screen.findByRole('button', { name: 'Start a plain session' });
+  await waitFor(() => expect(start).not.toBeDisabled());
+  // Both taps land before React re-renders, as a real double tap can.
+  await act(async () => {
+    fireEvent.click(start);
+    fireEvent.click(start);
+  });
+  await act(async () => {
+    finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+  });
+
+  expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+  expect(posts).toEqual([{}]);
+});
+
+it('a failed plain start says so beside its button', async () => {
+  routedFetch({
+    scripts: (url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [] })),
+    runsPost: () => jsonResponse({ error: 'boom' }, false),
+  });
+  render(<CoachSessionScriptsPage />);
+
+  const start = await screen.findByRole('button', { name: 'Start a plain session' });
+  await waitFor(() => expect(start).not.toBeDisabled());
+  fireEvent.click(start);
+
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Plain session' })).toBeNull();
 });

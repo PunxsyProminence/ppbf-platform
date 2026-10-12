@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 22;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 23;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -118,6 +118,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 22;
 // profile (#1469, N9-01B); the text is unchanged for PPBF. What goes into
 // authorizedContext is unchanged; bumped because a listed file moved. A v21
 // job still queued at deploy is refused as STALE.
+// 23: a pain report is named by its number (#1528, F-029): shadowChat.ts's
+// near-miss context reads "Pain report N/10" instead of the severity word,
+// and its review sentence for a pain report names the escalation rule
+// instead of HIGH or CRITICAL. A v22 job still queued at deploy is refused
+// as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -195,6 +200,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 20, sha256: '41ed96c5adfe7dc046efd5047b79eb7e3d2757d32ed469579e266c16697a1a74' },
   { version: 21, sha256: '6302cd7217394f98d6019444a0301beb14b191586e945448650b5a9dbe8e3eca' },
   { version: 22, sha256: '8ec827159f06678d1a977b203bc4c35c74f18c3824b5edf2dfdb1018bf185216' },
+  { version: 23, sha256: '7fee0cfd153d03ed993bbfba5b617bbc6e00e2f6de9431940c3fa01ffbdd7c3d' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

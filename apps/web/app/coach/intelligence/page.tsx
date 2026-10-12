@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
 
 // Coach Intelligence v1 (register module 111): the owner-approved morning
 // read. Seven deterministic, read-only observations about the coach's own
@@ -22,6 +23,7 @@ interface Digest {
   open_safety_escalations: Array<{
     athlete_id: string; athlete_name: string; escalation_id: string;
     source_type: string; severity: string; reason: string; created_at: string;
+    pain_report?: boolean;
   }>;
   open_compliance_violations: Array<{
     athlete_id: string; athlete_name: string; violation_id: string;
@@ -145,7 +147,8 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.open_safety_escalations.map((item) => (
                       <li key={item.escalation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.severity}</span>
+                        {/* A pain-report escalation reads "Pain report", not a severity word (#1528). */}
+                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.pain_report ? PAIN_ESCALATION_LABEL : item.severity}</span>
                         {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
                         {' '}— {humanize(item.source_type)}: {item.reason}
                         {' '}(filed {item.created_at.slice(0, 10)}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>

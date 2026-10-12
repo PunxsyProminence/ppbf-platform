@@ -17,6 +17,7 @@ import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 // here -- this file used to keep its own separate union that drifted out of
 // sync with the real one.
 import type { SafetyEscalationSourceType } from '@/src/server/pilot/escalationLadder';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -30,7 +31,14 @@ interface SafetyEscalation {
   status: EscalationStatus;
   escalated_to_role: string;
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
 }
+
+// #1528: an escalation filed from a pain report reads "Pain report", not a
+// severity word. The stored rung still sets the badge colour and the order.
+const severityText = (item: SafetyEscalation) =>
+  isPainReportEscalation(item.metadata) ? PAIN_ESCALATION_LABEL : item.severity;
 
 const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }> = {
   critical: { rung: 'badge--locked', glyph: '✕' },
@@ -149,9 +157,16 @@ export default function EscalationsPage() {
 
   const counts = useMemo(() => {
     const source = items ?? [];
+    // Pain-report escalations at the rungs Critical and High count are on
+    // their own tile instead (#1528 Q3), the same set the header badge counts
+    // apart; a moderate or low one stays in Total only, like any other.
+    // Total still counts every row.
+    const severe = source.filter((item) => item.severity === 'critical' || item.severity === 'high');
+    const others = severe.filter((item) => !isPainReportEscalation(item.metadata));
     return {
-      critical: source.filter((item) => item.severity === 'critical').length,
-      high: source.filter((item) => item.severity === 'high').length,
+      critical: others.filter((item) => item.severity === 'critical').length,
+      high: others.filter((item) => item.severity === 'high').length,
+      pain: severe.length - others.length,
       total: source.length,
     };
   }, [items]);
@@ -290,7 +305,7 @@ export default function EscalationsPage() {
             {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
           </header>
 
-          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
+          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-4">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Critical (this view)</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.critical}</p>
@@ -298,6 +313,10 @@ export default function EscalationsPage() {
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">High (this view)</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.high}</p>
+            </article>
+            <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+              <p className="t-eyebrow">Pain reports (this view)</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.pain}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Total (this view)</p>
@@ -362,7 +381,7 @@ export default function EscalationsPage() {
                     return (
                       <tr key={item.escalation_id} className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
                         <td className="px-[var(--s4)] py-[var(--s3)]">
-                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.severity}</span>
+                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{severityText(item)}</span>
                         </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_id}</td>
@@ -411,7 +430,7 @@ export default function EscalationsPage() {
                 className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
               >
                 <p className="t-eyebrow text-[color:var(--brass-200)]">
-                  {SOURCE_LABEL[resolving.source_type]} &middot; {resolving.severity}
+                  {SOURCE_LABEL[resolving.source_type]} &middot; {severityText(resolving)}
                 </p>
                 <h2
                   id="resolve-escalation-heading"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -169,12 +169,17 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   const [note, setNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
   const [saving, setSaving] = useState(false);
+  // One save per press (#1529): a ref, because two presses in one tick both
+  // read the same `saving` and both got through.
+  const savingRef = useRef(false);
   const [saveError, setSaveError] = useState('');
 
   const pick = (key: WellnessScaleKey) => (value: number) =>
     setAnswers((current) => ({ ...current, [key]: value }));
 
   const handleSubmit = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError('');
     try {
@@ -234,6 +239,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
     } catch {
       setSaveError('Check-in was not saved. Try again, and tell a coach you are here.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
