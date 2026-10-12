@@ -25,7 +25,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import SafetyAttentionBadge from './SafetyAttentionBadge';
+import SafetyAttentionBadge, { isRefusedTeamClip } from './SafetyAttentionBadge';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -488,6 +488,27 @@ describe('refused team clips are counted on the organization admin bar', () => {
     expect(link.textContent).toContain('3+ refused team clips');
   });
 
+  test('a full page with none refused in it is said quietly, never as silence', async () => {
+    installRouted(Array.from({ length: 100 }, (_, index) => clip({ video_session_id: `v${index}`, scan_state: 'clean', status: 'ready' })));
+    await renderFor('admin');
+
+    const link = await screen.findByRole('link', { name: /No refused team clip among the newest 100 clips\. Older clips were not read/ });
+    expect(link.textContent).toBe('Clips: 0 of newest 100');
+  });
+
+  test('an organization admin with an open escalation and a refused clip sees both counts', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/list')) {
+        return { ok: true, status: 200, json: async () => ({ items: [clip()] }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [escalation({ severity: 'critical' })] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+
+    expect(await screen.findByRole('link', { name: /Safety escalations needing acknowledgement: 1 critical/ })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
   test('a failed read says so rather than claiming none', async () => {
     installRouted('fail');
     await renderFor('admin');
@@ -505,4 +526,16 @@ describe('refused team clips are counted on the organization admin bar', () => {
       expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
     },
   );
+});
+
+describe('isRefusedTeamClip', () => {
+  test.each([
+    [{ athlete_id: null, scan_state: 'blocked', status: 'quarantined' }, true],
+    [{ athlete_id: 'ath-1', scan_state: 'blocked', status: 'quarantined' }, false],
+    [{ athlete_id: null, scan_state: 'passed', status: 'ready' }, false],
+    [{ athlete_id: null, scan_state: 'needs_human_review', status: 'quarantined' }, false],
+    [{ athlete_id: null, scan_state: 'infected', status: 'infected' }, false],
+  ])('%o -> %s', (row, expected) => {
+    expect(isRefusedTeamClip(row)).toBe(expected);
+  });
 });

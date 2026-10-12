@@ -361,8 +361,23 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  if (count === 0) {
+  if (count === 0 && !atLeast) {
     return null;
+  }
+
+  // A full page with none refused in it has not established "none": older
+  // clips were not read. Said quietly, never as silence (R1 #1).
+  if (count === 0) {
+    return (
+      <ChromeLink
+        href="/admin/video-review"
+        className={CONTROL_QUIET}
+        aria-label={`No refused team clip among the newest ${REFUSED_READ_LIMIT} clips. Older clips were not read. Open video review.`}
+        title={`Only the newest ${REFUSED_READ_LIMIT} clips were read. This is not a statement that there are none.`}
+      >
+        Clips: 0 of newest {REFUSED_READ_LIMIT}
+      </ChromeLink>
+    );
   }
 
   const shown = `${count}${atLeast ? '+' : ''}`;
