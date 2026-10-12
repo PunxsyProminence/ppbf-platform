@@ -774,11 +774,13 @@ export default function ParentHub() {
     }));
   /* The summary's attendance figures count the rows the Attendance tab lists
      for the same child, from the same read. Neither figure exists until that
-     read answered: a schedule still loading is not zero sessions. */
+     read answered AND a child is selected: a schedule still loading is not
+     zero sessions, and neither is a schedule filtered against no child (the
+     roster read can land after the schedule, or fail). */
   // Newest first, so the head of the list is the last mark written. "Marked",
   // not "attended": checked_in_at is when the mark was written or re-written.
   const lastAttendanceMark = activeAttendanceEntries[0] ?? null;
-  const activeAttendanceTally = schedulerFeedState === 'loaded'
+  const activeAttendanceTally = schedulerFeedState === 'loaded' && activeChildId
     ? {
       present: activeAttendanceEntries.filter((entry) => entry.status === 'Present').length,
       excused: activeAttendanceEntries.filter((entry) => entry.status === 'Excused').length,
@@ -789,7 +791,7 @@ export default function ParentHub() {
   // A waitlist is not a place, so this count differs from the tab's Upcoming
   // Sessions list by the waitlisted rows the tab shows marked as such. Judged
   // against the clock reading taken when the schedule landed, like the list.
-  const activeUpcomingPlaces = schedulerFeedState === 'loaded'
+  const activeUpcomingPlaces = schedulerFeedState === 'loaded' && activeChildId
     ? activeUpcomingSessions.filter((session) => session.standing === 'Registered').length
     : null;
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);

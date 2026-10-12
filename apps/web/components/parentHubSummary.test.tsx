@@ -327,6 +327,25 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
   });
 });
 
+describe('no child selected', () => {
+  test('a schedule that answered before the roster, with the roster failing, is not zero sessions', async () => {
+    const fetchMock = jest.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ error: 'down' }, false);
+      if (url.includes('/api/pilot/scheduler')) return jsonResponse(SCHEDULE);
+      return jsonResponse({ ok: true, items: [], announcements: [], card: null });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await waitFor(() => expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/scheduler'))).toBe(true));
+    expect(tileValue('Upcoming')).toBe('Unavailable');
+    expect(tileValue('Attendance')).toBe('Unavailable');
+    expect(tileValue('Progress')).toBe('Unavailable');
+  });
+});
+
 describe('what the overview no longer says, and what it still does', () => {
   test('the "Data Availability" box is gone', async () => {
     installFetch();
