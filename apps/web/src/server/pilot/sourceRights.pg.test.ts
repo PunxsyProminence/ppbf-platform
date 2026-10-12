@@ -842,6 +842,7 @@ describe('the routes answer the rule in plain words', () => {
     patchSource: (r: NextRequest) => Promise<Response>;
     postDocument: (r: NextRequest) => Promise<Response>;
     postChunk: (r: NextRequest) => Promise<Response>;
+    getSources: (r: NextRequest) => Promise<Response>;
   };
 
   function principal(role: PilotPrincipal['role']): PilotPrincipal {
@@ -871,6 +872,7 @@ describe('the routes answer the rule in plain words', () => {
       patchSource: (await import('@/app/api/pilot/shadow/library/sources/route')).PATCH,
       postDocument: (await import('@/app/api/pilot/shadow/library/documents/route')).POST,
       postChunk: (await import('@/app/api/pilot/shadow/library/chunks/route')).POST,
+      getSources: (await import('@/app/api/pilot/shadow/library/sources/route')).GET,
     };
   });
 
@@ -960,6 +962,46 @@ describe('the routes answer the rule in plain words', () => {
       source_id: 'source_nowhere', rights_status: 'open_licence',
     });
     expect(missing.status).toBe(404);
+  });
+
+  // Issue #1468 (A-Q12, "Keep, show real limit"): the sources list states the
+  // limit each non-owned source is held to and what it holds now, counted the
+  // way the chunk write counts it -- by the DOCUMENT's source, across every
+  // document -- so the intake screen can check a text before sending it.
+  test('the sources list carries each source\'s excerpt limit and what it holds, counted as the write counts it', async () => {
+    const listed = async () => {
+      const response = await routes.getSources(new NextRequest('http://localhost/api/pilot/shadow/library/sources?limit=200'));
+      const body = (await response.json()) as { items: Array<{ source_id: string; excerpt_budget: unknown }> };
+      return new Map(body.items.map((item) => [item.source_id, item.excerpt_budget]));
+    };
+    const newSource = async (title: string) => {
+      const source = await call(routes.postSource, 'POST', '/api/pilot/shadow/library/sources', { title, source_type: 'peer_reviewed' });
+      return (source.body.source as { source_id: string }).source_id;
+    };
+    const newDocument = async (sourceId: string, name: string) => {
+      const document = await call(routes.postDocument, 'POST', '/api/pilot/shadow/library/documents', { source_id: sourceId, document_name: name });
+      return (document.body.document as { document_id: string }).document_id;
+    };
+
+    const limited = await newSource('Limit Listing Paper');
+    const first = await newDocument(limited, 'Limit Listing, part 1');
+    const second = await newDocument(limited, 'Limit Listing, part 2');
+    for (const [documentId, ordinal, text] of [[first, 0, 'Twelve chars'], [first, 1, 'é and ü count once'], [second, 0, 'Third.']] as const) {
+      expect((await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+        document_id: documentId, ordinal, text_content: text, excerpt_locator: 'p. 1',
+      })).status).toBe(201);
+    }
+    const owned = await newSource('Limit Listing Manual');
+    await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', { source_id: owned, rights_status: 'ppbf_owned' });
+
+    const budgets = await listed();
+    expect(budgets.get(limited)).toEqual({
+      max_passages: MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
+      max_characters: MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE,
+      held_passages: 3,
+      held_characters: Array.from('Twelve chars').length + Array.from('é and ü count once').length + Array.from('Third.').length,
+    });
+    expect(budgets.get(owned)).toBeNull();
   });
 
   test('a role outside the reviewer tier cannot set rights', async () => {
