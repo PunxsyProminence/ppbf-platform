@@ -394,7 +394,7 @@ describe('closing a requirement with a note or an approved submission, against r
       resolved_from: 'research_page',
       resolved_by_account_id: ADMIN_ID,
     }));
-    expect(row.metadata).not.toHaveProperty('closing_submission_id');
+    expect(row.metadata.closing_submission_id).toBeNull();
   });
 
   test('a submission reviewed responsive on this requirement closes it and is recorded', async () => {
@@ -432,6 +432,29 @@ describe('closing a requirement with a note or an approved submission, against r
     expect(await submissionClosesRequirement(ORG_ID, other, `sub-elsewhere-${answered}`)).toBe(false);
     await expect(close(other, { note: null, submissionId: `sub-elsewhere-${answered}` })).resolves.toBe(false);
     expect((await rowOf(other)).status).toBe('open');
+  });
+
+  test('a closing key planted when the row was filed does not survive the close', async () => {
+    const id = await requirement();
+    await client.query(
+      `update pilot.shadow_research_requirements set metadata = metadata || '{"closing_submission_id":"planted"}'::jsonb
+       where research_requirement_id = $1`,
+      [id],
+    );
+
+    await expect(close(id, { note: 'Closed with a note.', submissionId: null })).resolves.toBe(true);
+
+    const row = await rowOf(id);
+    expect(row.metadata.closing_note).toBe('Closed with a note.');
+    expect(row.metadata.closing_submission_id).toBeNull();
+  });
+
+  test('a note does not carry a submission that is not responsive', async () => {
+    const id = await requirement();
+    await insertSubmission(client, id, `sub-note-${id}`);
+
+    await expect(close(id, { note: 'A note as well.', submissionId: `sub-note-${id}` })).resolves.toBe(false);
+    expect((await rowOf(id)).status).toBe('open');
   });
 
   test('neither a note nor a submission closes nothing, and writes nothing', async () => {

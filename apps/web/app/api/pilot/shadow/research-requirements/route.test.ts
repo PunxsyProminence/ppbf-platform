@@ -429,7 +429,7 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
 
 // ---------------------------------------------------------------------------
-// POST { action: 'resolve', closing_note: 'Answered in the Library.' } -- the athlete scope on the WRITE
+// POST { action: 'resolve' } -- the athlete scope on the WRITE
 // ---------------------------------------------------------------------------
 //
 // THE BUG. The resolve branch set an athlete scope for exactly ONE of the
@@ -703,6 +703,32 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
   // about their own child; only a coach or organization admin closes any row.
   // The parent passes the relationship gate, so they are told plainly (403)
   // rather than "not found" -- the row is already in their list.
+  test.each(['coach', 'volunteer'] as const)(
+    'a %s refused the child is told only "not found" and no submission is looked up',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal(role));
+      mockAssertAthlete.mockRejectedValue(REFUSED);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171, closing_submission_id: 'sub-probe' }));
+
+      expect(response.status).toBe(404);
+      expect(mockSubmissionCloses).not.toHaveBeenCalled();
+      expect(mockResolve).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a parent is refused before any closing check, whatever closing they sent', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171, closing_submission_id: 'sub-probe' }));
+
+    expect(response.status).toBe(403);
+    expect(mockSubmissionCloses).not.toHaveBeenCalled();
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
   test('a parent may not close their own child requirement', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
@@ -834,6 +860,16 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
       expect(response.status).toBe(400);
       expect(((await response.json()) as { error: string }).error).toMatch(/not a submission reviewed responsive/);
       expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    test('a submission re-reviewed between the check and the write is said, not reported as "not found"', async () => {
+      mockSubmissionCloses.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      mockResolve.mockResolvedValue(false);
+
+      const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 10, closing_submission_id: 'sub-7' }));
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { error: string }).error).toMatch(/no longer a submission reviewed responsive/);
     });
 
     test('refuses a note over 2000 characters', async () => {

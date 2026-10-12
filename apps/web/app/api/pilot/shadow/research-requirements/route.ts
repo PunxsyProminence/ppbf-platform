@@ -448,6 +448,9 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+      if (closingSubmissionId) {
+        await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_submissions'] });
+      }
       if (
         closingSubmissionId
         && !(await submissionClosesRequirement(principal.organizationId, body.research_requirement_id, closingSubmissionId))
@@ -475,6 +478,15 @@ export async function POST(request: NextRequest) {
       });
 
       if (!resolved) {
+        // The caller is entitled to this row (gates above), so saying why is
+        // no leak: the submission stopped being responsive between the
+        // check and the write, which the UPDATE asks again.
+        if (closingSubmissionId && !(await submissionClosesRequirement(principal.organizationId, body.research_requirement_id, closingSubmissionId))) {
+          return NextResponse.json(
+            { ok: false, error: 'closing_submission_id is no longer a submission reviewed responsive on this requirement' },
+            { status: 409 },
+          );
+        }
         return requirementNotFound();
       }
 

@@ -791,7 +791,7 @@ export default function ResearchIntakePage() {
                     );
                   })()
                 ) : null}
-                {requirement.status === 'resolved' && requirement.metadata?.closing_note ? (
+                {requirement.status === 'resolved' && typeof requirement.metadata?.closing_note === 'string' && requirement.metadata.closing_note ? (
                   <p className="t-body mt-[var(--s3)]">Closing note: {requirement.metadata.closing_note}</p>
                 ) : null}
                 {requirement.status === 'open' && mayOfferResolve(session.role) ? (

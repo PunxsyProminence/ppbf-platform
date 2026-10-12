@@ -582,8 +582,11 @@ export async function resolveShadowResearchRequirement(input: {
       // server's to state, not the caller's.
       JSON.stringify({
         ...(input.metadata ?? {}),
-        ...(closingNote ? { closing_note: closingNote } : {}),
-        ...(closingSubmissionId ? { closing_submission_id: closingSubmissionId } : {}),
+        // Both keys, every time, null when unused: a value planted in the
+        // row's metadata before (create takes free metadata) never survives
+        // as a false closing record.
+        closing_note: closingNote,
+        closing_submission_id: closingSubmissionId,
         resolved_by_account_id: input.resolvedByAccountId,
         resolved_by_role: input.resolvedByRole,
       }),
