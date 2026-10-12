@@ -306,9 +306,11 @@ describe('the child on screen', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
     });
-    // The second child's gaps read is still open: nothing from the first child.
+    // The second child's gaps read is still open: nothing from the first
+    // child on that line, and the second child's other lines arrive anyway.
     expect(value('summary-gaps')).toBe('Reading...');
-    expect(value('summary-assignments')).toBe('Reading...');
+    await waitFor(() => expect(value('summary-assignments')).toBe('0 open · 1 completed'));
+    expect(value('summary-gaps')).toBe('Reading...');
     expect(value('summary-support')).toBe('0 of 1 done');
   });
 
@@ -353,6 +355,24 @@ describe('the child on screen', () => {
     });
     expect(value('summary-gaps')).toBe('1 on record');
     expect(value('summary-assignments')).toBe('0 open · 1 completed');
+  });
+});
+
+describe('a slow read holds back only its own line', () => {
+  test('a gaps read that never answers leaves the other lines to arrive', async () => {
+    installFetch({ ...RECORDS, ath_1: { ...RECORDS.ath_1, gaps: 'hang' } });
+    await renderProgress();
+    await waitFor(() => expect(value('summary-logged')).toBe('5 entries: 3 verified by a coach · 1 waiting for a coach · 1 disputed'));
+    expect(value('summary-assignments')).toBe('2 open · 1 completed · 1 closed, not completed');
+    expect(value('summary-gaps')).toBe('Reading...');
+  });
+
+  test('a completions read that never answers leaves the gaps and work lines to arrive', async () => {
+    installFetch({ ...RECORDS, ath_1: { ...RECORDS.ath_1, completions: { ...RECORDS.ath_1.completions, a3: 'hang' } } });
+    await renderProgress();
+    await waitFor(() => expect(value('summary-gaps')).toBe('5 on record'));
+    await waitFor(() => expect(value('summary-assignments')).toBe('2 open · 1 completed · 1 closed, not completed'));
+    expect(value('summary-logged')).toBe('Reading...');
   });
 });
 

@@ -30,11 +30,14 @@ interface WorkTally {
   closed: number;
 }
 
+/* Each line arrives on its own: a line whose read is still out is absent
+   here and reads "Reading...", and one slow read never holds back a line
+   whose own reads have answered. */
 interface Standing {
   athleteId: string;
-  gaps: Count<number>;
-  work: Count<WorkTally>;
-  logged: Count<{ verified: number; pending: number; disputed: number }>;
+  gaps?: Count<number>;
+  work?: Count<WorkTally>;
+  logged?: Count<{ verified: number; pending: number; disputed: number }>;
 }
 
 /** The family's support tasks for this child, from the hub's messages read. */
@@ -93,6 +96,14 @@ export default function ParentProgressSummary({
     const { signal } = controller;
     const base = apiBase();
     const id = encodeURIComponent(athleteId);
+    // Writes one line for this child. A write for the child left behind is
+    // dropped twice over: the read was aborted, and the athlete key differs.
+    const publish = (line: Omit<Standing, 'athleteId'>) => {
+      if (signal.aborted) return;
+      setStanding((held) => (held && held.athleteId === athleteId
+        ? { ...held, ...line }
+        : { athleteId, ...line }));
+    };
     void (async () => {
       const guard = async <T,>(work: () => Promise<Count<T>>): Promise<Count<T>> => {
         try {
@@ -135,10 +146,14 @@ export default function ParentProgressSummary({
         return { state: 'loaded', value: { ...tally, ids: typed.map((row) => row.assignment_id) } };
       });
 
-      const [gaps, assignments] = await Promise.all([gapsRead, assignmentsRead]);
-      const work: Standing['work'] = assignments.state === 'loaded'
-        ? { state: 'loaded', value: { open: assignments.value.open, completed: assignments.value.completed, closed: assignments.value.closed } }
-        : { state: 'failed' };
+      void gapsRead.then((gaps) => publish({ gaps }));
+
+      const assignments = await assignmentsRead;
+      publish({
+        work: assignments.state === 'loaded'
+          ? { state: 'loaded', value: { open: assignments.value.open, completed: assignments.value.completed, closed: assignments.value.closed } }
+          : { state: 'failed' },
+      });
 
       // Any one completions read failing makes the whole line Unavailable: a
       // partial tally would undercount and look complete.
@@ -159,8 +174,7 @@ export default function ParentProgressSummary({
         return { state: 'loaded', value: tally };
       });
 
-      if (signal.aborted) return;
-      setStanding({ athleteId, gaps, work, logged });
+      publish({ logged });
     })();
     return () => controller.abort();
   }, [athleteId]);
