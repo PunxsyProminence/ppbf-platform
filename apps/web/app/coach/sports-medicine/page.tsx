@@ -793,14 +793,12 @@ export default function SportsMedicinePage() {
                     </div>
                     {row.clearance === null ? (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
-                        No clearance record on file. The office sets one during onboarding; until then the
-                        medical gate blocks recommendations for this athlete.
+                        No clearance record on file. The office sets one during onboarding.
                       </p>
                     ) : null}
                     {row.clearance === 'cleared_expired' ? (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
-                        This clearance passed its end date, so it no longer counts. The medical gate blocks
-                        recommendations until a new clearance is recorded.
+                        This clearance passed its end date, so it no longer counts.
                       </p>
                     ) : null}
                     {row.clearance === 'unavailable' ? (
