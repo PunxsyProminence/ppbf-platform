@@ -142,9 +142,13 @@ export default function CueLibraryPage() {
                             that also told the next reader deep-linking worked.
                             Whether the library should support opening on a named
                             drill is a real question and a separate one; the link
-                            is honest without it in the meantime. */}
+                            is honest without it in the meantime.
+                            One per cue, so on a full library this link is
+                            nearly every target on the page: it carries the
+                            gym-floor height itself, because the app's 44px
+                            floor (globals.css) deliberately skips links. */}
                         <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
-                          {cue.focus_type} · from <Link className="underline" href="/coach/drills">{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
+                          {cue.focus_type} · from <Link className="inline-flex min-h-[var(--tap)] items-center underline" href="/coach/drills">{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
                         </p>
                         {cue.evidence_note ? (
                           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>{cue.evidence_note}</p>
@@ -158,7 +162,7 @@ export default function CueLibraryPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/drills" className="btn btn--ghost">Open the Drill Library</Link>
+            <Link href="/coach/drills" className="btn btn--ghost btn--tap">Open the Drill Library</Link>
           </div>
         </div>
       </main>
