@@ -619,9 +619,9 @@ export function assertAthleteUpdateAllowed(
  * plus walk-ins"). The coach who teaches, scheduled, or is covering a class
  * runs its register: they may mark attendance for EVERY athlete registered to
  * that class, and may mark a walk-in -- an athlete of the gym who is not
- * registered -- present. Nothing else widens: outside the class register a
- * coach still reaches only their assigned and covered athletes
- * (assertActorCanAccessAthlete; OD-2026-10-05-024 item 2).
+ * registered -- present. Outside the register a coach reaches every live
+ * athlete of their gym through assertActorCanAccessAthlete (issue #1480,
+ * 2026-10-12); the register rule is about who runs a class, not reach.
  *
  * The three ownership fields are the same ones the scheduler GET uses to
  * decide which classes a coach "owns"; a class the coach does not run gives
