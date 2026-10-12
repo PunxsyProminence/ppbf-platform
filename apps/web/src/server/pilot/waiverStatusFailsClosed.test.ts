@@ -352,6 +352,12 @@ describe('every direct reader of a consent status is registered', () => {
         + 'nomination statuses above.',
     ],
     [
+      'app/operations/external-competition/page.tsx',
+      'NOT A WAIVER STATUS. The competition page splits entries into Entries '
+        + "and Withdrawn by the same entry status ('entered'/'withdrawn', WO-N8-03). "
+        + 'Display only, no gate; the entry route above runs the safety gates.',
+    ],
+    [
       'app/api/pilot/parent/safety/route.ts',
       "The guardian's safety page. Reads a purged former guardian's retained "
         + "status, normalised, as 'withdrawn' so the family is not told the gym "
