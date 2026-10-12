@@ -124,6 +124,7 @@ const UNRELATED_COACH = principal('coach', 'coach-unrelated');
 const ORG_ADMIN = principal('organization_admin', 'admin-org');
 const LEGACY_ADMIN = principal('admin', 'admin-legacy');
 const OTHER_GYM_ADMIN = principal('organization_admin', 'admin-other', OTHER_ORG);
+const OTHER_GYM_COACH = principal('coach', 'coach-away', OTHER_ORG);
 
 function getRequest(query: string) {
   return new NextRequest(`http://localhost/api/pilot/coach/sparring-exposure?${query}`);
@@ -185,9 +186,13 @@ afterEach(() => {
 });
 
 describe('GET /api/pilot/coach/sparring-exposure', () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // Assigned, covering, lapsed or unrelated: a coach of this gym reads.
   test.each([
     ['coach of record', COACH_OF_RECORD],
     ['coach with a live coverage grant', COVERING_COACH],
+    ['a same-gym coach whose grant lapsed', LAPSED_COACH],
+    ['a same-gym coach with no relationship', UNRELATED_COACH],
     ['organization admin', ORG_ADMIN],
     ['legacy admin', LEGACY_ADMIN],
   ])('%s reads entries, raw counts and the gym\'s stop rules', async (_label, who) => {
@@ -207,9 +212,13 @@ describe('GET /api/pilot/coach/sparring-exposure', () => {
     expect(mockStopRules).toHaveBeenCalledWith(ORG);
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // The gym is the boundary: a coach of another gym, or any coach naming another
+  // gym's or a deleted athlete, is refused as an org admin would be.
   test.each([
-    ['a coach with no relationship', UNRELATED_COACH, 'ath-kid'],
-    ['a coach whose grant lapsed', LAPSED_COACH, 'ath-kid'],
+    ['a coach of another gym', OTHER_GYM_COACH, 'ath-kid'],
+    ['a coach naming another gym\'s athlete (coach_id matches there)', COACH_OF_RECORD, 'ath-away'],
+    ['an unrelated coach, deleted athlete', UNRELATED_COACH, 'ath-gone'],
     ['coach of record, deleted athlete', COACH_OF_RECORD, 'ath-gone'],
     ['covering coach, deleted athlete', COVERING_COACH, 'ath-gone'],
     ['org admin, deleted athlete', ORG_ADMIN, 'ath-gone'],
@@ -301,6 +310,9 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
 
   test.each([
     ['covering coach', COVERING_COACH],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    ['a same-gym coach whose grant lapsed', LAPSED_COACH],
+    ['a same-gym coach with no relationship', UNRELATED_COACH],
     ['organization admin', ORG_ADMIN],
   ])('%s may record', async (_label, who) => {
     mockRequirePrincipal.mockResolvedValue(who);
@@ -308,9 +320,11 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     expect(mockRecord.mock.calls[0][0].supervisingCoachAccountId).toBe(who.accountId);
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
   test.each([
-    ['a coach with no relationship', UNRELATED_COACH, 'ath-kid'],
-    ['a coach whose grant lapsed', LAPSED_COACH, 'ath-kid'],
+    ['a coach of another gym', OTHER_GYM_COACH, 'ath-kid'],
+    ['a coach naming another gym\'s athlete (coach_id matches there)', COACH_OF_RECORD, 'ath-away'],
+    ['an unrelated coach, deleted athlete', UNRELATED_COACH, 'ath-gone'],
     ['coach of record, deleted athlete', COACH_OF_RECORD, 'ath-gone'],
     ['org admin, deleted athlete', ORG_ADMIN, 'ath-gone'],
     ['org admin, another gym\'s athlete', ORG_ADMIN, 'ath-away'],
@@ -387,10 +401,21 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     expect((await POST(postRequest({ ...VALID_BODY, round_equivalent: 2.5 }))).status).toBe(201);
   });
 
-  test('an unrelated coach naming a partner is refused on the athlete, before the partner is looked at', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of another gym naming a partner is refused on the athlete, before the partner is looked at', async () => {
+    mockRequirePrincipal.mockResolvedValue(OTHER_GYM_COACH);
+    const response = await POST(postRequest({ ...VALID_BODY, partner_athlete_id: 'ath-away' }));
+    // 403, not the partner check's 400: the athlete gate ran first and stopped it.
+    expect(response.status).toBe(403);
+    expect(mockQueryOne.mock.calls.some(([, params]) => (params as string[])[0] === 'ath-away')).toBe(false);
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a same-gym unrelated coach reaches the athlete, so a bad partner is then the partner check\'s 400', async () => {
     mockRequirePrincipal.mockResolvedValue(UNRELATED_COACH);
     const response = await POST(postRequest({ ...VALID_BODY, partner_athlete_id: 'ath-away' }));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(400);
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
@@ -604,6 +629,9 @@ describe('cap check (map item 15): warn only, after the save', () => {
 describe('GET: clips linked to each entry (Jason 2026-10-05: behind the scenes now)', () => {
   test.each([
     ['coach of record', COACH_OF_RECORD],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    ['a same-gym coach with no tie to the athlete', UNRELATED_COACH],
+    ['a same-gym lapsed covering coach', LAPSED_COACH],
     ['organization admin', ORG_ADMIN],
     ['legacy admin', LEGACY_ADMIN],
   ])('%s sees each entry\'s linked clips; an entry with none says []', async (_label, who) => {
@@ -643,13 +671,15 @@ describe('GET: clips linked to each entry (Jason 2026-10-05: behind the scenes n
     errorSpy.mockRestore();
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
   test.each([
-    ['a coach with no tie to the athlete', UNRELATED_COACH],
-    ['a lapsed covering coach', LAPSED_COACH],
-    ['another gym\'s admin', OTHER_GYM_ADMIN],
-  ])('%s is refused before any clip is read', async (_label, who) => {
+    ['a coach of another gym', OTHER_GYM_COACH, 'ath-kid'],
+    ['a coach naming another gym\'s athlete', UNRELATED_COACH, 'ath-away'],
+    ['a coach naming a deleted athlete', UNRELATED_COACH, 'ath-gone'],
+    ['another gym\'s admin', OTHER_GYM_ADMIN, 'ath-kid'],
+  ])('%s is refused before any clip is read', async (_label, who, athleteId) => {
     mockRequirePrincipal.mockResolvedValue(who);
-    const response = await GET(getRequest('athlete_id=ath-kid'));
+    const response = await GET(getRequest(`athlete_id=${athleteId}`));
     expect(response.status).toBe(403);
     expect(mockLinkedClips).not.toHaveBeenCalled();
   });

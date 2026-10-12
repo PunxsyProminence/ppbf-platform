@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import {
   assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
+  assertCoachReachesAthlete,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
@@ -20,7 +20,7 @@ import {
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertAthleteBelongsToOrganization: jest.fn(),
-  assertCoachAssignedToAthlete: jest.fn(),
+  assertCoachReachesAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -50,7 +50,7 @@ jest.mock('@/src/server/pilot/trainingHolds', () => ({
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
-const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
+const mockCoachReaches = assertCoachReachesAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
 const mockGuardianIds = guardianAthleteIds as jest.Mock;
 const mockGetActive = getActiveTrainingHold as jest.Mock;
@@ -201,15 +201,16 @@ describe('GET /api/pilot/training-holds', () => {
     expect(mockGetActive).not.toHaveBeenCalled();
   });
 
-  test('a coach must name an athlete and pass the assignment gate', async () => {
+  test("a coach must name an athlete and pass the whole-gym gate; another gym's athlete is refused", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     const missingAthlete = await GET(getRequest());
     expect(missingAthlete.status).toBe(400);
 
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
-    mockCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
-    const notAssigned = await GET(getRequest('?athlete_id=ATH-OTHER'));
-    expect(notAssigned.status).toBe(403);
+    mockCoachReaches.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+    const otherGym = await GET(getRequest('?athlete_id=ATH-OTHER-GYM'));
+    expect(otherGym.status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
   });
 
@@ -250,14 +251,16 @@ describe('POST place', () => {
     lift_condition_text: 'A doctor says you are ready.',
   };
 
-  test('a coach places through the assignment gate and the audit event is written', async () => {
+  test('a coach places through the whole-gym gate (any athlete of their gym) and the audit event is written', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The gate
+    // is asked about the gym and the athlete, never about this coach's account.
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     mockPlace.mockResolvedValueOnce(FULL_HOLD);
 
     const response = await POST(postRequest(placeBody));
 
     expect(response.status).toBe(200);
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-caller', 'ATH-1', 'org-a');
+    expect(mockCoachReaches).toHaveBeenCalledWith('org-a', 'ATH-1');
     expect(mockPlace).toHaveBeenCalledWith(
       expect.objectContaining({ placedByRole: 'coach', athleteId: 'ATH-1', scope: 'all_training' }),
     );
@@ -277,7 +280,7 @@ describe('POST place', () => {
     await POST(postRequest(placeBody));
 
     expect(mockBelongs).toHaveBeenCalledWith('org-a', 'ATH-1');
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockPlace).toHaveBeenCalledWith(expect.objectContaining({ placedByRole: 'organization_admin' }));
   });
 
@@ -299,7 +302,7 @@ describe('POST place', () => {
     const badCategory = await POST(postRequest({ ...placeBody, reason_category: 'vibes' }));
     expect(badCategory.status).toBe(400);
 
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockPlace).not.toHaveBeenCalled();
   });
 
@@ -419,7 +422,8 @@ describe('POST lift', () => {
     );
   });
 
-  test('a coach lifts through the assignment gate (owner decision: coaches lift too)', async () => {
+  test('a coach lifts through the whole-gym gate (owner decision: coaches lift too)', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     mockGetById.mockResolvedValueOnce(FULL_HOLD);
     mockLift.mockResolvedValueOnce({ ...FULL_HOLD, status: 'lifted' });
@@ -427,7 +431,7 @@ describe('POST lift', () => {
     const response = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-caller', 'ATH-1', 'org-a');
+    expect(mockCoachReaches).toHaveBeenCalledWith('org-a', 'ATH-1');
   });
 
   test('a coach cannot lift a hold an admin placed, even on their own athlete (OD-2026-10-05-024 ruling 1)', async () => {
@@ -456,10 +460,11 @@ describe('POST lift', () => {
     }
   });
 
-  test("a coach probing another roster's hold id gets the same Missing as a bogus id", async () => {
+  test("a coach probing another gym's hold id gets the same Missing as a bogus id", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     mockGetById.mockResolvedValueOnce(FULL_HOLD);
-    mockCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    mockCoachReaches.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
     const notMine = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
     const notMinePayload = await notMine.json();
 

@@ -383,10 +383,11 @@ export async function bodyMassVisibleTo(
 // entries nothing supersedes, so the flag is computed from corrected values;
 // the original stays in the table, on record and out of the flag.
 //
-// WHO: the athlete, for their own record, or a coach assigned to or covering
-// that athlete -- the two arms of assertActorCanAccessAthlete Jason named.
-// Everyone else is refused, including a coach who only shares the gym, a
-// parent, the organization admin and the platform owner.
+// WHO: the athlete, for their own record, or a coach of the athlete's gym --
+// the two arms of assertActorCanAccessAthlete Jason named (since issue #1480,
+// 2026-10-12, a coach's arm is the whole gym; whether a youth's weight should
+// stay with the coach of record is an open owner question there). Everyone
+// else is refused: a parent, the organization admin and the platform owner.
 //
 // WHEN: an entry observed in the last BODY_MASS_CORRECTION_DAYS days -- the
 // recommended 7, plus the day of tolerance MVP-12 allows when it picks the
@@ -428,7 +429,7 @@ export async function correctBodyMass(
   now: Date = new Date(),
 ): Promise<{ observation_id: string; supersedes_observation_id: string }> {
   if (!(await canCorrectBodyMass(actor, input.athleteId))) {
-    throw new ForbiddenError('Only the athlete or their own coach can correct a body mass entry.');
+    throw new ForbiddenError('Only the athlete or a coach of their gym can correct a body mass entry.');
   }
   const organizationId = actor.organizationId;
   const original = await queryOne<{ context_id: string; observed_at: string | Date }>(

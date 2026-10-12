@@ -100,7 +100,7 @@ const COACH_ID = 'acct-notes-coach'; // coach of record for ATHLETE, SECOND here
 const SECOND_COACH_ID = 'acct-notes-coach-2'; // coach of record for SECOND only
 const LAPSED_COACH_ID = 'acct-notes-lapsed'; // membership here deactivated
 const VISITING_COACH_ID = 'acct-notes-visiting'; // home elsewhere, member here, coverage on ATHLETE_ID only
-const UNASSIGNED_COACH_ID = 'acct-notes-unassigned'; // active coach here, reaches nobody
+const UNASSIGNED_COACH_ID = 'acct-notes-unassigned'; // active coach here, coach of record for nobody (reaches the whole gym, issue #1480)
 const ATHLETE_ACCOUNT_ID = 'acct-notes-athlete';
 const PARENT_ACCOUNT_ID = 'acct-notes-parent'; // linked guardian of ATHLETE_ID
 const VOLUNTEER_ACCOUNT_ID = 'acct-notes-volunteer';
@@ -128,6 +128,8 @@ const SECOND_COACH = actorFor(SECOND_COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
 const VISITING_COACH = actorFor(VISITING_COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// The visiting coach signed in at their OTHER gym: a coach of another gym.
+const VISITING_COACH_AT_HOME = actorFor(VISITING_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const VOLUNTEER = actorFor(VOLUNTEER_ACCOUNT_ID, 'volunteer');
@@ -691,24 +693,62 @@ describe('sessionStaffNotes.ts against real rows', () => {
     }
   });
 
-  test("a coach covering an athlete may write and read that athlete's session notes, and only that one", async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test("a coach covering one athlete may write and read every athlete's session notes in this gym, and none in another gym", async () => {
     const client = await migratedDatabase('notes_coverage');
     try {
       const row = await createSessionStaffNote({ actor: VISITING_COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'covering today' });
       expect(row.author_role).toBe('coach');
       expect((await listSessionStaffNotes(VISITING_COACH, SESSION_ID, ATHLETE_ID)).map((r) => r.note_id)).toEqual([row.note_id]);
-      await expect(listSessionStaffNotes(VISITING_COACH, SECOND_SESSION_ID, SECOND_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      // No coverage on SECOND_ATHLETE_ID: reached anyway, and the row is real.
+      const second = await createSessionStaffNote({
+        actor: VISITING_COACH, sessionId: SECOND_SESSION_ID, athleteId: SECOND_ATHLETE_ID, note: 'gym-wide',
+      });
+      expect((await listSessionStaffNotes(VISITING_COACH, SECOND_SESSION_ID, SECOND_ATHLETE_ID)).map((r) => r.note_id))
+        .toEqual([second.note_id]);
+      expect((await allRows(client)).map((r) => [r.athlete_id, r.author_account_id])).toEqual([
+        [ATHLETE_ID, VISITING_COACH_ID],
+        [SECOND_ATHLETE_ID, VISITING_COACH_ID],
+      ]);
+      // Another gym's athlete is refused as for an org admin; nothing is written.
+      await expect(listSessionStaffNotes(VISITING_COACH, SHARED_SESSION_ID, OTHER_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
-        createSessionStaffNote({ actor: VISITING_COACH, sessionId: SECOND_SESSION_ID, athleteId: SECOND_ATHLETE_ID, note: 'not mine' }),
+        createSessionStaffNote({ actor: VISITING_COACH, sessionId: SHARED_SESSION_ID, athleteId: OTHER_ATHLETE_ID, note: 'not this gym' }),
       ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(await allRows(client)).toHaveLength(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // Authorship is unchanged: only a note's author edits or removes it.
+  test.each([
+    ['an unassigned coach of the same gym', UNASSIGNED_COACH],
+    ["another athlete's coach", SECOND_COACH],
+  ])('%s may read and write staff notes on the session, and still edits only their own', async (_label, actor) => {
+    const client = await migratedDatabase(`notes_gym_${actor.accountId.replace(/[^a-z]/g, '_')}`);
+    try {
+      const { rows } = await insertRaw(client);
+      const noteId = rows[0].note_id as string;
+      expect((await listSessionStaffNotes(actor, SESSION_ID, ATHLETE_ID)).map((r) => r.note_id)).toEqual([noteId]);
+      const mine = await createSessionStaffNote({ actor, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'seen today' });
+      expect(mine.author_role).toBe('coach');
+      expect((await allRows(client)).map((r) => r.author_account_id)).toEqual([COACH_ID, actor.accountId]);
+      // The other coach's note: not theirs to edit or remove.
+      await expect(updateOwnSessionStaffNote({ actor, noteId, note: 'mine?' })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(removeOwnSessionStaffNote({ actor, noteId })).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await allRows(client))[0]).toMatchObject({ author_account_id: COACH_ID, removed: false });
+      expect((await allRows(client))[0].note).not.toBe('mine?');
     } finally {
       await client.end();
     }
   });
 
   test.each([
-    ['an unassigned coach of the same gym', UNASSIGNED_COACH],
-    ["another athlete's coach", SECOND_COACH],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Same-
+    // gym coaches are now admitted (above); a coach of ANOTHER gym is refused.
+    ['a coach of another gym', VISITING_COACH_AT_HOME],
     ['a coach whose membership here lapsed', LAPSED_COACH],
     ['an admin of another gym', OTHER_ADMIN],
     ['the athlete themselves', ATHLETE],
@@ -736,11 +776,18 @@ describe('sessionStaffNotes.ts against real rows', () => {
     }
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym, so ending
+  // a coverage grant no longer takes a coach of the gym out of reach. The rule
+  // this pins is unchanged: an author who no longer reaches the athlete cannot
+  // edit their old note. Within the gym, reach is now lost when the athlete is
+  // deleted; from another gym the note is simply not there (org-scoped read).
   test('an author who no longer reaches the athlete cannot edit their old note either', async () => {
     const client = await migratedDatabase('notes_lost_reach');
     try {
       const row = await createSessionStaffNote({ actor: VISITING_COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'while covering' });
-      await client.query('delete from pilot.coach_coverage where organization_id = $1 and covering_coach_id = $2', [ORG_ID, VISITING_COACH_ID]);
+      const elsewhere = { ...VISITING_COACH, organizationId: `${ORG_ID}-elsewhere` };
+      await expect(updateOwnSessionStaffNote({ actor: elsewhere, noteId: row.note_id, note: 'later' })).rejects.toBeInstanceOf(NotFoundError);
+      await client.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG_ID, ATHLETE_ID]);
       await expect(updateOwnSessionStaffNote({ actor: VISITING_COACH, noteId: row.note_id, note: 'later' })).rejects.toBeInstanceOf(ForbiddenError);
       await expect(removeOwnSessionStaffNote({ actor: VISITING_COACH, noteId: row.note_id })).rejects.toBeInstanceOf(ForbiddenError);
       expect((await allRows(client))[0]).toMatchObject({ note: 'while covering', removed: false });
