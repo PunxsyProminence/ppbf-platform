@@ -573,6 +573,9 @@ export default function PlatformConsole() {
             <Link href="/admin/platform/overview" className="btn btn--ghost">
               All Gyms Overview
             </Link>
+            <Link href="/admin/system" className="btn btn--ghost">
+              System
+            </Link>
             <Link href="/admin/organizations" className="btn btn--ghost">
               Onboard A New Gym
             </Link>
