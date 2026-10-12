@@ -765,6 +765,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: MINE,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(false);
@@ -785,6 +786,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(false);
@@ -808,6 +810,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     })).resolves.toBe(false);
     expect(await statusOf(id)).toBe('open');
 
@@ -817,6 +820,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: OTHER,
+      closing: { note: 'Closed in test.', submissionId: null },
     })).resolves.toBe(true);
     expect(await statusOf(id)).toBe('resolved');
   });
@@ -836,6 +840,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: OTHER,
+      closing: { note: 'Closed in test.', submissionId: null },
     })).resolves.toBe(false);
 
     await expect(resolveShadowResearchRequirement({
@@ -844,6 +849,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: MINE,
+      closing: { note: 'Closed in test.', submissionId: null },
     })).resolves.toBe(true);
   });
 
@@ -860,6 +866,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       athleteIds: [MINE],
       expectedSubjectAthleteId: MINE,
       metadata: { resolved_from: 'research_page' },
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(true);
@@ -875,6 +882,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: null,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(true);
@@ -899,6 +907,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
         resolved_by_role: 'organization_admin',
         resolved_from: 'research_page',
       },
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     const row = await client.query<{ metadata: Record<string, unknown> }>(
@@ -920,6 +929,7 @@ describe('resolveShadowResearchRequirement binds the authorized subject, against
       resolvedByAccountId: COACH_ID,
       resolvedByRole: 'coach',
       expectedSubjectAthleteId: MINE,
+      closing: { note: 'Closed in test.', submissionId: null },
     });
 
     expect(resolved).toBe(false);

@@ -99,3 +99,44 @@ test('a failed read admits cues may exist, never rendering as an empty library',
   expect(screen.getByText(/Cues may exist that are not shown here/)).toBeTruthy();
   expect(screen.queryByText(/nobody has written any yet/)).toBeNull();
 });
+
+// #1482 item 4: on the live page 258 of 265 buttons and links were under 44px
+// -- one inline drill link per cue (15px, measured in Chromium), which the
+// app's 44px floor skips because it never floors links. A control here is
+// tall enough only by an existing class that actually applies to it:
+//   a link    min-h-[var(--tap)] AND a box that min-height acts on
+//             (inline-flex / flex / block -- an inline <a> ignores
+//             min-height), or ppbf.css's .btn--tap (a Tailwind min-h utility
+//             loses to ppbf.css's unlayered .btn rule, so it is not counted);
+//   input /   ppbf.css's own .input / .select floor (46px), by tag.
+//   select
+// A control added with none of them fails this.
+function tallEnough(control: Element): boolean {
+  const classes = control.classList;
+  const tag = control.tagName.toLowerCase();
+  if (tag === 'input') return classes.contains('input');
+  if (tag === 'select') return classes.contains('select');
+  if (classes.contains('btn')) return classes.contains('btn--tap');
+  const boxed = ['inline-flex', 'flex', 'block', 'inline-block'].some((name) => classes.contains(name));
+  return boxed && classes.contains('min-h-[var(--tap)]');
+}
+
+test('every control on the page carries a minimum height that applies to it', async () => {
+  global.fetch = mockFetch({
+    items: [
+      CUE,
+      { ...CUE, cue_id: 'cue-2', cue_text: 'Eyes through the target' },
+      { ...CUE, cue_id: 'cue-3', cue_family: 'rhythm', cue_text: 'Breathe out on the punch', drill_name: 'Shadow Rounds' },
+    ],
+  });
+
+  let container!: HTMLElement;
+  await act(async () => {
+    ({ container } = render(<CueLibraryPage />));
+  });
+
+  const controls = Array.from(container.querySelectorAll('main a, main button, main input, main select'));
+  // Three drill links, the search, the focus filter and the footer link.
+  expect(controls).toHaveLength(6);
+  expect(controls.filter((control) => !tallEnough(control)).map((control) => control.outerHTML)).toEqual([]);
+});

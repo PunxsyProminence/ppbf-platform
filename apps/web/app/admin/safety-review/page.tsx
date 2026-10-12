@@ -131,7 +131,10 @@ export default function SafetyReviewPage() {
               blackletter reserved for the clinic masthead at display size only.
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
-          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          {/* Never nearer the edge than 73px: the shade is 89px and its pool of
+              light 233px, centred, so 8% alone put the light past a phone's
+              screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
@@ -215,7 +218,7 @@ export default function SafetyReviewPage() {
                     {review!.openHolds.map((hold) => (
                       <li key={hold.hold_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(hold.athlete_id, hold.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{hold.scope} &middot; {hold.reason_category}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{hold.scope} &middot; {hold.reason_category}</span>
                       </li>
                     ))}
                   </ul>
@@ -229,7 +232,7 @@ export default function SafetyReviewPage() {
                     {review!.failingGates.map((gate) => (
                       <li key={`${gate.athlete_id}-${gate.gate_name}`} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(gate.athlete_id, gate.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{gate.gate_name} &middot; {gate.outcome}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{gate.gate_name} &middot; {gate.outcome}</span>
                       </li>
                     ))}
                   </ul>

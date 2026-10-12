@@ -6,7 +6,6 @@ import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness
 import {
   createProvisionalRecommendation,
   listRecommendations,
-  MedicalStatusBlockedError,
   type ShadowRecommendationStatus,
 } from '@/src/server/pilot/shadowRecommendations';
 import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
@@ -89,9 +88,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, recommendation });
   } catch (error) {
-    if (error instanceof MedicalStatusBlockedError) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 409 });
-    }
     return jsonError(error);
   }
 }
