@@ -67,7 +67,7 @@ import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferen
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
 import { findWorkoutIssueByRequestKey, recordWorkoutIssue, WorkoutIssueRequestKeyTakenError } from './workoutIssues';
-import { issueWorkoutTemplate } from './workoutTemplates';
+import { issueWorkoutTemplate, listUntestedTemplateDrills } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -88,8 +88,6 @@ const ORG = 'org-1';
 const TEMPLATE_ID = 'wtp_1';
 const ATHLETE = 'athlete-1';
 const DRAFT = 'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION';
-const NOT_FLOOR_TESTED =
-  'It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.';
 
 const PARAMS = {
   organizationId: ORG,
@@ -331,6 +329,7 @@ describe('a template whose drills the gym already runs', () => {
       ],
       adopted: [],
       updated: [],
+      untested: [],
     });
   });
 
@@ -369,7 +368,7 @@ describe('a template whose drills the gym already runs', () => {
     expect(mockCueRule).toHaveBeenCalledWith(ORG, 'op-1');
     expect(result).toMatchObject({
       outcome: 'refused',
-      drills: [{ steps: [1], drill_id: 'ref-1', name: 'Drill ref-1', untested_draft: false, reason: 'Add a coaching cue to "Drill ref-1" first.' }],
+      drills: [{ steps: [1], drill_id: 'ref-1', name: 'Drill ref-1', reason: 'Add a coaching cue to "Drill ref-1" first.' }],
     });
     expectNothingWritten();
   });
@@ -484,8 +483,8 @@ describe('a step naming a reference drill the gym has not adopted (OD-2026-10-07
   });
 });
 
-describe('an untested DRAFT drill (OD-2026-10-08-002 item 2)', () => {
-  test('refuses the whole issue, names the drill, and writes nothing', async () => {
+describe('an untested DRAFT does not stop the issue (Jason, 2026-10-11: "B", issue #1473)', () => {
+  test('it is adopted and assigned with the rest, and the result and the audit name it', async () => {
     given({
       items: [item(1), item(2), item(3)],
       library: {
@@ -497,17 +496,20 @@ describe('an untested DRAFT drill (OD-2026-10-08-002 item 2)', () => {
 
     const result = await issueWorkoutTemplate(PARAMS);
 
-    expect(result).toEqual({
-      outcome: 'refused',
-      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Slip Rope Shuffle.',
-      drills: [{ steps: [2], drill_id: 'ref-2', name: 'Slip Rope Shuffle', untested_draft: true, reason: NOT_FLOOR_TESTED }],
+    expect(result).toMatchObject({
+      outcome: 'issued',
+      adopted: [{ reference_drill_id: 'ref-2' }, { reference_drill_id: 'ref-3' }],
+      untested: [{ reference_drill_id: 'ref-2', name: 'Slip Rope Shuffle', steps: [2] }],
     });
-    expectNothingWritten();
+    // Every step became an assignment.
+    expect(mockCard).toHaveBeenCalledTimes(3);
+    const issueAudit = mockAudit.mock.calls.find(([event]) => event.entity_type === 'workout_template_issue');
+    expect(issueAudit?.[0].details.untested_reference_drill_ids).toEqual(['ref-2']);
   });
 
-  test('every untested draft is named, with the steps that use it', async () => {
+  test('every untested draft is named once, with the steps that use it, in step order', async () => {
     given({
-      items: [item(1, { drill_id: 'ref-a' }), item(2, { drill_id: 'ref-b' }), item(3, { drill_id: 'ref-a' })],
+      items: [item(1, { drill_id: 'ref-b' }), item(2, { drill_id: 'ref-a' }), item(3, { drill_id: 'ref-b' })],
       library: {
         'ref-a': { row: reference('ref-a', { name: 'Draft A', field_provenance: DRAFT }), state: 'available' },
         'ref-b': { row: reference('ref-b', { name: 'Draft B', field_provenance: DRAFT }), state: 'available' },
@@ -517,14 +519,12 @@ describe('an untested DRAFT drill (OD-2026-10-08-002 item 2)', () => {
     const result = await issueWorkoutTemplate(PARAMS);
 
     expect(result).toMatchObject({
-      outcome: 'refused',
-      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Draft A, Draft B.',
-      drills: [
-        { steps: [1, 3], drill_id: 'ref-a', untested_draft: true },
-        { steps: [2], drill_id: 'ref-b', untested_draft: true },
+      outcome: 'issued',
+      untested: [
+        { reference_drill_id: 'ref-b', name: 'Draft B', steps: [1, 3] },
+        { reference_drill_id: 'ref-a', name: 'Draft A', steps: [2] },
       ],
     });
-    expectNothingWritten();
   });
 
   test("another gym's floor test does not count: the mark is read for this gym only", async () => {
@@ -534,16 +534,58 @@ describe('an untested DRAFT drill (OD-2026-10-08-002 item 2)', () => {
       floorTested: [],
     });
 
-    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'refused' });
-    expect(mockFloorTested.mock.calls[0][0]).toBe(ORG);
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-1' }],
+    });
+    expect(mockFloorTested).toHaveBeenCalledWith(ORG, ['ref-1']);
+  });
+
+  test('a draft this gym has floor-tested is not named', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { row: reference('ref-1', { field_provenance: DRAFT }), state: 'available' } },
+      floorTested: ['ref-1'],
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', untested: [] });
+  });
+
+  test('untested AND short of something else: refused for the something else alone', async () => {
+    given({
+      items: [item(1), item(2)],
+      library: {
+        'ref-1': { state: 'available' },
+        'ref-2': {
+          row: reference('ref-2', { name: 'Stopless Draft', field_provenance: DRAFT, stop_rules: [] }),
+          state: 'available',
+        },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Cannot be assigned as they stand: Stopless Draft.',
+      drills: [{ steps: [2], drill_id: 'ref-2', name: 'Stopless Draft', reason: 'It has no stop rules.' }],
+    });
+    expect(JSON.stringify(result)).not.toMatch(/floor-tested/);
+    expectNothingWritten();
+  });
+
+  test('a refusal no longer carries the untested_draft flag', async () => {
+    given({ items: [item(1)], library: { 'ref-1': { state: 'retired', operational: 'op-old' } } });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'refused' });
+    expect(result.outcome === 'refused' && result.drills[0]).not.toHaveProperty('untested_draft');
   });
 });
 
-describe('a DRAFT the gym already adopted (OD-2026-10-08-002 item 2, read literally)', () => {
-  const ADOPTED_UNTESTED =
-    'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.';
-
-  test('with no floor-tested mark it is refused and named, and nothing is written', async () => {
+describe('a DRAFT the gym already adopted', () => {
+  test('with no floor-tested mark it is assigned and named', async () => {
     given({
       items: [item(1), item(2)],
       library: {
@@ -558,15 +600,15 @@ describe('a DRAFT the gym already adopted (OD-2026-10-08-002 item 2, read litera
 
     const result = await issueWorkoutTemplate(PARAMS);
 
-    expect(result).toEqual({
-      outcome: 'refused',
-      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Old Adopted Draft.',
-      drills: [{ steps: [2], drill_id: 'ref-2', name: 'Old Adopted Draft', untested_draft: true, reason: ADOPTED_UNTESTED }],
+    expect(result).toMatchObject({
+      outcome: 'issued',
+      adopted: [],
+      untested: [{ reference_drill_id: 'ref-2', name: 'Old Adopted Draft', steps: [2] }],
     });
-    expectNothingWritten();
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1', 'op-2']);
   });
 
-  test('once a coach of this gym has marked it floor-tested it is assigned', async () => {
+  test('once a coach of this gym has marked it floor-tested it is assigned and not named', async () => {
     given({
       items: [item(1)],
       library: {
@@ -575,17 +617,17 @@ describe('a DRAFT the gym already adopted (OD-2026-10-08-002 item 2, read litera
       floorTested: ['ref-1'],
     });
 
-    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', adopted: [] });
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', adopted: [], untested: [] });
     expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1']);
   });
 
-  test('an adopted drill that is NOT a draft needs no floor-tested mark', async () => {
+  test('an adopted drill that is NOT a draft is never named', async () => {
     given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: 'op-1' } }, floorTested: [] });
 
-    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', untested: [] });
   });
 
-  test('untested AND breaking the cue rule: both reasons, and not offered a floor test as the cure', async () => {
+  test('untested AND breaking the cue rule: refused for the cue rule alone', async () => {
     given({
       items: [item(1)],
       library: {
@@ -603,15 +645,39 @@ describe('a DRAFT the gym already adopted (OD-2026-10-08-002 item 2, read litera
     expect(result).toEqual({
       outcome: 'refused',
       message: 'Nothing was issued. Cannot be assigned as they stand: Old Adopted Draft.',
-      drills: [{
-        steps: [1],
-        drill_id: 'ref-1',
-        name: 'Old Adopted Draft',
-        untested_draft: false,
-        reason: `${ADOPTED_UNTESTED} "Old Adopted Draft" has no coaching cue.`,
-      }],
+      drills: [{ steps: [1], drill_id: 'ref-1', name: 'Old Adopted Draft', reason: '"Old Adopted Draft" has no coaching cue.' }],
     });
     expectNothingWritten();
+  });
+
+  test('a step naming a version the gym has updated past: the mark that counts is the version it runs', async () => {
+    const runsUntested = async (newerTested: boolean) => {
+      jest.clearAllMocks();
+      given({
+        items: [item(1)],
+        library: {
+          'ref-1': {
+            row: reference('ref-1', { name: 'Old Version', field_provenance: DRAFT, superseded_at: '2026-10-01T00:00:00.000Z' }),
+            state: 'operational',
+            operational: 'op-1',
+          },
+          'ref-1b': { row: reference('ref-1b', { name: 'New Version', field_provenance: DRAFT }), state: 'available' },
+        },
+        // The OLD version is marked; only the newer one's mark may count.
+        floorTested: newerTested ? ['ref-1', 'ref-1b'] : ['ref-1'],
+      });
+      const fallback = mockQueryOne.getMockImplementation() as (text: string) => Promise<unknown>;
+      mockQueryOne.mockImplementation(async (text: string) =>
+        /from pilot\.drills o/.test(text) ? { reference_drill_id: 'ref-1b' } : fallback(text),
+      );
+      return issueWorkoutTemplate(PARAMS);
+    };
+
+    await expect(runsUntested(false)).resolves.toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-1b', name: 'New Version', steps: [1] }],
+    });
+    await expect(runsUntested(true)).resolves.toMatchObject({ outcome: 'issued', untested: [] });
   });
 });
 
@@ -653,13 +719,13 @@ describe('every other step that cannot be assigned refuses the whole issue and i
     expect(result.outcome).toBe('refused');
     if (result.outcome !== 'refused') return;
     expect(result.drills).toHaveLength(1);
-    expect(result.drills[0]).toMatchObject({ steps: [1], drill_id: 'ref-1', untested_draft: false });
+    expect(result.drills[0]).toMatchObject({ steps: [1], drill_id: 'ref-1' });
     expect(result.drills[0].reason).toContain(reason);
     expect(result.message).toBe(`Nothing was issued. Cannot be assigned as they stand: ${result.drills[0].name}.`);
     expectNothingWritten();
   });
 
-  test('a draft that is untested AND missing something else is not offered a floor test as the cure', async () => {
+  test('a draft that is untested AND missing something else is refused for the something else alone', async () => {
     given({
       items: [item(1)],
       library: {
@@ -676,8 +742,7 @@ describe('every other step that cannot be assigned refuses the whole issue and i
         steps: [1],
         drill_id: 'ref-1',
         name: 'Half Built',
-        untested_draft: false,
-        reason: `It has no stop rules. ${NOT_FLOOR_TESTED}`,
+        reason: 'It has no stop rules.',
       }],
     });
     expectNothingWritten();
@@ -714,7 +779,6 @@ describe('every other step that cannot be assigned refuses the whole issue and i
       outcome: 'refused',
       drills: [{
         drill_id: 'ref-1',
-        untested_draft: false,
         reason: 'This gym adopted an earlier version of this drill and then retired it. Restore it in the drill library first.',
       }],
     });
@@ -768,14 +832,13 @@ describe('every other step that cannot be assigned refuses the whole issue and i
         steps: [2],
         drill_id: null,
         name: 'Jump rope, easy',
-        untested_draft: false,
         reason: 'This step is typed text, not a drill from the library, so it cannot be assigned.',
       }],
     });
     expectNothingWritten();
   });
 
-  test('untested drafts and other refusals are reported together, in step order', async () => {
+  test('an untested draft beside other refusals is not one of them; the others are named in step order', async () => {
     given({
       items: [item(1), item(2), item(3, { drill_id: null, free_text_drill: 'Shadow round' })],
       library: {
@@ -788,11 +851,10 @@ describe('every other step that cannot be assigned refuses the whole issue and i
 
     expect(result).toMatchObject({
       outcome: 'refused',
-      message:
-        'Nothing was issued. Not floor-tested by a coach of this gym yet: Draft Two. Cannot be assigned as they stand: No Stops, Shadow round.',
+      message: 'Nothing was issued. Cannot be assigned as they stand: No Stops, Shadow round.',
     });
     if (result.outcome !== 'refused') return;
-    expect(result.drills.map((drill) => drill.steps)).toEqual([[1], [2], [3]]);
+    expect(result.drills.map((drill) => drill.steps)).toEqual([[1], [3]]);
     expectNothingWritten();
   });
 });
@@ -819,14 +881,12 @@ describe('drill names, decided before anything is written', () => {
           steps: [1],
           drill_id: 'ref-1',
           name: 'Jab Ladder',
-          untested_draft: false,
           reason: 'This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
         },
         {
           steps: [3],
           drill_id: 'ref-3',
           name: 'Slip Line',
-          untested_draft: false,
           reason: 'This gym already has a drill named "Slip Line", so this one cannot be adopted under that name.',
         },
       ],
@@ -1284,6 +1344,72 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     });
   });
 
+  // Review finding (PR #1502): the floor test that counts is the drill the
+  // step will assign. Both steps assign the newer version once the gym's drill
+  // is updated to it, so only the newer version's mark matters, for both.
+  test('a template naming both versions: the untested list judges both steps by the newer version they will assign', async () => {
+    const both = async (tested: string[]) => {
+      jest.clearAllMocks();
+      given({
+        items: [item(1, { drill_id: 'ref-0' }), item(2, { drill_id: 'ref-1' })],
+        library: {
+          'ref-0': {
+            state: 'operational',
+            operational: 'op-old',
+            row: reference('ref-0', { name: 'Old Version', field_provenance: DRAFT, superseded_at: '2026-10-01T00:00:00.000Z' }),
+          },
+          'ref-1': {
+            state: 'newer_version_available',
+            operational: 'op-old',
+            row: reference('ref-1', { name: 'New Version', field_provenance: DRAFT }),
+          },
+        },
+        gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+        floorTested: tested,
+      });
+      mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-1' ? GYM_VERSION : null));
+      return issueWorkoutTemplate(PARAMS);
+    };
+
+    // The old version is unmarked, but no step assigns it: nothing is named.
+    await expect(both(['ref-1'])).resolves.toMatchObject({ outcome: 'issued', untested: [] });
+    // The new version is unmarked: named once, for BOTH steps.
+    await expect(both(['ref-0'])).resolves.toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-1', name: 'New Version', steps: [1, 2] }],
+    });
+  });
+
+  // Review finding 2 (PR #1502): only a version the issue would update to may
+  // decide which drill a step assigns. A superseded OLDER version named beside
+  // the running one is refused by the issue and must not stand in for it.
+  test('a superseded older version beside the running one does not stand in for it in the untested list', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-1' }), item(2, { drill_id: 'ref-0' })],
+      library: {
+        'ref-1': {
+          state: 'operational',
+          operational: 'op-1',
+          row: reference('ref-1', { name: 'Running Draft', field_provenance: DRAFT }),
+        },
+        'ref-0': {
+          state: 'superseded',
+          row: reference('ref-0', { name: 'Older Version', superseded_at: '2026-09-01T00:00:00.000Z' }),
+        },
+      },
+    });
+    mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-0' ? { operational_drill_id: 'op-1', adopted_reference_drill_id: 'ref-1' } : null));
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    // The issue refuses the superseded step; the list judged step 1 by ref-1.
+    expect(result).toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-0' }] });
+    await expect(listUntestedTemplateDrills(ORG, [
+      { drill_id: 'ref-1', ordinal: 1 },
+      { drill_id: 'ref-0', ordinal: 2 },
+    ])).resolves.toEqual([{ reference_drill_id: 'ref-1', name: 'Running Draft', steps: [1] }]);
+  });
+
   test("after an update, a step naming the older version takes the floor test of the version the gym runs", async () => {
     // The gym runs ref-2's drill; the step names ref-0, which it moved on from.
     const draftRef = (id: string) => reference(id, { field_provenance: DRAFT });
@@ -1299,18 +1425,20 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     mockReference.mockImplementation(async (_org: string, id: string) =>
       (id === 'ref-2' ? draftRef(id) : reference(id, { superseded_at: '2026-10-01T00:00:00.000Z' })));
 
-    // ref-2 is a draft no coach has floor-tested: refused, though ref-0 needs none.
+    // ref-2 is a draft no coach has floor-tested: issued, and ref-2 (the drill
+    // the gym runs) is the one named, though ref-0 needs no floor test.
     mockFloorTested.mockResolvedValue({});
     await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
-      outcome: 'refused',
-      drills: [{ drill_id: 'ref-0', untested_draft: true }],
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-2', steps: [1] }],
     });
     expect(mockFloorTested).toHaveBeenCalledWith(ORG, ['ref-2']);
+    expect(mockCard.mock.calls.at(-1)?.[0].drillId).toBe('op-new');
 
-    // Once ref-2 is floor-tested, the step issues the drill the gym runs.
+    // Once ref-2 is floor-tested, nothing is named.
     mockFloorTested.mockImplementation(async (_org: string, ids: string[]) =>
       (ids.includes('ref-2') ? { 'ref-2': { drill_id: 'ref-2' } } : {}));
-    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', untested: [] });
     expect(mockCard.mock.calls.at(-1)?.[0].drillId).toBe('op-new');
   });
 
@@ -1351,7 +1479,8 @@ describe('a step naming a newer version of a drill the gym runs updates it while
 
 describe('every read is scoped to the session gym', () => {
   test('the organization id reaches each collaborator', async () => {
-    given({ items: [item(1)], library: { 'ref-1': { state: 'available' } } });
+    // A draft, so the floor-test read is asked too.
+    given({ items: [item(1)], library: { 'ref-1': { row: reference('ref-1', { field_provenance: DRAFT }), state: 'available' } } });
 
     await issueWorkoutTemplate(PARAMS);
 

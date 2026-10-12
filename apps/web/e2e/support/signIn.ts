@@ -104,8 +104,6 @@ export const ROLE_DESTINATION: Record<string, string> = {
 export const SERVER_GUARDED_ROUTES = [
   '/athlete/dashboard',
   '/guardian/dashboard',
-  '/coach/review-queue',
-  '/coach/operations',
   '/director/dashboard',
 ] as const;
 

@@ -17,6 +17,7 @@ import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 // here -- this file used to keep its own separate union that drifted out of
 // sync with the real one.
 import type { SafetyEscalationSourceType } from '@/src/server/pilot/escalationLadder';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -30,7 +31,14 @@ interface SafetyEscalation {
   status: EscalationStatus;
   escalated_to_role: string;
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
 }
+
+// #1528: an escalation filed from a pain report reads "Pain report", not a
+// severity word. The stored rung still sets the badge colour and the order.
+const severityText = (item: SafetyEscalation) =>
+  isPainReportEscalation(item.metadata) ? PAIN_ESCALATION_LABEL : item.severity;
 
 const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }> = {
   critical: { rung: 'badge--locked', glyph: '✕' },
@@ -244,7 +252,10 @@ export default function EscalationsPage() {
               because --brass-400 is 3.34:1 on .mat-wood's lit edge; the full
               note, and where that restatement really belongs, is on
               /coach/sports-medicine. */}
-          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          {/* Never nearer the edge than 73px: the shade is 89px and its pool of
+              light 233px, centred, so 8% alone put the light past a phone's
+              screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
@@ -359,7 +370,7 @@ export default function EscalationsPage() {
                     return (
                       <tr key={item.escalation_id} className="border-b border-[color:var(--hide-800)] last:border-b-0 align-top">
                         <td className="px-[var(--s4)] py-[var(--s3)]">
-                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{item.severity}</span>
+                          <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{severityText(item)}</span>
                         </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_id}</td>
@@ -408,7 +419,7 @@ export default function EscalationsPage() {
                 className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
               >
                 <p className="t-eyebrow text-[color:var(--brass-200)]">
-                  {SOURCE_LABEL[resolving.source_type]} &middot; {resolving.severity}
+                  {SOURCE_LABEL[resolving.source_type]} &middot; {severityText(resolving)}
                 </p>
                 <h2
                   id="resolve-escalation-heading"

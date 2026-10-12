@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
-import LibraryTextIntakePanel, { SHELF_WORDS } from './LibraryTextIntakePanel';
+import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
@@ -38,6 +38,8 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  /** The closing record the server wrote on resolve (#1467). */
+  metadata?: { closing_note?: string | null; closing_submission_id?: string | null };
 }
 
 /* Only coaches and organization admins close a research requirement (Jason
@@ -90,6 +92,8 @@ interface LibrarySourceOption {
   title: string;
   source_type: string;
   metadata?: { general_research?: boolean; classification_domain?: string };
+  /** Passed through to the intake panel (#1468). */
+  excerpt_budget?: LibraryTextIntakeSource['excerpt_budget'];
 }
 
 // The sources route returns at most this many rows per request.
@@ -126,6 +130,18 @@ export default function ResearchIntakePage() {
   });
   const [submitMessage, setSubmitMessage] = useState('');
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  /* Closing needs a note (OD-2026-10-08-005 A-Q13): "Mark Resolved" opens
+     one note field for that requirement; Resolve sends it. */
+  const [closingId, setClosingIdState] = useState<number | null>(null);
+  // Mirrors closingId for the async resolve: it settles against the row
+  // that is open THEN, not the one that was open when it started.
+  const closingIdRef = useRef<number | null>(null);
+  const setClosingId = (id: number | null) => {
+    closingIdRef.current = id;
+    setClosingIdState(id);
+  };
+  const [closingNote, setClosingNote] = useState('');
+  const [closingError, setClosingError] = useState<string | null>(null);
   // Issue #345 slice 2: the computed ladder per requirement, the curator's
   // source list (null until the sources read succeeds -- a 403 simply leaves
   // the Answer-a-Gap panel unrendered, matching the POST's own gate), and
@@ -463,8 +479,11 @@ export default function ResearchIntakePage() {
     }
   }
 
-  async function handleResolveRequirement(researchRequirementId: number) {
+  async function handleResolveRequirement(researchRequirementId: number, note: string) {
+    const trimmed = note.trim();
+    if (!trimmed) return;
     setResolvingId(researchRequirementId);
+    setClosingError(null);
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
@@ -474,24 +493,33 @@ export default function ResearchIntakePage() {
         body: JSON.stringify({
           action: 'resolve',
           research_requirement_id: researchRequirementId,
+          closing_note: trimmed,
           metadata: { resolved_from: 'research_page' },
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Unable to resolve SHADOW research requirement.');
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to resolve SHADOW research requirement.');
       }
 
       setRequirements((current) =>
         current.map((requirement) =>
           requirement.research_requirement_id === researchRequirementId
-            ? { ...requirement, status: 'resolved' }
+            ? { ...requirement, status: 'resolved', metadata: { ...requirement.metadata, closing_note: trimmed } }
             : requirement,
         ),
       );
+      // Only this row's note field: another row may have been opened since.
+      if (closingIdRef.current === researchRequirementId) {
+        setClosingId(null);
+        setClosingNote('');
+      }
       setSubmitMessage('Research requirement resolved.');
     } catch (error) {
-      setSubmitMessage(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      if (closingIdRef.current === researchRequirementId) {
+        setClosingError(error instanceof Error ? error.message : 'Unable to resolve SHADOW research requirement.');
+      }
     } finally {
       setResolvingId(null);
     }
@@ -573,9 +601,6 @@ export default function ResearchIntakePage() {
             </Link>
             <Link href="/evidence" className="btn btn--ghost">
               Evidence Review
-            </Link>
-            <Link href="/source-control#publish" className="btn btn--ghost">
-              Publish Stage
             </Link>
           </div>
         </div>
@@ -753,7 +778,11 @@ export default function ResearchIntakePage() {
             {requirements.map((requirement) => (
               <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                  <p className="t-body font-bold text-[color:var(--bone-100)]">{requirement.source_event_name}</p>
+                  {/* A question a coach filed from an unanswered SHADOW reply (#1466)
+                      is named in words; every other source keeps its event name. */}
+                  <p className="t-body font-bold text-[color:var(--bone-100)]">
+                    {requirement.source_event_name === 'shadow_unanswered_question' ? 'Asked in SHADOW' : requirement.source_event_name}
+                  </p>
                   {requirement.status === 'open' ? (
                     <span className="badge badge--monitor">
                       <i>◉</i>Open
@@ -780,15 +809,60 @@ export default function ResearchIntakePage() {
                     );
                   })()
                 ) : null}
+                {requirement.status === 'resolved' && typeof requirement.metadata?.closing_note === 'string' && requirement.metadata.closing_note ? (
+                  <p className="t-body mt-[var(--s3)]">Closing note: {requirement.metadata.closing_note}</p>
+                ) : null}
                 {requirement.status === 'open' && mayOfferResolve(session.role) ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
-                    disabled={resolvingId === requirement.research_requirement_id}
-                    className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
-                  </button>
+                  closingId === requirement.research_requirement_id ? (
+                    <div className="mt-[var(--s4)] space-y-[var(--s2)]">
+                      <label className="t-label block" htmlFor={`closing-note-${requirement.research_requirement_id}`}>
+                        Closing note
+                      </label>
+                      <textarea
+                        id={`closing-note-${requirement.research_requirement_id}`}
+                        className="textarea w-full"
+                        rows={2}
+                        maxLength={2000}
+                        value={closingNote}
+                        onChange={(event) => setClosingNote(event.target.value)}
+                      />
+                      {closingError ? <p className="t-body text-[color:var(--restricted)]" role="alert">{closingError}</p> : null}
+                      <div className="flex flex-wrap gap-[var(--s2)]">
+                        <button
+                          type="button"
+                          onClick={() => void handleResolveRequirement(requirement.research_requirement_id, closingNote)}
+                          disabled={!closingNote.trim() || resolvingId === requirement.research_requirement_id}
+                          className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Resolve'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => {
+                            setClosingId(null);
+                            setClosingNote('');
+                            setClosingError(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClosingId(requirement.research_requirement_id);
+                        setClosingNote('');
+                        setClosingError(null);
+                      }}
+                      disabled={resolvingId !== null}
+                      className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Mark Resolved
+                    </button>
+                  )
                 ) : null}
                 {/* Not for the platform owner: requirements are the gym's, and a
                     gym-shelf submission from it is refused (D3). */}
@@ -966,6 +1040,7 @@ export default function ResearchIntakePage() {
             sources={curatorSources}
             shelf={onPlatformShelf ? 'platform' : 'gym'}
             truncated={curatorSourcesTruncated}
+            onSaved={() => void refreshCuratorSources()}
           />
         ) : null}
       </div>

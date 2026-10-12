@@ -63,9 +63,12 @@ function withDatabase(fixture: Fixture): void {
       );
     }
     if (text.includes('from pilot.athletes')) {
-      const [athleteId] = params as string[];
+      // inOrganization lists live athletes of org-real; another gym's caller
+      // (the org bound as $2) finds none of them.
+      const [athleteId, orgId] = params as string[];
+      const inThisGym = orgId === undefined || orgId === 'org-real';
       return Promise.resolve(
-        (fixture.inOrganization ?? []).includes(athleteId) ? { athlete_id: athleteId } : null,
+        inThisGym && (fixture.inOrganization ?? []).includes(athleteId) ? { athlete_id: athleteId } : null,
       );
     }
     if (text.includes('from pilot.coach_coverage')) {
@@ -163,24 +166,37 @@ describe('POST /api/pilot/intake/cases/get', () => {
     expect(mockAggregate).toHaveBeenCalledTimes(1);
   });
 
-  test('a promoted case is gated on the athlete its documents name', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // Still gated on the athlete the documents name: a coach of the gym reaches a
+  // live athlete of the gym (assigned or not); not one of another gym, or deleted.
+  test('a promoted case is gated on the athlete its documents name: any coach of that athlete\'s gym reaches it, nobody outside it does', async () => {
     const promoted: Fixture = {
       intakeCase: { primary_athlete_id: null, submitted_by_account_id: 'acct-uploader' },
       documentOwners: ['ath-1'],
     };
 
-    mockRequirePrincipal.mockResolvedValue(
-      principal({ accountId: 'acct-coach-of-record', role: 'coach' }),
-    );
-    withDatabase({ ...promoted, coachAssigned: ['ath-1'] });
-    expect((await POST(caseRequest({ intake_case_id: 'case-1' }))).status).toBe(200);
-
-    jest.clearAllMocks();
-    mockAggregate.mockResolvedValue({ intake_case: {}, documents: [] });
+    // A coach of the gym who is NOT ath-1's coach of record.
     mockRequirePrincipal.mockResolvedValue(
       principal({ accountId: 'acct-other-coach', role: 'coach' }),
     );
-    withDatabase({ ...promoted, coachAssigned: ['ath-other'] });
+    withDatabase({ ...promoted, coachAssigned: [], inOrganization: ['ath-1'] });
+    expect((await POST(caseRequest({ intake_case_id: 'case-1' }))).status).toBe(200);
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
+
+    // ath-1 is not a live athlete of this gym (another gym's, or deleted).
+    jest.clearAllMocks();
+    mockAggregate.mockResolvedValue({ intake_case: {}, documents: [] });
+    withDatabase({ ...promoted, coachAssigned: ['ath-1'], inOrganization: ['ath-other'] });
+    expect((await POST(caseRequest({ intake_case_id: 'case-1' }))).status).toBe(403);
+    expect(mockAggregate).not.toHaveBeenCalled();
+
+    // A coach of another gym, even with ath-1 live in org-real.
+    jest.clearAllMocks();
+    mockAggregate.mockResolvedValue({ intake_case: {}, documents: [] });
+    mockRequirePrincipal.mockResolvedValue(
+      principal({ accountId: 'acct-away-coach', role: 'coach', organizationId: 'org-elsewhere' }),
+    );
+    withDatabase({ ...promoted, inOrganization: ['ath-1'] });
     expect((await POST(caseRequest({ intake_case_id: 'case-1' }))).status).toBe(403);
     expect(mockAggregate).not.toHaveBeenCalled();
   });

@@ -2,6 +2,10 @@ import type { Metadata } from 'next';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WallOfNames from '@/components/WallOfNames';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 /**
  * /names -- the Wall of Names.
@@ -17,7 +21,7 @@ import WallOfNames from '@/components/WallOfNames';
  */
 export const metadata: Metadata = {
   title: 'The Wall of Names',
-  description: 'Everyone who has come through Punxsy Prominence Boxing and Fitness.',
+  description: `Everyone who has come through ${GYM.legalName}.`,
   // A record for the people in this gym, not a document for a search engine.
   robots: { index: false, follow: false },
 };

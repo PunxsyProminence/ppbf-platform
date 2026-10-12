@@ -1,4 +1,4 @@
-import { accessibleAthleteIds, athleteIdsForCoach, isOrganizationAdminRole } from './access';
+import { accessibleAthleteIds, isOrganizationAdminRole } from './access';
 import { auditEntityOwnersOf, resolveAuditEntityOwners } from './auditEntityOwners';
 import {
   ATHLETE_OWNED_AUDIT_ENTITY_TYPES,
@@ -138,7 +138,7 @@ function clampOffset(value: number | undefined): number {
 interface AthleteScope {
   // WHICH athlete-tied rows may this actor see?
   // A list: only rows tied to these athlete IDs (athlete: themselves; parent:
-  // their linked athletes; coach: their assigned + actively covered roster).
+  // their linked athletes; coach: every live athlete of their gym, issue #1480).
   // The EMPTY list is a real answer -- "no athlete-tied row at all" -- and is
   // what every role that assertActorCanAccessAthlete refuses outright gets.
   // Null means unrestricted and is reserved for the organization admin, who
@@ -158,17 +158,11 @@ interface AthleteScope {
  * matches the actor's real athlete scope everywhere in the app -- the same
  * relationship, evaluated on every read.
  *
- * The coach branch is the one that was missing. A coach fell through to "no
- * athlete restriction at all", so /api/pilot/shadow/events answered a
- * caller-supplied `entity_id` for ANY athlete in the organization, and
- * roleCanViewSensitivePayload returns true for a coach, so the pain-report
- * payload came back with body site, pain type and severity intact. The
- * sanitizer is not the defect: a coach seeing pain location and severity for
- * THEIR OWN athlete is load-bearing (describePainReportEvent below renders
- * exactly those fields into the coach's feed label). Restricting the coach to
- * athleteIdsForCoach -- the same coach_id-of-record UNION active-coverage
- * contract the escalations, readiness board and Coach Cards reads already use
- * -- is what makes the unredacted payload legitimate.
+ * A coach reads every athlete of their own gym (Jason, 2026-10-12: "lets make
+ * it coaches to whole gym"; issue #1480), as an organization admin does, so
+ * pain location and severity in this feed reach every coach of the gym. This
+ * replaced the earlier coach_id-of-record UNION active-coverage scope.
+ * Another gym's rows are never read: every query is organization-scoped.
  *
  * Roles that assertActorCanAccessAthlete refuses outright get the empty list,
  * not null. That was already the intent for a volunteer; volunteer was simply
@@ -210,13 +204,17 @@ async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteS
     return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], includeUnscopedRows: false };
   }
 
+  // A coach reaches every athlete of their own gym (Jason, 2026-10-12: "lets
+  // make it coaches to whole gym"; issue #1480): every live athlete of the gym,
+  // the same set accessibleAthleteIds now admits. An explicit list, not null:
+  // null is the admin's scope, and it would also hand a coach every intake
+  // case that names nobody, which stays the filer's (intakeCaseReaderScopeSql).
   if (context.actorRole === 'coach') {
-    // Empty is a real answer here too: a coach who currently reaches nobody
-    // reads the operational feed and no athlete's rows. Never null.
-    return {
-      restrictToAthleteIds: await athleteIdsForCoach(context.organizationId, context.actorAccountId),
-      includeUnscopedRows: true,
-    };
+    const rows = await query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes where organization_id = $1 and deleted_at is null`,
+      [context.organizationId],
+    );
+    return { restrictToAthleteIds: rows.map((row) => row.athlete_id), includeUnscopedRows: true };
   }
 
   if (isOrganizationAdminRole(context.actorRole)) {

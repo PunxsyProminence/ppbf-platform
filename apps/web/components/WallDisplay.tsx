@@ -6,6 +6,11 @@ import { apiBase } from '@/lib/apiBase';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
 import { pickSaying } from './gymSayings';
+import useGymSound from './useGymSound';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 /**
  * THE WALL — the board on the gym's television.
@@ -16,7 +21,8 @@ import { pickSaying } from './gymSayings';
  *
  *   - No RoleStandaloneView. That shell brings a session bar, a breadcrumb
  *     trail, an Operations link and a Shadow chat button -- four controls on a
- *     screen with no pointer attached to it. GlobalRoleHeader stands down on
+ *     screen with no pointer attached to it. The only controls here are the
+ *     pair box and, once paired, the sound switch, both worked with the remote. GlobalRoleHeader stands down on
  *     this route for the same reason.
  *   - No hover states and no focus rings, because there is no cursor and no
  *     keyboard. Every element here is text.
@@ -305,6 +311,7 @@ export default function WallDisplay() {
 
       <FootRule board={showLive ? board : null} health={health} connected={connected} zone={zone} />
       {paired === false && <PairBox onPaired={() => refreshRef.current()} />}
+      {paired === true && <WallSound />}
     </div>
   );
 }
@@ -312,7 +319,8 @@ export default function WallDisplay() {
 /* ------------------------------------------------------------- pair box --- */
 
 /**
- * THE ONE CONTROL ON THE WALL, and only while the screen is not paired.
+ * THE ONE CONTROL ON AN UNPAIRED WALL. A paired screen shows only the sound
+ * switch (WallSound, below).
  *
  * A coach presses "Pair a TV" on the dashboard and reads a six-character code
  * off it; somebody types that code here with the TV remote. POST
@@ -417,6 +425,79 @@ function PairBox({ onPaired }: { onPaired: () => void }) {
   );
 }
 
+/* ---------------------------------------------------------------- sound --- */
+
+/**
+ * THE TV'S SOUND (WO-N1-02; OD-2026-10-06-014 Q7: bells "play from the TV").
+ *
+ * On a PAIRED screen only -- an unpaired wall keeps the pair box as its one
+ * control. It is the app's one sound engine (useGymSound over
+ * design-system/ppbf-sound.js): off until somebody presses it, and that press
+ * is the browser's audio activation, so "Sound on" rings the bell once to prove
+ * the TV can be heard. "Test bell" rings it again on demand. Nothing here
+ * touches the poll, the pairing or the board, and the engine is one module-wide
+ * instance, so a re-pair, a poll or a remount never opens a second one.
+ *
+ * Volume is the TV's own: the engine's level is fixed when it starts, and the
+ * hook offers no way to change it after.
+ */
+const WALL_SOUND_LABEL: Record<'off' | 'arming' | 'on' | 'unavailable', string> = {
+  off: 'Sound off',
+  arming: 'Sound waiting',
+  on: 'Sound on',
+  unavailable: 'No audio',
+};
+
+/**
+ * The gym-floor floor for a control worked with a remote from across the room (AGENT_KERNEL.md
+ * rule 2: --tap and --t-md). Inline, because the design system's unlayered .btn rule fixes a
+ * button at 44px and 15px type and outranks a Tailwind utility; an inline style outranks both.
+ */
+const WALL_CONTROL_SIZE = { minHeight: 'var(--tap)', fontSize: 'var(--t-md)' } as const;
+
+function WallSound() {
+  const { enabled, status, setEnabled, play } = useGymSound();
+  // What this press means, decided as it begins. The hook's own pointerdown listener starts audio
+  // on a waiting TV during the same gesture, and can turn the status to "on" before the click
+  // lands; reading the status at click time would then switch sound OFF (Codex review). A press
+  // with no pointerdown (a remote's OK key) decides at the click.
+  const intent = useRef<boolean | null>(null);
+
+  async function toggle() {
+    // Inside the press, which is what lets the browser start audio. Only a
+    // screen whose sound is on turns it off; "Sound waiting" (a reloaded TV)
+    // and "No audio" are a press to start it.
+    const turnOn = intent.current ?? status !== 'on';
+    intent.current = null;
+    const live = await setEnabled(turnOn);
+    if (live) play('bell');
+  }
+
+  return (
+    <div
+      className="wall-sound flex shrink-0 items-center justify-end gap-[var(--s4)] px-[var(--s7)] pb-[var(--s4)]"
+      aria-label="TV sound"
+      role="group"
+    >
+      <button
+        type="button"
+        className="btn btn--ghost px-[var(--s5)]"
+        style={WALL_CONTROL_SIZE}
+        aria-pressed={enabled}
+        onPointerDown={() => { intent.current = status !== 'on'; }}
+        onClick={() => { void toggle(); }}
+      >
+        {WALL_SOUND_LABEL[status]}
+      </button>
+      {status === 'on' && (
+        <button type="button" className="btn px-[var(--s5)]" style={WALL_CONTROL_SIZE} onClick={() => { play('bell'); }}>
+          Test bell
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------- masthead --- */
 
 /** A held space, so the masthead's geometry does not jump when the clock lands. */
@@ -427,7 +508,7 @@ function Masthead({ now, zone }: { now: number | null; zone?: string }) {
   return (
     <header className="flex shrink-0 items-end justify-between gap-[var(--s6)] px-[var(--s7)] pt-[var(--s5)]">
       <div>
-        <p className="wall-eyebrow">Punxsy Prominence Boxing &amp; Fitness</p>
+        <p className="wall-eyebrow">{GYM.brand}</p>
         <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
         <p className="wall-date text-4xl">
           {stamp ? formatIn(stamp, zone, { month: 'long', day: 'numeric', year: 'numeric' }) : HELD}
@@ -661,7 +742,7 @@ function StandingBoard({ health }: { health: WallHealth }) {
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[var(--s5)] px-[var(--s7)] text-center">
       <p className="wall-standing-crest" aria-hidden="true">
-        PPBF
+        {GYM.shortName}
       </p>
       {saying ? (
         <p className="wall-standing-line text-6xl" data-testid="wall-standing-saying">

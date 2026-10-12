@@ -96,8 +96,8 @@ export const PRIVACY_TIER_DOCTRINE: Readonly<Record<PrivacyTier, TierDoctrine>> 
     audience: 'Actors with a per-subject relationship to one athlete.',
     enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'guardianAccess.ts'],
     reason:
-      'Role alone is never enough: a coach needs the coach_id of record or a live coverage grant, a '
-      + 'parent needs a guardian link, an athlete is self-only -- and platform_owner and board are '
+      'Role alone is never enough: a coach needs the athlete to be a live athlete of the coach\'s own '
+      + 'gym (issue #1480, Jason 2026-10-12: "lets make it coaches to whole gym"), a parent needs a guardian link, an athlete is self-only -- and platform_owner and board are '
       + 'refused outright, which is what makes the two de-identified tiers lateral rather than above.',
   },
   minor_circle: {
@@ -156,11 +156,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
-      'Per-relationship for coaches, and now real rather than aspirational: the roster list still names '
-      + 'every athlete, but dob comes back only for the coach of record or the holder of an active '
-      + 'coverage grant. Every coach-reachable read of this column is scoped -- athletes/list through '
-      + 'getAthletesForCoach, athletes/get + athletes/update + intake/domain-get through '
-      + 'assertActorCanAccessAthlete. profile/roster selects dob to feed the portrait age gate and never '
+      'The roster list (athletes/list, getAthletesForCoach) still returns dob only for the coach of record '
+      + 'or the holder of an active coverage grant. athletes/get + athletes/update + intake/domain-get go '
+      + 'through assertActorCanAccessAthlete, which since issue #1480 (Jason 2026-10-12) admits every coach '
+      + 'of the athlete\'s gym, so a coach reads dob per athlete there; whether the roster blanking should '
+      + 'follow is an open owner question on #1480. profile/roster selects dob to feed the portrait age gate and never '
       + 'returns it. coach/development-block-templates reads it through developmentBlockTemplates.ts after '
       + 'assertActorCanAccessAthlete and returns only an adult/not-adult boolean. Organization admins still read it org-wide, which is exactly what keeps this '
       + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
@@ -188,8 +188,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
-      + 'public read (wall denylist). Per-relationship for coaches by the same field split as '
-      + 'athletes.dob -- org-wide staff reads through athletes/list ended with it. The roster export '
+      + 'public read (wall denylist). Blanked on the roster list for coaches by the same field split as '
+      + 'athletes.dob, and, as with dob, readable per athlete by every coach of the gym through '
+      + 'assertActorCanAccessAthlete since issue #1480 (an open owner question there). The roster export '
       + '(admin/export/roster) still carries it and is gated to organization_admin alone.',
   },
   'account_profiles.photo_blob_path': {
@@ -417,10 +418,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note:
       'Body mass, from the athlete check-in and the sparring form, and the seven-day fast-change flag built on '
       + 'it (elite-boxing item 5; Jason 2026-10-04 "B everyone, youth limited", "Yes, keep org admin"). '
-      + 'Staff reads go through assertActorCanAccessAthlete since OD-2026-10-05-024 ruling 2 (Jason '
-      + '2026-10-05): assigned or covering coach, or organization admin, for an adult and a youth alike; '
-      + 'any other coach is refused. bodyMassVisibleTo still narrows a YOUTH (and an athlete with no '
-      + 'recorded date of birth) behind that gate. Parents read it for a youth only.',
+      + 'Staff reads go through assertActorCanAccessAthlete, which since issue #1480 (Jason 2026-10-12: '
+      + '"lets make it coaches to whole gym", replacing OD-2026-10-05-024 ruling 2) admits every coach of '
+      + 'the athlete\'s gym and the organization admin, for an adult and a youth alike. bodyMassVisibleTo '
+      + 'narrows a YOUTH (and an athlete with no recorded date of birth) behind that gate only by role; '
+      + 'whether a youth\'s weight should stay with the coach of record is an open owner question on #1480. Parents read it for a youth only.',
   },
   'training_holds.reason_category': {
     tier: 'organization',

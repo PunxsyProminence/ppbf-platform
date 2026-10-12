@@ -17,6 +17,16 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * families, no ranking, no other athlete's numbers, no norm or "good/bad"
  * label. Each rating is one family on one date; each jump is one number on
  * one date. The 1-5 wording is Jason's (2026-10-04, option A).
+ *
+ * RETEST QUEUE (work order N7-01), headed "Open test and rating requests"
+ * because a request may be a first test as well as a retest. The open
+ * data-collection requests for the chosen athlete, from
+ * GET /api/pilot/data-collection-requests, kept to the two kinds this page
+ * records (a physical test, a skill rubric). Rows keep the
+ * server's order (priority, then due date, then oldest first) and show the
+ * stored due date as it is: the server gives no overdue flag, so this page
+ * labels nothing overdue (N7-01-Q1, default C). Read-only: saving a jump here
+ * does not close a request, so nothing here says it does.
  */
 
 interface AuthorizedAthlete {
@@ -62,12 +72,27 @@ interface AssessmentPayload {
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'unavailable';
 
+/** The fields of a DataCollectionRequestRow this page reads. */
+interface RetestRequest {
+  request_id: string;
+  athlete_id: string | null;
+  request_kind: string;
+  prompt_text: string;
+  capture_hint: string;
+  due_on: string | null;
+  priority: string;
+}
+
+const RETEST_KINDS = new Set(['physical_test', 'skill_rubric']);
+
 export default function CoachAssessmentsPage() {
   const [athletes, setAthletes] = useState<AuthorizedAthlete[]>([]);
   const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [athleteId, setAthleteId] = useState('');
   const [data, setData] = useState<AssessmentPayload | null>(null);
   const [dataState, setDataState] = useState<LoadState>('idle');
+  const [queue, setQueue] = useState<RetestRequest[]>([]);
+  const [queueState, setQueueState] = useState<LoadState>('idle');
 
   const [jumpProtocol, setJumpProtocol] = useState('ppbf-jump-cmj-height');
   const [jumpValue, setJumpValue] = useState('');
@@ -132,6 +157,36 @@ export default function CoachAssessmentsPage() {
     }
   }, []);
 
+  // Each queue load is numbered; only the latest may set state, so a late
+  // answer to an earlier selection (even of the same athlete) is dropped.
+  const latestQueue = useRef(0);
+
+  const loadQueue = useCallback(async (id: string) => {
+    const request = ++latestQueue.current;
+    const stale = () => latestQueue.current !== request;
+    setQueue([]);
+    if (!id) {
+      setQueueState('idle');
+      return;
+    }
+    setQueueState('loading');
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/data-collection-requests?athlete_id=${encodeURIComponent(id)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (stale()) return;
+      if (!response.ok) throw new Error('queue');
+      const payload = (await response.json()) as { requests?: RetestRequest[] };
+      if (stale()) return;
+      setQueue((payload.requests ?? []).filter((r) => r.athlete_id === id && RETEST_KINDS.has(r.request_kind)));
+      setQueueState('loaded');
+    } catch {
+      if (stale()) return;
+      setQueueState('unavailable');
+    }
+  }, []);
+
   function selectAthlete(id: string) {
     currentAthlete.current = id;
     setAthleteId(id);
@@ -145,6 +200,7 @@ export default function CoachAssessmentsPage() {
     setRatingNote('');
     setMessage(null);
     void loadAthlete(id);
+    void loadQueue(id);
   }
 
   /** Returns null when not saved, otherwise whether the history reload worked. */
@@ -284,6 +340,34 @@ export default function CoachAssessmentsPage() {
             </p>
           )}
         </section>
+
+        {athleteId && queueState !== 'idle' && (
+          <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]">
+            <h2 className="t-eyebrow">Open test and rating requests{athleteName ? ` for ${athleteName}` : ''}</h2>
+            {queueState === 'loading' && <p className="t-body">Loading…</p>}
+            {queueState === 'unavailable' && (
+              <p role="alert" className="t-body text-[color:var(--restricted-ink)]">
+                The open requests could not be loaded. Open requests may exist that are not shown here.
+              </p>
+            )}
+            {queueState === 'loaded' && queue.length === 0 && (
+              <p className="t-body text-[color:var(--bone-300)]">No open test or rating requests for this athlete.</p>
+            )}
+            {queueState === 'loaded' && queue.length > 0 && (
+              <ol className="space-y-[var(--s2)]">
+                {queue.map((r) => (
+                  <li key={r.request_id}>
+                    <span className="font-semibold">{r.prompt_text}</span>
+                    <span className="block text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      {r.due_on ? `Due ${day(r.due_on)}` : 'No due date'} · priority {r.priority}
+                      {r.capture_hint ? ` · ${r.capture_hint}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
 
         {athleteId && data && dataState === 'loaded' && (
           <>

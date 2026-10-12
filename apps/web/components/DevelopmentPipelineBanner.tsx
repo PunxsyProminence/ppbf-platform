@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export type PipelineStageKey = 'research' | 'evidence' | 'knowledge' | 'simulator' | 'audit' | 'source-control' | 'publish';
+export type PipelineStageKey = 'research' | 'evidence' | 'knowledge' | 'simulator' | 'audit';
 
 interface PipelineStage {
   key: PipelineStageKey;
@@ -14,8 +14,6 @@ const pipelineStages: PipelineStage[] = [
   { key: 'knowledge', label: 'KNOWLEDGE GRAPH', href: '/knowledge-graph' },
   { key: 'simulator', label: 'SCENARIO SIMULATOR', href: '/simulator' },
   { key: 'audit', label: 'AUDIT TRACE', href: '/audit' },
-  { key: 'source-control', label: 'SOURCE CONTROL', href: '/source-control' },
-  { key: 'publish', label: 'PUBLISH', href: '/source-control#publish' },
 ];
 
 interface DevelopmentPipelineBannerProps {
@@ -84,7 +82,7 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
         <p>
           Stage {currentIndex >= 0 ? currentIndex + 1 : '--'} of {pipelineStages.length}: {current?.label ?? 'Not a pipeline stage'}
         </p>
-        <p>Next: {nextStage?.label ?? 'Publish is the last stage'}</p>
+        <p>Next: {nextStage?.label ?? 'this is the last stage'}</p>
       </div>
 
       <p className="t-muted mt-[var(--s3)] max-w-[64ch]">

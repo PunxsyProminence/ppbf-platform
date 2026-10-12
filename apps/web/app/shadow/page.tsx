@@ -139,6 +139,45 @@ const SHADOW_CHAT_ROLES = new Set([
   'platform_owner',
 ]);
 
+/* RESEARCH FILING ON AN UNANSWERED REPLY (issue #1466).
+ *
+ * A reply with no verified Library evidence files nothing on its own: the chat
+ * route writes no research requirement. A coach or org admin decides which of
+ * these become research, through the existing create on
+ * /api/pilot/shadow/research-requirements (staff only there). The same
+ * question filed twice reaches the same row: the route upserts on
+ * (org, event, entity type, entity id), and the entity id is the question as
+ * normalized below (N6-01-Q1 A).
+ *
+ * The line states only what was read. Nobody else sees it: a member cannot
+ * read a coach-filed row, so "not filed" would be a guess for them. */
+const RESEARCH_FILING_EVENT = 'shadow_unanswered_question';
+const RESEARCH_FILING_ENTITY = 'shadow_question';
+const RESEARCH_FILING_ROLES = new Set(['coach', 'admin', 'organization_admin']);
+
+/* The key names the athlete when the conversation is about one (Codex P1 on
+   #1509): the row is filed with that athlete as its subject, so the athlete
+   and their parents read it (OD-2026-10-06-010) and coaches reach it by the
+   athlete, and the same question about another child is its own row. */
+function researchKeyForQuestion(question: string, athleteId?: string | null): string {
+  const normalized = question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
+  if (!normalized) return '';
+  return athleteId ? `athlete:${athleteId}:${normalized}` : normalized;
+}
+
+interface ResearchFiling {
+  id: number;
+  status: 'open' | 'resolved' | null;
+}
+
+interface ResearchRequirementListRow {
+  research_requirement_id: number;
+  source_event_name: string;
+  source_entity_type: string;
+  source_entity_id: string;
+  status: 'open' | 'resolved';
+}
+
 /**
  * Only 401 means the HttpOnly session is gone. A 403 is "not allowed for
  * this action/role", not "signed out". Treating them alike forced logout
@@ -619,6 +658,108 @@ function ShadowChatPageContent() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const mayFileResearch = RESEARCH_FILING_ROLES.has(userRole);
+  const [researchFilings, setResearchFilings] = useState<Record<string, ResearchFiling>>({});
+  const [researchFilingsRead, setResearchFilingsRead] = useState<'idle' | 'loaded' | 'failed'>('idle');
+  const [researchFilingBusy, setResearchFilingBusy] = useState<string | null>(null);
+  const [researchFilingError, setResearchFilingError] = useState<Record<string, string>>({});
+  /* Filings this page made. A list read that started before a filing can
+     land after it; these are laid over every read so a filed question never
+     flips back to "Not filed" (R2 #1). */
+  const filedThisSession = useRef<Record<string, ResearchFiling>>({});
+  const unansweredReplies = messages.filter((msg) => msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE').length;
+
+  async function readResearchFilings(): Promise<Record<string, ResearchFiling>> {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
+    if (!response.ok) throw new Error('research requirements');
+    const payload = (await response.json()) as { items?: ResearchRequirementListRow[] };
+    const filed: Record<string, ResearchFiling> = {};
+    for (const row of payload.items ?? []) {
+      if (row.source_event_name === RESEARCH_FILING_EVENT && row.source_entity_type === RESEARCH_FILING_ENTITY) {
+        filed[row.source_entity_id] = { id: row.research_requirement_id, status: row.status };
+      }
+    }
+    return filed;
+  }
+
+  // Read again whenever another unanswered reply arrives: another coach may
+  // have filed that question since the last read (R1 #3).
+  useEffect(() => {
+    if (!mayFileResearch || unansweredReplies === 0) return;
+    let cancelled = false;
+    void readResearchFilings()
+      .then((filed) => {
+        if (cancelled) return;
+        setResearchFilings({ ...filedThisSession.current, ...filed });
+        setResearchFilingsRead('loaded');
+      })
+      .catch(() => {
+        if (!cancelled) setResearchFilingsRead('failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mayFileResearch, unansweredReplies]);
+
+  async function fileAsResearch(question: string) {
+    const athleteId = conversationAthleteId ?? null;
+    const key = researchKeyForQuestion(question, athleteId);
+    if (!key || researchFilingBusy === key) return;
+    setResearchFilingBusy(key);
+    setResearchFilingError((current) => ({ ...current, [key]: '' }));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          source_event_name: RESEARCH_FILING_EVENT,
+          source_entity_type: RESEARCH_FILING_ENTITY,
+          source_entity_id: key,
+          ...(athleteId ? { subject_id: athleteId } : {}),
+          research_requirement: question.trim().slice(0, 2000),
+          knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
+          source_status: 'weak',
+          source_confidence_tier: 'INSUFFICIENT',
+          source_verification_state: 'unverified',
+          metadata: { asked_in: 'shadow' },
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { research_requirement_id?: number; error?: string };
+      if (!response.ok || typeof payload.research_requirement_id !== 'number') {
+        throw new Error(payload.error || `Could not file it as research (${response.status}).`);
+      }
+      const filedId = payload.research_requirement_id;
+      // The stored row decides the status: a question filed before may
+      // already be resolved, and the upsert returns that row unchanged.
+      const filed = await readResearchFilings().catch(() => null);
+      const entry = filed?.[key] ?? { id: filedId, status: null };
+      filedThisSession.current = { ...filedThisSession.current, [key]: entry };
+      setResearchFilings((current) => ({
+        ...current,
+        ...(filed ?? {}),
+        ...filedThisSession.current,
+      }));
+    } catch (error) {
+      setResearchFilingError((current) => ({
+        ...current,
+        [key]: error instanceof Error ? error.message : 'Could not file it as research.',
+      }));
+    } finally {
+      setResearchFilingBusy(null);
+    }
+  }
+
+  // By position, not by id: the question is the user message just before
+  // this reply in the transcript.
+  function questionBefore(index: number): string {
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (messages[i].type === 'user') return messages[i].text;
+    }
+    return '';
+  }
 
   function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
@@ -1616,7 +1757,7 @@ function ShadowChatPageContent() {
             tabIndex={0}
             className="mb-[var(--s5)] max-h-[550px] space-y-[var(--s4)] overflow-y-auto pr-[var(--s2)]"
           >
-            {messages.map((msg) => (
+            {messages.map((msg, messageIndex) => (
               <div
                 key={msg.id}
                 className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -1673,6 +1814,43 @@ function ShadowChatPageContent() {
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
                   ) : null}
+                  {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
+                    ? (() => {
+                        const question = questionBefore(messageIndex);
+                        const key = researchKeyForQuestion(question, conversationAthleteId);
+                        if (!key || researchFilingsRead === 'idle') return null;
+                        const filed = researchFilings[key];
+                        const error = researchFilingError[key];
+                        return (
+                          <div className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]" data-testid="research-filing">
+                            {filed ? (
+                              <p className="t-body" key="filed">
+                                {filed.status ? `Filed as research: ${filed.status}.` : 'Filed as research.'}{' '}
+                                <Link href="/research" className="t-label">Open research</Link>
+                              </p>
+                            ) : (
+                              <>
+                                <p className="t-body" key={researchFilingsRead}>
+                                  {researchFilingsRead === 'failed'
+                                    ? 'Could not check whether this was filed as research.'
+                                    : 'Not filed as research yet.'}
+                                </p>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost"
+                                  disabled={researchFilingBusy === key}
+                                  aria-label={`File as research: ${question.trim().slice(0, 120)}`}
+                                  onClick={() => void fileAsResearch(question)}
+                                >
+                                  File as research
+                                </button>
+                              </>
+                            )}
+                            {error ? <p className="t-body text-[color:var(--restricted)]">{error}</p> : null}
+                          </div>
+                        );
+                      })()
+                    : null}
                   {/* Law 2/3: a response state is a queue outcome, so it rides
                       the badge ladder -- glyph plus uppercase word, never a
                       one-off chip. Withheld and degraded are --restricted, not

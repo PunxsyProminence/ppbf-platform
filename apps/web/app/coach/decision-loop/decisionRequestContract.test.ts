@@ -10,12 +10,10 @@
 // theirs to arm, on the surface where "is this child cleared to train" is
 // decided.
 //
-// The server side of that hole was already closed: shadowDecisions.ts runs
-// assertMedicalStatusAllowsRecommendation unconditionally, and
-// shadowDecisions.test.ts pins it ("checks the medical status guard on every
-// decision, whatever the topic"). What was left behind was the control, still
-// on screen, still in the request body, still describing a gate it did not
-// operate.
+// No medical-status check refuses a decision at all now (issue #1474: the
+// coach makes the assessment and the status on file is recorded with the
+// decision), so a field claiming to arm one would be doubly false. This gate
+// keeps the request body to the four fields the route reads.
 //
 // This gate reads source rather than behaviour on purpose: the defect is not
 // that a request fails, it is that a request carries a field nothing consumes,

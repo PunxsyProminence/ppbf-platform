@@ -170,3 +170,17 @@ test('a failed read admits gaps may be open that are not shown', async () => {
   expect(screen.getByText(/Gaps may be open that are not shown here/)).toBeTruthy();
   expect(screen.queryByText('No open gaps in these books')).toBeNull();
 });
+
+test('each row opens that athlete\'s own passbook', async () => {
+  global.fetch = mockFetch({});
+
+  await act(async () => {
+    render(<CoachPassbookGapsPage />);
+  });
+
+  const rows = screen.getAllByRole('listitem');
+  expect(within(rows[0]).getByRole('link', { name: 'Open passbook' }).getAttribute('href'))
+    .toBe('/coach/passbook?athlete_id=ath-1');
+  expect(within(rows[1]).getByRole('link', { name: 'Open passbook' }).getAttribute('href'))
+    .toBe('/coach/passbook?athlete_id=ath-2');
+});

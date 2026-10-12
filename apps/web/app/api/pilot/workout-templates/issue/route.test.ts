@@ -68,17 +68,17 @@ const ISSUED = {
   ],
   adopted: [{ drill_id: 'op-2', reference_drill_id: 'ref-2', name: 'Slip Rope Shuffle' }],
   updated: [],
+  untested: [],
 };
 
 const REFUSED = {
   outcome: 'refused',
-  message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Slip Rope Shuffle.',
+  message: 'Nothing was issued. Cannot be assigned as they stand: Slip Rope Shuffle.',
   drills: [{
     steps: [2],
     drill_id: 'ref-2',
     name: 'Slip Rope Shuffle',
-    untested_draft: true,
-    reason: 'It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.',
+    reason: 'It has no stop rules.',
   }],
 };
 
@@ -237,7 +237,22 @@ describe('the outcomes', () => {
       steps: ISSUED.steps,
       adopted_drills: ISSUED.adopted,
       updated_drills: [],
+      untested_drills: [],
     });
+  });
+
+  // Jason, 2026-10-11: "B" (issue #1473). An untested draft is issued and named.
+  test('the untested drills the writer names are returned as untested_drills on the 201', async () => {
+    const untested = [{ reference_drill_id: 'ref-2', name: 'Slip Rope Shuffle', steps: [2] }];
+    mockIssue.mockResolvedValue({ ...ISSUED, untested });
+
+    const res = await POST(post(BODY));
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.untested_drills).toEqual(untested);
+    // Named, not counted as anything created.
+    expect(body.created).toEqual({ assignments: 2, adopted_drills: 1, updated_drills: 0 });
   });
 
   test('a drill updated to the newer version while issuing is returned and counted as updated, not adopted', async () => {

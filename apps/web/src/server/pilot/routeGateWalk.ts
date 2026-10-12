@@ -68,6 +68,9 @@ export const AUTHORIZATION_GATES = new Set([
   'accessibleAthleteIds',
   'athleteIdsForCoach',
   'assertCoachAssignedToAthlete',
+  // Refuses an athlete who is not live in the coach's own gym (access.ts,
+  // assertCoachReachesAthlete -> assertAthleteBelongsToOrganization).
+  'assertCoachReachesAthlete',
   'assertAthleteUpdateAllowed',
   'assertViewerMayReachSubject',
   'assertActorCanAccessIntakeCase',
@@ -81,11 +84,14 @@ export const AUTHORIZATION_GATES = new Set([
 
 /**
  * Helpers that, when reached, mean the handler applied the coach-reach rule:
- * a coach sees only athletes assigned to them or under live coverage
- * (assertActorCanAccessAthlete and its batched / coach-scoped forms).
+ * since issue #1480 (Jason, 2026-10-12) a coach reaches every live athlete of
+ * their own gym (assertActorCanAccessAthlete, assertCoachReachesAthlete and the
+ * batched form); athleteIdsForCoach is the narrower "my athletes" list, and
+ * assertCoachAssignedToAthlete the coach-of-record-or-coverage relationship.
  */
 export const COACH_REACH_GATES = new Set([
   'assertActorCanAccessAthlete',
+  'assertCoachReachesAthlete',
   'accessibleAthleteIds',
   'athleteIdsForCoach',
   'assertCoachAssignedToAthlete',

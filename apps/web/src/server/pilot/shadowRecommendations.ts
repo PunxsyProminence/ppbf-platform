@@ -1,10 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
-import {
-  EXPIRED_CLEARANCE_STATUS,
-  effectiveMedicalStatus,
-  getLatestMedicalAdministrativeStatus,
-  isClearanceCurrent,
-} from './shadowMedicalStatus';
+import { effectiveMedicalStatus, getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
 export type ShadowRecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
@@ -26,47 +21,42 @@ export interface ShadowRecommendationRow {
 
 const DEFAULT_EXPIRY_HOURS = 72;
 
-function blockedMessage(status: string): string {
-  if (status === 'no_record') {
-    return "Blocked: this athlete has no medical administrative status on file yet. A medically sensitive decision requires an explicit 'cleared' status -- set one in the Medical Status panel before recording this decision.";
-  }
-  // A lapsed clearance needs its own sentence. "your status is
-  // 'cleared_expired', not 'cleared'" would read as a bug to the coach, and the
-  // action it calls for is different: not "decide", but "re-confirm".
-  if (status === EXPIRED_CLEARANCE_STATUS) {
-    return "Blocked: this athlete's medical clearance has passed its stated expiry, so it no longer counts as current. Record a new 'cleared' status in the Medical Status panel once the clearance has been re-confirmed.";
-  }
-  return `Blocked: this athlete's medical administrative status is '${status}', not 'cleared'. Set status to 'cleared' in the Medical Status panel before recording this decision, or leave it as-is if the athlete should not yet participate.`;
+// THE MEDICAL STATUS IS RECORDED, NOT ENFORCED (Jason, 2026-10-10 and
+// 2026-10-11, OD-2026-10-10-004 to -007: coaches make the assessments; the app
+// teaches and records, it does not block, flag, warn or hold; issue #1474).
+//
+// Creating a recommendation, deciding one and recording a decision used to be
+// refused unless the athlete held a current 'cleared' status. With no status
+// on file for anyone in the live gym, no coach could record any decision. Now
+// each record carries the status that was on file when it was made: the
+// decision row's medical_status_snapshot_id, and on every audit entry the three
+// fields below. The contact gate (contactClearanceGate.ts) is a separate rule
+// with its own read of isClearanceCurrent and is not changed by this.
+
+/** The athlete's medical administrative status as it stood when a record was made. */
+export interface MedicalStatusOnFile {
+  /**
+   * effectiveMedicalStatus's words: 'no_record', 'pending', 'restricted',
+   * 'not_cleared', 'cleared', or 'cleared_expired' for a clearance past its end.
+   */
+  medicalStatusOnFile: string;
+  /** The status row on file, or null when there is none. */
+  medicalStatusId: string | null;
+  medicalStatusExpiresAt: string | null;
 }
 
-export class MedicalStatusBlockedError extends Error {
-  constructor(readonly status: string) {
-    super(blockedMessage(status));
-    this.name = 'MedicalStatusBlockedError';
-  }
-}
-
-// Never auto-clear medical/sparring-clearance/weight-cut decisions. Any
-// recommendation whose topic touches one of those must check the athlete's
-// current MedicalAdministrativeStatus first -- this is the one shared guard
-// both this module and shadowDecisions.ts rely on, so the rule lives in
-// exactly one place.
-export async function assertMedicalStatusAllowsRecommendation(
+/** Reads the latest status once and states it as of `at` (default: now). Never refuses. */
+export async function readMedicalStatusOnFile(
   organizationId: string,
   athleteId: string,
-): Promise<void> {
-  // Fail closed: only an explicit 'cleared' record that is still in force
-  // allows a medically sensitive recommendation through. No record on file,
-  // 'pending', 'restricted'/'not_cleared', and a clearance past its stated
-  // expiry all block -- absence of a clearance decision is not itself a
-  // clearance decision, and neither is a clearance that has run out.
-  //
-  // isClearanceCurrent is shared with contactClearanceGate.ts precisely so the
-  // time bound cannot be enforced on one path and skipped on the other.
-  const status = await getLatestMedicalAdministrativeStatus(organizationId, athleteId);
-  if (!isClearanceCurrent(status)) {
-    throw new MedicalStatusBlockedError(effectiveMedicalStatus(status));
-  }
+  at: Date = new Date(),
+): Promise<MedicalStatusOnFile> {
+  const row = await getLatestMedicalAdministrativeStatus(organizationId, athleteId);
+  return {
+    medicalStatusOnFile: effectiveMedicalStatus(row, at),
+    medicalStatusId: row?.status_id ?? null,
+    medicalStatusExpiresAt: row?.expires_at ?? null,
+  };
 }
 
 export async function createProvisionalRecommendation(input: {
@@ -79,26 +69,8 @@ export async function createProvisionalRecommendation(input: {
   createdByRole: string;
   expiresInHours?: number;
 }): Promise<ShadowRecommendationRow> {
-  // Unconditional, and deliberately not a parameter.
-  //
-  // This guard used to run only when the caller passed isMedicallySensitive.
-  // That flag arrived verbatim off the HTTP body behind a `typeof` check, with
-  // `undefined` permitted -- so omitting one field from the JSON skipped the
-  // clearance check entirely, on a return-to-play recommendation, in a youth
-  // contact sport. A safety gate the caller decides to arm is not a gate.
-  //
-  // The alternative considered was deriving sensitivity server-side from the
-  // recommendation text (shadowClassifier.ts already carries the vocabulary).
-  // It was rejected as the primary control: a denylist decides by phrasing, and
-  // "he took a bad shot Tuesday, is he good to spar?" matches none of those
-  // patterns. Consulting the athlete's clearance record on every recommendation
-  // depends on no vocabulary at all.
-  //
-  // The cost is that a recommendation cannot be written for an athlete with no
-  // clearance record on file. That is the intended reading of the guard's own
-  // rule -- absence of a decision is not a decision -- and setting a status is
-  // ordinary onboarding, not a workaround.
-  await assertMedicalStatusAllowsRecommendation(input.organizationId, input.athleteId);
+  // Recorded with the recommendation, never a reason to refuse it (issue #1474).
+  const onFile = await readMedicalStatusOnFile(input.organizationId, input.athleteId);
 
   const expiresInHours = input.expiresInHours && input.expiresInHours > 0
     ? input.expiresInHours
@@ -136,7 +108,7 @@ export async function createProvisionalRecommendation(input: {
       action: 'created_provisional',
       actorAccountId: input.createdByAccountId,
       actorRole: input.createdByRole,
-      afterState: { status: row.status, expiresAt: row.expires_at },
+      afterState: { status: row.status, expiresAt: row.expires_at, ...onFile },
     });
 
     return row;
@@ -209,6 +181,9 @@ export async function decideOnRecommendation(input: {
   decidedByAccountId: string;
   decidedByRole: string;
 }): Promise<ShadowRecommendationRow | null> {
+  // Recorded with the decision, never a reason to refuse it (issue #1474).
+  const onFile = await readMedicalStatusOnFile(input.organizationId, input.athleteId);
+
   return withTransaction(async (client) => {
     const result = await client.query<ShadowRecommendationRow>(
       `update pilot.shadow_recommendations
@@ -231,7 +206,7 @@ export async function decideOnRecommendation(input: {
       actorAccountId: input.decidedByAccountId,
       actorRole: input.decidedByRole,
       beforeState: { status: 'provisional' },
-      afterState: { status: row.status },
+      afterState: { status: row.status, ...onFile },
     });
 
     return row;

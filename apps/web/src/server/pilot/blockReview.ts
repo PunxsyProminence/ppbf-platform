@@ -289,11 +289,12 @@ export async function blockEvidence(
          links a session outside the block's stated dates meant to, and
          second-guessing them here would silently drop the record. */
       query<{ when: string; detail: string }>(
-        `select r.delivered_on::text as when, s.name as detail
+        `select r.delivered_on::text as when, coalesce(s.name, 'Plain session') as detail
          from pilot.session_run_development_block_links l
          join pilot.session_script_runs r
            on r.organization_id = l.organization_id and r.run_id = l.run_id
-         join pilot.session_scripts s
+         -- left: a plain session (issue #1523) has no script and reads as "Plain session"
+         left join pilot.session_scripts s
            on s.organization_id = r.organization_id and s.script_id = r.script_id
          where l.organization_id = $1 and l.block_id = $2
          order by r.delivered_on desc, r.run_id`,

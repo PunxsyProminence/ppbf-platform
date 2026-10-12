@@ -594,7 +594,7 @@ describe('summary tile honesty', () => {
     return tile?.textContent?.replace(label, '').trim() ?? '';
   }
 
-  test('Upcoming says Unavailable -- it has no backend feed to count from; Home Tasks counts from the answered messages read (a real zero here)', async () => {
+  test('Upcoming counts from the answered schedule read and Home Tasks from the answered messages read (a real zero on both here)', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
@@ -604,7 +604,9 @@ describe('summary tile honesty', () => {
     // date is an observation once that read answered. The unanswered case
     // is pinned in parentHubTasks.test.tsx.
     expect(tileValue('Home Tasks')).toBe('0');
-    expect(tileValue('Upcoming')).toBe('Unavailable');
+    // The schedule answered with nothing booked for this child: a real zero.
+    // The unanswered case is pinned in parentHubSummary.test.tsx.
+    expect(tileValue('Upcoming')).toBe('0');
   });
 
   test('a failed messages read renders the Messages tile as Unavailable, not as 0', async () => {

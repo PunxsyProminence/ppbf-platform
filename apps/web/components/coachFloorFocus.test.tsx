@@ -6,12 +6,13 @@
  * The floor view at the top of the coach dashboard: one thing at a time.
  *
  * What is pinned here is what the view must never do, more than how it looks:
- * it never fetches anything, "Next" changes no record, the only write it can
- * reach is the real escalation acknowledge it is handed, and a feed that failed
- * or is still loading is never read out as "nothing needs you".
+ * it fetches nothing until Start a session is tapped (#1523: then the plan list,
+ * and a plain start when there are none), "Next" changes no record, the only
+ * other write it can reach is the real escalation acknowledge it is handed, and
+ * a feed that failed or is still loading is never read out as "nothing needs you".
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 
 import CoachFloorFocus, { type CoachFloorFocusProps, type FocusFeed, type FocusItem } from './CoachFloorFocus';
@@ -180,11 +181,88 @@ test('a roster that failed to load says so instead of showing an empty floor', (
   expect(screen.queryByText('No athletes are assigned to you.')).toBeNull();
 });
 
-test('starting a session goes to Session Scripts, and a running one says so', () => {
-  const { rerender } = render(<CoachFloorFocus {...props()} />);
-  expect(screen.getByRole('link', { name: 'Start a session' }).getAttribute('href')).toBe('/coach/session-scripts');
-  rerender(<CoachFloorFocus {...props({ sessionLive: true })} />);
-  expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/session-scripts');
+// Issue #1523 (Jason 2026-10-12, "allow a plain session"; Q2 A): one tap starts a session.
+describe('Start a session', () => {
+  function respond(scripts: unknown[] | 'fail', start: { status: number; body: Record<string, unknown> } = { status: 201, body: { run: {} } }) {
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/session-scripts/runs') && init?.method === 'POST') {
+        return { ok: start.status < 400, status: start.status, json: async () => start.body } as Response;
+      }
+      if (url.includes('/session-scripts')) {
+        if (scripts === 'fail') return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, status: 200, json: async () => ({ scripts }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    });
+  }
+  const posts = () => fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+
+  test('with no plans in the gym, one tap starts a plain session and goes to it', async () => {
+    respond([]);
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+
+    expect(posts()).toHaveLength(1);
+    expect(String(posts()[0][0])).toContain('/api/pilot/session-scripts/runs');
+    expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({});
+    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  });
+
+  test('with plans in the gym, the tap goes to the session page and starts nothing', async () => {
+    respond([{ script_id: 'scr-1' }]);
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+
+    expect(posts()).toHaveLength(0);
+    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  });
+
+  test('a session already live elsewhere is gone to, not refused', async () => {
+    respond([], { status: 409, body: { error: 'SESSION_RUN_ALREADY_LIVE' } });
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+
+    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['the plan list could not be read', 'fail' as const, undefined],
+    ['the start was refused', [] as unknown[], { status: 500, body: { error: 'boom' } }],
+  ])('when %s, it says no session was started and offers the page', async (_label, scripts, start) => {
+    respond(scripts, start);
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+
+    expect(onGoToSessions).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain('No session was started.');
+    expect(screen.getByRole('link', { name: 'Open the session page' }).getAttribute('href')).toBe('/coach/session-scripts');
+  });
+
+  test('nothing is fetched until the tap, and a running or unknown session is a link to the page', () => {
+    const { rerender } = render(<CoachFloorFocus {...props()} />);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    rerender(<CoachFloorFocus {...props({ sessionLive: true })} />);
+    expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/session-scripts');
+    rerender(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
+    expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href')).toBe('/coach/session-scripts');
+  });
 });
 
 test('session mode is a real toggle with its state announced', () => {
@@ -364,4 +442,70 @@ test('no heading on the board carries a feed panel\'s name, and the session sent
     expect(heading.textContent ?? '').not.toMatch(/safety escalations|pain reports|barrier reports/i);
   }
   expect(screen.queryByText(/Session in progress|No session in progress/)).toBeNull();
+});
+
+test('Start a session sends one start however fast it is tapped, and stays busy while it goes', async () => {
+  let finishStart: ((value: Response) => void) | null = null;
+  fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/session-scripts/runs') && init?.method === 'POST') {
+      return new Promise<Response>((resolve) => { finishStart = resolve; });
+    }
+    return { ok: true, status: 200, json: async () => ({ scripts: [] }) } as Response;
+  });
+  const onGoToSessions = jest.fn();
+  render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+  const button = screen.getByRole('button', { name: 'Start a session' });
+  await act(async () => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
+
+  await act(async () => {
+    finishStart?.({ ok: true, status: 201, json: async () => ({ run: {} }) } as Response);
+  });
+
+  const posts = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+  expect(posts).toHaveLength(1);
+  expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('an athlete\'s own check-in today is a reading: counted, said as "Checked in", never as a band (F-040)', () => {
+  render(
+    <CoachFloorFocus
+      {...props({
+        athletes: [
+          { id: 'ath_1', name: 'Ada Rivera', readiness: 'UNKNOWN', checkedInToday: true },
+          { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN' },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Checked in' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Marcus Bell: readiness No reading' })).toBeTruthy();
+  expect(gauge('Readings').textContent).toContain('1 of 2');
+  // A self-report is not one of the staff judgements counted as "not validated".
+  expect(gauge('Readings').textContent).not.toContain('not validated');
+});
+
+test('a band or an unvalidated staff reading still wins over a check-in, and only staff readings count as "not validated"', () => {
+  render(
+    <CoachFloorFocus
+      {...props({
+        athletes: [
+          { id: 'ath_1', name: 'Ada Rivera', readiness: 'GREEN', checkedInToday: true },
+          { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN', unvalidatedReading: true, checkedInToday: true },
+          { id: 'ath_3', name: 'Sam Ortiz', readiness: 'UNKNOWN', checkedInToday: true },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Green' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Marcus Bell: readiness Not validated' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sam Ortiz: readiness Checked in' })).toBeTruthy();
+  expect(gauge('Readings').textContent).toContain('3 of 3');
+  expect(gauge('Readings').textContent).toContain('1 not validated');
 });
