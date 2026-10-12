@@ -355,11 +355,16 @@ function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
  * plan and the template's detail read both use it, so the list the coach sees
  * before issuing and the one the result names come from one rule.
  *
- * Which drill's floor test counts is the rule the issue used when the floor
- * test still refused: when the gym runs this drill and the step names a
- * version it has since updated past, the version the gym runs; otherwise the
- * step's own reference. Only a draft (requiresFloorValidation) can be
- * untested; another gym's mark does not count.
+ * Which drill's floor test counts: the drill the step will actually assign.
+ * The step's own reference, except when the gym runs this drill and
+ *   - the SAME template names a newer version of it, which the issue will
+ *     update the gym's drill to (every step on that drill then assigns the
+ *     newer version), so the newer version counts; or
+ *   - the step names a version the gym has since updated past, so the version
+ *     the gym runs counts (the rule the issue used when the floor test still
+ *     refused).
+ * Only a draft (requiresFloorValidation) can be untested; another gym's mark
+ * does not count.
  */
 export async function listUntestedTemplateDrills(
   organizationId: string,
@@ -377,6 +382,21 @@ export async function listUntestedTemplateDrills(
   }
 
   const lifecycles = await listReferenceLifecycles(organizationId, referenceIds);
+
+  // The gym drills this template will update in place: gym drill id -> the
+  // newer reference a step names. Asked only when some step names a drill the
+  // gym runs, since only those steps can be moved onto the newer version.
+  const updatedTo = new Map<string, string>();
+  const runsSome = referenceIds.some((id) => lifecycles[id]?.state === 'operational');
+  if (runsSome) {
+    for (const referenceId of referenceIds) {
+      const state = lifecycles[referenceId]?.state;
+      if (state === 'operational' || state === 'retired') continue;
+      const other = await getOtherVersionAdoption(organizationId, referenceId);
+      if (other) updatedTo.set(other.operational_drill_id, referenceId);
+    }
+  }
+
   const drafts = new Map<string, TemplateUntestedDrill>();
   for (const referenceId of referenceIds) {
     const reference = await getDrillWithDetail(organizationId, referenceId);
@@ -387,7 +407,13 @@ export async function listUntestedTemplateDrills(
     let countedId = referenceId;
     let counted: DrillWithDetail = reference;
     const lifecycle = lifecycles[referenceId];
-    if (lifecycle?.state === 'operational' && lifecycle.operational_drill_id && reference.superseded_at !== null) {
+    const newer = lifecycle?.state === 'operational' && lifecycle.operational_drill_id
+      ? updatedTo.get(lifecycle.operational_drill_id)
+      : undefined;
+    if (newer !== undefined && newer !== referenceId) {
+      countedId = newer;
+      counted = (await getDrillWithDetail(organizationId, newer)) ?? reference;
+    } else if (lifecycle?.state === 'operational' && lifecycle.operational_drill_id && reference.superseded_at !== null) {
       const runs = (await queryOne<{ reference_drill_id: string | null }>(
         `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,
         [organizationId, lifecycle.operational_drill_id],

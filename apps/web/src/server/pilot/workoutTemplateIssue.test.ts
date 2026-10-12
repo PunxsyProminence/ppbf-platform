@@ -1344,6 +1344,42 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     });
   });
 
+  // Review finding (PR #1502): the floor test that counts is the drill the
+  // step will assign. Both steps assign the newer version once the gym's drill
+  // is updated to it, so only the newer version's mark matters, for both.
+  test('a template naming both versions: the untested list judges both steps by the newer version they will assign', async () => {
+    const both = async (tested: string[]) => {
+      jest.clearAllMocks();
+      given({
+        items: [item(1, { drill_id: 'ref-0' }), item(2, { drill_id: 'ref-1' })],
+        library: {
+          'ref-0': {
+            state: 'operational',
+            operational: 'op-old',
+            row: reference('ref-0', { name: 'Old Version', field_provenance: DRAFT, superseded_at: '2026-10-01T00:00:00.000Z' }),
+          },
+          'ref-1': {
+            state: 'newer_version_available',
+            operational: 'op-old',
+            row: reference('ref-1', { name: 'New Version', field_provenance: DRAFT }),
+          },
+        },
+        gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+        floorTested: tested,
+      });
+      mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-1' ? GYM_VERSION : null));
+      return issueWorkoutTemplate(PARAMS);
+    };
+
+    // The old version is unmarked, but no step assigns it: nothing is named.
+    await expect(both(['ref-1'])).resolves.toMatchObject({ outcome: 'issued', untested: [] });
+    // The new version is unmarked: named once, for BOTH steps.
+    await expect(both(['ref-0'])).resolves.toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-1', name: 'New Version', steps: [1, 2] }],
+    });
+  });
+
   test("after an update, a step naming the older version takes the floor test of the version the gym runs", async () => {
     // The gym runs ref-2's drill; the step names ref-0, which it moved on from.
     const draftRef = (id: string) => reference(id, { field_provenance: DRAFT });
