@@ -85,7 +85,7 @@ the owner's decision.
 | Data Type | Retention Window | Reason | Deletion Trigger |
 |---|---|---|---|
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
-| Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
+| Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired, or revoked, 30 days ago (`SESSION_TOKEN_RETENTION_DAYS`). Deleted by `.github/workflows/session-token-cleanup.yml` (`npm run session:cleanup`), nightly at 07:50 UTC or by dispatch with `apply=APPLY`. **The scheduled run only reports the count** until the repository variable `PPBF_SESSION_CLEANUP_SCHEDULED_APPLY` is `true`. |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
 | Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` exists to hold the date (shadow-deidentify-keys migration); nothing writes it yet, so today a guardian's flagged chats are still deleted at the 1-year purge; the purge-time hold and the 2-year sweep are not yet built; the athlete's coincide with the 2-year athlete purge. |
 
