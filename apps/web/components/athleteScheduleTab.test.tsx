@@ -163,6 +163,9 @@ describe('AthleteScheduleView', () => {
     ['a server error', () => respond({ ok: false, error: 'boom' }, 500)],
     ['an unreadable body', () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('x')) } as Response)],
     ['a network failure', () => Promise.reject(new Error('offline'))],
+    // A refused answer is not trusted for its lists, even when it carries some.
+    ['an error status carrying lists', () => respond({ ok: true, classes: [klass('z', 2)], registrations: [] }, 503)],
+    ['a body that says it did not work', () => respond({ ok: false, classes: [klass('z', 2)], registrations: [] })],
   ])('%s says the schedule could not be loaded, never that there are no classes', async (_label, answer) => {
     fetchMock.mockImplementation(answer);
     render(<AthleteScheduleView />);
