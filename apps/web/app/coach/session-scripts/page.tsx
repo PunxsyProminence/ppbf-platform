@@ -33,6 +33,9 @@ type Block = SessionScriptBlockRow;
 // The block kinds a coach most wants to pick out of a dense plan at a glance.
 // Anything not listed simply renders without a marker rather than being forced
 // into a category it does not belong to.
+// The busy marker of the plain-session start button; no script_id can equal it.
+const PLAIN_START = '__plain_session__';
+
 const NOTABLE_KINDS: Record<string, string> = {
   drill_round: 'Drill',
   reset_minute: 'Reset',
@@ -134,9 +137,11 @@ function CoachSessionScripts() {
     })();
   }, [fetchLiveRun]);
 
-  const startDelivery = useCallback(async (scriptId: string) => {
+  // scriptId null starts a PLAIN session (Jason 2026-10-12, issue #1523): no plan, the clock,
+  // pause, TV and finish only. Its busy marker is PLAIN_START so no script's button reads busy.
+  const startDelivery = useCallback(async (scriptId: string | null) => {
     if (startBusyScriptId) return;
-    setStartBusyScriptId(scriptId);
+    setStartBusyScriptId(scriptId ?? PLAIN_START);
     setStartError('');
     setLiveNotice('');
     try {
@@ -146,7 +151,7 @@ function CoachSessionScripts() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId }),
+          body: JSON.stringify(scriptId ? { script_id: scriptId } : {}),
         });
       } catch {
         setStartError('Network error -- no session was started.');
@@ -309,7 +314,7 @@ function CoachSessionScripts() {
               initialRun={liveRun}
               onSettled={(settled) => {
                 setLiveRun(null);
-                if (openScriptId === settled.script_id) {
+                if (settled.script_id && openScriptId === settled.script_id) {
                   void loadDeliveries(settled.script_id);
                 }
                 setLiveNotice(
@@ -326,6 +331,19 @@ function CoachSessionScripts() {
         )}
 
         {!liveRun && (<>
+        {/* A session does not need a plan (issue #1523): roster, check-in, notes and the TV all
+            work for a plain one. Offered whether or not the gym has scripts. */}
+        <section data-surface="kiosk" className="mt-[var(--s6)]">
+          <button
+            type="button"
+            onClick={() => void startDelivery(null)}
+            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
+            className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
+          </button>
+        </section>
+
         <section data-surface="kiosk" className="mt-[var(--s6)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
 

@@ -132,6 +132,9 @@ export default function SessionScriptLiveDelivery({
   onRunGone,
 }: SessionScriptLiveDeliveryProps) {
   const [run, setRun] = useState<LiveSessionScriptRun>(initialRun);
+  // A plain session (issue #1523) has no plan: no blocks to show or move between. Everything
+  // else -- the clock, pause, the TV switch, logging an intervention, finishing -- is the same.
+  const isPlain = initialRun.script_id === null;
   // The displayed clock. Seeded from the server's elapsed_seconds and RESET to
   // the server's value on every response; between responses an interval ticks
   // it forward for smoothness. Presentation only -- it is never sent anywhere,
@@ -162,6 +165,7 @@ export default function SessionScriptLiveDelivery({
   // initial state is already 'loading', and the retry button sets it back
   // before calling this again.
   const loadDetail = useCallback(async () => {
+    if (initialRun.script_id === null) return;
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(initialRun.script_id)}`,
@@ -411,12 +415,14 @@ export default function SessionScriptLiveDelivery({
         <div>
           <p className="t-eyebrow">Delivering now</p>
           <h2 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">
-            {detail ? detail.name : 'Session in progress'}
+            {isPlain ? 'Plain session' : detail ? detail.name : 'Session in progress'}
           </h2>
-          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">
-            Pinned at version {run.script_version} when this session started.
-          </p>
-          {detail && detail.version !== run.script_version && (
+          {!isPlain && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">
+              Pinned at version {run.script_version} when this session started.
+            </p>
+          )}
+          {!isPlain && detail && detail.version !== run.script_version && (
             <p className="mt-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
               The plan below is version {detail.version}; this session pinned version {run.script_version} at start.
             </p>
@@ -444,6 +450,8 @@ export default function SessionScriptLiveDelivery({
         >
           {run.is_paused ? 'Resume session' : 'Pause session'}
         </button>
+        {!isPlain && (
+        <>
         <button
           type="button"
           onClick={() => previousBlock && void mutateRun({ action: 'advance', to_block_id: previousBlock.block_id }, 'advance')}
@@ -460,6 +468,8 @@ export default function SessionScriptLiveDelivery({
         >
           Next block
         </button>
+        </>
+        )}
       </div>
 
       {/* The coach's "Show on TV" switch. Off by default on every run: a private
@@ -493,12 +503,12 @@ export default function SessionScriptLiveDelivery({
         </p>
       )}
 
-      {/* The plan, current block first-class. */}
-      {detailState === 'loading' && (
+      {/* The plan, current block first-class. A plain session has none. */}
+      {!isPlain && detailState === 'loading' && (
         <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]">Loading the plan...</p>
       )}
 
-      {detailState === 'unavailable' && (
+      {!isPlain && detailState === 'unavailable' && (
         <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
           <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
             The plan for this session could not be loaded, so its blocks cannot be shown or
@@ -517,7 +527,7 @@ export default function SessionScriptLiveDelivery({
         </div>
       )}
 
-      {detailState === 'loaded' && (
+      {!isPlain && detailState === 'loaded' && (
         <>
           {currentBlock ? (
             <div className="mt-[var(--s4)] rounded-[var(--r-lg)] border-2 border-[color:var(--brass-700)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">

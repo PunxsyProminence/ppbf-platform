@@ -732,3 +732,45 @@ describe('readiness is not presence', () => {
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
   });
 });
+
+// Issue #1523 (Jason 2026-10-12, "allow a plain session"): a session with no plan.
+describe('a plain session', () => {
+  const plainRun = () => liveRun({ script_id: null, script_version: null, current_block_id: null });
+
+  test('is named plainly, reads no plan, and offers no blocks to move between', async () => {
+    const { fetchMock } = await renderLive(plainRun());
+
+    expect(screen.getByRole('heading', { name: 'Plain session' })).toBeTruthy();
+    expect(screen.queryByText(/Pinned at version/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Previous block' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next block' })).toBeNull();
+    expect(screen.queryByText(/Loading the plan/)).toBeNull();
+    expect(screen.queryByText(/could not be loaded/)).toBeNull();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('script_id='))).toBe(false);
+  });
+
+  test('pauses, goes on the TV, and keeps the clock like any session', async () => {
+    const { fetchMock } = await renderLive(plainRun(), {
+      patch: (body) => jsonResponse({
+        run: {
+          ...plainRun(),
+          is_paused: body.action === 'pause',
+          show_on_wall: body.action === 'show_on_wall' ? body.show === true : false,
+        },
+      }),
+    });
+
+    expect(screen.getByLabelText('Elapsed delivery time').textContent).toBe('2:05');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+
+    expect(patchCalls(fetchMock)).toEqual([
+      { action: 'pause' },
+      { action: 'show_on_wall', show: true },
+    ]);
+  });
+});

@@ -97,6 +97,9 @@ const SHOW_ON_WALL_RUNNER_PATH = path.resolve(
 );
 let showOnWallMigrationSql: string;
 let applyShowOnWallMigration: (c: Client, sql: string) => Promise<void>;
+// Issue #1523: the plain-session migration (script_id nullable), applied after show-on-wall.
+const PLAIN_MIGRATION_FILE = 'pilot_slice_postgres_session_run_plain_migration.sql';
+const PLAIN_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-session-run-plain-migration.mjs');
 // Read in beforeAll, right after the migration: beforeEach clears the runs table before any test.
 let preMigrationRunShowOnWall: unknown;
 
@@ -266,6 +269,11 @@ beforeAll(async () => {
   ).rows[0]?.show_on_wall;
   // Idempotent: a second application (a rebuild, or a re-dispatched `all`) passes its own gate.
   await applyShowOnWallMigration(client, showOnWallMigrationSql);
+  const plainRunner = await nativeDynamicImport(pathToFileURL(PLAIN_RUNNER_PATH).href);
+  await (plainRunner.applyMigrationTransaction as (c: Client, sql: string) => Promise<void>)(
+    client,
+    await fs.readFile(path.join(INFRA_DIR, PLAIN_MIGRATION_FILE), 'utf8'),
+  );
 
   for (const [org, coach] of [[ORG_A, COACH_A], [ORG_B, COACH_B]]) {
     await client.query(
@@ -955,5 +963,64 @@ describe('the Show on TV switch (show-on-wall migration)', () => {
         'alter table pilot.session_script_runs alter column show_on_wall set default true;',
       ),
     ).rejects.toThrow('SESSION_RUN_SHOW_ON_WALL_NOT_READY');
+  });
+});
+
+// Issue #1523 (Jason 2026-10-12, "A: Yes, allow a plain session"): a session with no script.
+describe('a plain session', () => {
+  it('starts with no script: no version, no cursor, live, with the server clock', async () => {
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { athletesPresent: 6 });
+    expect(live).toMatchObject({
+      script_id: null,
+      script_version: null,
+      current_block_id: null,
+      run_state: 'in_progress',
+      athletes_present: 6,
+      is_paused: false,
+      show_on_wall: false,
+    });
+    expect(live.elapsed_seconds).toBeGreaterThanOrEqual(0);
+    expect((await getLiveRunForCoach(ORG_A, COACH_A))?.run_id).toBe(live.run_id);
+  });
+
+  it('is still one live session per coach, plain or scripted, and says so', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-one', ['blk-o1']);
+    await startSessionScriptRun(ORG_A, COACH_A, {});
+    await expect(startSessionScriptRun(ORG_A, COACH_A, {})).rejects.toMatchObject({ message: 'SESSION_RUN_ALREADY_LIVE', status: 409 });
+    await expect(startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-one' })).rejects.toMatchObject({ message: 'SESSION_RUN_ALREADY_LIVE' });
+    // Another coach is unaffected.
+    await expect(startSessionScriptRun(ORG_A, COACH_B, {})).resolves.toMatchObject({ script_id: null });
+  });
+
+  it('pauses, resumes, goes on the TV and finishes like any session', async () => {
+    const live = await startSessionScriptRun(ORG_A, COACH_A, {});
+    expect((await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id)).is_paused).toBe(true);
+    expect((await resumeSessionScriptRun(ORG_A, COACH_A, live.run_id)).is_paused).toBe(false);
+    expect((await setSessionScriptRunShowOnWall(ORG_A, COACH_A, live.run_id, true)).show_on_wall).toBe(true);
+    const finished = await finishSessionScriptRun(ORG_A, COACH_A, live.run_id, { runState: 'completed', athletesPresent: 8 });
+    expect(finished).toMatchObject({ run_state: 'completed', script_id: null, current_block_id: null, show_on_wall: false, athletes_present: 8 });
+    expect(await getLiveRunForCoach(ORG_A, COACH_A)).toBeNull();
+  });
+
+  it('has no blocks to move between', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-move', ['blk-m1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, {});
+    await expect(moveSessionScriptRunCursor(ORG_A, COACH_A, live.run_id, 'blk-m1'))
+      .rejects.toMatchObject({ message: 'SESSION_RUN_HAS_NO_SCRIPT', status: 409 });
+    const row = await client.query('select current_block_id from pilot.session_script_runs where run_id = $1', [live.run_id]);
+    expect(row.rows[0].current_block_id).toBeNull();
+  });
+
+  it('a scripted session still starts on its first block, as before', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-still', ['blk-s1', 'blk-s2']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-still' });
+    expect(live).toMatchObject({ script_id: 'scr-still', script_version: 1, current_block_id: 'blk-s1' });
+  });
+
+  it("is not listed among any plan's deliveries", async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-hist', ['blk-h1']);
+    const plain = await startSessionScriptRun(ORG_A, COACH_A, {});
+    await finishSessionScriptRun(ORG_A, COACH_A, plain.run_id, { runState: 'completed' });
+    expect(await listSettledRunsForScript(ORG_A, 'scr-hist')).toEqual([]);
   });
 });

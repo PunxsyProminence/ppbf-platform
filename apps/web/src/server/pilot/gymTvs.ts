@@ -669,13 +669,15 @@ async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
               - coalesce(r.paused_seconds, 0)) as elapsed_seconds
        from pilot.gym_tvs t
        join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
-       join pilot.session_scripts s on s.organization_id = r.organization_id and s.script_id = r.script_id
+       -- left: a plain session (issue #1523) has no script, and is on the TV all the same
+       left join pilot.session_scripts s on s.organization_id = r.organization_id and s.script_id = r.script_id
       where t.organization_id = $1 and t.tv_id = $2`,
     [tv.organization_id, tv.tv_id],
   );
   if (!run) return empty;
 
-  const blockRows = await query<Record<string, unknown>>(
+  // A plain session has no plan, so no blocks: the TV gets the clock and nothing to step through.
+  const blockRows = run.script_id == null ? [] : await query<Record<string, unknown>>(
     `select b.block_id, b.block_order, b.block_label, b.block_kind, d.name as drill_name,
             b.scale_level, b.start_offset_min, b.end_offset_min
        from pilot.session_script_blocks b
@@ -694,7 +696,7 @@ async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
     tv: { tv_name: tv.tv_name },
     session: {
       run_id: String(run.run_id),
-      script_name: String(run.script_name),
+      script_name: run.script_id == null ? 'Plain session' : String(run.script_name),
       total_minutes: run.total_minutes == null ? null : Number(run.total_minutes),
       started_at: isoOf(run.started_at),
       server_time: isoOf(run.server_time),
