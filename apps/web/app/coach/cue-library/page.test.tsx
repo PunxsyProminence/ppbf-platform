@@ -102,16 +102,26 @@ test('a failed read admits cues may exist, never rendering as an empty library',
 
 // #1482 item 4: on the live page 258 of 265 buttons and links were under 44px
 // -- one inline drill link per cue (15px, measured in Chromium), which the
-// app's 44px floor skips because it never floors links. A control on this
-// page is tall enough only by one of these, all existing classes:
-//   min-h-[var(--tap)]  the gym-floor height, as the other coach pages use;
-//   btn--tap            ppbf.css's own --tap height for a .btn (a Tailwind
-//                       min-h utility loses to ppbf.css's unlayered .btn rule);
-//   input / select      floored by ppbf.css itself (46px).
+// app's 44px floor skips because it never floors links. A control here is
+// tall enough only by an existing class that actually applies to it:
+//   a link    min-h-[var(--tap)] AND a box that min-height acts on
+//             (inline-flex / flex / block -- an inline <a> ignores
+//             min-height), or ppbf.css's .btn--tap (a Tailwind min-h utility
+//             loses to ppbf.css's unlayered .btn rule, so it is not counted);
+//   input /   ppbf.css's own .input / .select floor (46px), by tag.
+//   select
 // A control added with none of them fails this.
-const TALL_ENOUGH = ['min-h-[var(--tap)]', 'btn--tap', 'input', 'select'];
+function tallEnough(control: Element): boolean {
+  const classes = control.classList;
+  const tag = control.tagName.toLowerCase();
+  if (tag === 'input') return classes.contains('input');
+  if (tag === 'select') return classes.contains('select');
+  if (classes.contains('btn')) return classes.contains('btn--tap');
+  const boxed = ['inline-flex', 'flex', 'block', 'inline-block'].some((name) => classes.contains(name));
+  return boxed && classes.contains('min-h-[var(--tap)]');
+}
 
-test('every control on the page carries a minimum-height class', async () => {
+test('every control on the page carries a minimum height that applies to it', async () => {
   global.fetch = mockFetch({
     items: [
       CUE,
@@ -128,10 +138,5 @@ test('every control on the page carries a minimum-height class', async () => {
   const controls = Array.from(container.querySelectorAll('main a, main button, main input, main select'));
   // Three drill links, the search, the focus filter and the footer link.
   expect(controls).toHaveLength(6);
-  const short = controls.filter((control) => !TALL_ENOUGH.some((name) => control.classList.contains(name)));
-  expect(short.map((control) => control.outerHTML)).toEqual([]);
-  // The drill links are the bulk of the page: each carries the gym-floor height itself.
-  const drillLinks = controls.filter((control) => control.getAttribute('href') === '/coach/drills' && !control.classList.contains('btn'));
-  expect(drillLinks).toHaveLength(3);
-  for (const link of drillLinks) expect(link.classList.contains('min-h-[var(--tap)]')).toBe(true);
+  expect(controls.filter((control) => !tallEnough(control)).map((control) => control.outerHTML)).toEqual([]);
 });
