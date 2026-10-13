@@ -585,3 +585,77 @@ describe('reading task state back onto messages', () => {
     expect(state.size).toBe(0);
   });
 });
+
+/*
+ * WHAT THE GYM POSTED TO A FAMILY, READ BACK BY STAFF (#1542, FC-01). The
+ * coach's panel lists every parent_message for the athlete, newest first,
+ * with the author's name, its due date and whether the family marked it done.
+ * It never returns which guardian ticked it, never another note type, never
+ * another child's notes, and never another gym's.
+ */
+describe('listFamilyNotesForStaff (#1542)', () => {
+  const LATER_NOTE = '44444444-4444-4444-8444-444444444444';
+
+  async function seedLaterDoneNote() {
+    await activeClient!.query(
+      `update pilot.accounts set login_email = 'pat.coach@ppbf.test' where account_id = $1`,
+      [COACH],
+    );
+    await activeClient!.query(
+      `insert into pilot.coach_observations
+         (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text, created_at)
+       values ($1, $2::uuid, $3, $4, 'parent_message', 'Medical form by Friday, please.', now() + interval '1 minute')`,
+      [ORG_ID, LATER_NOTE, ATHLETE, COACH],
+    );
+    await parentTasks.setParentTaskDueDate({
+      organizationId: ORG_ID,
+      noteId: LATER_NOTE,
+      athleteId: ATHLETE,
+      dueDate: '2026-10-16',
+      actorAccountId: COACH,
+      actorRole: 'coach',
+    });
+    await parentTasks.setParentTaskCompletion({
+      organizationId: ORG_ID,
+      noteId: LATER_NOTE,
+      completed: true,
+      actorAccountId: GUARDIAN_ACCOUNT,
+      athleteIdsInScope: [ATHLETE],
+    });
+  }
+
+  test("the athlete's family notes, newest first, with name, due date and the family's state", async () => {
+    await seedLaterDoneNote();
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes.map((note) => note.note_id)).toEqual([LATER_NOTE, MESSAGE_NOTE]);
+    expect(notes[0]).toMatchObject({
+      note_text: 'Medical form by Friday, please.',
+      posted_by_name: 'Coach Pat Coach',
+      task: { due_date: '2026-10-16', completed_at: expect.any(String) },
+    });
+    expect(notes[0]!.posted_at).toEqual(expect.any(String));
+    // Posted with no due date and never ticked: no task at all, not "still to do" by invention.
+    expect(notes[1]).toMatchObject({ note_text: 'Bring gloves on Thursday.', task: null });
+    // The barrier report (a guardian's note to staff) is not a family post.
+    expect(notes.some((note) => note.note_text.includes('No lift'))).toBe(false);
+  });
+
+  test('which guardian ticked it is never returned', async () => {
+    await seedLaterDoneNote();
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(JSON.stringify(notes)).not.toContain(GUARDIAN_ACCOUNT);
+    expect(Object.keys(notes[0]!.task!)).toEqual(['due_date', 'completed_at']);
+  });
+
+  test("another child's notes and another gym's are not read", async () => {
+    const mine = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+    expect(mine.some((note) => note.note_id === OTHER_CHILD_NOTE)).toBe(false);
+
+    // The same athlete id in the other gym: nothing, though this gym has notes for it.
+    expect(await parentTasks.listFamilyNotesForStaff(OTHER_ORG_ID, ATHLETE)).toEqual([]);
+  });
+});

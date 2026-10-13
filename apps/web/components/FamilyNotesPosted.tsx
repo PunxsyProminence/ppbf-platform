@@ -1,0 +1,105 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+
+import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+
+/**
+ * ON THE FAMILY'S PAGE (#1542, FC-01; audit F-041).
+ *
+ * Under "Post to the Family's Page" on /coach/decision-loop: every note the gym
+ * has posted to the selected athlete's family, newest first, with who posted
+ * it, when (gym time), its due date if it has one, and whether the family
+ * marked it done and when. Before this the coach posted and then saw nothing.
+ *
+ * Read from GET /api/pilot/coach/family-notes (staff only; the server leaves
+ * out which guardian ticked it). A failed read says so; it is never shown as
+ * "nothing posted". `refreshKey` changes after a post, so the new note appears.
+ */
+export interface FamilyNoteRow {
+  note_id: string;
+  note_text: string;
+  posted_at: string;
+  posted_by_name: string;
+  task: { due_date: string | null; completed_at: string | null } | null;
+}
+
+type ReadState =
+  | { state: 'loading' }
+  | { state: 'failed' }
+  | { state: 'loaded'; items: FamilyNoteRow[] };
+
+export default function FamilyNotesPosted({
+  athleteId,
+  refreshKey,
+}: Readonly<{ athleteId: string; refreshKey: number }>) {
+  const [read, setRead] = useState<ReadState>({ state: 'loading' });
+  // Only the newest read lands: switching athletes while a read is slow must
+  // not leave one child's notes under another's name.
+  const seq = useRef(0);
+
+  useEffect(() => {
+    if (!athleteId) return;
+    const mine = ++seq.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRead({ state: 'loading' });
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/coach/family-notes?athlete_id=${encodeURIComponent(athleteId)}`,
+          { credentials: 'include' },
+        );
+        const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+        if (mine !== seq.current) return;
+        if (!response.ok || !Array.isArray(payload.items)) {
+          setRead({ state: 'failed' });
+          return;
+        }
+        setRead({ state: 'loaded', items: payload.items as FamilyNoteRow[] });
+      } catch {
+        if (mine === seq.current) setRead({ state: 'failed' });
+      }
+    })();
+  }, [athleteId, refreshKey]);
+
+  if (!athleteId) return null;
+
+  return (
+    <div className="mt-[var(--s4)]">
+      <h3 className="t-label">On the family&apos;s page</h3>
+      {read.state === 'loading' ? (
+        <p className="t-muted mt-[var(--s2)]">Loading what was posted…</p>
+      ) : read.state === 'failed' ? (
+        <p role="alert" className="t-body mt-[var(--s2)]">
+          Posted notes could not be loaded. This is not a statement that nothing was posted. Reload to retry.
+        </p>
+      ) : read.items.length === 0 ? (
+        <p className="t-muted mt-[var(--s2)]">Nothing has been posted to this family yet.</p>
+      ) : (
+        <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
+          {read.items.map((note) => {
+            const done = note.task?.completed_at ?? null;
+            // A due date is a calendar day, not an instant: printed as the day it is.
+            const due = note.task?.due_date ? formatCalendarDay(note.task.due_date) : null;
+            return (
+              <li key={note.note_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
+                <p className="t-body">{note.note_text}</p>
+                <p className="t-muted mt-[var(--s1)]">
+                  {note.posted_by_name} · {formatGymDateTimeShort(note.posted_at) ?? note.posted_at}
+                  {due ? ` · Due ${due}` : ''}
+                </p>
+                {note.task ? (
+                  <span className={`badge mt-[var(--s2)] ${done ? 'badge--cleared' : 'badge--monitor'}`}>
+                    {done ? `Done ${formatGymDateTimeShort(done) ?? done}` : 'Still to do'}
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

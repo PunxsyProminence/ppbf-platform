@@ -1,4 +1,5 @@
 import { isOrganizationAdminRole } from './access';
+import { deriveCoachDisplayName } from './achievements';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 
@@ -209,4 +210,73 @@ export async function setParentTaskCompletion(params: {
   }
 
   return toState(row);
+}
+
+/**
+ * WHAT THE GYM POSTED TO ONE ATHLETE'S FAMILY, AND WHETHER IT WAS DONE (#1542,
+ * FC-01; audit F-041).
+ *
+ * The coach's own read of the family page: every 'parent_message' note for
+ * this athlete, newest first, with the author's name, when it was posted, its
+ * due date if it has one, and whether the family marked it done and when.
+ * Before this the coach could post and then see nothing of it.
+ *
+ * STAFF ONLY, AND THE CALLER HAS ALREADY BEEN CLEARED FOR THE ATHLETE
+ * (coach/family-notes/route.ts: assertActorCanAccessAthlete, the whole gym and
+ * no other). The query is still scoped by organization, so a second gym's
+ * athlete with the same id reads nothing here.
+ *
+ * WHICH GUARDIAN TICKED IT IS NOT RETURNED. parent_task_state keeps one state
+ * per note, shared by the family; completed_by_account_id names the guardian
+ * who pressed Done, and that stays the family's (FC-01 Q2 default A). The
+ * parent read never returns it either.
+ *
+ * The author's name is the login-derived one the athlete and family screens
+ * already show for a coach (achievements.ts deriveCoachDisplayName), since
+ * pilot.accounts has no name column.
+ */
+export interface FamilyNoteForStaff {
+  note_id: string;
+  note_text: string;
+  posted_at: string;
+  posted_by_name: string;
+  task: { due_date: string | null; completed_at: string | null } | null;
+}
+
+interface FamilyNoteRow {
+  note_id: string;
+  note_text: string;
+  posted_at: string;
+  author_login: string | null;
+  has_task: boolean;
+  due_date: string | null;
+  completed_at: string | null;
+}
+
+export async function listFamilyNotesForStaff(
+  organizationId: string,
+  athleteId: string,
+): Promise<FamilyNoteForStaff[]> {
+  const rows = await query<FamilyNoteRow>(
+    `select co.note_id::text as note_id, co.note_text, co.created_at::text as posted_at,
+            a.login_email as author_login,
+            (t.note_id is not null) as has_task,
+            t.due_date::text as due_date, t.completed_at::text as completed_at
+       from pilot.coach_observations co
+       left join pilot.accounts a on a.account_id = co.coach_account_id
+       left join pilot.parent_task_state t
+         on t.organization_id = co.organization_id and t.note_id = co.note_id
+      where co.organization_id = $1
+        and co.athlete_id = $2
+        and co.note_type = 'parent_message'
+      order by co.created_at desc, co.note_id`,
+    [organizationId, athleteId],
+  );
+  return rows.map((row) => ({
+    note_id: row.note_id,
+    note_text: row.note_text,
+    posted_at: row.posted_at,
+    posted_by_name: deriveCoachDisplayName(row.author_login),
+    task: row.has_task ? { due_date: row.due_date, completed_at: row.completed_at } : null,
+  }));
 }

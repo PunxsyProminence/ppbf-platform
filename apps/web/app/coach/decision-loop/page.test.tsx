@@ -251,6 +251,20 @@ describe('Message Home (#90)', () => {
     await screen.findByText("Posted to the family's page.");
   });
 
+  test("a successful post re-reads what is on the family's page, for that athlete (#1542)", async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+    const reads = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/pilot/coach/family-notes?athlete_id=ath-1'));
+    await waitFor(() => expect(reads().length).toBeGreaterThan(0));
+    const before = reads().length;
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Great effort at practice this week!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+    await screen.findByText("Posted to the family's page.");
+
+    await waitFor(() => expect(reads().length).toBe(before + 1));
+  });
+
   test('the textarea clears after a successful send', async () => {
     installFetch();
     await selectAthlete();
