@@ -211,6 +211,23 @@ describe('what a coach said lands here, reading like a person said it', () => {
     expect(container.textContent).toContain('Jul 30 2026');
   });
 
+  // F-045. A note sent at 10:52 PM gym time on October 11 is October 12 in
+  // UTC; the athlete's page printed the UTC day, the parent's the gym day.
+  it('dates a note by the gym day, not the UTC day', async () => {
+    recognitions = [{
+      recognition_id: 'r-late',
+      coach_display_name: 'Coach Jason',
+      kind: 'showed_up_hard_day',
+      note: 'Late note.',
+      created_at: '2026-10-12T02:52:00.000Z',
+    }];
+
+    const { container } = await renderPanel();
+
+    expect(container.textContent).toContain('Oct 11 2026');
+    expect(container.textContent).not.toContain('Oct 12 2026');
+  });
+
   it('says it is empty rather than pretending, and never counts it', async () => {
     const { container } = await renderPanel();
     expect(container.textContent).toContain('This fills up when a coach catches you doing something right.');
