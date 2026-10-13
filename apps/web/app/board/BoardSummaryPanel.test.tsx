@@ -12,7 +12,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import BoardSummaryPanel, {
   type BoardReport,
   boardMetricDisplay,
-  defaultReportWindow,
+  lastCompletedMonth,
+  monthsWindow,
   formatMeasuredAt,
   type BoardSummary,
 } from './BoardSummaryPanel';
@@ -165,11 +166,13 @@ describe('the board report section (RP-04)', () => {
     return fetchMock;
   }
 
-  test('the default window is the 30 gym days ending today', () => {
-    // 03:30 UTC on Oct 14 is 11:30 pm on Oct 13 in the gym.
-    expect(defaultReportWindow(Date.parse('2026-10-14T03:30:00.000Z'))).toEqual({ from: '2026-09-14', to: '2026-10-13' });
-    // Across a month and a year.
-    expect(defaultReportWindow(Date.parse('2026-01-05T15:00:00.000Z'))).toEqual({ from: '2025-12-07', to: '2026-01-05' });
+  test('the default is the last completed month in the gym, and months become whole-month windows', () => {
+    // 03:30 UTC on Nov 1 is still Oct 31 in the gym: October is not complete.
+    expect(lastCompletedMonth(Date.parse('2026-11-01T03:30:00.000Z'))).toBe('2026-09');
+    expect(lastCompletedMonth(Date.parse('2026-11-01T05:00:00.000Z'))).toBe('2026-10');
+    expect(lastCompletedMonth(Date.parse('2026-01-05T15:00:00.000Z'))).toBe('2025-12');
+    expect(monthsWindow('2026-09', '2026-09')).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    expect(monthsWindow('2028-01', '2028-02')).toEqual({ from: '2028-01-01', to: '2028-02-29' });
   });
 
   test('makes the report for the window chosen, with its window, time made, figures in words and definitions', async () => {
@@ -178,8 +181,8 @@ describe('the board report section (RP-04)', () => {
       render(<BoardSummaryPanel />);
     });
 
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-01' } });
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-09-30' } });
+    fireEvent.change(screen.getByLabelText('From month'), { target: { value: '2026-09' } });
+    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-09' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
     });
@@ -207,7 +210,13 @@ describe('the board report section (RP-04)', () => {
       expect.stringMatching(/^Goals: the current goals of active athletes, as of when this report was made/),
       expect.stringMatching(/^Suppressed: fewer than 5 athletes contributed/),
       'Active athletes and goals have no stored history, so they are not figures for the window.',
+      expect.stringMatching(/^The organization figures above this report cover a rolling 30 days/),
+      expect.stringMatching(/^Reports cover whole, completed calendar months/),
     ]);
+
+    // A new month chosen takes the old report off the screen.
+    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-08' } });
+    expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
     expect(report.textContent).toContain('No individual athlete appears in this report.');
   });
 
@@ -248,8 +257,8 @@ describe('the board report section (RP-04)', () => {
       render(<BoardSummaryPanel />);
     });
 
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-30' } });
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('From month'), { target: { value: '2026-09' } });
+    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-08' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
     });

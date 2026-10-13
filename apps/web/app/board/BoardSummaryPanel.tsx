@@ -133,12 +133,20 @@ export function formatMeasuredAt(generatedAt: string): string | null {
   return `${parsed.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
-/** The 30 gym days ending today, inclusive: the report's default window. */
-export function defaultReportWindow(nowMs: number): BoardReportWindow {
-  const to = gymDayIso(new Date(nowMs)) ?? new Date(nowMs).toISOString().slice(0, 10);
-  const [year, month, day] = to.split('-').map(Number);
-  const from = new Date(Date.UTC(year!, month! - 1, day! - 29)).toISOString().slice(0, 10);
-  return { from, to };
+/** A month (YYYY-MM) as the window of days it covers, first to last. */
+export function monthsWindow(fromMonth: string, toMonth: string): BoardReportWindow {
+  const [year, month] = toMonth.split('-').map(Number);
+  return {
+    from: `${fromMonth}-01`,
+    to: new Date(Date.UTC(year!, month!, 0)).toISOString().slice(0, 10),
+  };
+}
+
+/** The last completed month in the gym (YYYY-MM): the report's default. */
+export function lastCompletedMonth(nowMs: number): string {
+  const today = gymDayIso(new Date(nowMs)) ?? new Date(nowMs).toISOString().slice(0, 10);
+  const [year, month] = today.split('-').map(Number);
+  return new Date(Date.UTC(year!, month! - 2, 1)).toISOString().slice(0, 7);
 }
 
 interface ReportFigure {
@@ -180,15 +188,20 @@ function reportFigures(report: BoardReport): ReportFigure[] {
 }
 
 /*
- * THE DATED BOARD REPORT (#1542, RP-04). A window the board chooses (the last
- * 30 gym days by default), the same aggregate figures and suppression as the
+ * THE DATED BOARD REPORT (#1542, RP-04). Whole, completed calendar months the
+ * board chooses (the last completed month by default; Q-F A: months never
+ * overlap, so two reports cannot be subtracted to isolate one day), the same
+ * aggregate figures and suppression as the
  * tiles above, when it was made, and what each figure counts. Print prints the
  * report alone; the browser's "Save as PDF" makes the file. Aggregate only: no
  * athlete appears. The definitions are written from the query in
  * src/server/pilot/boardSummary.ts.
  */
 function BoardReportSection() {
-  const [range, setRange] = useState<BoardReportWindow>(() => defaultReportWindow(Date.now()));
+  const [months, setMonths] = useState(() => {
+    const last = lastCompletedMonth(Date.now());
+    return { from: last, to: last };
+  });
   const [report, setReport] = useState<BoardReport | null>(null);
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
@@ -197,10 +210,11 @@ function BoardReportSection() {
   async function makeReport() {
     if (busyRef.current) return;
     setFailure('');
-    if (!range.from || !range.to || range.from > range.to) {
-      setFailure('Choose a From date on or before the To date.');
+    if (!months.from || !months.to || months.from > months.to) {
+      setFailure('Choose a From month on or before the To month.');
       return;
     }
+    const range = monthsWindow(months.from, months.to);
     busyRef.current = true;
     setBusy(true);
     try {
@@ -225,21 +239,21 @@ function BoardReportSection() {
       <h3 className="t-label">Board report</h3>
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
         <label className="field">
-          <span className="t-label">From</span>
+          <span className="t-label">From month</span>
           <input
-            type="date"
+            type="month"
             className="input"
-            value={range.from}
-            onChange={(event) => { setFailure(''); setRange((held) => ({ ...held, from: event.target.value })); }}
+            value={months.from}
+            onChange={(event) => { setFailure(''); setReport(null); setMonths((held) => ({ ...held, from: event.target.value })); }}
           />
         </label>
         <label className="field">
-          <span className="t-label">To</span>
+          <span className="t-label">To month</span>
           <input
-            type="date"
+            type="month"
             className="input"
-            value={range.to}
-            onChange={(event) => { setFailure(''); setRange((held) => ({ ...held, to: event.target.value })); }}
+            value={months.to}
+            onChange={(event) => { setFailure(''); setReport(null); setMonths((held) => ({ ...held, to: event.target.value })); }}
           />
         </label>
         <button type="button" className="btn" onClick={() => void makeReport()} disabled={busy}>
@@ -260,9 +274,10 @@ function BoardReportSection() {
       ) : null}
       {report ? (
         <>
-          {/* On paper, only the report: everything else on the page is hidden
-              while printing, and the report sits at the top of the sheet. */}
-          <style>{'@media print { body * { visibility: hidden !important; } .board-report-print, .board-report-print * { visibility: visible !important; } .board-report-print { position: absolute; left: 0; top: 0; width: 100%; } }'}</style>
+          {/* On paper, only the report: every element that neither is the
+              report, holds it, nor sits inside it is taken out of the layout,
+              so no blank pages print where the rest of the page was. */}
+          <style>{'@media print { body *:not(:has(.board-report-print)):not(.board-report-print):not(.board-report-print *) { display: none !important; } }'}</style>
           <article aria-label="Board report" className="board-report-print mt-[var(--s4)]">
             <h4 className="t-command text-[length:var(--t-md)]">Board summary report</h4>
             <p className="t-body mt-[var(--s2)]">
@@ -314,6 +329,13 @@ function BoardReportSection() {
                 than reduced. No records: nothing was recorded, which is not a measured zero.
               </li>
               <li>Active athletes and goals have no stored history, so they are not figures for the window.</li>
+              <li>
+                The organization figures above this report cover a rolling 30 days to today and will differ from it.
+              </li>
+              <li>
+                Reports cover whole, completed calendar months, so two reports never overlap and cannot be subtracted to
+                single out a day.
+              </li>
             </ul>
           </article>
         </>

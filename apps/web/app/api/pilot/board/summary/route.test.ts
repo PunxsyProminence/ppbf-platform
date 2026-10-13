@@ -98,6 +98,15 @@ test.each(['coach', 'organization_admin', 'admin', 'athlete'] as const)(
 describe('GET with a reporting window (RP-04)', () => {
   const mockGetBoardReport = jest.mocked(getBoardReport);
 
+  // 2026-10-14 03:30 UTC is still Oct 13 in the gym: October is in progress.
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-14T03:30:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   function principalFor(role: string) {
     return {
       accountId: 'acct',
@@ -131,6 +140,9 @@ describe('GET with a reporting window (RP-04)', () => {
     ['a date that is not a date', 'from=2026-02-30&to=2026-03-01', 'from must be a date as YYYY-MM-DD.'],
     ['a date in another shape', 'from=09/01/2026&to=2026-09-30', 'from must be a date as YYYY-MM-DD.'],
     ['a window that ends before it starts', 'from=2026-09-30&to=2026-09-01', 'from must be on or before to.'],
+    ['a window not starting on the first', 'from=2026-09-02&to=2026-09-30', 'A board report covers whole calendar months: from must be the first of a month and to the last day of a month.'],
+    ['a window not ending on the last day', 'from=2026-09-01&to=2026-09-29', 'A board report covers whole calendar months: from must be the first of a month and to the last day of a month.'],
+    ['the month still in progress', 'from=2026-10-01&to=2026-10-31', 'A board report covers completed months only: to must be before the start of this month.'],
   ])('%s is refused with its sentence, and nothing is read', async (_label, query, sentence) => {
     mockRequirePrincipal.mockResolvedValueOnce(principalFor('board'));
 
