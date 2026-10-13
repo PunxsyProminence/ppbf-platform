@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { listAthleteIdsCheckedInToday } from '@/src/server/pilot/athleteCheckIns';
 import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getReadinessBoard } from '@/src/server/pilot/readinessBoard';
@@ -13,6 +14,12 @@ export const runtime = 'nodejs';
 // record UNION active, unexpired coverage), an admin reads the
 // organization's. Athletes without a fresh check-in are absent from the
 // response -- the client renders them UNKNOWN, and unknown is never clear.
+//
+// checked_in_today (F-040): the athletes, of the same audience, with their own
+// check-in for the gym's today (pilot.athlete_check_ins). The board's `items`
+// come from pilot.readiness, which holds staff-entered intake scores, so an
+// athlete's own check-in never reached the floor's "Readings" count. Ids only:
+// a self-report carries no band here, and nothing is derived from its answers.
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,9 +34,12 @@ export async function GET(request: NextRequest) {
         ? (await organizationActionableRoster(principal.organizationId)).map((athlete) => athlete.athlete_id)
         : [];
 
-    const items = await getReadinessBoard(principal.organizationId, athleteIds);
+    const [items, checkedInToday] = await Promise.all([
+      getReadinessBoard(principal.organizationId, athleteIds),
+      listAthleteIdsCheckedInToday(principal.organizationId, athleteIds),
+    ]);
 
-    return NextResponse.json({ items });
+    return NextResponse.json({ items, checked_in_today: checkedInToday });
   } catch (error) {
     return jsonError(error);
   }

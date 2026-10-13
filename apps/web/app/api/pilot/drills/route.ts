@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
+import { reinstateDrillVersion } from '@/src/server/pilot/drillVersioning';
 import {
   DRILL_DIFFICULTIES,
   DrillNameTakenError,
@@ -37,6 +38,10 @@ export const runtime = 'nodejs';
 const DRILL_AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
 const MAX_CUES = 12;
+
+// A reinstate brings back an earlier version's content as it was, so it carries
+// no edit of its own and does not retire or restore (#1470).
+const FIELDS_NOT_WITH_REINSTATE = ['name', 'category', 'focus', 'cues', 'difficulty', 'active'] as const;
 
 /**
  * One operational drill with its promotion pointer removed, for athlete reads.
@@ -226,6 +231,8 @@ export async function POST(request: NextRequest) {
 
 // Edits a drill, and retires or restores one: `active: false` takes a drill out
 // of the library and leaves every assignment that references it intact.
+// `reinstate: true` brings back the earlier version `drill_id` names as the
+// drill's newest version (drillVersioning.ts#reinstateDrillVersion).
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -234,6 +241,25 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
     const drillId = requireText(body.drill_id, 'drill_id');
+
+    if (body.reinstate !== undefined) {
+      if (body.reinstate !== true || FIELDS_NOT_WITH_REINSTATE.some((field) => body[field] !== undefined)) {
+        throw new Error('Unsupported reinstate: send drill_id and reinstate: true only');
+      }
+      const { drill, previous, source } = await reinstateDrillVersion({
+        organizationId: principal.organizationId,
+        drillId,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+      });
+      return NextResponse.json({
+        ok: true,
+        organization_id: principal.organizationId,
+        drill,
+        reinstated_from_drill_id: source.drill_id,
+        previous_drill_id: previous.drill_id,
+      });
+    }
 
     if (body.active !== undefined && typeof body.active !== 'boolean') {
       throw new Error('Unsupported active');
@@ -303,6 +329,10 @@ export async function PATCH(request: NextRequest) {
     // current state, worded so the coach knows what to do instead.
     if (error instanceof DrillRestoreRefusedError) {
       return NextResponse.json({ error: error.message, code: error.reason }, { status: 409 });
+    }
+    // A reinstate of a drill not in this gym: the same 404 as an edit's miss.
+    if (error instanceof Error && error.message === 'DRILL_NOT_FOUND') {
+      return jsonError(new Error('Not found'));
     }
     return jsonError(error);
   }

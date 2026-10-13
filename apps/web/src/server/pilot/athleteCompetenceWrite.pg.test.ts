@@ -6,9 +6,10 @@
 // 1. History is kept: a change supersedes the current row and inserts a new
 //    one, and the one-current-row partial index is never violated.
 // 2. The audit row commits and rolls back with the write.
-// 3. Who may write is the existing guard: assigned coach, covering coach, the
-//    athlete's own organization admin -- and nobody else, with nothing written
-//    on a refusal.
+// 3. Who may write is the existing guard: any coach of the athlete's gym
+//    (Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym) and
+//    the athlete's own organization admin -- and nobody else, with nothing
+//    written on a refusal.
 // 4. Two saves at once leave exactly one current row (the athlete-row lock),
 //    and a delete that lands mid-save is seen and refused.
 // 5. Cohort placement reads the written level.
@@ -91,12 +92,14 @@ const OTHER_COACH = 'acct-comp-coach-other';
 const COVER_COACH = 'acct-comp-coach-cover';
 const ADMIN = 'acct-comp-admin';
 const OTHER_ADMIN = 'acct-comp-admin-b';
+const OTHER_GYM_COACH = 'acct-comp-coach-b';
 const ATH = 'ath-comp-1';
 
 const coach: ActorIdentity = { accountId: COACH, role: 'coach', organizationId: ORG, athleteId: null };
 const otherCoach: ActorIdentity = { accountId: OTHER_COACH, role: 'coach', organizationId: ORG, athleteId: null };
 const coverCoach: ActorIdentity = { accountId: COVER_COACH, role: 'coach', organizationId: ORG, athleteId: null };
 const orgAdmin: ActorIdentity = { accountId: ADMIN, role: 'organization_admin', organizationId: ORG, athleteId: null };
+const otherGymCoach: ActorIdentity = { accountId: OTHER_GYM_COACH, role: 'coach', organizationId: OTHER_ORG, athleteId: null };
 const otherOrgAdmin: ActorIdentity = { accountId: OTHER_ADMIN, role: 'organization_admin', organizationId: OTHER_ORG, athleteId: null };
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
@@ -230,6 +233,7 @@ beforeAll(async () => {
   for (const [account, role, org] of [
     [COACH, 'coach', ORG], [OTHER_COACH, 'coach', ORG], [COVER_COACH, 'coach', ORG],
     [ADMIN, 'organization_admin', ORG], [OTHER_ADMIN, 'organization_admin', OTHER_ORG],
+    [OTHER_GYM_COACH, 'coach', OTHER_ORG],
   ]) {
     await client.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1,$2,$3,'microsoft')`,
@@ -357,19 +361,36 @@ describe('setAthleteCompetence: who may', () => {
     await expect(setAthleteCompetence(coverCoach, footwork('exploring'))).resolves.toMatchObject({ changed: true });
   });
 
-  test('a coach whose coverage has expired is refused, and nothing is written', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of the same gym whose coverage has expired may still set a level', async () => {
     await client.query(
       `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
        values ($1,$2,$3,$4, now() - interval '3 hours', now() - interval '1 hour')`,
       [ORG, ATH, COVER_COACH, ADMIN],
     );
 
-    await expect(setAthleteCompetence(coverCoach, footwork('exploring'))).rejects.toThrow(/^Forbidden/);
-    expect(await competenceRows()).toHaveLength(0);
+    const result = await setAthleteCompetence(coverCoach, footwork('exploring'));
+    expect(result).toMatchObject({ changed: true, level_key: 'exploring' });
+    expect(await competenceRows()).toEqual([expect.objectContaining({
+      competence_id: result.competence_id, level_key: 'exploring', assessed_by_account_id: COVER_COACH, superseded_by: null,
+    })]);
+    expect(await auditRows()).toEqual([expect.objectContaining({ event_type: 'create', actor_account_id: COVER_COACH })]);
   });
 
-  test('a coach in the same gym with no relationship to the athlete is refused', async () => {
-    await expect(setAthleteCompetence(otherCoach, footwork('exploring'))).rejects.toThrow(/^Forbidden/);
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach in the same gym with no relationship to the athlete may set a level', async () => {
+    const result = await setAthleteCompetence(otherCoach, footwork('exploring'));
+    expect(result).toMatchObject({ changed: true, level_key: 'exploring' });
+    expect(await competenceRows()).toEqual([expect.objectContaining({
+      competence_id: result.competence_id, level_key: 'exploring', assessed_by_account_id: OTHER_COACH, superseded_by: null,
+    })]);
+    expect(await auditRows()).toEqual([expect.objectContaining({ event_type: 'create', actor_account_id: OTHER_COACH })]);
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- their own gym only.
+  test('a coach of another gym is refused exactly as an admin of another gym is, and nothing is written', async () => {
+    await expect(setAthleteCompetence(otherGymCoach, footwork('exploring')))
+      .rejects.toThrow('Forbidden: athlete does not belong to organization');
     expect(await competenceRows()).toHaveLength(0);
     expect(await auditRows()).toHaveLength(0);
   });
@@ -448,7 +469,7 @@ describe('setAthleteCompetence: concurrency', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       await deleter.query('COMMIT');
 
-      await expect(outcome).resolves.toMatch(/^Forbidden/);
+      await expect(outcome).resolves.toBe('Forbidden: athlete does not belong to organization');
     } finally {
       await deleter.end();
     }
@@ -456,8 +477,11 @@ describe('setAthleteCompetence: concurrency', () => {
   });
 });
 
-describe('setAthleteCompetence: the guard is re-checked under the lock', () => {
-  test('a reassignment that commits while the save waits is seen, with the guard own refusal', async () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The lock
+// re-check now guards only a delete; a reassignment or a coverage change no
+// longer decides whether a same-gym coach may write.
+describe('setAthleteCompetence: under the lock, only a delete refuses', () => {
+  test('a reassignment that commits while the save waits does not refuse the same-gym coach', async () => {
     const other = new Client({ connectionString: databaseUrl });
     await other.connect();
     try {
@@ -468,14 +492,38 @@ describe('setAthleteCompetence: the guard is re-checked under the lock', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       await other.query('COMMIT');
 
-      await expect(outcome).resolves.toBe('Forbidden: coach not assigned to athlete');
+      await expect(outcome).resolves.toBe('saved');
+    } finally {
+      await other.end();
+    }
+    expect(await competenceRows()).toEqual([
+      expect.objectContaining({ level_key: 'exploring', assessed_by_account_id: COACH, superseded_by: null }),
+    ]);
+  });
+
+  test('a reassignment and a delete that commit together while the save waits refuse it, and nothing is written', async () => {
+    const other = new Client({ connectionString: databaseUrl });
+    await other.connect();
+    try {
+      await other.query('BEGIN');
+      await other.query(
+        `update pilot.athletes set coach_id = $3, deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [ORG, ATH, OTHER_COACH],
+      );
+
+      const outcome = setAthleteCompetence(coach, footwork('exploring')).then(() => 'saved', (error: Error) => error.message);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await other.query('COMMIT');
+
+      await expect(outcome).resolves.toBe('Forbidden: athlete does not belong to organization');
     } finally {
       await other.end();
     }
     expect(await competenceRows()).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
   });
 
-  test('a coverage revocation that commits while the save waits is seen', async () => {
+  test('a coverage revocation that commits while the save waits does not refuse the same-gym coach', async () => {
     await client.query(
       `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
        values ($1,$2,$3,$4, now() - interval '1 hour', now() + interval '2 hours')`,
@@ -494,11 +542,13 @@ describe('setAthleteCompetence: the guard is re-checked under the lock', () => {
       await client.query(`delete from pilot.coach_coverage where organization_id = $1 and athlete_id = $2`, [ORG, ATH]);
       await holder.query('COMMIT');
 
-      await expect(outcome).resolves.toBe('Forbidden: coach not assigned to athlete');
+      await expect(outcome).resolves.toBe('saved');
     } finally {
       await holder.end();
     }
-    expect(await competenceRows()).toHaveLength(0);
+    expect(await competenceRows()).toEqual([
+      expect.objectContaining({ level_key: 'exploring', assessed_by_account_id: COVER_COACH, superseded_by: null }),
+    ]);
   });
 });
 

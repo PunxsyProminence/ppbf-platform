@@ -752,10 +752,11 @@ describe('through the routes: record, correct, dispute, and the transfer readout
       expect(await rowCounts()).toEqual({ attempts: 1, reviews: 0 });
     }
 
-    test('in the same gym: refused on every route, and nothing is written', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    test('in the same gym: allowed on every route, and the writes really happen', async () => {
       signInAs(UNASSIGNED_COACH_ID, ORG_ID);
 
-      const refusals = [
+      const allowed = [
         await attemptsRoute.GET(get(`/api/pilot/training-attempts?athlete_id=${ATHLETE_ID}`)),
         await attemptsRoute.POST(post('/api/pilot/training-attempts', {
           athlete_id: ATHLETE_ID, metric_kind: 'reps', context_type: 'assessment', target_value: 10, achieved_value: 10,
@@ -763,14 +764,33 @@ describe('through the routes: record, correct, dispute, and the transfer readout
         await review({ attempt_id: attemptId, review_state: 'confirmed' }),
         await review({
           attempt_id: attemptId, review_state: 'corrected', corrected_target_value: 10, corrected_achieved_value: 10,
-          reason: 'not my athlete, but trying anyway',
+          reason: 'not my athlete, my gym',
         }),
         await reviewRoute.GET(get(`/api/pilot/training-attempts/review?attempt_id=${attemptId}`)),
         await transferRoute.GET(get(`/api/pilot/coach/transfer-check?athlete_id=${ATHLETE_ID}`)),
       ];
 
-      expect(refusals.map((response) => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
-      await expectNothingReadAndNothingWritten(refusals);
+      expect(allowed.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
+      // The list read before the record saw the assigned coach's attempt.
+      const firstList = (await allowed[0].json()) as { items: Array<{ attempt_id: string }> };
+      expect(firstList.items.map((item) => item.attempt_id)).toEqual([attemptId]);
+      // The record and both reviews are real rows, written by this coach.
+      expect(await rowCounts()).toEqual({ attempts: 2, reviews: 2 });
+      const c = await client();
+      try {
+        const attempts = await c.query(
+          'select recorded_by_account_id from pilot.training_attempts where attempt_id <> $1',
+          [attemptId],
+        );
+        expect(attempts.rows).toEqual([{ recorded_by_account_id: UNASSIGNED_COACH_ID }]);
+        const reviews = await c.query(
+          'select review_state from pilot.training_attempt_reviews where attempt_id = $1 order by review_state',
+          [attemptId],
+        );
+        expect(reviews.rows).toEqual([{ review_state: 'confirmed' }, { review_state: 'corrected' }]);
+      } finally {
+        await c.end();
+      }
     });
 
     test('in another gym: the athlete is refused and the attempt does not exist', async () => {

@@ -7,10 +7,10 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /**
- * OD-2026-10-05-024 ruling 2 (Jason 2026-10-05) -- only the athlete's assigned
- * coach(es), coach of record or a live coverage grant, or an organization admin
- * reads that athlete's wellness check-in. This supersedes A-FIN-03R1 (2026-09-22,
- * any coach or admin in the organization) for this read.
+ * Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Any coach
+ * or organization admin of the athlete's own gym reads that athlete's wellness
+ * check-in; another gym's athlete is refused exactly as for an admin. This
+ * replaces OD-2026-10-05-024 ruling 2 (assigned coach(es) only) for this read.
  *
  * WHAT IS REAL AND WHAT IS FAKED. requirePrincipal is faked (there is no
  * session store here), and so is the database -- by a small in-memory table
@@ -21,10 +21,10 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * and "soft-deleted" are decided by the access query actually issued, not by a
  * stubbed gate told what to answer.
  *
- * COVERAGE IS MODELLED HERE BECAUSE IT DECIDES. The fake keeps a
- * coach_coverage table with one live grant and one lapsed grant on Marisol:
- * the live one admits its coach, the lapsed one does not, and a coach with
- * neither is refused.
+ * COVERAGE IS STILL MODELLED, AND NO LONGER DECIDES. The fake keeps a
+ * coach_coverage table with one live grant and one lapsed grant on Marisol;
+ * since issue #1480 every coach of the gym is admitted whatever the grants
+ * say, and a coach of another gym is refused whatever they say.
  *
  * THE FAKE HONOURS A PREDICATE ONLY WHEN THE SQL CARRIES IT. A deleted athlete
  * is filtered out only if the statement says `deleted_at is null`, and a
@@ -143,6 +143,8 @@ beforeEach(() => {
     { organization_id: 'org-1', athlete_id: 'ath-devon', coach_id: 'coach-record', deleted_at: null },
     { organization_id: 'org-1', athlete_id: 'ath-rosa', coach_id: 'coach-record', deleted_at: null },
     { organization_id: 'org-1', athlete_id: 'ath-deleted', coach_id: 'coach-record', deleted_at: '2026-09-01T00:00:00Z' },
+    // Another gym's athlete, live, with a stored row today: there is data to leak.
+    { organization_id: 'org-2', athlete_id: 'ath-elsewhere', coach_id: 'coach-elsewhere', deleted_at: null },
   ];
   coverage = [
     { organization_id: 'org-1', athlete_id: 'ath-marisol', covering_coach_id: 'coach-covering', live: true },
@@ -154,6 +156,13 @@ beforeEach(() => {
     // The soft-deleted athlete still HAS a stored row today. That is what
     // makes the soft-delete refusal a real test: there is data to leak.
     { ...MARISOL_TODAY, check_in_id: 'ci-deleted', athlete_id: 'ath-deleted', note: 'deleted athlete note' },
+    {
+      ...MARISOL_TODAY,
+      organization_id: 'org-2',
+      check_in_id: 'ci-elsewhere',
+      athlete_id: 'ath-elsewhere',
+      note: 'other gym athlete note',
+    },
   ];
   holdRows = [];
   statements = [];
@@ -314,21 +323,31 @@ describe('the assigned coach(es) and an organization admin read today\'s check-i
     expect(payload).toEqual({ today: MARISOL_TODAY });
   });
 
-  test('a coach with no assignment and no coverage is refused, before any check-in is read', async () => {
-    /* A-FIN-03R1 let this coach read it; OD-2026-10-05-024 ruling 2 does not.
-       coach-unrelated is not Marisol's coach of record and holds no grant. */
+  test('a same-gym coach with no assignment and no coverage reads it', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    // coach-unrelated is not Marisol's coach of record and holds no grant.
     const { status, payload } = await readAs({ accountId: 'coach-unrelated' });
 
-    expect(status).toBe(403);
-    expect(payload.today).toBeUndefined();
-    expect(checkInReads()).toHaveLength(0);
+    expect(status).toBe(200);
+    expect(payload).toEqual({ today: MARISOL_TODAY });
   });
 
-  test('a coach whose coverage grant has lapsed is refused, before any check-in is read', async () => {
+  test('a same-gym coach whose coverage grant has lapsed reads it', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     const { status, payload } = await readAs({ accountId: 'coach-lapsed' });
+
+    expect(status).toBe(200);
+    expect(payload).toEqual({ today: MARISOL_TODAY });
+  });
+
+  test("a coach asking for another gym's athlete is refused, before any check-in is read", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. ath-elsewhere is live in org-2 and has a row today.
+    const { status, payload } = await readAs({ accountId: 'coach-unrelated' }, 'athlete_id=ath-elsewhere');
 
     expect(status).toBe(403);
     expect(payload.today).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain('other gym athlete note');
     expect(checkInReads()).toHaveLength(0);
   });
 
@@ -416,17 +435,19 @@ describe('everyone else is refused, and refused before any check-in is read', ()
     expect(covering.payload).toEqual(unknown.payload);
   });
 
-  test('the gate is the shared helper: a coach is checked by assignment, an admin by organization', async () => {
-    /* assertActorCanAccessAthlete, not a route-local copy. The coach of record
-       is answered by one athletes lookup carrying coach_id; the admin by one
-       organization lookup without it. Both carry the live-athlete predicate. */
+  test('the gate is the shared helper: a coach and an admin are both checked by organization', async () => {
+    /* assertActorCanAccessAthlete, not a route-local copy. Issue #1480 (Jason,
+       2026-10-12): a coach's reach is the whole gym, so the coach is answered
+       by the same one organization lookup as the admin -- no coach_id, no
+       coverage read. Both carry the live-athlete predicate. */
     const athleteLookups = () => statements.filter((sql) => sql.includes('from pilot.athletes'));
 
     statements = [];
     await readAs({ accountId: 'coach-record' });
     expect(athleteLookups()).toHaveLength(1);
-    expect(athleteLookups()[0]).toContain('coach_id = $2');
+    expect(athleteLookups()[0]).not.toContain('coach_id');
     expect(athleteLookups()[0]).toContain('deleted_at is null');
+    expect(statements.some((sql) => sql.includes('coach_coverage'))).toBe(false);
 
     statements = [];
     await readAs({ accountId: 'acct-admin', role: 'organization_admin' });
@@ -663,10 +684,12 @@ describe('an active training hold is shown to the staff reader and blocks nothin
   test('a caller refused at the gate gets no hold fact either', async () => {
     holdRows = [HOLD];
 
-    const unrelated = await readAs({ accountId: 'coach-unrelated' });
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym, so the
+    // refused coach is one asking for another gym's athlete.
+    const elsewhere = await readAs({ accountId: 'coach-unrelated' }, 'athlete_id=ath-elsewhere');
     const athlete = await readAs({ accountId: 'acct-1', role: 'athlete', athleteId: 'ath-marisol' });
 
-    for (const refused of [unrelated, athlete]) {
+    for (const refused of [elsewhere, athlete]) {
       expect(refused.status).toBe(403);
       expect(JSON.stringify(refused.payload)).not.toMatch(/hold/i);
     }

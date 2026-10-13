@@ -164,6 +164,324 @@ and should not try to.
 
 ---
 
+## OD-2026-10-12-013 -- "Sign out everywhere" test on the test athlete: "No I not at ther terminal"; the test-coach invite address was supplied (not recorded)
+
+**Provenance: PRIMARY.** One two-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; put at line 37337, 2026-10-12T15:12:36.308Z; answered at line 37338, 2026-10-12T15:13:41.784Z). Read by script (records pass, 2026-10-12). The typed answer is quoted exactly, spelling kept. The questions and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Test coach".** Overwatch, as written: "Test coach check (31.21): adding a coach emails a sign-in link. Which address may receive it? I deactivate the account straight after. (Plain: give me an inbox of yours to aim the invite at, or skip it.)" Options as written: "Skip this check"; "I'll type the address". Jason typed an address he owns. **The address is deliberately not recorded here;** only the fact that he supplied one.
+
+**Question "Sign-out test".** Overwatch, as written: ""Sign out everywhere" check on the test athlete: it should bounce the athlete's browser at once, and then you would need to enter the athlete's PIN again in that Chrome window. Run it? (Plain: test that the office can kick a login out; costs you one PIN entry.)" Options as written: "A: Run it last (Recommended)": "I finish the Release 18 re-tests that need the athlete first, then run it and tell you when to re-enter the PIN."; "B: Skip it": "Leave the athlete signed in. I list remote sign-out as not tested.". Jason did not pick either; he typed: *"No I not at ther terminal"*
+
+**Rulings (overwatch's reading of his typed words, as logged in `OVERWATCH-HANDOVER-2026-10-12.md`; his words govern):**
+1. The "Sign out everywhere" check is not run now. It is listed as not tested.
+2. The test-coach check runs with the address he supplied: one coach account added and deactivated. The handover records it done at about 16:11 UTC (check 31.21, PASS): the account was deactivated 17 seconds after it was added and stays deactivated, and the form sent no email.
+
+**Not ruled here:** whether the sign-out check may run later, when he is at the terminal. His words give a reason, not a standing refusal.
+
+---
+
+## OD-2026-10-12-012 -- Operations work orders start with family communication: "Family communication (Recommended)"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37325, 2026-10-12T15:11:49.237Z; answered at line 37334, 2026-10-12T15:12:28.081Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Ops priority".** Overwatch, as written: "Operations side: which unbuilt area gets its work orders first? (Plain: what should the builders start on next after the current queue.)" Options as written: "Family communication (Recommended)": "Coach-to-family messages the coach can see sent, read and answered. The audit found the coach can't see what they posted to a family (F-041)."; "Payments": "Dues and fees. Needs your decisions on provider and pricing before anything is built."; "Reporting": "Attendance, grant and board reports from the data already in the app.". Jason: *"Family communication (Recommended)"*
+
+**Ruling:** family communication is the first operations area to get work orders. The order of payments and reporting after it is not ruled (the handover says "payments, reporting undecided").
+
+**Acted on:** nothing yet in the sources. The handover lists "family-communication work orders" as still owed.
+
+---
+
+## OD-2026-10-12-011 -- An athlete's goals show to the coach and the parent: "A: Coach and parent (Recommended)" (issue #1527)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37325, 2026-10-12T15:11:49.237Z; answered at line 37334, 2026-10-12T15:12:28.081Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Goals".** Overwatch, as written: "F-047: an athlete's own goals (and progress, and "I did it") are visible only to the athlete today. Who else should see them? (Plain: should the coach and the parent see what the kid said they want to work on.)" Options as written: "A: Coach and parent (Recommended)": "Goals show on the coach's athlete view and the parent hub, read-only. The "why it matters" line shows to the coach only."; "B: Coach only": "The coach sees goals; the parent does not."; "C: Leave it private": "Only the athlete sees their own goals, as today.". Jason: *"A: Coach and parent (Recommended)"*
+
+**Ruling:** an athlete's goals, their progress and "I did it" show read-only on the coach's athlete view and on the parent hub. The "why it matters" line shows to the coach only.
+
+**Acted on:** issue #1527, "Lane N8-05: an athlete's goals show read-only to their coach and their guardian" (finding F-047).
+
+---
+
+## OD-2026-10-12-010 -- A coach can start a plain session with no workout script: "A: Yes, allow a plain session (Recommended)" (issue #1523)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37325, 2026-10-12T15:11:49.237Z; answered at line 37334, 2026-10-12T15:12:28.081Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Plain session".** Overwatch, as written: "F-052 follow-up: should a coach be able to start a plain session with no workout script (roster, check-ins, notes, gym TV) as well as a scripted one? (Plain: can a coach just open tonight's class without first issuing a workout.)" Options as written: "A: Yes, allow a plain session (Recommended)": ""Start a session" opens a session straight away; a script is optional. An open-gym night or a last-minute class still gets attendance, notes and the TV."; "B: Script required": "Keep it as built: a session only exists once a workout template has been issued.". Jason: *"A: Yes, allow a plain session (Recommended)"*
+
+**Ruling:** "Start a session" opens a session straight away; a session script is optional.
+
+**Why it was asked (OBSERVED by overwatch, handover and register):** after Release 18 let a coach issue a workout, the Session Scripts screen still read "No session scripts yet" and nothing in the app creates a script, so a coach could not start a session (finding F-052).
+
+**Acted on:** issue #1523, "Lane N8-01: a coach can start a plain session with no script (F-052)".
+
+---
+
+## OD-2026-10-12-009 -- The office can record a signed waiver: "A: Yes, build it (Recommended)" (issue #1526)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37325, 2026-10-12T15:11:49.237Z; answered at line 37334, 2026-10-12T15:12:28.081Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Waivers".** Overwatch, as written: "F-056: should an organization admin be able to record a signed waiver (general, medical release, travel) directly on the Waiver Compliance screen? Today only intake can write one. (Plain: when someone hands you a paper waiver, can the office tick it as received.)" Options as written: "A: Yes, build it (Recommended)": "The office can mark each waiver type as signed, with the date and who recorded it. Otherwise those three read MISSING for every athlete forever."; "B: Intake only": "Waivers only come in through the intake form. The office cannot mark a paper one.". Jason: *"A: Yes, build it (Recommended)"*
+
+**Ruling:** an organization admin can record a signed waiver (general, medical release, travel) on the Waiver Compliance screen, with the date and who recorded it.
+
+**Acted on:** issue #1526, "Lane N8-04: the office can record a signed waiver on Waiver Compliance (F-056)".
+
+---
+
+## OD-2026-10-12-008 -- Codex stays a reviewer: "B: Reviews only (Recommended)"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37003, 2026-10-12T12:05:32.609Z; answered at line 37004, 2026-10-12T12:28:06.052Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry. It answers the question overwatch raised after his OD-2026-10-11-010 message.
+
+**The card, question "Codex builds".** Overwatch, as written: "Codex for BUILD tasks (not just reviews): allow it, given your ChatGPT plan allowance? Billing for Codex cloud builds is UNVERIFIED by me. (Plain: may Codex write code and open PRs, or does it stay a reviewer.)" Options as written: "B: Reviews only (Recommended)": "Codex keeps reviewing PRs. It hit its review limit once overnight already, so its allowance is better spent there."; "A: Yes, small builds": "Codex may take small, low-risk work orders and open PRs; I still review and merge. You confirm it is covered by your plan.". Jason: *"B: Reviews only (Recommended)"*
+
+**Ruling:** Codex keeps reviewing pull requests and takes no build tasks. This is consistent with OD-2026-10-05-019 (Codex counted as covered by his ChatGPT plan, no builder role).
+
+---
+
+## OD-2026-10-12-007 -- Parent observations (PH-04) categories approved: "A: Approve as is (Recommended)"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37003, 2026-10-12T12:05:32.609Z; answered at line 37004, 2026-10-12T12:28:06.052Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "PH-04".** Overwatch, as written: "Parent observations (PH-04) categories: Energy, Motivation, Sleep & recovery, General development, each with an optional 1-10 rating and a note. Approve? (Plain: the boxes a parent picks from when they tell the coach how their kid is doing at home.)" Options as written: "A: Approve as is (Recommended)": "Ship those four. More can be added later without a rebuild."; "B: Add School and Mood": "Six categories: the four plus School and Mood / behaviour at home."; "C: Notes only": "No categories or ratings; the parent just writes a note.". Jason: *"A: Approve as is (Recommended)"*
+
+**Ruling:** the parent-observation categories are Energy, Motivation, Sleep & recovery and General development, each with an optional 1-10 rating and a note.
+
+**Acted on:** parent hub PH-04, PR #1501 ("Parent hub PH-04: guardians write down and read back what they notice at home"), part of the parent hub build queue in issue #1483. Overwatch reported passing the approval to the lane.
+
+---
+
+## OD-2026-10-12-006 -- Family attendance is a same-day self check-in only: "A: Self check-in, same day only (Recommended)" (issue #1524)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37003, 2026-10-12T12:05:32.609Z; answered at line 37004, 2026-10-12T12:28:06.052Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Attendance".** Overwatch, as written: "Scheduler attendance: today an athlete or parent can mark Present / Absent / Excused themselves, days after the class, and it replaced the coach's record (F-046). What should families be able to do? (Plain: who gets to say a kid was there.)" Options as written: "A: Self check-in, same day only (Recommended)": "Athlete or parent can check in as Present on the day of the class. It never replaces a coach or admin mark, and Absent / Excused are staff only."; "B: Staff only": "Only coaches and admins record attendance. Families just see it."; "C: Keep as is, but never overwrite": "Families keep all three choices at any time; a staff mark always wins and is never replaced.". Jason: *"A: Self check-in, same day only (Recommended)"*
+
+**Ruling:** an athlete or parent can check in as Present on the day of the class only. A self check-in never replaces a coach or admin mark. Absent and Excused are staff only.
+
+**Acted on:** issue #1524, "Lane N8-02: family self check-in is Present, same day only, and never replaces a staff mark (F-046)".
+
+---
+
+## OD-2026-10-12-005 -- Pain reports show the number only: "A: Show the number only (Recommended)" (issue #1528)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 37003, 2026-10-12T12:05:32.609Z; answered at line 37004, 2026-10-12T12:28:06.052Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry. It settles the wording question left open in OD-2026-10-11-009 item 5.
+
+**The card, question "Pain label".** Overwatch, as written: "Pain severity label: a self-reported 2 out of 10 shows on the coach's board as "MODERATE - 2/10" (rule today: 1-3 moderate, 4-6 high, 7-10 critical, never low). Change the wording? (Plain: is "moderate" the right word for a 2.)" Options as written: "A: Show the number only (Recommended)": "The coach sees "2/10" with no word attached and makes their own read. Ordering on the board stays by number."; "B: Add a LOW band": "1-3 reads LOW, 4-6 MODERATE, 7-10 HIGH. Simple words, but the app is then grading pain."; "C: Leave it": "Keep MODERATE / HIGH / CRITICAL as they are.". Jason: *"A: Show the number only (Recommended)"*
+
+**Ruling:** a pain report shows on the coach's board as the number (for example "2/10") with no severity word. The board's order stays by number. This ruling does not touch OD-2026-10-03-017, which overwatch cites as ruling that a pain report is not a medical stop at any severity.
+
+**Acted on:** issue #1528, "Lane N8-06: pain reports show the number only, no severity word (F-029)".
+
+---
+
+## OD-2026-10-12-004 -- Audit checks held back may run as the test users: "you have permissionto do what ever we need to do to test this,Record a test waiver,Inactive and back,Add a test coach"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 36999, 2026-10-12T12:03:13.373Z; answered at line 37000, 2026-10-12T12:05:14.520Z). Read by script (records pass, 2026-10-12). The answer is quoted exactly, spelling kept: it joins his typed text with the three options he ticked. The question and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows on from OD-2026-10-11-003.
+
+**The card, question "Held checks".** Overwatch, as written: "Audit checks I held back because they create real-looking records on the live gym: which may I run as the test users? (Plain: these three look like real paperwork or send a message, so I want your say.)" Options as written: "Record a test waiver": "Marks a waiver as on file for the test athlete though no signed form exists, plus one test compliance violation taken through its statuses. I would label both AUDIT TEST."; "Inactive and back": "Marks the test athlete inactive, checks the coach and family screens follow, then sets them active again."; "Add a test coach": "Adds a coach then deactivates them. It sends an invite, so I need an address you own to send it to."; "None of these": "Leave all three unrun and list them as not tested.". Jason: *"you have permissionto do what ever we need to do to test this,Record a test waiver,Inactive and back,Add a test coach"*
+
+**Ruling:** all three held checks may run as the test users on the live gym.
+
+**What came of it (handover, REPORTED by overwatch):** "Inactive and back" passed. The waiver and compliance-violation check could not be run, because the office has no screen to record either (finding F-056, put to him next: OD-2026-10-12-009). The test-coach check ran after he supplied an address (OD-2026-10-12-013). The card said adding a coach sends an invite; the form itself says it does not, and no email left the app.
+
+---
+
+## OD-2026-10-12-003 -- Consent withdrawal hides only the withdrawing child's own clips: "B: Only their own clips"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 36999, 2026-10-12T12:03:13.373Z; answered at line 37000, 2026-10-12T12:05:14.520Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Consent".** Overwatch, as written: "Consent withdrawal scope (OD-2026-10-05-021): when a guardian withdraws video consent, also suppress published clips where the child appears but the clip is filed under another athlete? (Plain: if a kid is in someone else's clip and their parent pulls consent, does that clip come down too.)" Options as written: "A: Yes, hide those too (Recommended)": "Any published clip the child is tagged in comes down, whoever it is filed under. Needs a new lane to build; today it only hides clips filed under that child."; "B: Only their own clips": "Keep today's behaviour. Clips filed under another athlete stay up even if this child is in them.". Jason: *"B: Only their own clips"*
+
+**Ruling:** when a guardian withdraws video consent, only published clips filed under that child are hidden. Clips filed under another athlete stay up even if the child appears in them. This is today's behaviour; no lane is built for it. This went against overwatch's recommended option A.
+
+**Acted on:** nothing to build. The handover says to tell the N7-02 lane on #1488 (the published video library read page), and overwatch's report to him says both this answer and the PH-04 approval were passed to the lanes.
+
+---
+
+## OD-2026-10-12-002 -- A flagged guardian chat about a child who left first goes with the child: "A: With the child (Recommended)" (#1493)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 36999, 2026-10-12T12:03:13.373Z; answered at line 37000, 2026-10-12T12:05:14.520Z). Read by script (records pass, 2026-10-12). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Flagged chat".** Overwatch, as written: "#1493 retention: when a guardian's flagged SHADOW conversation is about their child, and the child was withdrawn before the guardian was deleted, when is that conversation deleted? (Plain: how long do we keep a flagged parent chat about a kid who already left.)" Options as written: "A: With the child (Recommended)": "As built. The chat goes when the child's 2 years end. The parent's review entry stays, without the chat. Keeps the least data about the child."; "B: Keep until guardian's 2 yrs": "The child's purge skips that one chat until the parent's own 2-year hold ends. Keeps the evidence longer, and data about the child longer."; "C: Hold whole child record": "The child's entire record waits until the parent's hold ends. Keeps the most data the longest.". Jason: *"A: With the child (Recommended)"*
+
+**Ruling:** as built. The flagged conversation is deleted when the child's two years end; the guardian's review entry stays without the chat.
+
+**Acted on:** PR #1493, merged `c6955e1517e27310e80de13b5461f1f6e16cbb83` after the Release 18 production run was dispatched, so the approved commit did not move.
+
+---
+
+## OD-2026-10-12-001 -- Release 18: "A: Yes, release (Recommended)"; "I clicked it"
+
+**Provenance: PRIMARY.** One question on a four-question card and one typed message in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 36999, 2026-10-12T12:03:13.373Z; answered at line 37000, 2026-10-12T12:05:14.520Z; typed message at line 37299, 2026-10-12T15:08:57.483Z). Read by script (records pass, 2026-10-12). The button pick and the typed message are quoted exactly. The question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**The card, question "Release 18".** Overwatch, as written: "Release 18: once staging passes on main 9028f09c (12 PRs, no migration), dispatch deploy-production for your approval click? (Plain: put the two coach fixes and the rest live today.)" Options as written: "A: Yes, release (Recommended)": "I stage it, run the checks, then send it to production. You still click approve in GitHub. Coaches can then issue workouts, start sessions and record decisions."; "B: Wait for parent hub": "Hold until #1492 and #1498 (parent hub PH-02, PH-09) are merged too, so the parent page changes land together. Costs a few hours."; "C: Stage only": "I put it on staging and stop. Nothing goes live until you say so later.". Jason: *"A: Yes, release (Recommended)"*
+
+**The approval.** Overwatch had dispatched `deploy-production` run 38252571511 (`confirm_sha` `9028f09cc73f4c73cd110c7676e955c3d67ef93e`, staged image `sha256:cf586d7be6126ea6c27c492875b2e2d0b4369af5db6744c6ae442f377de05f5e`, no migration) and it waited for his click. Jason, line 37299: *"I clicked it"* The handover records the run `success` and production at `9028f09c`.
+
+**Rulings:**
+1. Release 18 goes to production once staging passes on main `9028f09c`; he still clicks approve in GitHub. Option B (wait for the parent hub) and option C (stage only) were not chosen.
+2. He reports making the approval click on run 38252571511 himself (*"I clicked it"*).
+
+**Status (2026-10-12):** the card said coaches could then "start sessions". After Release 18 a coach still could not start a session (finding F-052); that gap is OD-2026-10-12-010.
+
+---
+
+## OD-2026-10-11-010 -- "ok send more tasks to idle AI if they can acess git hub let them do some building"; "keeo VS busy its probably one of the more powerful builder"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-12). Typed messages are quoted exactly, spelling kept. The id carries 2026-10-11 because these UTC times are the evening of 2026-10-11 Eastern. New; edits no earlier entry.
+
+**Typed** (line 35227, 2026-10-12T02:19:55.083Z), after overwatch reported who was working on what and that several queued items had no builder: *"ok send more tasks to idle AI if they can acess git hub let them do some building"*
+
+**Typed** (line 35246, 2026-10-12T02:20:37.353Z): *"keeo VS busy its probably one of the more powerful builder"*
+
+**Overwatch's reply, as written** (line 35242): outside AIs with GitHub access may build. It listed ChatGPT as "NOT SURE. Testing now with a one-line change", Grok as signed out, Gemini and BoodleBox as without GitHub access, and Codex as needing his yes first. It set the conditions "Draft pull requests only. They never merge and never touch main." and "CI, a Codex review, and my merge checks all still apply before anything lands."
+
+**Rulings (overwatch's reading; his words govern):**
+1. Idle outside AIs that can reach GitHub may be given build tasks, under the lane rules: draft pull requests, CI and review as for any lane, and Overwatch merges.
+2. The VS Code lane (the neeko@ account) is kept busy with the queue; he pasted overwatch's standing prompt for it (line 35278, *"A fir VS i pasted prompt"*).
+3. Codex builds were put to him as a separate question and he answered "B: Reviews only (Recommended)" (OD-2026-10-12-008).
+
+**Not ruled here:** whether ChatGPT can actually build; the sources record the one-line test as sent but give no result.
+
+---
+
+## OD-2026-10-11-009 -- Eight numbered questions: "1A 2A 3 B 4 lets build them sed them to VS code 5 what does the AI ML rules say 6B 7 A 8 a"
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; question list at line 35063, 2026-10-12T02:10:08.404Z; his answer at line 35074, 2026-10-12T02:13:38.123Z). Read by script (records pass, 2026-10-12). His message is quoted exactly, spelling and spacing kept. The numbered questions are quoted as overwatch wrote them. The id carries 2026-10-11 because these UTC times are the evening of 2026-10-11 Eastern. New; edits no earlier entry.
+
+**Typed** (line 35074), after overwatch asked "what questions do you have" and put eight questions with a recommended option first: *"1A 2A 3 B 4 lets build them sed them to VS code 5 what does the AI ML rules say 6B 7 A 8 a"*
+
+**The questions and what each part decided** (questions as overwatch wrote them; the answer to each is read from his message and overwatch's reply at line 35158):
+
+1. **Release 17.** "A: ship when #1479 merges" / "B: ship now what's on main". Answer 1A. Release 17 ships when the privacy fix, PR #1479, merges. It merged and went to production (handover: run 38198671125, production `3afdd95f6366ab4df94c30fbd4e1c54f96bf8946`; Jason approved the click).
+2. **Test records on the live gym** (the ZZ-AUDIT message and class, three Audit Test Gyms). "A: remove" / "B: keep". Answer 2A. Remove them. Overwatch's plan is to set the class and the gyms inactive, not delete them. The ZZ-AUDIT chalkboard message was retired; the handover still lists the ZZ-AUDIT class and the three Audit Test Gyms as to do.
+3. **Six drills with no coaching cue.** "A: a coach writes the cues" / "B: I draft cues for a coach to approve". Answer "3 B". Overwatch drafts the cues for a coach to approve; they are not put in the app. Drafted in `C:\Dev\DRAFT-CUES-SIX-DRILLS-2026-10-12.md`.
+4. **Parent page's empty tabs.** "A: hide them until built" / "B: reword them". He chose neither: *"lets build them sed them to VS code"*. The empty tabs are built, not hidden, and the work goes to the VS Code builder. The parent hub build queue is issue #1483.
+5. **A 2-out-of-10 pain report shows as "MODERATE".** "A: relabel by number" / "B: leave". He asked *"what does the AI ML rules say"*. This is a question, not a ruling. Overwatch answered from the code (the band is `severityForPain`, 1-3 moderate, 4-6 high, 7-10 critical, never low; OD-2026-10-03-017, which overwatch cites as saying a pain report is not a medical stop at any severity). The wording was ruled later: OD-2026-10-12-005.
+6. **Reopening a reviewed intervention.** "A: not allowed, as built" / "B: allow it and retire the old verdict". Answer 6B. Reopening is allowed and the earlier verdict is retired to history. Issue #1481.
+7. **Gemini is on his psu.edu account.** "A: fine" / "B: stop using it for gym work". Answer "7 A". Gemini on that account is fine for gym work.
+8. **Grok.** "Sign it in when convenient, or skip it". The row had no lettered options; he answered *"8 a"*. Overwatch read it as: he signs Grok in himself (its reply: "you'll sign Grok in"). That reading is overwatch's; the letter does not map to a lettered option.
+
+---
+
+## OD-2026-10-11-008 -- Remaining coach-written text is stripped for family readers: "strip them" (PR #1479)
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's note at line 34971, 2026-10-12T01:52:02.461Z; his answer at line 35007, 2026-10-12T02:07:19.460Z). Read by script (records pass, 2026-10-12). His message is quoted exactly; overwatch's note is quoted as it wrote it. The id carries 2026-10-11 because these UTC times are the evening of 2026-10-11 Eastern. New; edits no earlier entry. It extends the privacy fix of issue #1475.
+
+**Overwatch's note, as written:** "after this fix, athletes and parents still technically receive a few pieces of coach-written text that your ruling didn't name, such as a template's stated intent or a note on what a drill needs first. No family screen shows or uses them. Options when you get to it: leave them, or strip those too." Jason: *"strip them"*
+
+**Ruling:** athletes and parents no longer receive the remaining coach-written text: on workout templates, `intent` and `free_text_drill`; on session scripts, `prerequisite_note`, `reset_protocol` and `block_label`. Coaches and organization admins keep everything.
+
+**Acted on:** a second commit on PR #1479 (overwatch's report, line 35070), merged as `3afdd95f6366ab4df94c30fbd4e1c54f96bf8946` and released in Release 17.
+
+---
+
+## OD-2026-10-11-007 -- A coach's reach is the whole gym: "lets make it coaches to whole gym" (issue #1480)
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's note at line 34946, 2026-10-12T01:48:13.716Z; his answer at line 34975, 2026-10-12T02:06:36.259Z). Read by script (records pass, 2026-10-12). His message is quoted exactly; overwatch's note and the ruling text on the issue are quoted as written. The id carries 2026-10-11 because these UTC times are the evening of 2026-10-11 Eastern. New; edits no earlier entry.
+
+**Overwatch's note, as written:** "Whether that's a problem depends on how you want coaches scoped: to their own athletes only, or to the whole gym." It had reported that a coach or video annotator can open or change something for any athlete in the gym with no check in the route that the athlete is theirs (24 of the 35 routes ChatGPT reviewed). Jason: *"lets make it coaches to whole gym"*
+
+**Ruling (overwatch's reading, as written on issue #1480; his words govern):** a coach of a gym can read and act on every athlete of that gym, whether or not the athlete is assigned to them. Nothing changes between gyms, and nothing changes for athletes, parents, the platform owner or any other role. The assigned coach stays on the record and "my athletes" lists keep working; only the refusals go.
+
+**Conflict to settle in the build:** OD-2026-10-05-024 item 2 ruled coach read routes assigned-coach only, and OD-2026-10-07-011 ruling 1 made consent changes and one-percent notes assigned coach or organization admin only. The sources here do not say which entries this replaces; issue #1480 tells the lane to name them in its plan, and to bring back anything private (such as another coach's staff notes) with a default.
+
+**Acted on:** issue #1480, "Lane P11: a coach's reach is the whole gym, not only assigned athletes".
+
+---
+
+## OD-2026-10-11-006 -- Restore the retired drills: "Restore them an start the lanes"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-12). Typed messages are quoted exactly, spelling kept. New; edits no earlier entry. It follows on from OD-2026-10-11-005.
+
+**What was put to him** (overwatch, line 34066, 2026-10-11T23:43:44.336Z): 74 of the gym's 75 adopted drills were retired, all in the one hour 2026-09-19 03:00 to 03:59 UTC, and it found no decision of his retiring them. It wrote: "say "restore them" and I'll restore the 74 as the test coach. It's reversible: any of them can be retired again from the drill library."
+
+**Typed** (line 34220, 2026-10-11T23:56:48.329Z): *"Restore them an start the lanes"*
+
+**Then, typed** (line 34284, 2026-10-12T00:49:05.374Z), after the app's safety check refused overwatch's one large scripted restore and the lane cards: *"Tryagain"*
+
+**Ruling:** the retired drills are restored, as the test coach, through the app's own drill update. Done in smaller batches (handover): 68 of 74 restored. Six stay retired because a technique drill needs at least one coaching cue and they have none: Outside Control, Technique Hold Under Volume, Bag Work With Stated Purpose, Pad Round With Called Sequences, Shadow With an Imagined Opponent, Support-Assisted Footwork. Their cues are the subject of OD-2026-10-11-009 item 3.
+
+**Not ruled here:** what "start the lanes" covered. Overwatch's reading at the time (line 34280) was the six session cards it had offered: Lane P7d, Lane S2 and Audits A to D. Those sessions were running by 2026-10-12 01:20 UTC (handover).
+
+---
+
+## OD-2026-10-11-005 -- A workout template issues with untested drills: "B 2 not sure verify"
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's question at line 33942, 2026-10-11T23:18:44.201Z; his answer at line 33962, 2026-10-11T23:40:23.921Z). Read by script (records pass, 2026-10-12). His message is quoted exactly, spelling kept; overwatch's question is quoted as it wrote it. New; edits no earlier entry. It replaces ruling 3 of OD-2026-10-08-002.
+
+**Overwatch, as written:** "No workout can be issued on the live gym." All 12 templates were refused (409): 23 drills were drafts "not floor-tested by a coach of this gym yet" and 29 drills were ones "this gym adopted and then retired". Options as written: "A (recommended): fix the gym's library, keep the rule." (a coach marks the drills floor-tested and the retired ones are restored); "B: relax the rule." ("Let a workout be issued with untested drills, shown to the coach as untested. That's a code change and reverses an earlier ruling of yours."); "C: both.". Its two questions: "1. A, B or C?" and "2. Were the 29 drills retired on purpose, or is that left over from earlier testing?" Jason: *"B 2 not sure verify"*
+
+**Rulings:**
+1. **B.** A workout template issues even when some of its drills are untested drafts. The coach is told which drills are untested, before issuing and again in the result. The drills stay marked as untested; they stop blocking. This replaces OD-2026-10-08-002 ruling 3 (an untested DRAFT drill at template issue is refused and named). The refusal of retired drills stays as it was.
+2. **"2 not sure verify".** He did not know whether the drills were retired on purpose and asked overwatch to check. It checked (OBSERVED as the test coach, register F-027): 74 of 75 adopted drills retired, all in the hour of 2026-09-19 03:00 to 03:59 UTC, none with a decision of his behind it. He then ruled "Restore them" (OD-2026-10-11-006).
+
+**Acted on:** issue #1473, "Lane P7d: a workout template issues with untested drills, shown to the coach as untested"; PR #1502, merged `c1eed828b4552445b8bbfa66c1b4ed8337cf8244`, released in Release 18. The handover records finding F-026 closed on live after Release 18: a workout template was issued to the test athlete (7 cards).
+
+---
+
+## OD-2026-10-11-004 -- Audit scope: "android dont worry about the board users"
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's questions at line 32771, 2026-10-11T18:59:52.617Z; his answer at line 32775, 2026-10-11T19:00:47.078Z). Read by script (records pass, 2026-10-12). His message is quoted exactly; overwatch's questions are quoted as it wrote them. New; edits no earlier entry. It follows on from OD-2026-10-11-003.
+
+**Overwatch, as written**, after listing fourteen things it proposed to add to the audit plan: "Two questions that change the work: 1. What tablets does the gym use: iPad or Android? That decides whether 45 matters. 2. Do you want test users for board, staff and volunteer signed in? If yes, that's three more sign-ins from you when convenient." (Item 45 was "iPad and Safari": "I can only test Chrome. If your tablets are iPads, that's untested.") Jason: *"android dont worry about the board users"*
+
+**Rulings (overwatch's reading of his typed words; his words govern):**
+1. The gym's tablets are Android, so the iPad and Safari item does not apply to the audit.
+2. No test user is signed in for the board role.
+
+**Not ruled here:** staff and volunteer test users, which the second question also named. His words name only the board.
+
+---
+
+## OD-2026-10-11-003 -- The five signed-in live users are test users: "you can run these users as test users they are not tied to real people"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-12). Typed messages are quoted exactly, spelling and spacing kept. New; edits no earlier entry.
+
+**Typed** (line 32702, 2026-10-11T18:57:11.887Z), after overwatch listed the audit plan: *"wea also need how the users interact with eachother,  you can run these users as test users they are not tied to real people"*
+
+**Typed** (line 32984, 2026-10-11T19:30:32.065Z): *"Ok let star the audit"*
+
+**Rulings:**
+1. The five users signed in on the live app (organization admin, platform owner, coach, athlete, parent; handover) are test users, not tied to real people. Overwatch may run save actions as them on the live gym to check how the roles interact.
+2. The audit's interaction checks were added to the plan as section G of `C:\Dev\FULL-AUDIT-PLAN-2026-10-11.md` (26 checks), and the audit started on his "Ok let star the audit".
+
+**Limits overwatch set for itself** (its reply at line 32742; not his rulings): no invites or email to addresses outside the test users, no sign-in or PIN changes, no other gym, nothing in payments, no permanent deletes, and every record the run creates is listed at the end. Overwatch's safety check also refused one large scripted batch of live changes and re-sent workout issues he had not asked for (handover).
+
+---
+
+## OD-2026-10-11-002 -- One relay session for the outside AIs: "A for the Ai"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's options at line 32054, 2026-10-11T18:27:29.660Z). Read by script (records pass, 2026-10-12). Typed messages are quoted exactly, spelling kept; the options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Typed** (line 32042, 2026-10-11T18:27:11.816Z): *"so how do we want to hand the AI tabs, i didnt approve the chips until we confirm how we are going to do it avfter you validated"*
+
+**Overwatch's options, as written:** "A (recommended): one relay chip for all four AIs. The existing chip keeps one background tab per AI in its own group, sends what I give it, files each answer, and reports to me. Next step is that chip testing a send on Grok, Gemini and BoodleBox. I withdraw the three cards."; "B: one chip per AI. Four sessions, each owning one AI. You tap the three cards."; "C: no chips. I keep relaying from this thread, one AI at a time". The four AIs are ChatGPT, Grok, Gemini and BoodleBox.
+
+**Typed** (line 32099, 2026-10-11T18:30:21.686Z): *"A for the Ai"*
+
+**Ruling:** option A. One relay session carries the traffic to and from ChatGPT, Grok, Gemini and BoodleBox. The three per-AI session proposals are withdrawn. The session is "Relay: outside AIs (ChatGPT, Grok, Gemini, BoodleBox)" (handover).
+
+---
+
+## OD-2026-10-11-001 -- Drill update in place: "A: Start clean (Recommended)"; "A: Update while issuing (Recommended)" (issue #1431, PR #1453)
+
+**Provenance: PRIMARY.** Jason's selections on a two-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 29522, 2026-10-11T15:50:00.041Z; answered at line 29524, 2026-10-11T15:51:14.756Z). Read by script (records pass, 2026-10-12). Button picks are quoted exactly; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry. The card cites ruling D1 of OD-2026-10-08-008.
+
+**Question "Coach edits".** Overwatch, as written: "Drill update in place (your ruling D1, OD-2026-10-08-008). When a gym moves its adopted drill to the newer reference version, what happens to the edits a coach made to the gym's copy (name, category, focus, cues, difficulty)? (Plain: your coach tweaked the drill's cues; a newer official version comes out and the gym updates. Do the coach's tweaks carry over, or does the drill start clean from the new version?)" Options as written: "A: Start clean (Recommended)": "The new version is built from the newer reference. The coach's edits stay on the old version as history and can be re-applied by hand. Simple and predictable; nothing is merged by guesswork."; "B: Keep the coach's changes": "Field by field: where the coach changed a field, keep the gym's value; take the newer reference for the rest. Keeps gym customisation, but a kept cue may no longer fit the new version."; "C: Keep only the name": "The gym's name for the drill carries over; everything else comes from the newer reference.". Jason: *"A: Start clean (Recommended)"*
+
+**Question "Issue + update".** Overwatch, as written: "Issuing a workout template whose step uses the NEWER version of a drill while the gym is still on the OLDER version. Today this is refused. What should issuing do? (Plain: a coach issues a workout; one drill in it has a newer version than the one your gym adopted. Should issuing just move the gym to the new version, or stop and tell the coach?)" Options as written: "A: Update while issuing (Recommended)": "Issuing moves the gym's drill to the newer version in the same action, then assigns it. Same pattern as your earlier ruling 'Adopt it as part of issuing'. A retired drill is still refused and named."; "B: Stop and say why": "Issuing is refused and names the drill, telling the coach to update it in the drill library first."; "C: Issue the older version": "Issue the gym's current, older drill as it stands and leave the newer version alone.". Jason: *"A: Update while issuing (Recommended)"*
+
+**Rulings:**
+1. When a gym updates an adopted drill to the newer reference version, the new version is built from the newer reference. The coach's edits stay on the old version as history and can be re-applied by hand. No field-by-field merge.
+2. Issuing a workout template whose step names the newer version of a drill updates the gym's drill to that version in the same action, then assigns it. A retired drill is still refused and named.
+
+**Acted on:** issue #1431 and PR #1453 (merged `7e6d5fc79fc47900daf6c0c0855de2ccbbbdc05f`). Overwatch answered the lane's questions on the PR and named these two picks as his.
+
+---
+
 ## OD-2026-10-10-007 -- "Blocking and flagging stuff can cause more damage then knowledge"; "A: No banner (Recommended)"; overwatch stops putting safety and legal questions to Jason
 
 **Provenance: PRIMARY.** Two typed messages and one question card from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script. Typed messages and the button pick are quoted exactly, spelling kept. The question and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows on from OD-2026-10-10-004 ruling 1, OD-2026-10-10-005 and OD-2026-10-10-006.
@@ -693,6 +1011,8 @@ Overwatch had listed five open items waiting on his confirmation. Jason: *"I con
 4. Item 4 confirms the UI lane's reading of *"Be"* as B (OD-2026-10-08-011).
 
 **Not ruled here:** the log lists O6, O7, O15, O17b, O19 and audit Q10-Q22 as "Still not asked" in section E; the O-items were later confirmed in OD-2026-10-08-007, and audit Q10-Q22 have no entry here.
+
+Status (2026-10-12): ruling 3 and item 2 are replaced by OD-2026-10-11-005 (*"B 2 not sure verify"*): a workout template now issues with untested drills, named to the coach before and after. The refusal of retired drills stays.
 
 ---
 

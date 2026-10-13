@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import {
   accessibleAthleteIds,
+  assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
 } from '@/src/server/pilot/access';
@@ -21,6 +22,11 @@ jest.mock('@/src/server/pilot/access', () => ({
   accessibleAthleteIds: jest.fn(),
   assertAthleteBelongsToOrganization: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
+  // The route asks the chokepoint gate (issue #1480: a coach's reach is the
+  // whole gym, as an admin's is). For both roles the gate is the organization
+  // check, so the double hands it to the mocked organization check and the
+  // assertions below keep reading it.
+  assertActorCanAccessAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -41,6 +47,7 @@ jest.mock('@/src/server/pilot/athleteInjuries', () => ({
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
+const mockGate = assertActorCanAccessAthlete as jest.Mock;
 const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockGetById = getInjuryById as jest.Mock;
 const mockList = listInjuriesForAthlete as jest.Mock;
@@ -88,6 +95,8 @@ beforeEach(() => {
   jest.resetAllMocks();
   mockCoachAssigned.mockResolvedValue(undefined);
   mockBelongs.mockResolvedValue(undefined);
+  mockGate.mockImplementation((principal: { organizationId: string }, athleteId: string) =>
+    mockBelongs(principal.organizationId, athleteId));
   mockList.mockResolvedValue([INJURY]);
   mockCandidates.mockResolvedValue({ holds: [], plans: [], clearances: [], painReports: [] });
   mockRecord.mockResolvedValue(INJURY);
@@ -115,10 +124,12 @@ describe.each(['platform_owner', 'board', 'athlete', 'parent', 'volunteer', 'sta
   },
 );
 
-describe('a coach without standing with the athlete', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. A coach
+// is refused only for an athlete outside their gym, by the organization check.
+describe("a coach asking for another gym's athlete", () => {
   beforeEach(() => {
     as('coach');
-    mockCoachAssigned.mockRejectedValue(new Error('Forbidden: coach is not assigned to athlete'));
+    mockBelongs.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
   });
 
   test('cannot list or see link candidates', async () => {
@@ -126,6 +137,7 @@ describe('a coach without standing with the athlete', () => {
     expect(res.status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
     expect(mockCandidates).not.toHaveBeenCalled();
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
   });
 
   test('cannot record', async () => {
@@ -143,16 +155,18 @@ describe('a coach without standing with the athlete', () => {
   });
 });
 
-describe('an assigned coach', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Any coach
+// of the athlete's gym, assigned or not, goes through the organization check.
+describe('a coach of the athlete\'s gym, assigned or not', () => {
   beforeEach(() => as('coach', 'acct-coach-1'));
 
-  test('lists injuries and link candidates for the athlete, through the assignment gate', async () => {
+  test('lists injuries and link candidates for the athlete, through the organization check', async () => {
     const res = await GET(getReq());
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(await res.json()).toMatchObject({ ok: true, injuries: [INJURY], candidates: { holds: [] } });
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-coach-1', 'ATH-1', ORG);
-    expect(mockBelongs).not.toHaveBeenCalled();
+    expect(mockBelongs).toHaveBeenCalledWith(ORG, 'ATH-1');
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
     expect(mockList).toHaveBeenCalledWith(ORG, 'ATH-1');
   });
 
@@ -185,7 +199,7 @@ describe('an assigned coach', () => {
     let res = await POST(postReq({ ...RECORD, action: 'update', injury_id: INJURY.injury_id, returned_on: '2026-09-10' }));
     expect(res.status).toBe(200);
     expect(mockGetById).toHaveBeenCalledWith(ORG, INJURY.injury_id);
-    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-9', ORG]]);
+    expect(mockBelongs.mock.calls).toEqual([[ORG, 'ATH-9']]);
     expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -196,11 +210,12 @@ describe('an assigned coach', () => {
       }),
     );
 
-    mockCoachAssigned.mockClear();
+    mockBelongs.mockClear();
     res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id, athlete_id: 'ATH-1' }));
     expect(res.status).toBe(200);
-    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-9', ORG]]);
+    expect(mockBelongs.mock.calls).toEqual([[ORG, 'ATH-9']]);
     expect(mockMark).toHaveBeenCalledWith({ organizationId: ORG, injuryId: INJURY.injury_id, updatedByAccountId: 'acct-coach-1' });
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
   });
 
   test('a missing injury is a 404 and nothing is written', async () => {
@@ -211,7 +226,7 @@ describe('an assigned coach', () => {
   });
 
   test('a failure that is not a refusal surfaces, not a 404', async () => {
-    mockCoachAssigned.mockRejectedValue(new Error('connection reset'));
+    mockBelongs.mockRejectedValue(new Error('connection reset'));
     const res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id }));
     expect(res.status).toBe(500);
     expect(mockMark).not.toHaveBeenCalled();

@@ -9,6 +9,11 @@ import { ForbiddenError } from './errors';
 import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -1042,13 +1047,24 @@ async function readNearMissContext(
         evidenceIds: [],
       };
     }
+    // A pain report is named by its number, never a severity word (#1528), so
+    // a reply cannot repeat one. Its stored rung still decides the order and
+    // the safety sentence below. isSevere is the rung set that files an
+    // escalation (shouldAutoEscalateNearMiss; shadowChat.test.ts pins it).
+    const isSevere = (severity: string) => severity === 'high' || severity === 'critical';
     const lines = nearMisses.map((nearMiss) => {
       const date = String(nearMiss.created_at).slice(0, 10);
       const description = nearMiss.description.replace(/\s+/g, ' ').slice(0, 240);
-      return `- [E:${nearMiss.near_miss_id}] ${date} ${nearMiss.severity.toUpperCase()}: ${description}`;
+      const label = isPainReportNearMiss(nearMiss.metadata)
+        ? painReportLabel(painScoreFromMetadata(nearMiss.metadata))
+        : nearMiss.severity.toUpperCase();
+      return `- [E:${nearMiss.near_miss_id}] ${date} ${label}: ${description}`;
     });
     const hasSevere = nearMisses.some(
-      (nearMiss) => nearMiss.severity === 'high' || nearMiss.severity === 'critical',
+      (nearMiss) => !isPainReportNearMiss(nearMiss.metadata) && isSevere(nearMiss.severity),
+    );
+    const hasSeverePain = nearMisses.some(
+      (nearMiss) => isPainReportNearMiss(nearMiss.metadata) && isSevere(nearMiss.severity),
     );
     return {
       context: [
@@ -1056,9 +1072,15 @@ async function readNearMissContext(
         `RECORDED NEAR-MISS EVENTS for this athlete (organization records, last 90 days, most severe first):`,
         ...lines,
         'Safety directive: factor these recorded events into any intensity, contact, or progression guidance, and cite the event id when referencing one.'
-          + (hasSevere
-            ? ' A HIGH or CRITICAL event is on record: recommend the coach reviews it before any increase in load or contact.'
-            : ''),
+          + (hasSevere && hasSeverePain
+            ? ' A HIGH or CRITICAL event and a pain report high enough to file a safety escalation are on record: '
+              + 'recommend the coach reviews them before any increase in load or contact.'
+            : hasSevere
+              ? ' A HIGH or CRITICAL event is on record: recommend the coach reviews it before any increase in load or contact.'
+              : hasSeverePain
+                ? ' A pain report high enough to file a safety escalation is on record: '
+                  + 'recommend the coach reviews it before any increase in load or contact.'
+                : ''),
       ].join('\n'),
       authorized: true,
       evidenceIds: nearMisses.map((nearMiss) => nearMiss.near_miss_id),
@@ -1591,8 +1613,8 @@ export function validateShadowResponse(
   };
 }
 
-// SHADOW System Prompt — Punxsy Prominence Boxing & Fitness identity
-export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for Punxsy Prominence Boxing & Fitness.
+// SHADOW System Prompt — the gym's identity, from its one profile (#1469)
+export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for ${GYM.brand}.
 
 PRIMARY ROLE:
 Your primary role is organizational learning, not automatic knowledge or canned recommendations.

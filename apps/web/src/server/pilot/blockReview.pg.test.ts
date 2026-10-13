@@ -715,6 +715,37 @@ describe('the evidence read: what was actually recorded', () => {
     }
   });
 
+  test('a plain session linked to the block is counted and reads as "Plain session" (issue #1523)', async () => {
+    const client = await seededDatabase('br_plain');
+    try {
+      await seedEvidence(client);
+      await client.query(
+        `insert into pilot.session_script_runs
+           (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+            run_state, started_at, ended_at)
+         values ($1, 'run-plain', null, null, $2, $3::date, 'completed',
+                 $3::date + time '17:00', $3::date + time '18:00')`,
+        [ORG_ID, COACH_ID, ENDS_ON],
+      );
+      await client.query(
+        `insert into pilot.session_run_development_block_links
+           (organization_id, run_id, block_id, linked_by_account_id)
+         values ($1, 'run-plain', 'blk-1', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+
+      const sources = await blockEvidence(ORG_ID, ATHLETE_ID, 'blk-1', STARTS_ON, ENDS_ON);
+      const sessions = sources.find((s) => s.key === 'sessions');
+      expect(sessions?.recorded).toBe(2);
+      expect(sessions?.recent).toEqual([
+        expect.objectContaining({ when: ENDS_ON, detail: 'Plain session' }),
+        expect.objectContaining({ when: INSIDE, detail: 'Tuesday Technical' }),
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the window is a window, and the athlete is the athlete', async () => {
     const client = await seededDatabase('br_window');
     try {

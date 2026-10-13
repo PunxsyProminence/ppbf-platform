@@ -41,6 +41,7 @@ interface EscalationFixture {
   athlete_id?: string;
   reason?: string;
   source_type?: string;
+  metadata?: Record<string, unknown>;
 }
 
 function escalation(overrides: Partial<EscalationFixture> = {}): EscalationFixture {
@@ -391,5 +392,220 @@ describe('the badge reads the existing record, not a second one', () => {
     expect(url).not.toContain('athlete_id');
     expect(url).not.toContain('organization_id');
     expect(url).not.toContain('coach');
+  });
+});
+
+/*
+ * Refused team clips (#1445; OD-2026-10-08-006 A-Q22). A team clip has no
+ * athlete, so a refusal files no escalation; this second count is what puts it
+ * on the bar -- for the organization admin, the one role that can act on it.
+ */
+describe('refused team clips are counted on the organization admin bar', () => {
+  // The server's count (/api/pilot/video/refused-team-clips; the set is proven
+  // on real rows in refusedTeamClips.pg.test.ts). 'fail' is a refused read;
+  // 'garbled' is a 200 that carries no number.
+  function installRouted(count: number | 'fail' | 'garbled'): jest.Mock {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/video/refused-team-clips')) {
+        if (count === 'fail') return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+        if (count === 'garbled') return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({ count }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  async function renderFor(role: string | null) {
+    await act(async () => {
+      render(<SafetyAttentionBadge role={role} />);
+    });
+  }
+
+  test("the server's count is shown exactly, and links to the review filtered to those clips", async () => {
+    const fetchMock = installRouted(2);
+    await renderFor('admin');
+
+    const link = await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
+    expect(link.getAttribute('href')).toBe('/admin/video-review?filter=refused-team');
+    expect(link.textContent).toContain('2 refused team clips');
+    // The count route, and not the general list: no capped page to count.
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(urls.filter((url) => url.includes('/video/'))).toEqual([expect.stringContaining('/api/pilot/video/refused-team-clips')]);
+  });
+
+  test('a count past any page size is still the count, never a floor', async () => {
+    installRouted(250);
+    await renderFor('admin');
+
+    const link = await screen.findByRole('link', { name: '250 refused team clips. Open video review.' });
+    expect(link.textContent).not.toContain('+');
+  });
+
+  test('a decision on the review page re-reads the count at once', async () => {
+    let count = 2;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return { ok: true, status: 200, json: async () => ({ count }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
+
+    count = 1;
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('an older count read that answers last does not overwrite the newer one', async () => {
+    const pending: ((value: Response) => void)[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return new Promise<Response>((resolve) => { pending.push(resolve); });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response);
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+    expect(pending).toHaveLength(2);
+
+    const answer = (count: number) => ({ ok: true, status: 200, json: async () => ({ count }) } as unknown as Response);
+    await act(async () => {
+      pending[1]!(answer(1));
+    });
+    await act(async () => {
+      pending[0]!(answer(2));
+    });
+
+    expect(screen.getByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('one clip reads in the singular', async () => {
+    installRouted(1);
+    await renderFor('admin');
+
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('none refused renders nothing', async () => {
+    installRouted(0);
+    await renderFor('admin');
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // Settle the read: the badge renders nothing while loading too, so absence
+    // before the answer lands would prove nothing.
+    await act(async () => {});
+    expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
+    expect(screen.queryByText(/Clips: unread/)).toBeNull();
+  });
+
+  test('an organization admin with an open escalation and a refused clip sees both counts', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return { ok: true, status: 200, json: async () => ({ count: 1 }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [escalation({ severity: 'critical' })] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+
+    expect(await screen.findByRole('link', { name: /Safety escalations needing acknowledgement: 1 critical/ })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test.each(['fail', 'garbled'] as const)('a %s read says so rather than claiming none', async (kind) => {
+    installRouted(kind);
+    await renderFor('admin');
+
+    const unread = await screen.findByText('Clips: unread');
+    expect(unread.closest('a')?.getAttribute('href')).toBe('/admin/video-review?filter=refused-team');
+  });
+
+  test.each(['coach', 'platform_owner', 'athlete', 'parent', 'board', 'staff'])(
+    'the %s session never reads this count',
+    async (role) => {
+      const fetchMock = installRouted(3);
+      await renderFor(role);
+
+      expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/video/'))).toEqual([]);
+      expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
+    },
+  );
+});
+
+describe('a pain report is counted on its own line, never under a severity word (#1528 Q3)', () => {
+  const PAIN = { trigger: 'athlete_pain_report', near_miss_id: 'nm_1' };
+
+  test('a single critical pain report reads as a pain report, on the top rung', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'critical', metadata: PAIN })] });
+
+    expect(screen.getByText('Safety 1 pain report')).toBeTruthy();
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    // The stored rung still sets the tone: the badge is not quieter for it.
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    expect(link.getAttribute('aria-label')).toContain('1 pain report');
+    expect(link.getAttribute('aria-label')).not.toMatch(/critical|high/i);
+  });
+
+  test('pain reports are counted apart from the critical and high escalations beside them', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'critical' }),
+        escalation({ escalation_id: 'e2', severity: 'high' }),
+        escalation({ escalation_id: 'e3', severity: 'critical', metadata: PAIN }),
+        escalation({ escalation_id: 'e4', severity: 'high', metadata: { trigger_key: 'athlete_pain_report' } }),
+      ],
+    });
+
+    expect(screen.getByText('Safety 1 critical, 1 high, 2 pain reports')).toBeTruthy();
+    // The phone form counts the pain reports apart too, never inside CRITICAL.
+    expect(screen.getByText('SAFETY 2 · CRITICAL · 2 · PAIN REPORTS')).toBeTruthy();
+  });
+
+  test('a critical pain report beside an ordinary high names the pain report on the top rung', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'high' }),
+        escalation({ escalation_id: 'e2', severity: 'critical', metadata: PAIN }),
+      ],
+    });
+
+    // The pain report earned the top rung, so it is named first; the ordinary
+    // high keeps its own number and word.
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT · 1 · HIGH');
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    expect(screen.getByText('Safety 1 pain report, 1 high')).toBeTruthy();
+  });
+
+  test('pain reports beside an ordinary high are never counted under HIGH on the phone', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e0', severity: 'high' }),
+        ...[1, 2, 3, 4, 5].map((n) => escalation({ escalation_id: `p${n}`, severity: 'high', metadata: PAIN })),
+      ],
+    });
+
+    expect(screen.getByText('SAFETY 1 · HIGH · 5 · PAIN REPORTS')).toBeTruthy();
+    expect(screen.getByText('Safety 1 high, 5 pain reports')).toBeTruthy();
+  });
+
+  test('a high pain report alone wears the rung below the top, named as a pain report', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'high', metadata: PAIN })] });
+
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    expect(compact.closest('.badge')?.className).toContain('badge--restricted');
+  });
+
+  test('a moderate pain escalation still does not raise the badge', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'moderate', metadata: PAIN })] });
+    expect(screen.queryByRole('link', { name: /Safety escalations needing acknowledgement/i })).toBeNull();
   });
 });

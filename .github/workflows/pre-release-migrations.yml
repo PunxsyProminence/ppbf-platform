@@ -27,9 +27,11 @@
 #     ~100 embedded-Postgres suites do not belong on every pull request.
 #   * ci.yml does run `npm run test:migrations`, but only when the changed-file
 #     classifier (scripts/ci-classify-paths.mjs) flags the diff as touching
-#     `apps/web/src/server/pilot/`, `apps/web/scripts/pilot-`, `infra/azure/`,
-#     a data file under `apps/web/seed-data/`, or the package manifests. That
-#     is per-PR coverage of a PR's own diff.
+#     `apps/web/src/server/pilot/`, `apps/web/app/api/`,
+#     `apps/web/scripts/pilot-`, `infra/azure/`, the seed data and its
+#     loaders, the suite runner, any `.pg.test.ts` file, or the package
+#     manifests (isMigrationPath is the full list). That is per-PR coverage
+#     of a PR's own diff.
 #     Nothing verifies the migration suites against the *merged* state of
 #     `main` -- which is the state a release operator actually dispatches
 #     from, and which no single PR's CI run ever saw.

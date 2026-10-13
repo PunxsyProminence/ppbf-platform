@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import ReturnPlanBlock, { type Outcome } from '@/components/ReturnPlanBlock';
 import WorkAxis from '@/components/WorkAxis';
+import { painScoreLabel } from '@/src/shared/painScoreLabel';
 
 // The coach's injury record (map item 11). A separate page, linked from the
 // sports-medicine board, because that board's surface rule (owner decision
@@ -59,7 +60,7 @@ interface Candidates {
   holds: Array<{ hold_id: string; scope: string; status: string; placed_at: string }>;
   plans: Array<{ plan_id: string; triggering_event: string; event_date: string; earliest_return_date: string | null; status: string }>;
   clearances: Array<{ status_id: string; status: string; effective_at: string }>;
-  painReports: Array<{ near_miss_id: string; severity: string; created_at: string }>;
+  painReports: Array<{ near_miss_id: string; severity: string; pain_score?: number | null; created_at: string }>;
 }
 
 const NO_CANDIDATES: Candidates = { holds: [], plans: [], clearances: [], painReports: [] };
@@ -413,7 +414,7 @@ export default function CoachInjuriesPage() {
                 <select className="select" {...field('linked_pain_report_id')}>
                   <option value="">None</option>
                   {keepCurrent(form.linked_pain_report_id, candidates.painReports.map((n) => n.near_miss_id))}
-                  {candidates.painReports.map((n) => <option key={n.near_miss_id} value={n.near_miss_id}>{words(n.severity)} {stamp(n.created_at)}</option>)}
+                  {candidates.painReports.map((n) => <option key={n.near_miss_id} value={n.near_miss_id}>{painScoreLabel(n.pain_score)} {stamp(n.created_at)}</option>)}
                 </select></div>
             </div>
             <div className="mt-[var(--s4)] flex gap-[var(--s2)]">

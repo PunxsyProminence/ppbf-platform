@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
@@ -106,6 +106,8 @@ export default function AthleteAchievements({
   const [state, setState] = useState<LoadState>('loading');
   const [recognitionFailed, setRecognitionFailed] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
+  // One mark per press (#1529). "Did it" had no in-flight guard at all.
+  const markingRef = useRef(false);
 
   const isFamily = audience === 'family';
 
@@ -224,7 +226,8 @@ export default function AthleteAchievements({
   }, [athleteId, savingProgram]);
 
   const markMilestone = useCallback(async (milestone: Milestone) => {
-    if (!athleteId || isFamily) return;
+    if (!athleteId || isFamily || markingRef.current) return;
+    markingRef.current = true;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'POST',
@@ -237,6 +240,8 @@ export default function AthleteAchievements({
       }
     } catch {
       /* Silent: the milestone simply stays unmarked, which is the truth. */
+    } finally {
+      markingRef.current = false;
     }
   }, [athleteId, isFamily, load]);
 

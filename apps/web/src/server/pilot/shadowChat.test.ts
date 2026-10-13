@@ -124,6 +124,7 @@ function nearMissRow(overrides: Partial<{
   severity: 'low' | 'moderate' | 'high' | 'critical';
   description: string;
   created_at: string;
+  metadata: Record<string, unknown>;
 }> = {}) {
   return {
     near_miss_id: '11111111-2222-4333-8444-555555555555',
@@ -373,6 +374,54 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       const result = await retrieveShadowContext(athleteScoped);
       expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
       expect(result.context).not.toContain('HIGH or CRITICAL event is on record');
+    });
+
+    test('a pain report is named by its number, never its severity word, and keeps the review directive (#1528)', async () => {
+      mockListRecentNearMisses.mockResolvedValue([
+        nearMissRow({
+          near_miss_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          severity: 'critical',
+          metadata: { trigger: 'athlete_pain_report', severity_1_10: 8 },
+        }),
+      ]);
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.context).toContain('[E:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee] 2026-07-28 Pain report 8/10:');
+      expect(result.context).toContain('A pain report high enough to file a safety escalation is on record');
+      expect(result.context).not.toMatch(/\b(CRITICAL|HIGH|MODERATE)\b/);
+      expect(result.context).not.toContain('HIGH or CRITICAL event is on record');
+    });
+
+    test('a low-band pain report adds no review directive, as before (#1528)', async () => {
+      mockListRecentNearMisses.mockResolvedValue([
+        nearMissRow({ severity: 'moderate', metadata: { trigger: 'athlete_pain_report', severity_1_10: 2 } }),
+      ]);
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.context).toContain('Pain report 2/10:');
+      expect(result.context).not.toContain('is on record:');
+    });
+
+    test('a severe event and a severe pain report share one directive (#1528)', async () => {
+      mockListRecentNearMisses.mockResolvedValue([
+        nearMissRow({ severity: 'critical', metadata: { trigger: 'athlete_pain_report', severity_1_10: 8 } }),
+        nearMissRow({ near_miss_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', severity: 'high' }),
+      ]);
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.context).toContain(
+        'A HIGH or CRITICAL event and a pain report high enough to file a safety escalation are on record',
+      );
+      expect(result.context.match(/recommend the coach reviews/g)).toHaveLength(1);
+    });
+
+    test('the pain directive fires on exactly the rungs that file an escalation (#1528)', async () => {
+      const { shouldAutoEscalateNearMiss } = jest.requireActual<typeof import('./escalationLadder')>('./escalationLadder');
+      for (const severity of ['low', 'moderate', 'high', 'critical'] as const) {
+        mockListRecentNearMisses.mockResolvedValue([
+          nearMissRow({ severity, metadata: { trigger: 'athlete_pain_report', severity_1_10: 5 } }),
+        ]);
+        const result = await retrieveShadowContext(athleteScoped);
+        expect(result.context.includes('pain report high enough to file a safety escalation'))
+          .toBe(shouldAutoEscalateNearMiss(severity));
+      }
     });
 
     test('absence is stated honestly rather than silently omitted', async () => {

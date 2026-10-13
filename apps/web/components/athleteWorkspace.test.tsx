@@ -470,6 +470,21 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
   return postedTo('/api/pilot/sessions')[before].body;
 }
 
+describe('one session check-in per press (#1529)', () => {
+  test('two presses of Check In in the same tick open one session', async () => {
+    await renderWorkspace();
+    const button = await screen.findByRole('button', { name: 'Check In' });
+
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+    expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
+  });
+});
+
 describe('athlete workspace honesty', () => {
   test('the summary row claims no message count while no feed measures one', async () => {
     // "Messages 0" was a hardcoded zero: the athlete's Messages tab is
@@ -709,6 +724,67 @@ describe('athlete safety reporting', () => {
           injuryFlag: true,
         }),
       }));
+    });
+
+    test('two presses of Save in the same tick send one pain report (#1529)', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      const save = screen.getByRole('button', { name: 'Save' });
+
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+
+      await screen.findByText(/flagged for a coach to look at/);
+      expect(painObservations()).toHaveLength(1);
+    });
+
+    test('a retry of the same report carries the same idempotency key, so the server can drop a duplicate (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      await screen.findByText(/did not save|was not saved/i);
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      // Byte-identical, not just the same key: the route treats any other
+      // payload under one key as a conflict and answers 409 (repository.ts).
+      const [first, second] = painObservations();
+      expect(second!.body).toEqual(first!.body);
+    });
+
+    test('Cancel ends the report: the next Save of the same answers is a new report (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, second] = painObservations();
+      expect(second!.body.idempotencyKey).not.toBe(first!.body.idempotencyKey);
+    });
+
+    test('changed answers are a new report, not a reuse of the failed one (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      answerPain({ type: 'Sharp', severity: 6 });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, second] = painObservations();
+      expect(second!.body.idempotencyKey).not.toBe(first!.body.idempotencyKey);
     });
 
     test('the next report does not inherit the last one', async () => {

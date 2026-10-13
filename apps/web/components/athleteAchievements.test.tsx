@@ -15,7 +15,7 @@
  * kid next to them. Nothing rendered here gives them anything to compare.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { resetAchievementCeremonyMemory } from './achievementCeremony';
 import AthleteAchievements from './AthleteAchievements';
@@ -331,4 +331,21 @@ it('says a load failed rather than showing an empty record', async () => {
   // The distinction matters: "nothing earned" and "could not load" look
   // identical and mean opposite things to somebody who has been training a year.
   expect(container.textContent).toContain('nothing already earned has gone anywhere');
+});
+
+describe('one mark per press (#1529)', () => {
+  it('two presses of Did it in the same tick send one mark', async () => {
+    await renderPanel();
+    const button = screen.getAllByRole('button', { name: 'Did it' })[0]!;
+    const posts = () => (global.fetch as jest.Mock).mock.calls
+      .filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()).toHaveLength(1);
+  });
 });

@@ -661,6 +661,7 @@ describe('through the routes: revise, unlink and correct, and what the next read
     execution: ExecutionItem;
     evidence: LinkItem[];
     review: ReviewItem | null;
+    review_history: Array<ReviewItem & { retired_on_reopen: boolean; retired_at: string }>;
   }
 
   let db: Client;
@@ -919,19 +920,28 @@ describe('through the routes: revise, unlink and correct, and what the next read
     expect(final?.evidence.map((entry) => entry.status)).toEqual(['removed', 'removed']);
     expect(final?.review?.review_id).toBe(reReviewed.review_id);
 
-    // The verdict stands on finished work, so the work cannot be flipped back
-    // to in progress underneath it. Refused whole, with the reason.
-    const beforeReopen = await ledger();
+    // Issue #1481 (Jason, 2026-10-12: "6B"): the work can be reopened under its
+    // verdict. The verdict is retired to history -- the review route shows no
+    // standing verdict and lists the retired one -- and the evidence stays.
     const reopen = await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
       action: 'correct',
       execution_id: current.execution_id,
       correction_reason: 'it had not actually finished',
       outcome: 'in_progress',
     }));
-    expect(reopen.status).toBe(409);
-    expect(((await reopen.json()) as { error: string }).error).toMatch(/outcome review/);
-    expect(await ledger()).toBe(beforeReopen);
-    expect((await chainFor(current.execution_id))?.execution.status).toBe('completed');
+    expect(reopen.status).toBe(200);
+    const reopenedId = ((await reopen.json()) as { item: ExecutionItem }).item.execution_id;
+    const reopenedChain = await chainFor(reopenedId);
+    expect(reopenedChain?.execution.status).toBe('in_progress');
+    expect(reopenedChain?.review).toBeNull();
+    expect(reopenedChain?.evidence.map((entry) => entry.link_id).sort()).toEqual(final!.evidence.map((entry) => entry.link_id).sort());
+    // History, newest first: the re-review's verdict retired on reopening, then
+    // the first verdict the re-review replaced.
+    expect(reopenedChain?.review_history.map((entry) => [entry.review_id, entry.retired_on_reopen])).toEqual([
+      [reReviewed.review_id, true],
+      [reviewed.review_id, false],
+    ]);
+    expect(reopenedChain?.review_history.every((entry) => typeof entry.retired_at === 'string' && entry.retired_at.length > 0)).toBe(true);
 
     // Both attempts are still there.
     const attempts = await db.query(
@@ -943,19 +953,41 @@ describe('through the routes: revise, unlink and correct, and what the next read
 
   describe('a coach who is not this athlete\'s coach', () => {
     /** Revise, correct and unlink, each aimed at this athlete's records. */
-    async function tryEachCorrection(): Promise<Response[]> {
+    async function tryEachCorrection(
+      targets: { protocolId: string; executionId: string; linkId: string } =
+        { protocolId: 'proto-guard', executionId: 'exec-1', linkId: 'link-guard' },
+    ): Promise<Response[]> {
       return [
         await protocolsRoute.PATCH(send('PATCH', PROTOCOLS, {
-          action: 'revise', protocol_id: 'proto-guard', ...CONTENT,
+          action: 'revise', protocol_id: targets.protocolId, ...CONTENT,
         })),
         await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
-          action: 'correct', execution_id: 'exec-1', correction_reason: 'not my athlete, but trying anyway',
+          action: 'correct', execution_id: targets.executionId, correction_reason: 'not my athlete, my gym',
           adherence: 'not_delivered',
         })),
         await reviewRoute.PATCH(send('PATCH', REVIEW, {
-          action: 'remove_evidence', link_id: 'link-guard', removed_reason: 'not my athlete, but trying anyway',
+          action: 'remove_evidence', link_id: targets.linkId, removed_reason: 'not my athlete, my gym',
         })),
       ];
+    }
+
+    /** The live version of each lineage the three corrections aim at. */
+    async function currentTargets(): Promise<{ protocolId: string; executionId: string }> {
+      const protocol = await db.query(
+        `select protocol_id from pilot.intervention_protocols
+         where organization_id = $1 and lineage_id = 'proto-guard' and status <> 'superseded'`,
+        [ORG_ID],
+      );
+      const execution = await db.query(
+        `select e.execution_id from pilot.intervention_executions e
+         join pilot.intervention_executions first
+           on first.organization_id = e.organization_id and first.lineage_id = e.lineage_id
+         where e.organization_id = $1 and first.execution_id = 'exec-1' and e.status <> 'superseded'`,
+        [ORG_ID],
+      );
+      expect(protocol.rows).toHaveLength(1);
+      expect(execution.rows).toHaveLength(1);
+      return { protocolId: protocol.rows[0].protocol_id, executionId: execution.rows[0].execution_id };
     }
 
     async function expectNothingReturned(refusals: Response[]): Promise<void> {
@@ -964,15 +996,24 @@ describe('through the routes: revise, unlink and correct, and what the next read
       }
     }
 
-    test('in the same gym: refused on all three, and no row or audit entry is written', async () => {
-      const before = await ledger();
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    test('in the same gym: allowed on all three, and the records really change', async () => {
       signInAs(UNASSIGNED_COACH_ID, ORG_ID);
 
-      const refusals = await tryEachCorrection();
+      const allowed = await tryEachCorrection();
 
-      expect(refusals.map((response) => response.status)).toEqual([403, 403, 403]);
-      await expectNothingReturned(refusals);
-      expect(await ledger()).toBe(before);
+      expect(allowed.map((response) => response.status)).toEqual([200, 200, 200]);
+      expect(await stored('intervention_protocols', 'protocol_id', 'proto-guard'))
+        .toMatchObject({ status: 'superseded', version: 1 });
+      expect(await stored('intervention_executions', 'execution_id', 'exec-1'))
+        .toMatchObject({ status: 'superseded' });
+      expect(await stored('intervention_evidence_links', 'link_id', 'link-guard'))
+        .toMatchObject({ status: 'removed', removed_reason: 'not my athlete, my gym' });
+      const current = await currentTargets();
+      expect(await stored('intervention_protocols', 'protocol_id', current.protocolId))
+        .toMatchObject({ version: 2, created_by_account_id: UNASSIGNED_COACH_ID });
+      expect(await stored('intervention_executions', 'execution_id', current.executionId))
+        .toMatchObject({ correction_reason: 'not my athlete, my gym', adherence: 'not_delivered' });
     });
 
     test('in another gym: the records do not exist, and nothing is written', async () => {
@@ -986,10 +1027,15 @@ describe('through the routes: revise, unlink and correct, and what the next read
       expect(await ledger()).toBe(before);
     });
 
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+    // gym coach above already moved the seeded records on, so the assigned
+    // coach aims at the live versions and a fresh link.
     test('the assigned coach is not refused the same three', async () => {
+      await insertLink(db, 'link-guard-2', { source_id: 'att-r2', evidence_role: 'baseline' });
+      const current = await currentTargets();
       signInAs(COACH_ID, ORG_ID);
 
-      const allowed = await tryEachCorrection();
+      const allowed = await tryEachCorrection({ ...current, linkId: 'link-guard-2' });
 
       expect(allowed.map((response) => response.status)).toEqual([200, 200, 200]);
     });

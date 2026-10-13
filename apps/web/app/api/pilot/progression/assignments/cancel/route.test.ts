@@ -97,13 +97,14 @@ const VALID = { assignment_id: 'asg-1', athlete_id: 'ath-1' };
 
 /**
  * queryOne order inside the route for a coach: getDrillAssignmentById, then
- * assertCoachAssignedToAthlete (coach of record, then coverage). For an
- * organization admin the second read is assertAthleteBelongsToOrganization.
+ * the one organization lookup (assertAthleteBelongsToOrganization) -- the same
+ * second read an organization admin gets. Issue #1480 (Jason, 2026-10-12): a
+ * coach's reach is the whole gym.
  */
 function coachReaches(assignment: DrillAssignment | null) {
   mockQueryOne
     .mockResolvedValueOnce(assignment) // getDrillAssignmentById
-    .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // coach of record
+    .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete of this gym
 }
 
 /** Every statement sent to the database, in order, as [sql, params]. */
@@ -287,7 +288,7 @@ describe('the assignment is resolved inside the caller gym, for the athlete name
       mockRequirePrincipal.mockResolvedValueOnce(principal());
       mockQueryOne
         .mockResolvedValueOnce(assignmentRow({ athlete_id: 'ath-2' })) // getDrillAssignmentById
-        .mockResolvedValueOnce({ athlete_id: 'ath-2' }); // coach of record for ath-2
+        .mockResolvedValueOnce({ athlete_id: 'ath-2' }); // ath-2 is a live athlete of this gym
       mockQuery.mockResolvedValueOnce([assignmentRow({ athlete_id: 'ath-2', status: 'cancelled' })]);
 
       const res = await POST(postRequest(VALID)); // names ath-1
@@ -358,35 +359,41 @@ describe('who may cancel: coaches with access and organization admins (owner dec
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('a coach with no relationship to the athlete is refused as not found, and nothing is written', async () => {
+  test('a coach whose athlete is not a live athlete of their gym is refused as not found, and nothing is written', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. The organization lookup finds no live row for the athlete.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-stranger' }));
     mockQueryOne
       .mockResolvedValueOnce(assignmentRow()) // getDrillAssignmentById
-      .mockResolvedValueOnce(null) // not the coach of record
-      .mockResolvedValueOnce(null); // and no live coverage grant
+      .mockResolvedValueOnce(null); // not a live athlete of this gym
 
     const res = await POST(postRequest(VALID));
 
-    // The same answer an unknown id gets, so a coach in the same gym cannot
-    // use this route to learn which assignment ids exist for athletes they
-    // cannot reach.
+    // The same answer an unknown id gets, so a coach cannot use this route to
+    // learn which assignment ids exist for athletes they cannot reach.
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'Not found' });
     expect(mockQuery).not.toHaveBeenCalled();
+    const [accessSql, accessParams] = mockQueryOne.mock.calls[1];
+    expect(String(accessSql)).not.toContain('coach_id');
+    expect(accessParams).toEqual(['ath-1', 'org-1']);
   });
 
-  test('a covering coach with a live coverage grant can cancel', async () => {
+  test('a same-gym coach with no assignment and no coverage can cancel', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. One
+    // organization lookup decides; no coach-of-record or coverage read follows.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-covering' }));
     mockQueryOne
       .mockResolvedValueOnce(assignmentRow())
-      .mockResolvedValueOnce(null) // not the coach of record
-      .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live coverage
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete of this gym
     mockQuery.mockResolvedValueOnce([assignmentRow({ status: 'cancelled' })]);
 
     const res = await POST(postRequest(VALID));
 
     expect(res.status).toBe(200);
     expect(updates()).toHaveLength(1);
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
+    expect(statements().some(([sql]) => String(sql).includes('coach_coverage'))).toBe(false);
   });
 
   test.each<PilotRole>(['organization_admin', 'admin'])('an %s in the same gym can cancel', async (role) => {

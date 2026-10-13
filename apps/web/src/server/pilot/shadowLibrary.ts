@@ -760,13 +760,28 @@ export async function listShadowLibrarySources(input: {
   generalResearch?: boolean;
   limit?: number;
   offset?: number;
-}): Promise<ShadowLibrarySourceRow[]> {
+}): Promise<ShadowLibrarySourceListItem[]> {
   const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50)));
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
 
-  return query<ShadowLibrarySourceRow>(
-    `select *
-     from pilot.shadow_library_sources
+  // Each row also carries what the source already holds, counted exactly as
+  // createShadowLibraryChunk counts it (HELD_EXCERPT_BUDGET_SQL: by the
+  // DOCUMENT's source), so the intake screen can state the real excerpt limit
+  // and check a text against it before sending (A-Q12, issue #1468).
+  const rows = await query<ShadowLibrarySourceRow & { held_chunk_count: number; held_character_count: number }>(
+    `select s.*, coalesce(held.chunk_count, 0) as held_chunk_count, coalesce(held.character_count, 0) as held_character_count
+     from pilot.shadow_library_sources s
+     -- One grouped count for the organization, not one per listed row (R2 #2).
+     left join (
+       select d.source_id,
+              count(*)::int as chunk_count,
+              coalesce(sum(char_length(c.text_content)), 0)::int as character_count
+         from pilot.shadow_library_chunks c
+         join pilot.shadow_library_documents d
+           on d.document_id = c.document_id and d.organization_id = c.organization_id
+        where d.organization_id = $1
+        group by d.source_id
+     ) held on held.source_id = s.source_id
      where organization_id = $1
        and ($2::text is null or source_type = $2)
        and ($3::text is null or status = $3)
@@ -783,7 +798,30 @@ export async function listShadowLibrarySources(input: {
       offset,
     ],
   );
+
+  return rows.map(({ held_chunk_count: heldChunks, held_character_count: heldCharacters, ...source }) => ({
+    ...source,
+    excerpt_budget: isExcerptBudgeted(source.rights_status)
+      ? {
+          max_passages: MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
+          max_characters: MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE,
+          held_passages: heldChunks ?? 0,
+          held_characters: heldCharacters ?? 0,
+        }
+      : null,
+  }));
 }
+
+/** The excerpt limit a non-owned source is held to, and what it holds now.
+ *  Null for a ppbf_owned or open_licence source, which has no such limit. */
+export interface ShadowLibraryExcerptBudget {
+  max_passages: number;
+  max_characters: number;
+  held_passages: number;
+  held_characters: number;
+}
+
+export type ShadowLibrarySourceListItem = ShadowLibrarySourceRow & { excerpt_budget: ShadowLibraryExcerptBudget | null };
 
 // Rights statuses whose text may leave the database for the research bridge.
 export const RESEARCH_BRIDGE_EXPORTABLE_RIGHTS: readonly ShadowLibraryRightsStatus[] = ['ppbf_owned', 'open_licence'];

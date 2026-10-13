@@ -97,7 +97,7 @@ const OTHER_ADMIN_ID = 'acct-capnotes-other-admin';
 const COACH_ID = 'acct-capnotes-coach'; // coach of record for ATHLETE, SECOND, SHARED here
 const LAPSED_COACH_ID = 'acct-capnotes-lapsed'; // membership here deactivated
 const VISITING_COACH_ID = 'acct-capnotes-visiting'; // home elsewhere, member here, coverage on ATHLETE_ID only
-const UNASSIGNED_COACH_ID = 'acct-capnotes-unassigned'; // active coach here, reaches nobody
+const UNASSIGNED_COACH_ID = 'acct-capnotes-unassigned'; // active coach here, coach of record for nobody (reaches the whole gym, issue #1480)
 const ATHLETE_ACCOUNT_ID = 'acct-capnotes-athlete';
 const PARENT_ACCOUNT_ID = 'acct-capnotes-parent'; // linked guardian of ATHLETE_ID
 const VOLUNTEER_ACCOUNT_ID = 'acct-capnotes-volunteer';
@@ -128,6 +128,8 @@ const COACH = actorFor(COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
 const VISITING_COACH = actorFor(VISITING_COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// The visiting coach signed in at their OTHER gym: a coach of another gym.
+const VISITING_COACH_AT_HOME = actorFor(VISITING_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const VOLUNTEER = actorFor(VOLUNTEER_ACCOUNT_ID, 'volunteer');
@@ -645,22 +647,61 @@ describe('athleteCapacityNotes.ts against real rows', () => {
     }
   });
 
-  test('a coach covering an athlete may write and read that athlete\'s notes, and only that one', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach covering one athlete may write and read notes for every athlete of this gym, and none of another gym', async () => {
     const client = await migratedDatabase('capnotes_coverage');
     try {
       const row = await addCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, note: 'Covering today' });
       expect(row.author_role).toBe('coach');
       expect((await listCapacityNotes(VISITING_COACH, ATHLETE_ID)).map((r) => r.note_id)).toEqual([row.note_id]);
-      await expect(listCapacityNotes(VISITING_COACH, SECOND_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
-      await expect(addCapacityNote({ actor: VISITING_COACH, athleteId: SECOND_ATHLETE_ID, note: 'x' }))
+      // No coverage on SECOND_ATHLETE_ID: reached anyway, and the row is real.
+      const second = await addCapacityNote({ actor: VISITING_COACH, athleteId: SECOND_ATHLETE_ID, note: 'Gym-wide' });
+      expect((await listCapacityNotes(VISITING_COACH, SECOND_ATHLETE_ID)).map((r) => r.note_id)).toEqual([second.note_id]);
+      const { rows } = await client.query(
+        'select athlete_id, author_account_id from pilot.athlete_capacity_notes order by athlete_id',
+      );
+      expect(rows).toEqual([
+        { athlete_id: ATHLETE_ID, author_account_id: VISITING_COACH_ID },
+        { athlete_id: SECOND_ATHLETE_ID, author_account_id: VISITING_COACH_ID },
+      ]);
+      // Another gym's athlete is refused as for an org admin; nothing is written.
+      await expect(listCapacityNotes(VISITING_COACH, OTHER_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(addCapacityNote({ actor: VISITING_COACH, athleteId: OTHER_ATHLETE_ID, note: 'x' }))
         .rejects.toBeInstanceOf(ForbiddenError);
+      expect(await noteCount(client)).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // Authorship is unchanged: only a note's author withdraws it.
+  test('an unassigned coach of the same gym may read and write a note, and withdraws only their own', async () => {
+    const client = await migratedDatabase('capnotes_unassigned_allowed');
+    try {
+      await insertRaw(client);
+      const { rows } = await client.query('select note_id from pilot.athlete_capacity_notes');
+      expect((await listCapacityNotes(UNASSIGNED_COACH, ATHLETE_ID)).map((r) => r.note_id)).toEqual([rows[0].note_id]);
+      const mine = await addCapacityNote({ actor: UNASSIGNED_COACH, athleteId: ATHLETE_ID, note: 'Seen today' });
+      expect(mine.author_role).toBe('coach');
+      expect(await noteCount(client, { live: true })).toBe(2);
+      // Not the author of the existing note: still refused, nothing changes.
+      await expect(withdrawCapacityNote({ actor: UNASSIGNED_COACH, athleteId: ATHLETE_ID, noteId: rows[0].note_id }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      expect(await noteCount(client, { live: true })).toBe(2);
+      await withdrawCapacityNote({ actor: UNASSIGNED_COACH, athleteId: ATHLETE_ID, noteId: mine.note_id });
+      expect(await noteCount(client, { live: true })).toBe(1);
+      expect(await noteCount(client)).toBe(2);
     } finally {
       await client.end();
     }
   });
 
   test.each([
-    ['an unassigned coach of the same gym', UNASSIGNED_COACH],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+    // same-gym unassigned coach is now admitted (test above); a coach of
+    // ANOTHER gym is still refused.
+    ['a coach of another gym', VISITING_COACH_AT_HOME],
     ['a coach whose membership here lapsed', LAPSED_COACH],
     ['an admin of another gym', OTHER_ADMIN],
     ['the athlete themselves', ATHLETE],
