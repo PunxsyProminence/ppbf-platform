@@ -339,6 +339,16 @@ const reviewOutcome = (executionId: string, performanceNotes: string) => answer(
 
 /* ------------------------------------------------------ the interleaving -- */
 
+/** Every request this test is holding, so a failed assertion cannot leave one
+ * parked on a pooled connection with its transaction open. */
+const held: Array<{ release: () => void; result: Promise<unknown> }> = [];
+
+afterEach(async () => {
+  const stillHeld = held.splice(0);
+  stillHeld.forEach((entry) => entry.release());
+  await Promise.allSettled(stillHeld.map((entry) => entry.result));
+});
+
 /** Runs a request that waits before the first statement matching `pauseBefore`. */
 function heldBefore(pauseBefore: RegExp, request: () => Promise<Answer>) {
   let reached!: () => void;
@@ -346,6 +356,7 @@ function heldBefore(pauseBefore: RegExp, request: () => Promise<Answer>) {
   const atGate = new Promise<void>((resolve) => { reached = resolve; });
   const resume = new Promise<void>((resolve) => { release = resolve; });
   const result = mockGate.run({ pauseBefore, reached, resume, used: false }, request);
+  held.push({ release, result });
   const waiting = Promise.race([
     atGate,
     result.then(() => {
