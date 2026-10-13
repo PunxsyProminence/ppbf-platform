@@ -132,8 +132,8 @@ export async function getOrganizationAttendanceSummary(
            or c.covering_coach_account_id = $2
          )
          and ($3::timestamptz is null or a.checked_in_at >= $3)
-         and ($4::date is null or (c.start_at at time zone $6)::date >= $4::date)
-         and ($5::date is null or (c.start_at at time zone $6)::date <= $5::date)
+         and ($4::date is null or (c.start_at at time zone $6::text)::date >= $4::date)
+         and ($5::date is null or (c.start_at at time zone $6::text)::date <= $5::date)
        group by a.athlete_id
      ) agg on agg.athlete_id = ath.athlete_id
      where ath.organization_id = $1
@@ -315,8 +315,10 @@ export async function getWeeklyAttendanceTrend(
  * Times are in gym time.
  *
  * Every cell is quoted, and a cell that a spreadsheet would read as a formula
- * (starting =, +, - or @) is prefixed with an apostrophe, so a name cannot
- * become a formula when the file is opened.
+ * (starting =, +, - or @, or a tab or carriage return that some spreadsheets
+ * strip before reading one) is prefixed with an apostrophe, so a name cannot
+ * become a formula when the file is opened. The file starts with a UTF-8 byte
+ * order mark, so Excel reads an accented name as written.
  */
 export function attendanceByAthleteCsv(
   rows: readonly AttendanceAthleteSummary[],
@@ -336,10 +338,10 @@ export function attendanceByAthleteCsv(
       row.last_marked_at ? formatGymDateTime(row.last_marked_at) ?? '' : '',
     ]),
   ];
-  return `${lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')}\r\n`;
+  return `\uFEFF${lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')}\r\n`;
 }
 
 function csvCell(value: string): string {
-  const guarded = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return `"${guarded.replace(/"/g, '""')}"`;
 }

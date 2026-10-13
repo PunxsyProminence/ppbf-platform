@@ -19,8 +19,14 @@ function row(overrides: Partial<AttendanceAthleteSummary>): AttendanceAthleteSum
 }
 
 function lines(csv: string): string[] {
-  return csv.split('\r\n').filter(Boolean);
+  return csv.replace(/^\uFEFF/, '').split('\r\n').filter(Boolean);
 }
+
+test('the file starts with a UTF-8 byte order mark, so Excel reads accented names as written', () => {
+  const csv = attendanceByAthleteCsv([row({ full_name: 'José Núñez' })], { fromDay: '2026-10-01', toDay: '2026-10-13' });
+  expect(csv.charCodeAt(0)).toBe(0xfeff);
+  expect(csv).toContain('"José Núñez"');
+});
 
 test('a period line, a header, and one row per athlete', () => {
   const csv = attendanceByAthleteCsv(
@@ -72,6 +78,8 @@ test('quotes, commas and newlines stay inside their cell, and a would-be formula
       row({ full_name: '+1 Plus' }),
       row({ full_name: '-Minus' }),
       row({ full_name: '@At' }),
+      row({ full_name: '\t=Tabbed' }),
+      row({ full_name: '\r=Returned' }),
     ],
     { fromDay: '2026-10-01', toDay: '2026-10-13' },
   );
@@ -82,4 +90,6 @@ test('quotes, commas and newlines stay inside their cell, and a would-be formula
   expect(csv).toContain(`"'+1 Plus"`);
   expect(csv).toContain(`"'-Minus"`);
   expect(csv).toContain(`"'@At"`);
+  expect(csv).toContain(`"'\t=Tabbed"`);
+  expect(csv).toContain(`"'\r=Returned"`);
 });

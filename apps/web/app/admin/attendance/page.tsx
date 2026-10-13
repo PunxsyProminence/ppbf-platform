@@ -146,7 +146,9 @@ function AttendanceReportDownload() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      // Released after the click has handed the file over; revoking in the same
+      // tick can cancel the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
     } finally {

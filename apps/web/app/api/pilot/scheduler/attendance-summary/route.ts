@@ -122,6 +122,11 @@ export async function GET(request: NextRequest) {
     if (format !== null && format !== 'csv') {
       throw new Error('Unsupported format: only csv');
     }
+    // A report is for a stated period, so the file says which one -- refused
+    // before any read.
+    if (format === 'csv' && (!fromDay || !toDay)) {
+      throw new Error('Missing from or to: a CSV report needs both');
+    }
     const reachable = await coachReach();
     const summary = inReach(
       await getOrganizationAttendanceSummary(principal.organizationId, {
@@ -133,11 +138,7 @@ export async function GET(request: NextRequest) {
       reachable,
     );
 
-    if (format === 'csv') {
-      // A report is for a stated period, so the file says which one.
-      if (!fromDay || !toDay) {
-        throw new Error('Missing from or to: a CSV report needs both');
-      }
+    if (format === 'csv' && fromDay && toDay) {
       return new NextResponse(attendanceByAthleteCsv(summary, { fromDay, toDay }), {
         status: 200,
         headers: {

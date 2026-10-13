@@ -356,7 +356,10 @@ describe('the attendance-by-athlete report (RP-01)', () => {
     expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
     expect(response.headers.get('content-disposition')).toBe('attachment; filename="attendance-by-athlete_2026-09-14_2026-10-13.csv"');
     expect(mockSummary).toHaveBeenCalledWith('org-a', expect.objectContaining({ fromDay: '2026-09-14', toDay: '2026-10-13' }));
-    const body = await response.text();
+    // The raw bytes: Response.text() would strip the byte order mark it is checking for.
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const body = new TextDecoder().decode(bytes);
     expect(body).toContain('"Ada Rivera","3","1","1","5","75%"');
   });
 
@@ -387,6 +390,8 @@ describe('the attendance-by-athlete report (RP-01)', () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toMatch(message);
+    // Refused before any read.
+    expect(mockSummary).not.toHaveBeenCalled();
   });
 
   test('an athlete or a parent cannot download it', async () => {

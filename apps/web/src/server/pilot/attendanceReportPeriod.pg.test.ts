@@ -49,6 +49,7 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 const ORG = 'org-report';
 const OTHER_ORG = 'org-report-other';
 const COACH = 'acct-report-coach';
+const OTHER_COACH = 'acct-report-coach-2';
 const ATHLETE = 'ATH-REPORT-1';
 const NEVER_MARKED = 'ATH-REPORT-2';
 
@@ -85,13 +86,14 @@ async function markedClass(
   gymWallClock: string,
   status: 'present' | 'absent' | 'excused',
   athleteId = ATHLETE,
+  coach = COACH,
 ) {
   await client.query(
     `insert into pilot.scheduler_classes
        (organization_id, class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id, coach_account_id, status)
      values ($1, $2, 'Fundamentals', ($3::timestamp at time zone 'America/New_York'),
              ($3::timestamp at time zone 'America/New_York') + interval '1 hour', 'Main Floor', 20, $4, $4, 'open')`,
-    [org, classId, gymWallClock, COACH],
+    [org, classId, gymWallClock, coach],
   );
   await client.query(
     `insert into pilot.scheduler_registrations
@@ -124,10 +126,12 @@ async function seededDatabase(name: string): Promise<Client> {
       [org],
     );
   }
-  await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`,
-    [COACH, ORG],
-  );
+  for (const coach of [COACH, OTHER_COACH]) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`,
+      [coach, ORG],
+    );
+  }
   for (const [org, athleteId, name] of [
     [ORG, ATHLETE, 'Ada Rivera'],
     [ORG, NEVER_MARKED, 'Bo Never'],
@@ -148,6 +152,8 @@ async function seededDatabase(name: string): Promise<Client> {
   await markedClass(client, ORG, 'c-excused', '2026-10-10 18:00', 'excused');
   await markedClass(client, ORG, 'c-last-night', '2026-10-13 23:30', 'present'); // 10-13 in the gym (10-14 in UTC): in
   await markedClass(client, ORG, 'c-after', '2026-10-14 18:00', 'present'); // out
+  // Another coach's class in the period: in the gym's report, not in COACH's.
+  await markedClass(client, ORG, 'c-other-coach', '2026-10-07 18:00', 'present', ATHLETE, OTHER_COACH);
   // The other gym's athlete with the same id, inside the period.
   await markedClass(client, OTHER_ORG, 'o-first', '2026-10-02 18:00', 'present');
 
@@ -210,15 +216,16 @@ describe('the attendance report period (RP-01)', () => {
       const rows = await getOrganizationAttendanceSummary(ORG, { fromDay: '2026-10-01', toDay: '2026-10-13' });
 
       const ada = rows.find((row) => row.athlete_id === ATHLETE);
-      // c-first and c-last-night present; c-mid absent; c-excused excused.
-      // The evening before the first day and the day after the last are out.
+      // c-first, c-other-coach and c-last-night present; c-mid absent;
+      // c-excused excused. The evening before the first day and the day after
+      // the last are out.
       expect(ada).toMatchObject({
         full_name: 'Ada Rivera',
-        present_count: 2,
+        present_count: 3,
         absent_count: 1,
         excused_count: 1,
-        total_marked: 4,
-        attendance_rate: 0.667,
+        total_marked: 5,
+        attendance_rate: 0.75,
       });
       // Never marked: listed, with no rate rather than 0.
       expect(rows.find((row) => row.athlete_id === NEVER_MARKED)).toMatchObject({
@@ -236,7 +243,7 @@ describe('the attendance report period (RP-01)', () => {
     const client = await seededDatabase('arp_all');
     try {
       const rows = await getOrganizationAttendanceSummary(ORG);
-      expect(rows.find((row) => row.athlete_id === ATHLETE)).toMatchObject({ total_marked: 6, present_count: 3, absent_count: 2 });
+      expect(rows.find((row) => row.athlete_id === ATHLETE)).toMatchObject({ total_marked: 7, present_count: 4, absent_count: 2 });
     } finally {
       await client.end();
     }
@@ -247,6 +254,28 @@ describe('the attendance report period (RP-01)', () => {
     try {
       const rows = await getOrganizationAttendanceSummary(ORG, { fromDay: '2026-10-13', toDay: '2026-10-13' });
       expect(rows.find((row) => row.athlete_id === ATHLETE)).toMatchObject({ total_marked: 1, present_count: 1, attendance_rate: 1 });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe("a coach's report (RP-01, Q2 default A)", () => {
+  test("the period and the coach's own classes together: another coach's class is not counted", async () => {
+    const client = await seededDatabase('arp_coach');
+    try {
+      const rows = await getOrganizationAttendanceSummary(ORG, {
+        coachAccountId: COACH,
+        fromDay: '2026-10-01',
+        toDay: '2026-10-13',
+      });
+      expect(rows.find((row) => row.athlete_id === ATHLETE)).toMatchObject({
+        present_count: 2,
+        absent_count: 1,
+        excused_count: 1,
+        total_marked: 4,
+        attendance_rate: 0.667,
+      });
     } finally {
       await client.end();
     }
