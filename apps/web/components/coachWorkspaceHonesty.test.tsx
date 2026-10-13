@@ -954,6 +954,10 @@ describe('coach review read-back', () => {
     expect(screen.queryByText('Clean angles all night.')).not.toBeNull();
     // The other coach's review is attributed to another coach, not to this one.
     expect(screen.queryByText(/another coach \(acct_coach_2\)/)).not.toBeNull();
+    // The saved decision reads in the picker's words, not as the stored code.
+    expect(screen.queryByText('Approved', { selector: 'span' })).not.toBeNull();
+    expect(screen.queryByText('Not decided yet', { selector: 'span' })).not.toBeNull();
+    expect(screen.queryByText('hold', { selector: 'span' })).toBeNull();
   });
 
   test('a session with no reviews says so, without the failure warning', async () => {
@@ -2454,16 +2458,19 @@ describe('coach home tabs read in a coach\'s words', () => {
         items: [
           { id: 'o1', source: 'telemetry', label: 'shadow.audit.login', review_state: 'unknown', created_at: '2026-10-12T12:00:00.000Z' },
           { id: 'o2', source: 'event', label: 'SHADOW_AUDIT_CREATE_DRILL', review_state: 'pending_review', created_at: '2026-10-12T12:00:00.000Z' },
+          { id: 'o3', source: 'event', label: 'Pain report: Jordan P. Doe at left shoulder (strain), severity 7/10, pending review', review_state: 'pending_review', created_at: '2026-10-12T12:00:00.000Z' },
         ],
       }),
     });
     openTab('SHADOW Intel');
 
     expect(await screen.findByText('Shadow audit login')).toBeTruthy();
+    // A sentence the feed built is left as it is: names and places keep their case.
+    expect(screen.getByText('Pain report: Jordan P. Doe at left shoulder (strain), severity 7/10, pending review')).toBeTruthy();
     expect(screen.getByText('Shadow audit create drill')).toBeTruthy();
     expect(screen.getByText('From: system activity')).toBeTruthy();
     expect(screen.getByText('Review: not reviewed')).toBeTruthy();
-    expect(screen.getByText('Review: waiting for review')).toBeTruthy();
+    expect(screen.getAllByText('Review: waiting for review').length).toBeGreaterThan(0);
     expect(screen.queryByText(/State: unknown/)).toBeNull();
 
     expect(screen.queryByText(/Projection/)).toBeNull();

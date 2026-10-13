@@ -364,9 +364,20 @@ const SHADOW_OBSERVATION_SOURCE_LABEL: Record<string, string> = {
 };
 
 function shadowObservationLabel(raw: string): string {
+  // Only a bare event name is reworded. A sentence the feed built (a pain
+  // report naming an athlete and a body location) is left exactly as it is.
+  if (!/^[A-Za-z0-9._]+$/.test(raw)) return raw;
   const spoken = raw.replace(/[._]+/g, ' ').trim().toLowerCase();
   return spoken ? spoken.charAt(0).toUpperCase() + spoken.slice(1) : raw;
 }
+
+/* What a saved review's decision says, in the words the picker offers. The
+   stored value is the code; a coach who picked "Needs follow-up" reads that. */
+const REVIEW_DECISION_LABEL: Record<string, string> = {
+  approved: 'Approved',
+  follow_up: 'Needs follow-up',
+  hold: 'Not decided yet',
+};
 
 function shadowObservationStateLabel(state: string): string {
   if (state === 'unknown') return 'not reviewed';
@@ -4809,7 +4820,7 @@ export default function CoachWorkspace() {
                     {sessionReviews.map((review) => (
                       <div key={review.reviewId} className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
                         <p className="t-data text-[color:var(--bone-300)]">
-                          <span className="font-bold">{review.decision}</span>
+                          <span className="font-bold">{REVIEW_DECISION_LABEL[review.decision] ?? review.decision}</span>
                           {' -- '}
                           {review.coachId === coachAccountId
                             ? 'your review'
@@ -4830,9 +4841,9 @@ export default function CoachWorkspace() {
                     onChange={(event) => setReviewDecision(event.target.value)}
                     className="select"
                   >
-                    <option value="approved">Approved</option>
-                    <option value="follow_up">Needs follow-up</option>
-                    <option value="hold">Not decided yet</option>
+                    {Object.entries(REVIEW_DECISION_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
                   </select>
                 </label>
                 <label className="field">

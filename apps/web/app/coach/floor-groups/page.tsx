@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
+import { gymDayIso } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 
 // Today's floor (modules 121 + 123): the room split for the people who
@@ -35,7 +36,7 @@ interface AthleteOption {
   full_name: string;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => gymDayIso(new Date()) ?? new Date().toISOString().slice(0, 10);
 
 export default function FloorGroupsPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);

@@ -124,3 +124,17 @@ test('dates read as dates, and an instant is the gym day, not the UTC day', asyn
   expect(screen.queryByText(/2026-08-/)).toBeNull();
   expect(screen.queryByText(/deterministic/i)).toBeNull();
 });
+
+// The hold's expires_at is cast to text in SQL, so it can arrive as
+// "2026-08-20 00:00:00+00", which not every browser parses.
+test('a Postgres-text instant is read as the gym day too', async () => {
+  global.fetch = mockFetch({
+    digest: { ...DIGEST, expiring_holds: [{ athlete_id: 'ath-4', athlete_name: 'Kim L.', hold_id: 'h-1', expires_at: '2026-08-20 00:00:00+00' }] },
+  });
+
+  await act(async () => {
+    render(<CoachIntelligencePage />);
+  });
+
+  expect(screen.getByText(/hold expires Aug 19, 2026/)).toBeTruthy();
+});

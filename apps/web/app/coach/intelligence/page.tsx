@@ -6,7 +6,17 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort } from '@/src/lib/gymTime';
+
 import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
+
+/** Some of this digest's instants arrive as Postgres text ("2026-08-20
+ *  00:00:00+00"), which not every browser parses. Written as ISO first. */
+function gymDay(value: string): string {
+  const iso = /\d{2}:\d{2}(:\d{2}(\.\d+)?)?[+-]\d{2}$/.test(value)
+    ? value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00')
+    : value.replace(' ', 'T');
+  return formatGymDateShort(iso) ?? value;
+}
 
 // Coach Intelligence v1 (register module 111): the owner-approved morning
 // read. Seven deterministic, read-only observations about the coach's own
@@ -153,7 +163,7 @@ export default function CoachIntelligencePage() {
                         <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.pain_report ? PAIN_ESCALATION_LABEL : item.severity}</span>
                         {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
                         {' '}— {humanize(item.source_type)}: {item.reason}
-                        {' '}(filed {formatGymDateShort(item.created_at) ?? item.created_at}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>
+                        {' '}(filed {gymDay(item.created_at)}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>
                       </li>
                     ))}
                   </ul>
@@ -183,7 +193,7 @@ export default function CoachIntelligencePage() {
                     {digest.expiring_holds.map((item) => (
                       <li key={item.hold_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
-                        {' '}— hold expires {formatGymDateShort(item.expires_at) ?? item.expires_at}. <Link className="underline" href="/coach/sports-medicine">Clearance board</Link>
+                        {' '}— hold expires {gymDay(item.expires_at)}. <Link className="underline" href="/coach/sports-medicine">Clearance board</Link>
                       </li>
                     ))}
                   </ul>

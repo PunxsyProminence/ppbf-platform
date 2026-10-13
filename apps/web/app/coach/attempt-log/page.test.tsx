@@ -380,6 +380,9 @@ test('a corrected attempt shows the coach correction beside the athlete source, 
   expect(screen.getByText(/8 reps \/ target 10 reps/)).toBeTruthy();
   // LC-17: the unit is said once, not "10reps reps".
   expect(document.body.textContent).not.toMatch(/reps reps/);
+  // ...and the kind line does not open with it either ("10repsreps").
+  expect(screen.queryByText(/^reps · /)).toBeNull();
+  expect(screen.getByText(/^assessment · /)).toBeTruthy();
   // ... and the coach correction is shown beside it (10, made).
   expect(screen.getByText(/Coach correction:/)).toBeTruthy();
   expect(screen.getByText(/miscount confirmed on film/)).toBeTruthy();
