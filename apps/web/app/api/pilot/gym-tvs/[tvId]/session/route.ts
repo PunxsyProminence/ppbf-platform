@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { sendRunToGymTv, takeRunOffGymTv } from '@/src/server/pilot/gymTvs';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,8 @@ interface RouteContext {
 // (Jason "A", 2026-10-06: shared gym TVs, one session per TV), but the module refuses a TV that is
 // showing ANOTHER coach's live session (TV_IN_USE) rather than taking it over, and it only ever
 // sends a run the caller delivers: another coach's run id gets the same 404 as a missing one.
+// Taking a session off follows the same in-use rule, except that an organization admin may take
+// any coach's live session off (O17b, OD-2026-10-08-007).
 const STAFF_ROLES = ['coach', 'organization_admin'] as const;
 
 function tvIdOf(raw: unknown): string | null {
@@ -59,7 +62,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!tvId) {
       return NextResponse.json({ error: 'TV_ID_REQUIRED' }, { status: 400 });
     }
-    const tv = await takeRunOffGymTv(principal.organizationId, principal.accountId, tvId);
+    // O17b: an organization admin may take any coach's live session off a TV.
+    const tv = await takeRunOffGymTv(principal.organizationId, principal.accountId, tvId, {
+      organizationAdmin: roleEquals(principal.role, 'organization_admin'),
+    });
     return NextResponse.json({ tv });
   } catch (error) {
     return jsonError(error);

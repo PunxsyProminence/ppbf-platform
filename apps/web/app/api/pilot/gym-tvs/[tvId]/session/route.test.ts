@@ -112,11 +112,15 @@ describe('POST: send the session to a TV', () => {
 });
 
 describe('DELETE: take the session off a TV', () => {
-  it.each(['coach', 'organization_admin', 'admin'])('%s takes the session off', async (role) => {
+  it.each([
+    ['coach', false],
+    ['organization_admin', true],
+    ['admin', true],
+  ])('%s takes the session off (organization admin: %s, O17b)', async (role, organizationAdmin) => {
     as(role);
     const response = await takeOff('gymtv_1');
     expect(response.status).toBe(200);
-    expect(mockTakeOff).toHaveBeenCalledWith('org-1', 'acct-coach', 'gymtv_1');
+    expect(mockTakeOff).toHaveBeenCalledWith('org-1', 'acct-coach', 'gymtv_1', { organizationAdmin });
     expect((await response.json()).tv.current_run_id).toBeNull();
   });
 
