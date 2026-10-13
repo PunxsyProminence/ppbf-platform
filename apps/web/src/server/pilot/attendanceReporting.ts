@@ -1,3 +1,5 @@
+import { formatGymDateTime, GYM_TIME_ZONE } from '../../lib/gymTime';
+
 import { query } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 
@@ -64,6 +66,14 @@ export interface AttendanceSummaryOptions {
   coachAccountId?: string;
   /** Only count attendance marks at or after this timestamp. */
   sinceIso?: string;
+  /**
+   * A reporting period, as gym calendar days (YYYY-MM-DD), inclusive, matched
+   * against the day the CLASS was on in the gym's time zone -- not the moment
+   * the mark was made, and not UTC's day, so an evening class counts on its
+   * own date (RP-01).
+   */
+  fromDay?: string;
+  toDay?: string;
 }
 
 /**
@@ -79,6 +89,8 @@ export async function getOrganizationAttendanceSummary(
 ): Promise<AttendanceAthleteSummary[]> {
   const coachAccountId = options.coachAccountId ?? null;
   const sinceIso = options.sinceIso ?? null;
+  const fromDay = options.fromDay ?? null;
+  const toDay = options.toDay ?? null;
 
   const rows = await query<OrganizationSummaryRow>(
     `select
@@ -120,6 +132,8 @@ export async function getOrganizationAttendanceSummary(
            or c.covering_coach_account_id = $2
          )
          and ($3::timestamptz is null or a.checked_in_at >= $3)
+         and ($4::date is null or (c.start_at at time zone $6)::date >= $4::date)
+         and ($5::date is null or (c.start_at at time zone $6)::date <= $5::date)
        group by a.athlete_id
      ) agg on agg.athlete_id = ath.athlete_id
      where ath.organization_id = $1
@@ -146,7 +160,7 @@ export async function getOrganizationAttendanceSummary(
          )
        )
      order by ath.full_name`,
-    [organizationId, coachAccountId, sinceIso],
+    [organizationId, coachAccountId, sinceIso, fromDay, toDay, GYM_TIME_ZONE],
   );
 
   return rows.map((row) => ({
@@ -288,4 +302,44 @@ export async function getWeeklyAttendanceTrend(
     total_marked: row.total_marked,
     attendance_rate: computeAttendanceRate(row.present_count, row.absent_count),
   }));
+}
+
+/**
+ * THE ATTENDANCE-BY-ATHLETE REPORT, AS CSV (RP-01).
+ *
+ * The same rows the dashboard shows, for a stated period, written out for a
+ * coach or admin to keep. Counts and dates only: no free-text attendance note
+ * (RP-01 Q4 default A). The rate is the dashboard's -- present / (present +
+ * absent), excused excluded -- and is left BLANK when there is nothing to
+ * count, never written as 0 (RP-01 Q1 default A; the module header says why).
+ * Times are in gym time.
+ *
+ * Every cell is quoted, and a cell that a spreadsheet would read as a formula
+ * (starting =, +, - or @) is prefixed with an apostrophe, so a name cannot
+ * become a formula when the file is opened.
+ */
+export function attendanceByAthleteCsv(
+  rows: readonly AttendanceAthleteSummary[],
+  period: { fromDay: string; toDay: string },
+): string {
+  const header = ['Athlete', 'Present', 'Absent', 'Excused', 'Marked', 'Attendance rate', 'Last marked (gym time)'];
+  const lines = [
+    [`Attendance by athlete, ${period.fromDay} to ${period.toDay} (by class date, gym time)`],
+    header,
+    ...rows.map((row) => [
+      row.full_name,
+      String(row.present_count),
+      String(row.absent_count),
+      String(row.excused_count),
+      String(row.total_marked),
+      row.attendance_rate === null ? '' : `${Math.round(row.attendance_rate * 1000) / 10}%`,
+      row.last_marked_at ? formatGymDateTime(row.last_marked_at) ?? '' : '',
+    ]),
+  ];
+  return `${lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
+
+function csvCell(value: string): string {
+  const guarded = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${guarded.replace(/"/g, '""')}"`;
 }

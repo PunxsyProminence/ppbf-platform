@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
+  attendanceByAthleteCsv,
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
@@ -10,6 +11,18 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 
 export const runtime = 'nodejs';
+
+/** A calendar day, YYYY-MM-DD, that is a real date. */
+function calendarDay(raw: string | null, field: string): string | undefined {
+  if (raw === null) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  const real = match
+    && new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).toISOString().slice(0, 10) === raw;
+  if (!real) {
+    throw new Error(`Unsupported ${field}: must be a date as YYYY-MM-DD`);
+  }
+  return raw;
+}
 
 // Read-only rollup over pilot.scheduler_attendance, for the reporting layer
 // #122/#173 had none of before this route: an org-wide per-athlete summary,
@@ -99,13 +112,43 @@ export async function GET(request: NextRequest) {
       throw new Error('Unsupported since: must be a valid date string');
     }
     const sinceIso = sinceRaw ?? undefined;
+    // A reporting period by class date in gym time (RP-01), inclusive.
+    const fromDay = calendarDay(request.nextUrl.searchParams.get('from'), 'from');
+    const toDay = calendarDay(request.nextUrl.searchParams.get('to'), 'to');
+    if (fromDay && toDay && fromDay > toDay) {
+      throw new Error('Unsupported period: from must be on or before to');
+    }
+    const format = request.nextUrl.searchParams.get('format');
+    if (format !== null && format !== 'csv') {
+      throw new Error('Unsupported format: only csv');
+    }
     const reachable = await coachReach();
-    const summary = await getOrganizationAttendanceSummary(principal.organizationId, {
-      coachAccountId,
-      sinceIso,
-    });
+    const summary = inReach(
+      await getOrganizationAttendanceSummary(principal.organizationId, {
+        coachAccountId,
+        sinceIso,
+        fromDay,
+        toDay,
+      }),
+      reachable,
+    );
 
-    return NextResponse.json({ ok: true, athletes: inReach(summary, reachable) });
+    if (format === 'csv') {
+      // A report is for a stated period, so the file says which one.
+      if (!fromDay || !toDay) {
+        throw new Error('Missing from or to: a CSV report needs both');
+      }
+      return new NextResponse(attendanceByAthleteCsv(summary, { fromDay, toDay }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="attendance-by-athlete_${fromDay}_${toDay}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    return NextResponse.json({ ok: true, athletes: summary });
   } catch (error) {
     return jsonError(error);
   }

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateShort, formatGymDayShort } from '@/src/lib/gymTime';
+import { formatGymDateShort, formatGymDayShort, gymDayIso } from '@/src/lib/gymTime';
 
 interface AttendanceAthleteSummary {
   athlete_id: string;
@@ -94,6 +94,100 @@ function sortSummary(items: AttendanceAthleteSummary[]): AttendanceAthleteSummar
   const withRate = items.filter((item) => item.attendance_rate !== null).sort((a, b) => (a.attendance_rate ?? 0) - (b.attendance_rate ?? 0));
   const withoutRate = items.filter((item) => item.attendance_rate === null).sort((a, b) => a.full_name.localeCompare(b.full_name));
   return [...withRate, ...withoutRate];
+}
+
+/** A calendar day moved by whole days, on the calendar (no time zone involved). */
+function shiftDay(day: string, days: number): string {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(Date.UTC(year!, month! - 1, date! + days)).toISOString().slice(0, 10);
+}
+
+/** The last 30 gym days, ending today (RP-01 Q3 default A). */
+function defaultReportPeriod(): { from: string; to: string } {
+  const today = gymDayIso(Date.now()) ?? new Date().toISOString().slice(0, 10);
+  return { from: shiftDay(today, -29), to: today };
+}
+
+/*
+ * THE ATTENDANCE-BY-ATHLETE REPORT (RP-01). A dated CSV of the same counts this
+ * page shows, for a period the coach or admin picks, counted by the day each
+ * class was on in gym time. The download asks the server for the file; a
+ * refused or failed one says so here and saves nothing.
+ */
+function AttendanceReportDownload() {
+  const [period, setPeriod] = useState(defaultReportPeriod);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  const busyRef = useRef(false);
+
+  async function download() {
+    if (busyRef.current) return;
+    if (!period.from || !period.to || period.from > period.to) {
+      setFailure('Choose a From date on or before the To date.');
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    setFailure('');
+    try {
+      const params = new URLSearchParams({ from: period.from, to: period.to, format: 'csv' });
+      const response = await fetch(`${apiBase()}/api/pilot/scheduler/attendance-summary?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'The report could not be made.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `attendance-by-athlete_${period.from}_${period.to}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="Attendance report" className="mt-[var(--s5)] border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+      <p className="t-eyebrow">Report by athlete</p>
+      <p className="t-body mt-[var(--s2)]">
+        Present, absent and excused counts for each athlete, by the day each class was on. The rate leaves out
+        excused marks, and is blank when there is nothing to count.
+      </p>
+      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+        <label className="field">
+          <span className="t-label">From</span>
+          <input
+            type="date"
+            value={period.from}
+            onChange={(event) => setPeriod((current) => ({ ...current, from: event.target.value }))}
+            className="input"
+          />
+        </label>
+        <label className="field">
+          <span className="t-label">To</span>
+          <input
+            type="date"
+            value={period.to}
+            onChange={(event) => setPeriod((current) => ({ ...current, to: event.target.value }))}
+            className="input"
+          />
+        </label>
+        <button type="button" onClick={() => void download()} disabled={busy} className="btn">
+          {busy ? 'Preparing…' : 'Download CSV'}
+        </button>
+      </div>
+      {failure ? <p role="alert" className="t-body mt-[var(--s3)]">{failure}</p> : null}
+    </section>
+  );
 }
 
 export default function AttendanceDashboardPage() {
@@ -188,6 +282,8 @@ export default function AttendanceDashboardPage() {
               </p>
             ) : null}
           </header>
+
+          <AttendanceReportDownload />
 
           <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
