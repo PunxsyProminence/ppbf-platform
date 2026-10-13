@@ -4,6 +4,13 @@
 // email, or account_id through an intake/domain read. Authorized staff must
 // retain the fields needed for legitimate emergency and administrative work."
 //
+// Since #1558 the invariant is wider, and so is this probe: no family reader
+// receives any guardian's record id (parent_id), and a guardian does not
+// receive the OTHER guardian's name -- not in the guardian list, not as the
+// emergency contact. A guardian proves they read the record by their own row
+// (`"you":true`) beside a co-guardian row (`"you":false`); the athlete, who
+// still reads both guardians by name, proves it by those names.
+//
 // Unit tests prove the SQL string. The embedded-Postgres suite
 // (guardianContactProjection.pg.test.ts) proves the rows a real database
 // returns. Neither proves that the image actually running in an environment
@@ -71,25 +78,29 @@ function record(name, ok, detail) {
 }
 
 /** Every secret must be absent from the body, and the body must be a real answer. */
-function assertWithheld(name, { status, text }, secrets) {
+function assertWithheld(name, { status, text }, secrets, proofOfRead) {
   if (status !== 200) {
     record(name, false, `expected 200 from ${DOMAIN_GET_PATH}, observed ${status}`);
     return;
   }
   // A 200 carrying no guardian at all would pass every "does not contain"
   // check below while proving nothing. The reader must genuinely have read the
-  // record, and seen the OTHER guardian in it by name.
-  if (!text.includes(GUARDIAN_CONTACT_FIXTURE.parentB.fullName)) {
+  // record: every proof string has to be in the body.
+  const unproven = proofOfRead.filter((proof) => !text.includes(proof));
+  if (unproven.length > 0) {
     record(name, false,
-      'the response does not name the co-guardian at all, so this proves nothing: the fixture '
+      `the response lacks ${unproven.join(' and ')}, so this proves nothing: the fixture `
       + 'is missing or the reader was not admitted to the record.');
     return;
   }
   const leaked = secrets.filter((secret) => text.includes(secret));
   record(name, leaked.length === 0, leaked.length === 0
-    ? `read the record, saw the co-guardian by name, and none of ${secrets.length} contact values`
+    ? `read the record (${proofOfRead.join(', ')}), and none of ${secrets.length} withheld values`
     : `LEAKED ${leaked.length} value(s): ${leaked.join(', ')}`);
 }
+
+/** A guardian's proof of having read the record: their own row beside a co-guardian's. */
+const GUARDIAN_PROOF_OF_READ = ['"you":true', '"you":false'];
 
 function assertRetained(name, { status, text }, expected) {
   if (status !== 200) {
@@ -135,16 +146,33 @@ async function run() {
       readers.find((reader) => reader.key === 'guardianB').accountId,
     );
 
+    const { parentA, parentB } = GUARDIAN_CONTACT_FIXTURE;
+    const guardianIds = [parentA.parentId, parentB.parentId];
+
     console.log('  the other household, and the child');
     assertWithheld(
-      'guardian A cannot read guardian B\'s phone, email, account_id, or the staff-only note',
+      'guardian A cannot read guardian B\'s name, phone, email, account_id, the staff-only note, or any guardian id',
       await readDomainGet(baseUrl, sessions.get('guardianA').cookie, athleteId),
-      secretsOfB,
+      [...secretsOfB, parentB.fullName, ...guardianIds],
+      GUARDIAN_PROOF_OF_READ,
     );
     assertWithheld(
-      'the athlete cannot read either guardian\'s contact details',
+      'guardian B cannot read guardian A\'s name, phone, email, account_id, or any guardian id',
+      await readDomainGet(baseUrl, sessions.get('guardianB').cookie, athleteId),
+      [
+        parentA.fullName,
+        parentA.phone,
+        parentA.email,
+        readers.find((reader) => reader.key === 'guardianA').accountId,
+        ...guardianIds,
+      ],
+      GUARDIAN_PROOF_OF_READ,
+    );
+    assertWithheld(
+      'the athlete reads both guardians by name, and neither guardian\'s contact details or id',
       await readDomainGet(baseUrl, sessions.get('athlete').cookie, athleteId),
-      [...secretsOfB, GUARDIAN_CONTACT_FIXTURE.parentA.phone, GUARDIAN_CONTACT_FIXTURE.parentA.email],
+      [...secretsOfB, parentA.phone, parentA.email, ...guardianIds],
+      [parentA.fullName, parentB.fullName],
     );
 
     console.log('');

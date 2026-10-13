@@ -208,22 +208,137 @@ describe('the guardian projection is an explicit column list, never p.*', () => 
   );
 
   test.each(NON_STAFF_READERS)(
-    'THE DEFECT: %s receives identity and relationship only -- no other guardian\'s contact details',
+    'THE DEFECT: for %s no guardian id or contact column is selected at all (#1558)',
     async (_label, overrides) => {
       mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      // The guardian records the reader's own account backs (guardianAccess).
+      mockQuery.mockImplementation(((sql: string) => Promise.resolve(
+        sql.includes('from pilot.parents where') ? [{ parent_id: 'par-own' }] : [],
+      )) as never);
 
       await POST(domainRequest({ athlete_id: 'ath-1' }));
 
       // Equality, not containment: this is the whole list, so a column added
-      // later fails here rather than riding along unnoticed. Matches the set
-      // passbook.ts already hands the same two readers.
+      // later fails here rather than riding along unnoticed. parent_id is
+      // gone: it is `par-` plus an email-shaped account id. "Is this row the
+      // reader's own" is answered in SQL and arrives as a boolean.
       expect(guardianSelectList()).toEqual([
-        'p.parent_id',
+        '(g.parent_id = any($3::text[])) as you',
         'p.full_name',
         'g.relationship_to_athlete',
       ]);
+      // ... against the records of the reader's OWN account, in their own
+      // organization -- not anything the request supplied. Only a parent has
+      // a guardian record of their own; the athlete is compared with none.
+      const ownLookup = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.parents where'));
+      const expectedOwn = overrides.role === 'parent' ? ['par-own'] : [];
+      if (overrides.role === 'parent') {
+        expect(ownLookup?.[1]).toEqual(['org-real', overrides.accountId]);
+      } else {
+        expect(ownLookup).toBeUndefined();
+      }
+      expect(guardianCall()[1]).toEqual(['org-real', 'ath-1', expectedOwn]);
+      // The waiver read asks the same question of the same records.
+      const waiverCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.waivers'));
+      expect(String(waiverCall?.[0])).toContain('(w.parent_id = any($3::text[])) is true as you');
+      expect(waiverCall?.[1]).toEqual(['org-real', 'ath-1', expectedOwn]);
     },
   );
+
+  test.each(STAFF_READERS)('%s reads every waiver column, as before', async (_label, overrides) => {
+    mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    const waiverCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.waivers'));
+    const columns = (/select\s+([\s\S]*?)\s+from\s/i.exec(String(waiverCall?.[0]))?.[1] ?? '')
+      .split(',').map((column) => column.trim());
+    expect(columns).toEqual([
+      'organization_id', 'waiver_id', 'athlete_id', 'waiver_type', 'signed_by_name', 'signed_by_role',
+      'signed_at', 'consent_version', 'status', 'parent_id', 'covers_video', 'public_use_allowed',
+      'created_at', 'updated_at', 'notes', 'recorded_by_account_id',
+    ]);
+    expect(waiverCall?.[1]).toEqual(['org-real', 'ath-1']);
+  });
+
+  // The mocked rows carry what the database would never return to this
+  // reader, so the response is the in-process projection's own work.
+  const GUARDIAN_ROWS = [
+    { you: true, full_name: 'Guardian One', relationship_to_athlete: 'mother', parent_id: 'par-one', account_id: 'acct-parent', phone: '555-0100' },
+    { you: false, full_name: 'Guardian Two', relationship_to_athlete: 'father', parent_id: 'par-two', account_id: 'acct-two', phone: '555-0200' },
+  ];
+  const WAIVER_ROWS = [
+    {
+      waiver_id: 'w-own', athlete_id: 'ath-1', waiver_type: 'photo_media', signed_by_name: 'Guardian One', signed_by_role: 'parent',
+      signed_at: 't1', consent_version: 'v1', status: 'signed', covers_video: true, public_use_allowed: false,
+      created_at: 't1', updated_at: 't1', you: true, latest_of_signer: true, parent_id: 'par-one', notes: 'staff note',
+    },
+    {
+      waiver_id: 'w-other', athlete_id: 'ath-1', waiver_type: 'photo_media', signed_by_name: 'Guardian Two', signed_by_role: 'parent',
+      signed_at: 't2', consent_version: 'v1', status: 'withdrawn', covers_video: false, public_use_allowed: false,
+      created_at: 't2', updated_at: 't2', you: false, latest_of_signer: true, parent_id: 'par-two', notes: 'staff note',
+    },
+  ];
+  const WAIVER_KEYS = [
+    'athlete_id', 'consent_version', 'covers_video', 'created_at', 'public_use_allowed', 'signed_at',
+    'signed_by_name', 'signed_by_role', 'status', 'updated_at', 'waiver_id', 'waiver_type',
+  ];
+
+  function arrangeFamilyRows(): void {
+    mockQuery.mockImplementation(((sql: string) => Promise.resolve(
+      sql.includes('from pilot.guardian_links') ? GUARDIAN_ROWS : sql.includes('from pilot.waivers') ? WAIVER_ROWS : [],
+    )) as never);
+  }
+
+  test('a guardian receives their own row marked you, and of the co-guardian only that they exist', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-parent', role: 'parent' }));
+    arrangeFamilyRows();
+
+    const body = await (await POST(domainRequest({ athlete_id: 'ath-1' }))).json();
+
+    expect(body.guardians).toEqual([
+      { you: true, full_name: 'Guardian One', relationship_to_athlete: 'mother' },
+      { you: false, relationship_to_athlete: 'father' },
+    ]);
+    expect(body.waivers).toEqual([
+      {
+        you: true, waiver_id: 'w-own', athlete_id: 'ath-1', waiver_type: 'photo_media', signed_by_name: 'Guardian One',
+        signed_by_role: 'parent', signed_at: 't1', consent_version: 'v1', status: 'signed', covers_video: true,
+        public_use_allowed: false, created_at: 't1', updated_at: 't1',
+      },
+      { you: false, waiver_type: 'photo_media', status: 'withdrawn' },
+    ]);
+    for (const leaked of ['par-', 'parent_id', 'Guardian Two', 'acct-two', '555-0200', 'staff note', 'w-other']) {
+      expect(JSON.stringify(body)).not.toContain(leaked);
+    }
+  });
+
+  test('the athlete receives both guardians by name and no guardian id', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' }));
+    arrangeFamilyRows();
+
+    const body = await (await POST(domainRequest({ athlete_id: 'ath-1' }))).json();
+
+    expect(body.guardians).toEqual([
+      { full_name: 'Guardian One', relationship_to_athlete: 'mother' },
+      { full_name: 'Guardian Two', relationship_to_athlete: 'father' },
+    ]);
+    expect(body.waivers.map((waiver: Record<string, unknown>) => Object.keys(waiver).sort())).toEqual([WAIVER_KEYS, WAIVER_KEYS]);
+    for (const leaked of ['par-', 'parent_id', 'acct-two', '555-0200', 'staff note']) {
+      expect(JSON.stringify(body)).not.toContain(leaked);
+    }
+  });
+
+  test.each(STAFF_READERS)('%s receives the guardian and waiver rows exactly as the database returned them', async (_label, overrides) => {
+    mockRequirePrincipal.mockResolvedValue(principal(overrides));
+    arrangeFamilyRows();
+
+    const body = await (await POST(domainRequest({ athlete_id: 'ath-1' }))).json();
+
+    expect(body.guardians).toEqual(GUARDIAN_ROWS);
+    expect(body.waivers).toEqual(WAIVER_ROWS);
+  });
 
   test.each(STAFF_READERS)(
     '%s still reads guardian contact details -- the roster and the emergency call need them',
@@ -309,25 +424,33 @@ describe('the emergency-contact projection is an explicit column list, never *',
     },
   );
 
-  test.each(NON_STAFF_READERS)(
-    'THE SECOND DEFECT: %s learns who the emergency contact is, and not how to reach them',
-    async (_label, overrides) => {
-      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+  test('THE SECOND DEFECT: the athlete learns who the emergency contact is, and not how to reach them', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' }));
 
-      await POST(domainRequest({ athlete_id: 'ath-1' }));
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
 
-      // Equality for the same reason the guardian list uses it: "*" contains
-      // no substring named "phone", so a containment check would pass over
-      // precisely the defect this test is named for.
-      expect(emergencyContactSelectList()).toEqual([
-        'contact_id',
-        'athlete_id',
-        'full_name',
-        'relationship_to_athlete',
-        'is_primary',
-      ]);
-    },
-  );
+    // Equality for the same reason the guardian list uses it: "*" contains
+    // no substring named "phone", so a containment check would pass over
+    // precisely the defect this test is named for.
+    expect(emergencyContactSelectList()).toEqual([
+      'contact_id',
+      'athlete_id',
+      'full_name',
+      'relationship_to_athlete',
+      'is_primary',
+    ]);
+  });
+
+  // #1558, Jason 2026-10-13: "A: Relationship only (Recommended)". The other
+  // parent is the ordinary emergency contact; the name on this row was the
+  // co-guardian's name reaching the other household by a second door.
+  test('a linked guardian reads the relationship and the primary flag only -- no name, no record id', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-parent', role: 'parent' }));
+
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    expect(emergencyContactSelectList()).toEqual(['relationship_to_athlete', 'is_primary']);
+  });
 
   test.each(STAFF_READERS)(
     '%s keeps the number, the email and the note -- that is what the record is for',

@@ -113,7 +113,10 @@ describe('getAthletePassbook', () => {
       // one. `null` would read as "no coach assigned", which is a different
       // fact and a false one.
       coach: {},
-      guardians: [expect.objectContaining({ parent_id: 'parent-1' })],
+      // #1558: the athlete reads their guardians by name, with no record id
+      // (parent_id is `par-` plus an email-shaped account id) -- although the
+      // mocked row carries one, which is what makes the projection observable.
+      guardians: [{ full_name: 'Jordan Boxer', relationship_to_athlete: 'guardian' }],
       observations: [expect.objectContaining({ note_id: 'note-1', note_text: 'Keep the lead hand home.' })],
     });
     expect(result?.pages.sessions).toHaveLength(1);
@@ -142,9 +145,9 @@ describe('getAthletePassbook', () => {
     ]);
     expect(Object.keys(result?.pages.corner.guardians[0] ?? {}).sort()).toEqual([
       'full_name',
-      'parent_id',
       'relationship_to_athlete',
     ]);
+    expect(JSON.stringify(result)).not.toContain('parent-1');
     expect(Object.keys(result?.pages.sessions[0] ?? {}).sort()).toEqual([
       'completed_flag',
       'date',
@@ -986,4 +989,75 @@ describe('passbook: a confirmed load jump in the family wording', () => {
     const result = await getAthletePassbook('org-1', 'ath-1', role);
     expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([COACH_TEXT, 'Drops lead hand']);
   });
+});
+
+/*
+ * #1558: WHO READS WHAT OF A GUARDIAN ON THE CORNER PAGE.
+ *
+ * parent_id is `par-` plus an email-shaped account id, so for a family reader
+ * it is neither selected nor returned. The mocked `query` hands back the id
+ * whatever the SQL asked for, so the row assertions exercise the in-process
+ * projection and the SQL assertions pin the database side; both must hold.
+ */
+describe('passbook guardians by reader', () => {
+  function arrange(): void {
+    mockQueryOne.mockResolvedValueOnce({
+      organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer', dob: '2010-05-01',
+      weight_class: '125', gym_status: 'active', active_flag: true, coach_id: 'coach-1',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.guardian_links')
+        ? [
+          { organization_id: 'org-1', parent_id: 'par-guardian.one@example.test', full_name: 'Guardian One', relationship_to_athlete: 'mother' },
+          { organization_id: 'org-1', parent_id: 'par-guardian.two@example.test', full_name: 'Guardian Two', relationship_to_athlete: 'father' },
+        ]
+        : [],
+    ));
+  }
+
+  const guardianSql = () =>
+    (mockQuery.mock.calls.find((entry) => (entry[0] as string).includes('from pilot.guardian_links'))?.[0] ?? '') as string;
+  const selectList = () => /select\s+([\s\S]*?)\s+from\s/i.exec(guardianSql())?.[1] ?? '';
+
+  test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s keeps the record id and the name, as before', async (role) => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+    expect(result?.pages.corner.guardians).toEqual([
+      { parent_id: 'par-guardian.one@example.test', full_name: 'Guardian One', relationship_to_athlete: 'mother' },
+      { parent_id: 'par-guardian.two@example.test', full_name: 'Guardian Two', relationship_to_athlete: 'father' },
+    ]);
+    expect(selectList()).toBe('g.organization_id, p.parent_id, p.full_name, g.relationship_to_athlete');
+  });
+
+  test('the athlete reads both guardians by name and no guardian id anywhere in the book', async () => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
+
+    expect(result?.pages.corner.guardians).toEqual([
+      { full_name: 'Guardian One', relationship_to_athlete: 'mother' },
+      { full_name: 'Guardian Two', relationship_to_athlete: 'father' },
+    ]);
+    expect(JSON.stringify(result)).not.toContain('par-');
+    expect(selectList()).toBe('g.organization_id, p.full_name, g.relationship_to_athlete');
+  });
+
+  // The route sends a guardian to getGuardianPassbook; this is the floor for
+  // any caller that passes a non-staff, non-athlete role here anyway.
+  test.each(['parent', 'volunteer', 'staff', 'board', 'platform_owner'] as PilotRole[])(
+    'any other reader (%s) learns the relationship only -- no name, no id',
+    async (role) => {
+      arrange();
+      const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+      expect(result?.pages.corner.guardians).toEqual([
+        { relationship_to_athlete: 'mother' },
+        { relationship_to_athlete: 'father' },
+      ]);
+      expect(JSON.stringify(result)).not.toContain('par-');
+      expect(JSON.stringify(result)).not.toContain('Guardian One');
+      expect(selectList()).not.toContain('parent_id');
+    },
+  );
 });

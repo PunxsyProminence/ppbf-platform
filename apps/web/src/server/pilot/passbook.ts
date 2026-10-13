@@ -250,10 +250,20 @@ interface CoachObservationRow {
 
 interface GuardianRow {
   organization_id: string;
+  /** Selected for staff only (#1558): `par-` plus an email-shaped account id.
+   *  Absent from the row a family reader's query returns. */
   parent_id: string;
   full_name: string;
   relationship_to_athlete: string;
 }
+
+/** A guardian on the corner page. Staff read the record id and the name; the
+ *  athlete reads their own guardians by name with no id; any other reader
+ *  learns only that a guardian exists and the relationship. */
+export type PassbookGuardian =
+  | { parent_id: string; full_name: string; relationship_to_athlete: string }
+  | { full_name: string; relationship_to_athlete: string }
+  | { relationship_to_athlete: string };
 
 interface ProgressionGapRow {
   organization_id: string;
@@ -301,7 +311,7 @@ export interface AthletePassbook {
     goals: Array<Omit<GoalRow, 'organization_id'>>;
     corner: {
       coach: { account_id?: string };
-      guardians: Array<Omit<GuardianRow, 'organization_id'>>;
+      guardians: PassbookGuardian[];
       observations: Array<
         Omit<CoachObservationRow, 'organization_id' | 'coach_account_id'> & { coach_account_id?: string }
       >;
@@ -535,7 +545,9 @@ export async function getAthletePassbook(
       [organizationId, athleteId, [...allowedNoteTypes]],
     ),
     query<GuardianRow>(
-      `select g.organization_id, p.parent_id, p.full_name, g.relationship_to_athlete
+      // parent_id is selected for staff only, as coach_account_id is above:
+      // a guardian's record id never leaves the database for a family reader.
+      `select g.organization_id${staffReader ? ', p.parent_id' : ''}, p.full_name, g.relationship_to_athlete
        from pilot.guardian_links g
        join pilot.parents p
          on p.organization_id = g.organization_id
@@ -594,11 +606,20 @@ export async function getAthletePassbook(
     }));
   const guardians = guardianRows
     .filter((row) => belongsToOrganization(row, organizationId))
-    .map((row) => ({
-      parent_id: row.parent_id,
-      full_name: row.full_name,
-      relationship_to_athlete: row.relationship_to_athlete,
-    }));
+    .map((row): PassbookGuardian => {
+      // Named fields per reader, never the row minus a key (#1558).
+      if (staffReader) {
+        return {
+          parent_id: row.parent_id,
+          full_name: row.full_name,
+          relationship_to_athlete: row.relationship_to_athlete,
+        };
+      }
+      if (viewerRole === 'athlete') {
+        return { full_name: row.full_name, relationship_to_athlete: row.relationship_to_athlete };
+      }
+      return { relationship_to_athlete: row.relationship_to_athlete };
+    });
   const progressionGaps = progressionGapRows
     .filter((row) => belongsToOrganization(row, organizationId))
     .map((row) => ({
