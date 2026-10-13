@@ -40,7 +40,7 @@ jest.mock('./db', () => ({
 import { query, queryOne, withTransaction } from './db';
 import { listExecutions, correctExecution, RECORD_CHANGED_MESSAGE } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
-import { reviseProtocol } from './interventionProtocols';
+import { retireProtocol, reviseProtocol } from './interventionProtocols';
 
 /* ------------------------------------------------------------- THE STORE -- */
 
@@ -155,6 +155,9 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   }
   if (/update pilot\.intervention_protocols set status = 'superseded'/.test(sql)) {
     return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'superseded');
+  }
+  if (/update pilot\.intervention_protocols set status = 'retired'/.test(sql)) {
+    return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'retired');
   }
   if (/update pilot\.intervention_protocols set status = 'active'/.test(sql)) {
     return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'active');
@@ -495,6 +498,32 @@ describe('reviseProtocol', () => {
     expect(liveProtocols()).toHaveLength(1);
     expect(liveProtocols()[0].title).toBe('Front-hand return under fatigue, v2');
     expect(store.intervention_protocols).toHaveLength(2);
+  });
+});
+
+describe('a protocol that is not there, and one that has changed since it was loaded', () => {
+  test('revising or retiring a protocol that does not exist is a quiet null', async () => {
+    seedProtocol();
+
+    expect(await reviseProtocol({ ...revision, protocolId: 'no-such-protocol' })).toBeNull();
+    expect(await retireProtocol(ORG, 'no-such-protocol')).toBeNull();
+    expect(store.intervention_protocols).toHaveLength(1);
+    expect(liveProtocols()[0].status).toBe('active');
+  });
+
+  test('revising or retiring one already revised or retired says the record changed, and changes nothing', async () => {
+    seedProtocol({ status: 'retired' });
+    const before = JSON.stringify(store.intervention_protocols);
+
+    await expect(reviseProtocol(revision)).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+    await expect(retireProtocol(ORG, 'proto-1')).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+    expect(JSON.stringify(store.intervention_protocols)).toBe(before);
+  });
+
+  test('retiring an active protocol retires it', async () => {
+    seedProtocol();
+
+    expect((await retireProtocol(ORG, 'proto-1'))?.status).toBe('retired');
   });
 });
 
