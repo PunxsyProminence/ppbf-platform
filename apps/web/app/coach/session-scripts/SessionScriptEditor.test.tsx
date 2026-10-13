@@ -7,7 +7,8 @@
 // id, the state of the plan the form was opened on, and ONLY what was changed;
 // what the server answered is handed up as it came; a bad row is named before
 // anything is sent; and the form says "nothing was saved" only when the server
-// said so -- saved (any 2xx), refused (its worded 4xx), or not known.
+// said so -- saved (any 2xx), refused (a status the route refuses with), or
+// not known (anything else).
 
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
@@ -191,6 +192,8 @@ describe('the plan editor', () => {
     await act(async () => save());
 
     expect(screen.getByRole('alert')).toHaveTextContent(sentence);
+    // An ordinary message: --locked is the medical stop and nothing else.
+    expect(screen.getByRole('alert').className).not.toMatch(/locked/);
     expect(onSaved).not.toHaveBeenCalled();
     expect(block(1).getByLabelText('Title')).toHaveValue('Typed before the refusal');
     expect(screen.getByRole('button', { name: 'Save plan' })).not.toBeDisabled();
@@ -204,6 +207,9 @@ describe('the plan editor', () => {
       // The route saves and then re-reads; a fault after the save still answers 500.
       () => answer(500, undefined),
       () => answer(429, undefined),
+      // Not this route's refusal, whatever its body says (Codex on #1565).
+      () => answer(429, { error: 'Too many requests' }),
+      () => answer(408, { error: 'SESSION_SCRIPT_CHANGED' }),
     ];
     for (const handler of handlers) {
       const { onSaved, unmount } = setup(handler);
@@ -217,6 +223,20 @@ describe('the plan editor', () => {
       expect(onSaved).not.toHaveBeenCalled();
       unmount();
     }
+  });
+
+  it.each([
+    [401, 'Unauthorized', /You are signed out, so nothing was saved/],
+    [403, 'Forbidden: role not allowed', /Your account may not edit session scripts, so nothing was saved/],
+    [400, 'expected_updated_at', /The server refused, so nothing was saved/],
+  ])('a %i from the route is a refusal with a plain sentence', async (status, error, sentence) => {
+    const { onSaved } = setup(() => answer(status, { error }));
+    type(screen.getByLabelText('Plan name'), 'Changed');
+
+    await act(async () => save());
+
+    expect(screen.getByRole('alert')).toHaveTextContent(sentence);
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('a 200 whose body cannot be read is still a save: handed up as saved with nothing to show', async () => {

@@ -24,8 +24,14 @@ import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts'
 //
 // THE FORM NEVER SAYS "NOTHING WAS SAVED" UNLESS THE SERVER SAID SO:
 //   - 2xx: saved, always -- even when the answer cannot be read;
-//   - a refusal the server worded (4xx with its code): nothing was saved;
-//   - no answer, or a fault: not known, and said so.
+//   - a refusal by one of the statuses this route refuses with (the list
+//     below): nothing was saved;
+//   - anything else -- no answer, a fault, or another 4xx such as a rate limit
+//     from something in between, whatever its body says: not known, and said so.
+//
+// NOT THE MEDICAL-STOP COLOUR: --locked means a medical stop and nothing else
+// (AGENT_KERNEL.md, OD-2026-09-29-001). The alert is brass and bone, and its
+// words carry the meaning.
 
 export type SessionScriptEditOutcome = 'unchanged' | 'updated' | 'new_version';
 
@@ -38,6 +44,15 @@ interface BlockDraft {
 
 // The server's own ceiling on a block's minutes (sessionScriptAuthoring.ts MAX_OFFSET_MIN).
 const LAST_MINUTE = 24 * 60;
+
+// What PATCH /api/pilot/session-scripts answers when it refuses before or
+// inside its transaction.
+const REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
+const REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
+  401: 'You are signed out, so nothing was saved. Sign in, open the plan again and make your changes.',
+  403: 'Your account may not edit session scripts, so nothing was saved.',
+};
 
 const REFUSALS: Readonly<Record<string, string>> = {
   SESSION_SCRIPT_CHANGED:
@@ -155,8 +170,9 @@ export default function SessionScriptEditor({
         else onSaved(null, null);
         return;
       }
-      if (response.status >= 400 && response.status < 500 && typeof payload?.error === 'string') {
-        setError(REFUSALS[payload.error] ?? 'The server refused, so nothing was saved.');
+      if (REFUSAL_STATUSES.includes(response.status)) {
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        setError(REFUSALS[code] ?? REFUSALS_BY_STATUS[response.status] ?? 'The server refused, so nothing was saved.');
         return;
       }
       setError('The server did not answer properly, so it is not known whether the plan was saved. Reload the list to see which.');
@@ -225,7 +241,7 @@ export default function SessionScriptEditor({
       </ol>
 
       {error && (
-        <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <p role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           {error}
         </p>
       )}

@@ -74,9 +74,15 @@ function cleanText(value: string, code: string): string {
   return text;
 }
 
-// total_minutes is checked 10..300 by the table; outside that it is not stated.
-function statedTotalMinutes(lastEnd: number): number | null {
-  return lastEnd >= 10 && lastEnd <= 300 ? lastEnd : null;
+// THE STATED LENGTH is the author's figure -- the template's duration, or what
+// an imported script says -- and is kept apart from what the blocks add up to
+// (sessionScripts.ts coveredMinutes). One rule holds it on create and on edit:
+// it stays as stated, except that it is never shorter than the blocks, so a
+// plan whose last block ends at minute 50 does not read "45 min". The table
+// checks it 10..300; outside that it is not stated.
+function statedLength(stated: number | null, lastEnd: number): number | null {
+  const length = Math.max(stated ?? 0, lastEnd);
+  return length >= 10 && length <= 300 ? length : null;
 }
 
 type TemplateStep = Pick<
@@ -185,10 +191,7 @@ export async function createSessionScriptFromTemplate(
         params.organizationId,
         scriptId,
         name,
-        // The length the template states, not what the blocks add up to: the
-        // table keeps the two apart (sessionScripts.ts coveredMinutes), and a
-        // step with no minutes of its own was only given a starting figure.
-        template.duration_minutes,
+        statedLength(template.duration_minutes, blocks[blocks.length - 1].end_offset_min),
         contactStructure(items),
         `Workout template: ${template.name} v${template.version}`,
         params.actorAccountId,
@@ -359,9 +362,8 @@ export async function editSessionScript(
     if (changed.length === 0 && name === script.name) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    // The stated length follows the blocks once a coach has moved them.
     const totalMinutes = minutesChanged
-      ? statedTotalMinutes(Math.max(...blocks.map((block) => block.end_offset_min)))
+      ? statedLength(script.total_minutes, Math.max(...blocks.map((block) => block.end_offset_min)))
       : script.total_minutes;
 
     const run = await client.query(

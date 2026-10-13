@@ -498,19 +498,20 @@ describe('editing a session script', () => {
       name: 'Renamed plan',
       blocks: [
         { block_id: first.block_id, block_label: 'Jab warm-up', start_offset_min: 0, end_offset_min: 10 },
-        { block_id: third.block_id, block_label: third.block_label, start_offset_min: 15, end_offset_min: 40 },
+        { block_id: third.block_id, block_label: third.block_label, start_offset_min: 15, end_offset_min: 50 },
       ],
     });
 
     expect(result).toEqual({ outcome: 'updated', script_id: created.script_id, version: 1 });
     expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1]);
     const after = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
-    expect(after).toMatchObject({ name: 'Renamed plan', version: 1, total_minutes: 40, created_by_account_id: gym.coachId });
+    // The last block now ends past the 45 minutes the template stated, so the stated length is 50.
+    expect(after).toMatchObject({ name: 'Renamed plan', version: 1, total_minutes: 50, created_by_account_id: gym.coachId });
     expect(after!.blocks.map((block) => [block.block_id, block.block_label, block.start_offset_min, block.end_offset_min])).toEqual([
       [first.block_id, 'Jab warm-up', 0, 10],
       // Not named in the edit: kept exactly.
       [second.block_id, 'Partner mirror', 6, 11],
-      [third.block_id, 'Sparring Round', 15, 40],
+      [third.block_id, 'Sparring Round', 15, 50],
     ]);
     // Everything the edit does not own is as it was.
     const untouched = ({ block_id, block_order, what_to_say, what_to_explain, block_kind, drill_id, scale_level, contact_level }: (typeof first)) =>
@@ -555,7 +556,8 @@ describe('editing a session script', () => {
       name: 'Fixture Workout, longer',
       lineage_id: created.script_id,
       version: 2,
-      total_minutes: 16,
+      // A block moved, but the blocks still end inside the 45 minutes stated: it stays 45.
+      total_minutes: 45,
       authoring_state: 'coach_reviewed',
       source_document: 'Workout template: Fixture Workout v3',
       contact_structure: 'split_non_contact_then_contact',
