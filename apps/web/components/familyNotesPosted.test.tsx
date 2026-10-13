@@ -95,12 +95,11 @@ test('a new refreshKey re-reads, so a note just posted appears', async () => {
     .mockResolvedValueOnce(jsonResponse({ items: [OPEN] }));
   global.fetch = fetchMock as unknown as typeof fetch;
 
-  let view: ReturnType<typeof render> | null = null;
+  // render() wraps itself in act; the second act lets the first read settle.
+  const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+  await act(async () => {});
   await act(async () => {
-    view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
-  });
-  await act(async () => {
-    view!.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
+    view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
   });
 
   expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -116,13 +115,12 @@ test("the render right after a switch shows loading, not the last athlete's note
     return Promise.resolve(jsonResponse({ items: [OPEN] }));
   }) as unknown as typeof fetch;
 
-  let view: ReturnType<typeof render> | null = null;
-  await act(async () => {
-    view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
-  });
+  // render() wraps itself in act; the second act lets the first read settle.
+  const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+  await act(async () => {});
   expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
 
-  view!.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+  view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
   expect(screen.queryByText('Bring gloves Thursday.')).toBeNull();
   expect(screen.getByText('Loading what was posted…')).toBeInTheDocument();
 
@@ -140,12 +138,11 @@ test("a slow read for the athlete just left never shows under the next athlete's
     return Promise.resolve(jsonResponse({ items: [] }));
   }) as unknown as typeof fetch;
 
-  let view: ReturnType<typeof render> | null = null;
+  // render() wraps itself in act; the second act lets the first read settle.
+  const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+  await act(async () => {});
   await act(async () => {
-    view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
-  });
-  await act(async () => {
-    view!.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+    view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
   });
   await act(async () => {
     finishFirst?.(jsonResponse({ items: [OPEN] }));

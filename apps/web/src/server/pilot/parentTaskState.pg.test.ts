@@ -642,6 +642,21 @@ describe('listFamilyNotesForStaff (#1542)', () => {
     expect(notes.some((note) => note.note_text.includes('No lift'))).toBe(false);
   });
 
+  test("a note an organization admin posted reads as the admin's, as the family sees it", async () => {
+    await activeClient!.query(
+      `update pilot.accounts set login_email = 'ppbf@ppbf.test' where account_id = $1`,
+      [ADMIN_ACCOUNT],
+    );
+    await activeClient!.query(
+      `update pilot.coach_observations set coach_account_id = $3 where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE, ADMIN_ACCOUNT],
+    );
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes[0]!.posted_by_name).toBe('Admin Ppbf');
+  });
+
   test('which guardian ticked it is never returned', async () => {
     await seedLaterDoneNote();
 

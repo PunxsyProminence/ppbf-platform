@@ -259,14 +259,19 @@ interface FamilyNoteRow {
   note_text: string;
   posted_at: string;
   author_login: string | null;
+  author_role: string;
   has_task: boolean;
   due_date: string | null;
   completed_at: string | null;
 }
 
-function staffFacingAuthorName(login: string | null): string {
-  const name = deriveCoachDisplayName(login);
-  return name === 'Your coach' ? 'A coach' : name;
+// The family reads "From Coach" or "From Admin" by the author's role
+// (ParentHub.tsx); the staff list says the same, with the login-derived name.
+function staffFacingAuthorName(login: string | null, role: string): string {
+  const coachName = deriveCoachDisplayName(login);
+  const admin = role !== 'coach';
+  if (coachName === 'Your coach') return admin ? 'An administrator' : 'A coach';
+  return admin ? coachName.replace(/^Coach /, 'Admin ') : coachName;
 }
 
 export async function listFamilyNotesForStaff(
@@ -276,7 +281,7 @@ export async function listFamilyNotesForStaff(
   const rows = await query<FamilyNoteRow>(
     `select co.note_id::text as note_id, co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
-            a.login_email as author_login,
+            a.login_email as author_login, a.role as author_role,
             (t.note_id is not null) as has_task,
             t.due_date::text as due_date,
             to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
@@ -294,7 +299,7 @@ export async function listFamilyNotesForStaff(
     note_id: row.note_id,
     note_text: row.note_text,
     posted_at: row.posted_at,
-    posted_by_name: staffFacingAuthorName(row.author_login),
+    posted_by_name: staffFacingAuthorName(row.author_login, row.author_role),
     task: row.has_task ? { due_date: row.due_date, completed_at: row.completed_at } : null,
   }));
 }
