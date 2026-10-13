@@ -161,7 +161,8 @@ describe('a goal cannot be failed', () => {
       expect(text).not.toContain(word);
     }
     // A date that has passed is just a date somebody wrote down once.
-    expect(container.textContent).toContain('Wrote down: Jan 1 2020');
+    expect(container.textContent).toContain('Aiming for: Jan 1 2020');
+    expect(container.textContent).not.toContain('Wrote down');
   });
 
   it('offers no way to mark one failed or abandoned', async () => {
@@ -174,6 +175,23 @@ describe('a goal cannot be failed', () => {
     for (const label of [/give up/i, /abandon/i, /failed/i, /delete/i, /remove/i]) {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
+  });
+});
+
+describe('the day a goal was reached is the gym day', () => {
+  // 10:52 PM on October 11 in New York is October 12 in UTC (F-045).
+  it('does not print the UTC day for a goal ticked off in the evening', async () => {
+    goals = [{
+      goal_id: 'g1', title: 'Run a mile', why_it_matters: '', target_date: null, reached_at: '2026-10-12T02:52:00.000Z',
+    }];
+
+    const { container } = await renderBoard();
+    await waitFor(() => {
+      expect(container.textContent).toContain('Run a mile');
+    });
+
+    expect(container.textContent).toContain('Oct 11 2026');
+    expect(container.textContent).not.toContain('Oct 12 2026');
   });
 });
 
