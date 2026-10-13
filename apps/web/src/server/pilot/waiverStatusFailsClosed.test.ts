@@ -330,7 +330,8 @@ describe('every direct reader of a consent status is registered', () => {
       'Admin worklist rendering. Reads server-normalised values and renders '
         + "anything it does not recognise as 'Missing', which is the honest "
         + 'reading for a worklist whose job is to surface absent waivers. '
-        + 'Display only, no gate.',
+        + 'No gate. Since #1526 it also records and withdraws a paper waiver, '
+        + 'through the intake writer, which holds the status vocabulary.',
     ],
     [
       'app/parent/consent/page.tsx',

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { formatGymDateShort } from '@/src/lib/gymTime';
+import { formatGymDateShort, gymDayIso } from '@/src/lib/gymTime';
 
 const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
@@ -177,6 +177,46 @@ function tonightReasons(tonight: Tonight): { why: string[]; alsoOnFile: string[]
   return { why: lines, alsoOnFile };
 }
 
+/*
+ * RECORDING A PAPER WAIVER HERE (Jason 2026-10-12, OD-2026-10-12-009: "A: Yes,
+ * build it"; Overwatch GO on #1526, Q1 A).
+ *
+ * The office records that a signed general, medical release or travel waiver
+ * is on file, with the date on the paper and who signed it, and can withdraw
+ * one. Both are a new row through the intake writer the register page already
+ * uses (POST /api/pilot/intake/domain-upsert): rows are append-only and the
+ * newest per type is current, so a withdrawal keeps the signed row as history,
+ * and the server records who typed it (recorded_by_account_id) and writes the
+ * audit event. Photo and media stays on its own consent audit, guardian by
+ * guardian, and the server refuses it here too.
+ *
+ * Organization admin only: this page's gate is ['admin'], the client name for
+ * an organization admin. Coaches keep the intake path they already have,
+ * untouched (Q1 A).
+ */
+const RECORDABLE_TYPES: readonly TrackedWaiverType[] = ['general', 'medical_release', 'travel'];
+
+/** Today as the gym's calendar day, the date field's default. */
+function todayGymDay(): string {
+  return gymDayIso(Date.now()) ?? '';
+}
+
+// The register page's vocabulary (/admin/consent). The office is a real
+// answer for a withdrawal it makes itself -- a paper entered by mistake, or
+// one that no longer stands -- so a withdrawal starts there (#1526 review).
+const SIGNER_ROLES = [
+  { value: 'guardian', label: 'Parent or legal guardian' },
+  { value: 'athlete', label: 'Athlete (18 or over)' },
+  { value: 'organization_admin', label: 'Gym administrator, on file' },
+] as const;
+
+interface WaiverEdit {
+  athleteId: string;
+  athleteName: string;
+  type: TrackedWaiverType;
+  action: 'record' | 'withdraw';
+}
+
 type Filter = 'incomplete' | 'complete' | 'all';
 
 /**
@@ -199,6 +239,41 @@ export default function WaiverComplianceAuditPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [activeOnly, setActiveOnly] = useState(true);
+  const [edit, setEdit] = useState<WaiverEdit | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState<string>('guardian');
+  const [editNote, setEditNote] = useState('');
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('');
+  // One write per press: two presses in one tick both read the same
+  // editSaving, so the guard is a ref.
+  const savingRef = useRef(false);
+  // Keyboard focus follows the form: into its first field when it opens, back
+  // to the cell's button when it closes (#1526 review).
+  const editDateRef = useRef<HTMLInputElement | null>(null);
+  const returnFocusTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (edit) {
+      editDateRef.current?.focus();
+      return;
+    }
+    const cell = returnFocusTo.current;
+    returnFocusTo.current = null;
+    if (cell) {
+      // Matched by value, not by a built selector: an athlete id may hold a
+      // quote or a backslash (#1543 review).
+      const match = Array.from(document.querySelectorAll<HTMLElement>('[data-waiver-cell]'))
+        .find((element) => element.dataset.waiverCell === cell);
+      match?.querySelector<HTMLButtonElement>('button')?.focus();
+    }
+  }, [edit]);
+
+  function closeEdit() {
+    if (edit) returnFocusTo.current = `${edit.athleteId}:${edit.type}`;
+    setEdit(null);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -222,6 +297,72 @@ export default function WaiverComplianceAuditPage() {
   }, [load]);
 
   const isLoading = items === null;
+
+  function openEdit(next: WaiverEdit) {
+    // One form while a save is out: opening another would let the first
+    // save's answer close it, or land its error beside the wrong waiver.
+    if (savingRef.current) return;
+    setEdit(next);
+    setEditDate(todayGymDay());
+    setEditName('');
+    setEditRole(next.action === 'withdraw' ? 'organization_admin' : 'guardian');
+    setEditNote('');
+    setEditError('');
+    setSavedMessage('');
+  }
+
+  async function saveEdit() {
+    if (!edit || savingRef.current) return;
+    if (!editName.trim()) {
+      setEditError(edit.action === 'record'
+        ? 'Enter the name of the person who signed.'
+        : 'Enter the name of the person who withdrew it.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editDate)) {
+      setEditError('Enter the date on the form.');
+      return;
+    }
+    savingRef.current = true;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'waiver',
+          athlete_id: edit.athleteId,
+          payload: {
+            waiver_type: edit.type,
+            status: edit.action === 'record' ? 'signed' : 'withdrawn',
+            signed_by_name: editName.trim(),
+            signed_by_role: editRole,
+            // The column is a timestamp and the form gives a day: noon, so the
+            // stored instant is that day in every timezone (as /admin/consent).
+            signed_at: `${editDate}T12:00:00.000Z`,
+            consent_version: 'v1',
+            notes: editNote.trim(),
+          },
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'The waiver was not saved.');
+      }
+      setSavedMessage(
+        `${PAPER_NAMES[edit.type]} for ${edit.athleteName}: ${edit.action === 'record' ? 'recorded as signed' : 'withdrawn'}.`,
+      );
+      closeEdit();
+      await load();
+    } catch (error) {
+      setEditError(error instanceof Error && error.message ? error.message : 'The waiver was not saved.');
+    } finally {
+      savingRef.current = false;
+      setEditSaving(false);
+    }
+  }
 
   const visible = useMemo(() => {
     if (isLoading) return [];
@@ -266,6 +407,9 @@ export default function WaiverComplianceAuditPage() {
                 says when a clinician or a safeguarding decision has stopped
                 something, so it does not carry this. --restricted does, keeping
                 the glyph and gaining the uppercase label Law 3 asks for. */}
+            {savedMessage ? (
+              <p role="status" className="t-body mt-[var(--s3)]">{savedMessage}</p>
+            ) : null}
             {errorMessage ? (
               <div role="alert" className="alert alert--warning mt-[var(--s3)]">
                 <span className="alert-icon" aria-hidden="true">▲</span>
@@ -361,12 +505,63 @@ export default function WaiverComplianceAuditPage() {
                       {TRACKED_WAIVER_TYPES.map((type) => {
                         const status = row.waivers[type];
                         const ok = status === 'signed';
+                        const recordable = RECORDABLE_TYPES.includes(type);
+                        const editing = edit?.athleteId === row.athlete_id && edit.type === type;
+                        const action: WaiverEdit['action'] = ok ? 'withdraw' : 'record';
                         return (
-                          <td key={type} className="px-[var(--s4)] py-[var(--s3)]">
+                          <td key={type} data-waiver-cell={`${row.athlete_id}:${type}`} className="px-[var(--s4)] py-[var(--s3)] align-top">
                             <span className={`badge ${ok ? 'badge--cleared' : 'badge--restricted'}`}>
                               <i>{ok ? '✓' : '▲'}</i>
                               {status === 'signed' ? 'Signed' : status === 'declined' ? 'Declined' : status === 'withdrawn' ? 'Withdrawn' : 'Missing'}
                             </span>
+                            {recordable && !editing ? (
+                              <button
+                                type="button"
+                                onClick={() => openEdit({ athleteId: row.athlete_id, athleteName: row.athlete_name, type, action })}
+                                disabled={editSaving}
+                                aria-label={`${ok ? 'Withdraw' : 'Record signed'}: ${WAIVER_TYPE_LABEL[type]}, ${row.athlete_name}`}
+                                className="btn btn--ghost mt-[var(--s2)] block"
+                              >
+                                {ok ? 'Withdraw' : 'Record signed'}
+                              </button>
+                            ) : null}
+                            {editing && edit ? (
+                              <div
+                                role="group"
+                                aria-label={`${edit.action === 'record' ? 'Record signed' : 'Withdraw'}: ${WAIVER_TYPE_LABEL[type]}, ${row.athlete_name}`}
+                                className="mt-[var(--s2)] space-y-[var(--s2)]"
+                              >
+                                <label className="field">
+                                  <span className="t-label">{edit.action === 'record' ? 'Date on the form' : 'Date withdrawn'}</span>
+                                  <input ref={editDateRef} type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} className="input" />
+                                </label>
+                                <label className="field">
+                                  <span className="t-label">{edit.action === 'record' ? 'Signed by' : 'Withdrawn by'}</span>
+                                  <input value={editName} onChange={(event) => setEditName(event.target.value)} className="input" />
+                                </label>
+                                <label className="field">
+                                  <span className="t-label">They are the</span>
+                                  <select value={editRole} onChange={(event) => setEditRole(event.target.value)} className="select">
+                                    {SIGNER_ROLES.map((option) => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  <span className="t-label">Note (optional)</span>
+                                  <input value={editNote} onChange={(event) => setEditNote(event.target.value)} className="input" />
+                                </label>
+                                {editError ? <p role="alert" className="t-body">{editError}</p> : null}
+                                <div className="flex flex-wrap gap-[var(--s2)]">
+                                  <button type="button" onClick={() => void saveEdit()} disabled={editSaving} className="btn">
+                                    {editSaving ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button type="button" onClick={closeEdit} disabled={editSaving} className="btn btn--ghost">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
                           </td>
                         );
                       })}

@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import WaiverComplianceAuditPage from './page';
 
@@ -381,7 +381,7 @@ test('the waiver columns are unchanged by the answer beside them', async () => {
   const row = await renderRow({ tonight: tonight({ answer: 'not_cleared' }) });
 
   // general signed, medical_release missing, photo_media signed, travel missing
-  const cells = Array.from(row.querySelectorAll('td')).slice(2).map((cell) => cell.textContent);
+  const cells = Array.from(row.querySelectorAll('td')).slice(2).map((cell) => cell.querySelector('.badge')?.textContent);
   expect(cells).toEqual(['✓Signed', '▲Missing', '✓Signed', '▲Missing']);
 });
 
@@ -421,5 +421,214 @@ describe('opened from the compliance centre (?view=all)', () => {
 
     await screen.findByText('Nothing in this view');
     expect(screen.queryByText('Held Kid')).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * RECORDING A PAPER WAIVER (Jason 2026-10-12, OD-2026-10-12-009; Overwatch GO
+ * on #1526, Q1 A). The office records a signed general, medical release or
+ * travel waiver, or withdraws one, through the intake writer; photo and media
+ * stays on its own consent audit. The server side -- tenancy, roles, the audit
+ * event, history kept -- is pinned in domain-upsert/route.test.ts and
+ * waiverCompliance.pg.test.ts.
+ */
+describe('the office records and withdraws a paper waiver (#1526)', () => {
+  type Post = { url: string; body: Record<string, unknown> };
+
+  function installRecording(options: { saveFails?: boolean; firstSave?: Promise<Response> } = {}) {
+    const posts: Post[] = [];
+    let waivers = { ...INCOMPLETE[0].waivers };
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/intake/domain-upsert') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posts.push({ url, body });
+        if (options.firstSave && posts.length === 1) return options.firstSave;
+        if (options.saveFails) return jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, false);
+        const payload = body.payload as { waiver_type: string; status: string };
+        waivers = { ...waivers, [payload.waiver_type]: payload.status };
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ ok: true, items: [{ ...INCOMPLETE[0], waivers }] });
+    }) as unknown as typeof fetch;
+    return posts;
+  }
+
+  async function openRecord(label: string) {
+    render(<WaiverComplianceAuditPage />);
+    await screen.findByText('Jordan T.');
+    fireEvent.click(screen.getByRole('button', { name: label }));
+  }
+
+  test('a missing medical release is recorded as signed, with the date, the signer and their role, and the grid re-reads', async () => {
+    const posts = installRecording();
+    await openRecord('Record signed: Medical release, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Medical release, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Date on the form'), { target: { value: '2026-10-01' } });
+    fireEvent.change(within(form).getByLabelText('Signed by'), { target: { value: 'Pat T.' } });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    });
+
+    expect(posts).toEqual([{
+      url: expect.stringContaining('/api/pilot/intake/domain-upsert'),
+      body: {
+        entity_type: 'waiver',
+        athlete_id: 'ath-1',
+        payload: {
+          waiver_type: 'medical_release',
+          status: 'signed',
+          signed_by_name: 'Pat T.',
+          signed_by_role: 'guardian',
+          signed_at: '2026-10-01T12:00:00.000Z',
+          consent_version: 'v1',
+          notes: '',
+        },
+      },
+    }]);
+    expect(await screen.findByText('Medical release for Jordan T.: recorded as signed.')).toBeInTheDocument();
+    // The grid is the server's: re-read, and the cell now offers Withdraw.
+    expect(screen.getByRole('button', { name: 'Withdraw: Medical release, Jordan T.' })).toBeInTheDocument();
+  });
+
+  test('a signed general waiver is withdrawn as a new withdrawn row', async () => {
+    const posts = installRecording();
+    await openRecord('Withdraw: General, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Withdraw: General, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Withdrawn by'), { target: { value: 'Pat T.' } });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.body.payload).toMatchObject({ waiver_type: 'general', status: 'withdrawn', signed_by_name: 'Pat T.' });
+    expect(await screen.findByText('General waiver for Jordan T.: withdrawn.')).toBeInTheDocument();
+  });
+
+  test("the withdraw form starts on the office as the one withdrawing", async () => {
+    installRecording();
+    await openRecord('Withdraw: General, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Withdraw: General, Jordan T.' });
+    expect(within(form).getByLabelText('Date withdrawn')).toBeInTheDocument();
+    expect((within(form).getByLabelText('They are the') as HTMLSelectElement).value).toBe('organization_admin');
+  });
+
+  test('Cancel closes the form, sends nothing, and puts focus back on the button', async () => {
+    const posts = installRecording();
+    await openRecord('Record signed: Travel, Jordan T.');
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    // Focus goes into the form when it opens.
+    expect(document.activeElement).toBe(within(form).getByLabelText('Date on the form'));
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('group', { name: /Record signed/ })).toBeNull();
+    const button = screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' });
+    expect(document.activeElement).toBe(button);
+    expect(posts).toEqual([]);
+  });
+
+  test('a withdrawal with no name asks for who withdrew it', async () => {
+    const posts = installRecording();
+    await openRecord('Withdraw: General, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Withdraw: General, Jordan T.' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    expect(posts).toEqual([]);
+    expect(within(form).getByRole('alert').textContent).toBe('Enter the name of the person who withdrew it.');
+  });
+
+  test('photo and media is never recorded here: no control on that column', async () => {
+    installRecording();
+    render(<WaiverComplianceAuditPage />);
+    await screen.findByText('Jordan T.');
+
+    expect(screen.queryByRole('button', { name: /Photo & media/ })).toBeNull();
+  });
+
+  test('a save without the signer is not sent, and says what is missing', async () => {
+    const posts = installRecording();
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    expect(posts).toEqual([]);
+    expect(within(form).getByRole('alert').textContent).toBe('Enter the name of the person who signed.');
+  });
+
+  test('a refused save is shown beside the form, and the form stays open', async () => {
+    installRecording({ saveFails: true });
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Signed by'), { target: { value: 'Pat T.' } });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    });
+
+    expect(within(form).getByRole('alert').textContent).toBe('Forbidden: athlete does not belong to organization');
+    expect(screen.queryByText(/recorded as signed/)).toBeNull();
+  });
+
+  test('while a save is out, no other waiver can be opened', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const posts = installRecording({ firstSave: new Promise<Response>((resolve) => { finish = resolve; }) });
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Signed by'), { target: { value: 'Pat T.' } });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    });
+
+    const other = screen.getByRole('button', { name: 'Record signed: Medical release, Jordan T.' }) as HTMLButtonElement;
+    expect(other.disabled).toBe(true);
+    fireEvent.click(other);
+    expect(screen.queryByRole('group', { name: 'Record signed: Medical release, Jordan T.' })).toBeNull();
+
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true }));
+    });
+    expect(posts).toHaveLength(1);
+  });
+
+  test('focus returns to the right cell for an athlete id holding a quote', async () => {
+    const posts: unknown[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') { posts.push(init.body); return jsonResponse({ ok: true }); }
+      return jsonResponse({ ok: true, items: [{ ...INCOMPLETE[0], athlete_id: 'ath-"1\\' }] });
+    }) as unknown as typeof fetch;
+    render(<WaiverComplianceAuditPage />);
+    await screen.findByText('Jordan T.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' }));
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' })).getByRole('button', { name: 'Cancel' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' }));
+    expect(posts).toEqual([]);
+  });
+
+  test('two presses of Save in the same tick send one waiver', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const posts = installRecording({ firstSave: new Promise<Response>((resolve) => { finish = resolve; }) });
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Signed by'), { target: { value: 'Pat T.' } });
+    const save = within(form).getByRole('button', { name: 'Save' });
+    await act(async () => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true }));
+    });
+
+    expect(posts).toHaveLength(1);
   });
 });
