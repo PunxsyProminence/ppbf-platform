@@ -200,11 +200,11 @@ export async function GET(request: NextRequest) {
         // Owner ruling, Jason 2026-10-05 ("Go with all reco,endations"): a
         // co-guardian sees the other guardian's consent STATUS only -- not
         // their record id, signed date or scope flags. The caller's own rows
-        // keep full detail.
+        // keep full detail, without the record id: it is `par-` plus the
+        // email-shaped account id, and no family answer carries one (#1558).
         per_guardian: consent.perGuardian.map((g) =>
           ownParentIds.has(g.parentId)
             ? {
-                parent_id: g.parentId,
                 you: true,
                 status: g.status,
                 covers_video: g.coversVideo,
