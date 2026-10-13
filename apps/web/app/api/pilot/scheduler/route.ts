@@ -21,6 +21,7 @@ import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/serve
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
+  cancelSchedulerClass,
   createSchedulerClass,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
@@ -52,6 +53,7 @@ export const runtime = 'nodejs';
 type SchedulerAction =
   | 'create_class'
   | 'cover_class'
+  | 'cancel_class'
   | 'register_class'
   | 'parent_review_registration'
   | 'request_coaching'
@@ -395,6 +397,17 @@ type FamilyClass = Omit<
   'scheduled_by_account_id' | 'coach_account_id' | 'covering_coach_account_id'
 > & { registered_count: number };
 
+/* Whether this staff member may cancel this class now (#1536): the same rule
+   cancel_class enforces, sent so the screen offers the button only where the
+   server would accept it. Never sent to a family (familyClass names its
+   fields). */
+function canCancelClass(actor: SchedulerActor, item: SchedulerClass): boolean {
+  if (item.status === 'cancelled') return false;
+  const endsMs = Date.parse(item.end_at);
+  if (Number.isFinite(endsMs) && endsMs < Date.now()) return false;
+  return canManageAll(actor) || (actor.role === 'coach' && actorRunsClass(actor, item));
+}
+
 /* Built by naming what stays rather than by deleting what goes -- an
    allowlist, for the reason intake.ts's waiver projection gives: a column a
    later migration adds must not reach a family by default. Rest-destructuring
@@ -592,7 +605,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       role: actor.role,
       athlete_id: actor.athleteId,
-      classes: family ? classes.map(familyClass) : classes,
+      classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: canCancelClass(actor, item) })),
       registrations: family ? filtered.registrations.map(familyRegistration) : filtered.registrations,
       coaching_requests: family
         ? filtered.coaching_requests.map(familyCoachingRequest)
@@ -714,6 +727,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, class_id: classId });
     }
 
+    if (action === 'cancel_class') {
+      // #1536: the coach who runs the class (teaches, scheduled or covers it:
+      // Overwatch Q1 A, cover hands them the register) or an organization
+      // admin. A soft cancel: registrations, attendance and history are kept,
+      // and families read the class as cancelled.
+      if (!(actor.role === 'coach' || canManageAll(actor))) {
+        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+      }
+      const classId = requiredString(body.class_id, 'class_id');
+      const classItem = await getSchedulerClassById(actor.organizationId, classId);
+      if (!classItem) {
+        throw new Error('Missing class record');
+      }
+      if (actor.role === 'coach' && !actorRunsClass(actor, classItem)) {
+        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+      }
+      if (classItem.status === 'cancelled') {
+        throw new ValidationError('This class is already cancelled.');
+      }
+      const endsMs = Date.parse(classItem.end_at);
+      if (Number.isFinite(endsMs) && endsMs < Date.now()) {
+        throw new ValidationError('A class that has already ended cannot be cancelled.');
+      }
+
+      const cancelled = await cancelSchedulerClass(actor.organizationId, classId, new Date().toISOString());
+      if (!cancelled) {
+        throw new ValidationError('This class is already cancelled.');
+      }
+
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_class',
+        entity_id: classId,
+        details: {
+          action: 'cancel_class',
+          class_id: classId,
+          previous_status: classItem.status,
+        },
+        shadow_mirror: false,
+      });
+
+      return NextResponse.json({ ok: true, class_id: classId, status: 'cancelled' });
+    }
+
     if (action === 'register_class') {
       const classId = requiredString(body.class_id, 'class_id');
 
@@ -751,6 +811,9 @@ export async function POST(request: NextRequest) {
 
       if (result.outcome === 'class_not_found') {
         throw new Error('Missing class record');
+      }
+      if (result.outcome === 'class_cancelled') {
+        return NextResponse.json({ error: 'This class was cancelled.' }, { status: 409 });
       }
       // A duplicate registration is a caller-visible conflict, not a server
       // fault: thrown here it would carry no jsonError prefix and be masked
@@ -1046,6 +1109,11 @@ export async function POST(request: NextRequest) {
         }
         method = resolveAttendanceMethod(actor, isSelf);
       }
+      // After who-may-act, like the family checks above (#1536): nobody marks
+      // a register for a class that did not run.
+      if (classItem.status === 'cancelled') {
+        throw new ValidationError('This class was cancelled.');
+      }
 
       const beyondReach = await athletesBeyondReach(actor, [athleteId]);
       // A family check-in says "I'm here" and nothing else (#1524); the note
@@ -1119,6 +1187,9 @@ export async function POST(request: NextRequest) {
       // Refused before the entries are even read: a coach who does not run
       // this class gets nothing from it, whoever is in the batch.
       assertCoachOwnsClass(actor, classItem);
+      if (classItem.status === 'cancelled') {
+        throw new ValidationError('This class was cancelled.');
+      }
 
       const entries = body.entries;
       if (!Array.isArray(entries) || entries.length === 0) {

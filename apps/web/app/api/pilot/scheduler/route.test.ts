@@ -15,6 +15,7 @@ import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
+  cancelSchedulerClass,
   createSchedulerClass,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
@@ -66,6 +67,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 }));
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
+  cancelSchedulerClass: jest.fn(),
   createSchedulerClass: jest.fn(),
   createSchedulerCoachingRequest: jest.fn(),
   registerForClassTransactionally: jest.fn(),
@@ -2129,5 +2131,168 @@ describe('family check-in: Present, on the day of the class, never over a staff 
     expect(response.status).toBe(200);
     expect(mockUpsertAttendance).toHaveBeenCalledTimes(1);
     expect(mockFamilyUpsert).not.toHaveBeenCalled();
+  });
+});
+
+/* CANCEL A CLASS (#1536, F-059). The coach who runs the class -- teaches,
+   scheduled or covers it (Overwatch Q1 A) -- or an organization admin. A soft
+   cancel: only the class's status changes, so its registrations, attendance and
+   history stay; register and check-in on it are refused. */
+describe('cancel_class', () => {
+  const mockCancel = cancelSchedulerClass as jest.Mock;
+  const mockAuditCancel = writePilotAuditEvent as jest.Mock;
+  const future = () => new Date(Date.now() + 3_600_000).toISOString();
+
+  beforeEach(() => {
+    mockCancel.mockResolvedValue(true);
+    mockGetClass.mockResolvedValue({ ...classRecord, end_at: future() });
+  });
+
+  const cancel = () => POST(jsonRequest({ action: 'cancel_class', class_id: 'class-1' }));
+
+  test.each([
+    ['the coach who teaches it', principal('coach', { accountId: 'acct-coach-1' }), {}],
+    ['the coach covering it', principal('coach', { accountId: 'acct-cover' }), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', covering_coach_account_id: 'acct-cover' }],
+    ['the coach who scheduled it', principal('coach', { accountId: 'acct-sched' }), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-sched' }],
+    ['an organization admin', principal('organization_admin'), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' }],
+  ])('%s may cancel: the status changes and an audit row is written', async (_who, caller, classFields) => {
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: future(), ...classFields });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', status: 'cancelled' });
+    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String));
+    expect(mockAuditCancel.mock.calls[0][0]).toMatchObject({
+      entity_type: 'scheduler_class',
+      entity_id: 'class-1',
+      details: { action: 'cancel_class', class_id: 'class-1', previous_status: 'open' },
+    });
+  });
+
+  test.each([
+    ['a coach who does not run it', principal('coach', { accountId: 'acct-someone-else' })],
+    ['an athlete', athletePrincipal()],
+    ['a parent', principal('parent')],
+  ])('%s is refused with 403 and nothing changes', async (_who, caller) => {
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+
+    const response = await cancel();
+
+    expect(response.status).toBe(403);
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a class already cancelled is a 400 with a sentence, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: future(), status: 'cancelled' });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class is already cancelled.');
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  test('a class that has ended is a 400 with a sentence, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: new Date(Date.now() - 60_000).toISOString() });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('A class that has already ended cannot be cancelled.');
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  test('a cancel that lost a race to another cancel says so, and writes no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockCancel.mockResolvedValueOnce(false);
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('registering for a cancelled class is a 409 with a sentence', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({ outcome: 'class_cancelled' });
+
+    const response = await POST(registerRequest());
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'This class was cancelled.' });
+  });
+
+  test.each([
+    ['an athlete checking in', athletePrincipal(), { status: 'present' }],
+    ['the coach taking the register', principal('coach', { accountId: 'acct-coach-1' }), { athlete_id: 'ATH-1', status: 'present' }],
+  ])('%s on a cancelled class is refused, and nothing is written', async (_who, caller, fields) => {
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+    mockListRegistered.mockResolvedValueOnce(['ath-1', 'ATH-1']);
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, start_at: new Date().toISOString(), status: 'cancelled' });
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', ...fields }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class was cancelled.');
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+    expect(mockFamilyUpsert).not.toHaveBeenCalled();
+  });
+
+  test('a bulk register on a cancelled class is refused, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, status: 'cancelled' });
+
+    const response = await POST(jsonRequest({
+      action: 'bulk_attendance_checkin',
+      class_id: 'class-1',
+      entries: [{ athlete_id: 'ATH-1', status: 'present' }],
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  describe('GET says where Cancel Class would be accepted, to staff only', () => {
+    const mockListStoreCancel = listSchedulerStore as jest.Mock;
+    const classes = () => [
+      { ...classRecord, class_id: 'mine', end_at: future() },
+      { ...classRecord, class_id: 'theirs', coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', end_at: future() },
+      { ...classRecord, class_id: 'ended', end_at: new Date(Date.now() - 60_000).toISOString() },
+      { ...classRecord, class_id: 'gone', end_at: future(), status: 'cancelled' },
+    ];
+    const store = () => ({ classes: classes(), registrations: [], attendance: [], coaching_requests: [] });
+    const flags = async () => {
+      const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+      return Object.fromEntries(body.classes.map((item: { class_id: string; can_cancel?: boolean }) => [item.class_id, item.can_cancel]));
+    };
+
+    test('a coach: only an upcoming class they run', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach-1' }));
+      mockListStoreCancel.mockResolvedValue(store());
+
+      expect(await flags()).toEqual({ mine: true, theirs: false, ended: false, gone: false });
+    });
+
+    test('an organization admin: every upcoming class', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+      mockListStoreCancel.mockResolvedValue(store());
+
+      expect(await flags()).toEqual({ mine: true, theirs: true, ended: false, gone: false });
+    });
+
+    test('a family is never sent the flag, and still reads a cancelled class as cancelled', async () => {
+      mockRequirePrincipal.mockResolvedValue(athletePrincipal());
+      mockListStoreCancel.mockResolvedValue(store());
+
+      const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+      expect(body.classes.every((item: Record<string, unknown>) => !('can_cancel' in item))).toBe(true);
+      expect(body.classes.find((item: { class_id: string }) => item.class_id === 'gone').status).toBe('cancelled');
+    });
   });
 });

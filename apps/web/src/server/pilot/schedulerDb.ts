@@ -176,6 +176,24 @@ export async function setSchedulerClassCover(organizationId: string, classId: st
   );
 }
 
+/**
+ * Soft-cancels a class (#1536): the status reads 'cancelled' and nothing else
+ * changes. Its registrations, attendance and history stay exactly as they
+ * were. Returns false when the class was already cancelled (or is not this
+ * gym's), so two cancels racing write one change.
+ */
+export async function cancelSchedulerClass(organizationId: string, classId: string, updatedAt: string): Promise<boolean> {
+  const rows = await query<{ class_id: string }>(
+    `update pilot.scheduler_classes
+     set status = 'cancelled',
+         updated_at = $3
+     where organization_id = $1 and class_id = $2 and status <> 'cancelled'
+     returning class_id`,
+    [organizationId, classId, updatedAt],
+  );
+  return rows.length > 0;
+}
+
 export async function getSchedulerRegistrationById(
   organizationId: string,
   registrationId: string,
@@ -196,6 +214,7 @@ export async function getSchedulerRegistrationById(
 
 export type RegisterForClassOutcome =
   | { outcome: 'class_not_found' }
+  | { outcome: 'class_cancelled' }
   | { outcome: 'already_registered' }
   | { outcome: 'training_hold'; holdId: string; athleteExplanation: string; liftConditionText: string }
   | { outcome: 'registered' | 'waitlisted'; registrationId: string; membershipFlags: MembershipFlag[] };
@@ -227,6 +246,11 @@ export async function registerForClassTransactionally(
     const classRow = classResult.rows[0];
     if (!classRow) {
       return { outcome: 'class_not_found' };
+    }
+    // Read under the same row lock cancelSchedulerClass takes, so a
+    // registration racing a cancel either lands first or is refused (#1536).
+    if (classRow.status === 'cancelled') {
+      return { outcome: 'class_cancelled' };
     }
 
     // #82 STOP: an active 'all_training' hold refuses the registration

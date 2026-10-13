@@ -8,6 +8,7 @@ import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
+import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -32,6 +33,18 @@ type SchedulerClass = {
   covering_coach_account_id?: string;
   status: 'open' | 'full' | 'cancelled';
   registered_count?: number;
+  // Staff only: whether the server would accept cancel_class from this
+  // caller now (#1536). Never sent to a family.
+  can_cancel?: boolean;
+};
+
+/** One coach the admin can assign a coaching request to (#1536), from
+ *  /api/pilot/admin/staff: an active coach of this gym, named the way the
+ *  family screens name a coach, with the login beside it so two coaches whose
+ *  names come out alike can still be told apart. */
+type CoachOption = {
+  account_id: string;
+  label: string;
 };
 
 type SchedulerRegistration = {
@@ -179,6 +192,26 @@ function roleCanResolveCoachingRequests(role: SchedulerRole | null): boolean {
   return role === 'admin' || role === 'organization_admin';
 }
 
+/** The admin's coach picker: active coaches of this gym only, the set
+ *  review_coaching_request's assertActiveCoachAccount accepts. */
+function coachOptionsFrom(members: unknown): CoachOption[] {
+  if (!Array.isArray(members)) return [];
+  return members.flatMap((raw): CoachOption[] => {
+    const member = raw as { account_id?: unknown; login_email?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown };
+    if (
+      member.role !== 'coach'
+      || member.active_flag === false
+      || member.membership_active === false
+      || typeof member.account_id !== 'string'
+      || member.account_id === ''
+    ) {
+      return [];
+    }
+    const login = typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : member.account_id;
+    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})` }];
+  });
+}
+
 export default function SchedulerPage() {
   const [role, setRole] = useState<SchedulerRole | null>(null);
   const [athleteId, setAthleteId] = useState<string>('');
@@ -227,6 +260,11 @@ export default function SchedulerPage() {
   // one coach field, or approving the second silently reuses the first's
   // coach.
   const [assignCoachInputs, setAssignCoachInputs] = useState<Record<string, string>>({});
+  // The admin's coach list (#1536): picked by name, never typed as an id.
+  const [coachOptions, setCoachOptions] = useState<CoachOption[]>([]);
+  const [coachesState, setCoachesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  // A class whose Cancel Class was pressed once: the second press cancels it.
+  const [confirmCancelClassId, setConfirmCancelClassId] = useState('');
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
   const [attendanceNote, setAttendanceNote] = useState('');
   // The moment the page opened: what "today" and "has this class ended" are
@@ -307,6 +345,21 @@ export default function SchedulerPage() {
         }
       } else {
         setAthletes([]);
+      }
+
+      if (roleCanResolveCoachingRequests(auth.role)) {
+        // Its own try: a coach list that cannot be read leaves the picker
+        // saying so, and the rest of the page as it is.
+        try {
+          const staffRes = await fetch(`${apiBase()}/api/pilot/admin/staff`, { method: 'GET', credentials: 'include' });
+          if (!staffRes.ok) throw new Error('staff');
+          const staff = (await staffRes.json()) as { members?: unknown };
+          setCoachOptions(coachOptionsFrom(staff.members));
+          setCoachesState('loaded');
+        } catch {
+          setCoachOptions([]);
+          setCoachesState('unavailable');
+        }
       }
     } catch (error) {
       if (!schedulerRead) setSchedulerFailed(true);
@@ -438,8 +491,96 @@ export default function SchedulerPage() {
   const canRegisterFor = (item: SchedulerClass) => {
     const endsMs = Date.parse(item.end_at);
     const ended = Number.isFinite(endsMs) && endsMs < nowMs;
-    return !ended && !onClass.has(item.class_id);
+    return item.status !== 'cancelled' && !ended && !onClass.has(item.class_id);
   };
+  /* UPCOMING, THEN PAST AND CANCELLED (#1536). A cancelled class, or one
+     that has ended, leaves the upcoming list; it is still listed below, so
+     its registrations and attendance stay readable. */
+  const classIsUpcoming = (item: SchedulerClass) => {
+    const endsMs = Date.parse(item.end_at);
+    return item.status !== 'cancelled' && !(Number.isFinite(endsMs) && endsMs < nowMs);
+  };
+  const upcomingClasses = classes.filter(classIsUpcoming);
+  const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
+
+  // The admin reads coaches by name (#1536, Q3); a coach keeps the stored
+  // value until a coach-readable name source exists.
+  const coachNames = new Map(coachOptions.map((option) => [option.account_id, option.label]));
+  const staffName = (accountId: string) => coachNames.get(accountId) ?? accountId;
+
+  /* One class row, in the upcoming list or under Past and cancelled (#1536).
+     A cancelled class offers nothing; Cancel Class shows where the server
+     would accept it (can_cancel), and takes a second press. */
+  const renderClassRow = (item: SchedulerClass) => (
+    <div key={item.class_id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-md)] mat-leather--raised p-[var(--s4)]">
+      <div>
+        <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
+          {item.title}
+          {item.status === 'cancelled' ? (
+            <span className="badge badge--filed ml-[var(--s3)]"><i aria-hidden="true">✕</i>Cancelled</span>
+          ) : null}
+        </p>
+        <p className="t-muted">
+          {formatGymStamp(item.start_at)} - {formatGymTimeOfDay(item.end_at)} | {item.location}
+        </p>
+        <p className="t-data">
+          Seats: {item.registered_count ?? 0}/{item.capacity}
+          {item.coach_account_id ? ` | Coach: ${staffName(item.coach_account_id)}` : ''}
+          {item.covering_coach_account_id ? ` | Cover: ${staffName(item.covering_coach_account_id)}` : ''}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {canRegisterFor(item) ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedClassId(item.class_id);
+              if (!targetAthlete) {
+                showError('Select an athlete first before registering.');
+                return;
+              }
+              void runAction(
+                { action: 'register_class', class_id: item.class_id, athlete_id: targetAthlete },
+                'Class registration submitted.',
+              );
+            }}
+            disabled={actionInFlight}
+            className="btn disabled:opacity-60 disabled:grayscale"
+          >
+            Register
+          </button>
+        ) : null}
+        {roleCanManageClasses(role) && classIsUpcoming(item) ? (
+          <button
+            type="button"
+            onClick={() => void runAction({ action: 'cover_class', class_id: item.class_id }, 'Coach cover assignment updated.')}
+            disabled={actionInFlight}
+            className="btn btn--ghost disabled:opacity-60"
+          >
+            Cover Class
+          </button>
+        ) : null}
+        {item.can_cancel ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmCancelClassId !== item.class_id) {
+                setConfirmCancelClassId(item.class_id);
+                return;
+              }
+              setConfirmCancelClassId('');
+              void runAction({ action: 'cancel_class', class_id: item.class_id }, 'Class cancelled.');
+            }}
+            disabled={actionInFlight}
+            className="btn btn--ghost disabled:opacity-60"
+          >
+            {confirmCancelClassId === item.class_id ? 'Press again to cancel' : 'Cancel Class'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+
   const shownCheckInHold = checkInHold
     && checkInHold.athleteId === (role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers)
     ? checkInHold.hold
@@ -546,55 +687,19 @@ export default function SchedulerPage() {
                 ) : classes.length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">No classes scheduled yet.</p>
                 ) : (
-                  <div className="mt-3 space-y-2">
-                    {classes.map((item) => (
-                      <div key={item.class_id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-md)] mat-leather--raised p-[var(--s4)]">
-                        <div>
-                          <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{item.title}</p>
-                          <p className="t-muted">
-                            {formatGymStamp(item.start_at)} - {formatGymTimeOfDay(item.end_at)} | {item.location}
-                          </p>
-                          <p className="t-data">
-                            Seats: {item.registered_count ?? 0}/{item.capacity}
-                            {item.coach_account_id ? ` | Coach: ${item.coach_account_id}` : ''}
-                            {item.covering_coach_account_id ? ` | Cover: ${item.covering_coach_account_id}` : ''}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {canRegisterFor(item) ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedClassId(item.class_id);
-                                if (!targetAthlete) {
-                                  showError('Select an athlete first before registering.');
-                                  return;
-                                }
-                                void runAction(
-                                  { action: 'register_class', class_id: item.class_id, athlete_id: targetAthlete },
-                                  'Class registration submitted.',
-                                );
-                              }}
-                              disabled={actionInFlight}
-                              className="btn disabled:opacity-60 disabled:grayscale"
-                            >
-                              Register
-                            </button>
-                          ) : null}
-                          {roleCanManageClasses(role) ? (
-                            <button
-                              type="button"
-                              onClick={() => void runAction({ action: 'cover_class', class_id: item.class_id }, 'Coach cover assignment updated.')}
-                              disabled={actionInFlight}
-                              className="btn btn--ghost disabled:opacity-60"
-                            >
-                              Cover Class
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    {upcomingClasses.length === 0 ? (
+                      <p className="t-muted mt-[var(--s3)]">No upcoming classes.</p>
+                    ) : (
+                      <div className="mt-3 space-y-2">{upcomingClasses.map(renderClassRow)}</div>
+                    )}
+                    {pastOrCancelledClasses.length > 0 ? (
+                      <>
+                        <h3 className="t-label mt-[var(--s5)]">Past and cancelled</h3>
+                        <div className="mt-3 space-y-2">{pastOrCancelledClasses.map(renderClassRow)}</div>
+                      </>
+                    ) : null}
+                  </>
                 )}
               </section>
 
@@ -942,7 +1047,7 @@ export default function SchedulerPage() {
                       <p className="text-[color:var(--bone-300)]">
                         Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}
                         {item.status === 'approved' && item.assigned_coach_account_id
-                          ? ` | Coach: ${item.assigned_coach_account_id}`
+                          ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
                       </p>
                       <p className="text-[color:var(--bone-400)]">{item.goals}</p>
@@ -951,23 +1056,38 @@ export default function SchedulerPage() {
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
                             Coach to assign (their coach of record, or a coach holding active coverage)
                           </label>
-                          <input
+                          {/* Picked by name from the gym's active coaches, never
+                              typed as an id (#1536). No free-text fallback: a
+                              list that cannot be read says so. */}
+                          <select
                             id={`assign-coach-${item.request_id}`}
-                            type="text"
                             value={assignCoachInputs[item.request_id] ?? ''}
                             onChange={(e) =>
                               setAssignCoachInputs((current) => ({ ...current, [item.request_id]: e.target.value }))
                             }
-                            placeholder="coach account id"
-                            className="input"
-                          />
+                            disabled={coachesState !== 'loaded' || coachOptions.length === 0}
+                            className="select"
+                          >
+                            <option value="">
+                              {coachesState === 'loading'
+                                ? 'Loading coaches…'
+                                : coachesState === 'unavailable'
+                                  ? 'The coach list could not be loaded'
+                                  : coachOptions.length === 0
+                                    ? 'No active coaches in this gym'
+                                    : 'Select a coach'}
+                            </option>
+                            {coachOptions.map((option) => (
+                              <option key={option.account_id} value={option.account_id}>{option.label}</option>
+                            ))}
+                          </select>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
                               onClick={() => {
                                 const coachId = (assignCoachInputs[item.request_id] ?? '').trim();
                                 if (!coachId) {
-                                  showError('Enter the coach account id to assign first.');
+                                  showError('Choose the coach to assign first.');
                                   return;
                                 }
                                 void runAction(
