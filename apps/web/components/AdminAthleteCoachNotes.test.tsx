@@ -144,9 +144,9 @@ test('session notes: sessions are read when opened, newest first, two on one day
   ]);
   expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
     'Select a session',
-    '2026-10-08, 5:15 PM - open',
-    '2026-10-08, 9:30 AM - completed',
-    '2026-10-01, 11:00 AM - completed',
+    'Oct 8, 2026, 5:15 PM - open',
+    'Oct 8, 2026, 9:30 AM - completed',
+    'Oct 1, 2026, 11:00 AM - completed',
   ]);
   expect(screen.queryByText(/could not be read and/)).toBeNull();
   expect(screen.queryByText(/Older sessions are kept/)).toBeNull();

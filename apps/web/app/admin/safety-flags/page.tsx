@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { getRoleRoute } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 
 // The safety-flags board (register module 170): the first consumer of the
 // open-flag queue API. Everything here rides the existing route's own
@@ -207,7 +208,7 @@ export default function SafetyFlagsBoardPage() {
                         {flag.athlete_id ? (
                           <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Athlete ID {flag.athlete_id}</span>
                         ) : null}
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>raised {flag.created_at.slice(0, 10)} · {flag.triggered_by.replaceAll('_', ' ')}</span>
+                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>raised {formatGymDateShort(flag.created_at) ?? flag.created_at} · {flag.triggered_by.replaceAll('_', ' ')}</span>
                       </div>
                       {flag.trigger_detail ? (
                         <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{flag.trigger_detail}</p>

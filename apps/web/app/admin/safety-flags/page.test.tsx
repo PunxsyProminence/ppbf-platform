@@ -92,6 +92,9 @@ test('open flags render worst first with severity counts', async () => {
 
   const codes = screen.getAllByText(/no_contact_hold|minor_note/).map((el) => el.textContent);
   expect(codes[0]).toBe('no_contact_hold');
+  // Dated as a person writes it, in the gym's day.
+  expect(screen.getAllByText(/raised Aug 15, 2026/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/raised 2026-08-15/)).toBeNull();
   // 'blocking' appears both as the count tile's label and the card badge.
   expect(screen.getAllByText('blocking').length).toBeGreaterThan(0);
 });

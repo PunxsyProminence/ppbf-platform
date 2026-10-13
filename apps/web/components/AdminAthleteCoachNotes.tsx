@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 import CapacityNotesPanel from './CapacityNotesPanel';
@@ -66,7 +67,7 @@ function pickableSession(row: unknown): PickableSession | null {
 /** The day, when the session was started (two sessions on one day are told apart by it), and whether it was completed. */
 function sessionLabel(session: PickableSession): string {
   const started = formatGymTimeOfDay(session.createdAt);
-  return `${session.date}${started ? `, ${started}` : ''} - ${session.completed ? 'completed' : 'open'}`;
+  return `${formatCalendarDay(session.date)}${started ? `, ${started}` : ''} - ${session.completed ? 'completed' : 'open'}`;
 }
 
 type Sessions =
