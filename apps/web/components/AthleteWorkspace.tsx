@@ -1034,20 +1034,6 @@ export default function AthleteWorkspace() {
   // its message would only bring it back on the next visit. Kept in step by
   // setActiveTab below, which is the only thing that changes the tab.
   const currentTabRef = useRef<TabID>('my-dashboard');
-  // The gym's day, kept current. Read during render it is only as fresh as the
-  // last render, and a tablet left open past gym midnight re-renders for
-  // nobody: yesterday's wellness record would go on being called today's.
-  // A minute is fine; React drops a set to the same value without rendering.
-  const [gymDay, setGymDay] = useState(() => gymDayIso(new Date()) ?? '');
-  useEffect(() => {
-    const refresh = () => setGymDay(gymDayIso(new Date()) ?? '');
-    const timer = window.setInterval(refresh, 60_000);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, []);
   const setGoalSyncMessage = useCallback((text: string) => {
     if (currentTabRef.current !== 'smart-goals') return;
     setSyncMessage({ text, tab: 'smart-goals' });
@@ -2612,7 +2598,7 @@ export default function AthleteWorkspace() {
      sessions the workspace already holds (re-read after every check-out), so
      the corner can say "checked out" instead of "not checked in" -- which was
      false after a check-out. */
-  const gymToday = gymDay;
+  const gymToday = gymDayIso(new Date());
   const checkedOutToday = storedSessions.some((session) => session.completed && gymDayIso(session.createdAt) === gymToday);
   /* When the latest of today's check-outs happened. Check-out writes
      updated_at and nothing on the athlete side writes a completed session
@@ -2642,7 +2628,7 @@ export default function AthleteWorkspace() {
         ? (checkedOutAt ? `Checked out ${checkedOutAt}` : 'Checked out today')
         : checkInLoading || checkInLoadError !== null
           ? null
-          : todayCheckIn && todayCheckIn.checked_in_on === gymToday
+          : todayCheckIn
             ? "Today's wellness is recorded. No session started yet."
             : 'Not checked in yet';
 

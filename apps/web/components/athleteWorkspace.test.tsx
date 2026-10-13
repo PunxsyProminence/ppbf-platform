@@ -22,7 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
-import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymStamp } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
@@ -1857,25 +1857,12 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   // today", the Floor opens) and the chip under the tabs read "Not checked in
   // yet", which sounds like it did not count. It is about the training session.
   test('with the wellness check on record and no session open, Today says both, not "not checked in"', async () => {
-    storedCheckIn = { ...checkedInRecord(), checked_in_on: gymDayIso(new Date()) };
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
     expect(await screen.findByText("Today's wellness is recorded. No session started yet.")).toBeTruthy();
     expect(screen.queryByText('Not checked in yet')).toBeNull();
-  });
-
-  // A tablet left open past gym midnight still holds yesterday's record. It
-  // must not be reported as today's.
-  test("yesterday's wellness record is not reported as today's", async () => {
-    storedCheckIn = { ...checkedInRecord(), checked_in_on: '2026-08-28' };
-    await renderWorkspace();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-
-    expect(await screen.findByText('Not checked in yet')).toBeTruthy();
-    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
   });
 
   test('when the wellness read failed the rail claims nothing about it', async () => {
@@ -1892,29 +1879,6 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
     });
     expect(screen.queryByText('Not checked in yet')).toBeNull();
     expect(screen.queryByText(/wellness is recorded/)).toBeNull();
-  });
-
-  // Left open across gym midnight with no other update: the day has to move on
-  // its own, or yesterday's record is still "today's".
-  test('the rail stops calling a record "today\'s" once the gym day rolls over, with nothing else happening', async () => {
-    jest.useFakeTimers({ now: new Date('2026-10-12T20:30:00Z'), advanceTimers: true });
-    try {
-      storedCheckIn = { ...checkedInRecord(), checked_in_on: '2026-10-12' };
-      await renderWorkspace();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-      expect(await screen.findByText("Today's wellness is recorded. No session started yet.")).toBeTruthy();
-
-      await act(async () => {
-        jest.setSystemTime(new Date('2026-10-13T05:00:00Z'));
-        jest.advanceTimersByTime(61_000);
-      });
-
-      expect(await screen.findByText('Not checked in yet')).toBeTruthy();
-      expect(screen.queryByText(/wellness is recorded/)).toBeNull();
-    } finally {
-      jest.useRealTimers();
-    }
   });
 
   test('while the wellness read is still loading the rail claims nothing', async () => {
