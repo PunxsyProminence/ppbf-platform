@@ -262,7 +262,11 @@ export default function WaiverComplianceAuditPage() {
     const cell = returnFocusTo.current;
     returnFocusTo.current = null;
     if (cell) {
-      document.querySelector<HTMLButtonElement>(`[data-waiver-cell="${cell}"] button`)?.focus();
+      // Matched by value, not by a built selector: an athlete id may hold a
+      // quote or a backslash (#1543 review).
+      const match = Array.from(document.querySelectorAll<HTMLElement>('[data-waiver-cell]'))
+        .find((element) => element.dataset.waiverCell === cell);
+      match?.querySelector<HTMLButtonElement>('button')?.focus();
     }
   }, [edit]);
 
@@ -295,6 +299,9 @@ export default function WaiverComplianceAuditPage() {
   const isLoading = items === null;
 
   function openEdit(next: WaiverEdit) {
+    // One form while a save is out: opening another would let the first
+    // save's answer close it, or land its error beside the wrong waiver.
+    if (savingRef.current) return;
     setEdit(next);
     setEditDate(todayGymDay());
     setEditName('');
@@ -511,6 +518,7 @@ export default function WaiverComplianceAuditPage() {
                               <button
                                 type="button"
                                 onClick={() => openEdit({ athleteId: row.athlete_id, athleteName: row.athlete_name, type, action })}
+                                disabled={editSaving}
                                 aria-label={`${ok ? 'Withdraw' : 'Record signed'}: ${WAIVER_TYPE_LABEL[type]}, ${row.athlete_name}`}
                                 className="btn btn--ghost mt-[var(--s2)] block"
                               >

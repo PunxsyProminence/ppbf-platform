@@ -575,6 +575,44 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
     expect(screen.queryByText(/recorded as signed/)).toBeNull();
   });
 
+  test('while a save is out, no other waiver can be opened', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const posts = installRecording({ firstSave: new Promise<Response>((resolve) => { finish = resolve; }) });
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    fireEvent.change(within(form).getByLabelText('Signed by'), { target: { value: 'Pat T.' } });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    });
+
+    const other = screen.getByRole('button', { name: 'Record signed: Medical release, Jordan T.' }) as HTMLButtonElement;
+    expect(other.disabled).toBe(true);
+    fireEvent.click(other);
+    expect(screen.queryByRole('group', { name: 'Record signed: Medical release, Jordan T.' })).toBeNull();
+
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true }));
+    });
+    expect(posts).toHaveLength(1);
+  });
+
+  test('focus returns to the right cell for an athlete id holding a quote', async () => {
+    const posts: unknown[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') { posts.push(init.body); return jsonResponse({ ok: true }); }
+      return jsonResponse({ ok: true, items: [{ ...INCOMPLETE[0], athlete_id: 'ath-"1\\' }] });
+    }) as unknown as typeof fetch;
+    render(<WaiverComplianceAuditPage />);
+    await screen.findByText('Jordan T.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' }));
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' })).getByRole('button', { name: 'Cancel' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' }));
+    expect(posts).toEqual([]);
+  });
+
   test('two presses of Save in the same tick send one waiver', async () => {
     let finish: ((value: Response) => void) | null = null;
     const posts = installRecording({ firstSave: new Promise<Response>((resolve) => { finish = resolve; }) });
