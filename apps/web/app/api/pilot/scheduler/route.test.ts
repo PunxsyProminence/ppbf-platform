@@ -26,6 +26,7 @@ import {
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
+  setSchedulerClassCover,
   upsertSchedulerAttendance,
   upsertFamilySchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
@@ -2255,6 +2256,18 @@ describe('cancel_class', () => {
 
     expect(response.status).toBe(400);
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('a cancelled class cannot be covered: covering would hand over a register for a class that did not run', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: future(), status: 'cancelled' });
+
+    const response = await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class was cancelled.');
+    expect(setSchedulerClassCover as jest.Mock).not.toHaveBeenCalled();
+    expect(mockAuditCancel).not.toHaveBeenCalled();
   });
 
   describe('GET says where Cancel Class would be accepted, to staff only', () => {

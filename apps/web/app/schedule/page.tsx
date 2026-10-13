@@ -327,7 +327,9 @@ export default function SchedulerPage() {
             .map((row) => row.class_id),
         );
         const todays = todaysClasses.find((item) => mine.has(item.class_id)) ?? todaysClasses[0];
-        const firstClassId = (todays ?? scheduler.classes[0]).class_id;
+        // Staff open on the first class still running, not a cancelled one
+        // (#1536 review): the register refuses a cancelled class.
+        const firstClassId = (todays ?? scheduler.classes.find((item) => item.status !== 'cancelled') ?? scheduler.classes[0]).class_id;
         setSelectedClassId((current) => current || firstClassId);
       }
 
@@ -384,6 +386,8 @@ export default function SchedulerPage() {
     }
 
     setActionInFlight(true);
+    // A half-pressed Cancel Class does not survive another action (#1536 review).
+    setConfirmCancelClassId('');
     setActionMessage('');
     setCheckInHold(null);
     showError('');
@@ -852,7 +856,7 @@ export default function SchedulerPage() {
                   >
                     {classes.map((item) => (
                       <option key={item.class_id} value={item.class_id}>
-                        {item.title} ({formatGymDateNumeric(item.start_at)})
+                        {item.title} ({formatGymDateNumeric(item.start_at)}){item.status === 'cancelled' ? ' (cancelled)' : ''}
                       </option>
                     ))}
                   </select>

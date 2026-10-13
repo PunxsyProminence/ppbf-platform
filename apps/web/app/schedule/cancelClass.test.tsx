@@ -153,4 +153,37 @@ describe('Cancel Class (#1536)', () => {
     expect(within(rowFor('Called Off')).queryByRole('button', { name: 'Register' })).not.toBeInTheDocument();
     expect(within(rowFor('Still On')).getByRole('button', { name: 'Register' })).toBeInTheDocument();
   });
+
+  test('a half-pressed Cancel Class is forgotten when another action runs', async () => {
+    const fetchMock = installFetchMock('coach', [
+      classRow('upcoming', 'Mine Tomorrow', 24 * HOUR, { can_cancel: true }),
+      classRow('other', 'Other Tomorrow', 25 * HOUR),
+    ]);
+    await renderPage();
+
+    fireEvent.click(within(rowFor('Mine Tomorrow')).getByRole('button', { name: 'Cancel Class' }));
+    await act(async () => {
+      fireEvent.click(within(rowFor('Other Tomorrow')).getByRole('button', { name: 'Cover Class' }));
+    });
+    await screen.findByText('Coach cover assignment updated.');
+
+    fireEvent.click(within(rowFor('Mine Tomorrow')).getByRole('button', { name: 'Cancel Class' }));
+
+    expect(posts(fetchMock).map((body) => body.action)).toEqual(['cover_class']);
+  });
+
+  test('staff open the register on a class still running, and a cancelled one is marked in the picker', async () => {
+    installFetchMock('coach', [
+      classRow('gone', 'Called Off', 1 * HOUR, { status: 'cancelled' }),
+      classRow('upcoming', 'Still On', 24 * HOUR, { can_cancel: true }),
+    ]);
+    await renderPage();
+
+    const picker = screen.getByDisplayValue(/Still On/) as HTMLSelectElement;
+    expect(picker.value).toBe('upcoming');
+    expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
+      expect.stringMatching(/^Called Off \(.*\) \(cancelled\)$/),
+      expect.stringMatching(/^Still On \(.*\)$/),
+    ]);
+  });
 });

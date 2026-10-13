@@ -702,6 +702,11 @@ export async function POST(request: NextRequest) {
       if (!existingClass) {
         throw new Error('Missing class record');
       }
+      // Covering hands a coach the class register (its registrations and
+      // attendance); a cancelled class has no register to take (#1536 review).
+      if (existingClass.status === 'cancelled') {
+        throw new ValidationError('This class was cancelled.');
+      }
       await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
 
       // Route-survey B6: any coach can name themselves covering coach with
