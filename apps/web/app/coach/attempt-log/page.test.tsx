@@ -204,6 +204,22 @@ async function pickAthlete() {
   await screen.findByText('missed');
 }
 
+// The athlete saw this attempt saved at October 11, 11:39 PM. The row printed
+// the first ten characters of the ISO text, which is the UTC day: 2026-10-12.
+test('the attempt row shows the gym day and time the athlete saw, not the UTC date', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, {
+    ...MISSED_ATTEMPT,
+    review_state: null,
+    attempted_at: '2026-10-12T03:39:53.000Z',
+  });
+
+  await pickAthlete();
+
+  expect(screen.getByText(/Oct 11, 2026, 11:39 PM/)).toBeTruthy();
+  expect(screen.queryByText(/2026-10-12/)).toBeNull();
+});
+
 test('confirming an attempt posts a confirmed review and no verdict', async () => {
   const capture = { reviews: [] as Array<Record<string, unknown>> };
   global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });

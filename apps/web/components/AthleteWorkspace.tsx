@@ -3544,7 +3544,7 @@ export default function AthleteWorkspace() {
                           </select>
                         </label>
                       </div>
-                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Target: {goal.targetDate}</p>
+                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Target: {formatCalendarDay(goal.targetDate)}</p>
                       <p className="t-muted">{goal.successMetric}</p>
                     </div>
                   );
