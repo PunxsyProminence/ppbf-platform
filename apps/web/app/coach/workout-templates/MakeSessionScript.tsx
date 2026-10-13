@@ -16,10 +16,27 @@ import { apiBase } from '@/lib/apiBase';
 // Issue to athlete keeps on this page. Nothing stops a template being made
 // into a script twice, so a coach wrongly told it failed would make a second:
 //   - 201: made, always -- even when the body cannot be read;
-//   - a refusal the server worded (4xx with its code): nothing was made, and
-//     the reason is given;
-//   - no answer, a server fault, or a 4xx that is not the app's: not known,
-//     and said so, with where to look before pressing again.
+//   - a refusal by one of the statuses this route refuses with (the list
+//     below): nothing was made, and the reason is given;
+//   - anything else -- no answer, a server fault, or another 4xx such as a
+//     rate limit or a timeout from something in between, whatever its body
+//     says -- is not known, and said so, with where to look before pressing
+//     again. The rule Issue to athlete keeps on this page.
+//
+// NOT THE MEDICAL-STOP COLOUR. A refusal or an unknown answer here is an
+// ordinary message: --locked means a medical stop and nothing else
+// (AGENT_KERNEL.md, OD-2026-09-29-001), so the alert is brass and bone, and
+// its words carry the meaning.
+
+// What POST /api/pilot/session-scripts answers when it refuses before or
+// inside its transaction: a bad body, signed out, not allowed, not found, not
+// current or empty, a name or a length it cannot hold.
+const REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
+const NOT_MADE_BY_STATUS: Readonly<Record<number, string>> = {
+  401: 'You are signed out, so no session script was made. Sign in and try again.',
+  403: 'Your account may not make session scripts, so none was made.',
+};
 
 const NOT_MADE: Readonly<Record<string, string>> = {
   WORKOUT_TEMPLATE_NOT_FOUND: 'This template could not be found, so no session script was made.',
@@ -34,7 +51,7 @@ type Outcome =
   | { kind: 'not_made'; message: string }
   | { kind: 'unknown' };
 
-const ALERT = 'rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]';
+const ALERT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
 export default function MakeSessionScript({
   templateId,
@@ -82,10 +99,12 @@ export default function MakeSessionScript({
         });
         return;
       }
-      // A refusal is the app's only when it carries the app's own error; a 4xx
-      // from anything in between (a timeout, a rate limit) is "not known".
-      if (response.status >= 400 && response.status < 500 && typeof payload?.error === 'string') {
-        setOutcome({ kind: 'not_made', message: NOT_MADE[payload.error] ?? 'The server refused, so no session script was made.' });
+      if (REFUSAL_STATUSES.includes(response.status)) {
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        setOutcome({
+          kind: 'not_made',
+          message: NOT_MADE[code] ?? NOT_MADE_BY_STATUS[response.status] ?? 'The server refused, so no session script was made.',
+        });
         return;
       }
       setOutcome({ kind: 'unknown' });

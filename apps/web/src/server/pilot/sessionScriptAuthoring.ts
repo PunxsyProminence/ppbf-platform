@@ -74,9 +74,15 @@ function cleanText(value: string, code: string): string {
   return text;
 }
 
-// total_minutes is checked 10..300 by the table; outside that it is not stated.
-function statedTotalMinutes(lastEnd: number): number | null {
-  return lastEnd >= 10 && lastEnd <= 300 ? lastEnd : null;
+// THE STATED LENGTH is the author's figure -- the template's duration, or what
+// an imported script says -- and is kept apart from what the blocks add up to
+// (sessionScripts.ts coveredMinutes). One rule holds it on create and on edit:
+// it stays as stated, except that it is never shorter than the blocks, so a
+// plan whose last block ends at minute 50 does not read "45 min". The table
+// checks it 10..300; outside that it is not stated.
+function statedLength(stated: number | null, lastEnd: number): number | null {
+  const length = Math.max(stated ?? 0, lastEnd);
+  return length >= 10 && length <= 300 ? length : null;
 }
 
 type TemplateStep = Pick<
@@ -185,7 +191,7 @@ export async function createSessionScriptFromTemplate(
         params.organizationId,
         scriptId,
         name,
-        statedTotalMinutes(blocks[blocks.length - 1].end_offset_min),
+        statedLength(template.duration_minutes, blocks[blocks.length - 1].end_offset_min),
         contactStructure(items),
         `Workout template: ${template.name} v${template.version}`,
         params.actorAccountId,
@@ -288,7 +294,8 @@ export async function editSessionScript(
   return withTransaction(async (client) => {
     // FOR UPDATE: two edits of one script queue here, as does a content import
     // revising it (which locks the same row) and a run being started on it
-    // (its foreign key takes a key-share lock on this row). The two questions
+    // (startSessionScriptRun share-locks this row before it asks the same
+    // question, so neither can answer from before the other committed). The two questions
     // below -- is it still the current version, has it been run -- are each
     // asked in a statement of their own AFTER the lock is held, so they see
     // what the writer this one waited for committed. Asked in the locking
@@ -355,9 +362,8 @@ export async function editSessionScript(
     if (changed.length === 0 && name === script.name) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    // The stated length follows the blocks once a coach has moved them.
     const totalMinutes = minutesChanged
-      ? statedTotalMinutes(Math.max(...blocks.map((block) => block.end_offset_min)))
+      ? statedLength(script.total_minutes, Math.max(...blocks.map((block) => block.end_offset_min)))
       : script.total_minutes;
 
     const run = await client.query(

@@ -6,7 +6,8 @@
 // pin: one press sends one POST naming only the template; the result on screen
 // is the server's answer and nothing more -- made (201, even when the body
 // cannot be read), not made (a refusal, with its reason), or not known (no
-// answer, or a server fault) -- and the link lands on the plan that was made.
+// answer, a server fault, or any status the route does not refuse with) --
+// and the link lands on the plan that was made.
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
@@ -78,7 +79,9 @@ describe('make a session script', () => {
     ['WORKOUT_TEMPLATE_NOT_CURRENT', 409, /no longer in use, so no session script was made/],
     ['WORKOUT_TEMPLATE_EMPTY', 409, /has no steps, so no session script was made/],
     ['WORKOUT_TEMPLATE_NOT_FOUND', 404, /could not be found, so no session script was made/],
-    ['SOMETHING_NEW', 403, /The server refused, so no session script was made/],
+    ['SOMETHING_NEW', 422, /The server refused, so no session script was made/],
+    ['Forbidden: role not allowed', 403, /Your account may not make session scripts, so none was made/],
+    ['Unauthorized', 401, /You are signed out, so no session script was made/],
   ])('a refusal (%s) says nothing was made and why, and the button stays', async (code, status, sentence) => {
     mockFetch(() => answer(status, { error: code }));
     render(<MakeSessionScript templateId="wt-1" />);
@@ -94,9 +97,11 @@ describe('make a session script', () => {
     const handlers = [
       () => { throw new Error('offline'); },
       () => answer(500, { error: 'boom' }),
-      // A timeout or a rate limit from something in between carries no error of the app's.
+      // A rate limit or a timeout from something in between is not this route's
+      // refusal, whatever its body says (Codex on #1565).
+      () => answer(429, { error: 'Too many requests' }),
       () => answer(429, undefined),
-      () => answer(408, {}),
+      () => answer(408, { error: 'WORKOUT_TEMPLATE_EMPTY' }),
     ];
     for (const handler of handlers) {
       mockFetch(handler);
@@ -151,5 +156,17 @@ describe('make a session script', () => {
     render(<MakeSessionScript templateId="wt-1" />);
 
     expect(screen.getByText(/A block with no minutes\s+is given 5\./)).toBeInTheDocument();
+  });
+
+  it('never wears the medical-stop colour: a refusal and an unknown answer are ordinary messages', async () => {
+    for (const handler of [() => answer(409, { error: 'WORKOUT_TEMPLATE_EMPTY' }), () => answer(500, undefined)]) {
+      mockFetch(handler);
+      const view = render(<MakeSessionScript templateId="wt-1" />);
+
+      press();
+
+      expect((await screen.findByRole('alert')).className).not.toMatch(/locked/);
+      view.unmount();
+    }
   });
 });
