@@ -31,7 +31,8 @@ const replace = jest.fn();
    render re-runs it on every render, which re-checks the session forever and
    makes the test hang with nothing wrong with the page. */
 const router = { replace, push: jest.fn() };
-const searchParams = { get: () => null };
+const mockEntry: Record<string, string> = {};
+const searchParams = { get: (key: string) => mockEntry[key] ?? null };
 
 jest.mock('next/navigation', () => ({
   useRouter: () => router,
@@ -86,6 +87,7 @@ function mockServerSaying(role: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  for (const key of Object.keys(mockEntry)) delete mockEntry[key];
   mockListSessions.mockResolvedValue([]);
   // jsdom implements no scrollIntoView, and the message list scrolls itself on
   // every render of the allowed surface.
@@ -178,5 +180,39 @@ describe('a saved-sessions read that failed', () => {
     await act(async () => { render(<ShadowChatPage />); });
 
     expect(screen.getByText('No saved sessions yet.')).toBeTruthy();
+  });
+});
+
+/* F-053. An athlete read "Scoped role-aware SHADOW conversation", "Authority
+   Boundary" and "Context: athlete workspace /athlete/dashboard" above a
+   question about their jab. That is staff wording; the athlete and the parent
+   get one plain sentence and staff keep theirs. */
+describe('what sits at the top of the room', () => {
+  const PLAIN = 'Ask a question about your training: SHADOW explains, and your coach makes the call.';
+
+  test.each(['athlete', 'parent'])('a %s reads one plain sentence, not the system wording', async (role) => {
+    mockEntry.context = 'athlete workspace /athlete/dashboard';
+    mockServerSaying(role);
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(screen.getAllByText(PLAIN).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Scoped role-aware/)).toBeNull();
+    expect(screen.queryByText('Authority Boundary')).toBeNull();
+    expect(screen.queryByText(/Context:/)).toBeNull();
+    expect(screen.queryByText(/SCOUT ONLINE/)).toBeNull();
+    expect(screen.queryByText(/Role-scoped view/)).toBeNull();
+  });
+
+  test('a coach keeps the staff header', async () => {
+    mockEntry.context = 'coach floor';
+    mockServerSaying('coach');
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(screen.getByText('Scoped role-aware SHADOW conversation.')).toBeTruthy();
+    expect(screen.getByText('Authority Boundary')).toBeTruthy();
+    expect(screen.getByText(/Context: coach floor/)).toBeTruthy();
+    expect(screen.queryByText(PLAIN)).toBeNull();
   });
 });

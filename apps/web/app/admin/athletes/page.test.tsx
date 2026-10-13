@@ -206,6 +206,29 @@ describe('/admin/athletes', () => {
     await screen.findByText(/attendance 86%/i);
   });
 
+  // F-058. The row printed "coach coach-1": the account id behind the coach.
+  test('the roster row names the coach, not the account id', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/coach-1/)).toBeNull();
+  });
+
+  test('a coach who is not on the staff list is said plainly, never printed as an id', async () => {
+    const fetchMock = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({ ok: true, members: [] })
+      : undefined));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach not on the staff list/);
+    expect(screen.queryByText(/coach-1/)).toBeNull();
+  });
+
   test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
     const fetchMock = consoleFetch((url) =>
       url.includes('/api/pilot/scheduler/attendance-summary')

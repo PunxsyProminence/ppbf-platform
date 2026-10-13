@@ -54,8 +54,20 @@ function isNoteRow(value: unknown): value is NoteRow {
     && (row.can_withdraw === undefined || typeof row.can_withdraw === 'boolean');
 }
 
-export default function CapacityNotesPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
+export default function CapacityNotesPanel({
+  athleteId,
+  athleteName,
+  confirmWithdraw = false,
+}: {
+  athleteId: string;
+  athleteName: string;
+  /** Withdraw takes two taps: the first asks, the second does it. The admin's
+   *  screen asks, as its Deactivate button does (F-058); the coach's own panel
+   *  is unchanged. */
+  confirmWithdraw?: boolean;
+}) {
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
+  const [armedNoteId, setArmedNoteId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   // The heading names the action that failed: a refused withdrawal is not
@@ -260,12 +272,39 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                           {formatGymDateNumeric(row.created_at)} · {row.author_name}
                         </p>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{row.note}</p>
-                        {row.own || row.can_withdraw === true ? (
+                        {(row.own || row.can_withdraw === true) && armedNoteId === row.note_id ? (
+                          <div className="mt-[var(--s2)] space-y-[var(--s2)]">
+                            <p className="t-body font-semibold">
+                              {`Withdraw the note from ${formatGymDateNumeric(row.created_at)}?`}
+                            </p>
+                            <div className="flex flex-wrap gap-[var(--s3)]">
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={busy}
+                                onClick={() => {
+                                  setArmedNoteId(null);
+                                  void withdraw(row.note_id);
+                                }}
+                              >
+                                Yes, Withdraw It
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                disabled={busy}
+                                onClick={() => setArmedNoteId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : row.own || row.can_withdraw === true ? (
                           <button
                             type="button"
                             className="btn btn--ghost mt-[var(--s1)]"
                             disabled={busy}
-                            onClick={() => void withdraw(row.note_id)}
+                            onClick={() => (confirmWithdraw ? setArmedNoteId(row.note_id) : void withdraw(row.note_id))}
                             aria-label={row.own
                               ? `Withdraw your note from ${formatGymDateNumeric(row.created_at)}`
                               : `Withdraw the note ${row.author_name} wrote on ${formatGymDateNumeric(row.created_at)}`}

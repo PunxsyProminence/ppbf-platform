@@ -97,3 +97,35 @@ describe('ShadowStructuredProse', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('bold', () => {
+  test('a balanced **pair** is bold and its asterisks are not printed', () => {
+    const { container } = render(<ShadowStructuredProse text="Keep your **jab, shoulder up, hand home** every time." />);
+
+    const strong = container.querySelector('strong');
+    expect(strong?.textContent).toBe('jab, shoulder up, hand home');
+    expect(container.textContent).toBe('Keep your jab, shoulder up, hand home every time.');
+    expect(container.textContent).not.toContain('*');
+  });
+
+  test('bold works inside a list item', () => {
+    const { container } = render(<ShadowStructuredProse text={'- **Guard** up\n- Chin down'} />);
+
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelector('li strong')?.textContent).toBe('Guard');
+  });
+
+  test('an unmatched ** is left as typed rather than guessed at', () => {
+    const { container } = render(<ShadowStructuredProse text="Two stars ** and no partner" />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Two stars ** and no partner');
+  });
+
+  test('markup inside a bold pair stays text', () => {
+    const { container } = render(<ShadowStructuredProse text="**<img src=x onerror=alert(1)>**" />);
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('strong')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+});

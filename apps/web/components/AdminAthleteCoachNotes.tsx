@@ -149,7 +149,7 @@ export default function AdminAthleteCoachNotes({ athleteId, athleteName }: { ath
         </p>
       </div>
 
-      <CapacityNotesPanel athleteId={athleteId} athleteName={athleteName} />
+      <CapacityNotesPanel athleteId={athleteId} athleteName={athleteName} confirmWithdraw />
 
       <div>
         <button

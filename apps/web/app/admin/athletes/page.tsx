@@ -7,6 +7,7 @@ import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 
 /** A row of pilot.athletes as GET /api/pilot/athletes/list returns it. */
 interface RosterAthlete {
@@ -340,6 +341,16 @@ function AthleteRecordsConsoleContent() {
     [roster, selectedId],
   );
 
+  // The row names the coach the way the notes sign them ("Coach Ppbf"), not
+  // by the account id behind them (F-058). The staff list is read first; an
+  // email-shaped id that is not on it is named from itself; anything else is
+  // said plainly rather than printed as an id.
+  const coachNameFor = useCallback((coachId: string) => {
+    const known = coaches.find((coach) => coach.account_id === coachId);
+    if (known?.login_email) return deriveCoachDisplayName(known.login_email);
+    return coachId.includes('@') ? deriveCoachDisplayName(coachId) : 'coach not on the staff list';
+  }, [coaches]);
+
   const visibleRoster = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     if (!needle) return roster;
@@ -577,7 +588,7 @@ function AthleteRecordsConsoleContent() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{athlete.full_name}</p>
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {athlete.athlete_id} · born {athlete.dob} · coach {athlete.coach_id}
+                          {athlete.athlete_id} · born {athlete.dob} · {coachNameFor(athlete.coach_id)}
                           {typeof attendanceRate === 'number' && (
                             <> · attendance {Math.round(attendanceRate * 100)}%</>
                           )}

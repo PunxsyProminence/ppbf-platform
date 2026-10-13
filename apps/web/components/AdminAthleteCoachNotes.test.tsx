@@ -124,7 +124,17 @@ test('capacity notes: Withdraw only on the departed coach\'s note, by display na
   const withdraw = screen.getAllByRole('button', { name: /^Withdraw/ });
   expect(withdraw).toHaveLength(1);
   expect(withdraw[0].getAttribute('aria-label')).toMatch(/^Withdraw the note Coach Dana Reyes wrote on /);
+  // F-058: one tap asks, it does not remove. Cancel leaves the note and sends
+  // nothing; the second tap, on "Yes, Withdraw It", does the withdrawal.
   fireEvent.click(withdraw[0]);
+  expect(screen.getByText(/^Withdraw the note from .*\?$/)).toBeTruthy();
+  expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByText('Faded late in round five')).toBeTruthy();
+  expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+
+  fireEvent.click(screen.getAllByRole('button', { name: /^Withdraw/ })[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, Withdraw It' }));
   await waitFor(() => expect(screen.queryByText('Faded late in round five')).toBeNull());
   expect(screen.getByText('Held pace through all six rounds')).toBeTruthy();
 
