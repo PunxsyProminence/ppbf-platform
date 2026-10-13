@@ -65,6 +65,7 @@ jest.mock('./db', () => {
 
 import type { PilotRole } from './contracts';
 import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
+import { FAMILY_ALLOWED_AUDIT_ENTITY_TYPES } from './auditReadAllowlist';
 import { emitShadowEvent } from './shadowEvents';
 import { listShadowEvents } from './shadowReadModels';
 
@@ -316,6 +317,11 @@ async function visibleTo(actorAccountId: string, actorRole: PilotRole, athleteId
 
 const sorted = (ids: string[]) => [...ids].sort();
 
+/** A mirrored audit row reaches an athlete or parent only when its entity type
+ *  is on the family list (#1558 item two; the list is the owner's Q-1). */
+const familyMirror = (label: string, entityType: string) =>
+  (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES.has(entityType) ? [label] : []);
+
 describe("SHADOW event feed: mirrored audit events follow audit/get's role and entity-type gate", () => {
   test('fixture: every row is in the table', async () => {
     const stored = await activeClient!.query<{ entity_id: string }>(
@@ -373,8 +379,20 @@ describe("SHADOW event feed: mirrored audit events follow audit/get's role and e
     expect(await visibleTo(PLATFORM_OWNER, 'platform_owner')).toEqual([OPS]);
   });
 
-  test("athletes and parents keep what they had: only their own athlete's rows, mirrors included", async () => {
-    expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(sorted([SAFETY_A, GOAL_A, LOGIN_A, GOAL_MOVED]));
-    expect(await visibleTo(PARENT_A, 'parent')).toEqual(sorted([SAFETY_A, GOAL_A, LOGIN_A, GOAL_MOVED]));
+  // #1558 item two. These four mirrors are all tied to athlete A, and until
+  // the family list existed the athlete and the parent read every one of
+  // them. Now each arrives only if its entity type is on the list; a safety
+  // flag and an account row never are (shadowReadModels.test.ts pins that).
+  test("athletes and parents read their own athlete's mirrors only for the entity types on the family list", async () => {
+    const expected = sorted([
+      ...familyMirror(SAFETY_A, 'safety_flag'),
+      ...familyMirror(GOAL_A, 'goal'),
+      ...familyMirror(LOGIN_A, 'account'),
+      ...familyMirror(GOAL_MOVED, 'goal'),
+    ]);
+    expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(expected);
+    expect(await visibleTo(PARENT_A, 'parent')).toEqual(expected);
+    expect(expected).not.toContain(SAFETY_A);
+    expect(expected).not.toContain(LOGIN_A);
   });
 });
