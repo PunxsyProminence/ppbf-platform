@@ -152,14 +152,16 @@ export default function InterventionReviewPage() {
     return () => controller.abort();
   }, [reload]);
 
-  /** Resolves null when the write failed, otherwise what the server answered. */
+  /** Resolves null when the write failed; otherwise what the server answered,
+   * and whether the list was read again after it. */
   const send = async (
     method: 'POST' | 'PATCH',
     body: Record<string, unknown>,
     failure: string,
-  ): Promise<{ item?: unknown } | null> => {
+  ): Promise<{ item?: unknown; refreshed: boolean } | null> => {
     setBusy(true);
     let answered: { item?: unknown } = {};
+    let refreshed = false;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-review`, {
         method,
@@ -182,13 +184,14 @@ export default function InterventionReviewPage() {
     // invite sending the same write again.
     try {
       await reload();
+      refreshed = true;
       setErrorMessage(null);
     } catch {
       setErrorMessage(NOT_REFRESHED);
     } finally {
       setBusy(false);
     }
-    return answered;
+    return { ...answered, refreshed };
   };
 
   const post = (body: Record<string, unknown>, failure: string) => send('POST', body, failure);
@@ -246,11 +249,13 @@ export default function InterventionReviewPage() {
       ...reviewForm,
     }, 'Unable to record the review.');
     if (ok) {
-      // Shown here as the server recorded it, so the verdict stands on screen
-      // even when the reload did not come back -- and the next review from
-      // this screen names it. After a good reload this changes nothing.
+      // When the reload did not come back, the verdict is shown as the server
+      // recorded it, so it stands on screen and the next review from this
+      // screen names it. When the reload did come back the list is the truth
+      // and is left alone: it may already hold a verdict someone else recorded
+      // after this one, and this answer is the older of the two.
       const recorded = ok.item as OutcomeReview | undefined;
-      if (recorded?.review_id) {
+      if (!ok.refreshed && recorded?.review_id) {
         setItems((current) => current.map((entry) => (entry.execution.execution_id === executionId
           ? { ...entry, review: recorded }
           : entry)));

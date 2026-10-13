@@ -541,3 +541,50 @@ describe('a review that is saved while the reload after it fails', () => {
     expect(posts[1]).toHaveProperty('expected_review_id', 'rev-1');
   });
 });
+
+describe('a review that is saved, and the reload after it brings a newer verdict from someone else', () => {
+  test('the list read after the save is what is shown, not the older answer to this save', async () => {
+    // Codex P2 on #1568: another reviewer's verdict lands after this POST and
+    // before the reload. The reload has it; the POST's answer must not put the
+    // older one back over it.
+    const posts: Array<Record<string, unknown>> = [];
+    const verdict = (reviewId: string, notes: string) => ({
+      review_id: reviewId, performance_result: 'improved', performance_notes: notes,
+      hypothesis_result: 'supported', learning_signal: 'prior_belief_strengthened', learning_notes: '',
+      reviewed_at: '2026-10-13T15:00:00.000Z',
+    });
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ item: verdict('rev-mine', 'my verdict') }) } as Response;
+      }
+      const review = posts.length > 0 ? verdict('rev-theirs', 'recorded by another coach just after') : null;
+      return { ok: true, json: async () => ({ items: [{ ...CHAIN_ITEM, review }] }) } as Response;
+    }) as unknown as typeof fetch;
+    const review = async (button: string, notes: string) => {
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: button }));
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), { target: { value: notes } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+      });
+    };
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+
+    await review('Review outcome', 'my verdict');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/recorded by another coach just after/)).toBeTruthy();
+    expect(screen.queryByText(/my verdict/)).toBeNull();
+
+    // A re-review from this refreshed screen names the verdict it shows.
+    await review('Re-review (supersedes)', 'having read theirs');
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toHaveProperty('expected_review_id', 'rev-theirs');
+  });
+});
