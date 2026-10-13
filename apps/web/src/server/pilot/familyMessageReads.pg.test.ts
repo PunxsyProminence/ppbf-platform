@@ -313,6 +313,18 @@ describe('family message reads migration (FC-04)', () => {
     }
   });
 
+  test('a read goes with its athlete, through the note', async () => {
+    const client = await freshDatabase('fmread_athlete_cascade');
+    try {
+      await read(client);
+      await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, ATHLETE]);
+      const left = await client.query('select count(*)::int as n from pilot.family_message_reads');
+      expect(left.rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the file holds nothing destructive', async () => {
     const sql = migrationSql.toLowerCase().replace(/--.*$/gm, '');
     expect(sql).not.toMatch(/\bdrop\s+(table|column|index|schema|function)\b/);

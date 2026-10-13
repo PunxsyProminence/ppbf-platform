@@ -45,11 +45,14 @@ const READINESS_QUERY = `
          ) = array['athlete_id', 'note_id', 'organization_id']
     ) as note_fk_ready,
     exists (
+      -- Exactly reader_account_id -> accounts.account_id, one column each side.
       select 1 from pg_constraint c
-       join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
        where c.conrelid = to_regclass('pilot.family_message_reads')
          and c.contype = 'f' and c.confrelid = to_regclass('pilot.accounts')
-         and c.confdeltype = 'c' and a.attname = 'reader_account_id'
+         and c.confdeltype = 'c'
+         and array_length(c.conkey, 1) = 1 and array_length(c.confkey, 1) = 1
+         and (select a.attname from pg_attribute a where a.attrelid = c.conrelid and a.attnum = c.conkey[1]) = 'reader_account_id'
+         and (select a.attname from pg_attribute a where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'account_id'
     ) as reader_fk_cascade,
     exists (
       select 1 from pg_constraint
@@ -62,6 +65,12 @@ const READINESS_QUERY = `
        where i.indexrelid = to_regclass('pilot.uq_pilot_coach_observations_org_note_athlete')
          and i.indrelid = to_regclass('pilot.coach_observations')
          and i.indisunique
+         and i.indpred is null and i.indexprs is null
+         and (
+           select array_agg(a.attname::text order by k.ord)
+             from unnest(i.indkey::int2[]) with ordinality as k(attnum, ord)
+             join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.attnum
+         ) = array['organization_id', 'note_id', 'athlete_id']
     ) as note_index_ready,
     exists (
       -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4), DELETE (bit 8) and UPDATE (bit 16),
