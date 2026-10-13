@@ -5431,6 +5431,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-message-replies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-message-replies",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists every guardian reply on one athlete's parent messages, oldest first, with the guardian's name from pilot.parents (familyMessageReplies.ts listRepliesForStaff; #1542 FC-03). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-notes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-notes",
@@ -8548,6 +8578,60 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Guardian grants/withdraws media consent for own child; gate consent/route.ts:192-193, athlete must be in guardianAthleteIds (:210-212); withdrawal also suppresses published video.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-replies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads only their own replies (author_account_id = caller), on messages about children in guardianAthleteIds now; a co-guardian's replies are never returned (familyMessageReplies.ts listOwnReplies; #1542 FC-03).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-replies/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the note's athlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian replies to one parent_message note in this gym about a child linked to them on this request; a forged id, another gym's note, a non-parent-message note or an ended link is the same 404 (familyMessageReplies.ts createFamilyMessageReply; append-only table, FC-02).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

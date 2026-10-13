@@ -17,6 +17,11 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * Read from GET /api/pilot/coach/family-notes (staff only; the server leaves
  * out which guardian ticked it). A failed read says so; it is never shown as
  * "nothing posted". `refreshKey` changes after a post, so the new note appears.
+ *
+ * FAMILY REPLIES (FC-03): under each note, what the family wrote back, oldest
+ * first, with the guardian's name and the time (gym time). Read from GET
+ * /api/pilot/coach/family-message-replies alongside the notes; a failed replies
+ * read says so and leaves the notes showing.
  */
 export interface FamilyNoteRow {
   note_id: string;
@@ -26,10 +31,31 @@ export interface FamilyNoteRow {
   task: { due_date: string | null; completed_at: string | null } | null;
 }
 
+export interface FamilyReplyRow {
+  reply_id: string;
+  note_id: string;
+  reply_text: string;
+  created_at: string;
+  author_name: string;
+}
+
 type ReadState =
   | { state: 'loading' }
   | { state: 'failed'; athleteId: string }
-  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[] };
+  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[]; replies: FamilyReplyRow[] | null };
+
+async function readReplies(athleteId: string): Promise<FamilyReplyRow[] | null> {
+  try {
+    const response = await fetch(
+      `${apiBase()}/api/pilot/coach/family-message-replies?athlete_id=${encodeURIComponent(athleteId)}`,
+      { credentials: 'include' },
+    );
+    const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+    return response.ok && Array.isArray(payload.items) ? (payload.items as FamilyReplyRow[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function FamilyNotesPosted({
   athleteId,
@@ -47,17 +73,19 @@ export default function FamilyNotesPosted({
     setRead({ state: 'loading' });
     void (async () => {
       try {
+        const repliesRead = readReplies(athleteId);
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/family-notes?athlete_id=${encodeURIComponent(athleteId)}`,
           { credentials: 'include' },
         );
         const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+        const replies = await repliesRead;
         if (mine !== seq.current) return;
         if (!response.ok || !Array.isArray(payload.items)) {
           setRead({ state: 'failed', athleteId });
           return;
         }
-        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[] });
+        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies });
       } catch {
         if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
@@ -81,8 +109,15 @@ export default function FamilyNotesPosted({
       ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">Nothing has been posted to this family yet.</p>
       ) : (
+        <>
+        {shown.replies === null ? (
+          <p role="alert" className="t-body mt-[var(--s2)]">
+            The family&apos;s replies could not be loaded. This is not a statement that nobody replied. Reload to retry.
+          </p>
+        ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {
+            const replies = shown.replies?.filter((reply) => reply.note_id === note.note_id) ?? [];
             const done = note.task?.completed_at ?? null;
             // A due date is a calendar day, not an instant: printed as the day it is.
             const due = note.task?.due_date ? formatCalendarDay(note.task.due_date) : null;
@@ -98,10 +133,23 @@ export default function FamilyNotesPosted({
                     {done ? `Done ${formatGymDateTimeShort(done) ?? done}` : 'Still to do'}
                   </span>
                 ) : null}
+                {replies.length > 0 ? (
+                  <ul aria-label="Family replies" className="mt-[var(--s2)] space-y-[var(--s2)] border-l-2 border-[color:var(--brass-600)] pl-[var(--s3)]">
+                    {replies.map((reply) => (
+                      <li key={reply.reply_id}>
+                        <p className="t-label">
+                          {reply.author_name} replied · {formatGymDateTimeShort(reply.created_at) ?? reply.created_at}
+                        </p>
+                        <p className="t-body whitespace-pre-wrap">{reply.reply_text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             );
           })}
         </ul>
+        </>
       )}
     </div>
   );
