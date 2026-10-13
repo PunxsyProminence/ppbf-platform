@@ -7,7 +7,7 @@
 // settled row never is; and advancing a row PATCHes the ledger rather than
 // mutating anything client-side.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import GrantObligationsPage from './page';
@@ -71,9 +71,11 @@ test('an overdue open row is flagged; a settled row with the same old date is no
 
   render(<GrantObligationsPage />);
 
-  await screen.findByText('Community Youth Grant');
-  expect(screen.getAllByText('overdue')).toHaveLength(1);
-  expect(screen.getByText('Equipment Grant')).toBeTruthy();
+  // The ledger list; the report above it names the same grants (RP-03).
+  const list = await screen.findByRole('list');
+  await within(list).findByText('Community Youth Grant');
+  expect(within(list).getAllByText('overdue')).toHaveLength(1);
+  expect(within(list).getByText('Equipment Grant')).toBeTruthy();
 });
 
 test('advancing a row PATCHes the ledger with the target status', async () => {
@@ -82,7 +84,7 @@ test('advancing a row PATCHes the ledger with the target status', async () => {
 
   render(<GrantObligationsPage />);
 
-  await screen.findByText('Community Youth Grant');
+  await within(await screen.findByRole('list')).findByText('Community Youth Grant');
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark submitted' }));
   });
@@ -119,4 +121,90 @@ test('a failed re-read after a create does not go back to "No obligations on rec
 
   await screen.findByText('Obligations could not be read');
   expect(screen.queryByText('No obligations on record')).toBeNull();
+});
+
+/*
+ * THE OBLIGATIONS REPORT (RP-03): a summary by grant and funder for the chosen
+ * state and due range, Print, and a CSV download that says when it fails.
+ */
+describe('the obligations report section (RP-03)', () => {
+  const createObjectURL = jest.fn(() => 'blob:report');
+  const ROWS = [
+    { ...OVERDUE_ROW, obligation_id: 'r1' },
+    { ...OVERDUE_ROW, obligation_id: 'r2', status: 'in_progress', due_date: '2099-01-01' },
+    { ...SETTLED_OLD_ROW, obligation_id: 'r3', funder_name: '' },
+  ];
+
+  beforeEach(() => {
+    createObjectURL.mockClear();
+    Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  });
+
+  function reportFetch(csvOk: boolean) {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('format=csv')) {
+        return csvOk
+          ? ({ ok: true, blob: async () => new Blob(['x']) } as unknown as Response)
+          : ({ ok: false, json: async () => ({ error: 'Forbidden' }) } as unknown as Response);
+      }
+      return { ok: true, json: async () => ({ items: ROWS }) } as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  function summaryRow(grant: string): string[] {
+    const report = screen.getByRole('region', { name: 'Obligations report' });
+    const cells = within(report).getByText(grant).closest('tr')!.querySelectorAll('td');
+    return Array.from(cells).map((cell) => cell.textContent ?? '');
+  }
+
+  test('grouped by grant and funder, with open, settled and overdue counts; the state filter narrows it', async () => {
+    reportFetch(true);
+    render(<GrantObligationsPage />);
+    await screen.findByRole('region', { name: 'Obligations report' });
+
+    expect(summaryRow('Community Youth Grant')).toEqual(['Community Youth Grant', 'Foundation X', '2', '2', '0', '1']);
+    expect(summaryRow('Equipment Grant')).toEqual(['Equipment Grant', '—', '1', '0', '1', '0']);
+
+    fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'open' } });
+    const report = screen.getByRole('region', { name: 'Obligations report' });
+    expect(within(report).queryByText('Equipment Grant')).toBeNull();
+  });
+
+  test('Print prints; Download CSV asks the server for the chosen state and range', async () => {
+    const fetchMock = reportFetch(true);
+    const print = jest.spyOn(window, 'print').mockImplementation(() => undefined);
+    render(<GrantObligationsPage />);
+    await screen.findByRole('region', { name: 'Obligations report' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(print).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'settled' } });
+    fireEvent.change(screen.getByLabelText('Due from'), { target: { value: '2020-01-01' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    });
+
+    const csvCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('format=csv'));
+    expect(csvCalls).toHaveLength(1);
+    expect(String(csvCalls[0]![0])).toContain('format=csv&state=settled&from=2020-01-01');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused download says so and saves nothing', async () => {
+    reportFetch(false);
+    render(<GrantObligationsPage />);
+    await screen.findByRole('region', { name: 'Obligations report' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    });
+
+    const report = screen.getByRole('region', { name: 'Obligations report' });
+    expect(within(report).getByRole('alert').textContent).toContain('Forbidden');
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
 });

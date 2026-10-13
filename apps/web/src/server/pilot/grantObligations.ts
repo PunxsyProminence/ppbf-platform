@@ -94,6 +94,37 @@ export async function createGrantObligation(input: {
   return row;
 }
 
+/**
+ * THE OBLIGATIONS REPORT (RP-03): every obligation of this organization due
+ * within a range, for one state, grouped for reading -- by grant, then funder,
+ * then due date. Open means open or in progress; settled means submitted,
+ * complete or waived (the set completed_at is stamped for). The range is the
+ * due date, a calendar day; missing dates cannot occur (due_date is NOT NULL).
+ * Overdue is not stored or computed here: it is a display fact the caller
+ * derives from today's gym day (RP-03 Q2 default A).
+ */
+export type GrantReportState = 'open' | 'settled' | 'all';
+
+export async function grantObligationsReport(
+  organizationId: string,
+  options: { dueFrom?: string; dueTo?: string; state: GrantReportState },
+): Promise<GrantObligationRow[]> {
+  return query<GrantObligationRow>(
+    `select ${FIELDS}
+     from pilot.grant_obligations
+     where organization_id = $1
+       and ($2::date is null or due_date >= $2::date)
+       and ($3::date is null or due_date <= $3::date)
+       and (
+         $4 = 'all'
+         or ($4 = 'open' and status in ('open', 'in_progress'))
+         or ($4 = 'settled' and status in ('submitted', 'complete', 'waived'))
+       )
+     order by grant_name asc, funder_name asc, due_date asc, created_at asc`,
+    [organizationId, options.dueFrom ?? null, options.dueTo ?? null, options.state],
+  );
+}
+
 /** Soonest due first; settled rows (submitted/complete/waived -- the same
  * set the status update stamps completed_at for) sink below open work. */
 export async function listGrantObligations(

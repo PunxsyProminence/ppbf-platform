@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
@@ -55,6 +55,148 @@ function isOverdue(row: ObligationRow): boolean {
   // running now, not ours.
   if (row.status === 'submitted' || row.status === 'complete' || row.status === 'waived') return false;
   return row.due_date < gymToday();
+}
+
+type ReportState = 'open' | 'settled' | 'all';
+
+const SETTLED = new Set(['submitted', 'complete', 'waived']);
+
+/*
+ * THE OBLIGATIONS REPORT (RP-03). Internal, for the organization admin. A
+ * summary grouped by grant and funder for the chosen state and due range,
+ * counted from the ledger this page already read; Print prints only this
+ * section; Download CSV asks the server for the same rows as a dated file
+ * (no notes). Overdue is a display fact, as on the list below.
+ */
+function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
+  const [state, setState] = useState<ReportState>('all');
+  const [dueFrom, setDueFrom] = useState('');
+  const [dueTo, setDueTo] = useState('');
+  const [failure, setFailure] = useState('');
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  const groups = useMemo(() => {
+    const chosen = items.filter((row) => {
+      const settled = SETTLED.has(row.status);
+      if (state === 'open' && settled) return false;
+      if (state === 'settled' && !settled) return false;
+      if (dueFrom && row.due_date < dueFrom) return false;
+      if (dueTo && row.due_date > dueTo) return false;
+      return true;
+    });
+    const byGrant = new Map<string, { grant: string; funder: string; total: number; open: number; settled: number; overdue: number }>();
+    for (const row of chosen) {
+      const key = `${row.grant_name}\u0000${row.funder_name}`;
+      const group = byGrant.get(key) ?? { grant: row.grant_name, funder: row.funder_name, total: 0, open: 0, settled: 0, overdue: 0 };
+      group.total += 1;
+      if (SETTLED.has(row.status)) group.settled += 1;
+      else group.open += 1;
+      if (isOverdue(row)) group.overdue += 1;
+      byGrant.set(key, group);
+    }
+    return [...byGrant.values()].sort((a, b) => a.grant.localeCompare(b.grant) || a.funder.localeCompare(b.funder));
+  }, [items, state, dueFrom, dueTo]);
+
+  async function download() {
+    if (busyRef.current) return;
+    setFailure('');
+    if (dueFrom && dueTo && dueFrom > dueTo) {
+      setTimeout(() => setFailure('Choose a From date on or before the To date.'), 0);
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({ format: 'csv', state });
+      if (dueFrom) params.set('from', dueFrom);
+      if (dueTo) params.set('to', dueTo);
+      const response = await fetch(`${apiBase()}/api/pilot/admin/grant-obligations?${params}`, { credentials: 'include' });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'The report could not be made.');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `grant-obligations_${state}_${gymToday()}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Released after the click has handed the file over.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="Obligations report" className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+      <p className="t-eyebrow">Report</p>
+      <p className="t-body mt-[var(--s2)]">
+        By grant and funder, as of {gymToday()} (gym day). Overdue means open or in progress past its due date.
+      </p>
+      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)] print:hidden">
+        <label className="field">
+          <span className="t-label">Show</span>
+          <select className="select" value={state} onChange={(event) => setState(event.target.value as ReportState)}>
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="settled">Settled</option>
+          </select>
+        </label>
+        <label className="field">
+          <span className="t-label">Due from</span>
+          <input type="date" className="input" value={dueFrom} onChange={(event) => setDueFrom(event.target.value)} />
+        </label>
+        <label className="field">
+          <span className="t-label">Due to</span>
+          <input type="date" className="input" value={dueTo} onChange={(event) => setDueTo(event.target.value)} />
+        </label>
+        <button type="button" className="btn btn--ghost" onClick={() => window.print()}>Print</button>
+        <button type="button" className="btn" onClick={() => void download()} disabled={busy}>
+          {busy ? 'Preparing…' : 'Download CSV'}
+        </button>
+      </div>
+      {failure ? (
+        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <span className="alert-msg">{failure}</span>
+        </p>
+      ) : null}
+      {groups.length === 0 ? (
+        <p className="t-muted mt-[var(--s3)]">No obligations match.</p>
+      ) : (
+        <table className="mt-[var(--s3)] w-full text-left">
+          <thead>
+            <tr className="t-eyebrow">
+              <th className="py-[var(--s2)]">Grant</th>
+              <th className="py-[var(--s2)]">Funder</th>
+              <th className="py-[var(--s2)]">Obligations</th>
+              <th className="py-[var(--s2)]">Open</th>
+              <th className="py-[var(--s2)]">Settled</th>
+              <th className="py-[var(--s2)]">Overdue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((group) => (
+              <tr key={`${group.grant}|${group.funder}`} className="t-body">
+                <td className="py-[var(--s2)]">{group.grant}</td>
+                <td className="py-[var(--s2)]">{group.funder || '—'}</td>
+                <td className="py-[var(--s2)]">{group.total}</td>
+                <td className="py-[var(--s2)]">{group.open}</td>
+                <td className="py-[var(--s2)]">{group.settled}</td>
+                <td className="py-[var(--s2)]">{group.overdue}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
 }
 
 export default function GrantObligationsPage() {
@@ -180,14 +322,16 @@ export default function GrantObligationsPage() {
             </div>
           )}
 
-          <div className="mb-[var(--s4)]">
+          {listRead && items.length > 0 ? <GrantReport items={items} /> : null}
+
+          <div className="mb-[var(--s4)] print:hidden">
             <button type="button" className="btn" onClick={() => setShowForm((current) => !current)}>
               {showForm ? 'Close form' : 'Add obligation'}
             </button>
           </div>
 
           {showForm && (
-            <section className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+            <section className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)] print:hidden">
               <div className="grid gap-[var(--s3)] md:grid-cols-2">
                 <div className="field">
                   <label className="t-label" htmlFor="grant-name">Grant</label>
@@ -246,7 +390,7 @@ export default function GrantObligationsPage() {
               </div>
             </div>
           ) : (
-            <ul className="space-y-[var(--s3)]">
+            <ul className="space-y-[var(--s3)] print:hidden">
               {items.map((row) => {
                 const badge = STATUS_BADGE[row.status] ?? STATUS_BADGE.open;
                 const overdue = isOverdue(row);
