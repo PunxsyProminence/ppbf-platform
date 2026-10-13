@@ -1029,8 +1029,17 @@ export default function AthleteWorkspace() {
   const [syncMessage, setSyncMessage] = useState<{ text: string; tab: TabID | null }>({ text: '', tab: null });
   const backendSyncMessage = syncMessage.tab === null || syncMessage.tab === activeTab ? syncMessage.text : '';
   const setBackendSyncMessage = useCallback((text: string) => setSyncMessage({ text, tab: null }), []);
-  const setGoalSyncMessage = useCallback((text: string) => setSyncMessage({ text, tab: 'smart-goals' }), []);
+  // The tab the athlete is on RIGHT NOW, for handlers that finish later: a
+  // save that lands after they have left Goals has nobody to tell, and storing
+  // its message would only bring it back on the next visit. Kept in step by
+  // setActiveTab below, which is the only thing that changes the tab.
+  const currentTabRef = useRef<TabID>('my-dashboard');
+  const setGoalSyncMessage = useCallback((text: string) => {
+    if (currentTabRef.current !== 'smart-goals') return;
+    setSyncMessage({ text, tab: 'smart-goals' });
+  }, []);
   const setActiveTab = useCallback((tab: TabID) => {
+    currentTabRef.current = tab;
     setActiveTabRaw(tab);
     setSyncMessage((current) => (current.tab !== null && current.tab !== tab ? { text: '', tab: null } : current));
   }, []);
@@ -2617,9 +2626,11 @@ export default function AthleteWorkspace() {
       ? null
       : checkedOutToday
         ? (checkedOutAt ? `Checked out ${checkedOutAt}` : 'Checked out today')
-        : todayCheckIn
-          ? "Today's wellness is recorded. No session started yet."
-          : 'Not checked in yet';
+        : checkInLoading
+          ? null
+          : todayCheckIn && todayCheckIn.checked_in_on === gymToday
+            ? "Today's wellness is recorded. No session started yet."
+            : 'Not checked in yet';
 
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');

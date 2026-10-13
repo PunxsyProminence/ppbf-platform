@@ -22,7 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
-import { formatGymStamp } from '@/src/lib/gymTime';
+import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
@@ -1746,6 +1746,26 @@ describe('reporting progress writes it', () => {
     expect(screen.queryByText('Progress saved: 30%.')).toBeNull();
   });
 
+  // A save can land after the athlete has moved on. Its message has nobody to
+  // tell on another tab and must not be waiting for them on the way back.
+  test('a goal that finishes saving after the athlete left Goals does not say so on return', async () => {
+    await openGoals();
+    fireEvent.click(screen.getByRole('button', { name: '+ New SMART Goal' }));
+    fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Read a chapter a night' } });
+    fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: 'chapters logged' } });
+    fireEvent.change(screen.getByLabelText('Goal target date'), { target: { value: '2026-09-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Goal' }));
+
+    openTab('Drills');
+    await act(async () => {
+      resolveGoalPost?.(null);
+      await Promise.resolve();
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText("Goal's on the board. Now go work it.")).toBeNull();
+  });
+
   test('clearing the report sends null rather than 0', async () => {
     storedGoals = [storedGoal({ progress_percent: 60 })];
     await openGoals();
@@ -1837,12 +1857,41 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   // today", the Floor opens) and the chip under the tabs read "Not checked in
   // yet", which sounds like it did not count. It is about the training session.
   test('with the wellness check on record and no session open, Today says both, not "not checked in"', async () => {
+    storedCheckIn = { ...checkedInRecord(), checked_in_on: gymDayIso(new Date()) };
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
     expect(await screen.findByText("Today's wellness is recorded. No session started yet.")).toBeTruthy();
     expect(screen.queryByText('Not checked in yet')).toBeNull();
+  });
+
+  // A tablet left open past gym midnight still holds yesterday's record. It
+  // must not be reported as today's.
+  test("yesterday's wellness record is not reported as today's", async () => {
+    storedCheckIn = { ...checkedInRecord(), checked_in_on: '2026-08-28' };
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
+  });
+
+  test('while the wellness read is still loading the rail claims nothing', async () => {
+    checkInReadPending = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
   });
 
   test('after check-out Today says checked out, with the time', async () => {
