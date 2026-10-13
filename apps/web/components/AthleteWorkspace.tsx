@@ -1126,6 +1126,7 @@ export default function AthleteWorkspace() {
      timing, because a queued write may not run for several renders. */
   const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const checkingOutRef = useRef(false);
+  const checkingInRef = useRef(false);
   /* The note the session row holds right now, as far as this tab knows -- what
      a coach can read. A publication that lands WHILE check-out is waiting on
      the chain updates it here, synchronously, so the note check-out replays is
@@ -1999,8 +2000,10 @@ export default function AthleteWorkspace() {
 
   const handleCheckIn = async () => {
     // A second check-in over an open session would leave the first one open
-    // forever, which is the state this screen exists to get out of.
-    if (isCheckingIn || activeSessionRecord) {
+    // forever, which is the state this screen exists to get out of. The ref
+    // catches two presses in one tick, which both read the same isCheckingIn
+    // (#1529, as checkingOutRef does for Check Out).
+    if (checkingInRef.current || isCheckingIn || activeSessionRecord) {
       return;
     }
 
@@ -2018,6 +2021,7 @@ export default function AthleteWorkspace() {
     }
 
     setCheckInFailed(false);
+    checkingInRef.current = true;
     setIsCheckingIn(true);
 
     const sessionId = `session_${Date.now()}`;
@@ -2106,6 +2110,7 @@ export default function AthleteWorkspace() {
         + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
       setCheckInFailed(true);
     } finally {
+      checkingInRef.current = false;
       setIsCheckingIn(false);
     }
 
@@ -2241,6 +2246,23 @@ export default function AthleteWorkspace() {
        nothing is sent to SHADOW from here. */
   };
 
+  /* One pain report, one save (#1529). The ref stops a second press in the
+     same tick. The pending report -- its id and the moment it was made --
+     lives until it is confirmed saved, so a retry of the SAME answers sends a
+     byte-identical observation: the observations route treats an identical
+     payload under one idempotency key as the same report, and anything that
+     differs under that key as a conflict (repository.ts), so the moment has
+     to be kept as well as the id. Changed answers, or Cancel, start a new
+     report. */
+  const painSavingRef = useRef(false);
+  const pendingPainReportRef = useRef<{
+    id: string;
+    observedAt: string;
+    location: string;
+    type: string;
+    severity: number;
+  } | null>(null);
+
   const handleSavePainReport = async () => {
     /* A-FIN-07. An incomplete pain report is not a quiet partial save: it is
        no write at all. Location, type and severity must each be the athlete's
@@ -2251,14 +2273,31 @@ export default function AthleteWorkspace() {
     if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
       return;
     }
+    if (painSavingRef.current) {
+      return;
+    }
+    painSavingRef.current = true;
 
-    const now = new Date();
+    const pending = pendingPainReportRef.current;
+    const report = pending
+      && pending.location === selectedPainLocation
+      && pending.type === currentPainType
+      && pending.severity === currentPainSeverity
+      ? pending
+      : {
+        id: `pain_${Date.now()}`,
+        observedAt: new Date().toISOString(),
+        location: selectedPainLocation,
+        type: currentPainType,
+        severity: currentPainSeverity,
+      };
+    pendingPainReportRef.current = report;
     const newPainLogEntry: PainLogEntry = {
-      id: `pain_${Date.now()}`,
+      id: report.id,
       location: selectedPainLocation,
       type: currentPainType,
       severity: currentPainSeverity,
-      capturedAt: now.toISOString(),
+      capturedAt: report.observedAt,
     };
 
     setIsSavingPain(true);
@@ -2297,7 +2336,7 @@ export default function AthleteWorkspace() {
             painType: currentPainType,
             injuryFlag: true,
           },
-          observedAt: now.toISOString(),
+          observedAt: report.observedAt,
           idempotencyKey: `${newPainLogEntry.id}-pain_report`,
         }),
       });
@@ -2361,6 +2400,8 @@ export default function AthleteWorkspace() {
       setPainSaveMessage('Logged, and flagged for a coach to look at.');
 
       setShowPainModal(false);
+      // Saved and confirmed: the next report is a new one.
+      pendingPainReportRef.current = null;
       /* A-FIN-07. The stored answers go with the modal. Leaving them set made
          the NEXT report open pre-filled with the last one -- a different way
          of putting words in the athlete's mouth, and a harder one to notice
@@ -2377,6 +2418,7 @@ export default function AthleteWorkspace() {
         ? error.message
         : 'That pain report did not save. Report it again, and tell a coach in person.');
     } finally {
+      painSavingRef.current = false;
       setIsSavingPain(false);
     }
   };
@@ -4097,7 +4139,16 @@ export default function AthleteWorkspace() {
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
                 </button>
-                <button onClick={() => setShowPainModal(false)} className="btn btn--kiosk btn--ghost flex-1">Cancel</button>
+                <button
+                  onClick={() => {
+                    // A cancelled report is over; the next Save is a new one (#1529).
+                    pendingPainReportRef.current = null;
+                    setShowPainModal(false);
+                  }}
+                  className="btn btn--kiosk btn--ghost flex-1"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

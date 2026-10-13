@@ -3025,6 +3025,9 @@ function CapabilityRoomWrongRoleNotice() {
           <Link href="/admin/organizations" className="btn btn--ghost">
             Organization Provisioning
           </Link>
+          <Link href="/admin/system" className="btn btn--ghost">
+            System
+          </Link>
         </div>
       </div>
     </main>

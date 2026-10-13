@@ -11,7 +11,7 @@
 // shown only from a good read of that same season -- never after a failed
 // read, and never from a late reply for a season no longer open.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import WrestlingLeagueManagementPage from './page';
 
@@ -48,6 +48,8 @@ function mockFetch(options: {
   capture?: { posts: Array<{ url: string; body: unknown }> };
   rosterPostStatus?: number;
   rosterPostError?: string;
+  roster?: Array<Record<string, unknown>>;
+  athletes?: Array<Record<string, unknown>>;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -69,10 +71,10 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ items: [EVENT] }) } as Response;
     }
     if (url.includes('/wrestling-league/roster')) {
-      return { ok: true, json: async () => ({ items: [ROSTER_ENTRY] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.roster ?? [ROSTER_ENTRY] }) } as Response;
     }
     if (url.includes('/athletes/list')) {
-      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.athletes ?? [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
     }
     return { ok: true, json: async () => ({ items: [] }) } as Response;
   }) as unknown as typeof fetch;
@@ -238,7 +240,7 @@ test('a failed season-detail read shows neither an empty season nor the last sea
   expect(screen.queryByText(/Opening Duals/)).toBeNull();
   expect(screen.queryByText(/Jordan Little/)).toBeNull();
   expect(screen.queryByText(/No events filed for this season/)).toBeNull();
-  expect(screen.queryByText(/No athletes on this season roster/)).toBeNull();
+  expect(screen.queryByText(/No active athletes on this season roster/)).toBeNull();
 });
 
 test('a failed first season-detail read does not say the season has no events or athletes', async () => {
@@ -265,7 +267,7 @@ test('a failed first season-detail read does not say the season has no events or
 
   expect(screen.getByRole('alert').textContent).toMatch(/Unable to load the season detail\./);
   expect(screen.queryByText(/No events filed for this season/)).toBeNull();
-  expect(screen.queryByText(/No athletes on this season roster/)).toBeNull();
+  expect(screen.queryByText(/No active athletes on this season roster/)).toBeNull();
 });
 
 const SECOND_SEASON = { ...SEASON, season_id: 'season-2', season_name: 'Spring League 2027' };
@@ -353,7 +355,7 @@ test('after a failed season-detail read, the lists still say so once another act
   // One line under Events, one under Roster.
   expect(screen.getAllByText('Unable to load the season detail.')).toHaveLength(2);
   expect(screen.queryByText(/No events filed for this season/)).toBeNull();
-  expect(screen.queryByText(/No athletes on this season roster/)).toBeNull();
+  expect(screen.queryByText(/No active athletes on this season roster/)).toBeNull();
 });
 
 test("a season's reload that lands after another season was opened is dropped (the other season failed)", async () => {
@@ -392,7 +394,7 @@ test("a season's reload that lands after another season was opened is dropped (t
   expect(screen.queryByText(/Jordan Little/)).toBeNull();
   expect(screen.getByRole('alert').textContent).toMatch(/Unable to load the season detail\./);
   expect(screen.queryByText(/No events filed for this season/)).toBeNull();
-  expect(screen.queryByText(/No athletes on this season roster/)).toBeNull();
+  expect(screen.queryByText(/No active athletes on this season roster/)).toBeNull();
 });
 
 test.each([
@@ -429,4 +431,108 @@ test.each([
   expect(screen.queryByText(/Opening Duals/)).toBeNull();
   expect(screen.queryByText(/Jordan Little/)).toBeNull();
   expect(screen.queryByText('Unable to load the season detail.')).toBeNull();
+});
+
+// WO-N8-03, N8-03-Q1 A: inactive roster members leave the active list and keep their history under
+// Inactive; the picker offers no athlete already on this season's roster.
+const INACTIVE = { entry_id: 'entry-2', athlete_id: 'ath-3', athlete_name: 'Riley Shaw', status: 'inactive' };
+
+async function openTheSeason() {
+  await act(async () => {
+    render(<WrestlingLeagueManagementPage />);
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Open detail' }));
+  });
+}
+
+test('an inactive member is listed under Inactive, not in the active roster', async () => {
+  global.fetch = mockFetch({ roster: [ROSTER_ENTRY, INACTIVE] });
+  await openTheSeason();
+
+  const active = await screen.findByRole('list', { name: 'Roster' });
+  expect(within(active).getByText(/Jordan Little/)).toBeTruthy();
+  expect(within(active).queryByText(/Riley Shaw/)).toBeNull();
+  const inactive = screen.getByRole('list', { name: 'Inactive' });
+  expect(within(inactive).getByText('Riley Shaw · inactive')).toBeTruthy();
+  expect(within(inactive).queryByRole('button')).toBeNull();
+});
+
+test('with every member inactive, the active list says it is empty and the history stays', async () => {
+  global.fetch = mockFetch({ roster: [INACTIVE] });
+  await openTheSeason();
+
+  expect(await screen.findByText('No active athletes on this season roster.')).toBeTruthy();
+  expect(screen.getByRole('list', { name: 'Inactive' })).toBeTruthy();
+});
+
+test('the picker leaves out athletes already on the roster, active or inactive', async () => {
+  global.fetch = mockFetch({
+    roster: [ROSTER_ENTRY, INACTIVE],
+    athletes: [
+      { athlete_id: 'ath-1', full_name: 'Jordan Little' },
+      { athlete_id: 'ath-2', full_name: 'Casey Stone' },
+      { athlete_id: 'ath-3', full_name: 'Riley Shaw' },
+    ],
+  });
+  await openTheSeason();
+
+  const picker = await screen.findByLabelText('Add athlete');
+  const options = within(picker).getAllByRole('option').map((option) => option.textContent);
+  expect(options).toEqual(['Select an athlete…', 'Casey Stone']);
+});
+
+test('a choice made under one season is not carried into a season where that athlete is rostered', async () => {
+  const capture: unknown[] = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === 'POST') {
+      capture.push(JSON.parse(String(init.body)));
+      return items([]);
+    }
+    if (url.includes('/wrestling-league/seasons')) return items([SEASON, SECOND_SEASON]);
+    if (url.includes('/athletes/list')) {
+      return items([{ athlete_id: 'ath-2', full_name: 'Casey Stone' }, { athlete_id: 'ath-3', full_name: 'Riley Moss' }]);
+    }
+    if (url.includes('season_id=season-2')) return items(url.includes('/events') ? [SECOND_EVENT] : [SECOND_ENTRY]);
+    return items(url.includes('/events') ? [EVENT] : [ROSTER_ENTRY]);
+  }) as unknown as typeof fetch;
+  await act(async () => {
+    render(<WrestlingLeagueManagementPage />);
+  });
+
+  await openSeason(0);
+  fireEvent.change(await screen.findByLabelText('Add athlete'), { target: { value: 'ath-3' } });
+  expect((screen.getByLabelText('Add athlete') as HTMLSelectElement).value).toBe('ath-3');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Close detail' }));
+  });
+  await openSeason(1);
+  await screen.findByText(/Spring Opener/);
+
+  expect((screen.getByLabelText('Add athlete') as HTMLSelectElement).value).toBe('');
+  const add = screen.getByRole('button', { name: 'Add to roster' }) as HTMLButtonElement;
+  expect(add.disabled).toBe(true);
+  await act(async () => {
+    fireEvent.click(add);
+  });
+  expect(capture).toEqual([]);
+});
+
+test('after a failed season-detail read the picker offers every athlete and no Inactive list is drawn', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/wrestling-league/seasons')) return items([SEASON]);
+    if (url.includes('/athletes/list')) {
+      return items([{ athlete_id: 'ath-1', full_name: 'Jordan Little' }, { athlete_id: 'ath-3', full_name: 'Riley Shaw' }]);
+    }
+    if (url.includes('season_id=')) return failed();
+    return items([]);
+  }) as unknown as typeof fetch;
+  await openTheSeason();
+
+  expect(await screen.findAllByText('Unable to load the season detail.')).not.toHaveLength(0);
+  expect(screen.queryByRole('list', { name: 'Inactive' })).toBeNull();
+  const options = within(screen.getByLabelText('Add athlete')).getAllByRole('option').map((option) => option.textContent);
+  expect(options).toEqual(['Select an athlete…', 'Jordan Little', 'Riley Shaw']);
 });

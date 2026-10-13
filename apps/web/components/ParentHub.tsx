@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
@@ -468,10 +468,14 @@ export default function ParentHub() {
   const [barrierDescription, setBarrierDescription] = useState('');
   const [barrierMessage, setBarrierMessage] = useState('');
   const [barrierSubmitting, setBarrierSubmitting] = useState(false);
+  // One report per press (#1529): a ref, because two presses in one tick both
+  // read the same `barrierSubmitting` and both got through.
+  const barrierSubmittingRef = useRef(false);
 
   async function handleReportBarrier(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeChildId || !barrierDescription.trim() || barrierSubmitting) return;
+    if (!activeChildId || !barrierDescription.trim() || barrierSubmitting || barrierSubmittingRef.current) return;
+    barrierSubmittingRef.current = true;
     setBarrierMessage('');
     setBarrierSubmitting(true);
     try {
@@ -494,6 +498,7 @@ export default function ParentHub() {
     } catch (error) {
       setBarrierMessage(error instanceof Error ? error.message : 'Failed to send the report.');
     } finally {
+      barrierSubmittingRef.current = false;
       setBarrierSubmitting(false);
     }
   }

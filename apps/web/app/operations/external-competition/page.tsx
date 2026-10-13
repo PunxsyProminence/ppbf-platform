@@ -222,20 +222,45 @@ export default function ExternalCompetitionPlatformPage() {
     }
   };
 
+  // Adding an athlete and re-entering a withdrawn one are the same POST: the server reopens a
+  // withdrawn entry and runs every existing check again (WO-N8-03). A refusal is shown as the
+  // server worded it, and the withdrawn row stays as it is.
+  const postEntry = async (athleteId: string): Promise<void> => {
+    if (!selectedCompetitionId) return;
+    const response = await fetch(`${apiBase()}/api/pilot/operations/external-competition/entries`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ competition_id: selectedCompetitionId, athlete_id: athleteId }),
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || `Entry failed (${response.status})`);
+    }
+  };
+
+  const handleReenter = async (entry: EntryRow) => {
+    if (!selectedCompetitionId) return;
+    setBusy(true);
+    try {
+      await postEntry(entry.athlete_id);
+      await reloadEntries(selectedCompetitionId);
+      setErrorMessage(null);
+    } catch (error) {
+      // Re-read first, so a row another screen already re-entered is not left under Withdrawn
+      // beside the server's answer.
+      await reloadEntries(selectedCompetitionId).catch(() => undefined);
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to re-enter the athlete.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAddEntry = async () => {
     if (!selectedCompetitionId || !entryAthleteId) return;
     setBusy(true);
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/operations/external-competition/entries`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ competition_id: selectedCompetitionId, athlete_id: entryAthleteId }),
-      });
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Entry failed (${response.status})`);
-      }
+      await postEntry(entryAthleteId);
       setEntryAthleteId('');
       await reloadEntries(selectedCompetitionId);
       setErrorMessage(null);
@@ -310,6 +335,9 @@ export default function ExternalCompetitionPlatformPage() {
       setBusy(false);
     }
   };
+
+  const enteredEntries = entries.filter((entry) => entry.status !== 'withdrawn');
+  const withdrawnEntries = entries.filter((entry) => entry.status === 'withdrawn');
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -431,14 +459,14 @@ export default function ExternalCompetitionPlatformPage() {
                           <div className="mt-[var(--s4)]"><span className="working">Loading entries...</span></div>
                         ) : (
                           <div className="mt-[var(--s4)]">
-                            <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Entries</h3>
+                            <h3 id="entries-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Entries</h3>
                             {entriesFailed ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>The entry list could not be loaded just now.</p>
-                            ) : entries.length === 0 ? (
+                            ) : enteredEntries.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes entered.</p>
                             ) : (
-                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-                                {entries.map((entry) => (
+                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="entries-heading">
+                                {enteredEntries.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
                                       {entry.athlete_name} · {entry.status}
@@ -499,6 +527,38 @@ export default function ExternalCompetitionPlatformPage() {
                                   </li>
                                 ))}
                               </ul>
+                            )}
+                            {/* Withdrawn athletes are not competitors: they leave the Entries list and
+                                show their history here, result and lesson included. Re-enter reopens
+                                the entry, and the server clears that result and lesson when it does. */}
+                            {!entriesFailed && withdrawnEntries.length > 0 && (
+                              <div className="mt-[var(--s3)]">
+                                <h3 id="withdrawn-heading" className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Withdrawn</h3>
+                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="withdrawn-heading">
+                                  {withdrawnEntries.map((entry) => (
+                                    <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                                      <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
+                                        {entry.athlete_name} · withdrawn
+                                        {entry.result && (
+                                          <span className={RESULT_BADGE[entry.result]?.className ?? 'badge badge--filed'}>
+                                            <i aria-hidden="true">{RESULT_BADGE[entry.result]?.glyph ?? '▣'}</i>
+                                            {entry.result.replaceAll('_', ' ')}
+                                          </span>
+                                        )}
+                                        <button type="button" className="btn btn--ghost" disabled={busy}
+                                          onClick={() => void handleReenter(entry)}>
+                                          Re-enter
+                                        </button>
+                                      </span>
+                                      {entry.lesson_note ? (
+                                        <span className="block text-[color:var(--bone-300)]">
+                                          Lesson: {entry.lesson_note}
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                             <div className="mt-[var(--s3)] grid gap-[var(--s2)] md:max-w-sm">
                               <div className="field">
