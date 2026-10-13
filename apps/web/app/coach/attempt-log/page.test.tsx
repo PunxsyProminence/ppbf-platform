@@ -204,6 +204,52 @@ async function pickAthlete() {
   await screen.findByText('missed');
 }
 
+// The athlete saw this attempt saved at October 11, 11:39 PM. The row printed
+// the first ten characters of the ISO text, which is the UTC day: 2026-10-12.
+test('the attempt row shows the gym day and time the athlete saw, not the UTC date', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, {
+    ...MISSED_ATTEMPT,
+    review_state: null,
+    attempted_at: '2026-10-12T03:39:53.000Z',
+  });
+
+  await pickAthlete();
+
+  expect(screen.getByText(/Oct 11, 2026, 11:39 PM/)).toBeTruthy();
+  expect(screen.queryByText(/2026-10-12/)).toBeNull();
+});
+
+test('the review history shows the gym day and time a review was written, not the UTC date', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  const base = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/training-attempts/review') && !init?.method) {
+      return {
+        ok: true,
+        json: async () => ({
+          items: [{
+            review_id: 'rv-1',
+            review_state: 'confirmed',
+            corrected_target_value: null,
+            corrected_achieved_value: null,
+            corrected_made: null,
+            reason: '',
+            reviewed_at: '2026-10-12T03:45:00.000Z',
+          }],
+        }),
+      } as Response;
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+
+  await pickAthlete();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'History' })); });
+
+  expect(await screen.findByText(/Oct 11, 2026, 11:45 PM · confirmed/)).toBeTruthy();
+  expect(screen.queryByText(/2026-10-12/)).toBeNull();
+});
+
 test('confirming an attempt posts a confirmed review and no verdict', async () => {
   const capture = { reviews: [] as Array<Record<string, unknown>> };
   global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });

@@ -193,3 +193,17 @@ test('two presses of Check in in the same tick send one check-in (#1529)', async
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+// The check-in answer is a gym-day string from the server ("2026-10-12"). The
+// athlete read it back in computer form; a person writes October 12.
+test('the check-in day reads as a date, in the confirmation and in the recent list', () => {
+  const record = { ...savedRecord(), checked_in_on: '2026-10-12' };
+  const earlier = { ...savedRecord(), check_in_id: 'ci-0', checked_in_on: '2026-10-11' };
+  render(
+    <AthleteCheckInPanel today={record as never} recent={[record, earlier] as never} loading={false} loadError={null} onSaved={() => undefined} />,
+  );
+
+  expect(screen.getByText(/You checked in on Oct 12, 2026\./)).toBeTruthy();
+  expect(screen.getAllByText('Oct 11, 2026').length).toBeGreaterThan(0);
+  expect(screen.queryByText(/2026-10-1/)).toBeNull();
+});

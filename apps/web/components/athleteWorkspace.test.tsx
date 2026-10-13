@@ -1640,6 +1640,15 @@ describe('goal category and progress say only what the row says', () => {
     expect(screen.getByTestId('goal-progress-bar-goal_1')).toBeTruthy();
   });
 
+  // A bare calendar day was printed in computer form ("Target: 2026-12-26").
+  test('the goal target date is written as a date a person reads', async () => {
+    storedGoals = [storedGoal({ target_date: '2026-12-26' })];
+    await openGoals();
+
+    expect(await screen.findByText('Target: Dec 26, 2026')).toBeTruthy();
+    expect(screen.queryByText(/2026-12-26/)).toBeNull();
+  });
+
   test('a stored category and percentage are shown as stored', async () => {
     storedGoals = [storedGoal({ category: 'Academics', progress_percent: 40 })];
     await openGoals();

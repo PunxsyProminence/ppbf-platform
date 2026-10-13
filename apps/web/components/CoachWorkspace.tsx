@@ -31,6 +31,7 @@ import {
   formatGymStamp,
   formatGymTimeOfDay,
 } from '@/src/lib/gymTime';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import {
   COACH_DEVELOPMENT_GOAL_STATUS_LABEL,
   COACH_DEVELOPMENT_TOPIC_PROMPTS,
@@ -3836,7 +3837,7 @@ export default function CoachWorkspace() {
                   {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (
                     <div className="space-y-[var(--s3)]">
                       <p className="t-body">
-                        Today&apos;s report for {wellnessAthleteName}, checked in on {wellnessShown.today.checkedInOn}.
+                        Today&apos;s report for {wellnessAthleteName}, checked in on {formatCalendarDay(wellnessShown.today.checkedInOn)}.
                       </p>
                       <dl className="grid gap-[var(--s3)] sm:grid-cols-2 lg:grid-cols-3">
                         <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">

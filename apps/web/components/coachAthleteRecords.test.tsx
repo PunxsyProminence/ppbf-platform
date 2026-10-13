@@ -40,7 +40,7 @@ describe('SleepTrend', () => {
       />,
     );
     const rows = screen.getAllByRole('listitem').map((row) => row.textContent);
-    expect(rows).toEqual(['2026-09-227.5 hours', '2026-09-21not answered']);
+    expect(rows).toEqual(['Sep 22, 20267.5 hours', 'Sep 21, 2026not answered']);
   });
 
   test('adds no average, rating or advice', () => {

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
 // attempt -- made OR failed -- because the failed ones are the point. "One
@@ -203,7 +204,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
           {attempt.target_value ? ` / target ${attempt.target_value}${unit}` : ''}
         </span>
         <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-          {attempt.metric_kind.replaceAll('_', ' ')} · {attempt.context_type.replaceAll('_', ' ')} · {attempt.attempted_at.slice(0, 10)}
+          {attempt.metric_kind.replaceAll('_', ' ')} · {attempt.context_type.replaceAll('_', ' ')} · {formatGymDateTimeShort(attempt.attempted_at) ?? attempt.attempted_at}
         </span>
         <span className="t-muted" style={{ fontSize: 'var(--t-xs)' }}>{recorderLabel(attempt.recorded_by_role)}</span>
       </div>
@@ -293,7 +294,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
             <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
               {history.map((review) => (
                 <li key={review.review_id} className="t-muted" style={{ fontSize: 'var(--t-xs)' }}>
-                  {review.reviewed_at.slice(0, 10)} · {review.review_state}
+                  {formatGymDateTimeShort(review.reviewed_at) ?? review.reviewed_at} · {review.review_state}
                   {review.review_state === 'corrected'
                     ? `: ${review.corrected_achieved_value}${unit}${review.corrected_target_value ? ` / ${review.corrected_target_value}${unit}` : ''} — ${verdictLabel(review.corrected_made)}`
                     : ''}
