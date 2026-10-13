@@ -90,8 +90,15 @@ describe('make a session script', () => {
     expect(screen.getByRole('button', { name: 'Make a session script' })).not.toBeDisabled();
   });
 
-  it('no answer, or a server fault, is "not known": it never says nothing was made', async () => {
-    for (const handler of [() => { throw new Error('offline'); }, () => answer(500, { error: 'boom' })]) {
+  it('no answer, a server fault, or a 4xx that is not the app\'s is "not known": it never says nothing was made', async () => {
+    const handlers = [
+      () => { throw new Error('offline'); },
+      () => answer(500, { error: 'boom' }),
+      // A timeout or a rate limit from something in between carries no error of the app's.
+      () => answer(429, undefined),
+      () => answer(408, {}),
+    ];
+    for (const handler of handlers) {
       mockFetch(handler);
       const view = render(<MakeSessionScript templateId="wt-1" />);
 
@@ -122,5 +129,27 @@ describe('make a session script', () => {
 
     expect(await screen.findByRole('status')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the page while the request is running, and when it has answered', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    mockFetch(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    const onBusyChange = jest.fn();
+    render(<MakeSessionScript templateId="wt-1" onBusyChange={onBusyChange} />);
+
+    await act(async () => press());
+    expect(onBusyChange.mock.calls).toEqual([[true]]);
+    await act(async () => {
+      finish?.(answer(201, MADE));
+    });
+
+    expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('says what a block with no minutes is given, as a length and not a start', () => {
+    mockFetch(() => answer(201, MADE));
+    render(<MakeSessionScript templateId="wt-1" />);
+
+    expect(screen.getByText(/A block with no minutes\s+is given 5\./)).toBeInTheDocument();
   });
 });

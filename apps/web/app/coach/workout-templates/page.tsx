@@ -600,6 +600,8 @@ function CoachWorkoutTemplates() {
   // control, and an issue whose control is gone answers to nobody: the cards
   // would exist with nothing on screen to say so.
   const [issuing, setIssuing] = useState(false);
+  // The same, while a session script is being made from the open template.
+  const [making, setMaking] = useState(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
   const requestKeys = useRef<RequestKeys>(new Map());
@@ -744,7 +746,7 @@ function CoachWorkoutTemplates() {
                   // for the template already showing with its issue control (a
                   // stray tap would wipe the result the coach is reading). A
                   // template with no steps has no control, and can be re-read.
-                  disabled={issuing || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                  disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                 >
                   {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                 </button>
@@ -847,7 +849,11 @@ function CoachWorkoutTemplates() {
                     when another template is opened: a result never sits under
                     a template it was not made from. */}
                 {detail.items.length > 0 && (
-                  <MakeSessionScript key={detail.template.template_id} templateId={detail.template.template_id} />
+                  <MakeSessionScript
+                    key={detail.template.template_id}
+                    templateId={detail.template.template_id}
+                    onBusyChange={setMaking}
+                  />
                 )}
               </>
             )}

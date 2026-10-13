@@ -656,6 +656,10 @@ describe('a coach-made plan', () => {
     expect(await screen.findByText('Arrival and wraps')).toBeInTheDocument();
     expect(fetchMock.mock.calls.map((call) => String(call[0])))
       .toContain('/api/pilot/session-scripts?script_id=scr-friday');
+    // Used once and taken out of the address: an edit can replace that script
+    // with a newer version, and a reload must not reopen the old one.
+    expect(window.location.search).toBe('');
+    expect(window.location.pathname).toBe('/coach/session-scripts');
   });
 
   it('editing puts the start button away, and Cancel brings the stored plan back unsent', async () => {
@@ -664,7 +668,7 @@ describe('a coach-made plan', () => {
 
     // What Start would start is the stored plan, not the one being typed.
     expect(screen.queryByRole('button', { name: 'Start live delivery' })).toBeNull();
-    expect(screen.queryByRole('list', { name: 'Session blocks, in the order they run' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('list', { name: 'Session blocks, in the order they run' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -746,6 +750,78 @@ describe('a coach-made plan', () => {
 
     await screen.findByRole('heading', { name: 'Tuesday technical' });
     expect(screen.queryByRole('status')).toBeNull();
-    expect(fetchMock).toHaveBeenCalled();
+    const patches = fetchMock.mock.calls.filter((call) => call[1]?.method === 'PATCH');
+    expect(patches).toHaveLength(1);
+  });
+
+  it('while a save is running no other plan can be opened and no session started: the answer lands on the plan it was for', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') return new Promise<Response>((resolve) => { finish = resolve; }) as unknown as Response;
+      return url.includes('script_id') ? jsonResponse({ script: detail({ version: 1 }) }) : jsonResponse({ scripts: [FRIDAY, TUESDAY] });
+    });
+    render(<CoachSessionScriptsPage />);
+    const plain = await screen.findByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(plain).not.toBeDisabled());
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open plan' }))[0]);
+    await screen.findByText('Arrival and wraps');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit minutes and titles' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save plan' }));
+
+    await screen.findByRole('button', { name: 'Saving...' });
+    expect(screen.getByRole('button', { name: 'Open plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Showing plan' })).toBeDisabled();
+    expect(plain).toBeDisabled();
+
+    await act(async () => {
+      finish?.(jsonResponse({ outcome: 'updated', script: detail({ version: 1, name: 'Friday sparring, saved' }) }));
+    });
+    expect(await screen.findByRole('heading', { name: 'Friday sparring, saved' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open plan' })).not.toBeDisabled());
+    expect(plain).not.toBeDisabled();
+  });
+
+  it('a save whose answer cannot be read says it was saved and closes the plan, which is now out of date', async () => {
+    const { listReads } = editingFetch(() => ({ ok: true, json: async () => { throw new Error('unreadable'); } }) as unknown as Response);
+    const form = await openAndEdit();
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+
+    expect(await screen.findByText('The plan was saved, but the answer could not be read here. Open it from the list to see it.')).toBeInTheDocument();
+    expect(screen.queryByText('Arrival and wraps')).toBeNull();
+    expect(screen.queryByRole('form', { name: 'Edit plan' })).toBeNull();
+    await waitFor(() => expect(listReads()).toBe(2));
+  });
+
+  it('a plain session started while a plan is being edited: when it ends, the plan is back as stored, not in edit mode', async () => {
+    const plainRun = liveRunRow({ script_id: null, script_version: null, current_block_id: null });
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs/')) {
+        return jsonResponse({ run: { ...plainRun, run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' } });
+      }
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        if (init?.method === 'POST') return jsonResponse({ run: plainRun });
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      return url.includes('script_id') ? jsonResponse({ script: detail({ version: 1 }) }) : jsonResponse({ scripts: [FRIDAY] });
+    });
+    await openAndEdit();
+
+    const plain = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(plain).not.toBeDisabled());
+    fireEvent.click(plain);
+    await screen.findByRole('heading', { name: 'Plain session' });
+    fireEvent.click(await screen.findByText('End session...'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Record as completed' }));
+
+    expect(await screen.findByText(/recorded as completed/i)).toBeInTheDocument();
+    // The plan that was open is shown as stored; the form the session took away does not come back.
+    expect(await screen.findByText('Arrival and wraps')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Edit plan' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeInTheDocument();
   });
 });

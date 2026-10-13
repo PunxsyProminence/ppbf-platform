@@ -11,11 +11,21 @@ import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts'
 // the page shows everywhere else: minutes from the start of the session, a
 // start and an end, never a clock time.
 //
-// WHAT SAVING DOES IS THE SERVER'S ANSWER, and it is said back as given. A plan
-// nobody has delivered is changed where it is. A plan that has been delivered
-// is not changed: the save becomes its next version, and the nights already
-// delivered keep the version they ran (sessionScriptAuthoring.ts). The coach is
-// told which happened rather than left to guess from the list.
+// ONLY WHAT WAS CHANGED IS SENT. The name goes only if it was retyped, and a
+// block only if its title or minutes were; the server keeps the rest. So a
+// block nobody touched is never re-judged, and a save with nothing changed is
+// answered "unchanged" instead of making a new version of a delivered plan.
+//
+// WHAT SAVING DID IS THE SERVER'S ANSWER, and it is said back as given
+// (sessionScriptAuthoring.ts). A plan nobody has delivered is changed where it
+// is. A plan that has been delivered is not changed: the save becomes its next
+// version. A plan another coach saved since this form opened is refused, and
+// that coach's save is left as it is.
+//
+// THE FORM NEVER SAYS "NOTHING WAS SAVED" UNLESS THE SERVER SAID SO:
+//   - 2xx: saved, always -- even when the answer cannot be read;
+//   - a refusal the server worded (4xx with its code): nothing was saved;
+//   - no answer, or a fault: not known, and said so.
 
 export type SessionScriptEditOutcome = 'unchanged' | 'updated' | 'new_version';
 
@@ -26,12 +36,17 @@ interface BlockDraft {
   end: string;
 }
 
+// The server's own ceiling on a block's minutes (sessionScriptAuthoring.ts MAX_OFFSET_MIN).
+const LAST_MINUTE = 24 * 60;
+
 const REFUSALS: Readonly<Record<string, string>> = {
+  SESSION_SCRIPT_CHANGED:
+    'Another coach saved this plan after you opened it, so nothing of yours was saved and their save is as they left it. Open the plan again to see it, then make your changes.',
   SESSION_SCRIPT_SUPERSEDED:
-    'This plan was replaced by a newer version while you were editing, so nothing was saved. Reload the list and edit the current version.',
+    'This plan has been replaced by a newer version, so nothing was saved. Reload the list and edit the current version.',
   SESSION_SCRIPT_NOT_FOUND: 'This plan could not be found, so nothing was saved.',
   SESSION_SCRIPT_BLOCK_MINUTES_INVALID:
-    'Nothing was saved. Each block needs whole minutes from the start of the session, with its end after its start.',
+    `Nothing was saved. Each block needs whole minutes from the start of the session, its end after its start and no later than minute ${LAST_MINUTE}.`,
   SESSION_SCRIPT_BLOCK_LABEL_INVALID: 'Nothing was saved. Every block needs a title of 200 characters or fewer.',
   SESSION_SCRIPT_NAME_INVALID: 'Nothing was saved. The plan needs a name of 200 characters or fewer.',
 };
@@ -44,10 +59,14 @@ export default function SessionScriptEditor({
   script,
   onSaved,
   onCancel,
+  onBusyChange,
 }: {
   readonly script: SessionScriptWithDetail;
-  readonly onSaved: (outcome: SessionScriptEditOutcome, saved: SessionScriptWithDetail) => void;
+  /** `saved` is null when the server saved but its answer could not be read. */
+  readonly onSaved: (outcome: SessionScriptEditOutcome | null, saved: SessionScriptWithDetail | null) => void;
   readonly onCancel: () => void;
+  /** Told while a save is running, so the page keeps this form on screen until it answers. */
+  readonly onBusyChange?: (busy: boolean) => void;
 }) {
   const [name, setName] = useState(script.name);
   const [blocks, setBlocks] = useState<BlockDraft[]>(() =>
@@ -72,12 +91,21 @@ export default function SessionScriptEditor({
     setError('');
 
     // Said here, by block, before anything is sent; the server checks the same things.
-    if (name.trim() === '') {
+    const nameChanged = name !== script.name;
+    if (nameChanged && name.trim() === '') {
       setError('The plan needs a name.');
       return;
     }
     const edits = [];
     for (const [index, block] of blocks.entries()) {
+      const stored = script.blocks[index];
+      if (
+        block.label === stored.block_label
+        && block.start === String(stored.start_offset_min)
+        && block.end === String(stored.end_offset_min)
+      ) {
+        continue;
+      }
       const start = wholeMinutes(block.start);
       const end = wholeMinutes(block.end);
       if (block.label.trim() === '') {
@@ -88,11 +116,16 @@ export default function SessionScriptEditor({
         setError(`Block ${index + 1} needs whole minutes, with its end after its start.`);
         return;
       }
+      if (end > LAST_MINUTE) {
+        setError(`Block ${index + 1} ends after minute ${LAST_MINUTE}, the longest a plan can run.`);
+        return;
+      }
       edits.push({ block_id: block.block_id, block_label: block.label, start_offset_min: start, end_offset_min: end });
     }
 
     inFlight.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     try {
       let response: Response;
       try {
@@ -100,25 +133,37 @@ export default function SessionScriptEditor({
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: script.script_id, name, blocks: edits }),
+          body: JSON.stringify({
+            script_id: script.script_id,
+            // Which state of the plan this form was opened on: the two-coaches check.
+            expected_updated_at: script.updated_at,
+            ...(nameChanged ? { name } : {}),
+            ...(edits.length > 0 ? { blocks: edits } : {}),
+          }),
         });
       } catch {
-        setError('Network error. The plan may or may not have been saved -- reload the list to see which.');
+        setError('No answer arrived, so it is not known whether the plan was saved. Reload the list to see which.');
         return;
       }
-      const payload = (await response.json().catch(() => ({}))) as {
+      const payload = (await response.json().catch(() => null)) as {
         outcome?: SessionScriptEditOutcome;
         script?: SessionScriptWithDetail | null;
-        error?: string;
-      };
-      if (response.ok && payload.outcome && payload.script) {
-        onSaved(payload.outcome, payload.script);
+        error?: unknown;
+      } | null;
+      if (response.ok) {
+        if (payload?.outcome !== undefined && payload.script) onSaved(payload.outcome, payload.script);
+        else onSaved(null, null);
         return;
       }
-      setError(REFUSALS[payload.error ?? ''] ?? 'The plan could not be saved.');
+      if (response.status >= 400 && response.status < 500 && typeof payload?.error === 'string') {
+        setError(REFUSALS[payload.error] ?? 'The server refused, so nothing was saved.');
+        return;
+      }
+      setError('The server did not answer properly, so it is not known whether the plan was saved. Reload the list to see which.');
     } finally {
       inFlight.current = false;
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
@@ -133,7 +178,7 @@ export default function SessionScriptEditor({
     >
       <label className="field">
         <span className="t-label">Plan name</span>
-        <input className="input" value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
+        <input type="text" className="input" value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
       </label>
 
       <ol aria-label="Blocks to edit, in the order they run" className="flex flex-col gap-[var(--s3)]">
@@ -147,6 +192,7 @@ export default function SessionScriptEditor({
               <label className="field min-w-[14rem] flex-1">
                 <span className="t-label">Title</span>
                 <input
+                  type="text"
                   className="input"
                   value={block.label}
                   maxLength={200}
@@ -156,6 +202,7 @@ export default function SessionScriptEditor({
               <label className="field w-[8rem]">
                 <span className="t-label">Starts at minute</span>
                 <input
+                  type="text"
                   className="input"
                   inputMode="numeric"
                   value={block.start}
@@ -165,6 +212,7 @@ export default function SessionScriptEditor({
               <label className="field w-[8rem]">
                 <span className="t-label">Ends at minute</span>
                 <input
+                  type="text"
                   className="input"
                   inputMode="numeric"
                   value={block.end}

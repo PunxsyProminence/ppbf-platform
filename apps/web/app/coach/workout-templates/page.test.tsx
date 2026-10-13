@@ -1693,6 +1693,33 @@ describe('make a session script from an open template', () => {
     expect(screen.queryByRole('button', { name: 'Make a session script' })).toBeNull();
   });
 
+  it('keeps the other templates closed while a script is being made, so its answer has somewhere to land', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    mockFetch((url) => {
+      if (url.includes('/api/pilot/coach/athletes')) return jsonResponse({ ok: true, items: [] });
+      if (url.includes('/api/pilot/session-scripts')) {
+        return new Promise<Response>((resolve) => { finish = resolve; }) as unknown as Response;
+      }
+      return url.includes('template_id')
+        ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] })
+        : jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /open template/i }))[0]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Make a session script' }));
+
+    await screen.findByRole('button', { name: 'Making...' });
+    for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) {
+      expect(open).toBeDisabled();
+    }
+    await act(async () => {
+      finish?.({ ok: true, status: 201, json: async () => ({ script: { script_id: 'scr-9', name: 'X', blocks: [] } }) } as Response);
+    });
+    expect(await screen.findByText(/Made the session script X/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true);
+  });
+
   it('says in the header that a session script can be made from a template', async () => {
     mockFetch(() => jsonResponse({ templates: [] }));
     render(<CoachWorkoutTemplatesPage />);

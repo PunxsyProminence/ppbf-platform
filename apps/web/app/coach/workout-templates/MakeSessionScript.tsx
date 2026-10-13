@@ -16,9 +16,10 @@ import { apiBase } from '@/lib/apiBase';
 // Issue to athlete keeps on this page. Nothing stops a template being made
 // into a script twice, so a coach wrongly told it failed would make a second:
 //   - 201: made, always -- even when the body cannot be read;
-//   - a refusal (4xx): nothing was made, and the reason is given;
-//   - a network failure or a server fault: not known, and said so, with where
-//     to look before pressing again.
+//   - a refusal the server worded (4xx with its code): nothing was made, and
+//     the reason is given;
+//   - no answer, a server fault, or a 4xx that is not the app's: not known,
+//     and said so, with where to look before pressing again.
 
 const NOT_MADE: Readonly<Record<string, string>> = {
   WORKOUT_TEMPLATE_NOT_FOUND: 'This template could not be found, so no session script was made.',
@@ -35,7 +36,14 @@ type Outcome =
 
 const ALERT = 'rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]';
 
-export default function MakeSessionScript({ templateId }: { readonly templateId: string }) {
+export default function MakeSessionScript({
+  templateId,
+  onBusyChange,
+}: {
+  readonly templateId: string;
+  /** Told while the request is running, so the page keeps this control on screen until it answers. */
+  readonly onBusyChange?: (busy: boolean) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // One request per press: `busy` disables the button only after a render.
@@ -45,6 +53,7 @@ export default function MakeSessionScript({ templateId }: { readonly templateId:
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setOutcome(null);
     try {
       let response: Response;
@@ -73,24 +82,26 @@ export default function MakeSessionScript({ templateId }: { readonly templateId:
         });
         return;
       }
-      if (response.status >= 400 && response.status < 500) {
-        const code = typeof payload?.error === 'string' ? payload.error : '';
-        setOutcome({ kind: 'not_made', message: NOT_MADE[code] ?? 'The server refused, so no session script was made.' });
+      // A refusal is the app's only when it carries the app's own error; a 4xx
+      // from anything in between (a timeout, a rate limit) is "not known".
+      if (response.status >= 400 && response.status < 500 && typeof payload?.error === 'string') {
+        setOutcome({ kind: 'not_made', message: NOT_MADE[payload.error] ?? 'The server refused, so no session script was made.' });
         return;
       }
       setOutcome({ kind: 'unknown' });
     } finally {
       inFlight.current = false;
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
   return (
-    <section aria-label="Make a session script" className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s5)]">
+    <section data-surface="kiosk" aria-label="Make a session script" className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s5)]">
       <h3 className="t-command text-[length:var(--t-md)]">Make a session script</h3>
       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
         Turns these blocks, in this order, into a timed plan you can run live. A block with no minutes
-        starts at 5. You set the minutes and block titles afterwards under Session Scripts.
+        is given 5. You set the minutes and block titles afterwards under Session Scripts.
       </p>
 
       {outcome?.kind !== 'made' && (

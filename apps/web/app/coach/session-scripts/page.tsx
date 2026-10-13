@@ -94,6 +94,10 @@ function CoachSessionScripts() {
   // was, or kept as a new version because the plan had been delivered.
   const [editing, setEditing] = useState(false);
   const [editNotice, setEditNotice] = useState('');
+  // True while a save is running. Opening another plan or starting a session
+  // would take the form off the screen, and a save whose form is gone answers
+  // to nobody (the rule the workout templates page keeps for an issue).
+  const [saving, setSaving] = useState(false);
 
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
@@ -139,6 +143,7 @@ function CoachSessionScripts() {
         setLiveRun(run);
         setLiveRunCheck('checked');
         if (run) {
+          setEditing(false);
           setLiveNotice('A session already in progress was restored -- the clock kept running on the server.');
         }
       } catch {
@@ -182,6 +187,8 @@ function CoachSessionScripts() {
       if (response.ok && payload.run) {
         setLiveRun(payload.run);
         setLiveRunCheck('checked');
+        // The live surface replaces the plan; it is not left in edit mode behind it.
+        setEditing(false);
         return;
       }
 
@@ -194,6 +201,7 @@ function CoachSessionScripts() {
           if (existing) {
             setLiveRun(existing);
             setLiveRunCheck('checked');
+            setEditing(false);
             setLiveNotice('You already had a session in progress. It has been restored, not restarted.');
             return;
           }
@@ -281,15 +289,28 @@ function CoachSessionScripts() {
 
   // A link from the workout templates page names the script it just made
   // (?script=...), so the coach lands on that plan rather than on the list.
+  // The name is used once and taken out of the address: an edit can replace
+  // that script with a newer version, and a reload must not reopen the old one.
   useEffect(() => {
     void (async () => {
       const scriptId = await Promise.resolve(new URLSearchParams(window.location.search).get('script'));
-      if (scriptId) await openScript(scriptId);
+      if (!scriptId) return;
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+      await openScript(scriptId);
     })();
   }, [openScript]);
 
-  const planSaved = useCallback((outcome: SessionScriptEditOutcome, saved: ScriptDetail) => {
+  const planSaved = useCallback((outcome: SessionScriptEditOutcome | null, saved: ScriptDetail | null) => {
     setEditing(false);
+    if (outcome === null || saved === null) {
+      // Saved, but what was saved did not arrive. The plan on screen is the one
+      // from before the save, so it is closed rather than shown as current.
+      setOpenScriptId(null);
+      setDetail(null);
+      setLiveNotice('The plan was saved, but the answer could not be read here. Open it from the list to see it.');
+      void load();
+      return;
+    }
     // A new version is a new row with its own id: the open plan becomes it.
     setDetail(saved);
     setOpenScriptId(saved.script_id);
@@ -383,7 +404,7 @@ function CoachSessionScripts() {
           <button
             type="button"
             onClick={() => void startDelivery(null)}
-            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
+            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving}
             className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
@@ -442,7 +463,8 @@ function CoachSessionScripts() {
                 <button
                   type="button"
                   onClick={() => void openScript(script.script_id)}
-                  className="btn btn--ghost mt-[var(--s4)]"
+                  disabled={saving}
+                  className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {openScriptId === script.script_id ? 'Showing plan' : 'Open plan'}
                 </button>
@@ -518,7 +540,7 @@ function CoachSessionScripts() {
                     </button>
                   </div>
                 )}
-                {startError && startErrorFor === detail.script_id && (
+                {!editing && startError && startErrorFor === detail.script_id && (
                   <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                     {startError}
                   </p>
@@ -532,6 +554,7 @@ function CoachSessionScripts() {
                     script={detail}
                     onSaved={planSaved}
                     onCancel={() => setEditing(false)}
+                    onBusyChange={setSaving}
                   />
                 )}
 
@@ -547,11 +570,12 @@ function CoachSessionScripts() {
                     ordering the list actually carries: block_order, which is
                     the sequence a coach runs, NOT start offset -- two blocks
                     legitimately share an offset. */}
+                {!editing && (
                 <ol
                   aria-label="Session blocks, in the order they run"
                   className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]"
                 >
-                  {(editing ? [] : detail.blocks).map((block) => (
+                  {detail.blocks.map((block) => (
                     <li
                       key={block.block_id}
                       className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
@@ -579,6 +603,7 @@ function CoachSessionScripts() {
                     </li>
                   ))}
                 </ol>
+                )}
 
                 {detail.renderings.length > 0 && (
                   <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">
