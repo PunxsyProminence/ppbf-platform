@@ -6,7 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
-import { pickSaying } from './gymSayings';
+import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
@@ -114,6 +114,11 @@ interface PairedResponse {
   session?: { run_id?: string; timer?: RoundTimerView | null } | null;
   board?: WallBoard | null;
   board_status?: 'ok' | 'unavailable';
+  /**
+   * The gym's live quotes, paired TV only (#1462 Q-A). [] means the local sayings; null (a failed
+   * quotes read) or absent means keep the quotes this screen last read, so the line does not flip.
+   */
+  quotes?: LibraryQuote[] | null;
 }
 
 interface PublicResponse {
@@ -187,9 +192,44 @@ export function roundsAreLive(timer: WallRoundTimer | null): boolean {
   return timer !== null && timer.view.state !== 'ended';
 }
 
-/** One poll: the paired read first, the public read if this screen is not paired. */
+/** The idle band's line for one gym day. */
+export interface DailySaying {
+  readonly day: string;
+  readonly saying: GymSaying;
+}
 
-export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean; timer: WallRoundTimer | null }> {
+/**
+ * Today's line, kept while it is still live (#1462). The day seed picks it, as
+ * always; but an admin adding or switching off another quote changes the
+ * list it was picked from, and re-picking by index would change the line
+ * mid-day. So the line already on the wall stays until the gym day changes or
+ * that very quote is no longer in the list.
+ */
+export function keepDailySaying(
+  previous: DailySaying | null,
+  day: string,
+  source: readonly GymSaying[],
+): DailySaying | null {
+  if (
+    previous
+    && previous.day === day
+    && sayingsFor('anywhere', source).some(
+      (s) => s.line === previous.saying.line && s.said_by === previous.saying.said_by,
+    )
+  ) {
+    return previous;
+  }
+  const saying = pickSaying('anywhere', day, source);
+  return saying ? { day, saying } : null;
+}
+
+/** One poll: the paired read first, the public read if this screen is not paired. */
+export async function readBoard(base: string): Promise<{
+  board: WallBoard;
+  paired: boolean;
+  timer: WallRoundTimer | null;
+  quotes: LibraryQuote[] | null;
+}> {
   const paired = await fetch(`${base}/api/pilot/tv/session`, {
     cache: 'no-store',
     // The device cookie is the credential. It is httpOnly and scoped to
@@ -204,7 +244,12 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
     const session = payload.session;
     const timer = session?.timer && session.run_id ? { runId: session.run_id, view: session.timer } : null;
     if (!payload.board) throw new BoardMissError(timer);
-    return { board: payload.board, paired: true, timer };
+    return {
+      board: payload.board,
+      paired: true,
+      timer,
+      quotes: Array.isArray(payload.quotes) ? payload.quotes : null,
+    };
   }
 
   /* credentials: 'omit' is stated rather than left to the default, and
@@ -228,11 +273,16 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
     throw new UnpairedReadError();
   }
   if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
-  return { board: publicToBoard(payload.board), paired: false, timer: null };
+  // The public board carries no quotes (OD-2026-10-07-008): an unpaired wall says the gym's own lines.
+  return { board: publicToBoard(payload.board), paired: false, timer: null, quotes: [] };
 }
 
 export default function WallDisplay() {
   const [board, setBoard] = useState<WallBoard | null>(null);
+  // The quotes last read (null on a failed quotes read keeps these), and the
+  // day's line picked from them.
+  const quotesRef = useRef<LibraryQuote[]>([]);
+  const [daily, setDaily] = useState<DailySaying | null>(null);
   const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
   const [connected, setConnected] = useState(true);
   const [now, setNow] = useState<number | null>(null);
@@ -289,12 +339,15 @@ export default function WallDisplay() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const { board: next, paired: isPaired, timer: nextTimer } = await readBoard(apiBase());
+        const { board: next, paired: isPaired, timer: nextTimer, quotes: library } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
         roundsLive = roundsAreLive(nextTimer);
         setBoard(next);
+        if (library !== null) quotesRef.current = library;
+        const source = sayingSource(quotesRef.current, 'anywhere');
+        setDaily((previous) => keepDailySaying(previous, next.gym_day, source));
         setPaired(isPaired);
         setRoundTimer(nextTimer ? { ...nextTimer, readAt: Date.now() } : null);
         setLastGoodAt(Date.now());
@@ -319,6 +372,8 @@ export default function WallDisplay() {
           setRoundTimer(null);
           setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
+          quotesRef.current = [];
+          setDaily(null);
         }
       } finally {
         // In `finally` so the early returns above cannot leave the display
@@ -409,7 +464,7 @@ export default function WallDisplay() {
       />
 
       {showLive ? (
-        <LiveBoard board={board} zone={zone} />
+        <LiveBoard board={board} zone={zone} daily={daily} />
       ) : (
         <StandingBoard health={health} />
       )}
@@ -649,7 +704,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
 
 /* ----------------------------------------------------------- live board --- */
 
-function LiveBoard({ board, zone }: { board: WallBoard; zone?: string }) {
+function LiveBoard({ board, zone, daily }: { board: WallBoard; zone?: string; daily: DailySaying | null }) {
   return (
     <>
       {/* The golden section, not a half. --split-major / --split-minor are the
@@ -658,7 +713,7 @@ function LiveBoard({ board, zone }: { board: WallBoard; zone?: string }) {
         <OnTheFloor board={board} />
         <Today sessions={board.sessions} zone={zone} />
       </main>
-      <Marquee board={board} />
+      <Marquee board={board} daily={daily} />
     </>
   );
 }
@@ -758,7 +813,7 @@ function Today({ sessions, zone }: { sessions: readonly WallSession[]; zone?: st
  * a travelling sign is what a marquee IS. Under prefers-reduced-motion it
  * stops dead and becomes a list.
  */
-function Marquee({ board }: { board: WallBoard }) {
+function Marquee({ board, daily }: { board: WallBoard; daily: DailySaying | null }) {
   const items = board.marquee;
 
   if (items.length === 0) {
@@ -788,7 +843,10 @@ function Marquee({ board }: { board: WallBoard }) {
        starts two rungs above that. The marquee's own idle chrome is the wall's
        lettering slot, already sized for fifteen feet, and the attribution sits
        in the label the band already has. */
-    const saying = pickSaying('anywhere', board.gym_day);
+    // From the gym's quote library on a paired TV (#1462 Q-A), the gym's own
+    // GYM_SAYINGS otherwise; the same day seed either way, and kept for the
+    // day while it stays live (keepDailySaying).
+    const saying = daily && daily.day === board.gym_day ? daily.saying : pickSaying('anywhere', board.gym_day);
     return (
       <section className="marquee marquee--idle" aria-label={saying ? 'Words on the wall' : 'Milestones'}>
         {saying ? (

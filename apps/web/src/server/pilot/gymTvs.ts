@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
 import { PilotError } from './errors';
+import { listLiveQuotes, type QuoteShown } from './orgQuotes';
 import { ROUND_TIMER_FIELDS, deriveRoundTimer, type RoundTimerRow, type RoundTimerView } from './roundTimers';
 import { createOpaqueToken, hashToken } from './security';
 import type { WallBoard, WallNameMode } from './wallDisplay';
@@ -643,12 +644,26 @@ export interface GymTvScreen extends GymTvRead {
    */
   board: WallBoard | null;
   board_status: 'ok' | 'unavailable';
+  /**
+   * The gym's switched-on quotes for the idle band (#1462 Q-A, OVERWATCH 2026-10-12): words,
+   * speaker and moments only -- no ids, sources or types. Served on the PAIRED read only; the
+   * public /api/pilot/wall payload is unchanged (OD-2026-10-07-008). Best-effort like the board:
+   * a failed read is null (not []), so the TV keeps the quotes it last read rather than switching
+   * the day's line for one poll; [] is a library with nothing switched on.
+   */
+  quotes: GymTvQuote[] | null;
+}
+
+export interface GymTvQuote {
+  quote_text: string;
+  speaker: string;
+  shown: QuoteShown[];
 }
 
 export async function readGymTvScreen(deviceKey: string, options: { mode: WallNameMode }): Promise<GymTvScreen | null> {
   const tv = await resolveGymTvByDeviceKey(deviceKey);
   if (!tv) return null;
-  const [read, board] = await Promise.all([
+  const [read, board, quotes] = await Promise.all([
     readSessionForTv(tv),
     loadWallBoard({ organizationId: tv.organization_id, mode: options.mode }).then(
       (loaded): Pick<GymTvScreen, 'board' | 'board_status'> => ({ board: loaded, board_status: 'ok' }),
@@ -662,8 +677,18 @@ export async function readGymTvScreen(deviceKey: string, options: { mode: WallNa
         return { board: null, board_status: 'unavailable' };
       },
     ),
+    listLiveQuotes(tv.organization_id).then(
+      (live): GymTvQuote[] => live.map(({ quote_text, speaker, shown }) => ({ quote_text, speaker, shown })),
+      (error: unknown): null => {
+        console.error('tv-quotes-read-failed', {
+          name: error instanceof Error ? error.constructor.name : typeof error,
+          code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : undefined,
+        });
+        return null;
+      },
+    ),
   ]);
-  return { ...read, ...board };
+  return { ...read, ...board, quotes };
 }
 
 async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
