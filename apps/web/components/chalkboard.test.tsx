@@ -288,19 +288,56 @@ describe('the line under a board with nothing real on it comes from the quote li
     expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
   });
 
-  it('picks from the library on the same fixed seed, so the line does not reshuffle', async () => {
+  it('picks from the library on the same fixed seed, and the same board says the same line again', async () => {
     const library = [
       ALI,
-      { quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall', shown: ['anywhere'] },
+      { quote_text: 'EVERY ROUND IS A NEW ROUND.', speaker: 'Coach Dan', shown: ['anywhere'] },
       { quote_text: 'HANDS UP. HEAD CLEAR.', speaker: 'the wall', shown: ['after-hard-session'] },
     ];
-    await renderBoard({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', quotes: library });
     const expected = pickSaying('anywhere', 'chalkboard-athlete_workspace', [
       { line: ALI.quote_text, said_by: ALI.speaker, shown: ['anywhere'] },
-      { line: 'AMPLECTERE MISERIAM', said_by: 'the wall', shown: ['anywhere'] },
-      { line: 'HANDS UP. HEAD CLEAR.', said_by: 'the wall', shown: ['after-hard-session'] },
-    ]);
-    expect(screen.getByText(expected!.line)).toBeTruthy();
+      { line: 'EVERY ROUND IS A NEW ROUND.', said_by: 'Coach Dan', shown: ['anywhere'] },
+    ])!;
+    // Not a line the local file could have produced: the library really was used.
+    expect(GYM_SAYINGS.some((s) => s.line === expected.line)).toBe(false);
+
+    for (let i = 0; i < 2; i += 1) {
+      stubFetch({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', quotes: library });
+      let view!: ReturnType<typeof render>;
+      await act(async () => {
+        view = render(<Chalkboard placement="athlete_workspace" />);
+      });
+      expect(screen.getByText(expected.line)).toBeTruthy();
+      view.unmount();
+    }
+  });
+
+  it('holds the saying until the library read settles, so the line never swaps on screen', async () => {
+    let releaseQuotes: () => void = () => {};
+    const quotesHeld = new Promise<void>((resolve) => { releaseQuotes = resolve; });
+    const base = stubFetch({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', quotes: [ALI] });
+    global.fetch = jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/quotes')) await quotesHeld;
+      return base(url);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<Chalkboard placement="athlete_workspace" />);
+    });
+    expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
+    const local = pickSaying('anywhere', 'chalkboard-athlete_workspace')!;
+    expect(screen.queryByText(local.line)).toBeNull();
+    expect(screen.queryByText(ALI.quote_text)).toBeNull();
+
+    await act(async () => { releaseQuotes(); await quotesHeld; });
+    expect(screen.getByText(ALI.quote_text)).toBeTruthy();
+  });
+
+  it('the gym\'s own lines read as before: no speaker line under a local saying', async () => {
+    await renderBoard({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', quotes: [] });
+    const local = pickSaying('anywhere', 'chalkboard-athlete_workspace')!;
+    expect(screen.getByText(local.line)).toBeTruthy();
+    expect(screen.queryByText(`— ${local.said_by}`)).toBeNull();
   });
 
   it.each([

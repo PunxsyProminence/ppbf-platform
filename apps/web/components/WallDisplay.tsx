@@ -100,8 +100,11 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
 interface PairedResponse {
   board?: WallBoard | null;
   board_status?: 'ok' | 'unavailable';
-  /** The gym's live quotes, paired TV only (#1462 Q-A). Absent or [] means the local sayings. */
-  quotes?: LibraryQuote[];
+  /**
+   * The gym's live quotes, paired TV only (#1462 Q-A). [] means the local sayings; null (a failed
+   * quotes read) or absent means keep the quotes this screen last read, so the line does not flip.
+   */
+  quotes?: LibraryQuote[] | null;
 }
 
 interface PublicResponse {
@@ -147,7 +150,7 @@ export class UnpairedReadError extends Error {
 }
 
 /** One poll: the paired read first, the public read if this screen is not paired. */
-export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean; quotes: LibraryQuote[] }> {
+export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean; quotes: LibraryQuote[] | null }> {
   const paired = await fetch(`${base}/api/pilot/tv/session`, {
     cache: 'no-store',
     // The device cookie is the credential. It is httpOnly and scoped to
@@ -160,7 +163,7 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
     // board: null is the server's best-effort miss (gymTvs.ts): the session
     // read worked, the board read did not. The last board stays up, dated.
     if (!payload.board) throw new Error('unavailable');
-    return { board: payload.board, paired: true, quotes: Array.isArray(payload.quotes) ? payload.quotes : [] };
+    return { board: payload.board, paired: true, quotes: Array.isArray(payload.quotes) ? payload.quotes : null };
   }
 
   /* credentials: 'omit' is stated rather than left to the default, and
@@ -243,7 +246,7 @@ export default function WallDisplay() {
 
         failures = 0;
         setBoard(next);
-        setQuotes(library);
+        if (library !== null) setQuotes(library);
         setPaired(isPaired);
         setLastGoodAt(Date.now());
         setConnected(true);

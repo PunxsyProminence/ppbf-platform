@@ -182,6 +182,11 @@ describe('the quote library (#1462): attributed quotes, the local lines as fallb
       { quote_text: 'NO MOMENT', speaker: 'x', shown: ['at-the-bell'] },
       { quote_text: 'KEEP', speaker: 'x', shown: ['at-the-bell', 'at-a-milestone'] },
     ])).toEqual([{ line: 'KEEP', said_by: 'x', shown: ['at-a-milestone'] }]);
+    // No speaker, no screen: a boxing quote must never read as the gym's own words.
+    expect(librarySayings([
+      { quote_text: 'FLOAT LIKE A BUTTERFLY, STING LIKE A BEE.', speaker: '', shown: ['anywhere'] },
+      { quote_text: 'EVERYBODY HAS A PLAN.', speaker: '   ', shown: ['anywhere'] },
+    ])).toEqual([]);
     expect(librarySayings(null)).toEqual([]);
   });
 

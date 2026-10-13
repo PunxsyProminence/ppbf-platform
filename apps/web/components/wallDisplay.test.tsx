@@ -780,9 +780,23 @@ describe('the idle band reads the gym\'s quote library on a paired TV (#1462 Q-A
     expect(container.querySelector('.marquee-idle-line')?.textContent).toBe(first);
   });
 
+  it('a failed quotes read (null) keeps the line it had: no flip for one poll', async () => {
+    const { container } = await renderPaired(LIBRARY);
+    const first = container.querySelector('.marquee-idle-line')?.textContent;
+    fetchMock = respondWith({ board: board({ gym_day: '2026-08-03' }), board_status: 'ok', quotes: null });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+    expect(fetchMock).toHaveBeenCalled();
+    expect(container.querySelector('.marquee-idle-line')?.textContent).toBe(first);
+    expect(first).toContain(sayings.pickSaying('anywhere', '2026-08-03', asSayings)!.line);
+  });
+
   it.each([
     ['empty', []],
-    ['missing', undefined],
+    ['missing on the first read', undefined],
   ])('an %s library falls back to the gym\'s own sayings', async (_label, quotes) => {
     const { container } = await renderPaired(quotes);
     const line = container.querySelector('.marquee-idle-line')?.textContent ?? '';

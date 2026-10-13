@@ -129,8 +129,9 @@ const SAYING_CONTEXTS: readonly SayingContext[] = ['after-hard-session', 'at-a-m
 /**
  * The gym's quote library as sayings (#1462): the editable library is the
  * source, and GYM_SAYINGS is the fallback when it is empty or could not be
- * read. A row with no words or no moment this file knows is dropped rather
- * than guessed at. Pass the result to pickSaying, so the same fixed seed
+ * read. A row with no words, no speaker, or no moment this file knows is
+ * dropped rather than guessed at: a quote is never put on a screen without
+ * who said it (a boxing quote would otherwise read as the gym's own words). Pass the result to pickSaying, so the same fixed seed
  * still picks the line and nothing reshuffles on a poll.
  */
 export function librarySayings(quotes: readonly LibraryQuote[] | null | undefined): GymSaying[] {
@@ -138,8 +139,9 @@ export function librarySayings(quotes: readonly LibraryQuote[] | null | undefine
     const line = typeof quote.quote_text === 'string' ? quote.quote_text.trim() : '';
     const shown = (Array.isArray(quote.shown) ? quote.shown : [])
       .filter((moment): moment is SayingContext => SAYING_CONTEXTS.includes(moment as SayingContext));
-    if (!line || shown.length === 0) return [];
-    return [{ line, said_by: typeof quote.speaker === 'string' ? quote.speaker.trim() : '', shown }];
+    const saidBy = typeof quote.speaker === 'string' ? quote.speaker.trim() : '';
+    if (!line || !saidBy || shown.length === 0) return [];
+    return [{ line, said_by: saidBy, shown }];
   });
 }
 

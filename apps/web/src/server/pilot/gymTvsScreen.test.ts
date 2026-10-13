@@ -113,14 +113,14 @@ it("the paired read carries the TV organization's live quotes, words only (#1462
   }
 });
 
-it('a quotes read failure is best-effort: quotes [], the board and session still served', async () => {
+it('a quotes read failure is best-effort: quotes null (keep the last), the board and session still served', async () => {
   mockQueryOne.mockResolvedValueOnce(TV);
   mockLoadWallBoard.mockResolvedValue(BOARD);
   mockLiveQuotes.mockRejectedValueOnce(Object.assign(new Error('timeout at db.internal'), { code: '57014' }));
   const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   try {
     const read = await readGymTvScreen('k'.repeat(64), { mode: 'initials' });
-    expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: [] });
+    expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: null });
     expect(logged.mock.calls[0][0]).toBe('tv-quotes-read-failed');
     expect(JSON.stringify(logged.mock.calls[0])).not.toContain('db.internal');
   } finally {
