@@ -164,6 +164,170 @@ and should not try to.
 
 ---
 
+## OD-2026-10-12-024 -- A child's two guardians each see only their own replies to the coach: "A: No, each sees only their own (Recommended)" (work orders FC-02, FC-03 on #1542)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 38203, 2026-10-12T23:58:31.123Z; answered at line 38204, 2026-10-13T00:29:28.564Z). Read by script (records pass, 2026-10-13). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**The card, question "Guardians".** Overwatch, as written: "Family messages, when a child has two guardians: can one guardian see the other guardian's replies to the coach? (Plain: split households. The architect's default is no.)" Options as written: "A: No, each sees only their own (Recommended)": "A guardian sees the coach's notes and their own replies. The coach sees everything. Matches how barrier reports and observations already work."; "B: Yes, guardians share one thread": "Both guardians of a child see all replies. Simpler for one household, risky for separated ones.". Jason: *"A: No, each sees only their own (Recommended)"*
+
+**Ruling:** when a child has two guardians, a guardian sees the coach's notes and their own replies and not the other guardian's replies. The coach sees everything. Option B (one shared thread) was not chosen.
+
+**Acted on:** the architect's work order FC-02 (reply storage, migration only) and FC-03 (guardian replies, coach reads them) list the same question as owner decision B and recommend the same answer (OBSERVED in the work-order file `C:\Users\jason\Documents\PPBF-overwatch\lane-inbox\CHATGPT-WORK-ORDERS-FAMILY-COMMS-REPORTING-2026-10-13.md`, FC-02). Overwatch's 2026-10-13T01:03:24Z comment on issue #1542 (OBSERVED, `gh`) tells the VS Code lane that with two guardians each sees only their own replies and nothing may show one guardian what the other did. Nothing in the sources read says FC-02 or FC-03 is built.
+
+---
+
+## OD-2026-10-12-023 -- The round timer: "A: Yes (Recommended)" (PR #1494 and the stack #1496, #1499, #1504)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 38203, 2026-10-12T23:58:31.123Z; answered at line 38204, 2026-10-13T00:29:28.564Z). Read by script (records pass, 2026-10-13). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**The card, question "Round timer".** Overwatch, as written: "Round timer (coach controls the round clock; the paired gym TV shows it and rings the bell): it is built and green, 4 PRs, one a migration adding table pilot.round_timers. Apply that migration to staging then production and release it? (Plain: one more small database change, then the TV gets a round clock.)" Options as written: "A: Yes (Recommended)": "I read the SQL, merge the four, apply the migration to staging, then production with your click, then release. Same steps as the plain session today."; "B: Not yet": "The four PRs stay parked until you say.". Jason: *"A: Yes (Recommended)"*
+
+**Ruling:** the round timer is merged, its migration (the new table `pilot.round_timers`) is applied to staging and then to production with his approval click, and it is then released. Option B (park the four PRs) was not chosen.
+
+**Acted on:** PR #1494 (the migration, "feat(db): pilot.round_timers, one round clock per live session run"), merged `f148e896806465b2aec13c2aa67c3022a88c7a44` at 2026-10-13T00:29:59Z (OBSERVED, `gh`). #1496, #1499 and #1504 (the stacked app PRs) are open at the time of writing (OBSERVED, `gh`). The handover's stop point (00:45 UTC, REPORTED) says the migration is not applied to staging or production and that the production migration and the production deploy each wait for his click.
+
+---
+
+## OD-2026-10-12-022 -- Overwatch may wake an idle cloud lane with a queue prompt: "A: Yes, nudge them (Recommended)"
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 38203, 2026-10-12T23:58:31.123Z; answered at line 38204, 2026-10-13T00:29:28.564Z). Read by script (records pass, 2026-10-13). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**The card, question "Wake lanes".** Overwatch, as written: "Idle cloud lanes: may Overwatch type the next-task prompt into a team cloud session in the in-app browser when that lane has stopped? (Plain: cloud lane 3 sat idle 8 hours today because nobody told it to check its queue.)" Options as written: "A: Yes, nudge them (Recommended)": "I type a short queue prompt into an idle cloud lane's session. Only queue prompts for work you have already approved; nothing else."; "B: No, I'll paste them": "I give you the line to paste, as I did above, and the lane waits until you do.". Jason: *"A: Yes, nudge them (Recommended)"*
+
+**Ruling:** when a team cloud lane has stopped, Overwatch may type a short queue prompt into that lane's session in the in-app browser. Only for work he has already approved; nothing else. Option B (he pastes the line) was not chosen.
+
+**Acted on (handover and overwatch's report, REPORTED):** about 00:35 UTC on 2026-10-13 Overwatch typed a queue prompt into the idle cloud session "PPBF build lane 3 queue" (parent Safety rows #1537 first, then cancel a class #1536). It reported the message sent and showing in the lane's transcript (line 38268).
+
+---
+
+## OD-2026-10-12-021 -- The gym saying that replaces "Steel Town": "AMPLECTERE MISERIAM" (issues #1462, #1491, #1512)
+
+**Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 38203, 2026-10-12T23:58:31.123Z; answered at line 38204, 2026-10-13T00:29:28.564Z). Read by script (records pass, 2026-10-13). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**The card, question "Wall saying".** Overwatch, as written: "Gym sayings (D19), exact text of the new line that replaces "Steel Town": which is painted on the wall? (Plain: the builders have waited on this since last night; the wording gets locked into the database.)" Options as written: "AMPLECTERE MISERIAM": "Latin only, credited to "the wall", shown anywhere. This is what the lane built as its default."; "AMPLECTERE MISERIAM (EMBRACE THE SUCK)": "Latin with the English in brackets after it.". Jason: *"AMPLECTERE MISERIAM"*
+
+**Ruling:** the new line is the Latin only, credited to "the wall" and shown anywhere, exactly as the lane built it. The version with the English in brackets was not chosen.
+
+**Acted on:** Overwatch's 2026-10-13T00:29:45Z comment on issue #1462 (OBSERVED, `gh`) passes the wording to the quotes lane and lifts the hold on #1491 ("Quotes library D19 data migration: Steel Town switched off, AMPLECTERE MISERIAM added", a migration) and #1512 ("Gym sayings match the approved list (D19)"). The comment says the migration is applied by the release, never by a lane. Both PRs are open at the time of writing (OBSERVED, `gh`). Applying that migration to production has not been put to him (handover stop point, REPORTED).
+
+---
+
+## OD-2026-10-12-020 -- "Pass t he rest to VS": the VS Code lane owns the rest of the family communication track (issue #1542)
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; his message at line 38106, 2026-10-12T23:53:38.082Z; overwatch's reply at line 38121, 2026-10-12T23:53:57.039Z). Read by script (records pass, 2026-10-13). His message is quoted exactly, spelling and spacing kept; overwatch's reply is quoted as written. The id carries 2026-10-12 because this UTC time is the evening of 2026-10-12 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-12-019.
+
+**Typed** (line 38106): *"Pass t he rest to VS"*
+
+**Ruling (overwatch's reading, at line 38121; his words govern):** the VS Code lane now owns the rest, queued on #1542 in this order, one PR each with a plan posted before each: 1. the coach sees what they posted to a family and whether it was done; 2. a guardian can reply and the coach sees it; 3. read state the coach can see; 4. the athlete's view of messages meant for them; 5. reporting (attendance, then grant obligations, then a board summary); 6. a coach can write a session script from an issued workout. Overwatch added that the lane does not wait on ChatGPT's work orders, which it pastes onto #1542 as input.
+
+**Not ruled here:** which items "the rest" covers. His four words name no list; the six items and their order are overwatch's.
+
+**Acted on:** Overwatch's comment on issue #1542 at 2026-10-12T23:53:51Z (OBSERVED, `gh`) hands the VS Code lane the track. The architect's ten work orders (FC-02 to FC-07, RP-01 to RP-04) were posted there at 2026-10-12T23:57:35Z (OBSERVED, `gh`).
+
+---
+
+## OD-2026-10-12-019 -- Family communication starts: "Ok start next one" (issue #1542)
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's question at line 38068, 2026-10-12T23:43:44.744Z; his message at line 38072, 2026-10-12T23:52:52.840Z). Read by script (records pass, 2026-10-13). His message is quoted exactly; overwatch's question is quoted as it wrote it. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-12-012.
+
+**Overwatch, as written**, after listing what could be built next (family communication; reporting; session scripts a coach can write; two lost-write races; payments, blocked on his decisions): "Question. Official: which should I have ChatGPT write work orders for now? A: family communication first, reporting second (recommended) / B: family communication and session scripts / C: you name it. Plain: the builders are nearly through today's queue; this picks what they start on next." Jason typed (line 38072): *"Ok start next one"*
+
+**Ruling (overwatch's reading, as logged in `OVERWATCH-HANDOVER-2026-10-12.md`; his words name no option and no area):** start family communication. This matches OD-2026-10-12-012, which already ruled it the first operations area.
+
+**Not ruled here:** reporting and coach-written session scripts, which options A and B named. They were queued by his next message (OD-2026-10-12-020).
+
+**Acted on:** issue #1542, "Lane N10-01: the coach sees what they posted to a family and whether it was done (F-041, family communication slice 1)", created 2026-10-12T23:53:15Z (OBSERVED, `gh`) and routed to the VS Code lane. Overwatch's report (line 38094) says it also asked the relay session to have ChatGPT write the work orders for the later slices and for reporting.
+
+---
+
+## OD-2026-10-12-018 -- Release 20: "Yes" to the session-run-plain migration and the release; "Clicked what can we buikd"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's question at line 37960, 2026-10-12T21:32:47.878Z; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-13). Typed messages are quoted exactly, spelling kept; overwatch's question is quoted as it wrote it. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**Overwatch, as written** (line 37960): Release 20 "carries the plain session (so a coach can finally start a session), plus pain reports showing the number only. It includes one migration. I read the SQL: it lets a session exist without a script and adds consistency checks; it's additive and safe to re-run." Question: "Official: apply the session-run-plain migration to staging and then production, then release 20? A: yes (recommended) / B: wait. Plain: one small database change, then coaches get a "start a session" button that works. You'd click approve for the production migration and again for the deploy."
+
+**Typed** (line 37964, 2026-10-12T22:40:16.110Z): *"Yes"*
+
+**Typed** (line 38028, 2026-10-12T23:41:27.061Z), after overwatch's report at 23:13:41Z (line 38016) that the production migration run was waiting for his click: *"Clicked what can we buikd"*
+
+**Rulings:**
+1. **"Yes".** Apply the session-run-plain migration to staging, then to production, then release 20 (PRs #1533, #1532, #1534, main `9d23e824915f07689944b27740b8bb29cdd0ce09`). Option B (wait) was not chosen. The production migration and the production deploy each take his approval click in GitHub.
+2. **"Clicked what can we buikd".** Overwatch read the first words as his click on the waiting production migration (run 38318131819); the run succeeded after it (line 38068). The last words, "what can we buikd", are a question about what to build next; overwatch answered it in the same reply (line 38068) and the question it put there is OD-2026-10-12-019.
+
+**Evidence:** `apply-migrations` runs 38317999048 (staging) and 38318131819 (production), `deploy-production` run 38323536812 for `9d23e824915f07689944b27740b8bb29cdd0ce09`: all three `success`, and the production runs show an approval by the production reviewer login (OBSERVED, `gh`, records pass). Staged image `sha256:5d44724fc3fff55c5d28008b6e4c6da2d9e7a91687e5c8ebe3921029b3465ac2` (handover, REPORTED). Live checks after the deploy (handover, REPORTED): home 200, /help 307, /coach/session-scripts 200; not re-tested signed in, because the coach and parent test logins had expired.
+
+**Acted on:** finding F-052 (a coach could not start a session; OD-2026-10-12-010) is built by #1532 (the migration, which lets a session run have no script) and #1534 (the app).
+
+---
+
+## OD-2026-10-12-017 -- Release 19: "Yes" to dispatching the production deploy for acad305b; "Yes" to the approval
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's question at line 37852, 2026-10-12T19:51:12.281Z; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-13). Typed messages are quoted exactly; overwatch's question and notes are quoted as it wrote them. The id carries 2026-10-12 because these UTC times are the afternoon and evening of 2026-10-12 Eastern. New; edits no earlier entry.
+
+**Overwatch, as written** (line 37852): Release 19 was on staging, not dispatched: "Commit `acad305b`, 18 PRs, no migration." It named three screens nobody had checked signed in on staging (coach reach, guardian goals, guardian observations). Question: "Official: dispatch deploy-production for `acad305b` now, for your approval click? A: yes (recommended) / B: hold on staging. Plain: say yes and I queue it; you then approve it in GitHub like last time."
+
+**Typed** (line 37864, 2026-10-12T21:23:24.819Z): *"Yes"*
+
+**Overwatch dispatched** `deploy-production` run 38310342642 (line 37885, 2026-10-12T21:24:04.276Z) and told him to open it and approve.
+
+**Typed** (line 37889, 2026-10-12T21:28:46.837Z): *"Yes"*
+
+**Rulings:**
+1. **First "Yes".** Release 19 goes to production: `deploy-production` for main `acad305bae1552231b3900f03c75b66619ae6a2d`, with the image that passed staging (`sha256:a21e908d4ecbd90a48e5945f57113ae861ec8a58d04b073677e00a8f8542313d`), no migration. Option B (hold on staging) was not chosen.
+2. **Second "Yes".** Overwatch's reading (lines 37900 to 37903): his approval of that run. About three seconds later (line 37901) the run showed the guard job passed and the deploy in progress. His words do not say what question the second "Yes" answered.
+
+**Evidence:** run 38310342642 `success` for `acad305bae1552231b3900f03c75b66619ae6a2d`, with an approval by the production reviewer login (OBSERVED, `gh`, records pass). Live checks after the deploy (handover, REPORTED): home 200, /help 307, /source-control 404, /parent/dashboard 200. The coach reach, guardian goals, guardian observations and readings tile were not re-tested signed in, because the coach and parent test logins had expired. No human signed-in check on staging was done for #1506, #1535 or #1501 (handover, REPORTED).
+
+**Acted on:** Release 19 carries 18 PRs (handover, REPORTED), among them #1506 (OD-2026-10-12-016), #1501 (OD-2026-10-12-007) and #1535 (OD-2026-10-12-011).
+
+---
+
+## OD-2026-10-12-016 -- A youth's body mass follows the whole-gym coach rule: "Any coach all coaches coach all athletes" (PR #1506)
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's question at line 37728, 2026-10-12T17:13:53.256Z; his answer at line 37732, 2026-10-12T17:21:43.686Z). Read by script (records pass, 2026-10-13). His message is quoted exactly; overwatch's question is quoted as it wrote it. New; edits no earlier entry. It answers a question that came up while building OD-2026-10-11-007.
+
+**Overwatch, as written**, from its reading of #1506: "Official: now that a coach reaches every athlete in the gym, should a youth athlete's body mass (weight entries) stay readable only by the coach of record and covering coaches? A: yes, keep weight with the athlete's own coach (recommended) / B: no, any coach of the gym, same as everything else. Plain: every coach in the gym can now open any kid's record. Weight is the most sensitive number in it. Should that one stay with the kid's own coach?" Jason: *"Any coach all coaches coach all athletes"*
+
+**Ruling (overwatch's reading, as posted on #1506; his words govern):** option B. A youth's body mass follows the same rule as everything else: any coach of the athlete's gym can read it. No narrower rule for weight. He named no letter. This went against overwatch's recommended option A.
+
+**Acted on:** overwatch's comment on PR #1506 at 2026-10-12T17:21:54Z (OBSERVED, `gh`) quotes his words and asks the lane to update the comment in `athleteBodyMass.ts` that calls this an open owner question, at its next touch of the file. PR #1506, "Lane P11 (PR A): a coach's reach is the whole gym, not only assigned athletes", merged `0ad57fa6c196c61f8cce1e96bdc0ff716be2b282` at 2026-10-12T17:22:02Z (OBSERVED, `gh`) and shipped in Release 19 (OD-2026-10-12-017). Overwatch's note (handover, REPORTED): it raises the shadow context contract version, so queued SHADOW jobs are refused as stale at deploy time.
+
+---
+
+## OD-2026-10-12-015 -- "No keep this open": the two HIIT gyms are left alone and the session keeps working
+
+**Provenance: PRIMARY.** One typed message from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; overwatch's last report before it at line 37638, 2026-10-12T16:22:32.982Z; his message at line 37642, 2026-10-12T16:50:54.167Z; overwatch's reading at line 37682, 2026-10-12T16:52:09.532Z). Read by script (records pass, 2026-10-13). His message is quoted exactly; overwatch's lines are quoted as written. New; edits no earlier entry.
+
+**Overwatch, as written** (line 37638), at the end of its report: "Still open with you: whether "hiit fit" and "Danielle's HIIT Fit" are test gyms to close." Jason: *"No keep this open"*
+
+**Overwatch's reading, as written** (line 37682): "I read "No keep this open" as two things: leave both HIIT gyms alone, and don't pause this session. If you meant something else, say so." He did not say otherwise. This is overwatch's reading, not his statement; his words name no gym and no session.
+
+**Ruling (overwatch's reading):** the gyms "hiit fit" and "Danielle's HIIT Fit" are not closed as test gyms, and the session keeps working.
+
+**Not ruled here:** whether either gym is a test gym. The handover (REPORTED) lists both as untouched and unanswered.
+
+---
+
+## OD-2026-10-12-014 -- Direction to keep working through the last of the weekly usage: "Ok that fine keep working run out the last %"; "Ok keep working"; "Keep building let add as ,such n as we can to those releases"; "Keep going"; "If we lose usage it resets tomorrow,  work hard"
+
+**Provenance: PRIMARY.** Five typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-13). Typed messages are quoted exactly, spelling and spacing kept (the third has a space after "releases" that is not shown; the fifth has two spaces after the comma). The id carries 2026-10-12 because these UTC times are 2026-10-12 Eastern. New; edits no earlier entry.
+
+**Typed** (line 37412, 2026-10-12T16:06:15.006Z), after overwatch's message at 15:16:00Z (line 37408) that the Max account was at 98% weekly usage and it was stopping for the 99% reassessment, with options A (swap Overwatch to the higher-usage account), B (spend the last 1% opening the two HIGH lanes and stop) and C (wait for the reset): *"Ok that fine keep working run out the last %"*
+
+**Typed** (line 37757, 2026-10-12T19:01:32.802Z): *"Ok keep working"*
+
+**Typed** (line 38272, 2026-10-13T00:42:55.516Z): *"Keep building let add as ,such n as we can to those releases"*
+
+**Typed** (line 38297, 2026-10-13T00:59:04.451Z), after overwatch's report at 00:43:38Z (line 38293) that it had reached the 99% line, with options A (swap Overwatch to another account, recommended), B (keep going on this account until it cuts off) and C (pause until the reset in about 14 hours): *"Keep going"*
+
+**Typed** (line 38324, 2026-10-13T01:02:31.820Z): *"If we lose usage it resets tomorrow,  work hard"*
+
+**Ruling (overwatch's reading; his words give no option letter):** keep working on the Overwatch account through the remaining weekly usage, and build as much as can be built into the coming releases. Overwatch continued on that account (line 38320), choosing to wait on CI watchers rather than poll, to spend little of what remained. The weekly limit resets at 2026-10-13T14:59:59Z (usage report, line 37635).
+
+**Not ruled here:** a new scope, or a change to which steps need his click. The handover's Release 21 order (REPORTED) still has each production migration and deploy waiting for his approval click. His words do not say whether a swap to another account was refused; overwatch took "Keep going" as a choice to continue.
+
+---
+
 ## OD-2026-10-12-013 -- "Sign out everywhere" test on the test athlete: "No I not at ther terminal"; the test-coach invite address was supplied (not recorded)
 
 **Provenance: PRIMARY.** One two-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; put at line 37337, 2026-10-12T15:12:36.308Z; answered at line 37338, 2026-10-12T15:13:41.784Z). Read by script (records pass, 2026-10-12). The typed answer is quoted exactly, spelling kept. The questions and options are quoted as overwatch wrote them. New; edits no earlier entry.
@@ -190,6 +354,8 @@ and should not try to.
 
 **Acted on:** nothing yet in the sources. The handover lists "family-communication work orders" as still owed.
 
+**Status (2026-10-12):** started; issue #1542 (OD-2026-10-12-019).
+
 ---
 
 ## OD-2026-10-12-011 -- An athlete's goals show to the coach and the parent: "A: Coach and parent (Recommended)" (issue #1527)
@@ -215,6 +381,8 @@ and should not try to.
 **Why it was asked (OBSERVED by overwatch, handover and register):** after Release 18 let a coach issue a workout, the Session Scripts screen still read "No session scripts yet" and nothing in the app creates a script, so a coach could not start a session (finding F-052).
 
 **Acted on:** issue #1523, "Lane N8-01: a coach can start a plain session with no script (F-052)".
+
+**Status (2026-10-12):** built as #1532 (the migration) and #1534 (the app) and released in Release 20 (OD-2026-10-12-018).
 
 ---
 
@@ -389,6 +557,8 @@ and should not try to.
 **Conflict to settle in the build:** OD-2026-10-05-024 item 2 ruled coach read routes assigned-coach only, and OD-2026-10-07-011 ruling 1 made consent changes and one-percent notes assigned coach or organization admin only. The sources here do not say which entries this replaces; issue #1480 tells the lane to name them in its plan, and to bring back anything private (such as another coach's staff notes) with a default.
 
 **Acted on:** issue #1480, "Lane P11: a coach's reach is the whole gym, not only assigned athletes".
+
+**Status (2026-10-12):** the body-mass question that came up in PR #1506 is ruled in OD-2026-10-12-016 (a youth's weight follows the same whole-gym rule). #1506 merged `0ad57fa6c196c61f8cce1e96bdc0ff716be2b282` and shipped in Release 19 (OD-2026-10-12-017).
 
 ---
 
