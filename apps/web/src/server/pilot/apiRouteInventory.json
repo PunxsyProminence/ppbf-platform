@@ -10065,11 +10065,9 @@
     "id": "app/api/pilot/quotes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/quotes",
-    "gate": "requirePrincipal + requireRole",
+    "gate": "requirePrincipal (?live=1, words only); otherwise requirePrincipal + requireRole(QUOTE_READ_ROLES)",
     "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
+      "any-authenticated"
     ],
     "athleteData": false,
     "writes": false,
