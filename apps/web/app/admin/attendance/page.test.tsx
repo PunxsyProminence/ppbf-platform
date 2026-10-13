@@ -331,6 +331,36 @@ describe('the attendance report by class (RP-02)', () => {
     expect((await classReport().findByRole('alert')).textContent).toContain('Choose a From date on or before the To date.');
   });
 
+  test('a period changed while the answer body is still being read drops it, table and file alike', async () => {
+    let finishBody: ((value: unknown) => void) | null = null;
+    let finishBlob: ((value: Blob) => void) | null = null;
+    installClassReport(async (url) =>
+      (url.includes('format=csv')
+        ? ({ ok: true, blob: () => new Promise<Blob>((resolve) => { finishBlob = resolve; }) } as unknown as Response)
+        : ({ ok: true, json: () => new Promise((resolve) => { finishBody = resolve; }) } as unknown as Response)));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Show' }));
+    });
+    fireEvent.change(classReport().getByLabelText('From'), { target: { value: '2026-10-01' } });
+    await act(async () => {
+      finishBody?.(BODY);
+    });
+    expect(classReport().queryByRole('table')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Download CSV' }));
+    });
+    fireEvent.change(classReport().getByLabelText('From'), { target: { value: '2026-10-02' } });
+    await act(async () => {
+      finishBlob?.(new Blob(['x']));
+    });
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
   test('a period changed while a report is loading drops its answer', async () => {
     let finish: ((value: Response) => void) | null = null;
     installClassReport(() => new Promise<Response>((resolve) => { finish = resolve; }));

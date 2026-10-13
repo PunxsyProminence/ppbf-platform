@@ -278,7 +278,10 @@ function ClassAttendanceReport() {
       }
       if (mine !== requestSeq.current) return;
       if (format === 'csv') {
-        const url = URL.createObjectURL(await response.blob());
+        const blob = await response.blob();
+        // Checked again after the body: a period changed while it was read drops it too.
+        if (mine !== requestSeq.current) return;
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         link.download = `attendance-by-class_${asked.from}_${asked.to}.csv`;
@@ -290,6 +293,7 @@ function ClassAttendanceReport() {
         return;
       }
       const payload = (await response.json().catch(() => ({}))) as { classes?: unknown; totals?: ClassReportTotals };
+      if (mine !== requestSeq.current) return;
       if (!Array.isArray(payload.classes) || !payload.totals) {
         throw new Error('The report could not be made.');
       }
