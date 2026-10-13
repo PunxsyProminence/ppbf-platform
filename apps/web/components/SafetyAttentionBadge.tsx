@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
@@ -305,62 +305,62 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
  * safety_escalations.athlete_id is not null, so a refused team clip files
  * nothing and was on no bar at all. This counts them.
  *
- * WHAT COUNTS: a clip with no athlete, scan_state 'blocked' and still
- * quarantined -- currently refused, however long ago (N4-03-Q1 default A). An
- * admin's "approve" makes it ready, and it leaves the count.
+ * WHAT COUNTS: a clip with no athlete that the content screen refused, still
+ * quarantined, that no administrator has decided yet. An approve or a block
+ * takes it out (Q2 B on #1445; src/server/pilot/refusedTeamClips.ts).
  *
  * WHO: the organization admin only (client role 'admin'). Only that role can
  * approve or block a refused clip (/admin/video-review), and only that role's
  * video list is the whole gym's.
  *
- * A NUMBER AND NOTHING ELSE. The list read carries titles and file names; none
- * of it is rendered, kept, or put in a label.
+ * A NUMBER AND NOTHING ELSE. The count route returns only { count }.
  *
- * THE READ IS CAPPED. /api/pilot/video/list returns at most REFUSED_READ_LIMIT
- * clips, newest first. A full page means older refused clips may exist past
- * it, so the count is shown as a floor, "N+", rather than as a total.
+ * THE SAME SET BEHIND THE LINK. The count is the server's, over every clip,
+ * and the link opens the review filtered to exactly the clips it counted
+ * (REFUSED_REVIEW_HREF): the first version counted a capped page of the
+ * general list and linked to an unfiltered one, so the two could disagree
+ * (#1508 Codex P1s).
  */
-const REFUSED_READ_LIMIT = 100;
+export const REFUSED_REVIEW_HREF = '/admin/video-review?filter=refused-team';
 
-interface VideoListRow {
-  athlete_id: string | null;
-  scan_state: string;
-  status: string;
-}
-
-export function isRefusedTeamClip(row: VideoListRow): boolean {
-  return row.athlete_id === null && row.scan_state === 'blocked' && row.status === 'quarantined';
-}
+/** Fired by the review page after a decision, so the count re-reads at once. */
+export const REFUSED_TEAM_CLIPS_CHANGED = 'ppbf:refused-team-clips-changed';
 
 function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   const [count, setCount] = useState(0);
-  const [atLeast, setAtLeast] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
+  // Only the newest read lands: a timer read started just before a decision
+  // must not answer after the decision's own re-read.
+  const loadSeq = useRef(0);
   // The client carries an organization admin as 'admin' (roleSession.ts
   // mapPilotRoleToClubRole); the server name is accepted too, as above.
   const serves = role === 'admin' || role === 'organization_admin';
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++loadSeq.current;
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/video/list?limit=${REFUSED_READ_LIMIT}`, {
+      const response = await fetch(`${apiBase()}/api/pilot/video/refused-team-clips`, {
         method: 'GET',
         credentials: 'include',
         signal,
       });
       if (!response.ok) {
-        throw new Error('video list');
+        throw new Error('refused team clips');
       }
-      const payload = (await response.json()) as { items?: VideoListRow[] };
-      const rows = payload.items ?? [];
-      setCount(rows.filter(isRefusedTeamClip).length);
-      setAtLeast(rows.length >= REFUSED_READ_LIMIT);
+      const payload = (await response.json()) as { count?: unknown };
+      if (seq !== loadSeq.current) {
+        return;
+      }
+      if (typeof payload.count !== 'number') {
+        throw new Error('refused team clips');
+      }
+      setCount(payload.count);
       setReadState('loaded');
     } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') {
+      if ((error as { name?: string }).name === 'AbortError' || seq !== loadSeq.current) {
         return;
       }
       setCount(0);
-      setAtLeast(false);
       setReadState('unavailable');
     }
   }, []);
@@ -376,9 +376,14 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     const timer = setInterval(() => {
       void load(controller.signal);
     }, REFRESH_INTERVAL_MS);
+    const onChanged = () => {
+      void load(controller.signal);
+    };
+    window.addEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     return () => {
       controller.abort();
       clearInterval(timer);
+      window.removeEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     };
   }, [serves, load]);
 
@@ -389,7 +394,7 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   if (readState === 'unavailable') {
     return (
       <ChromeLink
-        href="/admin/video-review"
+        href={REFUSED_REVIEW_HREF}
         className={CONTROL_QUIET}
         aria-label="Open video review. The count of refused team clips could not be read."
         title="Refused team clips could not be read. This is not a statement that there are none."
@@ -399,21 +404,18 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  // Silent at zero (plan, #1445). KNOWN LIMIT of the capped read: a refused
-  // clip older than the newest REFUSED_READ_LIMIT is not seen, so a full page
-  // with none refused in it also renders nothing. A count-only route would
-  // close that; it is outside this lane's allowlist (PR body, LANE QUESTION).
+  // Silent at zero (plan, #1445). The count is over every clip, so zero is zero.
   if (count === 0) {
     return null;
   }
 
-  const shown = `${count}${atLeast ? '+' : ''}`;
-  const noun = count === 1 && !atLeast ? 'refused team clip' : 'refused team clips';
+  const shown = String(count);
+  const noun = count === 1 ? 'refused team clip' : 'refused team clips';
   return (
     <ChromeLink
-      href="/admin/video-review"
+      href={REFUSED_REVIEW_HREF}
       className="inline-flex min-h-[var(--tap)] items-center no-underline"
-      aria-label={`${atLeast ? 'At least ' : ''}${count} ${noun}. Open video review.`}
+      aria-label={`${count} ${noun}. Open video review.`}
     >
       <span className="badge badge--restricted">
         <i>▲</i>
