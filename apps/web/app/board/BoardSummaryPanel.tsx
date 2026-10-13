@@ -203,6 +203,10 @@ function BoardReportSection() {
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  // Each request is tied to the month it asked for: choosing another month
+  // while one is loading means its answer is dropped, not shown under the
+  // new month.
+  const requestSeq = useRef(0);
 
   async function makeReport() {
     if (busyRef.current) return;
@@ -212,17 +216,20 @@ function BoardReportSection() {
       return;
     }
     const range = monthWindow(month);
+    const mine = ++requestSeq.current;
     busyRef.current = true;
     setBusy(true);
     try {
       const params = new URLSearchParams({ from: range.from, to: range.to });
       const response = await fetch(`${apiBase()}${BOARD_SUMMARY_ENDPOINT}?${params}`, { credentials: 'include' });
       const payload = (await response.json().catch(() => ({}))) as { success?: boolean; report?: BoardReport; error?: string };
+      if (mine !== requestSeq.current) return;
       if (!response.ok || payload.success !== true || !payload.report) {
         throw new Error(payload.error || 'The report could not be made.');
       }
       setReport(payload.report);
     } catch (error) {
+      if (mine !== requestSeq.current) return;
       setReport(null);
       setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
     } finally {
@@ -241,7 +248,7 @@ function BoardReportSection() {
             type="month"
             className="input"
             value={month}
-            onChange={(event) => { setFailure(''); setReport(null); setMonth(event.target.value); }}
+            onChange={(event) => { requestSeq.current += 1; setFailure(''); setReport(null); setMonth(event.target.value); }}
           />
         </label>
         <button type="button" className="btn" onClick={() => void makeReport()} disabled={busy}>

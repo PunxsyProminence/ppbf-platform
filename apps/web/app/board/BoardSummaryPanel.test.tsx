@@ -251,6 +251,32 @@ describe('the board report section (RP-04)', () => {
     expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
   });
 
+  test("a report still loading when another month is chosen is dropped, not shown under the new month", async () => {
+    let finish: ((value: { ok: boolean; json: () => Promise<unknown> }) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('from=')) {
+        return new Promise((resolve) => { finish = resolve; });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ success: true, summary: summaryFixture() }) });
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-09' } });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-08' } });
+    await act(async () => {
+      finish?.({ ok: true, json: async () => ({ success: true, report: reportFixture() }) });
+    });
+
+    expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Make report' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   test('no month chosen is not sent', async () => {
     const fetchMock = routedFetch(() => ({ ok: true, json: async () => ({ success: true, report: reportFixture() }) }));
     await act(async () => {
