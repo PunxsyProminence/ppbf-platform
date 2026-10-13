@@ -13,7 +13,8 @@ import path from 'node:path';
 const WORKSPACE = readFileSync(path.resolve(__dirname, '../../components/AthleteWorkspace.tsx'), 'utf8');
 
 describe('the 003 visual pass kept every athlete tab group', () => {
-  const REAL_GROUPS = ['Today', 'Development', 'Learn', 'Schedule', 'Messages', 'SHADOW'] as const;
+  // WO-N5-02 (N5-02-Q1 A) removed the Messages group: Ask SHADOW is a tab under SHADOW.
+  const REAL_GROUPS = ['Today', 'Development', 'Learn', 'Schedule', 'SHADOW'] as const;
 
   function groupBlock(): string {
     const m = WORKSPACE.match(/const TAB_GROUPS[\s\S]*?\n\];/);

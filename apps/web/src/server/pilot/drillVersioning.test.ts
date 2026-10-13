@@ -8,13 +8,19 @@ jest.mock('./shadowLibrary', () => ({
   requireEvidenceReviewer: jest.fn(),
 }));
 
+jest.mock('./audit', () => ({
+  writePilotAuditEvent: jest.fn(async () => undefined),
+}));
+
 import {
   adoptDrillChangeProposal,
   declineDrillChangeProposal,
   getDrillLineage,
   listDrillChangeProposals,
   proposeDrillChange,
+  reinstateDrillVersion,
 } from './drillVersioning';
+import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { requireEvidenceReviewer } from './shadowLibrary';
 
@@ -666,5 +672,146 @@ describe('declineDrillChangeProposal', () => {
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(sql).toContain("review_state in ('proposed', 'under_review')");
     expect(params).toEqual(['org-1', 'propchg-1', 'acct-admin-1', 'Not the direction we want.']);
+  });
+});
+
+describe('reinstateDrillVersion (#1470)', () => {
+  // Statements in order: lock the lineage, read the source (with whether the
+  // lineage is in use and whether its reference is withdrawn), read the head;
+  // then deactivate, insert, stamp the head, and the audit row.
+  const v1 = drillRow({ drill_id: 'drill-1', version: 1, active: false, cues: ['Old cue'], reference_drill_id: 'ref-1' });
+  const v2 = drillRow({ drill_id: 'drill-2', version: 2, active: true, cues: ['New cue'], reference_drill_id: 'ref-2' });
+
+  function reinstate(drillId: string, client: ReturnType<typeof fakeClient>) {
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+    return reinstateDrillVersion({
+      organizationId: 'org-1',
+      drillId,
+      actorAccountId: 'acct-coach-1',
+      actorRole: 'coach',
+    });
+  }
+
+  function source(row: Record<string, unknown>, extra: { lineage_active?: boolean; reference_withdrawn?: boolean } = {}) {
+    return { ...row, lineage_active: true, reference_withdrawn: false, ...extra };
+  }
+
+  test('a drill not in this gym locks nothing and is not found', async () => {
+    const client = fakeClient([]);
+    await expect(reinstate('drill-elsewhere', client)).rejects.toThrow('DRILL_NOT_FOUND');
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query.mock.calls[0][1]).toEqual(['org-1', 'drill-elsewhere']);
+  });
+
+  test('retired is checked before head: the newest version of a retired drill is told it is retired', async () => {
+    const retiredHead = { ...v2, active: false };
+    const client = fakeClient([{}], [source(retiredHead, { lineage_active: false })], [retiredHead]);
+
+    await expect(reinstate('drill-2', client)).rejects.toMatchObject({
+      message: 'This drill is retired, so an earlier version cannot be reinstated. Restore the drill first.',
+      code: 'DRILL_RETIRED',
+      status: 409,
+    });
+    expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  test('the newest version is refused, and nothing is written', async () => {
+    const client = fakeClient([{}], [source(v2)], [v2]);
+
+    await expect(reinstate('drill-2', client)).rejects.toMatchObject({
+      message: 'This is already the newest version.',
+      status: 409,
+    });
+    expect(client.query).toHaveBeenCalledTimes(3);
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test("a withdrawn reference is refused with Restore's rule and code, worded for a reinstate, and nothing is written", async () => {
+    const client = fakeClient([{}], [source(v1, { reference_withdrawn: true })], [v2]);
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({
+      status: 409,
+      code: 'reference_withdrawn',
+      message: 'The reference this version was built from has been withdrawn, so this version cannot be reinstated.',
+    });
+    expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  test('the cue rule is applied when the cues differ from the head, and refuses with nothing written', async () => {
+    const cueless = { ...v1, cues: [], reference_drill_id: null };
+    const client = fakeClient([{}], [source(cueless)], [v2]);
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', status: 409 });
+    expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  test('the cue rule is applied when only the reference differs from the head', async () => {
+    const cuelessHead = { ...v2, cues: [], reference_drill_id: null };
+    const cuelessSource = { ...v1, cues: [], reference_drill_id: 'ref-technique' };
+    // The reference is a technique drill, so a cue-less copy is refused.
+    const client = fakeClient([{}], [source(cuelessSource)], [cuelessHead], [{ discipline: 'technique' }]);
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', status: 409 });
+    expect(client.query).toHaveBeenCalledTimes(4);
+  });
+
+  test('the cue rule is not applied when neither cues nor category differ from the head', async () => {
+    const cuelessHead = { ...v2, cues: [], reference_drill_id: null };
+    const cuelessSource = { ...v1, cues: [], reference_drill_id: null };
+    const client = fakeClient([{}], [source(cuelessSource)], [cuelessHead], [], [drillRow({ drill_id: 'drill-3', version: 3 })], []);
+
+    await expect(reinstate('drill-1', client)).resolves.toMatchObject({ drill: { drill_id: 'drill-3' } });
+  });
+
+  test("writes v(head+1) from the source's content and reference, deactivating every active version", async () => {
+    const v3 = drillRow({ drill_id: 'drill-3', version: 3, cues: ['Old cue'], reference_drill_id: 'ref-1', supersedes_drill_id: 'drill-2' });
+    const client = fakeClient([{}], [source(v1)], [v2], [], [v3], []);
+
+    const result = await reinstate('drill-1', client);
+
+    expect(result).toEqual({ drill: v3, previous: v2, source: v1 });
+    const [deactivateSql, deactivateParams] = client.query.mock.calls[3];
+    expect(deactivateSql).toContain('(active or drill_id = $3)');
+    expect(deactivateParams).toEqual(['org-1', v2.lineage_id, 'drill-2']);
+    const [insertSql, insertParams] = client.query.mock.calls[4];
+    expect(insertSql).toContain('insert into pilot.drills');
+    expect(insertParams).toEqual([
+      'org-1', expect.any(String), v1.name, v1.category, v1.focus, ['Old cue'], v1.difficulty,
+      3, v2.lineage_id, 'drill-2', 'ref-1',
+    ]);
+    expect(client.query.mock.calls[5][1]).toEqual(['org-1', 'drill-2', insertParams[1]]);
+    expect(writePilotAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'update',
+        entity_id: 'drill-3',
+        details: expect.objectContaining({
+          action: 'reinstate_version',
+          reinstated_from_drill_id: 'drill-1',
+          reinstated_from_version: 1,
+          from_drill_id: 'drill-2',
+        }),
+      }),
+      client,
+    );
+  });
+
+  test('a version-number collision under a race is a clean 409, not a raw constraint error', async () => {
+    const client = fakeClient([{}], [source(v1)], [v2], []);
+    client.query.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'pilot_drills_lineage_version_uq',
+    }));
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({ code: 'DRILL_VERSION_CONFLICT', status: 409 });
+  });
+
+  test('a name clash is the name-taken error', async () => {
+    const client = fakeClient([{}], [source(v1)], [v2], []);
+    client.query.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'pilot_drills_one_name_per_org',
+    }));
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({ name: 'DrillNameTakenError' });
   });
 });

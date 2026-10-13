@@ -389,6 +389,9 @@ beforeEach(() => {
     if (url.includes('/api/pilot/training-attempts')) {
       return jsonResponse({ items: [] });
     }
+    if (url.includes('/api/pilot/athlete/chat')) {
+      return jsonResponse({ state: 'ok', conversationId: 'conv_1' });
+    }
     if (url.includes('/api/pilot/goals')) {
       // Held open so a second click lands while the first request is in flight.
       return new Promise((resolve) => {
@@ -422,8 +425,8 @@ const GROUP_FOR_SURFACE: Record<string, string> = {
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
-  Messages: 'Messages',
   'SHADOW Intel': 'SHADOW',
+  'Ask SHADOW': 'SHADOW',
 };
 
 /**
@@ -470,13 +473,27 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
   return postedTo('/api/pilot/sessions')[before].body;
 }
 
+describe('one session check-in per press (#1529)', () => {
+  test('two presses of Check In in the same tick open one session', async () => {
+    await renderWorkspace();
+    const button = await screen.findByRole('button', { name: 'Check In' });
+
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+    expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
+  });
+});
+
 describe('athlete workspace honesty', () => {
   test('the summary row claims no message count while no feed measures one', async () => {
-    // "Messages 0" was a hardcoded zero: the athlete's Messages tab is
+    // "Messages 0" was a hardcoded zero: the athlete's question box is
     // write-only Ask-SHADOW, so no unread count exists to render, and a tile
     // saying 0 told a child nobody had written to them as if that had been
-    // measured. The nav group is still allowed to say Messages -- a door is
-    // not a measurement -- so the assertion targets stat tiles specifically.
+    // measured. The assertion targets stat tiles specifically.
     await renderWorkspace();
 
     expect(screen.getByText('Open Coach Work')).toBeTruthy();
@@ -709,6 +726,67 @@ describe('athlete safety reporting', () => {
           injuryFlag: true,
         }),
       }));
+    });
+
+    test('two presses of Save in the same tick send one pain report (#1529)', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      const save = screen.getByRole('button', { name: 'Save' });
+
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+
+      await screen.findByText(/flagged for a coach to look at/);
+      expect(painObservations()).toHaveLength(1);
+    });
+
+    test('a retry of the same report carries the same idempotency key, so the server can drop a duplicate (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      await screen.findByText(/did not save|was not saved/i);
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      // Byte-identical, not just the same key: the route treats any other
+      // payload under one key as a conflict and answers 409 (repository.ts).
+      const [first, second] = painObservations();
+      expect(second!.body).toEqual(first!.body);
+    });
+
+    test('Cancel ends the report: the next Save of the same answers is a new report (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, second] = painObservations();
+      expect(second!.body.idempotencyKey).not.toBe(first!.body.idempotencyKey);
+    });
+
+    test('changed answers are a new report, not a reuse of the failed one (#1529)', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      answerPain({ type: 'Sharp', severity: 6 });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, second] = painObservations();
+      expect(second!.body.idempotencyKey).not.toBe(first!.body.idempotencyKey);
     });
 
     test('the next report does not inherit the last one', async () => {
@@ -1678,17 +1756,43 @@ describe('reporting progress writes it', () => {
 });
 
 describe('the workspace nav groups its surfaces instead of listing them flat', () => {
-  test('six groups are offered, and a surface inside one is not loose in the top row', async () => {
+  test('five groups are offered, and a surface inside one is not loose in the top row', async () => {
     await renderWorkspace();
 
-    for (const group of ['Today', 'Development', 'Learn', 'Schedule', 'Messages', 'SHADOW']) {
+    for (const group of ['Today', 'Development', 'Learn', 'Schedule', 'SHADOW']) {
       expect(screen.getByRole('button', { name: group })).toBeTruthy();
     }
+    // No Messages group (WO-N5-02, N5-02-Q1 A): the only question box is answered by SHADOW, so
+    // no navigation suggests messaging a coach.
+    expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
 
     // Goals belongs to Development. Until that group is open there is no Goals
     // button at all -- that is the difference between grouping the nav and
     // merely captioning it.
     expect(screen.queryByRole('button', { name: 'Goals' })).toBeNull();
+  });
+
+  test('SHADOW holds SHADOW Intel and Ask SHADOW, and Ask SHADOW is the same question box as before', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'SHADOW' }));
+    expect(screen.getByRole('button', { name: 'SHADOW Intel' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+    expect(screen.getByRole('heading', { name: 'Ask SHADOW' })).toBeTruthy();
+  });
+
+  test('Ask SHADOW, moved under SHADOW, still sends the question to SHADOW through the same route', async () => {
+    await renderWorkspace();
+
+    openTab('Ask SHADOW');
+    fireEvent.change(screen.getByPlaceholderText('Type your question...'), { target: { value: 'How do I hold my guard?' } });
+    // The nav tab and the form's submit button share the name; the submit is the one not marked current.
+    const submit = screen.getAllByRole('button', { name: 'Ask SHADOW' }).find((button) => !button.hasAttribute('aria-current'));
+    await act(async () => {
+      fireEvent.click(submit!);
+    });
+
+    expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);
   });
 
   test('a surface is reachable through the group that owns it', async () => {
@@ -1888,7 +1992,7 @@ describe('the athlete question box does not imply a coach reads it', () => {
   test('it is named for what answers it, and offers no coach to pick', async () => {
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    openTab('Ask SHADOW');
 
     expect(screen.getByRole('heading', { name: 'Ask SHADOW' })).toBeTruthy();
     // The picker offered two hardcoded names and changed nothing about where
@@ -1901,7 +2005,7 @@ describe('the athlete question box does not imply a coach reads it', () => {
   test('the SafeSport warning still states that no parent is copied', async () => {
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    openTab('Ask SHADOW');
 
     expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
   });
@@ -4370,7 +4474,7 @@ describe('the wellness check-in', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Development' }));
     expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    openTab('Ask SHADOW');
     expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
   });
 

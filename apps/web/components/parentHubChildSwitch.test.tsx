@@ -417,6 +417,29 @@ describe('Report a Barrier (#95/#96)', () => {
     });
   }
 
+  test('two presses of Send to Coach in the same tick send one report (#1529)', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const fetchMock = installFetch(
+      undefined,
+      undefined,
+      () => new Promise<Response>((resolve) => { finish = resolve; }),
+    );
+    await openParentFloor();
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'No ride most weeknights.' } });
+    const send = screen.getByRole('button', { name: 'Send to Coach' });
+
+    await act(async () => {
+      fireEvent.click(send);
+      fireEvent.click(send);
+    });
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true, note_id: 'note-1' }));
+    });
+
+    const reports = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    expect(reports).toHaveLength(1);
+  });
+
   test('defaults to Home and posts athleteId/barrierType/description', async () => {
     const fetchMock = installFetch();
     await openParentFloor();

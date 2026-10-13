@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
@@ -106,6 +106,15 @@ export default function AthleteAchievements({
   const [state, setState] = useState<LoadState>('loading');
   const [recognitionFailed, setRecognitionFailed] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
+  // Save truth (WO-N5-02): a press that is saving says so, and one the server did not keep says
+  // that, instead of leaving the screen as if nothing had been pressed. Success is the screen
+  // itself changing after the server answers.
+  const [programSave, setProgramSave] = useState<SaveState>('idle');
+  // Keyed by athlete and milestone, so the line sits on the card that was pressed, one card's
+  // answer never overwrites another's, and a kiosk switched to another athlete shows none of them.
+  const [milestoneSave, setMilestoneSave] = useState<Readonly<Record<string, SaveState>>>({});
+  // One mark per press (#1529). "Did it" had no in-flight guard at all.
+  const markingRef = useRef(false);
 
   const isFamily = audience === 'family';
 
@@ -205,6 +214,7 @@ export default function AthleteAchievements({
   const chooseProgram = useCallback(async (next: string) => {
     if (!athleteId || !isProgram(next) || savingProgram) return;
     setSavingProgram(true);
+    setProgramSave('saving');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'PATCH',
@@ -214,17 +224,24 @@ export default function AthleteAchievements({
       });
       if (response.ok) {
         setProgram(next);
+        setProgramSave('idle');
+      } else {
+        setProgramSave('failed');
       }
     } catch {
-      // Leaving the previous program showing is the honest failure: the path
-      // on screen is still the one the server holds.
+      // The previous program stays showing -- the path on screen is still the
+      // one the server holds -- and the line below says the press was not kept.
+      setProgramSave('failed');
     } finally {
       setSavingProgram(false);
     }
   }, [athleteId, savingProgram]);
 
   const markMilestone = useCallback(async (milestone: Milestone) => {
-    if (!athleteId || isFamily) return;
+    if (!athleteId || isFamily || markingRef.current) return;
+    markingRef.current = true;
+    const key = `${athleteId}:${milestone.key}`;
+    setMilestoneSave((now) => ({ ...now, [key]: 'saving' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
         method: 'POST',
@@ -234,9 +251,15 @@ export default function AthleteAchievements({
       });
       if (response.ok) {
         await load();
+        setMilestoneSave((now) => withoutKey(now, key));
+      } else {
+        setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
       }
     } catch {
-      /* Silent: the milestone simply stays unmarked, which is the truth. */
+      // The milestone stays unmarked, which is the truth, and its card says so.
+      setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
+    } finally {
+      markingRef.current = false;
     }
   }, [athleteId, isFamily, load]);
 
@@ -397,6 +420,7 @@ export default function AthleteAchievements({
             track={track}
             isFamily={isFamily}
             pressedKey={pressed}
+            saveOf={(milestoneKey) => milestoneSave[`${athleteId}:${milestoneKey}`]}
             onMark={isFamily ? undefined : markMilestone}
           />
         ))}
@@ -429,9 +453,30 @@ export default function AthleteAchievements({
               </button>
             ))}
           </div>
+          <SaveNote state={programSave} />
         </div>
       )}
     </section>
+  );
+}
+
+export type SaveState = 'idle' | 'saving' | 'failed';
+
+/** The same record without `key`: a kept press leaves no line behind. */
+export function withoutKey(saves: Readonly<Record<string, SaveState>>, key: string): Record<string, SaveState> {
+  const next = { ...saves };
+  delete next[key];
+  return next;
+}
+
+/** One quiet line for a press that is saving or was not kept. Nothing at rest. Floor-sized: this is
+    read on the gym kiosk (AGENT_KERNEL rule 2). */
+export function SaveNote({ state }: { state: SaveState | undefined }) {
+  if (!state || state === 'idle') return null;
+  return (
+    <p className="mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]" role="status">
+      {state === 'saving' ? 'Saving...' : 'That did not save. Try it again.'}
+    </p>
   );
 }
 
@@ -461,11 +506,13 @@ function TrackPanel({
   track,
   isFamily,
   pressedKey,
+  saveOf,
   onMark,
 }: {
   track: TrackProgress;
   isFamily: boolean;
   pressedKey: string | null;
+  saveOf: (milestoneKey: string) => SaveState | undefined;
   onMark?: (milestone: Milestone) => void;
 }) {
   const total = track.earned.length + track.ahead.length;
@@ -524,6 +571,7 @@ function TrackPanel({
                 Did it
               </button>
             )}
+            <SaveNote state={saveOf(milestone.key)} />
           </li>
         ))}
       </ul>
