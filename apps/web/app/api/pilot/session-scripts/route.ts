@@ -147,18 +147,25 @@ export async function POST(request: NextRequest) {
 }
 
 // PATCH changes a script's name and its blocks' titles and minutes.
-// { script_id, name?, blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }] }.
+// { script_id, expected_updated_at, name?,
+//   blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }] }.
 // A script that has been delivered is not changed: the edit becomes its next
-// version, and `outcome` says which happened.
+// version, and `outcome` says which happened. expected_updated_at is the
+// script's updated_at as the editor read it, and is required: a script another
+// coach has saved since is refused (409 SESSION_SCRIPT_CHANGED) rather than
+// overwritten.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
 
-    const record = await bodyRecord(request, ['script_id', 'name', 'blocks']);
+    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks']);
     if (record instanceof NextResponse) return record;
     if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
       return badRequest('script_id');
+    }
+    if (typeof record.expected_updated_at !== 'string' || Number.isNaN(Date.parse(record.expected_updated_at))) {
+      return badRequest('expected_updated_at');
     }
     if (record.name !== undefined && typeof record.name !== 'string') {
       return badRequest('name');
@@ -174,6 +181,7 @@ export async function PATCH(request: NextRequest) {
       scriptId: record.script_id.trim(),
       name: record.name,
       blocks: record.blocks as SessionScriptBlockEdit[] | undefined,
+      expectedUpdatedAt: record.expected_updated_at,
     });
     const script = await getSessionScriptWithDetail(principal.organizationId, edited.script_id);
     return NextResponse.json({ outcome: edited.outcome, script });

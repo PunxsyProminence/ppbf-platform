@@ -80,6 +80,9 @@ const post = (body: unknown) => send(POST, 'POST', body);
 const patch = (body: unknown) => send(PATCH, 'PATCH', body);
 
 const BLOCK = { block_id: 'blk-1', block_label: 'Warm-up', start_offset_min: 0, end_offset_min: 10 };
+// The least a PATCH must say: which script, and which state of it the editor read.
+const READ_AT = '2026-10-13T15:00:00.000Z';
+const EDIT = { script_id: 'scr-1', expected_updated_at: READ_AT };
 const STORED = { script_id: 'scr-new', name: 'Tuesday juniors', blocks: [], renderings: [] };
 
 beforeEach(() => {
@@ -95,7 +98,7 @@ describe('who may write a session script', () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
 
     const created = await post({ template_id: 'wtp-1' });
-    const edited = await patch({ script_id: 'scr-1', name: 'Renamed' });
+    const edited = await patch({ ...EDIT, name: 'Renamed' });
 
     if (MAY_AUTHOR[role]) {
       expect(created.status).toBe(201);
@@ -123,7 +126,7 @@ describe('who may write a session script', () => {
     mockRequirePrincipal.mockRejectedValue(new Error('Unauthorized'));
 
     expect((await post({ template_id: 'wtp-1' })).status).toBe(401);
-    expect((await patch({ script_id: 'scr-1', name: 'Renamed' })).status).toBe(401);
+    expect((await patch({ ...EDIT, name: 'Renamed' })).status).toBe(401);
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockEdit).not.toHaveBeenCalled();
   });
@@ -175,7 +178,7 @@ describe('POST /api/pilot/session-scripts', () => {
 
 describe('PATCH /api/pilot/session-scripts', () => {
   it("edits in the principal's gym and says whether the script was updated or a new version was made", async () => {
-    const response = await patch({ script_id: 'scr-1', name: 'Renamed', blocks: [BLOCK] });
+    const response = await patch({ ...EDIT, name: 'Renamed', blocks: [BLOCK] });
 
     expect(mockEdit).toHaveBeenCalledWith({
       organizationId: 'org-1',
@@ -184,6 +187,7 @@ describe('PATCH /api/pilot/session-scripts', () => {
       scriptId: 'scr-1',
       name: 'Renamed',
       blocks: [BLOCK],
+      expectedUpdatedAt: READ_AT,
     });
     // The script answered is the one the edit produced, which is the new row when a version was made.
     expect(mockDetail).toHaveBeenCalledWith('org-1', 'scr-new');
@@ -193,7 +197,7 @@ describe('PATCH /api/pilot/session-scripts', () => {
 
   it('accepts no organization or version from the body', async () => {
     for (const extra of ['organization_id', 'version', 'lineage_id', 'authoring_state']) {
-      const response = await patch({ script_id: 'scr-1', [extra]: 'x' });
+      const response = await patch({ ...EDIT, [extra]: 'x' });
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({ error: `UNEXPECTED_FIELD:${extra}` });
     }
@@ -203,12 +207,12 @@ describe('PATCH /api/pilot/session-scripts', () => {
   it('400s a missing script id and a block that is not a whole edit', async () => {
     const bad = [
       {},
-      { script_id: '' },
-      { script_id: 'scr-1', name: 7 },
-      { script_id: 'scr-1', blocks: 'all' },
-      { script_id: 'scr-1', blocks: [{ ...BLOCK, start_offset_min: '0' }] },
-      { script_id: 'scr-1', blocks: [{ block_id: 'blk-1' }] },
-      { script_id: 'scr-1', blocks: [null] },
+      { ...EDIT, script_id: '' },
+      { ...EDIT, name: 7 },
+      { ...EDIT, blocks: 'all' },
+      { ...EDIT, blocks: [{ ...BLOCK, start_offset_min: '0' }] },
+      { ...EDIT, blocks: [{ block_id: 'blk-1' }] },
+      { ...EDIT, blocks: [null] },
     ];
     for (const body of bad) {
       expect((await patch(body)).status).toBe(400);
@@ -216,10 +220,28 @@ describe('PATCH /api/pilot/session-scripts', () => {
     expect(mockEdit).not.toHaveBeenCalled();
   });
 
+  it('requires the state the editor read, so an edit can never skip the two-coaches check', async () => {
+    for (const body of [{ script_id: 'scr-1', name: 'x' }, { ...EDIT, expected_updated_at: 'yesterday' }, { ...EDIT, expected_updated_at: 7 }]) {
+      const response = await patch(body);
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'expected_updated_at' });
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it('answers a script another coach saved in the meantime with 409 and its code', async () => {
+    mockEdit.mockRejectedValue(new SessionScriptAuthoringError('SESSION_SCRIPT_CHANGED', 409));
+
+    const response = await patch({ ...EDIT, name: 'Second save' });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_CHANGED' });
+  });
+
   it('answers a superseded script with 409 and its code', async () => {
     mockEdit.mockRejectedValue(new SessionScriptAuthoringError('SESSION_SCRIPT_SUPERSEDED', 409));
 
-    const response = await patch({ script_id: 'scr-old', name: 'Late edit' });
+    const response = await patch({ ...EDIT, script_id: 'scr-old', name: 'Late edit' });
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_SUPERSEDED' });

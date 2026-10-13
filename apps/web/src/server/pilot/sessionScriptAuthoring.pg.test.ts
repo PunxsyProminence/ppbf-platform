@@ -15,6 +15,10 @@
 //    version it pinned.
 // 4. Organization scope: another gym's template and another gym's script are
 //    refused and nothing is written.
+// 5. Two coaches editing one script: the second save is refused and told, on
+//    the timestamp the database itself wrote.
+// 6. What a family reader is sent of a coach-made script (the projection the
+//    route applies), read off the rows this module really wrote.
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
@@ -86,6 +90,7 @@ import {
   moveSessionScriptRunCursor,
   startSessionScriptRun,
 } from './sessionScriptRuns';
+import { projectSessionScriptDetailForReader } from './sessionScriptProjection';
 import { getSessionScriptLineage, getSessionScriptWithDetail, listSessionScripts } from './sessionScripts';
 
 jest.setTimeout(180_000);
@@ -208,7 +213,7 @@ function create(gym: Gym, name?: string) {
   });
 }
 
-type EditChange = Pick<Parameters<typeof editSessionScript>[0], 'name' | 'blocks'>;
+type EditChange = Pick<Parameters<typeof editSessionScript>[0], 'name' | 'blocks' | 'expectedUpdatedAt'>;
 
 /** Edits are made by the gym's OTHER coach: any coach of the gym may edit, not only the author. */
 function edit(gym: Gym, scriptId: string, change: EditChange) {
@@ -446,6 +451,41 @@ describe('making a session script from a workout template', () => {
   });
 });
 
+describe('what a family is sent of a coach-made script', () => {
+  test('a parent and an athlete get the running order without the block titles, the coach text or who made it', async () => {
+    const gym = await newGym('family');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const stored = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    // The staff text really is in the stored rows, so its absence below is the projection's doing.
+    expect(JSON.stringify(stored)).toContain('Hands up.');
+
+    for (const role of ['parent', 'athlete'] as const) {
+      const sent = projectSessionScriptDetailForReader(role, stored!);
+      const text = JSON.stringify(sent);
+      for (const staffOnly of [
+        'Jab Drill', 'Partner mirror', 'Sparring Round', // block titles
+        'Hands up.', 'warm-up', 'technical - 10 reps', 'From workout template', // what to say / explain
+        'Workout template: Fixture Workout v3', // source document
+        gym.coachId,
+        'Coach-typed intent',
+      ]) {
+        expect(text).not.toContain(staffOnly);
+      }
+      for (const block of sent.blocks) {
+        expect(Object.keys(block).sort()).toEqual([
+          'block_id', 'block_kind', 'block_order', 'contact_level', 'drill_id', 'end_offset_min',
+          'organization_id', 'scale_level', 'script_id', 'start_offset_min',
+        ]);
+      }
+      expect(sent).toMatchObject({ name: 'Fixture Workout', theme: '', total_minutes: 16 });
+      expect(sent.blocks.map((block) => [block.start_offset_min, block.end_offset_min])).toEqual([[0, 6], [6, 11], [11, 16]]);
+    }
+    // The coach still reads all of it.
+    expect(projectSessionScriptDetailForReader('coach', stored!)).toBe(stored);
+  });
+});
+
 describe('editing a session script', () => {
   test('a script nobody has run is updated where it is: same row, same version, same block ids', async () => {
     const gym = await newGym('inplace');
@@ -571,6 +611,53 @@ describe('editing a session script', () => {
     expect(reason.message).toBe('SESSION_SCRIPT_SUPERSEDED');
     expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1, 2]);
     expect(await storedBytes(gym, created.script_id)).toBe(v1Bytes);
+  });
+
+  test('two coaches edit a plan nobody has delivered: the second save is refused and the first is kept', async () => {
+    const gym = await newGym('two-coaches');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    // Both coaches open the editor on the same stored plan.
+    const opened = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const readAt = new Date(opened!.updated_at).toISOString();
+
+    const first = await edit(gym, created.script_id, { name: 'First coach', expectedUpdatedAt: readAt });
+    expect(first.outcome).toBe('updated');
+    const afterFirst = await storedBytes(gym, created.script_id);
+
+    await expectRefused(
+      edit(gym, created.script_id, {
+        name: 'Second coach',
+        blocks: [{ block_id: opened!.blocks[0].block_id, block_label: 'Overwritten', start_offset_min: 0, end_offset_min: 30 }],
+        expectedUpdatedAt: readAt,
+      }),
+      'SESSION_SCRIPT_CHANGED',
+      409,
+    );
+    // Told, not silently overwritten: the first coach's save is exactly as it was.
+    expect(await storedBytes(gym, created.script_id)).toBe(afterFirst);
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.name).toBe('First coach');
+
+    // Having re-read the plan, the second coach saves on top of the first.
+    const reread = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const second = await edit(gym, created.script_id, {
+      name: 'Second coach',
+      expectedUpdatedAt: new Date(reread!.updated_at).toISOString(),
+    });
+    expect(second.outcome).toBe('updated');
+
+    // And at the same instant, from the same read: one saves, one is told.
+    const again = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const at = new Date(again!.updated_at).toISOString();
+    const settled = await Promise.allSettled([
+      edit(gym, created.script_id, { name: 'Left hand', expectedUpdatedAt: at }),
+      edit(gym, created.script_id, { name: 'Right hand', expectedUpdatedAt: at }),
+    ]);
+    expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const lost = settled.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toBeInstanceOf(SessionScriptAuthoringError);
+    expect(lost.reason.message).toBe('SESSION_SCRIPT_CHANGED');
+    expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1]);
   });
 
   test('a session still on the floor counts as a run: its plan is not changed under the coach', async () => {

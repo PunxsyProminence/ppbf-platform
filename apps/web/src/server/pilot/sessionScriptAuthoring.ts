@@ -28,6 +28,13 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 // check both follow the highest version, so the new one is what a coach finds
 // and starts. A script nobody has run yet is updated where it is.
 //
+// TWO COACHES EDITING AT ONCE: THE SECOND IS TOLD. An edit says which state of
+// the script it was made from (expectedUpdatedAt, the updated_at its form was
+// opened on). If the script has been saved since, the edit is refused with
+// SESSION_SCRIPT_CHANGED and nothing is written, so one coach's save never
+// silently replaces another's. When the first save made a new version instead,
+// the second gets SESSION_SCRIPT_SUPERSEDED for the same reason.
+//
 // AUTHORIZATION IS THE ROUTE'S. Like issueWorkoutTemplate, this trusts its
 // caller to have passed the role gate; organizationId is the session's and
 // scopes every read and write below.
@@ -269,7 +276,13 @@ function cleanBlockEdits(edits: readonly SessionScriptBlockEdit[]): Map<string, 
  * reordered here.
  */
 export async function editSessionScript(
-  params: Actor & { scriptId: string; name?: string; blocks?: readonly SessionScriptBlockEdit[] },
+  params: Actor & {
+    scriptId: string;
+    name?: string;
+    blocks?: readonly SessionScriptBlockEdit[];
+    /** The script's updated_at as the editor read it. Given, a script saved since is refused. */
+    expectedUpdatedAt?: string;
+  },
 ): Promise<EditedSessionScript> {
   const edits = cleanBlockEdits(params.blocks ?? []);
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
@@ -300,6 +313,15 @@ export async function editSessionScript(
     );
     if ((newer.rowCount ?? 0) > 0) {
       throw new SessionScriptAuthoringError('SESSION_SCRIPT_SUPERSEDED', 409);
+    }
+    // Compared to the millisecond, which is what a timestamp keeps on its way
+    // to a browser and back; the in-place save below always moves updated_at
+    // on by at least that much.
+    if (
+      params.expectedUpdatedAt !== undefined
+      && new Date(script.updated_at).getTime() !== Date.parse(params.expectedUpdatedAt)
+    ) {
+      throw new SessionScriptAuthoringError('SESSION_SCRIPT_CHANGED', 409);
     }
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -351,7 +373,8 @@ export async function editSessionScript(
     if (!hasRun) {
       await client.query(
         `update pilot.session_scripts
-            set name = $3, total_minutes = $4, updated_at = now()
+            set name = $3, total_minutes = $4,
+                updated_at = greatest(now(), updated_at + interval '1 millisecond')
           where organization_id = $1 and script_id = $2`,
         [params.organizationId, script.script_id, name, totalMinutes],
       );
