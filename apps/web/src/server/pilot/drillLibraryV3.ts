@@ -529,19 +529,37 @@ export async function listReferenceLifecycles(
   const rows = await query<{ drill_id: string; state: ReferenceLifecycleState; operational_drill_id: string | null }>(
     `select d.drill_id,
             case
+              -- The gym runs this version, or one it moved on to (Q1: the
+              -- version left behind still reads as the running drill). A
+              -- version NEWER than the one the live drill pins -- the gym
+              -- reinstated an earlier version of its drill -- is not running:
+              -- it falls through to the newer-version states below.
               when exists (
                 select 1 from pilot.drills od
                 join pilot.drills live
                   on live.organization_id = od.organization_id
                  and live.lineage_id = od.lineage_id
                  and live.active
+                left join pilot.drill_library pinned
+                  on pinned.organization_id = live.organization_id
+                 and pinned.drill_id = live.reference_drill_id
                 where od.organization_id = d.organization_id
                   and od.reference_drill_id = d.drill_id
+                  and (pinned.drill_id is null
+                       or pinned.lineage_id <> d.lineage_id
+                       or pinned.version >= d.version)
               ) then 'operational'
+              -- Retired only when the gym runs no version of that drill.
               when exists (
                 select 1 from pilot.drills od
                 where od.organization_id = d.organization_id
                   and od.reference_drill_id = d.drill_id
+                  and not exists (
+                    select 1 from pilot.drills live
+                    where live.organization_id = od.organization_id
+                      and live.lineage_id = od.lineage_id
+                      and live.active
+                  )
               ) then 'retired'
               when not d.active then 'unavailable'
               when d.superseded_at is not null then 'superseded'

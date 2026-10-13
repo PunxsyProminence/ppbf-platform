@@ -5431,6 +5431,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-notes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-notes",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists the parent_message notes posted to one athlete's family (text, posted_at, author's login-derived name) with their parent_task_state (due_date, completed_at), newest first (parentTasks.ts listFamilyNotesForStaff; #1542 FC-01). completed_by_account_id is never returned: which guardian ticked a note stays the family's. Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",

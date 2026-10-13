@@ -85,6 +85,7 @@ interface Server {
   versions: PilotDrillVersionRow[];
   items: DrillChangeProposalListing[];
   review?: (body: { proposal_id: string; action: string; review_note?: string }) => Response;
+  reinstate?: (body: { drill_id: string; reinstate: boolean }) => Response;
 }
 
 function json(body: unknown, status = 200) {
@@ -107,6 +108,9 @@ function serve(server: Server) {
       const body = JSON.parse(String(init.body)) as { proposal_id: string; action: string; review_note?: string };
       if (server.review) return server.review(body);
     }
+    if (url === '/api/pilot/drills' && init?.method === 'PATCH' && server.reinstate) {
+      return server.reinstate(JSON.parse(String(init.body)) as { drill_id: string; reinstate: boolean });
+    }
     return json({ error: 'unexpected' }, 500);
   });
 }
@@ -121,11 +125,11 @@ function proposalItem(rationale: string) {
 
 const twoVersions = () => [version(1), version(2, { active: true, focus: 'Focus as of version 2.' })];
 
-async function renderPanel(server: Server, canReview = true) {
+async function renderPanel(server: Server, canReview = true, canReinstate = false) {
   const fetchMock = serve(server);
   global.fetch = fetchMock as unknown as typeof fetch;
   const onChanged = jest.fn();
-  render(<DrillLineageReview drillId="jab-2" canReview={canReview} onClose={() => {}} onChanged={onChanged} />);
+  render(<DrillLineageReview drillId="jab-2" canReview={canReview} canReinstate={canReinstate} onClose={() => {}} onChanged={onChanged} />);
   // Versions and proposals are set together, so the versions list means both are in.
   await screen.findByRole('list', { name: 'Versions, oldest first' });
   return { fetchMock, onChanged };
@@ -292,5 +296,84 @@ describe('DrillLineageReview', () => {
     expect(document.body.textContent).not.toContain(PROPOSER);
     expect(document.body.textContent).not.toContain(REVIEWER);
     await waitFor(() => expect(document.body.innerHTML).not.toContain('acct-secret'));
+  });
+
+  describe('Reinstate', () => {
+    const threeVersions = () => [version(1), version(2), version(3, { active: true })];
+
+    function versionItems() {
+      return within(screen.getByRole('list', { name: 'Versions, oldest first' })).getAllByRole('listitem');
+    }
+
+    test('is offered on each earlier version, never on the current one', async () => {
+      await renderPanel({ versions: threeVersions(), items: [] }, false, true);
+      const items = versionItems();
+      expect(within(items[0]).getByRole('button', { name: 'Reinstate version 1' })).toHaveTextContent('Reinstate version 1');
+      expect(within(items[1]).getByRole('button', { name: 'Reinstate version 2' })).toBeInTheDocument();
+      expect(within(items[2]).queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
+    });
+
+    test('is not offered on a retired drill', async () => {
+      await renderPanel({ versions: [version(1), version(2)], items: [] }, true, true);
+      expect(screen.queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
+    });
+
+    test('is not offered to a role the route does not admit', async () => {
+      await renderPanel({ versions: threeVersions(), items: [] }, true, false);
+      expect(screen.queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
+    });
+
+    test('sends that version, reads the panel again and tells the page', async () => {
+      const server: Server = {
+        versions: threeVersions(),
+        items: [],
+        reinstate: () => {
+          server.versions = [version(1), version(2), version(3), version(4, { active: true })];
+          return json({ ok: true, organization_id: 'org-1', drill: server.versions[3], reinstated_from_drill_id: 'jab-1', previous_drill_id: 'jab-3' });
+        },
+      };
+      const { fetchMock, onChanged } = await renderPanel(server, false, true);
+
+      const button = within(versionItems()[0]).getByRole('button', { name: 'Reinstate version 1' });
+      fireEvent.click(button);
+      expect(button).toBeDisabled();
+      expect(within(versionItems()[1]).getByRole('button', { name: 'Reinstate version 2' })).toBeDisabled();
+
+      // The reinstate writes a NEW latest version, so the notice names it (here version 4).
+      expect(await screen.findByText("Reinstated version 1 as version 4, now the drill's current version.")).toHaveAttribute('role', 'status');
+      const patches = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(patches.map(([url, init]) => [String(url), JSON.parse(String((init as RequestInit).body))])).toEqual([
+        ['/api/pilot/drills', { drill_id: 'jab-1', reinstate: true }],
+      ]);
+      expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+      expect(versionItems()).toHaveLength(4);
+      expect(within(versionItems()[3]).queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
+      expect(within(versionItems()[2]).getByRole('button', { name: 'Reinstate version 3' })).toBeEnabled();
+    });
+
+    test("a 409 shows the server's own wording and reads the panel again", async () => {
+      const { fetchMock } = await renderPanel({
+        versions: threeVersions(),
+        items: [],
+        reinstate: () => json({ error: 'This drill already has a newer version. Reload and try again.', code: 'DRILL_VERSION_CONFLICT' }, 409),
+      }, false, true);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reinstate version 2' }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('This drill already has a newer version. Reload and try again.');
+      expect(alert).toHaveTextContent("Nothing was changed. This drill's versions and proposals were read again.");
+      expect(versionItems()[1]).toContainElement(alert);
+      expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
+    });
+
+    test('a fault says the outcome is not known', async () => {
+      await renderPanel({ versions: threeVersions(), items: [], reinstate: () => json({ error: 'Internal error' }, 500) }, false, true);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reinstate version 1' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("It is not known whether this was saved. This drill's versions and proposals were read again");
+    });
   });
 });

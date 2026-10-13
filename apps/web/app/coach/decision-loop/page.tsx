@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
+import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import { formatGymDate } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
@@ -553,6 +554,8 @@ export default function DecisionLoopReviewPage() {
   const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
   const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
   const [messageHomeMessage, setMessageHomeMessage] = useState('');
+  // Bumped after a post lands, so the list under the form re-reads (#1542).
+  const [familyNotesRefresh, setFamilyNotesRefresh] = useState(0);
 
   /* In flight, per athlete. One flag for the page left athlete B's button
      reading "Filing…" and locked while a report for A was still out. */
@@ -1056,6 +1059,7 @@ export default function DecisionLoopReviewPage() {
       }
       writeConfirmed();
       setMessageHomeMessage(due ? due.text : "Posted to the family's page.");
+      setFamilyNotesRefresh((n) => n + 1);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to post the message.');
     } finally {
@@ -1614,6 +1618,8 @@ export default function DecisionLoopReviewPage() {
                     {messageHomeSubmitting ? 'Posting…' : 'Post to Family'}
                   </button>
                 </form>
+
+                <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
               </section>
 
               {/* Decision Outcomes */}

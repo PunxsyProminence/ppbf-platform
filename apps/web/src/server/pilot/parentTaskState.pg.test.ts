@@ -585,3 +585,131 @@ describe('reading task state back onto messages', () => {
     expect(state.size).toBe(0);
   });
 });
+
+/*
+ * WHAT THE GYM POSTED TO A FAMILY, READ BACK BY STAFF (#1542, FC-01). The
+ * coach's panel lists every parent_message for the athlete, newest first,
+ * with the author's name, its due date and whether the family marked it done.
+ * It never returns which guardian ticked it, never another note type, never
+ * another child's notes, and never another gym's.
+ */
+describe('listFamilyNotesForStaff (#1542)', () => {
+  const LATER_NOTE = '44444444-4444-4444-8444-444444444444';
+
+  async function seedLaterDoneNote() {
+    await activeClient!.query(
+      `update pilot.accounts set login_email = 'pat.coach@ppbf.test' where account_id = $1`,
+      [COACH],
+    );
+    await activeClient!.query(
+      `insert into pilot.coach_observations
+         (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text, created_at)
+       values ($1, $2::uuid, $3, $4, 'coach', 'parent_message', 'Medical form by Friday, please.', now() + interval '1 minute')`,
+      [ORG_ID, LATER_NOTE, ATHLETE, COACH],
+    );
+    await parentTasks.setParentTaskDueDate({
+      organizationId: ORG_ID,
+      noteId: LATER_NOTE,
+      athleteId: ATHLETE,
+      dueDate: '2026-10-16',
+      actorAccountId: COACH,
+      actorRole: 'coach',
+    });
+    await parentTasks.setParentTaskCompletion({
+      organizationId: ORG_ID,
+      noteId: LATER_NOTE,
+      completed: true,
+      actorAccountId: GUARDIAN_ACCOUNT,
+      athleteIdsInScope: [ATHLETE],
+    });
+  }
+
+  test("the athlete's family notes, newest first, with name, due date and the family's state", async () => {
+    await seedLaterDoneNote();
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes.map((note) => note.note_id)).toEqual([LATER_NOTE, MESSAGE_NOTE]);
+    expect(notes[0]).toMatchObject({
+      note_text: 'Medical form by Friday, please.',
+      posted_by_name: 'Coach Pat Coach',
+      task: { due_date: '2026-10-16', completed_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/) },
+    });
+    expect(notes[0]!.posted_at).toEqual(expect.any(String));
+    // Posted with no due date and never ticked: no task at all, not "still to do" by invention.
+    expect(notes[1]).toMatchObject({ note_text: 'Bring gloves on Thursday.', task: null });
+    // The barrier report (a guardian's note to staff) is not a family post.
+    expect(notes.some((note) => note.note_text.includes('No lift'))).toBe(false);
+  });
+
+  test("a note an organization admin posted reads as the admin's, as the family sees it", async () => {
+    await activeClient!.query(
+      `update pilot.accounts set login_email = 'ppbf@ppbf.test' where account_id = $1`,
+      [ADMIN_ACCOUNT],
+    );
+    await activeClient!.query(
+      `update pilot.coach_observations set coach_account_id = $3, author_role = 'organization_admin'
+        where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE, ADMIN_ACCOUNT],
+    );
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes[0]!.posted_by_name).toBe('Admin Ppbf');
+  });
+
+  test('the role is the one the note was written under, not the account role today', async () => {
+    await seedLaterDoneNote();
+    // The coach who posted it is an organization admin now.
+    await activeClient!.query(`update pilot.accounts set role = 'organization_admin' where account_id = $1`, [COACH]);
+    // And a note from before author_role existed has none recorded.
+    await activeClient!.query(
+      `update pilot.coach_observations set author_role = null where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE],
+    );
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes[0]!.posted_by_name).toBe('Coach Pat Coach');
+    // No role on record: the name alone, with no role invented for it.
+    expect(notes[1]!.posted_by_name).toBe('Pat Coach');
+  });
+
+  test('which guardian ticked it is never returned', async () => {
+    await seedLaterDoneNote();
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(JSON.stringify(notes)).not.toContain(GUARDIAN_ACCOUNT);
+    expect(Object.keys(notes[0]!.task!)).toEqual(['due_date', 'completed_at']);
+  });
+
+  test("a note whose author's account is gone is off the family's page, and off this list too", async () => {
+    await seedLaterDoneNote();
+    // What the purge does to an authored note: the author goes, the note stays.
+    await activeClient!.query(
+      `update pilot.coach_observations set coach_account_id = null where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, LATER_NOTE],
+    );
+
+    const staff = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+    expect(staff.map((note) => note.note_id)).toEqual([MESSAGE_NOTE]);
+    // posted_at is ISO-8601 UTC, which every browser parses.
+    expect(staff[0]!.posted_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  test("another child's notes and another gym's are not read", async () => {
+    await activeClient!.query(
+      `update pilot.coach_observations set author_role = 'coach' where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE],
+    );
+    const mine = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+    expect(mine.some((note) => note.note_id === OTHER_CHILD_NOTE)).toBe(false);
+    // The author has no login name on file here: said as "A coach", never
+    // "Your coach", which read by staff would mean the reader.
+    expect(mine[0]!.posted_by_name).toBe('A coach');
+
+    // The same athlete id in the other gym: nothing, though this gym has notes for it.
+    expect(await parentTasks.listFamilyNotesForStaff(OTHER_ORG_ID, ATHLETE)).toEqual([]);
+  });
+});

@@ -115,7 +115,7 @@ import {
   promoteReferenceDrill,
   updateDrill,
 } from './drills';
-import { updateDrillToReferenceVersion } from './drillVersioning';
+import { reinstateDrillVersion, updateDrillToReferenceVersion } from './drillVersioning';
 
 jest.setTimeout(300_000);
 
@@ -1031,5 +1031,35 @@ describe('a gym updates its drill to the newer reference version in place (OD-20
       await retiring.query('ROLLBACK').catch(() => {});
       await retiring.end();
     }
+  });
+
+  // Codex P1 on #1545: after a gym updates v1 -> v2 and then reinstates its v1
+  // version, the drill it runs pins reference v1 again. v2 is newer than what
+  // runs, so it must read 'newer_version_available' -- not 'operational', which
+  // hid the Update button -- and Update must take the gym to v2 again.
+  test('after reinstating the pre-update version, the newer reference reads as newer_version_available, and Update works again', async () => {
+    const { gym, rootId } = await gymOnV1('update-reinstate');
+    // A technique drill is reinstated only with a cue (the cue rule).
+    await updateDrill({ organizationId: gym, drillId: rootId, cues: ['Chin down'] });
+    await updateTo(gym, rootId);
+    const { drill: reinstated } = await reinstateDrillVersion({
+      organizationId: gym,
+      drillId: rootId,
+      actorAccountId: 'acct-coach',
+      actorRole: 'coach',
+    });
+    expect(reinstated).toMatchObject({ version: 3, active: true, reference_drill_id: 'ref-jab-v1' });
+
+    expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'operational', operational_drill_id: reinstated.drill_id },
+      'ref-jab-v2': { state: 'newer_version_available', operational_drill_id: reinstated.drill_id },
+    });
+
+    const { drill: again } = await updateTo(gym, reinstated.drill_id);
+    expect(again).toMatchObject({ version: 4, active: true, reference_drill_id: 'ref-jab-v2' });
+    expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'operational', operational_drill_id: again.drill_id },
+      'ref-jab-v2': { state: 'operational', operational_drill_id: again.drill_id },
+    });
   });
 });
