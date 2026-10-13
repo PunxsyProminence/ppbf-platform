@@ -126,17 +126,18 @@ describe('GET with a reporting window (RP-04)', () => {
   });
 
   test.each([
-    ['only a from', 'from=2026-09-01'],
-    ['only a to', 'to=2026-09-30'],
-    ['a date that is not a date', 'from=2026-02-30&to=2026-03-01'],
-    ['a date in another shape', 'from=09/01/2026&to=2026-09-30'],
-    ['a window that ends before it starts', 'from=2026-09-30&to=2026-09-01'],
-  ])('%s is refused with a sentence, and nothing is read', async (_label, query) => {
+    ['only a from', 'from=2026-09-01', 'A report needs both from and to.'],
+    ['only a to', 'to=2026-09-30', 'A report needs both from and to.'],
+    ['a date that is not a date', 'from=2026-02-30&to=2026-03-01', 'from must be a date as YYYY-MM-DD.'],
+    ['a date in another shape', 'from=09/01/2026&to=2026-09-30', 'from must be a date as YYYY-MM-DD.'],
+    ['a window that ends before it starts', 'from=2026-09-30&to=2026-09-01', 'from must be on or before to.'],
+  ])('%s is refused with its sentence, and nothing is read', async (_label, query, sentence) => {
     mockRequirePrincipal.mockResolvedValueOnce(principalFor('board'));
 
     const response = await GET(new NextRequest(`http://localhost/api/pilot/board/summary?${query}`));
 
     expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(sentence);
     expect(mockGetBoardReport).not.toHaveBeenCalled();
     expect(mockGetBoardSummary).not.toHaveBeenCalled();
   });

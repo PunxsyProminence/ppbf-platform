@@ -198,7 +198,16 @@ describe('the board report section (RP-04)', () => {
     expect(row('Goals completed')[0]).toBe('No records');
     expect(row('Coach reviews')[1]).toContain('Approved 75% (6 of 8)');
     expect(within(report).getByText('Definitions')).toBeTruthy();
-    expect(report.textContent).toContain('as of when this report was made');
+    const definitions = Array.from(report.querySelectorAll('li')).map((item) => item.textContent ?? '');
+    expect(definitions).toEqual([
+      expect.stringMatching(/^Scope: the whole organization\./),
+      'Active athletes: athletes marked active and not deleted, as of when this report was made.',
+      expect.stringMatching(/^Training sessions: sessions dated in the reporting window/),
+      expect.stringMatching(/^Coach reviews: reviews written on a gym day in the reporting window/),
+      expect.stringMatching(/^Goals: the current goals of active athletes, as of when this report was made/),
+      expect.stringMatching(/^Suppressed: fewer than 5 athletes contributed/),
+      'Active athletes and goals have no stored history, so they are not figures for the window.',
+    ]);
     expect(report.textContent).toContain('No individual athlete appears in this report.');
   });
 
