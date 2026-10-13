@@ -28,8 +28,8 @@ export interface FamilyNoteRow {
 
 type ReadState =
   | { state: 'loading' }
-  | { state: 'failed' }
-  | { state: 'loaded'; items: FamilyNoteRow[] };
+  | { state: 'failed'; athleteId: string }
+  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[] };
 
 export default function FamilyNotesPosted({
   athleteId,
@@ -54,32 +54,35 @@ export default function FamilyNotesPosted({
         const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
         if (mine !== seq.current) return;
         if (!response.ok || !Array.isArray(payload.items)) {
-          setRead({ state: 'failed' });
+          setRead({ state: 'failed', athleteId });
           return;
         }
-        setRead({ state: 'loaded', items: payload.items as FamilyNoteRow[] });
+        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[] });
       } catch {
-        if (mine === seq.current) setRead({ state: 'failed' });
+        if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
     })();
   }, [athleteId, refreshKey]);
 
   if (!athleteId) return null;
+  // What is on screen belongs to the athlete selected now, or it reads as
+  // loading: the render after a switch must not show the last child's notes.
+  const shown: ReadState = read.state !== 'loading' && read.athleteId !== athleteId ? { state: 'loading' } : read;
 
   return (
     <div className="mt-[var(--s4)]">
       <h3 className="t-label">On the family&apos;s page</h3>
-      {read.state === 'loading' ? (
+      {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what was posted…</p>
-      ) : read.state === 'failed' ? (
+      ) : shown.state === 'failed' ? (
         <p role="alert" className="t-body mt-[var(--s2)]">
           Posted notes could not be loaded. This is not a statement that nothing was posted. Reload to retry.
         </p>
-      ) : read.items.length === 0 ? (
+      ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">Nothing has been posted to this family yet.</p>
       ) : (
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
-          {read.items.map((note) => {
+          {shown.items.map((note) => {
             const done = note.task?.completed_at ?? null;
             // A due date is a calendar day, not an instant: printed as the day it is.
             const due = note.task?.due_date ? formatCalendarDay(note.task.due_date) : null;

@@ -13,7 +13,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 // requireRole stays real; the athlete gate is faked at its contract and proved
 // on Postgres elsewhere (the gym-scoped read is proved in
-// familyNotesForStaff.pg.test.ts).
+// parentTaskState.pg.test.ts, "listFamilyNotesForStaff").
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
   return { ...actual, assertActorCanAccessAthlete: jest.fn() };

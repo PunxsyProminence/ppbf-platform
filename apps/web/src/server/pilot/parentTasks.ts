@@ -233,7 +233,18 @@ export async function setParentTaskCompletion(params: {
  *
  * The author's name is the login-derived one the athlete and family screens
  * already show for a coach (achievements.ts deriveCoachDisplayName), since
- * pilot.accounts has no name column.
+ * pilot.accounts has no name column. Its "Your coach" fallback means the
+ * reader's coach; read by staff it would mean the reader, so it is said here
+ * as "A coach".
+ *
+ * THE SAME NOTES THE FAMILY SEES. The author join is an inner join, as in
+ * listParentMessages: a note whose author's account was removed (its
+ * coach_account_id set null by the purge) drops off the family's page, and
+ * listing it here under "On the family's page" would tell the coach the family
+ * still sees it (#1542 review).
+ *
+ * Times go out as ISO-8601 in UTC, which every browser parses; Postgres's own
+ * text form ('2026-10-12 22:40:00+00') is not one Safari promises to read.
  */
 export interface FamilyNoteForStaff {
   note_id: string;
@@ -253,17 +264,24 @@ interface FamilyNoteRow {
   completed_at: string | null;
 }
 
+function staffFacingAuthorName(login: string | null): string {
+  const name = deriveCoachDisplayName(login);
+  return name === 'Your coach' ? 'A coach' : name;
+}
+
 export async function listFamilyNotesForStaff(
   organizationId: string,
   athleteId: string,
 ): Promise<FamilyNoteForStaff[]> {
   const rows = await query<FamilyNoteRow>(
-    `select co.note_id::text as note_id, co.note_text, co.created_at::text as posted_at,
+    `select co.note_id::text as note_id, co.note_text,
+            to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
             a.login_email as author_login,
             (t.note_id is not null) as has_task,
-            t.due_date::text as due_date, t.completed_at::text as completed_at
+            t.due_date::text as due_date,
+            to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
        from pilot.coach_observations co
-       left join pilot.accounts a on a.account_id = co.coach_account_id
+       join pilot.accounts a on a.account_id = co.coach_account_id
        left join pilot.parent_task_state t
          on t.organization_id = co.organization_id and t.note_id = co.note_id
       where co.organization_id = $1
@@ -276,7 +294,7 @@ export async function listFamilyNotesForStaff(
     note_id: row.note_id,
     note_text: row.note_text,
     posted_at: row.posted_at,
-    posted_by_name: deriveCoachDisplayName(row.author_login),
+    posted_by_name: staffFacingAuthorName(row.author_login),
     task: row.has_task ? { due_date: row.due_date, completed_at: row.completed_at } : null,
   }));
 }

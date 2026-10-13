@@ -633,7 +633,7 @@ describe('listFamilyNotesForStaff (#1542)', () => {
     expect(notes[0]).toMatchObject({
       note_text: 'Medical form by Friday, please.',
       posted_by_name: 'Coach Pat Coach',
-      task: { due_date: '2026-10-16', completed_at: expect.any(String) },
+      task: { due_date: '2026-10-16', completed_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/) },
     });
     expect(notes[0]!.posted_at).toEqual(expect.any(String));
     // Posted with no due date and never ticked: no task at all, not "still to do" by invention.
@@ -651,9 +651,26 @@ describe('listFamilyNotesForStaff (#1542)', () => {
     expect(Object.keys(notes[0]!.task!)).toEqual(['due_date', 'completed_at']);
   });
 
+  test("a note whose author's account is gone is off the family's page, and off this list too", async () => {
+    await seedLaterDoneNote();
+    // What the purge does to an authored note: the author goes, the note stays.
+    await activeClient!.query(
+      `update pilot.coach_observations set coach_account_id = null where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, LATER_NOTE],
+    );
+
+    const staff = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+    expect(staff.map((note) => note.note_id)).toEqual([MESSAGE_NOTE]);
+    // posted_at is ISO-8601 UTC, which every browser parses.
+    expect(staff[0]!.posted_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
   test("another child's notes and another gym's are not read", async () => {
     const mine = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
     expect(mine.some((note) => note.note_id === OTHER_CHILD_NOTE)).toBe(false);
+    // The author has no login name on file here: said as "A coach", never
+    // "Your coach", which read by staff would mean the reader.
+    expect(mine[0]!.posted_by_name).toBe('A coach');
 
     // The same athlete id in the other gym: nothing, though this gym has notes for it.
     expect(await parentTasks.listFamilyNotesForStaff(OTHER_ORG_ID, ATHLETE)).toEqual([]);
