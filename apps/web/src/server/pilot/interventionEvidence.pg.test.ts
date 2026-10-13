@@ -35,7 +35,9 @@ import {
   linkEvidence,
   listEvidence,
   removeEvidence,
+  reviewOutcome,
 } from './interventionEvidence';
+import { RECORD_CHANGED_MESSAGE } from './interventionExecutions';
 
 // Lane N3-02's route-level block (bottom of this file) drives the real
 // routes. They take their principal from here; everything else in the module
@@ -530,12 +532,39 @@ describe('intervention evidence migration', () => {
         expect(await getEvidenceLinkOwner('org-somebody-else', 'link-owned')).toBeNull();
 
         // The compare-and-set: an execution other than the authorized one
-        // stamps nothing and reports the refusal.
-        expect(await removeEvidence({
+        // stamps nothing and reports the refusal. The link is there, so the
+        // refusal is "the record changed" (the only way a caller the route
+        // authorized holds another execution is a correction in between).
+        await expect(removeEvidence({
           organizationId: ORG_ID,
           linkId: 'link-owned',
           removedReason: 'attempted against the wrong execution',
           expectedExecutionId: 'exec-not-this-one',
+        })).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+        // A link, or an execution, that is not there at all stays the quiet
+        // null the routes hide as not-found.
+        expect(await removeEvidence({
+          organizationId: ORG_ID,
+          linkId: 'no-such-link',
+          removedReason: 'nothing to remove',
+          expectedExecutionId: 'exec-1',
+        })).toBeNull();
+        expect(await linkEvidence({
+          organizationId: ORG_ID,
+          executionId: 'no-such-execution',
+          evidenceRole: 'baseline',
+          sourceKind: 'training_attempt',
+          sourceId: 'att-1',
+          linkedByAccountId: ADMIN_ID,
+        })).toBeNull();
+        expect(await reviewOutcome({
+          organizationId: ORG_ID,
+          executionId: 'no-such-execution',
+          performanceResult: 'improved',
+          performanceNotes: 'nothing to review',
+          hypothesisResult: 'supported',
+          learningSignal: 'prior_belief_strengthened',
+          reviewedByAccountId: ADMIN_ID,
         })).toBeNull();
         const untouched = await client.query(
           `select status, removed_reason from pilot.intervention_evidence_links
@@ -855,11 +884,13 @@ describe('through the routes: revise, unlink and correct, and what the next read
       ['att-r2', 'removed', 'that attempt was a different drill'],
     ]);
 
-    // A link already removed cannot be removed again, and stays as stamped.
+    // A link already removed cannot be removed again, and stays as stamped:
+    // the coach is told the record changed.
     const again = await reviewRoute.PATCH(send('PATCH', REVIEW, {
       action: 'remove_evidence', link_id: second.link_id, removed_reason: 'a second reason',
     }));
-    expect(again.status).toBe(404);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: string }).error).toBe(RECORD_CHANGED_MESSAGE);
     expect(await stored('intervention_evidence_links', 'link_id', second.link_id))
       .toMatchObject({ status: 'removed', removed_reason: 'that attempt was a different drill' });
 
