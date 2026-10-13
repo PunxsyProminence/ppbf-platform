@@ -7,6 +7,7 @@ import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 
 /** A row of pilot.athletes as GET /api/pilot/athletes/list returns it. */
@@ -384,6 +385,19 @@ function AthleteRecordsConsoleContent() {
       : [{ account_id: selected.coach_id, login_email: null }, ...coaches];
   }, [coaches, selected]);
 
+  // The picker names coaches the way the row and the notes do. Two coaches who
+  // would read the same get their login address added, so the choice is still
+  // unambiguous; otherwise the address is not shown.
+  const coachOptionLabel = useMemo(() => {
+    const names = coachChoices.map((coach) => (
+      coach.login_email ? deriveCoachDisplayName(coach.login_email) : coachNameFor(coach.account_id)
+    ));
+    return new Map(coachChoices.map((coach, index) => {
+      const duplicated = names.filter((name) => name === names[index]).length > 1;
+      return [coach.account_id, duplicated && coach.login_email ? `${names[index]} (${coach.login_email})` : names[index]];
+    }));
+  }, [coachChoices, coachNameFor]);
+
   function openRecord(athlete: RosterAthlete) {
     setSelectedId(athlete.athlete_id);
     setConfirmingStatusChange(false);
@@ -604,7 +618,7 @@ function AthleteRecordsConsoleContent() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{athlete.full_name}</p>
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {athlete.athlete_id} · born {athlete.dob} · {coachNameFor(athlete.coach_id)}
+                          {athlete.athlete_id} · born {formatCalendarDay(athlete.dob.slice(0, 10))} · {coachNameFor(athlete.coach_id)}
                           {typeof attendanceRate === 'number' && (
                             <> · attendance {Math.round(attendanceRate * 100)}%</>
                           )}
@@ -829,7 +843,7 @@ function AthleteRecordsConsoleContent() {
                 >
                   {coachChoices.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
-                      {coach.login_email || coach.account_id}
+                      {coachOptionLabel.get(coach.account_id) ?? 'coach name not available'}
                     </option>
                   ))}
                 </select>
