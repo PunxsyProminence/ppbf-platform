@@ -52,10 +52,14 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
   const [roundSeconds, setRoundSeconds] = useState('180');
   const [restSeconds, setRestSeconds] = useState('60');
   const [roundsTotal, setRoundsTotal] = useState('3');
-  // Every request takes a number; a read answered after a newer write never puts back the older
-  // state (a poll that crossed a Start in flight must not show "Ready" again).
+  // Every request takes a number, and an answer older than the last one shown is dropped: two
+  // overlapping reads cannot put back the older state, and an accepted write supersedes every
+  // request already in flight (a poll that crossed a Start must not show "Ready" again).
   const sequence = useRef(0);
-  const lastWrite = useRef(0);
+  const applied = useRef(0);
+  // Until the coach edits them, the three numbers show the server's saved settings -- the ones
+  // Start will use -- so a reload or a second screen never shows defaults that are not the set.
+  const edited = useRef(false);
   // Held in a ref: the live screen re-renders every second, and a new callback each time must not
   // restart the reads.
   const runGone = useRef(onRunNotLive);
@@ -68,6 +72,11 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
   const show = useCallback((timer: RoundTimerView | null) => {
     setLoad({ state: 'ready', timer, stale: false });
     setSecondsLeft(timer?.seconds_left ?? 0);
+    if (timer && !edited.current) {
+      setRoundSeconds(String(timer.round_seconds));
+      setRestSeconds(String(timer.rest_seconds));
+      setRoundsTotal(String(timer.rounds_total));
+    }
   }, []);
 
   // A read that fails after a good one keeps the last state, marked as the last reading.
@@ -80,7 +89,8 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
     try {
       const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
       const payload = (await response.json().catch(() => null)) as { timer?: RoundTimerView | null; error?: string } | null;
-      if (mine < lastWrite.current) return;
+      if (mine <= applied.current) return;
+      applied.current = mine;
       if (!response.ok && payload?.error && RUN_GONE.has(payload.error)) {
         runGone.current?.();
         return;
@@ -91,6 +101,8 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
       }
       show(payload.timer ?? null);
     } catch {
+      if (mine <= applied.current) return;
+      applied.current = mine;
       readFailed();
     }
   }, [readFailed, show, url]);
@@ -124,7 +136,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
     if (busy) return;
     setBusy(true);
     setError('');
-    const mine = ++sequence.current;
+    ++sequence.current;
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -143,7 +155,8 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
         void read();
         return;
       }
-      lastWrite.current = mine;
+      applied.current = sequence.current;
+      if (body.action === 'configure') edited.current = false;
       show(payload.timer);
     } catch {
       setError('Network error -- this may not have reached the server.');
@@ -184,6 +197,9 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
             {timer.is_paused ? ` · Paused at ${clock(secondsLeft)}` : ''}
           </p>
           {/* Announced when the round or phase changes, not every second. */}
+          <p data-testid="round-timer-settings" className="t-data text-[color:var(--bone-300)]">
+            {`${timer.rounds_total} ${timer.rounds_total === 1 ? 'round' : 'rounds'} of ${clock(timer.round_seconds)}, ${clock(timer.rest_seconds)} rest`}
+          </p>
           <p role="status" className="sr-only">{`${roundWords}${PHASE_WORD[timer.phase]}${timer.is_paused ? ', paused' : ''}`}</p>
           {load.stale && <p className="t-data text-[color:var(--bone-400)]">Last reading -- the server could not be reached just now.</p>}
         </>
@@ -194,15 +210,15 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
         <div className="mt-[var(--s2)] flex flex-wrap items-end gap-[var(--s3)]">
           <label className="t-data flex flex-col">
             Round (seconds)
-            <input type="number" min={1} max={3600} inputMode="numeric" value={roundSeconds} onChange={(event) => setRoundSeconds(event.target.value)} className="input w-[7rem]" />
+            <input type="number" min={1} max={3600} inputMode="numeric" value={roundSeconds} onChange={(event) => { edited.current = true; setRoundSeconds(event.target.value); }} className="input w-[7rem]" />
           </label>
           <label className="t-data flex flex-col">
             Rest (seconds)
-            <input type="number" min={0} max={3600} inputMode="numeric" value={restSeconds} onChange={(event) => setRestSeconds(event.target.value)} className="input w-[7rem]" />
+            <input type="number" min={0} max={3600} inputMode="numeric" value={restSeconds} onChange={(event) => { edited.current = true; setRestSeconds(event.target.value); }} className="input w-[7rem]" />
           </label>
           <label className="t-data flex flex-col">
             Rounds
-            <input type="number" min={1} max={100} inputMode="numeric" value={roundsTotal} onChange={(event) => setRoundsTotal(event.target.value)} className="input w-[5rem]" />
+            <input type="number" min={1} max={100} inputMode="numeric" value={roundsTotal} onChange={(event) => { edited.current = true; setRoundsTotal(event.target.value); }} className="input w-[5rem]" />
           </label>
           <button type="button" onClick={configure} disabled={busy} className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60">
             Set rounds

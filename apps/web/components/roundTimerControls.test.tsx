@@ -278,4 +278,71 @@ describe('round timer controls', () => {
     expect(screen.getByRole('button', { name: 'Set rounds' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'End rounds' })).toBeNull();
   });
+
+  // Codex P1 on #1499: a reload or a second screen shows the saved settings Start will use.
+  test('the three numbers show the saved settings, and the screen says what Start will run', async () => {
+    held = timer({ rounds_total: 5, round_seconds: 120, rest_seconds: 30 });
+    await renderControls();
+    expect(screen.getByLabelText('Round (seconds)')).toHaveValue(120);
+    expect(screen.getByLabelText('Rest (seconds)')).toHaveValue(30);
+    expect(screen.getByLabelText('Rounds')).toHaveValue(5);
+    expect(screen.getByTestId('round-timer-settings')).toHaveTextContent('5 rounds of 2:00, 0:30 rest');
+    expect(screen.getByRole('button', { name: 'Start rounds' })).toBeInTheDocument();
+  });
+
+  test('a number the coach is editing is not overwritten by the next read, and Set rounds sends it', async () => {
+    held = timer({ rounds_total: 5, round_seconds: 120, rest_seconds: 30 });
+    await renderControls();
+    fireEvent.change(screen.getByLabelText('Round (seconds)'), { target: { value: '90' } });
+    await act(async () => {
+      jest.advanceTimersByTime(10_000);
+    });
+    await settle();
+    expect(screen.getByLabelText('Round (seconds)')).toHaveValue(90);
+    answer = (body) => json({ timer: timer({ rounds_total: 5, round_seconds: Number(body.round_seconds), rest_seconds: 30 }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Set rounds' }));
+    await settle();
+    expect(posts()).toEqual([{ action: 'configure', round_seconds: 90, rest_seconds: 30, rounds_total: 5 }]);
+    expect(screen.getByTestId('round-timer-settings')).toHaveTextContent('5 rounds of 1:30, 0:30 rest');
+  });
+
+  // Codex P2 on #1499: overlapping reads never put back the older answer.
+  test('an older read answered after a newer one is dropped', async () => {
+    held = timer();
+    await renderControls();
+    const releases: Array<(value: Response) => void> = [];
+    fetchMock.mockImplementation(async () => new Promise<Response>((resolve) => { releases.push(resolve); }));
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(releases).toHaveLength(2);
+    releases[1](json({ timer: timer({ state: 'running', phase: 'work', round: 2, seconds_left: 100 }) }));
+    await settle();
+    releases[0](json({ timer: timer() }));
+    await settle();
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 2 of 3 · Work');
+  });
+
+  test('a read sent while a Start is in flight, answered after it, does not put "Ready" back', async () => {
+    held = timer();
+    await renderControls();
+    let releasePost: (value: Response) => void = () => {};
+    let releaseRead: (value: Response) => void = () => {};
+    fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Promise<Response>((resolve) => { releasePost = resolve; });
+      return new Promise<Response>((resolve) => { releaseRead = resolve; });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    releasePost(json({ timer: timer({ state: 'running', phase: 'work', round: 1, seconds_left: 180 }) }));
+    await settle();
+    releaseRead(json({ timer: timer() }));
+    await settle();
+    expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Round 1 of 3 · Work');
+  });
 });
