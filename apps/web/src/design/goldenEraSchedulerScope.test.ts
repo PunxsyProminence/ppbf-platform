@@ -135,7 +135,8 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     'Cover Class',
     'Schedule Class',
     'Submit Request',
-    'Check In',
+    // 'Check In' is now "I'm here" for an athlete or parent (Jason
+    // 2026-10-12, issue #1524), asserted on its own below.
     'Update Attendance',
     'Mark Parent Reviewed',
     'Decline',
@@ -179,6 +180,12 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
 
   test.each(REAL_BUTTONS)('the %s button still exists', (label) => {
     expect(rendersLabel(label)).toBe(true);
+  });
+
+  test("the family check-in button still exists, as \"I'm here\" (#1524)", () => {
+    // Double-quoted in the source because of the apostrophe, which
+    // rendersLabel's single-quote form does not match.
+    expect(PAGE).toContain(`"I'm here"`);
   });
 
   test('the Approve & Assign button still exists', () => {
