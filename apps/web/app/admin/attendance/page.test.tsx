@@ -204,7 +204,8 @@ describe('the attendance report download (RP-01)', () => {
     });
 
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('format=csv'))).toBe(false);
-    expect(athleteReport().getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
+    // The sentence is set on the next tick (so a repeat is announced again): waited for, not raced.
+    expect((await athleteReport().findByRole('alert')).textContent).toContain('Choose a From date on or before the To date.');
   });
 });
 
@@ -326,7 +327,8 @@ describe('the attendance report by class (RP-02)', () => {
     });
 
     expect(reportCalls(fetchMock)).toHaveLength(0);
-    expect(classReport().getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
+    // The sentence is set on the next tick (so a repeat is announced again): waited for, not raced.
+    expect((await classReport().findByRole('alert')).textContent).toContain('Choose a From date on or before the To date.');
   });
 
   test('a period changed while a report is loading drops its answer', async () => {
