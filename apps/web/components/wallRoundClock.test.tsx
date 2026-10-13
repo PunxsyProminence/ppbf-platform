@@ -70,6 +70,7 @@ function serverView(): RoundTimerView | null {
 let pairedTv = true;
 let publicFails = false;
 let boardMiss = false;
+let sessionDown = false;
 let fetchMock: jest.Mock;
 
 function sessionReads(): number {
@@ -101,9 +102,11 @@ beforeEach(() => {
   pairedTv = true;
   publicFails = false;
   boardMiss = false;
+  sessionDown = false;
   serverTimer = null;
   fetchMock = jest.fn(async (url: string) => {
     if (url.includes('/api/pilot/tv/session')) {
+      if (sessionDown) throw new Error('offline');
       if (!pairedTv) return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as Response;
       const timer = serverView();
       const session = { run_id: 'ssrun_1', timer };
@@ -315,5 +318,16 @@ describe('the round clock on a paired TV', () => {
     serverTimer = { startedAt: Date.now(), state: 'running' };
     await seconds(2);
     expect(played).toEqual(['bell']);
+  });
+
+  test('when the read itself fails, the wall backs off even while rounds are set', async () => {
+    serverTimer = { startedAt: T0, state: 'running', config: { rounds_total: 50 } };
+    render(<WallDisplay />);
+    await settle();
+    sessionDown = true;
+    const start = sessionReads();
+    // Backing off 5, 10, 20, 30 seconds: four tries in a minute, not twelve.
+    await seconds(60);
+    expect(sessionReads() - start).toBeLessThanOrEqual(4);
   });
 });
