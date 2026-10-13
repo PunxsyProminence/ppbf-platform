@@ -427,3 +427,20 @@ test('a check-in today keeps the Readiness Alerts tile from saying there are no 
   expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   expect(screen.getByText(/0 RED, 0 YELLOW, 1 unknown/)).toBeTruthy();
 });
+
+// F-057. The roster answer carries active_flag; the workspace dropped it, so an
+// athlete an admin marked inactive looked like everyone else on the floor.
+test('an athlete an admin marked inactive is marked on the floor roster, and is still listed', async () => {
+  await renderWorkspace({
+    athletesList: () => jsonResponse({
+      items: [
+        { athlete_id: 'ath_1', full_name: 'Jordan P.', active_flag: true },
+        { athlete_id: 'ath_2', full_name: 'Sam T.', active_flag: false },
+      ],
+    }),
+  });
+
+  expect(floor().getByRole('button', { name: /^Sam T\. \(inactive\)/ })).toBeTruthy();
+  expect(floor().getByRole('button', { name: /^Jordan P\.: readiness/ })).toBeTruthy();
+  expect(floor().getAllByText('Inactive')).toHaveLength(1);
+});

@@ -115,6 +115,9 @@ export interface FocusAthlete {
   readonly checkedInToday?: boolean;
   /** false when the roster names this athlete but this coach is not theirs. */
   readonly isMine?: boolean;
+  /** An admin marked this athlete inactive. They stay on the roster and in the
+   *  count; the row says so rather than looking like everyone else. */
+  readonly isInactive?: boolean;
 }
 
 export interface CoachFloorFocusProps {
@@ -392,7 +395,7 @@ export default function CoachFloorFocus({
                     <button
                       type="button"
                       onClick={() => onSelectAthlete(athlete.id)}
-                      aria-label={`${athlete.name}: readiness ${mark.label}`}
+                      aria-label={`${athlete.name}${athlete.isInactive ? ' (inactive)' : ''}: readiness ${mark.label}`}
                       className="coach-floor-focus__athlete"
                     >
                       <span className="coach-floor-focus__medal" data-readiness={athlete.readiness} aria-hidden="true">
@@ -400,6 +403,7 @@ export default function CoachFloorFocus({
                       </span>
                       <span className="coach-floor-focus__athlete-name">{athlete.name}</span>
                       <Badge badge={mark} />
+                      {athlete.isInactive && <span className="coach-floor-focus__quiet">Inactive</span>}
                       {athlete.isMine === false && <span className="coach-floor-focus__quiet">Not your athlete</span>}
                     </button>
                   </li>

@@ -316,6 +316,9 @@ type ShadowChatMode = 'omega' | 'master' | 'scoped';
 // first person or read out a menu of things to ask. The scope sentence is the
 // same scopeSummary the header prints, so the two can never drift apart.
 function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string, subject: string) {
+  if (mode === 'scoped' && isFamilyFacingRole(role)) {
+    return FAMILY_SHADOW_WELCOME;
+  }
   const { scopeSummary } = buildHeading(mode, subject);
   const opening = mode === 'omega'
     ? 'OMEGA ONLINE.'
@@ -326,6 +329,22 @@ function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string
         : `SCOUT ONLINE FOR ${role || 'CURRENT ROLE'}.`;
   const base = `${opening} ${scopeSummary}`;
   return context ? `${base} Entered from ${context}.` : base;
+}
+
+// What an athlete or a parent reads at the top of this room. The staff header
+// (mode names, "Role-scoped view", the Scope / Authority Boundary strip and the
+// Context caption with the page path they came from) is system wording, not
+// theirs: F-053 saw an athlete read "AUTHORITY BOUNDARY" and "CONTEXT: ATHLETE
+// WORKSPACE /ATHLETE/DASHBOARD" above a question about their jab. One sentence
+// instead, and staff keep what they have.
+const FAMILY_SHADOW_SENTENCE = 'Ask a question about your training: SHADOW explains, and your coach makes the call.';
+// The first bubble. The sentence above is already under the heading, so this
+// is only the invitation.
+const FAMILY_SHADOW_WELCOME = 'What would you like to ask?';
+
+function isFamilyFacingRole(role: string): boolean {
+  const normalized = role.trim().toLowerCase();
+  return normalized === 'athlete' || normalized === 'parent';
 }
 
 function buildHeading(mode: ShadowChatMode, subject: string) {
@@ -377,7 +396,10 @@ function ShadowChatPageContent() {
   const context = sanitizeEntryParam(entryParams.get('context'));
   const subject = sanitizeEntryParam(entryParams.get('subject'));
   const roleLabel = (userRole || 'guest').toUpperCase();
-  const { heading, intro, scopeSummary } = buildHeading(mode, subject);
+  const built = buildHeading(mode, subject);
+  const familyFacing = mode === 'scoped' && isFamilyFacingRole(userRole);
+  const { heading, scopeSummary } = built;
+  const intro = familyFacing ? FAMILY_SHADOW_SENTENCE : built.intro;
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
       id: '0',
@@ -1454,7 +1476,7 @@ function ShadowChatPageContent() {
           <div className="flex flex-wrap items-center gap-[var(--s4)] text-right">
             <div>
               <p className="t-label">Role: {roleLabel}</p>
-              {context ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
+              {context && !familyFacing ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
               <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
             </div>
           </div>
@@ -1462,6 +1484,7 @@ function ShadowChatPageContent() {
       </header>
 
       <div className="mx-auto w-full max-w-5xl px-6 py-6">
+        {familyFacing ? null : (
         <section className="mat-leather mb-[var(--s4)] grid gap-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)] md:grid-cols-3">
           <div>
             <p className="t-eyebrow">Scope</p>
@@ -1476,6 +1499,7 @@ function ShadowChatPageContent() {
             <p className="t-body mt-[var(--s2)]">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
+        )}
 
         {unlockHints.some((hint) => hint.closeToUnlocking) ? (
           <section
