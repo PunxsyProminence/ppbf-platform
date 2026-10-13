@@ -4,7 +4,6 @@ import { requireRole } from '@/src/server/pilot/access';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
-  SESSION_SCRIPT_AUTHOR_ROLES,
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
@@ -79,10 +78,15 @@ export async function GET(request: NextRequest) {
 }
 
 // WRITING A SCRIPT is coach work: a coach or an organization admin of the gym
-// (SESSION_SCRIPT_AUTHOR_ROLES), and nobody else -- the wider reader policy
-// above admits roles that only read. The organization is always the
-// principal's; no body field names one. Both verbs answer with the stored
-// script, which is what these two roles read anyway.
+// and nobody else -- the wider reader policy above admits roles that only
+// read, and platform_owner is refused here as it is for the drill and
+// template writes (DRILL_AUTHOR_ROLES, the same three names). The list is
+// declared here, as those are, and registered for this route in
+// coachingContentAccess.test.ts, whose sweeps allow a route no other role
+// list. The organization is always the principal's; no body field names one.
+// Both verbs answer with the stored script, which is what these roles read
+// anyway.
+const SESSION_SCRIPT_AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });

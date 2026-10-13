@@ -35,12 +35,10 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 // silently replaces another's. When the first save made a new version instead,
 // the second gets SESSION_SCRIPT_SUPERSEDED for the same reason.
 //
-// AUTHORIZATION IS THE ROUTE'S. Like issueWorkoutTemplate, this trusts its
-// caller to have passed the role gate; organizationId is the session's and
-// scopes every read and write below.
-
-/** Who may create or edit a session script (roleEquals carries the legacy 'admin' row name). */
-export const SESSION_SCRIPT_AUTHOR_ROLES: readonly PilotRole[] = ['coach', 'organization_admin'];
+// AUTHORIZATION IS THE ROUTE'S (SESSION_SCRIPT_AUTHOR_ROLES in
+// app/api/pilot/session-scripts/route.ts). Like issueWorkoutTemplate, this
+// trusts its caller to have passed the role gate; organizationId is the
+// session's and scopes every read and write below.
 
 /** What a template step with no minutes of its own starts at. The coach edits it. */
 export const DEFAULT_STEP_MINUTES = 5;

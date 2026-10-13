@@ -10490,7 +10490,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<[...SESSION_SCRIPT_AUTHOR_ROLES]>"
+        "admin,coach,organization_admin"
       ]
     }
   },
@@ -10519,7 +10519,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<[...SESSION_SCRIPT_AUTHOR_ROLES]>"
+        "admin,coach,organization_admin"
       ]
     }
   },
