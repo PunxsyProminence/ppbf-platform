@@ -303,7 +303,15 @@ afterAll(async () => {
 
 async function visibleTo(actorAccountId: string, actorRole: PilotRole, athleteId: string | null = null): Promise<string[]> {
   const rows = await listShadowEvents({ organizationId: ORG_ID, actorAccountId, actorRole, athleteId }, { limit: 200 });
-  return rows.map((row) => row.entity_id).sort();
+  // Labelled by the STORED entity_id, looked up by row id: a non-staff reader
+  // is no longer sent the id for most entity types (#1558), and which rows a
+  // role reads is a separate question from what each row carries.
+  const stored = await activeClient!.query<{ shadow_event_id: string; entity_id: string }>(
+    `select shadow_event_id, entity_id from pilot.shadow_events where organization_id = $1`,
+    [ORG_ID],
+  );
+  const storedId = new Map(stored.rows.map((row) => [String(row.shadow_event_id), row.entity_id]));
+  return rows.map((row) => String(storedId.get(String(row.shadow_event_id)))).sort();
 }
 
 const sorted = (ids: string[]) => [...ids].sort();
