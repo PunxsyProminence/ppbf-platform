@@ -194,6 +194,22 @@ describe('the obligations report section (RP-03)', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
 
+  test('a reversed range is not sent, and the sentence clears once the dates change', async () => {
+    const fetchMock = reportFetch(true);
+    render(<GrantObligationsPage />);
+    const report = await screen.findByRole('region', { name: 'Obligations report' });
+
+    fireEvent.change(screen.getByLabelText('Due from'), { target: { value: '2026-10-13' } });
+    fireEvent.change(screen.getByLabelText('Due to'), { target: { value: '2026-10-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+
+    expect(within(report).getByRole('alert').textContent).toContain('on or before');
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('format=csv'))).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText('Due to'), { target: { value: '2026-10-31' } });
+    expect(within(report).queryByRole('alert')).toBeNull();
+  });
+
   test('on paper: the report prints; the add button, the form toggle and the list do not', async () => {
     reportFetch(true);
     render(<GrantObligationsPage />);

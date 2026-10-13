@@ -85,10 +85,10 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
       if (dueTo && row.due_date > dueTo) return false;
       return true;
     });
-    const byGrant = new Map<string, { grant: string; funder: string; total: number; open: number; settled: number; overdue: number }>();
+    const byGrant = new Map<string, { key: string; grant: string; funder: string; total: number; open: number; settled: number; overdue: number }>();
     for (const row of chosen) {
       const key = `${row.grant_name}\u0000${row.funder_name}`;
-      const group = byGrant.get(key) ?? { grant: row.grant_name, funder: row.funder_name, total: 0, open: 0, settled: 0, overdue: 0 };
+      const group = byGrant.get(key) ?? { key, grant: row.grant_name, funder: row.funder_name, total: 0, open: 0, settled: 0, overdue: 0 };
       group.total += 1;
       if (SETTLED.has(row.status)) group.settled += 1;
       else group.open += 1;
@@ -102,7 +102,7 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
     if (busyRef.current) return;
     setFailure('');
     if (dueFrom && dueTo && dueFrom > dueTo) {
-      setTimeout(() => setFailure('Choose a From date on or before the To date.'), 0);
+      setFailure('Choose a From date on or before the To date.');
       return;
     }
     busyRef.current = true;
@@ -142,7 +142,7 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)] print:hidden">
         <label className="field">
           <span className="t-label">Show</span>
-          <select className="select" value={state} onChange={(event) => setState(event.target.value as ReportState)}>
+          <select className="select" value={state} onChange={(event) => { setFailure(''); setState(event.target.value as ReportState); }}>
             <option value="all">All</option>
             <option value="open">Open</option>
             <option value="settled">Settled</option>
@@ -150,11 +150,11 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
         </label>
         <label className="field">
           <span className="t-label">Due from</span>
-          <input type="date" className="input" value={dueFrom} onChange={(event) => setDueFrom(event.target.value)} />
+          <input type="date" className="input" value={dueFrom} onChange={(event) => { setFailure(''); setDueFrom(event.target.value); }} />
         </label>
         <label className="field">
           <span className="t-label">Due to</span>
-          <input type="date" className="input" value={dueTo} onChange={(event) => setDueTo(event.target.value)} />
+          <input type="date" className="input" value={dueTo} onChange={(event) => { setFailure(''); setDueTo(event.target.value); }} />
         </label>
         <button type="button" className="btn btn--ghost" onClick={() => window.print()}>Print</button>
         <button type="button" className="btn" onClick={() => void download()} disabled={busy}>
@@ -162,10 +162,13 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
         </button>
       </div>
       {failure ? (
-        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+        <div role="alert" className="alert alert--critical mt-[var(--s3)]">
           <span className="alert-icon" aria-hidden="true">✕</span>
-          <span className="alert-msg">{failure}</span>
-        </p>
+          <div className="alert-body">
+            <p className="alert-title">Download failed</p>
+            <p className="alert-msg">{failure}</p>
+          </div>
+        </div>
       ) : null}
       {groups.length === 0 ? (
         <p className="t-muted mt-[var(--s3)]">No obligations match.</p>
@@ -173,17 +176,17 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
         <table className="mt-[var(--s3)] w-full text-left">
           <thead>
             <tr className="t-eyebrow">
-              <th className="py-[var(--s2)]">Grant</th>
-              <th className="py-[var(--s2)]">Funder</th>
-              <th className="py-[var(--s2)]">Obligations</th>
-              <th className="py-[var(--s2)]">Open</th>
-              <th className="py-[var(--s2)]">Settled</th>
-              <th className="py-[var(--s2)]">Overdue</th>
+              <th scope="col" className="py-[var(--s2)]">Grant</th>
+              <th scope="col" className="py-[var(--s2)]">Funder</th>
+              <th scope="col" className="py-[var(--s2)]">Obligations</th>
+              <th scope="col" className="py-[var(--s2)]">Open</th>
+              <th scope="col" className="py-[var(--s2)]">Settled</th>
+              <th scope="col" className="py-[var(--s2)]">Overdue</th>
             </tr>
           </thead>
           <tbody>
             {groups.map((group) => (
-              <tr key={`${group.grant}|${group.funder}`} className="t-body">
+              <tr key={group.key} className="t-body">
                 <td className="py-[var(--s2)]">{group.grant}</td>
                 <td className="py-[var(--s2)]">{group.funder || '—'}</td>
                 <td className="py-[var(--s2)]">{group.total}</td>
