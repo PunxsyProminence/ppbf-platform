@@ -6876,7 +6876,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Version history of one drill lineage, org-scoped (getDrillLineage). Drill content only. Role gate line 38.",
+    "notes": "Version history of one drill lineage, org-scoped: by lineage_id (getDrillLineage) or by any version's drill_id (getDrillLineageForDrill); another gym's id reads empty. Drill content only. Role gate line 43.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
