@@ -175,12 +175,16 @@ async function waiverStatusesFor(
   return Object.fromEntries(entries);
 }
 
-/* The clearance gate's last evaluation says whether medical clearance was
-   current when contact was last logged. Medical status is staff-only, and that
-   outcome is not "clearance on file now", so it is not sent to a guardian:
-   the Safety page could not explain it, and the Parent Hub would count it as
-   "awaiting clearance" with nowhere to read why (#1537). */
-const GATE_KEYS_WITHHELD_FROM_GUARDIANS: ReadonlySet<string> = new Set(['contact_medical_clearance']);
+/* Gates whose last evaluation a guardian is not sent (#1537):
+   - contact_medical_clearance: its outcome says whether medical clearance was
+     current when contact was last logged. Medical status is staff-only, and
+     that outcome is not "clearance on file now".
+   - training_hold: its outcome is the last class-registration attempt, not
+     the hold. The hold itself is sent as `hold`, and that is what the Safety
+     page and the Parent Hub read.
+   Withheld here, at the one response both screens read, so the hub's
+   "awaiting clearance" count and the Safety page's rows cannot disagree. */
+const GATE_KEYS_WITHHELD_FROM_GUARDIANS: ReadonlySet<string> = new Set(['contact_medical_clearance', 'training_hold']);
 
 export async function GET(request: NextRequest) {
   try {

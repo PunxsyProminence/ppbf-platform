@@ -143,7 +143,7 @@ test('returns hold and gate status for every linked athlete', async () => {
     status: 'active',
   } as never);
   mockGetGuardianGateSummary.mockResolvedValueOnce([
-    { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'blocked', evaluated_at: '2026-08-01T00:00:00.000Z' },
+    { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00.000Z' },
   ]);
 
   const response = await get();
@@ -163,7 +163,7 @@ test('returns hold and gate status for every linked athlete', async () => {
         placed_by_name: 'Coach Neale',
       },
       gates: [
-        { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'blocked', evaluated_at: '2026-08-01T00:00:00.000Z' },
+        { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00.000Z' },
       ],
       // Asserted as part of the WHOLE item on purpose: this test is what
       // notices a field appearing in a guardian's payload that nobody meant to
@@ -182,23 +182,28 @@ test('returns hold and gate status for every linked athlete', async () => {
 // The whole reason a locally-defined projection exists in this route rather
 // than returning the hold row directly.
 // #1537: the clearance gate's outcome is derived from staff-only medical
-// status and says nothing about clearance on file now, so a guardian is not
-// sent it in any state. The Parent Hub counts flagged gates from this same
-// response, so this is also what keeps its alert and the Safety page agreeing.
-test('the clearance gate is not sent to a guardian, whatever its last outcome', async () => {
+// status and is not clearance on file now; the training-hold gate's outcome
+// is the last registration attempt, not the hold (which is sent as `hold`).
+// Neither is sent to a guardian, in any state. The Parent Hub counts flagged
+// gates from this same response, so this is also what keeps its alert and the
+// Safety page agreeing.
+test('the clearance and training-hold gates are not sent to a guardian, whatever their last outcome', async () => {
   for (const outcome of ['passed', 'flagged', 'blocked', 'not_evaluated'] as const) {
+    const evaluatedAt = outcome === 'not_evaluated' ? null : '2026-08-01T00:00:00.000Z';
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
     mockGetActiveTrainingHold.mockResolvedValueOnce(null);
     mockGetGuardianGateSummary.mockResolvedValueOnce([
-      { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome, evaluated_at: outcome === 'not_evaluated' ? null : '2026-08-01T00:00:00.000Z' },
-      { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'not_evaluated', evaluated_at: null },
+      { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome, evaluated_at: evaluatedAt },
+      { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome, evaluated_at: evaluatedAt },
+      { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome, evaluated_at: evaluatedAt },
     ]);
 
     const payload = await (await get()).json();
 
-    expect(payload.items[0].gates.map((gate: { gate_key: string }) => gate.gate_key)).toEqual(['training_hold']);
+    expect(payload.items[0].gates.map((gate: { gate_key: string }) => gate.gate_key)).toEqual(['mouthguard_on_file']);
     expect(JSON.stringify(payload)).not.toContain('contact_medical_clearance');
+    expect(JSON.stringify(payload)).not.toContain('"training_hold"');
   }
 });
 

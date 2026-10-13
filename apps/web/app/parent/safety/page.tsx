@@ -126,12 +126,14 @@ const GATE_OUTCOME_DISPLAY: Record<EvaluatedOutcome, { glyph: string; badge: str
   flagged: { glyph: '▲', badge: 'badge--restricted' },
 };
 
-/* The training-hold gate's last evaluation is written only when someone tries
-   to register the child for a class, so it read "Not yet checked" while a
-   hold was active (#1537). The page already has the hold itself (the route's
-   `hold`), so that row reads from it, in the same scope the heading above
-   names. */
+/* The hold row reads the hold itself (the route's `hold`), in the scope the
+   heading above names. The training-hold gate's last evaluation is written
+   only when someone tries to register the child for a class, so it read "Not
+   yet checked" under an active hold, and could read "Not clear" after one was
+   lifted (#1537). The route no longer sends that gate; it is skipped here too
+   in case an older response does. The name is the seeded gate's. */
 const TRAINING_HOLD_GATE_KEY = 'training_hold';
+const TRAINING_HOLD_ROW_NAME = 'Active Training Hold';
 
 const HOLD_ROW_LABEL: Record<TrainingHoldScope, string> = {
   all_training: 'Paused',
@@ -141,9 +143,9 @@ const HOLD_ROW_LABEL: Record<TrainingHoldScope, string> = {
 
 /* The clearance gate's last evaluation says whether clearance was current
    when contact was last logged, not whether it is on file now, and a guardian
-   is not sent medical status. The page cannot answer it, so it is not listed
-   (#1537). */
-const UNANSWERABLE_GATE_KEYS: ReadonlySet<string> = new Set(['contact_medical_clearance']);
+   is not sent medical status. The route no longer sends it; the page leaves
+   it out as well (#1537). */
+const UNANSWERABLE_GATE_KEYS: ReadonlySet<string> = new Set([TRAINING_HOLD_GATE_KEY, 'contact_medical_clearance']);
 
 interface SafetyCheckRow {
   key: string;
@@ -153,31 +155,30 @@ interface SafetyCheckRow {
   badge: string;
 }
 
-/** The rows the page can answer from what it was sent. The hold row reads the
- *  hold; a gate never evaluated, or one whose answer a guardian is not sent,
- *  is left out. */
+function holdRow(hold: AthleteFacingHold | null): SafetyCheckRow {
+  return hold
+    ? {
+        key: TRAINING_HOLD_GATE_KEY,
+        name: TRAINING_HOLD_ROW_NAME,
+        label: HOLD_ROW_LABEL[hold.scope] ?? HOLD_ROW_LABEL.all_training,
+        glyph: '▲',
+        badge: 'badge--restricted',
+      }
+    : { key: TRAINING_HOLD_GATE_KEY, name: TRAINING_HOLD_ROW_NAME, label: 'No pause', glyph: '✓', badge: 'badge--cleared' };
+}
+
+/** The rows the page can answer from what it was sent: the hold row, then
+ *  each other gate that has been evaluated and whose answer a guardian may
+ *  read. */
 function safetyCheckRows(item: AthleteSafety): SafetyCheckRow[] {
-  return item.gates.flatMap((gate): SafetyCheckRow[] => {
-    if (gate.gate_key === TRAINING_HOLD_GATE_KEY) {
-      return [
-        item.hold
-          ? {
-              key: gate.gate_key,
-              name: gate.name,
-              label: HOLD_ROW_LABEL[item.hold.scope] ?? HOLD_ROW_LABEL.all_training,
-              glyph: '▲',
-              badge: 'badge--restricted',
-            }
-          : { key: gate.gate_key, name: gate.name, label: 'No pause', glyph: '✓', badge: 'badge--cleared' },
-      ];
-    }
+  const gateRows = item.gates.flatMap((gate): SafetyCheckRow[] => {
     if (gate.outcome === 'not_evaluated' || UNANSWERABLE_GATE_KEYS.has(gate.gate_key)) return [];
     return [{ key: gate.gate_key, name: gate.name, label: GATE_OUTCOME_LABEL[gate.outcome], ...GATE_OUTCOME_DISPLAY[gate.outcome] }];
   });
+  return [holdRow(item.hold), ...gateRows];
 }
 
 function SafetyChecks({ rows }: { readonly rows: readonly SafetyCheckRow[] }) {
-  if (rows.length === 0) return null;
   return (
     <div className="mt-[var(--s4)]">
       <p className="t-label">Safety checks</p>
