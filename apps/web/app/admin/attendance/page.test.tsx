@@ -211,7 +211,7 @@ describe('the attendance report download (RP-01)', () => {
 /*
  * THE REPORT BY CLASS (RP-02): the last 30 gym days by default; Show reads
  * the classes for the period and lists them with a total over the classes
- * held; Download CSV saves the same report; a refused report says why; a
+ * not cancelled; Download CSV saves the same report; a refused report says why; a
  * period changed while one is loading drops its answer.
  */
 describe('the attendance report by class (RP-02)', () => {
@@ -259,7 +259,7 @@ describe('the attendance report by class (RP-02)', () => {
 
   const reportCalls = (fetchMock: jest.Mock) => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('report=classes'));
 
-  test('Show lists each class for the default 30 gym days, with a total over the classes held', async () => {
+  test('Show lists each class for the default 30 gym days, with a total over the classes not cancelled', async () => {
     const fetchMock = installClassReport(async () => jsonResponse(BODY));
     await act(async () => {
       render(<AttendanceDashboardPage />);

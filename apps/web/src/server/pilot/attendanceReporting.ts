@@ -514,7 +514,7 @@ export function attendanceByClassCsv(
       ratePercent(row.attendance_rate),
     ]),
     [
-      `Total, ${totals.classes} classes not cancelled${totals.cancelled ? ` (${totals.cancelled} cancelled, not included)` : ''}`,
+      `Total, ${totals.classes} ${totals.classes === 1 ? 'class' : 'classes'} not cancelled${totals.cancelled ? ` (${totals.cancelled} cancelled, not included)` : ''}`,
       '',
       '',
       String(totals.registered_count),

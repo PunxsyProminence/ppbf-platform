@@ -483,7 +483,7 @@ describe('the attendance report by class (RP-02)', () => {
     expect(response.headers.get('content-disposition')).toBe('attachment; filename="attendance-by-class_2026-10-01_2026-10-13.csv"');
     const text = new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()));
     expect(text).toContain('"Sparring"');
-    expect(text).toContain('"Total, 1 classes not cancelled"');
+    expect(text).toContain('"Total, 1 class not cancelled"');
     expect(mockSummary).not.toHaveBeenCalled();
   });
 

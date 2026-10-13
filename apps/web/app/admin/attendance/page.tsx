@@ -256,9 +256,10 @@ function ClassAttendanceReport() {
 
   async function run(format: 'json' | 'csv') {
     if (busyRef.current) return;
+    // Cleared first, so the same message said twice is announced twice.
     setFailure('');
     if (!period.from || !period.to || period.from > period.to) {
-      setFailure('Choose a From date on or before the To date.');
+      setTimeout(() => setFailure('Choose a From date on or before the To date.'), 0);
       return;
     }
     const mine = ++requestSeq.current;
@@ -307,7 +308,8 @@ function ClassAttendanceReport() {
       <p className="t-eyebrow">Report by class</p>
       <p className="t-body mt-[var(--s2)]">
         Each class in the period, by the day it was on: registered athletes, and how many were marked present, absent,
-        excused, or not marked at all. Not marked is not counted as absent; a class still to come shows its
+        excused, or not marked at all. Not marked is not counted as absent, and the rate leaves out excused marks; a
+        class still to come shows its
         registrations as not marked. A cancelled class is listed but left out of the total and every rate.
       </p>
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
@@ -337,13 +339,10 @@ function ClassAttendanceReport() {
         </button>
       </div>
       {failure ? (
-        <div role="alert" className="alert alert--critical mt-[var(--s3)]">
+        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
           <span className="alert-icon" aria-hidden="true">✕</span>
-          <div className="alert-body">
-            <p className="alert-title">Report not made</p>
-            <p className="alert-msg">{failure}</p>
-          </div>
-        </div>
+          <span className="alert-msg">{failure}</span>
+        </p>
       ) : null}
       {shown ? (
         shown.classes.length === 0 ? (

@@ -389,7 +389,7 @@ describe('the report by class (RP-02)', () => {
       // Excused only: nothing to count, so no rate -- never 0.
       expect(rows.find((row) => row.class_id === 'c-excused')).toMatchObject({ excused_count: 1, attendance_rate: null });
 
-      // The period's totals are over the six classes held; the cancelled one is counted, not added.
+      // The period's totals are over the six classes not cancelled; the cancelled one is counted, not added.
       expect(classReportTotals(rows)).toEqual({
         classes: 6,
         cancelled: 1,

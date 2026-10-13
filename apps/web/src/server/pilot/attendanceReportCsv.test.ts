@@ -102,7 +102,7 @@ test('quotes, commas and newlines stay inside their cell, and a would-be formula
 /*
  * THE REPORT BY CLASS AS CSV (RP-02): one row per class, counts only, the
  * rate blank when there is nothing to count or the class was cancelled, then
- * a total line over the classes held.
+ * a total line over the classes not cancelled.
  */
 describe('attendanceByClassCsv (RP-02)', () => {
   function cls(overrides: Partial<ClassAttendanceReportRow>): ClassAttendanceReportRow {
@@ -122,7 +122,7 @@ describe('attendanceByClassCsv (RP-02)', () => {
   }
   const PERIOD = { fromDay: '2026-10-01', toDay: '2026-10-13' };
 
-  test('the period, the header, a row per class in gym time, and a total over the classes held', () => {
+  test('the period, the header, a row per class in gym time, and a total over the classes not cancelled', () => {
     const csv = attendanceByClassCsv([
       cls({ title: 'Sparring', registered_count: 3, present_count: 1, absent_count: 1, unmarked_count: 1, attendance_rate: 0.5 }),
       cls({ class_id: 'c-2', title: 'Open Gym', status: 'cancelled', start_at: '2026-10-10T03:30:00.000Z', registered_count: 1, absent_count: 1 }),
