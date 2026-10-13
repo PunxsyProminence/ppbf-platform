@@ -138,3 +138,26 @@ describe('bold needs words inside it', () => {
     expect(container.textContent).toBe('Work out x ** 2 + y ** 2 for the drill.');
   });
 });
+
+describe('bold is not read out of arithmetic', () => {
+  test('unspaced exponents keep their operators', () => {
+    const { container } = render(<ShadowStructuredProse text="Work out x**2 + y**2 for the drill." />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Work out x**2 + y**2 for the drill.');
+  });
+
+  test('a pair next to punctuation is still bold', () => {
+    const { container } = render(<ShadowStructuredProse text="Remember: (**guard up**), then **chin down**." />);
+
+    expect([...container.querySelectorAll('strong')].map((node) => node.textContent)).toEqual(['guard up', 'chin down']);
+    expect(container.textContent).toBe('Remember: (guard up), then chin down.');
+  });
+
+  test('a pair stuck to a letter is left as typed', () => {
+    const { container } = render(<ShadowStructuredProse text="un**believ**able" />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('un**believ**able');
+  });
+});

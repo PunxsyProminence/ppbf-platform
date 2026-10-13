@@ -359,6 +359,9 @@ function AthleteRecordsConsoleContent() {
     const known = coachDirectory.find((coach) => coach.account_id === coachId);
     if (known?.login_email) return deriveCoachDisplayName(known.login_email);
     if (coachId.includes('@')) return deriveCoachDisplayName(coachId);
+    // On the staff list, with no login address to name them from: they are
+    // listed, so "not on the staff list" would be false.
+    if (known) return 'coach name not available';
     // Not found is only a statement once the staff list has been read; until
     // then (or if it could not be) the name is simply not known here.
     return coachesAvailable ? 'coach not on the staff list' : 'coach name not available';

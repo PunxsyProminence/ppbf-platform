@@ -251,6 +251,20 @@ describe('/admin/athletes', () => {
     expect(screen.queryByText(/not on the staff list/)).toBeNull();
   });
 
+  test('a coach who is listed without a login address is not said to be missing from the list', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ account_id: 'coach-1', login_email: null, role: 'coach', active_flag: true, membership_active: true }],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach name not available/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+  });
+
   test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
     const fetchMock = consoleFetch((url) =>
       url.includes('/api/pilot/scheduler/attendance-summary')

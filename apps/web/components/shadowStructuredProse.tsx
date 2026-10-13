@@ -76,9 +76,14 @@ export function splitProseBlocks(raw: string): ProseBlock[] {
   return blocks;
 }
 
-// The words inside must start and end on a character that is not a space or a
-// star, as in Markdown: "x ** 2 + y ** 2" is arithmetic, not two bold marks.
-const BOLD_PAIR = /\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*/g;
+// A bold pair is a **word or phrase** standing on its own, as a person writes
+// it: the words inside start and end on something that is not a space or a
+// star, and the pair is not stuck to a letter or digit on either side. So
+// "x ** 2 + y ** 2" and "x**2 + y**2" are arithmetic and are left alone, and
+// "**jab**," or "(**guard**)" are bold. Group 1 is the one character before the
+// opening pair (or nothing at the start), kept as plain text. No lookbehind:
+// the gym tablets are not all on a browser that parses one.
+const BOLD_PAIR = /(^|[^\p{L}\p{N}*])\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*(?![\p{L}\p{N}*])/gu;
 
 /** Exported for tests: text with each balanced **pair** as a <strong> text node. */
 export function renderInlineBold(text: string): ReactNode[] {
@@ -86,8 +91,9 @@ export function renderInlineBold(text: string): ReactNode[] {
   let last = 0;
   for (const match of text.matchAll(BOLD_PAIR)) {
     const start = match.index ?? 0;
-    if (start > last) nodes.push(text.slice(last, start));
-    nodes.push(<strong key={`bold-${start}`}>{match[1]}</strong>);
+    const boldStart = start + match[1].length;
+    if (boldStart > last) nodes.push(text.slice(last, boldStart));
+    nodes.push(<strong key={`bold-${boldStart}`}>{match[2]}</strong>);
     last = start + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
