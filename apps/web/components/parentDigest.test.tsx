@@ -61,6 +61,18 @@ describe('the parent digest', () => {
               note: 'Thirteen sessions on the card.',
               awarded_at: '2026-08-02T00:00:00Z',
             },
+            {
+              milestone_key: 'conditioning.three_rounds',
+              awarded_by_role: 'coach',
+              note: '',
+              awarded_at: '2026-08-03T00:00:00Z',
+            },
+            {
+              milestone_key: 'conditioning.not_in_the_catalogue',
+              awarded_by_role: 'coach',
+              note: '',
+              awarded_at: '2026-08-04T00:00:00Z',
+            },
           ],
         });
       }
@@ -75,6 +87,11 @@ describe('the parent digest', () => {
     expect(screen.getByText(/Coach Neale/)).toBeTruthy();
     expect(screen.getByText(/13 sessions on the card/i)).toBeTruthy();
     expect(screen.getByText('sessions 13')).toBeTruthy();
+    // F-051: a known milestone reads in the catalogue's family wording, and an
+    // unknown one loses its dot rather than printing "conditioning.not_in...".
+    expect(screen.getByText('Worked three rounds straight through')).toBeTruthy();
+    expect(screen.getByText('conditioning not in the catalogue')).toBeTruthy();
+    expect(screen.queryByText(/conditioning\.three_rounds/)).toBeNull();
     expect(screen.getByText(/Alex.s corner/)).toBeTruthy();
   });
 

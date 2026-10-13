@@ -1043,12 +1043,12 @@ export default function CoachProgressionIntelligencePage() {
                     </select>
                   </div>
                   <div className="field">
-                    <label htmlFor="gap-desc-textarea" className="t-label">Description</label>
+                    <label htmlFor="gap-desc-textarea" className="t-label">Description (the athlete reads this)</label>
                     <textarea
                       id="gap-desc-textarea"
                       value={newGap.gap_description}
                       onChange={(e) => setNewGap({ ...newGap, gap_description: e.target.value })}
-                      placeholder="Describe the performance gap..."
+                      placeholder="Say it the way you would say it to the athlete..."
                       className="textarea"
                       rows={3}
                     />

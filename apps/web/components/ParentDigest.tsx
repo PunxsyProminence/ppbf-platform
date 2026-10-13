@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymMonthDay } from '@/src/lib/gymTime';
+import { milestoneByKey } from '@/src/shared/achievementPaths';
 
 /**
  * FROM THE CORNER -- the parent digest.
@@ -60,7 +61,15 @@ function shortDate(iso: string): string {
 
 /** 'sessions-13' or 'first_spar' -> 'sessions 13' / 'first spar'. */
 function prettyKey(key: string): string {
-  return key.replace(/[_-]+/g, ' ').trim();
+  return key.replace(/[._-]+/g, ' ').trim();
+}
+
+/** What a parent reads: the catalogue's family wording for a known milestone
+ *  ("Worked three rounds straight through"), and only for one the catalogue
+ *  does not know, the key with its punctuation taken out. A parent used to
+ *  read "Conditioning.Plank One Minute" (F-051). */
+function milestoneLabel(key: string): string {
+  return milestoneByKey(key)?.family ?? prettyKey(key);
 }
 
 export default function ParentDigest({ athleteId, childName }: ParentDigestProps) {
@@ -250,7 +259,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
                 {milestones.map((item) => (
                   <li key={`${item.milestone_key}-${item.awarded_at}`}>
                     <p className="text-[length:var(--t-sm)] font-semibold capitalize text-[color:var(--card-ink)]">
-                      {prettyKey(item.milestone_key)}
+                      {milestoneLabel(item.milestone_key)}
                     </p>
                     {item.note && (
                       <p className="text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">{item.note}</p>

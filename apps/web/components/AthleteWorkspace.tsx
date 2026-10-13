@@ -1016,10 +1016,33 @@ function AthleteRabbitHoleLibrary() {
 }
 
 export default function AthleteWorkspace() {
-  const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
+  const [activeTab, setActiveTabRaw] = useState<TabID>('my-dashboard');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
   const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
-  const [backendSyncMessage, setBackendSyncMessage] = useState('');
+  /* The last word from the backend about what just saved. A goal's message
+     belongs to the Goals tab: "Progress saved: 30%." stayed on screen over
+     every other tab until something else overwrote it (F-048). `tab` is the
+     one tab a message belongs to; null means it is about the visit as a
+     whole (check-in, check-out) and stays as it always did. Leaving the tab
+     drops a message that belongs to it, in the same step as the tab change,
+     so coming back does not bring it back. */
+  const [syncMessage, setSyncMessage] = useState<{ text: string; tab: TabID | null }>({ text: '', tab: null });
+  const backendSyncMessage = syncMessage.tab === null || syncMessage.tab === activeTab ? syncMessage.text : '';
+  const setBackendSyncMessage = useCallback((text: string) => setSyncMessage({ text, tab: null }), []);
+  // The tab the athlete is on RIGHT NOW, for handlers that finish later: a
+  // save that lands after they have left Goals has nobody to tell, and storing
+  // its message would only bring it back on the next visit. Kept in step by
+  // setActiveTab below, which is the only thing that changes the tab.
+  const currentTabRef = useRef<TabID>('my-dashboard');
+  const setGoalSyncMessage = useCallback((text: string) => {
+    if (currentTabRef.current !== 'smart-goals') return;
+    setSyncMessage({ text, tab: 'smart-goals' });
+  }, []);
+  const setActiveTab = useCallback((tab: TabID) => {
+    currentTabRef.current = tab;
+    setActiveTabRaw(tab);
+    setSyncMessage((current) => (current.tab !== null && current.tab !== tab ? { text: '', tab: null } : current));
+  }, []);
 
   // Check-In State.
   //
@@ -1922,7 +1945,7 @@ export default function AthleteWorkspace() {
     if (!backendAthleteId) {
       // There is no local goal store -- goals exist only in pilot.goals -- so
       // without a backend session nothing is written anywhere.
-      setBackendSyncMessage("That goal did not save. You are not signed in right now -- sign in again and put it back up.");
+      setGoalSyncMessage("That goal did not save. You are not signed in right now -- sign in again and put it back up.");
       return;
     }
 
@@ -1957,7 +1980,7 @@ export default function AthleteWorkspace() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({ error: "That goal did not take. Try it again." }))) as { error?: string };
-        setBackendSyncMessage(payload.error || "That goal did not take. Try it again.");
+        setGoalSyncMessage(payload.error || "That goal did not take. Try it again.");
         return;
       }
 
@@ -1982,9 +2005,9 @@ export default function AthleteWorkspace() {
       setNewGoalTargetDate('');
       setNewGoalSuccessMetric('');
       setShowGoalForm(false);
-      setBackendSyncMessage("Goal's on the board. Now go work it.");
+      setGoalSyncMessage("Goal's on the board. Now go work it.");
     } catch (error) {
-      setBackendSyncMessage(error instanceof Error ? error.message : "That goal did not take. Try it again.");
+      setGoalSyncMessage(error instanceof Error ? error.message : "That goal did not take. Try it again.");
     } finally {
       setIsCreatingGoal(false);
     }
@@ -2040,18 +2063,18 @@ export default function AthleteWorkspace() {
         setSmartGoals((current) => current.map(
           (candidate) => (candidate.id === goalId ? { ...candidate, progressPercent: previous } : candidate),
         ));
-        setBackendSyncMessage(payload.error || 'Progress update failed');
+        setGoalSyncMessage(payload.error || 'Progress update failed');
         return;
       }
 
-      setBackendSyncMessage(
+      setGoalSyncMessage(
         percent === null ? 'Progress report cleared.' : `Progress saved: ${percent}%.`,
       );
     } catch (error) {
       setSmartGoals((current) => current.map(
         (candidate) => (candidate.id === goalId ? { ...candidate, progressPercent: previous } : candidate),
       ));
-      setBackendSyncMessage(error instanceof Error ? error.message : 'Progress update failed');
+      setGoalSyncMessage(error instanceof Error ? error.message : 'Progress update failed');
     } finally {
       setSavingGoalProgressId(null);
     }
@@ -2589,14 +2612,25 @@ export default function AthleteWorkspace() {
     : null;
   /* The rail's line. Until the session read has landed nothing here is known,
      so it says nothing: "Not checked in yet" over a failed read would tell an
-     athlete who did check in that they did not. */
+     athlete who did check in that they did not.
+
+     "Checked in" on this line means a TRAINING SESSION (the Check In button on
+     the Dashboard). The daily wellness check is a different thing, and the
+     athlete who has just filled it in -- the page says "Recorded today", the
+     Floor has opened -- was reading "Not checked in yet" as if it had not
+     counted (F-050). So when the wellness check is on record and no session is
+     open, the line says both facts. */
   const railCheckInLine = checkInTime
     ? `Checked in ${checkInTime}`
     : storedSessionLoad !== 'loaded'
       ? null
       : checkedOutToday
         ? (checkedOutAt ? `Checked out ${checkedOutAt}` : 'Checked out today')
-        : 'Not checked in yet';
+        : checkInLoading || checkInLoadError !== null
+          ? null
+          : todayCheckIn
+            ? "Today's wellness is recorded. No session started yet."
+            : 'Not checked in yet';
 
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');
