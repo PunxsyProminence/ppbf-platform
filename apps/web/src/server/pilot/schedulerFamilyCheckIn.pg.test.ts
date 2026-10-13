@@ -248,6 +248,22 @@ describe('a family check-in still records what it may', () => {
     }
   });
 
+  test("a parent's mark from before the parent-method migration is still the family's to update", async () => {
+    const client = await freshDatabase('fci_legacy_parent');
+    try {
+      // What that migration left behind: a parent's mark stored as coach_override.
+      await upsertSchedulerAttendance(
+        ORG_ID,
+        mark({ status: 'absent', method: 'coach_override', checked_in_by_role: 'parent', checked_in_by_account_id: PARENT_ACCOUNT_ID }),
+      );
+
+      expect(await upsertFamilySchedulerAttendance(ORG_ID, familyParent())).toBe(true);
+      expect(await storedRow(client)).toMatchObject({ status: 'present', method: 'parent', checked_in_by_role: 'parent' });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the register still overwrites a family mark: staff behaviour is unchanged', async () => {
     const client = await freshDatabase('fci_staff_over_family');
     try {

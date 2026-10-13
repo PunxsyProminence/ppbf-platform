@@ -530,6 +530,12 @@ export const FAMILY_ATTENDANCE_UPSERT_SQL = `insert into pilot.scheduler_attenda
          checked_in_at = excluded.checked_in_at,
          updated_at = excluded.updated_at
      where pilot.scheduler_attendance.method in ('self', 'parent')
+        -- A parent's mark from before the parent-method migration is stored as
+        -- 'coach_override' with checked_in_by_role 'parent'
+        -- (pilot_slice_postgres_attendance_parent_method_migration.sql): it is
+        -- the family's own mark, not a staff one. Staff writes always record a
+        -- staff role, so this never opens a coach's or admin's mark.
+        or pilot.scheduler_attendance.checked_in_by_role in ('athlete', 'parent')
      returning attendance_id`;
 
 export async function upsertFamilySchedulerAttendance(
