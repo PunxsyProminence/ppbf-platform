@@ -229,9 +229,18 @@ describe('family message replies migration (FC-02)', () => {
   test('only a parent message takes a reply, only a guardian writes one, and a blank or oversized one is refused', async () => {
     const client = await freshDatabase('fmr_checks');
     try {
-      await expect(reply(client, { noteId: OBSERVATION })).rejects.toThrow('FAMILY_MESSAGE_REPLY_NOT_TO_A_PARENT_MESSAGE');
+      // Each refusal carries its own name, so it is never mistaken for the text check.
+      await expect(reply(client, { noteId: OBSERVATION })).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'pilot_family_message_replies_parent_message',
+      });
       await expect(reply(client, { role: 'coach' })).rejects.toMatchObject({ code: '23514' });
       await expect(reply(client, { text: '   ' })).rejects.toMatchObject({ code: '23514' });
+      // A reply born with no author is refused; only the purge may detach one later.
+      await expect(reply(client, { author: null })).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'pilot_family_message_replies_author_required',
+      });
       await expect(reply(client, { text: 'x'.repeat(2001) })).rejects.toMatchObject({ code: '23514' });
       await expect(reply(client, { text: 'x'.repeat(2000) })).resolves.toEqual(expect.any(String));
     } finally {
@@ -284,6 +293,17 @@ describe('family message replies migration (FC-02)', () => {
     expect(sql).not.toMatch(/\btruncate\b/);
     expect(sql).not.toMatch(/\bdelete\s+from\b/);
     expect(sql).not.toMatch(/\balter\s+table\s+pilot\.coach_observations\b/);
+  });
+
+  test('the runner refuses a guard that is there by name but disabled', async () => {
+    const client = await freshDatabase('fmr_guard_disabled');
+    try {
+      await expect(
+        applyRunner(client, 'alter table pilot.family_message_replies disable trigger trg_family_message_replies_guard'),
+      ).rejects.toThrow('FAMILY_MESSAGE_REPLIES_NOT_READY: guard_ready');
+    } finally {
+      await client.end();
+    }
   });
 
   test("the runner refuses a result it did not produce", async () => {

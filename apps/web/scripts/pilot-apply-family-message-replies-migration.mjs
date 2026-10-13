@@ -23,11 +23,16 @@ const READINESS_QUERY = `
   select
     to_regclass('pilot.family_message_replies') is not null as table_ready,
     exists (
-      select 1 from pg_constraint
-       where conrelid = to_regclass('pilot.family_message_replies')
-         and conname = 'pilot_family_message_replies_note_fk' and contype = 'f'
-         and confrelid = to_regclass('pilot.coach_observations')
-         and confdeltype = 'c'
+      select 1 from pg_constraint c
+       where c.conrelid = to_regclass('pilot.family_message_replies')
+         and c.conname = 'pilot_family_message_replies_note_fk' and c.contype = 'f'
+         and c.confrelid = to_regclass('pilot.coach_observations')
+         and c.confdeltype = 'c'
+         and (
+           select array_agg(a.attname::text order by a.attname)
+             from pg_attribute a
+            where a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+         ) = array['athlete_id', 'note_id', 'organization_id']
     ) as note_fk_ready,
     exists (
       select 1 from pg_constraint c
@@ -49,9 +54,15 @@ const READINESS_QUERY = `
          and i.indisunique
     ) as note_index_ready,
     exists (
-      select 1 from pg_trigger
-       where tgrelid = to_regclass('pilot.family_message_replies')
-         and tgname = 'trg_family_message_replies_guard' and not tgisinternal
+      -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4) and UPDATE (bit 16), enabled, and
+      -- calling this migration's function.
+      select 1 from pg_trigger t
+       where t.tgrelid = to_regclass('pilot.family_message_replies')
+         and t.tgname = 'trg_family_message_replies_guard' and not t.tgisinternal
+         and t.tgenabled <> 'D'
+         and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
+         and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16
+         and t.tgfoid = to_regprocedure('pilot.family_message_replies_guard()')
     ) as guard_ready
 `;
 

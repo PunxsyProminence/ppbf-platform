@@ -22,6 +22,11 @@
 -- trigger refuses a reply to anything else -- a coach observation or a
 -- guardian's own barrier report is not a conversation with the family.
 --
+-- EACH REFUSAL NAMES ITSELF. The guard raises 23514 like a check constraint,
+-- with its own constraint name (..._author_required, ..._parent_message,
+-- ..._append_only), so a caller can tell it from the text check's
+-- "blank or too long" by name rather than by code alone.
+--
 -- APPEND-ONLY. A reply is not edited; a correction is a new reply (FC-02 Q3
 -- default A). The trigger refuses any UPDATE that changes what was said, about
 -- what, by which role, or when. The one change it lets through is
@@ -85,6 +90,12 @@ language plpgsql
 as $family_message_replies_guard$
 begin
   if tg_op = 'INSERT' then
+    -- Every reply is written by someone. Only the purge, later, may take the
+    -- author away (D-9); a reply born without one would be unattributable.
+    if new.author_account_id is null then
+      raise exception 'FAMILY_MESSAGE_REPLY_NEEDS_AN_AUTHOR'
+        using errcode = '23514', constraint = 'pilot_family_message_replies_author_required';
+    end if;
     if not exists (
       select 1 from pilot.coach_observations co
        where co.organization_id = new.organization_id
@@ -92,7 +103,7 @@ begin
          and co.note_type = 'parent_message'
     ) then
       raise exception 'FAMILY_MESSAGE_REPLY_NOT_TO_A_PARENT_MESSAGE'
-        using errcode = '23514';
+        using errcode = '23514', constraint = 'pilot_family_message_replies_parent_message';
     end if;
     return new;
   end if;
@@ -108,7 +119,7 @@ begin
      or (new.author_account_id is distinct from old.author_account_id and new.author_account_id is not null)
   then
     raise exception 'FAMILY_MESSAGE_REPLY_IS_APPEND_ONLY'
-      using errcode = '23514';
+      using errcode = '23514', constraint = 'pilot_family_message_replies_append_only';
   end if;
   return new;
 end;
