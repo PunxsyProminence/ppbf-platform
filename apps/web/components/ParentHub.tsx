@@ -64,8 +64,6 @@ interface FamilyReply {
   created_at: string;
 }
 
-const FAMILY_REPLY_MAX_LENGTH = 2000;
-
 interface ParentMessage {
   note_id: string;
   athlete_id: string;
@@ -299,7 +297,9 @@ export default function ParentHub() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyBusy, setReplyBusy] = useState<Set<string>>(() => new Set());
   const replySendingRef = useRef<Set<string>>(new Set());
-  const [replyNotice, setReplyNotice] = useState<{ noteId: string; text: string } | null>(null);
+  // One notice per message: a send on one message leaves another's failure
+  // showing while its unsent text is still in the box.
+  const [replyNotices, setReplyNotices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     void (async () => {
@@ -324,7 +324,7 @@ export default function ParentHub() {
     const text = (replyDrafts[noteId] ?? '').trim();
     if (!text || replySendingRef.current.has(noteId)) return;
     replySendingRef.current.add(noteId);
-    setReplyNotice(null);
+    setReplyNotices((held) => ({ ...held, [noteId]: '' }));
     setReplyBusy((held) => new Set(held).add(noteId));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent/message-replies`, {
@@ -344,10 +344,11 @@ export default function ParentHub() {
       // while the send was in flight stays.
       setReplyDrafts((held) => ((held[noteId] ?? '').trim() === text ? { ...held, [noteId]: '' } : held));
     } catch (error) {
-      setReplyNotice({
-        noteId,
-        text: `That reply did not send -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. Your text is still in the box; try again.`,
-      });
+      const reason = (error instanceof Error && error.message ? error.message : 'the gym could not be reached').replace(/\.$/, '');
+      setReplyNotices((held) => ({
+        ...held,
+        [noteId]: `That reply did not send -- ${reason}. Your text is still in the box; try again.`,
+      }));
     } finally {
       replySendingRef.current.delete(noteId);
       setReplyBusy((held) => {
@@ -1614,7 +1615,7 @@ export default function ParentHub() {
               ) : messages.length === 0 ? (
                 <p className="t-muted">No messages yet.</p>
               ) : (
-                <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
+                <div className="space-y-[var(--s4)]">
                   {messages.map((message) => (
                     <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                       <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
@@ -1660,7 +1661,14 @@ export default function ParentHub() {
                               <p className="t-body whitespace-pre-wrap">{reply.reply_text}</p>
                             </div>
                           ))}
-                        <label className="t-label block" htmlFor={`reply-${message.note_id}`}>Your reply</label>
+                        {/* Each box and button says which message it answers, for a
+                            screen reader reading several in a row. */}
+                        <label className="t-label block" htmlFor={`reply-${message.note_id}`}>
+                          Your reply
+                          <span className="sr-only">
+                            {` to the message about ${message.athlete_name ?? 'your child'}, ${formatGymDateTimeShort(message.created_at) ?? message.created_at}`}
+                          </span>
+                        </label>
                         <textarea
                           id={`reply-${message.note_id}`}
                           value={replyDrafts[message.note_id] ?? ''}
@@ -1668,12 +1676,11 @@ export default function ParentHub() {
                             const value = event.target.value;
                             setReplyDrafts((held) => ({ ...held, [message.note_id]: value }));
                           }}
-                          maxLength={FAMILY_REPLY_MAX_LENGTH}
-                          className="textarea h-20 resize-none"
+                          className="textarea h-20 resize-y"
                         />
-                        {replyNotice?.noteId === message.note_id && (
-                          <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{replyNotice.text}</p>
-                        )}
+                        {replyNotices[message.note_id] ? (
+                          <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{replyNotices[message.note_id]}</p>
+                        ) : null}
                         <button
                           type="button"
                           className="btn"
@@ -1681,6 +1688,7 @@ export default function ParentHub() {
                           onClick={() => void handleSendReply(message.note_id)}
                         >
                           {replyBusy.has(message.note_id) ? 'Sending…' : 'Send reply'}
+                          <span className="sr-only">{` about ${message.athlete_name ?? 'your child'}`}</span>
                         </button>
                       </div>
                     </div>

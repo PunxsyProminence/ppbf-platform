@@ -125,16 +125,16 @@ describe('replying to a coach message (FC-03)', () => {
     await openMessages();
 
     const gloves = card('Bring gloves Thursday.');
-    const send = within(gloves).getByRole('button', { name: 'Send reply' });
+    const send = within(gloves).getByRole('button', { name: /^Send reply/ });
     expect(send).toBeDisabled();
-    fireEvent.change(within(gloves).getByLabelText('Your reply'), { target: { value: '  See you Thursday.  ' } });
+    fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: '  See you Thursday.  ' } });
     await act(async () => {
       fireEvent.click(send);
     });
 
     expect(replyPosts(fetchMock)).toEqual([{ note_id: MESSAGES[0]!.note_id, reply_text: 'See you Thursday.' }]);
     expect(within(gloves).getByText('See you Thursday.')).toBeInTheDocument();
-    expect(within(gloves).getByLabelText('Your reply')).toHaveValue('');
+    expect(within(gloves).getByLabelText(/^Your reply/)).toHaveValue('');
     expect(within(card('Medical form is due.')).queryByText('See you Thursday.')).toBeNull();
   });
 
@@ -146,8 +146,8 @@ describe('replying to a coach message (FC-03)', () => {
     await openMessages();
 
     const gloves = card('Bring gloves Thursday.');
-    fireEvent.change(within(gloves).getByLabelText('Your reply'), { target: { value: 'Once.' } });
-    const send = within(gloves).getByRole('button', { name: 'Send reply' });
+    fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: 'Once.' } });
+    const send = within(gloves).getByRole('button', { name: /^Send reply/ });
     act(() => {
       fireEvent.click(send);
       fireEvent.click(send);
@@ -167,10 +167,10 @@ describe('replying to a coach message (FC-03)', () => {
     await openMessages();
 
     const gloves = card('Bring gloves Thursday.');
-    const box = within(gloves).getByLabelText('Your reply');
+    const box = within(gloves).getByLabelText(/^Your reply/);
     fireEvent.change(box, { target: { value: 'First.' } });
     act(() => {
-      fireEvent.click(within(gloves).getByRole('button', { name: 'Send reply' }));
+      fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
     });
     fireEvent.change(box, { target: { value: 'First. And another thing.' } });
     await act(async () => {
@@ -188,15 +188,58 @@ describe('replying to a coach message (FC-03)', () => {
     await openMessages();
 
     const gloves = card('Bring gloves Thursday.');
-    fireEvent.change(within(gloves).getByLabelText('Your reply'), { target: { value: 'Keep me.' } });
+    fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: 'Keep me.' } });
     await act(async () => {
-      fireEvent.click(within(gloves).getByRole('button', { name: 'Send reply' }));
+      fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
     });
 
     expect(within(gloves).getByRole('alert').textContent).toContain('Not found: that message is not on your page.');
-    expect(within(gloves).getByLabelText('Your reply')).toHaveValue('Keep me.');
+    expect(within(gloves).getByLabelText(/^Your reply/)).toHaveValue('Keep me.');
     expect(within(gloves).queryByText(/You replied/)).toBeNull();
     expect(within(card('Medical form is due.')).queryByRole('alert')).toBeNull();
+  });
+
+  test('each box and button says which message it answers', async () => {
+    installFetch();
+    await openMessages();
+
+    expect(screen.getByLabelText(/^Your reply to the message about First Child, /)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Your reply to the message about Second Child, /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send reply about First Child' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send reply about Second Child' })).toBeInTheDocument();
+  });
+
+  test("a failure stays under its own message when another message's reply is sent", async () => {
+    let calls = 0;
+    installFetch({
+      repliesPost: async (init) => {
+        calls += 1;
+        if (calls === 1) return jsonResponse({ ok: false, error: 'A reply is at most 2000 characters.' }, false);
+        const sent = JSON.parse(String(init?.body)) as { note_id: string; reply_text: string };
+        return jsonResponse({ ok: true, item: { reply_id: 'r-2', note_id: sent.note_id, reply_text: sent.reply_text, created_at: '2026-10-13T23:30:00.000Z' } });
+      },
+    });
+    await openMessages();
+
+    const gloves = card('Bring gloves Thursday.');
+    const medical = card('Medical form is due.');
+    // No limit in the box: a long reply reaches the server, whose sentence shows.
+    fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: 'x'.repeat(2001) } });
+    await act(async () => {
+      fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
+    });
+    expect(within(gloves).getByRole('alert').textContent).toBe(
+      'That reply did not send -- A reply is at most 2000 characters. Your text is still in the box; try again.',
+    );
+
+    fireEvent.change(within(medical).getByLabelText(/^Your reply/), { target: { value: 'Form is in.' } });
+    await act(async () => {
+      fireEvent.click(within(medical).getByRole('button', { name: /^Send reply/ }));
+    });
+
+    expect(within(medical).getByText('Form is in.')).toBeInTheDocument();
+    expect(within(gloves).getByRole('alert')).toBeInTheDocument();
+    expect(within(gloves).getByLabelText(/^Your reply/)).toHaveValue('x'.repeat(2001));
   });
 
   test('a failed earlier-replies read says so, and replying still works', async () => {
@@ -205,9 +248,9 @@ describe('replying to a coach message (FC-03)', () => {
 
     expect(screen.getByText(/Your earlier replies have not loaded\. This is not a statement that you have not replied\./)).toBeInTheDocument();
     const gloves = card('Bring gloves Thursday.');
-    fireEvent.change(within(gloves).getByLabelText('Your reply'), { target: { value: 'Still works.' } });
+    fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: 'Still works.' } });
     await act(async () => {
-      fireEvent.click(within(gloves).getByRole('button', { name: 'Send reply' }));
+      fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
     });
     expect(replyPosts(fetchMock)).toHaveLength(1);
     expect(within(gloves).getByText('Still works.')).toBeInTheDocument();

@@ -133,7 +133,7 @@ describe('POST /api/pilot/parent/message-replies (#1542, FC-03)', () => {
     expect((await response.json()).error).toBe('Not found: that message is not on your page.');
   });
 
-  test("an empty or too-long reply is refused with the module's sentence", async () => {
+  test("a too-long reply is refused with the module's sentence", async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockCreate.mockRejectedValue(new ValidationError('A reply is at most 2000 characters.'));
 
