@@ -194,6 +194,16 @@ describe('the obligations report section (RP-03)', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
 
+  test('on paper: the report prints; the add button, the form toggle and the list do not', async () => {
+    reportFetch(true);
+    render(<GrantObligationsPage />);
+    const report = await screen.findByRole('region', { name: 'Obligations report' });
+
+    expect(report.className).not.toContain('print:hidden');
+    expect(screen.getByRole('button', { name: 'Add obligation' }).parentElement!.className).toContain('print:hidden');
+    expect(screen.getByRole('list').className).toContain('print:hidden');
+  });
+
   test('a refused download says so and saves nothing', async () => {
     reportFetch(false);
     render(<GrantObligationsPage />);

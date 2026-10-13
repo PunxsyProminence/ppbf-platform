@@ -209,6 +209,26 @@ describe('GET format=csv: the obligations report (RP-03)', () => {
     expect(text).not.toContain('INTERNAL NOTE');
   });
 
+  test('overdue is open work only: in progress past due is; submitted and complete past due are not', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'admin' }));
+    mockReport.mockResolvedValue([
+      row({ obligation_id: 'ob-prog', status: 'in_progress', due_date: '2026-01-01' }),
+      row({ obligation_id: 'ob-sub', status: 'submitted', due_date: '2026-01-01', completed_at: '2026-01-02T15:00:00Z' }),
+      row({ obligation_id: 'ob-comp', status: 'complete', due_date: '2026-01-01', completed_at: '2026-01-02T15:00:00Z' }),
+    ]);
+
+    // No state sent: the report is all of them.
+    const { response, text } = await csvOf('format=csv');
+
+    expect(response.status).toBe(200);
+    expect(mockReport).toHaveBeenCalledWith('org-1', { dueFrom: undefined, dueTo: undefined, state: 'all' });
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="grant-obligations_all_2026-10-13.csv"');
+    const lines = text.split('\r\n');
+    expect(lines[2]).toMatch(/"in_progress","","yes"$/);
+    expect(lines[3]).toMatch(/"submitted","[^"]+",""$/);
+    expect(lines[4]).toMatch(/"complete","[^"]+",""$/);
+  });
+
   test('a cell that would run as a formula is defused', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     mockReport.mockResolvedValue([row({ grant_name: '=HYPERLINK("x")', funder_name: '\t+Tabbed' })]);

@@ -306,14 +306,14 @@ export default function GrantObligationsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Grant Compliance</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Grant Obligations</h1>
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)] print:hidden">
               The organization&rsquo;s commitments to funders — reports, deliverables, renewals, filings —
               soonest due first. Internal records only: nothing here reads or discloses athlete data.
             </p>
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
+            <div className="alert alert--critical print:hidden" role="alert">
               <span className="alert-icon" aria-hidden="true">✕</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
