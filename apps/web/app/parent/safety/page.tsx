@@ -111,49 +111,89 @@ const SCOPE_HEADLINE: Record<TrainingHoldScope, string> = {
   conditioning_only: 'Conditioning is paused right now',
 };
 
-const GATE_OUTCOME_LABEL: Record<GateSummaryRow['outcome'], string> = {
+type EvaluatedOutcome = Exclude<GateSummaryRow['outcome'], 'not_evaluated'>;
+
+const GATE_OUTCOME_LABEL: Record<EvaluatedOutcome, string> = {
   passed: 'Clear',
   blocked: 'Not clear',
   flagged: 'Needs a look',
-  not_evaluated: 'Not yet checked',
 };
 
-const GATE_OUTCOME_BADGE: Record<GateSummaryRow['outcome'], string> = {
-  passed: 'badge--cleared',
-  blocked: 'badge--restricted',
-  flagged: 'badge--restricted',
-  not_evaluated: 'badge--monitor',
+// Glyph + label, never colour alone (Law 3), as the waiver badges below.
+const GATE_OUTCOME_DISPLAY: Record<EvaluatedOutcome, { glyph: string; badge: string }> = {
+  passed: { glyph: '✓', badge: 'badge--cleared' },
+  blocked: { glyph: '▲', badge: 'badge--restricted' },
+  flagged: { glyph: '▲', badge: 'badge--restricted' },
 };
 
 /* The training-hold gate's last evaluation is written only when someone tries
-   to register the child for a class, so it can read "Not yet checked" while a
-   hold is active. The page already has the hold itself (the route's `hold`),
-   so that row reads from it instead (#1537). */
+   to register the child for a class, so it read "Not yet checked" while a
+   hold was active (#1537). The page already has the hold itself (the route's
+   `hold`), so that row reads from it, in the same scope the heading above
+   names. */
 const TRAINING_HOLD_GATE_KEY = 'training_hold';
+
+const HOLD_ROW_LABEL: Record<TrainingHoldScope, string> = {
+  all_training: 'Paused',
+  contact_only: 'Contact paused',
+  conditioning_only: 'Conditioning paused',
+};
+
+/* The clearance gate's last evaluation says whether clearance was current
+   when contact was last logged, not whether it is on file now, and a guardian
+   is not sent medical status. The page cannot answer it, so it is not listed
+   (#1537). */
+const UNANSWERABLE_GATE_KEYS: ReadonlySet<string> = new Set(['contact_medical_clearance']);
 
 interface SafetyCheckRow {
   key: string;
   name: string;
   label: string;
+  glyph: string;
   badge: string;
 }
 
 /** The rows the page can answer from what it was sent. The hold row reads the
- *  hold; any other gate that has never been evaluated is left out, because
- *  its answer (for contact, a medical clearance) is not something a guardian
- *  is sent. */
+ *  hold; a gate never evaluated, or one whose answer a guardian is not sent,
+ *  is left out. */
 function safetyCheckRows(item: AthleteSafety): SafetyCheckRow[] {
   return item.gates.flatMap((gate): SafetyCheckRow[] => {
     if (gate.gate_key === TRAINING_HOLD_GATE_KEY) {
       return [
         item.hold
-          ? { key: gate.gate_key, name: gate.name, label: 'Paused', badge: 'badge--restricted' }
-          : { key: gate.gate_key, name: gate.name, label: 'No pause', badge: 'badge--cleared' },
+          ? {
+              key: gate.gate_key,
+              name: gate.name,
+              label: HOLD_ROW_LABEL[item.hold.scope] ?? HOLD_ROW_LABEL.all_training,
+              glyph: '▲',
+              badge: 'badge--restricted',
+            }
+          : { key: gate.gate_key, name: gate.name, label: 'No pause', glyph: '✓', badge: 'badge--cleared' },
       ];
     }
-    if (gate.outcome === 'not_evaluated') return [];
-    return [{ key: gate.gate_key, name: gate.name, label: GATE_OUTCOME_LABEL[gate.outcome], badge: GATE_OUTCOME_BADGE[gate.outcome] }];
+    if (gate.outcome === 'not_evaluated' || UNANSWERABLE_GATE_KEYS.has(gate.gate_key)) return [];
+    return [{ key: gate.gate_key, name: gate.name, label: GATE_OUTCOME_LABEL[gate.outcome], ...GATE_OUTCOME_DISPLAY[gate.outcome] }];
   });
+}
+
+function SafetyChecks({ rows }: { readonly rows: readonly SafetyCheckRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-[var(--s4)]">
+      <p className="t-label">Safety checks</p>
+      <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
+            <span>{row.name}</span>
+            <span className={`badge ${row.badge}`}>
+              <i aria-hidden="true">{row.glyph}</i>
+              {row.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function GuardianSafetyPage() {
@@ -277,19 +317,7 @@ export default function GuardianSafetyPage() {
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training pause on file right now.</p>
                   )}
 
-                  {safetyCheckRows(item).length > 0 ? (
-                    <div className="mt-[var(--s4)]">
-                      <p className="t-label">Safety checks</p>
-                      <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
-                        {safetyCheckRows(item).map((row) => (
-                          <div key={row.key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
-                            <span>{row.name}</span>
-                            <span className={`badge ${row.badge}`}>{row.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+                  <SafetyChecks rows={safetyCheckRows(item)} />
 
                   <MyInjuries athleteId={item.athlete_id} />
 
