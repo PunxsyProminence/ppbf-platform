@@ -275,10 +275,14 @@ describe('family message replies migration (FC-02)', () => {
     }
   });
 
-  test('a reply dies with its note', async () => {
+  test('a reply is not deleted by hand, but dies with its note', async () => {
     const client = await freshDatabase('fmr_cascade');
     try {
-      await reply(client);
+      const replyId = await reply(client);
+      await expect(
+        client.query('delete from pilot.family_message_replies where reply_id = $1::uuid', [replyId]),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_message_replies_no_delete' });
+
       await client.query('delete from pilot.coach_observations where organization_id = $1 and note_id = $2::uuid', [ORG, MESSAGE]);
       const left = await client.query('select count(*)::int as n from pilot.family_message_replies');
       expect(left.rows[0].n).toBe(0);
@@ -295,11 +299,14 @@ describe('family message replies migration (FC-02)', () => {
     expect(sql).not.toMatch(/\balter\s+table\s+pilot\.coach_observations\b/);
   });
 
-  test('the runner refuses a guard that is there by name but disabled', async () => {
+  test('the runner refuses a guard that is there by name but disabled, or replica-only', async () => {
     const client = await freshDatabase('fmr_guard_disabled');
     try {
       await expect(
         applyRunner(client, 'alter table pilot.family_message_replies disable trigger trg_family_message_replies_guard'),
+      ).rejects.toThrow('FAMILY_MESSAGE_REPLIES_NOT_READY: guard_ready');
+      await expect(
+        applyRunner(client, 'alter table pilot.family_message_replies enable replica trigger trg_family_message_replies_guard'),
       ).rejects.toThrow('FAMILY_MESSAGE_REPLIES_NOT_READY: guard_ready');
     } finally {
       await client.end();

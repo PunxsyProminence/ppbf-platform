@@ -54,14 +54,15 @@ const READINESS_QUERY = `
          and i.indisunique
     ) as note_index_ready,
     exists (
-      -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4) and UPDATE (bit 16), enabled, and
+      -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4), DELETE (bit 8) and UPDATE (bit 16),
+      -- firing in ordinary sessions (O or A; R fires only under replication, D never), and
       -- calling this migration's function.
       select 1 from pg_trigger t
        where t.tgrelid = to_regclass('pilot.family_message_replies')
          and t.tgname = 'trg_family_message_replies_guard' and not t.tgisinternal
-         and t.tgenabled <> 'D'
+         and t.tgenabled in ('O', 'A')
          and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
-         and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16
+         and (t.tgtype & 4) = 4 and (t.tgtype & 8) = 8 and (t.tgtype & 16) = 16
          and t.tgfoid = to_regprocedure('pilot.family_message_replies_guard()')
     ) as guard_ready
 `;

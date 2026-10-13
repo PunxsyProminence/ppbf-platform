@@ -27,6 +27,12 @@
 -- ..._append_only), so a caller can tell it from the text check's
 -- "blank or too long" by name rather than by code alone.
 --
+-- AND NOT DELETED BY HAND. A DELETE issued directly against this table is
+-- refused; one that arrives as a cascade (its note, athlete or gym going) is a
+-- referential action run from inside another trigger, so pg_trigger_depth() is
+-- above 1 and it goes through. Nothing here is hard-deleted except with what
+-- it hangs off.
+--
 -- APPEND-ONLY. A reply is not edited; a correction is a new reply (FC-02 Q3
 -- default A). The trigger refuses any UPDATE that changes what was said, about
 -- what, by which role, or when. The one change it lets through is
@@ -89,7 +95,19 @@ returns trigger
 language plpgsql
 as $family_message_replies_guard$
 begin
+  if tg_op = 'DELETE' then
+    if pg_trigger_depth() = 1 then
+      raise exception 'FAMILY_MESSAGE_REPLY_IS_NOT_DELETED'
+        using errcode = '23514', constraint = 'pilot_family_message_replies_no_delete';
+    end if;
+    return old;
+  end if;
+
   if tg_op = 'INSERT' then
+    -- Missing keys are left to NOT NULL, so they are not reported as a wrong note.
+    if new.organization_id is null or new.note_id is null then
+      return new;
+    end if;
     -- Every reply is written by someone. Only the purge, later, may take the
     -- author away (D-9); a reply born without one would be unattributable.
     if new.author_account_id is null then
@@ -127,5 +145,5 @@ $family_message_replies_guard$;
 
 drop trigger if exists trg_family_message_replies_guard on pilot.family_message_replies;
 create trigger trg_family_message_replies_guard
-  before insert or update on pilot.family_message_replies
+  before insert or update or delete on pilot.family_message_replies
   for each row execute function pilot.family_message_replies_guard();
