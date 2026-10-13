@@ -79,7 +79,6 @@ jest.mock('./db', () => ({
 
 import { query } from './db';
 import {
-  DEFAULT_STEP_MINUTES,
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
@@ -355,7 +354,8 @@ describe('making a session script from a workout template', () => {
       discipline: 'boxing',
       // Sent to families; the template's intent is not, so it is not copied here.
       theme: '',
-      total_minutes: 6 + DEFAULT_STEP_MINUTES + DEFAULT_STEP_MINUTES,
+      // The template's stated length (45), not the 16 minutes its blocks add up to.
+      total_minutes: 45,
       contact_structure: 'split_non_contact_then_contact',
       authoring_state: 'coach_reviewed',
       source_document: 'Workout template: Fixture Workout v3',
@@ -478,7 +478,7 @@ describe('what a family is sent of a coach-made script', () => {
           'organization_id', 'scale_level', 'script_id', 'start_offset_min',
         ]);
       }
-      expect(sent).toMatchObject({ name: 'Fixture Workout', theme: '', total_minutes: 16 });
+      expect(sent).toMatchObject({ name: 'Fixture Workout', theme: '', total_minutes: 45 });
       expect(sent.blocks.map((block) => [block.start_offset_min, block.end_offset_min])).toEqual([[0, 6], [6, 11], [11, 16]]);
     }
     // The coach still reads all of it.
@@ -658,6 +658,56 @@ describe('editing a session script', () => {
     expect(lost.reason).toBeInstanceOf(SessionScriptAuthoringError);
     expect(lost.reason.message).toBe('SESSION_SCRIPT_CHANGED');
     expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1]);
+  });
+
+  test('a start that waited for an edit to finish is told the plan was replaced, not started on the old version', async () => {
+    const gym = await newGym('start-race');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const first = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, first.run_id, { runState: 'completed' });
+
+    // An edit of this delivered plan, held open at the point where it has
+    // locked version 1 and written version 2 but not yet committed.
+    const editor = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await editor.connect();
+    try {
+      await editor.query('BEGIN');
+      await editor.query(
+        `select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`,
+        [gym.organizationId, created.script_id],
+      );
+      await editor.query(
+        `insert into pilot.session_scripts
+           (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+         values ($1, 'scr_v2_held', $2, 2, 'Version two', $3)`,
+        [gym.organizationId, created.script_id, gym.otherCoachId],
+      );
+
+      // The other coach presses Start on version 1 while that edit is open.
+      const start = startSessionScriptRun(gym.organizationId, gym.otherCoachId, { scriptId: created.script_id }).then(
+        (run) => ({ run, error: null as unknown }),
+        (error: unknown) => ({ run: null, error }),
+      );
+      // It has to be waiting on the edit, not already answered.
+      const early = await Promise.race([start, new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+      expect(early).toBe('waiting');
+
+      await editor.query('COMMIT');
+      const outcome = await start;
+
+      expect(outcome.run).toBeNull();
+      expect((outcome.error as Error).message).toBe('SESSION_SCRIPT_SUPERSEDED');
+    } finally {
+      await editor.query('ROLLBACK').catch(() => {});
+      await editor.end();
+    }
+    // Nothing was started on the replaced version: the one run is the earlier, settled one.
+    const runs = await client.query(
+      `select run_id from pilot.session_script_runs where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, created.script_id],
+    );
+    expect(runs.rows.map((row) => row.run_id)).toEqual([first.run_id]);
   });
 
   test('a session still on the floor counts as a run: its plan is not changed under the coach', async () => {

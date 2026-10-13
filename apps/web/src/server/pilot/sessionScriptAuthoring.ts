@@ -185,7 +185,10 @@ export async function createSessionScriptFromTemplate(
         params.organizationId,
         scriptId,
         name,
-        statedTotalMinutes(blocks[blocks.length - 1].end_offset_min),
+        // The length the template states, not what the blocks add up to: the
+        // table keeps the two apart (sessionScripts.ts coveredMinutes), and a
+        // step with no minutes of its own was only given a starting figure.
+        template.duration_minutes,
         contactStructure(items),
         `Workout template: ${template.name} v${template.version}`,
         params.actorAccountId,
@@ -288,7 +291,8 @@ export async function editSessionScript(
   return withTransaction(async (client) => {
     // FOR UPDATE: two edits of one script queue here, as does a content import
     // revising it (which locks the same row) and a run being started on it
-    // (its foreign key takes a key-share lock on this row). The two questions
+    // (startSessionScriptRun share-locks this row before it asks the same
+    // question, so neither can answer from before the other committed). The two questions
     // below -- is it still the current version, has it been run -- are each
     // asked in a statement of their own AFTER the lock is held, so they see
     // what the writer this one waited for committed. Asked in the locking

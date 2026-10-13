@@ -184,6 +184,14 @@ export interface StartSessionScriptRunInput {
 // from the superseded plan. "Superseded" is derived exactly as listSessionScripts derives it (a
 // higher version exists in the lineage), so the list and this refusal cannot disagree.
 //
+// THE SCRIPT ROW IS SHARE-LOCKED FIRST, and "is it the head" is asked in a statement of its own
+// after the lock is held. A coach's edit (sessionScriptAuthoring.ts) and a content import both hold
+// that row FOR UPDATE while they write the next version. Asked unlocked, or in the locking
+// statement itself, the question was answered from before the wait: the start saw v1 as the head,
+// its insert queued behind the edit, and it then committed a run on the version just replaced
+// (Codex on #1560). A share lock lets any number of coaches start the same plan at once; it only
+// waits for a writer of the next version, and makes that writer wait for this start.
+//
 // This is a START check only. A run already live on the older version keeps its pinned script_id
 // and script_version: cursor, pause, resume and finish below never consult the lineage, because
 // the coach on the floor is mid-session on the plan they started, and switching plans under them
@@ -198,25 +206,26 @@ export async function startSessionScriptRun(
   }
   const scriptId = input.scriptId;
   return withTransaction(async (client) => {
-    const script = await client.query<{ script_id: string; version: number; is_head: boolean }>(
-      `select s.script_id, s.version,
-              not exists (
-                select 1
-                  from pilot.session_scripts newer
-                 where newer.organization_id = s.organization_id
-                   and newer.lineage_id = s.lineage_id
-                   and newer.version > s.version
-              ) as is_head
-         from pilot.session_scripts s
-        where s.organization_id = $1 and s.script_id = $2`,
+    const script = await client.query<{ script_id: string; version: number; lineage_id: string }>(
+      `select script_id, version, lineage_id
+         from pilot.session_scripts
+        where organization_id = $1 and script_id = $2
+          for share`,
       [organizationId, scriptId],
     );
     if (script.rowCount === 0) {
       throw new SessionScriptRunError('SESSION_SCRIPT_NOT_FOUND', 404);
     }
+    const newer = await client.query(
+      `select 1
+         from pilot.session_scripts
+        where organization_id = $1 and lineage_id = $2 and version > $3
+        limit 1`,
+      [organizationId, script.rows[0].lineage_id, script.rows[0].version],
+    );
     // 409, not 404: the script exists and is readable, it is just no longer the one to run. Checked
     // before the blocks, because the remedy (start the newer version) is the same either way.
-    if (!script.rows[0].is_head) {
+    if ((newer.rowCount ?? 0) > 0) {
       throw new SessionScriptRunError('SESSION_SCRIPT_SUPERSEDED', 409);
     }
 
