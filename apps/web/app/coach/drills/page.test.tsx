@@ -133,6 +133,8 @@ const NOT_ADOPTED: Lifecycle = { state: 'available', operational_drill_id: null 
 // The adopted lineage's HEAD. Deliberately not the id of any row the page can
 // see, so a Retire or Restore that sends anything else is caught.
 const OPERATIONAL_HEAD = 'operational-head-7';
+// The gym's own drill a newer-version card names; it is in the operational list while it runs.
+const operationalHead = { ...authored, drill_id: OPERATIONAL_HEAD, name: 'Seeded jab return (gym copy)', active: true };
 
 type ReferenceRow = typeof reference;
 
@@ -203,6 +205,12 @@ function routes(options: RouteOptions = {}) {
       options.onPromote?.();
       if (options.promote) return options.promote();
       const { reference_drill_id: referenceDrillId } = JSON.parse(String(init?.body)) as { reference_drill_id: string };
+      const earlier = lifecycle?.[referenceDrillId];
+      if (earlier?.state === 'newer_version_available') {
+        lifecycle = { ...lifecycle, [referenceDrillId]: { state: 'operational', operational_drill_id: earlier.operational_drill_id } };
+        if (options.answerAfterCommit) return options.answerAfterCommit();
+        return jsonResponse({ ok: true, drill: promoted, updated_from_drill_id: earlier.operational_drill_id }, true, 200);
+      }
       operational = [...operational, promoted];
       lifecycle = { ...lifecycle, [referenceDrillId]: { state: 'operational', operational_drill_id: promoted.drill_id } };
       if (options.answerAfterCommit) return options.answerAfterCommit();
@@ -237,6 +245,10 @@ function routes(options: RouteOptions = {}) {
         next[id] = entry.operational_drill_id === body.drill_id ? { ...entry, state } : entry;
       }
       lifecycle = next;
+      // The operational list carries the gym's running drills, as the route does.
+      operational = body.active
+        ? (operational.some((d) => (d as { drill_id: string }).drill_id === body.drill_id) ? operational : [...operational, { ...operationalHead, drill_id: body.drill_id }])
+        : operational.filter((d) => (d as { drill_id: string }).drill_id !== body.drill_id);
       if (options.answerAfterCommit) return options.answerAfterCommit();
       return jsonResponse({ item: { ...promoted, drill_id: body.drill_id, active: body.active } });
     }
@@ -372,7 +384,11 @@ const RETIRED_WITHDRAWN_NOTICE =
   'Retired. It can no longer be newly assigned. Its reference has been withdrawn, so it cannot be restored.';
 const NEWER_VERSION_LABEL = "Newer version of this gym's drill";
 const NEWER_VERSION_EXPLANATION =
-  "This gym runs an earlier version of this drill. The gym's drill moves to this version when a workout template that uses this version is issued.";
+  "This gym runs an earlier version of this drill. Updating moves the gym's drill to this version; its earlier versions are kept in its history.";
+// The sentence that stood in for the Update button before it was built (#1471 P10-04B).
+const BUTTON_NOT_BUILT = "The gym's drill moves to this version when a workout template that uses this version is issued.";
+const UPDATE_NAME = 'Update to newer version: Seeded jab return';
+const UPDATED_NOTICE = "Updated. The gym's drill now runs this version; its earlier versions are kept in its history.";
 const NEWER_VERSION_RETIRED_LABEL = 'Newer version of a drill this gym retired';
 const NEWER_VERSION_RESTORE_CONSEQUENCE =
   'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Once it is back, it moves to this version when a workout template that uses this version is issued.';
@@ -837,13 +853,14 @@ describe('reference lifecycle', () => {
     }
   });
 
-  it("labels the current version of a drill this gym adopted earlier, and offers no Promote on it", async () => {
+  it("labels the current version of a drill this gym adopted earlier, and offers Update rather than Promote on it", async () => {
     // Owner ruling R2: a revised drill is v2 and the gym's drill keeps pointing
     // at v1. The browse lists current versions only, so v2 is the card the
-    // coach sees; it must say why it cannot be promoted, and offer nothing the
-    // promote route would refuse.
+    // coach sees; it offers the update the promote route makes (D1), and no
+    // Promote, Retire or Restore.
     const fetchMock = routes({
       lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+      operational: [authored, operationalHead],
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
@@ -854,8 +871,97 @@ describe('reference lifecycle', () => {
     const detail = await openReference();
     expect(within(detail).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
     expect(within(detail).getByText(NEWER_VERSION_EXPLANATION)).toBeInTheDocument();
+    expect(detail).not.toHaveTextContent(BUTTON_NOT_BUILT);
+    expect(within(detail).getByRole('button', { name: UPDATE_NAME })).toHaveTextContent('Update to newer version');
     expectNoLifecycleAction(detail);
     expect(writes(fetchMock)).toEqual([]);
+  });
+
+  it('updates the gym drill to the newer version through the promote route, and reads the library again', async () => {
+    const fetchMock = routes({
+      lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+      operational: [authored, operationalHead],
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    const libraryReadsBefore = readsOf(fetchMock, '/api/pilot/drill-library');
+    const update = within(detail).getByRole('button', { name: UPDATE_NAME });
+    fireEvent.click(update);
+    expect(update).toBeDisabled();
+
+    expect(await screen.findByText(UPDATED_NOTICE)).toHaveAttribute('role', 'status');
+    expect(writes(fetchMock)).toEqual([
+      { method: 'POST', url: '/api/pilot/drills/promote', body: { reference_drill_id: reference.drill_id } },
+    ]);
+    expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
+    // The re-read is the server's answer: the gym's drill now runs this version.
+    expect(within(detail).getByText('Operational in this gym')).toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: UPDATE_NAME })).not.toBeInTheDocument();
+  });
+
+  it('a newer version that is a draft this gym has not floor-tested offers the mark, not Update', async () => {
+    // The promote route checks adoption readiness before it updates in place.
+    global.fetch = routes({
+      lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+      operational: [authored, operationalHead],
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+    }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    expect(within(detail).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
+    expect(within(detail).getByText('Not ready to adopt')).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Mark floor-tested' })).toBeEnabled();
+    expect(within(detail).queryByRole('button', { name: UPDATE_NAME })).not.toBeInTheDocument();
+  });
+
+  it('offers no Update when the gym no longer runs its drill (retired, its pinned reference withdrawn)', async () => {
+    // The server refuses the update on a retired drill (D3); the gym's drill is not in the operational list.
+    global.fetch = routes({
+      lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+      operational: [authored],
+    }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    expect(within(detail).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: UPDATE_NAME })).not.toBeInTheDocument();
+    expect(within(detail).queryByText(NEWER_VERSION_EXPLANATION)).not.toBeInTheDocument();
+  });
+
+  it("shows the page's outcome wording when the update is refused", async () => {
+    const fetchMock = routes({
+      lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+      operational: [authored, operationalHead],
+      promote: () => jsonResponse({ error: 'This drill already has a newer version.', code: 'DRILL_VERSION_CONFLICT' }, false, 409),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    fireEvent.click(within(detail).getByRole('button', { name: UPDATE_NAME }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('This drill already has a newer version.');
+    expect(alert).toHaveTextContent(CONFLICT_REREAD);
+  });
+
+  it.each([
+    ['available', NOT_ADOPTED],
+    ['operational', { state: 'operational', operational_drill_id: OPERATIONAL_HEAD }],
+    ['retired', { state: 'retired', operational_drill_id: OPERATIONAL_HEAD }],
+    ['newer_version_retired', { state: 'newer_version_retired', operational_drill_id: OPERATIONAL_HEAD }],
+  ] as const)('offers no Update on a %s card', async (_state, entry) => {
+    global.fetch = routes({ lifecycle: { [reference.drill_id]: entry as Lifecycle } }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    await within(detail).findByRole('button', { name: /^(Promote|Retire|Restore)$/ });
+    expect(within(detail).queryByRole('button', { name: /newer version/i })).not.toBeInTheDocument();
   });
 
   it("restores the gym's retired drill from the current version's card, by the drill the server named", async () => {
@@ -888,9 +994,10 @@ describe('reference lifecycle', () => {
       { method: 'PATCH', url: '/api/pilot/drills', body: { drill_id: OPERATIONAL_HEAD, active: true } },
     ]);
     // Running again, the gym's drill is still not this version: the reloaded
-    // state says so and offers nothing.
+    // state says so and offers the update to it, nothing else.
     expect(within(detail).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
     expect(within(detail).getByText(NEWER_VERSION_EXPLANATION)).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: UPDATE_NAME })).toBeInTheDocument();
     expectNoLifecycleAction(detail);
   });
 
@@ -2177,6 +2284,54 @@ describe('versions and proposals', () => {
 
     expect(within(panel).getAllByRole('button', { name: /^Adopt the proposal/ })).toHaveLength(2);
     expect(within(panel).getAllByRole('button', { name: /^Decline the proposal/ })).toHaveLength(2);
+  });
+
+  it.each(['coach', 'organization_admin', 'admin'] as const)('offers %s Reinstate on an earlier version, never on the current one', async (role) => {
+    mockSessionRole = role;
+    global.fetch = routes({ proposals, versions: [v1, v2] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions and proposals: Corner exit' }));
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    await within(panel).findByText('Why p-new.');
+
+    expect(within(panel).getAllByRole('button', { name: /^Reinstate/ }).map((button) => button.textContent)).toEqual(['Reinstate version 1']);
+  });
+
+  it.each(['athlete', 'platform_owner'] as const)('offers %s no Reinstate', async (role) => {
+    mockSessionRole = role;
+    global.fetch = routes({ proposals, versions: [v1, v2] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions and proposals: Corner exit' }));
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    await within(panel).findByText('Why p-new.');
+
+    expect(within(panel).queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
+  });
+
+  it('reinstates that version by its own drill id, then reads the panel and the drills again', async () => {
+    mockSessionRole = 'coach';
+    const fetchMock = routes({
+      proposals,
+      versions: [v1, v2],
+      patch: () => jsonResponse({ ok: true, organization_id: 'org-1', drill: v2, reinstated_from_drill_id: 'corner-v1', previous_drill_id: 'authored-1' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions and proposals: Corner exit' }));
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    await within(panel).findByText('Why p-new.');
+    const drillReadsBefore = readsOf(fetchMock, '/api/pilot/drills');
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Reinstate version 1' }));
+
+    expect(await within(panel).findByText(/^Reinstated version 1 as /)).toBeInTheDocument();
+    expect(writes(fetchMock)).toEqual([
+      { method: 'PATCH', url: '/api/pilot/drills', body: { drill_id: 'corner-v1', reinstate: true } },
+    ]);
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drills')).toBe(drillReadsBefore + 1));
   });
 
   it('says an empty queue is empty, and a failed queue read is a failure', async () => {

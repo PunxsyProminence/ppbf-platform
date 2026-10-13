@@ -60,12 +60,11 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
   newer_version_retired: 'Newer version of a drill this gym retired',
 };
 
-// What a coach reads on that drill instead of a Promote button: what is true
-// today. The server updates the gym's drill in place (OD-2026-10-08-008 D1);
-// from this page that happens when a template using this version is issued.
-// The button is the coach-screen PR's. Wording PROPOSED for Jason's look.
+// What Update to newer version does, before it is taken. The promote route
+// updates the gym's drill in place (OD-2026-10-08-008 D1): a new version of the
+// same drill, the earlier versions kept as its history.
 const NEWER_VERSION_EXPLANATION =
-  "This gym runs an earlier version of this drill. The gym's drill moves to this version when a workout template that uses this version is issued.";
+  "This gym runs an earlier version of this drill. Updating moves the gym's drill to this version; its earlier versions are kept in its history.";
 
 // What Restore does on the newer version's card, before it is taken. It brings
 // back the gym's OWN drill at the version the gym adopted -- not this version --
@@ -140,8 +139,10 @@ const NO_FILTERS: Record<FilterKey, string> = {
 // as event handlers.
 function ReferenceActions({
   referenceDrillId,
+  name,
   state,
   detail,
+  gymRunsDrill,
   floorTested,
   promotingReferenceId,
   changingLifecycle,
@@ -152,8 +153,12 @@ function ReferenceActions({
   onMarkFloorTested,
 }: {
   referenceDrillId: string;
+  /** The drill's name, so a control's accessible name says which drill it acts on. */
+  name: string;
   state: ReferenceLifecycle | undefined;
   detail: DrillWithDetail | null;
+  /** The gym runs this drill today: its operational version is in the library and active. */
+  gymRunsDrill: boolean;
   /** This gym's current floor-tested mark for the drill, if a coach made one. */
   floorTested: DrillFloorValidation | undefined;
   promotingReferenceId: string;
@@ -174,35 +179,39 @@ function ReferenceActions({
     return <p className="t-label text-[color:var(--bone-300)]">This drill&apos;s status in this gym could not be read.</p>;
   }
   const label = <p className="t-label text-[color:var(--bone-300)]">{LIFECYCLE_LABELS[state.state]}</p>;
+  // The promote route checks adoption readiness before it adopts OR updates in
+  // place, so both the available card and the newer-version card show what is
+  // missing, and the floor-tested mark, instead of a button it would refuse.
+  const readiness = detail ? adoptionReadiness({ ...detail, floor_tested_by_this_gym: Boolean(floorTested) }) : null;
+  // The one control ruling 3 needs: a draft this gym has not floor-tested
+  // offers the mark here, where the coach can read what they are vouching
+  // for. It records who and when; it adopts nothing.
+  const markControl = detail && requiresFloorValidation(detail.field_provenance) && !floorTested
+    ? (
+      <button
+        type="button"
+        id={`floor-tested-${referenceDrillId}`}
+        onClick={() => onMarkFloorTested(referenceDrillId)}
+        disabled={busy}
+        className="btn"
+      >
+        {markingFloorTested ? 'Marking...' : 'Mark floor-tested'}
+      </button>
+    )
+    : null;
+  const notReady = readiness && !readiness.ready
+    ? (
+      <div className="basis-full space-y-[var(--s2)]">
+        <p className="t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
+        <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+          {readiness.missing.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+        {markControl}
+      </div>
+    )
+    : null;
   if (state.state === 'available') {
-    const readiness = detail ? adoptionReadiness({ ...detail, floor_tested_by_this_gym: Boolean(floorTested) }) : null;
-    // The one control ruling 3 needs: a draft this gym has not floor-tested
-    // offers the mark here, where the coach can read what they are vouching
-    // for. It records who and when; it adopts nothing.
-    const markControl = detail && requiresFloorValidation(detail.field_provenance) && !floorTested
-      ? (
-        <button
-          type="button"
-          id={`floor-tested-${referenceDrillId}`}
-          onClick={() => onMarkFloorTested(referenceDrillId)}
-          disabled={busy}
-          className="btn"
-        >
-          {markingFloorTested ? 'Marking...' : 'Mark floor-tested'}
-        </button>
-      )
-      : null;
-    if (readiness && !readiness.ready) {
-      return (
-        <div className="basis-full space-y-[var(--s2)]">
-          <p className="t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
-          <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-            {readiness.missing.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-          {markControl}
-        </div>
-      );
-    }
+    if (notReady) return notReady;
     return (
       <button
         type="button"
@@ -238,12 +247,34 @@ function ReferenceActions({
       </>
     );
   }
-  // No Promote: the server refuses a separate promotion of a newer version of
-  // a drill this gym already has, so the page says why instead of offering it.
+  // The promote route, given this newer version, updates the gym's drill to it
+  // in place (D1) rather than adopting a second drill -- so the same request,
+  // named for what it does here.
+  // Offered only while the gym runs the drill: a retired gym drill is refused
+  // the update in place (D3, "Restore the drill first").
   if (state.state === 'newer_version_available') {
+    if (!gymRunsDrill) return label;
+    if (notReady) {
+      return (
+        <>
+          {label}
+          {notReady}
+        </>
+      );
+    }
     return (
       <>
         {label}
+        <button
+          type="button"
+          id={`lifecycle-${referenceDrillId}`}
+          onClick={() => onPromote(referenceDrillId)}
+          disabled={busy}
+          className="btn"
+          aria-label={`Update to newer version: ${name}`}
+        >
+          {promotingReferenceId === referenceDrillId ? 'Updating...' : 'Update to newer version'}
+        </button>
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_EXPLANATION}</p>
       </>
     );
@@ -343,6 +374,8 @@ function CoachDrillLibrary() {
   // the review route admits; everyone here reads the same history and queue.
   const pilotSession = usePilotSession();
   const canReview = isOrganizationAdminSessionRole(pilotSession.role);
+  // Reinstate is a drill edit, and the drills route's PATCH admits coaches too.
+  const canReinstate = canReview || pilotSession.role === 'coach';
   const [lineageDrillId, setLineageDrillId] = useState('');
   const [waiting, setWaiting] = useState<DrillChangeProposalListResponse['items']>([]);
   const [waitingError, setWaitingError] = useState('');
@@ -655,7 +688,7 @@ function CoachDrillLibrary() {
       });
       status = response.status;
 
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; missing?: string[] };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; missing?: string[]; updated_from_drill_id?: string };
       if (!response.ok) {
         const missing = Array.isArray(payload.missing) && payload.missing.length > 0 ? ` ${payload.missing.join(' ')}` : '';
         throw new Error(`${payload.error || 'The drill could not be promoted.'}${missing}`);
@@ -665,7 +698,10 @@ function CoachDrillLibrary() {
       // gym has adopted, and the lifecycle shown should be its answer, not this
       // component's optimism.
       await Promise.all([load(), loadReferenceLibrary()]);
-      setPromoteNotice('Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
+      // The route says which it did: updated the gym's drill in place, or adopted a new one.
+      setPromoteNotice(payload.updated_from_drill_id
+        ? "Updated. The gym's drill now runs this version; its earlier versions are kept in its history."
+        : 'Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
     } catch (error) {
       const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
       setActionOutcome(outcome);
@@ -980,8 +1016,10 @@ function CoachDrillLibrary() {
                   actions={(
                     <ReferenceActions
                       referenceDrillId={openReference.id}
+                      name={openReference.name}
                       state={lifecycle[openReference.id]}
                       detail={openReferenceDetail}
+                      gymRunsDrill={drills.some((d) => d.drill_id === lifecycle[openReference.id]?.operational_drill_id && d.active !== false)}
                       floorTested={floorTested[openReference.id]}
                       promotingReferenceId={promotingReferenceId}
                       changingLifecycle={changingLifecycle}
@@ -1157,6 +1195,7 @@ function CoachDrillLibrary() {
               key={lineageDrillId}
               drillId={lineageDrillId}
               canReview={canReview}
+              canReinstate={canReinstate}
               onClose={() => setLineageDrillId('')}
               onChanged={() => void Promise.all([load(), loadWaiting()])}
             />
