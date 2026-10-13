@@ -276,3 +276,34 @@ test('an unknown action is a 400', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   expect((await PATCH(bodyRequest('PATCH', { action: 'delete', execution_id: 'ex-1' }))).status).toBe(400);
 });
+
+// Lane L2, item two: the version the screen was showing reaches the module on
+// all three writes; a caller that sends none passes none.
+test('the version the screen loaded is handed to record, close and correct; without one, none is passed', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  const item = { execution_id: 'ex-1', lineage_id: 'ex-1', version: 1, adherence: 'unknown' };
+  mockRecord.mockResolvedValue(item);
+  mockClose.mockResolvedValue(item);
+  mockCorrect.mockResolvedValue(item);
+
+  const bodies = {
+    record: { action: 'record', execution_id: 'ex-1', notes: 'n' },
+    close: { action: 'close', execution_id: 'ex-1', outcome: 'completed' },
+    correct: { action: 'correct', execution_id: 'ex-1', correction_reason: 'miscounted rounds' },
+  };
+  const mocks = { record: mockRecord, close: mockClose, correct: mockCorrect };
+
+  for (const action of ['record', 'close', 'correct'] as const) {
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: ' 7001 ' }))).status).toBe(200);
+    expect(mocks[action]).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRowVersion: '7001' }));
+
+    expect((await PATCH(bodyRequest('PATCH', bodies[action]))).status).toBe(200);
+    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+
+    // Not a string, or blank: treated as not sent, never as a version.
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: 7001 }))).status).toBe(200);
+    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: '  ' }))).status).toBe(200);
+    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+  }
+});

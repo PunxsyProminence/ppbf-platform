@@ -150,12 +150,19 @@ export async function PATCH(request: NextRequest) {
     if (!target) return hiddenNotFound();
     await assertActorCanAccessAthlete(principal, target.athlete_id);
 
+    // The version of the record the screen was showing when its form opened
+    // (the row_version the GET handed out). Sent, a save against any other
+    // version is refused with the reason; a caller that sends none is judged
+    // on the record's state alone.
+    const expectedRowVersion = optionalString(body.expected_row_version)?.trim() || undefined;
+
     // One act per call: record facts, close, or correct.
     if (body.action === 'record') {
       const item = await recordExecutionFacts({
         ...parseFacts(body),
         organizationId: principal.organizationId,
         executionId,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, { action: 'record' });
@@ -178,6 +185,7 @@ export async function PATCH(request: NextRequest) {
         outcome,
         stopChangeReason,
         actualEnd: optionalString(body.actual_end) || null,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, { action: 'close', outcome, adherence: item.adherence });
@@ -202,6 +210,7 @@ export async function PATCH(request: NextRequest) {
         stopChangeReason: optionalString(body.stop_change_reason),
         actualEnd: optionalString(body.actual_end) || null,
         correctedByAccountId: principal.accountId,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, {

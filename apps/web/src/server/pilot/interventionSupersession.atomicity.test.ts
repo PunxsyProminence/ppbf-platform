@@ -476,7 +476,7 @@ describe('reviseProtocol', () => {
     expect(store.intervention_protocols).toHaveLength(1);
   });
 
-  test('a second revision that read the same head loses cleanly: null, and nothing stranded', async () => {
+  test('a second revision that read the same head loses cleanly: told the record changed, and nothing stranded', async () => {
     seedProtocol();
     const headAsBothWritersReadIt = { ...store.intervention_protocols[0] };
 
@@ -487,12 +487,11 @@ describe('reviseProtocol', () => {
     // still believes proto-1 is the active head.
     staleRead = { pattern: /from pilot\.intervention_protocols p/, rows: [headAsBothWritersReadIt] };
 
-    const second = await reviseProtocol({ ...revision, title: 'A different second opinion' });
-
     // Unguarded, the second stamp matched anyway and the second raise hit the
     // one-active-head index: an opaque 23505 for the caller, and a successor
     // row left behind that nothing could raise or remove.
-    expect(second).toBeNull();
+    await expect(reviseProtocol({ ...revision, title: 'A different second opinion' }))
+      .rejects.toThrow(RECORD_CHANGED_MESSAGE);
     expect(liveProtocols()).toHaveLength(1);
     expect(liveProtocols()[0].title).toBe('Front-hand return under fatigue, v2');
     expect(store.intervention_protocols).toHaveLength(2);

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
 import { getProtocol } from './interventionProtocols';
+import { recordChanged } from './interventionRecordChanged';
+
+export { RECORD_CHANGED_CODE, RECORD_CHANGED_MESSAGE, recordChanged } from './interventionRecordChanged';
 
 // Intervention executions (register module 026 slice 2) -- what ACTUALLY
 // happened when a protocol was run. A human decision is not evidence an
@@ -78,6 +80,10 @@ export interface InterventionExecutionRow {
   notes: string;
   correction_reason: string;
   created_at: string;
+  /** The row's version, opaque to the caller: a screen hands back the one it
+   * loaded with its save (expectedRowVersion below), and a save against any
+   * other version is refused. It is Postgres's xmin -- see ROW_VERSION_SQL. */
+  row_version: string;
 }
 
 const FIELDS = `e.organization_id, e.execution_id, e.lineage_id, e.version,
@@ -88,34 +94,21 @@ const FIELDS = `e.organization_id, e.execution_id, e.lineage_id, e.version,
   e.planned_exposure, e.planned_task_context, e.actual_exposure,
   e.trained_context, e.task_constraint, e.partner_context, e.adherence,
   e.deviations, e.deviation_reason, e.stop_change_reason, e.notes,
-  e.correction_reason, e.created_at`;
-
-/**
- * What a coach is told when the record they were saving to is not the record
- * they loaded: it was closed, corrected or reviewed first. Their own write is
- * refused whole, and the words say what to do next. They do not say WHO
- * changed it -- the same refusal answers a coach's own second tab.
- *
- * Thrown only AFTER the row was found in the caller's organization, and every
- * route reaches these functions after authorizing the caller on that row's
- * athlete, so it tells nobody that a record exists who could not already read
- * it. A record that is not there at all stays the null the routes answer as a
- * hidden not-found.
- */
-export const RECORD_CHANGED_MESSAGE =
-  'This record has changed since you opened it, so this was not saved. '
-  + 'Reload to see it as it stands now, then make your change again.';
-export const RECORD_CHANGED_CODE = 'INTERVENTION_RECORD_CHANGED';
-
-export function recordChanged(): ConflictError {
-  return new ConflictError(RECORD_CHANGED_MESSAGE, RECORD_CHANGED_CODE);
-}
+  e.correction_reason, e.created_at, e.xmin::text as row_version`;
 
 const FROM = `from pilot.intervention_executions e
   left join pilot.athletes a
     on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id
   left join pilot.intervention_protocols p
     on p.organization_id = e.organization_id and p.protocol_id = e.protocol_id`;
+
+/** The version of the record the caller's screen was showing when its form
+ * was opened. Given, the write goes through only against that version; left
+ * out (a caller with no screen), the write is judged on the record's state
+ * alone, as before. */
+export interface ExpectedVersion {
+  expectedRowVersion?: string;
+}
 
 export interface ExecutionFactsInput {
   actualExposure?: Record<string, number>;
@@ -250,8 +243,9 @@ function factsParams(input: ExecutionFactsInput & { organizationId: string; exec
 
 /** Why a write to work in progress matched no row. No such record is the null
  * the routes hide as not-found. A record that IS there was closed or corrected
- * first, and the coach is told so instead of "Not found". Read after the
- * refused write only to choose between those two answers. */
+ * first, or is not the version the caller's screen was showing, and the coach
+ * is told so instead of "Not found". Read after the refused write only to
+ * choose between those two answers. */
 async function notInProgress(organizationId: string, executionId: string): Promise<null> {
   const standing = await queryOne<{ status: ExecutionStatus }>(
     `select status from pilot.intervention_executions
@@ -263,7 +257,7 @@ async function notInProgress(organizationId: string, executionId: string): Promi
 }
 
 /** Updates ACTUAL facts on an in-progress execution. */
-export async function recordExecutionFacts(input: ExecutionFactsInput & {
+export async function recordExecutionFacts(input: ExecutionFactsInput & ExpectedVersion & {
   organizationId: string;
   executionId: string;
 }): Promise<InterventionExecutionRow | null> {
@@ -271,8 +265,9 @@ export async function recordExecutionFacts(input: ExecutionFactsInput & {
     `update pilot.intervention_executions set
        ${FACTS_SET}
      where organization_id = $1 and execution_id = $2 and status = 'in_progress'
+       and ($12::text is null or xmin::text = $12)
      returning execution_id`,
-    factsParams(input),
+    [...factsParams(input), input.expectedRowVersion ?? null],
   );
   if (!row) return notInProgress(input.organizationId, input.executionId);
   return getExecution(input.organizationId, input.executionId);
@@ -286,7 +281,7 @@ export async function recordExecutionFacts(input: ExecutionFactsInput & {
  * guarded on 'in_progress', so a correction landing between them kept the
  * close-out's facts and refused its status: half a write. One UPDATE either
  * closes the record with its facts or changes nothing. */
-export async function closeExecution(input: ExecutionFactsInput & {
+export async function closeExecution(input: ExecutionFactsInput & ExpectedVersion & {
   organizationId: string;
   executionId: string;
   outcome: 'completed' | 'stopped';
@@ -300,12 +295,14 @@ export async function closeExecution(input: ExecutionFactsInput & {
        stop_change_reason = coalesce($13, stop_change_reason),
        actual_end = coalesce($14, actual_end, now())
      where organization_id = $1 and execution_id = $2 and status = 'in_progress'
+       and ($15::text is null or xmin::text = $15)
      returning execution_id`,
     [
       ...factsParams(input),
       input.outcome,
       input.stopChangeReason ?? null,
       input.actualEnd ?? null,
+      input.expectedRowVersion ?? null,
     ],
   );
   if (!row) return notInProgress(input.organizationId, input.executionId);
@@ -330,7 +327,7 @@ interface ExecutionRowVersion {
  * facts are re-stated; identity, links, and the planned snapshot are
  * carried from the original untouched, and the evidence links and outcome
  * reviews attached to the original move to the new version with it. */
-export async function correctExecution(input: ExecutionFactsInput & {
+export async function correctExecution(input: ExecutionFactsInput & ExpectedVersion & {
   organizationId: string;
   executionId: string;
   correctionReason: string;
@@ -396,7 +393,10 @@ export async function correctExecution(input: ExecutionFactsInput & {
       [input.organizationId, input.executionId],
     );
     const current = held.rows[0];
-    if (!current || current.row_version !== seen.row_version) throw recordChanged();
+    // The version the coach's screen was showing, when it said; otherwise the
+    // version this request read a moment ago.
+    const expected = input.expectedRowVersion ?? seen.row_version;
+    if (!current || current.row_version !== expected) throw recordChanged();
     const finalStatus = input.outcome ?? current.status;
 
     await client.query(

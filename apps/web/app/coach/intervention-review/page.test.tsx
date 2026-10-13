@@ -436,3 +436,59 @@ test('an empty history list shows no "Earlier verdicts" section and reads as not
   expect(await screen.findByText('Not yet reviewed by a human.')).toBeTruthy();
   expect(screen.queryByText('Earlier verdicts')).toBeNull();
 });
+
+// Lane L2, item two: a review replaces whatever verdict stands. The verdict
+// the screen was showing goes with it, so the server can refuse to replace one
+// this reviewer has not seen.
+describe('the verdict the screen was showing travels with the review', () => {
+  async function reviewFrom(item: typeof CHAIN_ITEM | Record<string, unknown>, button: string) {
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/intervention-review') && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [item] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: button }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), {
+        target: { value: 'held output through the third' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+    return posts;
+  }
+
+  test('a first review says the screen showed no verdict', async () => {
+    const posts = await reviewFrom(CHAIN_ITEM, 'Review outcome');
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ action: 'review_outcome', execution_id: 'ex-1' });
+    expect(posts[0]).toHaveProperty('expected_review_id', null);
+  });
+
+  test('a re-review names the verdict it replaces', async () => {
+    const reviewed = {
+      ...CHAIN_ITEM,
+      review: {
+        review_id: 'rev-7', performance_result: 'improved', performance_notes: 'held through four rounds',
+        hypothesis_result: 'supported', learning_signal: 'prior_belief_strengthened', learning_notes: '',
+        reviewed_at: '2026-10-10T15:00:00.000Z',
+      },
+    };
+    const posts = await reviewFrom(reviewed, 'Re-review (supersedes)');
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toHaveProperty('expected_review_id', 'rev-7');
+  });
+});

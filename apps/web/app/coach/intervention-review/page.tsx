@@ -115,6 +115,10 @@ export default function InterventionReviewPage() {
   const [linkingFor, setLinkingFor] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState({ evidence_role: 'baseline', source_kind: 'training_attempt', source_id: '', note: '' });
   const [reviewingFor, setReviewingFor] = useState<string | null>(null);
+  // The verdict this screen was showing when the review form opened (null:
+  // none). It goes back with the review, so a verdict someone else recorded
+  // since is not replaced unseen.
+  const [reviewingOver, setReviewingOver] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({
     performance_result: 'unknown', performance_notes: '',
     hypothesis_result: 'unresolved', learning_signal: 'unresolved', learning_notes: '',
@@ -231,6 +235,7 @@ export default function InterventionReviewPage() {
     const ok = await post({
       action: 'review_outcome',
       execution_id: executionId,
+      expected_review_id: reviewingOver,
       ...reviewForm,
     }, 'Unable to record the review.');
     if (ok) {
@@ -418,7 +423,11 @@ export default function InterventionReviewPage() {
                       )}
                       {(execution.status === 'completed' || execution.status === 'stopped') && reviewingFor !== execution.execution_id && (
                         <button type="button" className="btn btn--ghost" disabled={busy}
-                          onClick={() => { setReviewingFor(execution.execution_id); setLinkingFor(null); }}>
+                          onClick={() => {
+                            setReviewingFor(execution.execution_id);
+                            setReviewingOver(review?.review_id ?? null);
+                            setLinkingFor(null);
+                          }}>
                           {review ? 'Re-review (supersedes)' : 'Review outcome'}
                         </button>
                       )}
