@@ -63,6 +63,17 @@ async function assertCanPlaceOnPlan(
   return 'ok';
 }
 
+/* A floor plan is for a session that runs; a cancelled class does not
+   (#1536, Overwatch on #1550). No plan is made for one, and a plan tied to one
+   takes no groups or placements. Only the class's status is checked here. */
+async function refuseCancelledClass(organizationId: string, classId: string | null | undefined): Promise<void> {
+  if (!classId) return;
+  const classItem = await getSchedulerClassById(organizationId, classId);
+  if (classItem?.status === 'cancelled') {
+    throw new ValidationError('This class was cancelled.');
+  }
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
@@ -103,10 +114,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const classId = text(body.class_id)?.trim() || null;
+      await refuseCancelledClass(principal.organizationId, classId);
+
       const item = await createPlan({
         organizationId: principal.organizationId,
         planOn,
-        classId: text(body.class_id)?.trim() || null,
+        classId,
         title: text(body.title),
         rotationMinutes: (rotationMinutes as number | undefined) ?? null,
         notes: text(body.notes),
@@ -122,6 +136,9 @@ export async function POST(request: NextRequest) {
       const groupName = text(body.group_name)?.trim();
       if (!planId) throw new ValidationError('Missing plan_id.');
       if (!groupName) throw new ValidationError('Missing group_name.');
+      const plan = await getPlan(principal.organizationId, planId);
+      if (!plan) return hiddenNotFound();
+      await refuseCancelledClass(principal.organizationId, plan.class_id);
 
       const item = await addGroup({
         organizationId: principal.organizationId,
@@ -144,6 +161,7 @@ export async function POST(request: NextRequest) {
         throw new ValidationError('place needs plan_id, group_id, and athlete_id.');
       }
       if ((await assertCanPlaceOnPlan(principal, planId, athleteId)) === 'plan_missing') return hiddenNotFound();
+      await refuseCancelledClass(principal.organizationId, (await getPlan(principal.organizationId, planId))?.class_id);
 
       const groups = await placeAthlete({
         organizationId: principal.organizationId,
@@ -160,6 +178,7 @@ export async function POST(request: NextRequest) {
       const athleteId = text(body.athlete_id)?.trim();
       if (!planId || !athleteId) throw new ValidationError('remove needs plan_id and athlete_id.');
       if ((await assertCanPlaceOnPlan(principal, planId, athleteId)) === 'plan_missing') return hiddenNotFound();
+      await refuseCancelledClass(principal.organizationId, (await getPlan(principal.organizationId, planId))?.class_id);
 
       const groups = await removeAthlete({
         organizationId: principal.organizationId,

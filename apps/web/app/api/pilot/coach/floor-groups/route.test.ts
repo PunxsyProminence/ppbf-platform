@@ -238,7 +238,10 @@ describe('a plan tied to a class the coach runs', () => {
       action: 'place', plan_id: 'p-cls', group_id: 'g-1', athlete_id: 'ath-registered',
     }))).status).toBe(200);
     expect(mockAccess).toHaveBeenCalledTimes(1);
-    expect(mockGetClass).not.toHaveBeenCalled();
+    // The class rule's register read is what widens reach, and it is never
+    // made for an admin. (The class itself is read once, for its cancelled
+    // status, #1536 -- that decides nothing about reach.)
+    expect(mockRegistered).not.toHaveBeenCalled();
   });
 
   test('an unknown plan answers the hidden 404 before any athlete check, on place and on remove', async () => {
@@ -252,5 +255,42 @@ describe('a plan tied to a class the coach runs', () => {
     expect(mockAccess).not.toHaveBeenCalled();
     expect(mockPlace).not.toHaveBeenCalled();
     expect(mockRemove).not.toHaveBeenCalled();
+  });
+});
+
+/* A CANCELLED CLASS GETS NO FLOOR (#1536; Codex P2 on #1550, Overwatch:
+   "the floor-groups route may join your allowlist for the status check
+   only"). No plan is made for one; a plan tied to one takes no groups and no
+   placements. */
+describe('a cancelled class', () => {
+  const cancelledPlan = { plan_id: 'p-gone', plan_on: '2026-08-16', class_id: 'cls-gone' };
+  const cancelledClass = { class_id: 'cls-gone', coach_account_id: 'acct-1', scheduled_by_account_id: 'acct-1', covering_coach_account_id: null, status: 'cancelled' };
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockGetPlan.mockResolvedValue(cancelledPlan);
+    mockGetClass.mockResolvedValue(cancelledClass);
+    mockRegistered.mockResolvedValue(['ath-1']);
+  });
+
+  test.each([
+    ['create_plan', { action: 'create_plan', plan_on: '2026-08-16', class_id: 'cls-gone' }, mockCreatePlan],
+    ['add_group', { action: 'add_group', plan_id: 'p-gone', group_name: 'Pads' }, mockAddGroup],
+    ['place', { action: 'place', plan_id: 'p-gone', group_id: 'g-1', athlete_id: 'ath-1' }, mockPlace],
+    ['remove', { action: 'remove', plan_id: 'p-gone', athlete_id: 'ath-1' }, mockRemove],
+  ])('%s is refused with a sentence, and nothing is written', async (_action, body, write) => {
+    const response = await POST(postRequest(body));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class was cancelled.');
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  test('a class still running is unaffected', async () => {
+    mockGetClass.mockResolvedValue({ ...cancelledClass, status: 'open' });
+    mockAddGroup.mockResolvedValue({ group_id: 'g-1' });
+
+    expect((await POST(postRequest({ action: 'add_group', plan_id: 'p-gone', group_name: 'Pads' }))).status).toBe(200);
+    expect(mockAddGroup).toHaveBeenCalledTimes(1);
   });
 });
