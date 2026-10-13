@@ -284,7 +284,8 @@ describe("a coach's report (RP-01, Q2 default A)", () => {
 
 /*
  * THE REPORT BY CLASS (RP-02), on the same seeded gym plus two more classes:
- *   c-big (Oct 8): Ada registered and present, Bo registered and never marked,
+ *   c-big (Oct 8): Ada registered and present, Bo registered and never marked
+ *     (after an earlier registration of his was cancelled),
  *     Cy registered and absent, Di waitlisted (with a stray mark), Ed's
  *     registration cancelled, Fay registered and present but since deleted,
  *     and a mark for Gus, who was never registered.
@@ -320,6 +321,7 @@ async function addClassReportSeeds(client: Client) {
   }
   const registrations: Array<[string, string, string]> = [
     ['c-big', ATHLETE, 'registered'],
+    ['c-big', NEVER_MARKED, 'cancelled'],
     ['c-big', NEVER_MARKED, 'registered'],
     ['c-big', 'ATH-CY', 'registered'],
     ['c-big', 'ATH-DI', 'waitlisted'],
@@ -332,7 +334,7 @@ async function addClassReportSeeds(client: Client) {
       `insert into pilot.scheduler_registrations
          (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
        values ($1, $2, $3, $4, 'coach', $5, $6)`,
-      [ORG, `reg-${classId}-${athleteId}`, classId, athleteId, COACH, status],
+      [ORG, `reg-${classId}-${athleteId}-${status}`, classId, athleteId, COACH, status],
     );
   }
   const marks: Array<[string, string, string]> = [

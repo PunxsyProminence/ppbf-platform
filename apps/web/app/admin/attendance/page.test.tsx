@@ -281,7 +281,7 @@ describe('the attendance report by class (RP-02)', () => {
     const cancelled = within(table).getByText('Open Gym').closest('tr')!;
     expect(cancelled.textContent).toContain('(cancelled)');
     expect(cancelled.querySelectorAll('td')[6]!.textContent).toBe('—');
-    expect(table.querySelector('tfoot')!.textContent).toContain('Total, 1 held (1 cancelled, not included)');
+    expect(table.querySelector('tfoot')!.textContent).toContain('Total, 1 not cancelled (1 cancelled, not included)');
   });
 
   test('Download CSV asks for the same report as a file', async () => {

@@ -461,7 +461,11 @@ export interface ClassReportTotals {
   attendance_rate: number | null;
 }
 
-/** The period's totals over the classes that ran: cancelled classes are counted, not added in. */
+/**
+ * The period's totals over the classes not cancelled: cancelled classes are
+ * counted, not added in. A class still to come is in them, its registrations
+ * not yet marked -- the label says "not cancelled", not "held".
+ */
 export function classReportTotals(rows: readonly ClassAttendanceReportRow[]): ClassReportTotals {
   const ran = rows.filter((row) => row.status !== 'cancelled');
   const sum = (key: 'registered_count' | 'present_count' | 'absent_count' | 'excused_count' | 'unmarked_count') =>
@@ -510,7 +514,7 @@ export function attendanceByClassCsv(
       ratePercent(row.attendance_rate),
     ]),
     [
-      `Total, ${totals.classes} classes held${totals.cancelled ? ` (${totals.cancelled} cancelled, not included)` : ''}`,
+      `Total, ${totals.classes} classes not cancelled${totals.cancelled ? ` (${totals.cancelled} cancelled, not included)` : ''}`,
       '',
       '',
       String(totals.registered_count),

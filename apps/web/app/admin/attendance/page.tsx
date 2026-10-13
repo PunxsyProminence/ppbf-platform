@@ -307,8 +307,8 @@ function ClassAttendanceReport() {
       <p className="t-eyebrow">Report by class</p>
       <p className="t-body mt-[var(--s2)]">
         Each class in the period, by the day it was on: registered athletes, and how many were marked present, absent,
-        excused, or not marked at all. Not marked is not counted as absent. A cancelled class is listed but left out of
-        every rate.
+        excused, or not marked at all. Not marked is not counted as absent; a class still to come shows its
+        registrations as not marked. A cancelled class is listed but left out of the total and every rate.
       </p>
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
         <label className="field">
@@ -386,7 +386,7 @@ function ClassAttendanceReport() {
               <tfoot>
                 <tr className="t-body font-semibold">
                   <th scope="row" className="py-[var(--s2)] pr-[var(--s3)]">
-                    Total, {shown.totals.classes} held
+                    Total, {shown.totals.classes} not cancelled
                     {shown.totals.cancelled ? ` (${shown.totals.cancelled} cancelled, not included)` : ''}
                   </th>
                   <td className="py-[var(--s2)] pr-[var(--s3)]" />

@@ -139,7 +139,7 @@ describe('attendanceByClassCsv (RP-02)', () => {
     expect(out[3]).toMatch(/^"Open Gym","[^"]*Oct[^"]*9[^"]*11:30\sPM","cancelled","1","0","1","0","0",""$/);
     // Excused only: no rate, never 0%.
     expect(out[4]).toMatch(/"Footwork",.*"2","0","0","2","0",""$/);
-    expect(out[5]).toBe('"Total, 2 classes held (1 cancelled, not included)","","","5","1","1","2","1","50%"');
+    expect(out[5]).toBe('"Total, 2 classes not cancelled (1 cancelled, not included)","","","5","1","1","2","1","50%"');
     expect(out).toHaveLength(6);
   });
 
@@ -151,6 +151,6 @@ describe('attendanceByClassCsv (RP-02)', () => {
   test('an empty period still has its header and a zero total with no rate', () => {
     const out = lines(attendanceByClassCsv([], PERIOD));
     expect(out).toHaveLength(3);
-    expect(out[2]).toBe('"Total, 0 classes held","","","0","0","0","0","0",""');
+    expect(out[2]).toBe('"Total, 0 classes not cancelled","","","0","0","0","0","0",""');
   });
 });

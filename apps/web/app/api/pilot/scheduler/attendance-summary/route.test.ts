@@ -439,7 +439,16 @@ describe('the attendance report by class (RP-02)', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.classes).toEqual([ROW]);
-    expect(body.totals).toMatchObject({ classes: 1, registered_count: 3, attendance_rate: 0.5 });
+    expect(body.totals).toEqual({
+      classes: 1,
+      cancelled: 0,
+      registered_count: 3,
+      present_count: 1,
+      absent_count: 1,
+      excused_count: 0,
+      unmarked_count: 1,
+      attendance_rate: 0.5,
+    });
     expect(mockClassReport).toHaveBeenCalledWith('org-a', {
       fromDay: '2026-10-01',
       toDay: '2026-10-13',
@@ -474,7 +483,7 @@ describe('the attendance report by class (RP-02)', () => {
     expect(response.headers.get('content-disposition')).toBe('attachment; filename="attendance-by-class_2026-10-01_2026-10-13.csv"');
     const text = new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()));
     expect(text).toContain('"Sparring"');
-    expect(text).toContain('"Total, 1 classes held"');
+    expect(text).toContain('"Total, 1 classes not cancelled"');
     expect(mockSummary).not.toHaveBeenCalled();
   });
 
