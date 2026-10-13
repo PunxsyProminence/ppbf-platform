@@ -2167,9 +2167,10 @@ describe('an issued workout keeps its shape on the Floor', () => {
     // Nothing on the grid is an alert, and the card carries no badge or tooltip.
     expect(within(grid).queryByRole('alert')).toBeNull();
     expect(sparring.querySelector('.alert, .badge, [title]')).toBeNull();
-    // Its whole text: its step, its name, its status, the three lines, its two links.
+    // Its whole text: its step, its name, its status, the three lines, its
+    // details toggle (the row carries a description, WO-N5-03), its two links.
     expect(sparring.textContent).toBe(
-      'Step 7Body SparringassignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Open drillLog completion',
+      'Step 7Body SparringassignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Show detailsOpen drillLog completion',
     );
     expect(within(sparring).getByRole('link', { name: 'Open drill: Step 7, Body Sparring' }).getAttribute('href'))
       .toBe('/athlete/progression-intelligence?assignment=as-w3&intent=instruction');
@@ -2468,6 +2469,112 @@ describe('the Floor is the work a coach assigned', () => {
       expect(screen.queryByText(generated)).toBeNull();
     }
     expect(screen.getByText('No open work from your coach.')).toBeTruthy();
+  });
+});
+
+// WO-N5-03 (#1465): every Floor card opens in place to show what its own row
+// already carries -- what the drill is for, its coaching cues, how much is
+// done -- and nothing else. Cards open independently (N5-03-Q1 A); the two
+// links stay usable either way; nothing new is read or written.
+describe('a Floor card opens in place to its own details', () => {
+  const LONG = `${'Keep the rear hand home and turn the hip through. '.repeat(40)}End of instruction.`;
+
+  async function openFloorWith(work: Array<Record<string, unknown>>) {
+    storedAssignments = work;
+    await renderWorkspace();
+    openTab('Floor');
+    await screen.findByRole('link', { name: `Log completion: ${String(work[0].drill_display_name)}` });
+  }
+
+  const toggle = (name: string) => screen.getByRole('button', { name: new RegExp(`^(Show|Hide) details: ${name}$`) });
+
+  test('collapsed by default; opening shows the description, cues and completion the row carries', async () => {
+    await openFloorWith([
+      assignment({ drill_display_name: 'Jab Ladder', drill_display_description: 'Jab from range, step in.', drill_cues: ['Chin down', 'Hand home'], completion_percentage: 40 }),
+    ]);
+    const button = toggle('Jab Ladder');
+    expect(button.textContent).toBe('Show details');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Jab from range, step in.')).toBeNull();
+
+    fireEvent.click(button);
+    expect(button.textContent).toBe('Hide details');
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const details = document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
+    expect(details).toBeTruthy();
+    expect(within(details).getByText('What it is for')).toBeTruthy();
+    expect(within(details).getByText('Jab from range, step in.')).toBeTruthy();
+    expect(within(details).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Chin down', 'Hand home']);
+    expect(within(details).getByText('40%')).toBeTruthy();
+
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Jab from range, step in.')).toBeNull();
+  });
+
+  test('two cards open independently, so both can be read at once', async () => {
+    await openFloorWith([
+      assignment({ assignment_id: 'as-a', drill_display_name: 'Jab Ladder', drill_display_description: 'First drill text.' }),
+      assignment({ assignment_id: 'as-b', drill_display_name: 'Slip Line', drill_display_description: 'Second drill text.' }),
+    ]);
+    fireEvent.click(toggle('Jab Ladder'));
+    expect(screen.getByText('First drill text.')).toBeTruthy();
+    expect(screen.queryByText('Second drill text.')).toBeNull();
+    fireEvent.click(toggle('Slip Line'));
+    expect(screen.getByText('First drill text.')).toBeTruthy();
+    expect(screen.getByText('Second drill text.')).toBeTruthy();
+    fireEvent.click(toggle('Jab Ladder'));
+    expect(screen.queryByText('First drill text.')).toBeNull();
+    expect(screen.getByText('Second drill text.')).toBeTruthy();
+  });
+
+  test('the toggle is a real button, so Enter and Space reach it from the keyboard', async () => {
+    await openFloorWith([assignment({ drill_display_name: 'Jab Ladder', drill_display_description: 'Keyboard text.' })]);
+    const button = toggle('Jab Ladder');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.getAttribute('type')).toBe('button');
+    button.focus();
+    expect(document.activeElement).toBe(button);
+  });
+
+  test('a long description is shown whole, not cut short', async () => {
+    await openFloorWith([assignment({ drill_display_name: 'Jab Ladder', drill_display_description: LONG })]);
+    fireEvent.click(toggle('Jab Ladder'));
+    expect(screen.getByText(LONG.trim()).textContent).toBe(LONG.trim());
+  });
+
+  test('only what the row has is shown, and a row with nothing more offers no toggle', async () => {
+    await openFloorWith([
+      assignment({ assignment_id: 'as-a', drill_display_name: 'Cues Only', drill_display_description: '', drill_description: '', drill_cues: ['Eyes up'], completion_percentage: 0 }),
+      assignment({ assignment_id: 'as-b', drill_display_name: 'Bare Row', drill_display_description: '', drill_description: '', drill_cues: null, completion_percentage: 0 }),
+    ]);
+    fireEvent.click(toggle('Cues Only'));
+    expect(screen.getByText('Eyes up')).toBeTruthy();
+    expect(screen.queryByText('What it is for')).toBeNull();
+    expect(screen.queryByText('Done so far')).toBeNull();
+    expect(screen.queryByRole('button', { name: /details: Bare Row$/ })).toBeNull();
+  });
+
+  test('a typed assignment with no drill shows what the coach typed', async () => {
+    await openFloorWith([assignment({ drill_id: null, drill_display_name: 'Typed Work', drill_display_description: '', drill_description: 'Three rounds as the coach wrote it.' })]);
+    fireEvent.click(toggle('Typed Work'));
+    expect(screen.getByText('Three rounds as the coach wrote it.')).toBeTruthy();
+  });
+
+  test('open or closed, both links still lead to the work, and opening reads and writes nothing', async () => {
+    await openFloorWith([assignment({ assignment_id: 'as-9', drill_display_name: 'Jab Ladder', drill_display_description: 'Text.' })]);
+    const before = fetchCalls.length;
+    fireEvent.click(toggle('Jab Ladder'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchCalls.length).toBe(before);
+    expect(screen.getByRole('link', { name: 'Open drill: Jab Ladder' }).getAttribute('href')).toBe(
+      '/athlete/progression-intelligence?assignment=as-9&intent=instruction',
+    );
+    expect(screen.getByRole('link', { name: 'Log completion: Jab Ladder' }).getAttribute('href')).toBe(
+      '/athlete/progression-intelligence?assignment=as-9&intent=log',
+    );
   });
 });
 

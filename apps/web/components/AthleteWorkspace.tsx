@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
@@ -235,6 +235,12 @@ interface CoachWorkItem {
   drill_id?: string | null;
   drill_name: string;
   drill_display_name?: string | null;
+  // What the drill is for and its coaching cues, from the same row; the
+  // card's details draw them only when the row carries them.
+  drill_description?: string | null;
+  drill_display_description?: string | null;
+  drill_cues?: string[] | null;
+  completion_percentage?: number | null;
   status: string;
   rep_count?: number | null;
   duration_minutes?: number | null;
@@ -264,6 +270,15 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
   const label = step ? `Step ${step.ordinal}, ${name}` : name;
   // Under a workout and its block the drill's heading is one level further down.
   const WorkHeading = step ? 'h6' : 'h4';
+  // Its details are only what the row already carries: nothing is fetched,
+  // filled in or swapped for another version of the drill. Each card opens on
+  // its own, so two can be read side by side (N5-03-Q1 A).
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
+  const description = (work.drill_display_description || work.drill_description || '').trim();
+  const cues = (work.drill_cues ?? []).filter((cue) => cue.trim() !== '');
+  const done = work.completion_percentage != null && work.completion_percentage > 0 ? work.completion_percentage : null;
+  const hasDetails = description !== '' || cues.length > 0 || done != null;
   return (
     <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
       <div className="flex items-start justify-between gap-[var(--s4)]">
@@ -300,6 +315,46 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
           </div>
         )}
       </dl>
+      {hasDetails && (
+        <div>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={open ? detailsId : undefined}
+            aria-label={`${open ? 'Hide details' : 'Show details'}: ${label}`}
+            onClick={() => setOpen((was) => !was)}
+            className="btn btn--kiosk btn--ghost"
+          >
+            {open ? 'Hide details' : 'Show details'}
+          </button>
+          {open && (
+            <div id={detailsId} className="mt-[var(--s3)] space-y-[var(--s3)] t-body break-words">
+              {description !== '' && (
+                <div>
+                  <p className="t-label">What it is for</p>
+                  <p className="mt-[var(--s2)] whitespace-pre-line">{description}</p>
+                </div>
+              )}
+              {cues.length > 0 && (
+                <div>
+                  <p className="t-label">Coaching cues</p>
+                  <ul className="mt-[var(--s2)] list-disc pl-[var(--s5)] space-y-[var(--s1)]">
+                    {cues.map((cue, index) => (
+                      <li key={`${index}:${cue}`}>{cue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {done != null && (
+                <div>
+                  <p className="t-label">Done so far</p>
+                  <p className="t-data mt-[var(--s2)]">{done}%</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-[var(--s3)]">
         {work.drill_id ? (
           <Link
