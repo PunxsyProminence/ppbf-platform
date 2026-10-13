@@ -1,5 +1,5 @@
 import { query, queryOne } from './db';
-import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
+import { FAMILY_READABLE_ENTITY_ID_TYPES, listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 import type { PilotRole } from './contracts';
 
@@ -375,6 +375,143 @@ describe('sanitizeEventPayload', () => {
 
     expect(rows[0].payload).toEqual({ entity_id: 'ath-1' });
   });
+});
+
+/*
+ * #1558: WHOSE ENTITY ID A NON-STAFF READER IS SENT.
+ *
+ * For some entity types the id is a person's: an account id (the login email
+ * unless somebody chose otherwise) or a parent_id (`par-` plus that account
+ * id). Rows about a guardian name the child, so they reach the athlete and
+ * both guardians; one guardian read the other's id here. The mocked query
+ * returns the row whatever the role, so these exercise the projection alone;
+ * shadowEventAthleteScope.pg.test.ts shows the rows really arrive.
+ */
+describe('entity_id by reader', () => {
+  const row = (entityType: string, entityId: string, payload: Record<string, unknown> = {}) => ({
+    shadow_event_id: 1,
+    organization_id: 'org-1',
+    // Not an audit mirror: those take a second, per-role path for a coach.
+    event_name: 'SHADOW_INTAKE_DOMAIN_UPSERTED',
+    entity_type: entityType,
+    entity_id: entityId,
+    actor_account_id: 'acct-admin',
+    actor_role: 'organization_admin',
+    payload,
+    created_at: '2026-10-13T00:00:00.000Z',
+  });
+
+  // The feed query answers with the row; every scope lookup before it (a
+  // parent's linked children, a coach's roster) answers with nothing.
+  // clearAllMocks keeps an implementation; this block must not leave one behind.
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  const feedReturns = (feedRow: ReturnType<typeof row>) => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(sql.includes('from pilot.shadow_events') ? [feedRow] : []));
+  };
+
+  // THE PIN. A type added to this list sends its entity_id to every athlete
+  // and guardian whose feed the row reaches; it has to change this test.
+  test('the entity types whose id a non-staff reader is sent are exactly these four', () => {
+    expect([...FAMILY_READABLE_ENTITY_ID_TYPES]).toEqual(['athlete', 'intake_case', 'intake_document', 'shadow_intake']);
+  });
+
+  const PERSON_ID_ROWS: Array<[string, string]> = [
+    ['account', 'guardian.two@example.test'],
+    ['guardian', 'par-guardian.two@example.test'],
+    ['intake_guardian', 'par-guardian.two@example.test:ath-1'],
+    ['guardian_link', 'par-guardian.two@example.test'],
+    // A type nobody has listed sends null: a new emitter must decide.
+    ['some_future_type', 'anything'],
+  ];
+
+  describe.each(['parent', 'athlete', 'volunteer', 'staff', 'board'] as const)('for a %s', (actorRole) => {
+    test.each(PERSON_ID_ROWS)('a %s row arrives with no entity_id', async (entityType, entityId) => {
+      feedReturns(row(entityType, entityId, { entity_id: entityId }));
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].entity_type).toBe(entityType);
+      expect(rows[0].entity_id).toBeNull();
+      // The payload's own copy goes by the same rule.
+      expect(rows[0].payload).toEqual({});
+      expect(JSON.stringify(rows)).not.toContain(entityId);
+    });
+
+    test.each([
+      ['athlete', 'ath-1'],
+      ['intake_case', 'case-1'],
+      ['intake_document', 'doc-1'],
+      ['shadow_intake', 'intake-1'],
+    ])('a %s row keeps its id: it is the child or their paperwork', async (entityType, entityId) => {
+      feedReturns(row(entityType, entityId));
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      expect(rows[0].entity_id).toBe(entityId);
+    });
+
+    test('a payload that states its own entity type is judged by that type, not the row\'s', async () => {
+      feedReturns(row('athlete', 'ath-1', { entity_type: 'guardian', entity_id: 'par-guardian.two@example.test' }));
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      expect(rows[0].payload).toEqual({ entity_type: 'guardian' });
+    });
+  });
+
+  // The telemetry reader keeps `entity_id` among its safe dimension keys; the
+  // same rule decides whether it is one.
+  describe('telemetry dimensions', () => {
+    const telemetry = (dimensions: Record<string, unknown>) => {
+      mockQuery.mockImplementation((sql: string) => Promise.resolve(
+        sql.includes('from pilot.shadow_telemetry')
+          ? [{ telemetry_id: 1, organization_id: 'org-1', metric_name: 'shadow.intake.domain_upsert', actor_account_id: 'acct-admin', actor_role: 'organization_admin', dimensions, created_at: '2026-10-13T00:00:00.000Z' }]
+          : [],
+      ));
+    };
+
+    test.each(['parent', 'athlete', 'volunteer'] as const)('a %s is not sent a guardian id as a dimension', async (actorRole) => {
+      telemetry({ entity_type: 'intake_guardian', entity_id: 'par-guardian.two@example.test:ath-1' });
+
+      const rows = await listShadowTelemetry(context({ actorRole }));
+
+      expect(rows[0].dimensions).toEqual({ entity_type: 'intake_guardian' });
+    });
+
+    test.each(['parent', 'athlete', 'volunteer'] as const)('a %s keeps the id of an intake case', async (actorRole) => {
+      telemetry({ entity_type: 'intake_case', entity_id: 'case-1' });
+
+      const rows = await listShadowTelemetry(context({ actorRole }));
+
+      expect(rows[0].dimensions).toEqual({ entity_type: 'intake_case', entity_id: 'case-1' });
+    });
+
+    test('a coach reads the dimensions whole, as before', async () => {
+      telemetry({ entity_type: 'intake_guardian', entity_id: 'par-guardian.two@example.test:ath-1' });
+
+      const rows = await listShadowTelemetry(context({ actorRole: 'coach' }));
+
+      expect(rows[0].dimensions).toEqual({ entity_type: 'intake_guardian', entity_id: 'par-guardian.two@example.test:ath-1' });
+    });
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'] as const)(
+    'a %s reads every entity_id, as before',
+    async (actorRole) => {
+      for (const [entityType, entityId] of PERSON_ID_ROWS) {
+        feedReturns(row(entityType, entityId, { entity_id: entityId }));
+
+        const rows = await listShadowEvents(context({ actorRole }));
+
+        expect(rows[0].entity_id).toBe(entityId);
+        expect(rows[0].payload).toEqual({ entity_id: entityId });
+      }
+    },
+  );
 });
 
 describe('actor_account_id in the events feed (staff only)', () => {

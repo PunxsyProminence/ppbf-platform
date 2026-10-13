@@ -11,7 +11,8 @@ interface ShadowKnowledgeNode {
   title: string;
   source_event_name: string;
   entity_type: string;
-  entity_id: string;
+  // Null for a non-staff reader unless the type's id is theirs to have (#1558).
+  entity_id: string | null;
   review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
   created_at: string;
 }
@@ -198,11 +199,11 @@ export default function KnowledgeGraphPage() {
                 )
               ) : (
                 <div className="mt-[var(--s4)] space-y-[var(--s3)]">
-                  {group.items.map((item) => {
+                  {group.items.map((item, index) => {
                     const badge = REVIEW_STATE_BADGES[item.review_state];
                     return (
                       <article
-                        key={`${item.entity_type}-${item.entity_id}-${item.created_at}`}
+                        key={`${item.entity_type}-${item.entity_id ?? index}-${item.created_at}`}
                         className="relative mat-paper rounded-[var(--r-sm)] p-[var(--s4)]"
                       >
                         <span className="pin pin--brass" aria-hidden="true" />
@@ -222,7 +223,7 @@ export default function KnowledgeGraphPage() {
                             fix /evidence documents for .t-body. */}
                         <p className="t-data mt-[var(--s2)]">
                           <span className="text-[color:var(--hide-800)]">
-                            {item.entity_type} / {item.entity_id}
+                            {item.entity_id === null ? item.entity_type : `${item.entity_type} / ${item.entity_id}`}
                           </span>
                         </p>
                       </article>
