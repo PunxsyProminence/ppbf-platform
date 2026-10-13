@@ -245,6 +245,26 @@ test('an evaluated gate the page can answer stays listed beside the hold row', a
   expect(badgeIn('Mouthguard On File')).toHaveTextContent('▲Needs a look');
 });
 
+test('any other gate never evaluated is left out rather than read as Not yet checked', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      items: [{
+        ...CLEAR_ATHLETE[0],
+        gates: [
+          { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'not_evaluated' as const, evaluated_at: null },
+          NEVER_EVALUATED_GATES[1],
+        ],
+      }],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Active Training Hold');
+  expect(screen.queryByText('Mouthguard On File')).not.toBeInTheDocument();
+});
+
 test('with no row the page can answer, the Safety checks list is not shown', async () => {
   global.fetch = jest.fn().mockResolvedValue(
     jsonResponse({ ok: true, items: [{ ...CLEAR_ATHLETE[0], gates: [NEVER_EVALUATED_GATES[0]] }] }),
