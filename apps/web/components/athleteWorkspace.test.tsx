@@ -2473,8 +2473,8 @@ describe('the Floor is the work a coach assigned', () => {
 });
 
 // WO-N5-03 (#1465): every Floor card opens in place to show what its own row
-// already carries -- what the drill is for, its coaching cues, how much is
-// done -- and nothing else. Cards open independently (N5-03-Q1 A); the two
+// already carries -- what the drill is for and its coaching cues -- and
+// nothing else. Cards open independently (N5-03-Q1 A); the two
 // links stay usable either way; nothing new is read or written.
 describe('a Floor card opens in place to its own details', () => {
   const LONG = `${'Keep the rear hand home and turn the hip through. '.repeat(40)}End of instruction.`;
@@ -2488,7 +2488,7 @@ describe('a Floor card opens in place to its own details', () => {
 
   const toggle = (name: string) => screen.getByRole('button', { name: new RegExp(`^(Show|Hide) details: ${name}$`) });
 
-  test('collapsed by default; opening shows the description, cues and completion the row carries', async () => {
+  test('collapsed by default; opening shows the description and cues the row carries', async () => {
     await openFloorWith([
       assignment({ drill_display_name: 'Jab Ladder', drill_display_description: 'Jab from range, step in.', drill_cues: ['Chin down', 'Hand home'], completion_percentage: 40 }),
     ]);
@@ -2505,7 +2505,8 @@ describe('a Floor card opens in place to its own details', () => {
     expect(within(details).getByText('What it is for')).toBeTruthy();
     expect(within(details).getByText('Jab from range, step in.')).toBeTruthy();
     expect(within(details).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Chin down', 'Hand home']);
-    expect(within(details).getByText('40%')).toBeTruthy();
+    // Only the instructions: no completion figure is drawn here.
+    expect(details.textContent).toBe('What it is forJab from range, step in.Coaching cuesChin downHand home');
 
     fireEvent.click(button);
     expect(button.getAttribute('aria-expanded')).toBe('false');
@@ -2523,42 +2524,96 @@ describe('a Floor card opens in place to its own details', () => {
     fireEvent.click(toggle('Slip Line'));
     expect(screen.getByText('First drill text.')).toBeTruthy();
     expect(screen.getByText('Second drill text.')).toBeTruthy();
+    // Each button points at its own details, by an id no other card shares.
+    const [first, second] = ['Jab Ladder', 'Slip Line'].map((name) => toggle(name).getAttribute('aria-controls') ?? '');
+    expect(first).not.toBe('');
+    expect(first).not.toBe(second);
+    expect(document.getElementById(first)?.textContent).toContain('First drill text.');
+    expect(document.getElementById(second)?.textContent).toContain('Second drill text.');
     fireEvent.click(toggle('Jab Ladder'));
     expect(screen.queryByText('First drill text.')).toBeNull();
     expect(screen.getByText('Second drill text.')).toBeTruthy();
   });
 
-  test('the toggle is a real button, so Enter and Space reach it from the keyboard', async () => {
+  // jsdom sends no click for Enter or Space; a native button gets both from
+  // the browser, so this pins that it is one, and that focus stays on it.
+  test('the toggle is a native button that keeps focus as it opens and closes', async () => {
     await openFloorWith([assignment({ drill_display_name: 'Jab Ladder', drill_display_description: 'Keyboard text.' })]);
     const button = toggle('Jab Ladder');
     expect(button.tagName).toBe('BUTTON');
     expect(button.getAttribute('type')).toBe('button');
     button.focus();
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(button);
   });
 
-  test('a long description is shown whole, not cut short', async () => {
-    await openFloorWith([assignment({ drill_display_name: 'Jab Ladder', drill_display_description: LONG })]);
+  // jsdom cannot measure layout, so the class contract is the proof: nothing
+  // clamps, truncates or hides overflow, and an unbroken run of text wraps.
+  test('a long description is shown whole, not cut short, and long unbroken text wraps', async () => {
+    const unbroken = `https://example.org/${'x'.repeat(300)}`;
+    await openFloorWith([assignment({ drill_display_name: 'Jab Ladder', drill_display_description: `${LONG}\n${unbroken}` })]);
     fireEvent.click(toggle('Jab Ladder'));
-    expect(screen.getByText(LONG.trim()).textContent).toBe(LONG.trim());
+    const text = screen.getByText((_, element) => element?.tagName === 'P' && (element.textContent ?? '').startsWith('Keep the rear hand'));
+    expect(text.textContent).toBe(`${LONG}\n${unbroken}`);
+    const card = text.closest('div.mat-leather--raised') as HTMLElement;
+    const details = document.getElementById(toggle('Jab Ladder').getAttribute('aria-controls') ?? '') as HTMLElement;
+    for (const element of [text, details, card]) {
+      expect(element.className).not.toMatch(/truncate|line-clamp|overflow-hidden|max-h-/);
+    }
+    expect(text.className).toContain('whitespace-pre-line');
+    expect(details.className).toContain('[overflow-wrap:anywhere]');
+    expect(card.className).toContain('min-w-0');
+  });
+
+  test('two steps on the same drill each name their own toggle', async () => {
+    storedWorkouts = [{
+      issue_id: 'issue-1',
+      athlete_id: 'athlete-001',
+      template_name: 'Technical Tuesday',
+      template_version: 1,
+      issued_at: '2026-10-11T15:00:00.000Z',
+      issued_by_name: 'Coach J Rivera',
+      steps: [
+        { ordinal: 1, block: 'main_work', scale_level: null, contact_level: 'none', coach_note: null, assignment_id: 'as-s1' },
+        { ordinal: 2, block: 'main_work', scale_level: null, contact_level: 'none', coach_note: null, assignment_id: 'as-s2' },
+      ],
+    }];
+    storedAssignments = [
+      assignment({ assignment_id: 'as-s1', drill_display_name: 'Jab Ladder', drill_display_description: 'First step text.' }),
+      assignment({ assignment_id: 'as-s2', drill_display_name: 'Jab Ladder', drill_display_description: 'Second step text.' }),
+    ];
+    await renderWorkspace();
+    openTab('Floor');
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details: Step 2, Jab Ladder' }));
+    expect(screen.getByText('Second step text.')).toBeTruthy();
+    expect(screen.queryByText('First step text.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show details: Step 1, Jab Ladder' }).getAttribute('aria-expanded')).toBe('false');
   });
 
   test('only what the row has is shown, and a row with nothing more offers no toggle', async () => {
     await openFloorWith([
-      assignment({ assignment_id: 'as-a', drill_display_name: 'Cues Only', drill_display_description: '', drill_description: '', drill_cues: ['Eyes up'], completion_percentage: 0 }),
-      assignment({ assignment_id: 'as-b', drill_display_name: 'Bare Row', drill_display_description: '', drill_description: '', drill_cues: null, completion_percentage: 0 }),
+      assignment({ assignment_id: 'as-a', drill_display_name: 'Cues Only', drill_display_description: '', drill_description: '', drill_cues: ['Eyes up', null, '  '], completion_percentage: 60 }),
+      assignment({ assignment_id: 'as-b', drill_display_name: 'Bare Row', drill_display_description: '', drill_description: '', drill_cues: null, completion_percentage: 60 }),
     ]);
     fireEvent.click(toggle('Cues Only'));
-    expect(screen.getByText('Eyes up')).toBeTruthy();
-    expect(screen.queryByText('What it is for')).toBeNull();
-    expect(screen.queryByText('Done so far')).toBeNull();
+    const details = document.getElementById(toggle('Cues Only').getAttribute('aria-controls') ?? '') as HTMLElement;
+    expect(details.textContent).toBe('Coaching cuesEyes up');
     expect(screen.queryByRole('button', { name: /details: Bare Row$/ })).toBeNull();
   });
 
-  test('a typed assignment with no drill shows what the coach typed', async () => {
-    await openFloorWith([assignment({ drill_id: null, drill_display_name: 'Typed Work', drill_display_description: '', drill_description: 'Three rounds as the coach wrote it.' })]);
+  test('a typed assignment with no drill shows what the coach typed, and a blank display text falls back to it', async () => {
+    await openFloorWith([
+      assignment({ assignment_id: 'as-a', drill_id: null, drill_display_name: 'Typed Work', drill_display_description: '', drill_description: 'Three rounds as the coach wrote it.' }),
+      assignment({ assignment_id: 'as-b', drill_display_name: 'Blank Focus', drill_display_description: '   ', drill_description: 'The words assigned.' }),
+    ]);
     fireEvent.click(toggle('Typed Work'));
+    fireEvent.click(toggle('Blank Focus'));
     expect(screen.getByText('Three rounds as the coach wrote it.')).toBeTruthy();
+    expect(screen.getByText('The words assigned.')).toBeTruthy();
   });
 
   test('open or closed, both links still lead to the work, and opening reads and writes nothing', async () => {

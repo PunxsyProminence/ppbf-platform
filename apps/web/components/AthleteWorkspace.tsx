@@ -240,7 +240,6 @@ interface CoachWorkItem {
   drill_description?: string | null;
   drill_display_description?: string | null;
   drill_cues?: string[] | null;
-  completion_percentage?: number | null;
   status: string;
   rep_count?: number | null;
   duration_minutes?: number | null;
@@ -270,17 +269,19 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
   const label = step ? `Step ${step.ordinal}, ${name}` : name;
   // Under a workout and its block the drill's heading is one level further down.
   const WorkHeading = step ? 'h6' : 'h4';
-  // Its details are only what the row already carries: nothing is fetched,
-  // filled in or swapped for another version of the drill. Each card opens on
-  // its own, so two can be read side by side (N5-03-Q1 A).
+  // Its details are only what the row already carries -- the assigned drill's
+  // own row, read as every other assignment surface reads it, or what the
+  // coach typed when there is no drill. Nothing is fetched or filled in. Each
+  // card opens on its own, so two can be read side by side (N5-03-Q1 A).
   const [open, setOpen] = useState(false);
   const detailsId = useId();
-  const description = (work.drill_display_description || work.drill_description || '').trim();
-  const cues = (work.drill_cues ?? []).filter((cue) => cue.trim() !== '');
-  const done = work.completion_percentage != null && work.completion_percentage > 0 ? work.completion_percentage : null;
-  const hasDetails = description !== '' || cues.length > 0 || done != null;
+  const description = [work.drill_display_description, work.drill_description]
+    .map((text) => (text ?? '').trim())
+    .find((text) => text !== '') ?? '';
+  const cues = (work.drill_cues ?? []).filter((cue): cue is string => typeof cue === 'string' && cue.trim() !== '');
+  const hasDetails = description !== '' || cues.length > 0;
   return (
-    <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
+    <div className="mat-leather--raised min-w-0 rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
       <div className="flex items-start justify-between gap-[var(--s4)]">
         <div className="min-w-0">
           {step && <p className="t-label">Step {step.ordinal}</p>}
@@ -328,7 +329,7 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
             {open ? 'Hide details' : 'Show details'}
           </button>
           {open && (
-            <div id={detailsId} className="mt-[var(--s3)] space-y-[var(--s3)] t-body break-words">
+            <div id={detailsId} className="mt-[var(--s3)] space-y-[var(--s3)] t-body break-words [overflow-wrap:anywhere]">
               {description !== '' && (
                 <div>
                   <p className="t-label">What it is for</p>
@@ -343,12 +344,6 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
                       <li key={`${index}:${cue}`}>{cue}</li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {done != null && (
-                <div>
-                  <p className="t-label">Done so far</p>
-                  <p className="t-data mt-[var(--s2)]">{done}%</p>
                 </div>
               )}
             </div>
