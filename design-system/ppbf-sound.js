@@ -46,7 +46,7 @@
      import '@/../../design-system/ppbf-sound.js';
      const snd = new window.PPBFSound();
 
-   Voices: 'bell' 'stamp' 'latch' 'accept' 'refuse'
+   Voices: 'bell' 'stamp' 'latch' 'accept' 'refuse' 'knock'
    ========================================================================= */
 (function () {
 'use strict';
@@ -135,6 +135,7 @@ class PPBFSound {
       case 'latch':  this.#busyUntil = now + this.#latch();  return true;
       case 'accept': this.#busyUntil = now + this.#accept(); return true;
       case 'refuse': this.#busyUntil = now + this.#refuse(); return true;
+      case 'knock':  this.#busyUntil = now + this.#knock();  return true;
       default: return false;
     }
   }
@@ -188,7 +189,7 @@ class PPBFSound {
     src.onended = () => { src.disconnect(); filt.disconnect(); g.disconnect(); };
   }
 
-  /* --- the five voices. Each returns its duration in seconds. ----------- */
+  /* --- the six voices. Each returns its duration in seconds. ------------ */
 
   /** The round bell. Struck bronze: inharmonic partials, long tail. */
   #bell() {
@@ -230,6 +231,17 @@ class PPBFSound {
     this.#tone({ freq: 174.61, dur: 0.22, type: 'sawtooth', peak: 0.22 });
     this.#tone({ freq: 164.81, dur: 0.28, type: 'sawtooth', peak: 0.18, delay: 0.02 });
     return 0.30;
+  }
+
+  /** The ten-second knock -- the gym's wooden clapper before the round bell
+      (WO-N1-04). Two dry hits of hardwood, no pitch to speak of and no ring,
+      so it can never be mistaken for the bell itself. */
+  #knock() {
+    for (const delay of [0, 0.16]) {
+      this.#noise({ dur: 0.05, cutoff: 1800, type: 'bandpass', peak: 0.80, q: 3.0, delay });
+      this.#tone({ freq: 340, dur: 0.06, type: 'triangle', peak: 0.30, delay });
+    }
+    return 0.26;
   }
 }
 
