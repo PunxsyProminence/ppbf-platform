@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
@@ -113,6 +113,8 @@ export default function AthleteAchievements({
   // Keyed by athlete and milestone, so the line sits on the card that was pressed, one card's
   // answer never overwrites another's, and a kiosk switched to another athlete shows none of them.
   const [milestoneSave, setMilestoneSave] = useState<Readonly<Record<string, SaveState>>>({});
+  // One mark per press (#1529). "Did it" had no in-flight guard at all.
+  const markingRef = useRef(false);
 
   const isFamily = audience === 'family';
 
@@ -236,7 +238,8 @@ export default function AthleteAchievements({
   }, [athleteId, savingProgram]);
 
   const markMilestone = useCallback(async (milestone: Milestone) => {
-    if (!athleteId || isFamily) return;
+    if (!athleteId || isFamily || markingRef.current) return;
+    markingRef.current = true;
     const key = `${athleteId}:${milestone.key}`;
     setMilestoneSave((now) => ({ ...now, [key]: 'saving' }));
     try {
@@ -255,6 +258,8 @@ export default function AthleteAchievements({
     } catch {
       // The milestone stays unmarked, which is the truth, and its card says so.
       setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
+    } finally {
+      markingRef.current = false;
     }
   }, [athleteId, isFamily, load]);
 

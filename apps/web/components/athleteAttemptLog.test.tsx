@@ -9,7 +9,7 @@
 // recorded that the canonical API did not accept. Cross-athlete refusal is
 // the API route's job and is proven there, not by client filtering.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 
 import AthleteAttemptLog from './AthleteAttemptLog';
@@ -291,5 +291,23 @@ describe('AthleteAttemptLog', () => {
     await recordOne({ achieved: '8', target: '10' });
     await waitFor(() => expect(postCalls()).toHaveLength(1));
     expect(postCalls()[0].body?.context_type).toBe('open_floor');
+  });
+});
+
+describe('one save per press (#1529)', () => {
+  test('two presses in the same tick send exactly one attempt', async () => {
+    render(<AthleteAttemptLog athleteId="ath_test" />);
+    await waitFor(() => expect(listCalls()).toHaveLength(1));
+    const button = screen.getByRole('button', { name: /record attempt/i });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText(/what you got/i), { target: { value: '12' } });
+
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(listCalls()).toHaveLength(2));
+    expect(postCalls()).toHaveLength(1);
   });
 });

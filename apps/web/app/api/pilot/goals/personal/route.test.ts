@@ -132,7 +132,9 @@ describe('PATCH /api/pilot/goals/personal authorizes the STORED goal owner', () 
     expect(writePilotAuditEvent).toHaveBeenCalledTimes(1);
   });
 
-  test('a coach marking a goal for an athlete they can reach still works', async () => {
+  test('a coach cannot mark an athlete\'s goal reached, even one they can reach (lane N8-05)', async () => {
+    // Owner ruling 2026-10-12: coaches read an athlete's goals; only the
+    // athlete marks one reached. Until N8-05 a coach could, with no screen.
     mockRequirePrincipal.mockResolvedValue({
       accountId: 'acct-coach',
       role: 'coach',
@@ -141,18 +143,12 @@ describe('PATCH /api/pilot/goals/personal authorizes the STORED goal owner', () 
       sessionToken: 'token',
       authProvider: 'microsoft',
     });
-    mockAssertAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
-      if (athleteId !== 'ath-mine') throw new Error('Forbidden: coach not assigned to athlete');
-    });
-    mockMarkReached.mockResolvedValue({
-      goal_id: 'goal_theirs_1',
-      athlete_id: 'ath-mine',
-      reached_at: '2026-08-25T00:00:00.000Z',
-    });
+    mockAssertAccess.mockResolvedValue(undefined);
 
     const response = await PATCH(request({ athlete_id: 'ath-mine', goal_id: 'goal_theirs_1' }));
 
-    expect(response.status).toBe(200);
-    expect(mockMarkReached).toHaveBeenCalledWith('org-a', 'goal_theirs_1', 'ath-mine');
+    expect(response.status).toBe(403);
+    expect(mockMarkReached).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
 });

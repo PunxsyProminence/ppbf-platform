@@ -99,12 +99,13 @@ const OTHER_ADMIN_ID = 'acct-limits-other-admin';
 const COACH_ID = 'acct-limits-coach'; // coach of record for ATHLETE, SECOND, ADULT, SHARED here
 const LAPSED_COACH_ID = 'acct-limits-lapsed'; // membership here deactivated
 const VISITING_COACH_ID = 'acct-limits-visiting'; // home elsewhere, member here, coverage on ATHLETE_ID only
-const UNASSIGNED_COACH_ID = 'acct-limits-unassigned'; // active coach here, reaches nobody
+const UNASSIGNED_COACH_ID = 'acct-limits-unassigned'; // active coach here, coach of record for nobody (reaches the whole gym, issue #1480)
 const ATHLETE_ACCOUNT_ID = 'acct-limits-athlete';
 const PARENT_ACCOUNT_ID = 'acct-limits-parent'; // linked guardian of ATHLETE_ID
 const VOLUNTEER_ACCOUNT_ID = 'acct-limits-volunteer';
 // Home role organization_admin (of the other gym); here, only a COACH
-// membership, coach of record for nobody. Reaches nobody here.
+// membership, coach of record for nobody. As a coach here it reaches this
+// whole gym (issue #1480), recorded as the coach it is here.
 const HOME_ADMIN_ID = 'acct-limits-home-admin';
 const ATHLETE_ID = 'ath-limits-1'; // born 2012: a minor
 const SECOND_ATHLETE_ID = 'ath-limits-2';
@@ -130,6 +131,8 @@ const COACH = actorFor(COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
 const VISITING_COACH = actorFor(VISITING_COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// The visiting coach signed in at their OTHER gym: a coach of another gym.
+const VISITING_COACH_AT_HOME = actorFor(VISITING_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const VOLUNTEER = actorFor(VOLUNTEER_ACCOUNT_ID, 'volunteer');
@@ -696,20 +699,55 @@ describe('athleteMinorLimits.ts against real rows', () => {
     }
   });
 
-  test('a coach covering an athlete may set and read that athlete\'s limits, and only that one', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach covering one athlete may set and read limits for every athlete of this gym, and none of another gym', async () => {
     const client = await migratedDatabase('limits_coverage');
     try {
       const row = await setMinorLimit({ actor: VISITING_COACH, athleteId: ATHLETE_ID, ...SUPERVISED });
       expect(row.set_by_role).toBe('coach');
       expect((await readAthleteMinorLimits(VISITING_COACH, ATHLETE_ID)).limits.supervision?.limit_id).toBe(row.limit_id);
-      await expect(readAthleteMinorLimits(VISITING_COACH, SECOND_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      // No coverage on SECOND_ATHLETE_ID: reached anyway, and the write is real.
+      const second = await setMinorLimit({ actor: VISITING_COACH, athleteId: SECOND_ATHLETE_ID, ...SUPERVISED });
+      expect((await readAthleteMinorLimits(VISITING_COACH, SECOND_ATHLETE_ID)).limits.supervision?.limit_id)
+        .toBe(second.limit_id);
+      const { rows } = await client.query(
+        'select athlete_id, set_by_account_id from pilot.athlete_minor_limits order by athlete_id',
+      );
+      expect(rows).toEqual([
+        { athlete_id: ATHLETE_ID, set_by_account_id: VISITING_COACH_ID },
+        { athlete_id: SECOND_ATHLETE_ID, set_by_account_id: VISITING_COACH_ID },
+      ]);
+      // Another gym's athlete is refused as for an org admin; nothing is written.
+      await expect(readAthleteMinorLimits(VISITING_COACH, OTHER_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(setMinorLimit({ actor: VISITING_COACH, athleteId: OTHER_ATHLETE_ID, ...SUPERVISED }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      expect(await limitCount(client)).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('an unassigned coach of the same gym may read and set a limit', async () => {
+    const client = await migratedDatabase('limits_unassigned_allowed');
+    try {
+      await insertRaw(client);
+      expect((await readAthleteMinorLimits(UNASSIGNED_COACH, ATHLETE_ID)).history).toHaveLength(1);
+      expect(await getCurrentMinorLimit(UNASSIGNED_COACH, ATHLETE_ID, 'heat_exposure_minutes_per_session')).not.toBeNull();
+      const row = await setMinorLimit({ actor: UNASSIGNED_COACH, athleteId: ATHLETE_ID, ...HEAT_20 });
+      expect(row.set_by_role).toBe('coach');
+      expect(await limitCount(client)).toBe(2);
+      expect((await auditRows(client)).at(-1)).toMatchObject({ actor_role: 'coach', actor_account_id: UNASSIGNED_COACH_ID });
     } finally {
       await client.end();
     }
   });
 
   test.each([
-    ['an unassigned coach of the same gym', UNASSIGNED_COACH],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+    // same-gym unassigned coach is now admitted (test above); a coach of
+    // ANOTHER gym is still refused.
+    ['a coach of another gym', VISITING_COACH_AT_HOME],
     ['a coach whose membership here lapsed', LAPSED_COACH],
     ['an admin of another gym', OTHER_ADMIN],
     ['the athlete themselves', ATHLETE],
@@ -747,26 +785,23 @@ describe('athleteMinorLimits.ts against real rows', () => {
     }
   });
 
-  test("an admin elsewhere who is only a coach here reaches only a coach's athletes here", async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('an admin elsewhere who is only a coach here reaches this gym as a coach, and is recorded as one', async () => {
     const client = await migratedDatabase('limits_home_role');
     try {
       await insertRaw(client);
       // The session says organization_admin; the membership here says coach,
-      // and this account coaches nobody here. Whole-gym admin reach would
-      // have let this through.
-      await expect(readAthleteMinorLimits(HOME_ADMIN_AS_COACH_HERE, ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      // and this account coaches nobody here. A coach reaches the whole gym,
+      // no coverage grant needed.
+      expect((await readAthleteMinorLimits(HOME_ADMIN_AS_COACH_HERE, ATHLETE_ID)).history).toHaveLength(1);
+      // Its own gym's athlete is not reachable from this gym's session; nothing written.
       await expect(
-        setMinorLimit({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...HEAT_20 }),
+        setMinorLimit({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: OTHER_ATHLETE_ID, ...HEAT_20 }),
       ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(await limitCount(client)).toBe(1);
 
-      // Given coverage of that athlete, it may set -- and is recorded as the
-      // coach it is here, not as the admin its home role says.
-      await client.query(
-        `insert into pilot.coach_coverage
-           (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
-         values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '8 hours')`,
-        [ORG_ID, ATHLETE_ID, HOME_ADMIN_ID, ADMIN_ID],
-      );
+      // It sets -- and is recorded as the coach it is here, not as the admin
+      // its home role says.
       const row = await setMinorLimit({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...HEAT_20 });
       expect(row.set_by_role).toBe('coach');
       expect((await auditRows(client)).at(-1)).toMatchObject({ actor_role: 'coach', actor_account_id: HOME_ADMIN_ID });
@@ -811,14 +846,19 @@ describe('athleteMinorLimits.ts against real rows', () => {
     try {
       const all = [ATHLETE_ID, SECOND_ATHLETE_ID, ADULT_ATHLETE_ID, SHARED_ATHLETE_ID, THIRD_ATHLETE_ID, OTHER_ATHLETE_ID];
       const sorted = async (actor: ActorIdentity) => [...(await minorLimitAccessibleAthleteIds(actor, all))].sort();
-      expect(await sorted(COACH)).toEqual([ATHLETE_ID, SECOND_ATHLETE_ID, ADULT_ATHLETE_ID, SHARED_ATHLETE_ID].sort());
-      expect(await sorted(VISITING_COACH)).toEqual([ATHLETE_ID]);
-      expect(await sorted(ADMIN)).toEqual(
-        [ATHLETE_ID, SECOND_ATHLETE_ID, ADULT_ATHLETE_ID, SHARED_ATHLETE_ID, THIRD_ATHLETE_ID].sort(),
-      );
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym --
+      // every live athlete of this gym, the same set the gym's admin gets.
+      const wholeGym = [ATHLETE_ID, SECOND_ATHLETE_ID, ADULT_ATHLETE_ID, SHARED_ATHLETE_ID, THIRD_ATHLETE_ID].sort();
+      expect(await sorted(COACH)).toEqual(wholeGym);
+      expect(await sorted(VISITING_COACH)).toEqual(wholeGym);
+      expect(await sorted(UNASSIGNED_COACH)).toEqual(wholeGym);
+      expect(await sorted(ADMIN)).toEqual(wholeGym);
       expect(await sorted(LAPSED_COACH)).toEqual([]);
-      expect(await sorted(HOME_ADMIN_AS_COACH_HERE)).toEqual([]);
-      for (const actor of [UNASSIGNED_COACH, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD]) {
+      expect(await sorted(HOME_ADMIN_AS_COACH_HERE)).toEqual(wholeGym);
+      // A coach of another gym: that gym's athletes only (the shared id is
+      // that gym's own row), none of this gym's.
+      expect(await sorted(VISITING_COACH_AT_HOME)).toEqual([OTHER_ATHLETE_ID, SHARED_ATHLETE_ID].sort());
+      for (const actor of [ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD]) {
         expect({ who: actor.accountId, ids: await sorted(actor) }).toEqual({ who: actor.accountId, ids: [] });
       }
       // Another gym's admin reaches their own gym's athletes (the shared id included) and none of this gym's.
@@ -827,7 +867,7 @@ describe('athleteMinorLimits.ts against real rows', () => {
       // And the filter IS the gate: for every actor and athlete, "in the set"
       // equals "the per-athlete read is not refused".
       const actors = [ADMIN, OTHER_ADMIN, COACH, LAPSED_COACH, VISITING_COACH, UNASSIGNED_COACH,
-        HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
+        VISITING_COACH_AT_HOME, HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
       for (const actor of actors) {
         const admitted = await minorLimitAccessibleAthleteIds(actor, all);
         for (const athleteId of all) {

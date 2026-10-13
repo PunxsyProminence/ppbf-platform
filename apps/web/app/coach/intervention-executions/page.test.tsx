@@ -293,6 +293,35 @@ describe('correcting a record', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  // Issue #1481 (Jason, "6B"; Codex P1 on #1507): a coach reopens a closed
+  // record through the form, not only through a hand-made request.
+  test('a closed record can be corrected back to in progress from the form', async () => {
+    const server = correctionServer(CLOSED_EXECUTION);
+    await openCorrection(server);
+
+    const options = Array.from((screen.getByLabelText('Outcome') as HTMLSelectElement).options).map((option) => option.value);
+    expect(options).toEqual(['completed', 'stopped', 'in_progress']);
+    await change('What was wrong? (required)', 'it had not actually finished');
+    await change('Outcome', 'in_progress');
+    await press('Record correction');
+
+    expect(server.patches).toHaveLength(1);
+    expect(server.patches[0]).toMatchObject({ action: 'correct', execution_id: 'ex-1', outcome: 'in_progress' });
+  });
+
+  test('closing out work in progress never offers "in progress" as an outcome', async () => {
+    global.fetch = correctionServer(EXECUTION).fetchMock;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    const closeButton = await screen.findByRole('button', { name: /close out/i });
+    await act(async () => {
+      fireEvent.click(closeButton);
+    });
+    const options = Array.from((screen.getByLabelText('Outcome') as HTMLSelectElement).options).map((option) => option.value);
+    expect(options).not.toContain('in_progress');
+  });
+
   test('a closed record can have its outcome corrected, and a stop still needs its reason', async () => {
     const server = correctionServer(CLOSED_EXECUTION);
     await openCorrection(server);

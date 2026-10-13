@@ -21,7 +21,7 @@ import {
   createProvisionalRecommendation,
   decideOnRecommendation,
   listRecommendations,
-  MedicalStatusBlockedError,
+  readMedicalStatusOnFile,
 } from './shadowRecommendations';
 
 const mockQuery = jest.mocked(query);
@@ -47,13 +47,7 @@ function recommendationRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/**
- * An explicitly cleared status.
- *
- * Needed by every write test now, not only the medically-worded ones: the guard
- * is unconditional, so a test that does not stub a cleared record is asserting
- * the blocked path whether it meant to or not.
- */
+/** An explicitly cleared status; overrides make the other states. */
 function clearedStatus(
   overrides: Partial<ShadowMedicalAdministrativeStatusRow> = {},
 ): ShadowMedicalAdministrativeStatusRow {
@@ -82,8 +76,6 @@ beforeEach(() => {
 
 describe('createProvisionalRecommendation', () => {
   test('always creates the row with the literal status "provisional"', async () => {
-    // Cleared record required to reach the write at all: the medical guard is
-    // unconditional now, so an unstubbed status asserts the blocked path.
     mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus());
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
@@ -105,154 +97,21 @@ describe('createProvisionalRecommendation', () => {
     expect(params).not.toContain('provisional');
   });
 
-  test('blocks creation when the athlete is restricted/not-cleared and the topic is medically sensitive', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce({
-      status_id: 'status-1',
-      organization_id: 'org-1',
-      athlete_id: 'athlete-1',
-      status: 'restricted',
-      restriction_flags: {},
-      source_reference: null,
-      set_by_account_id: 'coach-1',
-      set_by_role: 'coach',
-      effective_at: '2026-07-27T10:00:00.000Z',
-      expires_at: null,
-      created_at: '2026-07-27T10:00:00.000Z',
-    });
-
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
-  });
-
-  test('blocks a medically sensitive recommendation when no clearance record exists at all', async () => {
-    // Fail closed: absence of a status is not a clearance decision. An
-    // athlete with no medical administrative status on file must not sail
-    // through a sparring/weight-cut/clearance recommendation by default.
-    mockGetMedicalStatus.mockResolvedValueOnce(null);
-
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
-  });
-
-  test('blocks a medically sensitive recommendation while status is only pending', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce({
-      status_id: 'status-2',
-      organization_id: 'org-1',
-      athlete_id: 'athlete-1',
-      status: 'pending',
-      restriction_flags: {},
-      source_reference: null,
-      set_by_account_id: 'coach-1',
-      set_by_role: 'coach',
-      effective_at: '2026-07-27T10:00:00.000Z',
-      expires_at: null,
-      created_at: '2026-07-27T10:00:00.000Z',
-    });
-
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
-  });
-
-  test('allows a medically sensitive recommendation only once status is explicitly cleared', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce({
-      status_id: 'status-3',
-      organization_id: 'org-1',
-      athlete_id: 'athlete-1',
-      status: 'cleared',
-      restriction_flags: {},
-      source_reference: 'physician-note-123',
-      set_by_account_id: 'coach-1',
-      set_by_role: 'coach',
-      effective_at: '2026-07-27T10:00:00.000Z',
-      expires_at: null,
-      created_at: '2026-07-27T10:00:00.000Z',
-    });
-
-    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
-    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
-
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).resolves.toBeDefined();
-  });
-
-  // Replaces a test that asserted the opposite -- that an unflagged topic did
-  // not consult medical status at all. That was the hole: the caller decided
-  // whether the gate ran, so omitting one JSON field skipped it.
-  test('consults medical status even for an obviously non-medical recommendation', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus());
+  // Issue #1474 (Jason, OD-2026-10-10-004 to -007: the coach makes the
+  // assessment; the app records). Creating a recommendation is never refused
+  // for the athlete's medical status; the status on file goes into the audit.
+  test.each<[string, ShadowMedicalAdministrativeStatusRow | null, string]>([
+    ['no status on file', null, 'no_record'],
+    ['pending', clearedStatus({ status_id: 'status-p', status: 'pending' }), 'pending'],
+    ['restricted', clearedStatus({ status_id: 'status-r', status: 'restricted' }), 'restricted'],
+    ['not cleared', clearedStatus({ status_id: 'status-n', status: 'not_cleared' }), 'not_cleared'],
+    ['a lapsed clearance', clearedStatus({ status_id: 'status-e', expires_at: '2026-01-01T00:00:00.000Z' }), 'cleared_expired'],
+    ['cleared', clearedStatus(), 'cleared'],
+  ])('%s: the recommendation is created and its audit entry carries the status on file', async (_label, row, word) => {
+    mockGetMedicalStatus.mockResolvedValueOnce(row);
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
-    await createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Add 10 minutes of footwork drills.',
-      expectedOutcome: 'Work-rate consistency improves next session.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    });
-
-    expect(mockGetMedicalStatus).toHaveBeenCalledWith('org-1', 'athlete-1');
-  });
-
-  // The time bound, stated as a test. Before expires_at existed this guard
-  // compared `status !== 'cleared'` on the latest row with no clock involved,
-  // so a clearance recorded once let every medically sensitive recommendation
-  // through forever.
-  test('blocks when the clearance on file has passed its stated expiry', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus({
-      expires_at: '2026-01-01T00:00:00.000Z',
-    }));
-
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Clear athlete for full-contact sparring.',
-      expectedOutcome: 'Athlete returns to full sparring load.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).rejects.toThrow(/expiry/i);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
-  });
-
-  test('allows it while the clearance on file is still inside its expiry', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce(clearedStatus({
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-    }));
-    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
-    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
-
     await expect(createProvisionalRecommendation({
       organizationId: 'org-1',
       athleteId: 'athlete-1',
@@ -261,27 +120,58 @@ describe('createProvisionalRecommendation', () => {
       createdByAccountId: 'coach-1',
       createdByRole: 'coach',
     })).resolves.toBeDefined();
+
+    expect(mockGetMedicalStatus).toHaveBeenCalledWith('org-1', 'athlete-1');
+    expect(mockWriteAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: 'created_provisional',
+      afterState: expect.objectContaining({
+        status: 'provisional',
+        medicalStatusOnFile: word,
+        medicalStatusId: row?.status_id ?? null,
+        medicalStatusExpiresAt: row?.expires_at ?? null,
+      }),
+    }));
   });
+});
 
-  // The forgery path, stated as a test. There is no longer any input a caller
-  // can supply, or omit, that skips the guard.
-  test('a footwork note is blocked when the athlete has no clearance record', async () => {
-    mockGetMedicalStatus.mockResolvedValueOnce(null);
+describe('readMedicalStatusOnFile', () => {
+  test('states the status as of the moment given, so a clearance reads as it stood then', async () => {
+    mockGetMedicalStatus.mockResolvedValue(clearedStatus({ expires_at: '2026-10-01T16:00:00.000Z' }));
 
-    await expect(createProvisionalRecommendation({
-      organizationId: 'org-1',
-      athleteId: 'athlete-1',
-      recommendationText: 'Add 10 minutes of footwork drills.',
-      expectedOutcome: 'Work-rate consistency improves next session.',
-      createdByAccountId: 'coach-1',
-      createdByRole: 'coach',
-    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
-
-    expect(mockWithTransaction).not.toHaveBeenCalled();
+    await expect(readMedicalStatusOnFile('org-1', 'athlete-1', new Date('2026-09-01T00:00:00.000Z'))).resolves.toEqual({
+      medicalStatusOnFile: 'cleared',
+      medicalStatusId: 'status-cleared',
+      medicalStatusExpiresAt: '2026-10-01T16:00:00.000Z',
+    });
+    await expect(readMedicalStatusOnFile('org-1', 'athlete-1', new Date('2026-10-05T00:00:00.000Z'))).resolves.toMatchObject({
+      medicalStatusOnFile: 'cleared_expired',
+    });
   });
 });
 
 describe('decideOnRecommendation', () => {
+  // Issue #1474: deciding is never refused for the medical status; the status
+  // on file goes into the decision's audit entry.
+  test('a decision on a recommendation for an athlete with no status on file is recorded with that fact', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce(null);
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow({ status: 'rejected', decided_by_account_id: 'coach-1' })] });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await expect(decideOnRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationId: 'rec-1',
+      decision: 'rejected',
+      decidedByAccountId: 'coach-1',
+      decidedByRole: 'coach',
+    })).resolves.toMatchObject({ status: 'rejected' });
+
+    expect(mockWriteAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: 'decided_rejected',
+      afterState: { status: 'rejected', medicalStatusOnFile: 'no_record', medicalStatusId: null, medicalStatusExpiresAt: null },
+    }));
+  });
+
   test('only transitions a recommendation that is currently provisional', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow({ status: 'accepted', decided_by_account_id: 'coach-1' })] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));

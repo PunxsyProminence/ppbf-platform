@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useId, useState, type SyntheticEvent } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { currentOrganizationProfile, physicalAddressLine } from '@/src/shared/organizationProfile';
 import {
   contactMethodLabels,
   contactMethodOptions,
@@ -25,7 +26,8 @@ import {
    contact them if they are requesting info"). Sending the form is the request
    to be contacted, and the route records it that way. */
 
-const fallbackAddress = '220 N Jefferson St, Punxsutawney, PA 15767';
+// The gym's address, from its one profile (#1469, N9-01).
+const fallbackAddress = physicalAddressLine(currentOrganizationProfile());
 
 export default function PublicInterestForm() {
   // htmlFor/id rather than a wrapping <label>: a label wrapped around a

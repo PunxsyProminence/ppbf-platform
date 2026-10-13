@@ -831,6 +831,42 @@ describe('the module linking sessions to blocks (real database)', () => {
   });
 });
 
+// Issue #1523 (Jason 2026-10-12, "allow a plain session"; Overwatch: left joins, "Plain session"):
+// a session with no script links to a block like any other, and every reader shows it.
+describe('a plain session and its links', () => {
+  test('links to a block, is listed for it as "Plain session", and is offered by the picker', async () => {
+    const client = await seededDatabase('sbl_plain');
+    try {
+      await insertBlock(client, 'blk-1');
+      await client.query(
+        `insert into pilot.session_script_runs
+           (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+            run_state, started_at, ended_at, current_block_id, paused_seconds, what_worked)
+         values ($1, 'run-plain', null, null, $2, '2026-08-20', 'completed',
+                 '2026-08-20T18:00:00Z', '2026-08-20T19:00:00Z', null, 0, 'Pads only, sharp.')`,
+        [ORG_ID, COACH_ID],
+      );
+
+      expect(await linkSessionToBlock({
+        organizationId: ORG_ID, runId: 'run-plain', blockId: 'blk-1', linkedByAccountId: COACH_ID,
+      })).not.toBeNull();
+
+      const sessions = await listSessionsForBlock(ORG_ID, 'blk-1');
+      expect(sessions.find((row) => row.run_id === 'run-plain')).toMatchObject({
+        script_id: null,
+        script_name: 'Plain session',
+        delivered_on: '2026-08-20',
+        what_worked: 'Pads only, sharp.',
+      });
+
+      const offered = await listSelectableRuns(ORG_ID);
+      expect(offered.find((row) => row.run_id === 'run-plain')).toMatchObject({ script_id: null, script_name: 'Plain session' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('a session cannot be used to enumerate which children have plans', () => {
   test('listBlocksForRun returns only blocks for athletes the caller may reach', async () => {
     const client = await seededDatabase('sbl_filter');

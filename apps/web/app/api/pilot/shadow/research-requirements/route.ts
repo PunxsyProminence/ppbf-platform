@@ -23,6 +23,7 @@ import {
   namedAthleteId,
   namedAthleteIdsOf,
   resolveShadowResearchRequirement,
+  submissionClosesRequirement,
   subjectAthleteIdOf,
   SUBJECT_NAMING_METADATA_KEYS,
   type ShadowResearchRequirementRow,
@@ -88,6 +89,11 @@ const COVERAGE_CHECK_METADATA_KEYS = [
   'resolved_matched_sources',
   'reopened_after_resolution_at',
 ] as const;
+
+/** The closing record (A-Q13) is written from closing_note and
+ *  closing_submission_id, never from caller metadata. */
+const CLOSING_METADATA_KEYS = ['closing_note', 'closing_submission_id'] as const;
+const CLOSING_NOTE_MAX = 2000;
 
 /**
  * Would this caller-supplied resolve metadata change which athlete the stored
@@ -250,6 +256,8 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       action?: 'create' | 'resolve';
       research_requirement_id?: number;
+      closing_note?: unknown;
+      closing_submission_id?: unknown;
       source_event_name?: string;
       source_entity_type?: string;
       source_entity_id?: string;
@@ -409,6 +417,50 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const closingKey = CLOSING_METADATA_KEYS.find((key) => key in metadata);
+      if (closingKey) {
+        return NextResponse.json(
+          { ok: false, error: `resolve metadata cannot set ${closingKey}; send closing_note or closing_submission_id` },
+          { status: 400 },
+        );
+      }
+
+      // OD-2026-10-08-005 A-Q13: "closing a research requirement needs a
+      // closing note or an approved submission". Asked after the gates, so an
+      // unentitled caller still gets the plain 404 whatever they sent.
+      if (body.closing_note !== undefined && body.closing_note !== null && typeof body.closing_note !== 'string') {
+        return NextResponse.json({ ok: false, error: 'closing_note must be a string' }, { status: 400 });
+      }
+      if (body.closing_submission_id !== undefined && body.closing_submission_id !== null && typeof body.closing_submission_id !== 'string') {
+        return NextResponse.json({ ok: false, error: 'closing_submission_id must be a string' }, { status: 400 });
+      }
+      const closingNote = (body.closing_note as string | null | undefined)?.trim() || null;
+      const closingSubmissionId = (body.closing_submission_id as string | null | undefined)?.trim() || null;
+      if (!closingNote && !closingSubmissionId) {
+        return NextResponse.json(
+          { ok: false, error: 'missing closing_note or closing_submission_id: a requirement closes with a closing note or an approved submission' },
+          { status: 400 },
+        );
+      }
+      if (closingNote && closingNote.length > CLOSING_NOTE_MAX) {
+        return NextResponse.json(
+          { ok: false, error: `closing_note is longer than ${CLOSING_NOTE_MAX} characters` },
+          { status: 400 },
+        );
+      }
+      if (closingSubmissionId) {
+        await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_submissions'] });
+      }
+      if (
+        closingSubmissionId
+        && !(await submissionClosesRequirement(principal.organizationId, body.research_requirement_id, closingSubmissionId))
+      ) {
+        return NextResponse.json(
+          { ok: false, error: 'closing_submission_id is not a submission reviewed responsive on this requirement' },
+          { status: 400 },
+        );
+      }
+
       // Authorize-and-write as ONE statement: the subject just authorized is
       // carried into the UPDATE's WHERE, so a row whose subject changed
       // between the read above and this write matches nothing and is left
@@ -422,9 +474,19 @@ export async function POST(request: NextRequest) {
         metadata: body.metadata ?? {},
         athleteIds: athleteScope,
         expectedSubjectAthleteId: subjectAthleteId,
+        closing: { note: closingNote, submissionId: closingSubmissionId },
       });
 
       if (!resolved) {
+        // The caller is entitled to this row (gates above), so saying why is
+        // no leak: the submission stopped being responsive between the
+        // check and the write, which the UPDATE asks again.
+        if (closingSubmissionId && !(await submissionClosesRequirement(principal.organizationId, body.research_requirement_id, closingSubmissionId))) {
+          return NextResponse.json(
+            { ok: false, error: 'closing_submission_id is no longer a submission reviewed responsive on this requirement' },
+            { status: 409 },
+          );
+        }
         return requirementNotFound();
       }
 

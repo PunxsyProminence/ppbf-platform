@@ -91,7 +91,8 @@ const OTHER_ADMIN_ID = 'acct-obj-other-admin';
 // Coach of record for both athletes in ORG_ID.
 const COACH_ID = 'acct-obj-coach';
 const LAPSED_COACH_ID = 'acct-obj-lapsed';
-// Active coach membership here, coach of record for nobody, no coverage.
+// Active coach membership here, coach of record for nobody, no coverage --
+// and since issue #1480 (2026-10-12) still reaches the whole gym.
 const UNASSIGNED_COACH_ID = 'acct-obj-unassigned';
 const OTHER_COACH_ID = 'acct-obj-other-coach';
 // Active memberships HERE, in roles that may not author.
@@ -723,16 +724,19 @@ describe('the module writing and reading objectives', () => {
     }
   });
 
-  test('a coach of this gym who cannot open the block cannot add to it', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of this gym who is not the athlete\'s coach may add to the block; a coach of another gym may not', async () => {
     /* The read decision reaching this table. The objective has no
        athlete_id, so this is not a rule the module states -- it resolves the
        parent through getDevelopmentBlock, which is athlete-scoped, and
        inherits the answer. A coach with an active membership here, coach of
-       record for nobody, gets the same null a stranger's block gives. */
+       record for nobody, now opens every block of the gym; a coach of another
+       gym gets the same null a stranger's block gives. */
     const client = await migratedDatabase('adbo_mod_unassigned');
     try {
+      // The refusal first: the other gym's coach, in their own organization.
       await expect(addBlockObjective({
-        actor: UNASSIGNED_COACH,
+        actor: actorFor(OTHER_COACH_ID, 'coach', OTHER_ORG_ID),
         blockId: BLOCK_ID,
         domain: 'technical',
         objective: OBJECTIVE_TEXT,
@@ -740,20 +744,22 @@ describe('the module writing and reading objectives', () => {
       expect((await client.query('select objective_id from pilot.athlete_development_block_objectives')).rows)
         .toEqual([]);
 
-      // The control: make them the athlete's coach and the identical call
-      // succeeds, so the null above means "not your athlete" rather than
-      // "not a writer".
-      await client.query(
-        'update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3',
-        [UNASSIGNED_COACH_ID, ORG_ID, ATHLETE_ID],
-      );
+      // The same-gym coach of record for nobody: the write really happens.
       const created = await addBlockObjective({
         actor: UNASSIGNED_COACH,
         blockId: BLOCK_ID,
         domain: 'technical',
         objective: OBJECTIVE_TEXT,
       });
-      expect(created?.block_id).toBe(BLOCK_ID);
+      expect(created).toMatchObject({
+        organization_id: ORG_ID, block_id: BLOCK_ID, created_by_account_id: UNASSIGNED_COACH_ID,
+      });
+      const written = await client.query<{ organization_id: string; block_id: string; created_by_account_id: string }>(
+        'select organization_id, block_id, created_by_account_id from pilot.athlete_development_block_objectives',
+      );
+      expect(written.rows).toEqual([
+        { organization_id: ORG_ID, block_id: BLOCK_ID, created_by_account_id: UNASSIGNED_COACH_ID },
+      ]);
     } finally {
       await client.end();
     }
@@ -899,18 +905,36 @@ describe('access is inherited from the block, arm by arm', () => {
     }
   });
 
-  test('a coach reads their own athletes\' objectives, and an unassigned coach of the same gym reads none', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach reads every athlete\'s objectives in their gym, assigned or not; a coach of another gym reads none', async () => {
     const client = await seeded('adbo_read_coach');
+    const otherGymCoach = actorFor(OTHER_COACH_ID, 'coach', OTHER_ORG_ID);
     try {
       expect((await getBlockObjective(COACH, 'obj-mine'))?.objective_id).toBe('obj-mine');
       expect((await listObjectivesForBlock(COACH, SECOND_BLOCK_ID)).map((r) => r.objective_id))
         .toEqual(['obj-sibling']);
 
-      expect(await getBlockObjective(UNASSIGNED_COACH, 'obj-mine')).toBeNull();
-      expect(await listObjectivesForBlock(UNASSIGNED_COACH, BLOCK_ID)).toEqual([]);
-      // A writer here by role, and still not for this athlete: the status
-      // setter answers null rather than moving a row they cannot read.
-      expect(await setBlockObjectiveStatus(UNASSIGNED_COACH, 'obj-mine', 'cancelled')).toBeNull();
+      // The same-gym coach of record for nobody reads both, and may move one.
+      expect((await getBlockObjective(UNASSIGNED_COACH, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      expect((await listObjectivesForBlock(UNASSIGNED_COACH, BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-mine']);
+      expect((await listObjectivesForBlock(UNASSIGNED_COACH, SECOND_BLOCK_ID)).map((r) => r.objective_id))
+        .toEqual(['obj-sibling']);
+      expect((await setBlockObjectiveStatus(UNASSIGNED_COACH, 'obj-mine', 'cancelled'))?.status).toBe('cancelled');
+
+      // Another gym's coach reads none of it, and the status setter answers
+      // null rather than moving a row they cannot read.
+      expect(await getBlockObjective(otherGymCoach, 'obj-sibling')).toBeNull();
+      expect(await listObjectivesForBlock(otherGymCoach, SECOND_BLOCK_ID)).toEqual([]);
+      expect(await setBlockObjectiveStatus(otherGymCoach, 'obj-sibling', 'cancelled')).toBeNull();
+
+      const statuses = await client.query<{ objective_id: string; status: string }>(
+        'select objective_id, status from pilot.athlete_development_block_objectives order by objective_id',
+      );
+      expect(statuses.rows).toEqual([
+        { objective_id: 'obj-mine', status: 'cancelled' },
+        { objective_id: 'obj-sibling', status: 'active' },
+      ]);
     } finally {
       await client.end();
     }

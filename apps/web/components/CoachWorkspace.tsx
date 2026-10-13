@@ -56,6 +56,7 @@ import {
 // a child said about themselves, so it recognises them too -- from the same
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
@@ -439,6 +440,15 @@ interface CoachEscalation {
   reason: string;
   status: 'open' | 'acknowledged' | 'resolved';
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
+}
+
+/* #1528 (owner ruling 2026-10-12): an escalation filed from a pain report
+   reads "Pain report", not a severity word. Its stored rung still sets the
+   tone and the order. */
+function escalationBadgeLabel(escalation: CoachEscalation): string {
+  return isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity;
 }
 
 // athlete_voice is deliberately absent: the server never sends it to a coach.
@@ -1058,6 +1068,9 @@ export default function CoachWorkspace() {
      by leaving everyone UNKNOWN; the floor's readings gauge must not, or a
      read that never happened shows as "0 of N". */
   const [readinessFeedState, setReadinessFeedState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  /* Athletes with their own check-in for the gym's today (F-040). A self-report
+     is a reading for the floor's count and chip, never a band. */
+  const [checkedInToday, setCheckedInToday] = useState<ReadonlySet<string>>(new Set());
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   /* Whether the coach PICKED this athlete, as opposed to the roster having
@@ -1340,7 +1353,10 @@ export default function CoachWorkspace() {
      AND took the provenance caveat down with it, since the caveat renders
      inside this branch. "No signal" has to keep meaning no signal. */
   const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN')
-    || contextualReadiness.length > 0;
+    || contextualReadiness.length > 0
+    // F-040: an athlete's own check-in today is a working feed too; without it
+    // the tile said "No fresh readiness check-ins" beside a floor counting them.
+    || checkedInToday.size > 0;
   /* How many readings the feed returned, and how many of those may not be
      presented as measurements.
      Counted from the two sources SEPARATELY, because an unvalidated reading no
@@ -1798,8 +1814,10 @@ export default function CoachWorkspace() {
               reliability_status?: string;
               validity_status?: string;
             }>;
+            checked_in_today?: string[];
           };
           const items = board.items ?? [];
+          setCheckedInToday(new Set(board.checked_in_today ?? []));
           /* ITEM 2: AN UNVALIDATED ROW IS NOT PROMOTED TO A BAND.
              GREEN/YELLOW/RED on this roster is an authoritative reading a coach
              acts on -- it drives the alert count, the dot and the floor-plan
@@ -1841,10 +1859,13 @@ export default function CoachWorkspace() {
           // instead of becoming a stale disclaimer nobody removes.
           setReadinessFeedState('loaded');
         } else {
+          // A failed re-read must not leave an earlier read's check-ins standing.
+          setCheckedInToday(new Set());
           setReadinessFeedState('error');
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+        setCheckedInToday(new Set());
         setReadinessFeedState('error');
       }
 
@@ -1861,6 +1882,7 @@ export default function CoachWorkspace() {
       // The readiness board is read inside this load, so a roster failure is a
       // readiness failure too; left at 'loading' the tile said "No fresh
       // readiness check-ins" about a feed nobody read.
+      setCheckedInToday(new Set());
       setReadinessFeedState('error');
       // Fallback: set empty list but don't block UI
       setAthletes([]);
@@ -2536,7 +2558,7 @@ export default function CoachWorkspace() {
         urgent: true,
         title: athleteName ?? `Athlete ID ${escalation.athlete_id}`,
         meta: `${ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type} · ${painReportTime(escalation.created_at)}`,
-        badge: { tone: painSeverityTone(escalation.severity), label: escalation.severity },
+        badge: { tone: painSeverityTone(escalation.severity), label: escalationBadgeLabel(escalation) },
         details: [],
         body: escalation.reason,
         note: 'Acknowledging says you have seen it. Closing it out is an admin decision and happens on the admin escalations console.',
@@ -2557,7 +2579,8 @@ export default function CoachWorkspace() {
         meta: `Athlete ID ${report.athleteId} · recorded ${painReportTime(report.recordedAt)}`,
         badge: {
           tone: painSeverityTone(report.severity),
-          label: `${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`,
+          // The number only (#1528); the stored severity still sets the tone.
+          label: painScoreLabel(report.painScore),
         },
         details: [
           { label: 'Body location', value: report.location ?? painDetailAbsent(report.reporter), muted: !report.location },
@@ -2679,6 +2702,7 @@ export default function CoachWorkspace() {
               name: athlete.name,
               readiness: athlete.readiness,
               unvalidatedReading: contextualReadiness.some((entry) => entry.athleteId === athlete.id),
+              checkedInToday: checkedInToday.has(athlete.id),
               // The roster row says "Not your athlete" from the register's
               // coverage; the floor says it from the same place, or from the
               // faces read when that is all there is.
@@ -2761,7 +2785,7 @@ export default function CoachWorkspace() {
                     </div>
                     <StatusBadge
                       tone={painSeverityTone(report.severity)}
-                      label={`${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`}
+                      label={painScoreLabel(report.painScore)}
                     />
                   </div>
 
@@ -2882,7 +2906,7 @@ export default function CoachWorkspace() {
                           {painReportTime(escalation.created_at)}
                         </p>
                       </div>
-                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalationBadgeLabel(escalation)} />
                     </div>
 
                     <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>

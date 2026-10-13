@@ -562,9 +562,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Any coach in the gym can read every athlete's guardian media-consent status and guardian names, not just assigned athletes; header says this is an owner decision (route.ts:145-159).",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole :176; listOrganizationConsentStatus(principal.organizationId) returns all athletes with guardian names and consent status; no coach-reach helper runs.",
+    "notes": "requireRole :176; listOrganizationConsentStatus(principal.organizationId) returns all athletes with guardian names and consent status; no coach-reach helper runs. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Any coach in the gym can read every athlete's guardian media-consent status and guardian names, not just assigned athletes; header says this is an owner decision (route.ts:145-159).\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2766,9 +2766,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach branch returns the whole org roster (names, weight class, gym_status, coach_id) for athletes the coach is not assigned to; only dob and emergency_contact are redacted in SQL (entities.ts coachRosterQuery, line 406).",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items. Athlete and parent items are the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2); staff rows unchanged.",
+    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items. Athlete and parent items are the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2); staff rows unchanged. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach branch returns the whole org roster (names, weight class, gym_status, coach_id) for athletes the coach is not assigned to; only dob and emergency_contact are redacted in SQL (entities.ts coachRosterQuery, line 406).\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3538,9 +3538,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach can open any in-org ready teaching clip by calibration_clip_id with no assigned-athlete check; loadPlayableClip/assertVideoClippable (projects.ts:262-285) check org and video status only, and the response includes clip.athlete_id and the video pointer.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "calibration/annotation-set/route.ts requireAnnotator at the top of the handler; returns the caller's own annotation set and events for a clip. Footage is limited to teaching footage with a capture_take_id so athlete exposure is limited and athlete_id is nullable; flagged because no coach-reach helper runs. platform_owner refused.",
+    "notes": "calibration/annotation-set/route.ts requireAnnotator at the top of the handler; returns the caller's own annotation set and events for a clip. Footage is limited to teaching footage with a capture_take_id so athlete exposure is limited and athlete_id is nullable; flagged because no coach-reach helper runs. platform_owner refused. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach can open any in-org ready teaching clip by calibration_clip_id with no assigned-athlete check; loadPlayableClip/assertVideoClippable (projects.ts:262-285) check org and video status only, and the response includes clip.athlete_id and the video pointer.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3565,9 +3565,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach can open any in-org ready teaching clip by calibration_clip_id with no assigned-athlete check; loadPlayableClip/assertVideoClippable (projects.ts:262-285) check org and video status only, and the response includes clip.athlete_id and the video pointer.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "calibration/annotation-set/route.ts requireAnnotator at the top of the handler; opens an annotation set (openAnnotationSet) and writes an audit row. Footage is limited to teaching footage with a capture_take_id so athlete exposure is limited and athlete_id is nullable; flagged because no coach-reach helper runs. platform_owner refused.",
+    "notes": "calibration/annotation-set/route.ts requireAnnotator at the top of the handler; opens an annotation set (openAnnotationSet) and writes an audit row. Footage is limited to teaching footage with a capture_take_id so athlete exposure is limited and athlete_id is nullable; flagged because no coach-reach helper runs. platform_owner refused. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach can open any in-org ready teaching clip by calibration_clip_id with no assigned-athlete check; loadPlayableClip/assertVideoClippable (projects.ts:262-285) check org and video status only, and the response includes clip.athlete_id and the video pointer.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3592,9 +3592,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach reach rule is not run; access is limited to the caller's own annotation set (annotatorGate.ts loadOwnAnnotationSet), so reach is by ownership, not athlete assignment.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:57-61; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id. A body-point set (0.2+) the database refuses as incomplete (CALIBRATION_BODY_POINTS_INCOMPLETE) returns a 400 carrying the trigger's missing list; other failures stay opaque 500s.",
+    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:57-61; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id. A body-point set (0.2+) the database refuses as incomplete (CALIBRATION_BODY_POINTS_INCOMPLETE) returns a 400 carrying the trigger's missing list; other failures stay opaque 500s. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach reach rule is not run; access is limited to the caller's own annotation set (annotatorGate.ts loadOwnAnnotationSet), so reach is by ownership, not athlete assignment.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3619,9 +3619,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads the caller's own set's body moments, points, stance labels and the submission's missing list (body-points/route.ts GET; bodyPoints.ts listBodyDataForSet/listMissingBodyData). Teaching footage clip; clip rows carry a nullable athlete_id. No clippability check on a read of marks; private no-store.",
+    "notes": "Reads the caller's own set's body moments, points, stance labels and the submission's missing list (body-points/route.ts GET; bodyPoints.ts listBodyDataForSet/listMissingBodyData). Teaching footage clip; clip rows carry a nullable athlete_id. No clippability check on a read of marks; private no-store. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3646,9 +3646,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Opens one moment of one event in the caller's own in-progress set (moments/route.ts POST); loadPlayableClip re-checks the footage; the module derives the moment's time from the event. Writes moment + audit (event and slot only, no label).",
+    "notes": "Opens one moment of one event in the caller's own in-progress set (moments/route.ts POST); loadPlayableClip re-checks the footage; the module derives the moment's time from the event. Writes moment + audit (event and slot only, no label). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3673,9 +3673,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Relabels a moment (lead side, guard, picture size, free-middle time) in the caller's own in-progress set (moments/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (field names only).",
+    "notes": "Relabels a moment (lead side, guard, picture size, free-middle time) in the caller's own in-progress set (moments/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (field names only). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3700,9 +3700,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Removes a moment and its points from the caller's own in-progress set (moments/route.ts DELETE); no clippability check, as events DELETE. Writes + audit.",
+    "notes": "Removes a moment and its points from the caller's own in-progress set (moments/route.ts DELETE); no clippability check, as events DELETE. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3727,9 +3727,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Marks one or more points at a moment in the caller's own in-progress set (points/route.ts PUT); loadPlayableClip re-checks the footage; the module holds the version's point list and the [0,1] range. Writes + audit (counts only, no coordinate).",
+    "notes": "Marks one or more points at a moment in the caller's own in-progress set (points/route.ts PUT); loadPlayableClip re-checks the footage; the module holds the version's point list and the [0,1] range. Writes + audit (counts only, no coordinate). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3754,9 +3754,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Removes one point's mark in the caller's own in-progress set (points/route.ts DELETE); no clippability check. Writes + audit.",
+    "notes": "Removes one point's mark in the caller's own in-progress set (points/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3781,9 +3781,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Sets or changes the stance type of one event in the caller's own in-progress set (stance/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (event only, no stance).",
+    "notes": "Sets or changes the stance type of one event in the caller's own in-progress set (stance/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (event only, no stance). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3808,9 +3808,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Clears the stance type of one event in the caller's own in-progress set (stance/route.ts DELETE); no clippability check. Writes + audit.",
+    "notes": "Clears the stance type of one event in the caller's own in-progress set (stance/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3835,9 +3835,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Any coach gets every clip in a study, including clip athlete_id, with no assigned-athlete check.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Lists calibration clips for a project and checks each is still playable (clips/route.ts GET). Gate annotatorGate.ts:20-22. Clip rows include athlete_id taken from the video (projects.ts:348,392).",
+    "notes": "Lists calibration clips for a project and checks each is still playable (clips/route.ts GET). Gate annotatorGate.ts:20-22. Clip rows include athlete_id taken from the video (projects.ts:348,392). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Any coach gets every clip in a study, including clip athlete_id, with no assigned-athlete check.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3917,9 +3917,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check on the clip footage.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Records an annotation event in the caller's own in-progress set (events/route.ts POST); loadPlayableClip checks clip playable and Teach Shadow only. Writes event + audit.",
+    "notes": "Records an annotation event in the caller's own in-progress set (events/route.ts POST); loadPlayableClip checks clip playable and Teach Shadow only. Writes event + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check on the clip footage.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3944,9 +3944,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). On a body-point set, an event that holds body marks is refused (409) instead of replaced, since the delete would cascade them away. Writes + audit.",
+    "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). On a body-point set, an event that holds body marks is refused (409) instead of replaced, since the delete would cascade them away. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3971,9 +3971,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit.",
+    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3998,9 +3998,9 @@
     "writes": true,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Deletes an event from the caller's own in-progress set (events/route.ts DELETE). Writes + audit.",
+    "notes": "Deletes an event from the caller's own in-progress set (events/route.ts DELETE). Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5444,9 +5444,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "A coach listing a plan's groups gets every member's athlete_id and full name in the gym, with no coach-reach filter.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists floor plans, or one plan's groups with members (floorGroups.ts:126-154 returns athlete_id + full_name for all placed athletes). Names and placement only; probably intentional for a room-wide rotation board.",
+    "notes": "Lists floor plans, or one plan's groups with members (floorGroups.ts:126-154 returns athlete_id + full_name for all placed athletes). Names and placement only; probably intentional for a room-wide rotation board. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"A coach listing a plan's groups gets every member's athlete_id and full name in the gym, with no coach-reach filter.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5512,7 +5512,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5542,8 +5542,8 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "accessibleAthleteIds",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5573,7 +5573,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5603,7 +5603,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5633,7 +5633,7 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "<[...SHADOW_PHI_ROLES]>"
@@ -5985,9 +5985,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Any coach reads every 1% Club nomination (athlete names, nominator notes, votes) in the gym with no coach-reach filter.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists nominations and member list for the whole gym or one nomination (one-percent-club/route.ts GET); listNominations/getNomination filter only by organization and non-deleted athlete (onePercentClub.ts:188-211). Likely intended committee visibility.",
+    "notes": "Lists nominations and member list for the whole gym or one nomination (one-percent-club/route.ts GET); listNominations/getNomination filter only by organization and non-deleted athlete (onePercentClub.ts:188-211). Likely intended committee visibility. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Any coach reads every 1% Club nomination (athlete names, nominator notes, votes) in the gym with no coach-reach filter.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6603,7 +6603,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; a coach's unfiltered list is the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1), passed to getOrganizationViolations as athleteIds.",
+    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; a coach's unfiltered list is the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1), passed to getOrganizationViolations as athleteIds. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7305,7 +7305,8 @@
       "organization_admin",
       "admin",
       "coach",
-      "athlete"
+      "athlete",
+      "parent"
     ],
     "athleteData": true,
     "writes": false,
@@ -7313,7 +7314,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists one athlete goals. goals/list/route.ts:11-12 role gate, :27 assertActorCanAccessAthlete before read.",
+    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7323,7 +7324,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete,coach,organization_admin,parent"
       ]
     }
   },
@@ -7345,7 +7346,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts:26,31-32 gate; :39 assertActorCanAccessAthlete (parent = linked child only).",
+    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7365,18 +7366,15 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates a personal goal in athlete own words plus audit row. goals/personal/route.ts:27,51-52 gate; :61 assertActorCanAccessAthlete. Parent excluded from writes.",
+    "notes": "Creates a personal goal in the athlete's own words plus an audit row. goals/personal/route.ts GOAL_WRITER_ROLES = athlete only (lane N8-05); assertActorCanAccessAthlete ties the write to the athlete's own record.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7386,7 +7384,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7396,18 +7394,15 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Marks a personal goal reached; authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete goal is not stamped. goals/personal/route.ts:105-106,115-129.",
+    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7417,7 +7412,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7427,18 +7422,15 @@
     "path": "/api/pilot/goals",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (payload and stored owner)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates or updates a SMART goal. goals/route.ts:12-13 gate; :16 access on payload athlete; :25-27 access on existing owner with compare-and-set; audit write :38.",
+    "notes": "Creates or updates a SMART goal; athlete only (lane N8-05). goals/route.ts role gate; access on the payload athlete and on an existing goal's stored owner with compare-and-set; audit write.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7448,7 +7440,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7458,18 +7450,15 @@
     "path": "/api/pilot/goals/update",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (stored and payload athlete)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Updates an existing goal. goals/update/route.ts:12-13 gate; :22-23 access on both stored owner and payload athlete; compare-and-set :26; audit :28.",
+    "notes": "Updates an existing goal; athlete only (lane N8-05). goals/update/route.ts role gate; access on both the stored owner and the payload athlete; compare-and-set; audit write.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7479,7 +7468,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -8077,9 +8066,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach reads every athlete entered in a competition (name, entry status, result) with no coach-reach filter; the file comment (entries/route.ts:19-26) says this is deliberate org-wide read, but these are per-athlete records of possibly minor athletes.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists competition entries joined to athlete names. entries/route.ts:37-38 role gate; no assertActor/athleteIdsForCoach call, so coach sees all entries in the gym by documented design (:19-26).",
+    "notes": "Lists competition entries joined to athlete names. entries/route.ts:37-38 role gate; no assertActor/athleteIdsForCoach call, so coach sees all entries in the gym by documented design (:19-26). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach reads every athlete entered in a competition (name, entry status, result) with no coach-reach filter; the file comment (entries/route.ts:19-26) says this is deliberate org-wide read, but these are per-athlete records of possibly minor athletes.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8219,9 +8208,9 @@
     "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
-    "looksWrong": "Coach reads every athlete on a season roster org-wide with no coach-reach helper; the route comment says this is deliberate (names only, matches athletes/list doctrine).",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists season roster (athlete name + membership link) via listLeagueRoster; gate roster/route.ts:30-31, roles at wrestlingLeague.ts:32. Read is org-wide for coaches by documented design (route.ts:19-28).",
+    "notes": "Lists season roster (athlete name + membership link) via listLeagueRoster; gate roster/route.ts:30-31, roles at wrestlingLeague.ts:32. Read is org-wide for coaches by documented design (route.ts:19-28). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach reads every athlete on a season roster org-wide with no coach-reach helper; the route comment says this is deliberate (names only, matches athletes/list doctrine).\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8596,6 +8585,62 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/observations",
+    "gate": "requirePrincipal + requireRole(parent) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Guardian reads back the observations they themselves wrote about their linked child (note_type parent_observation, author = caller); gate observations/route.ts GET requireRole(parent) + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/observations/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/observations",
+    "gate": "requirePrincipal + requireRole(parent) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Guardian writes an observation (category, optional 1-10 rating, notes) about their linked child as a parent_observation coach observation, audited in one transaction; gate observations/route.ts POST requireRole(parent) + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/safety/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/safety",
@@ -8638,7 +8683,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2).",
+    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9466,7 +9511,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the athletes the caller reaches (athleteIdsForCoach: coach of record UNION active coverage, lane P1), or the whole gym when scope=organization and caller is org admin. dob is selected but only feeds the portrait decision; is_mine and coach_of_subject stay coach-of-record.",
+    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the athletes the caller reaches (athleteIdsForCoach: coach of record UNION active coverage, lane P1), or the whole gym when scope=organization and caller is org admin. dob is selected but only feeds the portrait decision; is_mine and coach_of_subject stay coach-of-record. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9621,7 +9666,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Records a drill completion for athlete_id (route.ts:93-110) or verifies a completion (route.ts:62-86). Both branches call assertActorCanAccessAthlete (route.ts:69, 93), restricting athlete to self and coach to assigned/covered. Parent cannot log completions.",
+    "notes": "Records a drill completion for athlete_id (route.ts:93-110) or verifies a completion (route.ts:62-86). Both branches call assertActorCanAccessAthlete (route.ts:69, 93), restricting athlete to self and coach to assigned/covered. Parent cannot log completions. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9654,7 +9699,7 @@
     "missingGate": false,
     "looksWrong": "Role list admits platform_owner, volunteer and staff (coachingContentAccess.ts:93-102) but the athlete-reach check then refuses them; harmless, but the list is wider than the effective set.",
     "confidence": "high",
-    "notes": "Returns drill instruction text for an assignment_id plus assigner display name (route.ts:16-45). Reach check on assignment.athlete_id at route.ts:28; refusal 404. Effective admitted set after both checks: coach (assigned/covered), org admin, athlete (self), parent (linked).",
+    "notes": "Returns drill instruction text for an assignment_id plus assigner display name (route.ts:16-45). Reach check on assignment.athlete_id at route.ts:28; refusal 404. Effective admitted set after both checks: coach (assigned/covered), org admin, athlete (self), parent (linked). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10196,7 +10241,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "QUEUE_ROLES = organization_admin, admin, coach. Coach with athlete_id filter runs assertCoachAssignedToAthlete; otherwise coachVisibleFlags filters via accessibleAthleteIds (account-level flags only if person_account_id is the coach). Org admin sees all open flags. Per-athlete safety flags.",
+    "notes": "QUEUE_ROLES = organization_admin, admin, coach. Coach with athlete_id filter runs assertCoachAssignedToAthlete; otherwise coachVisibleFlags filters via accessibleAthleteIds (account-level flags only if person_account_id is the coach). Org admin sees all open flags. Per-athlete safety flags. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10204,7 +10249,7 @@
       "authorizationGates": [
         "requireRole",
         "accessibleAthleteIds",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -10227,14 +10272,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Coach must supply athlete_id and pass assertCoachAssignedToAthlete; coach cannot flag an account. Org admin may flag any athlete or person in the org. Writes flag + audit.",
+    "notes": "Coach must supply athlete_id and pass assertCoachAssignedToAthlete; coach cannot flag an account. Org admin may flag any athlete or person in the org. Writes flag + audit. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -10257,14 +10302,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Coach: loads flag, requires athlete_id on it and assertCoachAssignedToAthlete (errors masked as 404). Org admin resolves any flag. Calls resolveSafetyFlag, audits.",
+    "notes": "Coach: loads flag, requires athlete_id on it and assertCoachAssignedToAthlete (errors masked as 404). Org admin resolves any flag. Calls resolveSafetyFlag, audits. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -10287,7 +10332,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance.",
+    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10316,7 +10361,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside athleteIdsForCoach; no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design.",
+    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside athleteIdsForCoach; no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10345,7 +10390,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside athleteIdsForCoach the hold warning carries scope only and the stored note is kept, a note from them refused. cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only.",
+    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside athleteIdsForCoach the hold warning carries scope only and the stored note is kept, a note from them refused. cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10877,7 +10922,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "decisions/route.ts:48 requireRole; :60 assertActorCanAccessAthlete before recordDecision; recordDecision scopes the cited recommendation to the same athlete (shadowDecisions.ts ~:38-41) and blocks on medical status. Writes a decision row.",
+    "notes": "decisions/route.ts:48 requireRole; :60 assertActorCanAccessAthlete before recordDecision; recordDecision scopes the cited recommendation to the same athlete (shadowDecisions.ts ~:38-41). The athlete's medical status never refuses it; the status on file is stored with the decision (medical_status_snapshot_id, audit after_state; issue #1474). Writes a decision row.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11575,7 +11620,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "claims/route.ts:29-30 gate; with scope='subject' shadowLibrary.ts:1329 runs assertActorCanAccessAthlete (athlete self-only, coach assigned, platform_owner refused); scope 'scoped' is org-wide library evidence. Writes a research requirement and SHADOW event (shadowLibrary.ts createShadowLibraryClaim ~1540+). Question text can be about a named athlete.",
+    "notes": "claims/route.ts:29-30 gate; with scope='subject' shadowLibrary.ts:1329 runs assertActorCanAccessAthlete (athlete self-only, coach assigned, platform_owner refused); scope 'scoped' is org-wide library evidence. Writes a research requirement and SHADOW event (shadowLibrary.ts createShadowLibraryClaim ~1540+). Question text can be about a named athlete. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12144,7 +12189,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "recommendations/route.ts:62-63 role gate, :77 assertActorCanAccessAthlete; createProvisionalRecommendation inserts a row (refused unless athlete has a current cleared medical status, per decide/route.ts comment).",
+    "notes": "recommendations/route.ts:62-63 role gate, :77 assertActorCanAccessAthlete; createProvisionalRecommendation inserts a row; never refused for the athlete's medical status, which is recorded in the audit entry (issue #1474).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13180,13 +13225,13 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads training holds (route.ts:100-155). Athlete gets own athlete-safe projection; parent only linked child; coach must pass assertCoachAssignedToAthlete and must name athlete_id; org admin may list org-wide. platform_owner/board/staff/volunteer get Forbidden (isStaff).",
+    "notes": "Reads training holds (route.ts:100-155). Athlete gets own athlete-safe projection; parent only linked child; coach must pass assertCoachAssignedToAthlete and must name athlete_id; org admin may list org-wide. platform_owner/board/staff/volunteer get Forbidden (isStaff). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": []
     }
@@ -13213,7 +13258,7 @@
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertCoachAssignedToAthlete"
+        "assertCoachReachesAthlete"
       ],
       "roleLiterals": []
     }
@@ -13577,7 +13622,7 @@
     "missingGate": false,
     "looksWrong": "Every athlete-less (unassigned) clip in the gym is listed to any coach; owner-confirmed breadth (2026-08-08), see the route comment.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13740,7 +13785,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Issues a saved workout template to one athlete (issueWorkoutTemplate, workoutTemplates.ts): one gap-free assignment per step and any unadopted-but-ready reference drill adopted, in one transaction with audit events; refuses the whole issue and names the drills when a step cannot be assigned. Role gate is the first statement after requirePrincipal; reach check before the template is read, an unreachable athlete answers the hidden 404. Hold warning read after commit.",
+    "notes": "Issues a saved workout template to one athlete (issueWorkoutTemplate, workoutTemplates.ts): one gap-free assignment per step and any unadopted-but-ready reference drill adopted, in one transaction with audit events; refuses the whole issue and names the drills when a step cannot be assigned. Role gate is the first statement after requirePrincipal; reach check before the template is read, an unreachable athlete answers the hidden 404. Hold warning read after commit. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

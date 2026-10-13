@@ -4,6 +4,10 @@ import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 /**
  * THE WALL OF NAMES.
@@ -93,7 +97,7 @@ export default function WallOfNames() {
     <main className="wall-names room room--floor min-h-screen">
       <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s7)]">
         <header className="wall-names-head">
-          <p className="wall-names-eyebrow">Punxsy Prominence Boxing &amp; Fitness</p>
+          <p className="wall-names-eyebrow">{GYM.brand}</p>
           <h1 className="wall-names-title">The Wall of Names</h1>
           <p className="wall-names-blurb">
             Everybody who has come through this gym. Nobody comes off it. If you trained here for one week in

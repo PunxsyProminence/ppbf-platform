@@ -329,18 +329,24 @@ describe("SHADOW event feed: mirrored audit events follow audit/get's role and e
     );
   });
 
-  test('a coach reads allow-listed mirrors for their own athlete and gym-wide types; no payment, board, consent, safety, calibration or account row', async () => {
-    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, DRILL, GOAL_A, GOAL_OWNED_A]));
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Every
+  // coach of the gym now reads the allow-listed mirrors of every athlete of
+  // the gym; the entity-type gate (no payment, board, consent, safety,
+  // calibration or account row) and the fail-closed "names nobody, resolves to
+  // nobody" rule are unchanged.
+  test('a coach reads allow-listed mirrors for every athlete of the gym and gym-wide types; no payment, board, consent, safety, calibration or account row', async () => {
+    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, DRILL, GOAL_A, GOAL_MOVED, GOAL_OWNED_A]));
   });
 
-  test("a goal moved to another coach's athlete leaves the first coach's feed, as audit/get; one that names nobody but resolves to the coach's athlete stays", async () => {
+  test("a goal moved to another athlete of the gym stays in the first coach's feed; one that names nobody and resolves to nobody stays hidden", async () => {
     const coachA = await visibleTo(COACH_A, 'coach');
-    expect(coachA).not.toContain(GOAL_MOVED);
+    expect(coachA).toContain(GOAL_MOVED);
     expect(coachA).toContain(GOAL_OWNED_A);
+    expect(coachA).not.toContain(GOAL_NOBODY);
   });
 
-  test("another coach reads neither athlete A's goal nor an athlete-owned row that names nobody", async () => {
-    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, DRILL]));
+  test('another coach of the gym reads the same rows as the first: assignment no longer narrows the feed', async () => {
+    expect(await visibleTo(COACH_B, 'coach')).toEqual(await visibleTo(COACH_A, 'coach'));
   });
 
   test('staff read no mirrored audit row', async () => {

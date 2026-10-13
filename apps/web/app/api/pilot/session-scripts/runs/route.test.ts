@@ -240,10 +240,22 @@ describe('POST runs — start', () => {
     });
   });
 
-  it('requires script_id', async () => {
-    const response = await POST(post({ athletes_present: 3 }));
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({ error: 'script_id' });
+  // Issue #1523 (Jason 2026-10-12, "allow a plain session"): no script_id is a plain session.
+  it('starts a plain session when no script_id is sent, or it is null', async () => {
+    for (const body of [{ athletes_present: 3 }, { script_id: null, athletes_present: 3 }]) {
+      mockStart.mockClear();
+      const response = await POST(post(body));
+      expect(response.status).toBe(201);
+      expect(mockStart).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ scriptId: null, athletesPresent: 3 }));
+    }
+  });
+
+  it('a script_id that is sent must name a script', async () => {
+    for (const scriptId of ['', '   ', 7]) {
+      const response = await POST(post({ script_id: scriptId }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'script_id' });
+    }
     expect(mockStart).not.toHaveBeenCalled();
   });
 
