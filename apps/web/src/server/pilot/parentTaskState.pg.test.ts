@@ -603,8 +603,8 @@ describe('listFamilyNotesForStaff (#1542)', () => {
     );
     await activeClient!.query(
       `insert into pilot.coach_observations
-         (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text, created_at)
-       values ($1, $2::uuid, $3, $4, 'parent_message', 'Medical form by Friday, please.', now() + interval '1 minute')`,
+         (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text, created_at)
+       values ($1, $2::uuid, $3, $4, 'coach', 'parent_message', 'Medical form by Friday, please.', now() + interval '1 minute')`,
       [ORG_ID, LATER_NOTE, ATHLETE, COACH],
     );
     await parentTasks.setParentTaskDueDate({
@@ -648,13 +648,31 @@ describe('listFamilyNotesForStaff (#1542)', () => {
       [ADMIN_ACCOUNT],
     );
     await activeClient!.query(
-      `update pilot.coach_observations set coach_account_id = $3 where organization_id = $1 and note_id = $2::uuid`,
+      `update pilot.coach_observations set coach_account_id = $3, author_role = 'organization_admin'
+        where organization_id = $1 and note_id = $2::uuid`,
       [ORG_ID, MESSAGE_NOTE, ADMIN_ACCOUNT],
     );
 
     const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
 
     expect(notes[0]!.posted_by_name).toBe('Admin Ppbf');
+  });
+
+  test('the role is the one the note was written under, not the account role today', async () => {
+    await seedLaterDoneNote();
+    // The coach who posted it is an organization admin now.
+    await activeClient!.query(`update pilot.accounts set role = 'organization_admin' where account_id = $1`, [COACH]);
+    // And a note from before author_role existed has none recorded.
+    await activeClient!.query(
+      `update pilot.coach_observations set author_role = null where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE],
+    );
+
+    const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
+
+    expect(notes[0]!.posted_by_name).toBe('Coach Pat Coach');
+    // No role on record: the name alone, with no role invented for it.
+    expect(notes[1]!.posted_by_name).toBe('Pat Coach');
   });
 
   test('which guardian ticked it is never returned', async () => {
@@ -681,6 +699,10 @@ describe('listFamilyNotesForStaff (#1542)', () => {
   });
 
   test("another child's notes and another gym's are not read", async () => {
+    await activeClient!.query(
+      `update pilot.coach_observations set author_role = 'coach' where organization_id = $1 and note_id = $2::uuid`,
+      [ORG_ID, MESSAGE_NOTE],
+    );
     const mine = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
     expect(mine.some((note) => note.note_id === OTHER_CHILD_NOTE)).toBe(false);
     // The author has no login name on file here: said as "A coach", never

@@ -259,19 +259,23 @@ interface FamilyNoteRow {
   note_text: string;
   posted_at: string;
   author_login: string | null;
-  author_role: string;
+  author_role: string | null;
   has_task: boolean;
   due_date: string | null;
   completed_at: string | null;
 }
 
-// The family reads "From Coach" or "From Admin" by the author's role
-// (ParentHub.tsx); the staff list says the same, with the login-derived name.
-function staffFacingAuthorName(login: string | null, role: string): string {
+// The role is the one recorded when the note was written
+// (coach_observations.author_role), never the account's role today: a coach
+// who later becomes an admin did not post as one (#1544 review). A note from
+// before that column has no role, and is said by name alone rather than with
+// a role invented for it.
+function staffFacingAuthorName(login: string | null, role: string | null): string {
   const coachName = deriveCoachDisplayName(login);
-  const admin = role !== 'coach';
-  if (coachName === 'Your coach') return admin ? 'An administrator' : 'A coach';
-  return admin ? coachName.replace(/^Coach /, 'Admin ') : coachName;
+  const bareName = coachName === 'Your coach' ? null : coachName.replace(/^Coach /, '');
+  if (role === 'coach') return bareName ? coachName : 'A coach';
+  if (role === 'organization_admin' || role === 'admin') return bareName ? `Admin ${bareName}` : 'An administrator';
+  return bareName ?? 'A staff member';
 }
 
 export async function listFamilyNotesForStaff(
@@ -281,7 +285,7 @@ export async function listFamilyNotesForStaff(
   const rows = await query<FamilyNoteRow>(
     `select co.note_id::text as note_id, co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
-            a.login_email as author_login, a.role as author_role,
+            a.login_email as author_login, co.author_role,
             (t.note_id is not null) as has_task,
             t.due_date::text as due_date,
             to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
