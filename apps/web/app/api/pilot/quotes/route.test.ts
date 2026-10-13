@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, PATCH, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { createQuote, listQuotes, updateQuote } from '@/src/server/pilot/orgQuotes';
+import { createQuote, listLiveQuotes, listQuotes, updateQuote } from '@/src/server/pilot/orgQuotes';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -15,11 +15,12 @@ jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }
 
 jest.mock('@/src/server/pilot/orgQuotes', () => {
   const actual = jest.requireActual('@/src/server/pilot/orgQuotes');
-  return { ...actual, listQuotes: jest.fn(), createQuote: jest.fn(), updateQuote: jest.fn() };
+  return { ...actual, listQuotes: jest.fn(), listLiveQuotes: jest.fn(), createQuote: jest.fn(), updateQuote: jest.fn() };
 });
 
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockList = listQuotes as jest.Mock;
+const mockLive = listLiveQuotes as jest.Mock;
 const mockCreate = createQuote as jest.Mock;
 const mockUpdate = updateQuote as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -29,6 +30,16 @@ const QUOTE = { quote_id: QUOTE_ID, organization_id: 'org-1', quote_text: 'Hands
 
 beforeEach(() => {
   mockList.mockResolvedValue([QUOTE]);
+  mockLive.mockResolvedValue([{
+    ...QUOTE,
+    quote_text: 'Float like a butterfly.',
+    speaker: 'Muhammad Ali',
+    quote_type: 'boxing_quote',
+    source: 'Press conference, 1964',
+    shown: ['anywhere'],
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+  }]);
   mockCreate.mockResolvedValue(QUOTE);
   mockUpdate.mockResolvedValue(QUOTE);
 });
@@ -170,4 +181,53 @@ test('a body that is not a JSON object, or holds an unstorable character, is a 4
   expect((await POST(bodyRequest('POST', { ...NEW_QUOTE, quote_text: 'bad\u0000text' }))).status).toBe(400);
   expect((await POST(bodyRequest('POST', { ...NEW_QUOTE, speaker: 'lone\uD800' }))).status).toBe(400);
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+describe('the live read (#1462 Q-B): any signed-in member, words only', () => {
+  const liveRequest = () => new NextRequest('http://localhost/api/pilot/quotes?live=1');
+
+  test('every signed-in role gets the live quotes, scoped to its own organization', async () => {
+    for (const role of ['athlete', 'parent', 'coach', 'organization_admin', 'admin', 'board'] as const) {
+      mockPrincipal.mockResolvedValue(principal({ role, organizationId: 'org-7' }));
+      const response = await GET(liveRequest());
+      expect(response.status).toBe(200);
+    }
+    expect(mockLive.mock.calls.every(([org]) => org === 'org-7')).toBe(true);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('a family member gets the words, speaker and moments and nothing else', async () => {
+    mockPrincipal.mockResolvedValue(principal({ role: 'parent' }));
+    const body = await (await GET(liveRequest())).json();
+    expect(body).toEqual({
+      ok: true,
+      quotes: [{ quote_text: 'Float like a butterfly.', speaker: 'Muhammad Ali', shown: ['anywhere'] }],
+    });
+    const text = JSON.stringify(body);
+    for (const field of ['quote_id', 'organization_id', 'source', 'quote_type', 'active', 'created_at', 'updated_at']) {
+      expect(text).not.toContain(field);
+    }
+  });
+
+  test('only the live list is read: an inactive quote cannot reach a family screen', async () => {
+    mockPrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+    await GET(liveRequest());
+    expect(mockLive).toHaveBeenCalledTimes(1);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('without live=1 the full staff list stays refused to athletes and parents', async () => {
+    for (const role of ['athlete', 'parent'] as const) {
+      mockPrincipal.mockResolvedValue(principal({ role }));
+      const full = new NextRequest('http://localhost/api/pilot/quotes?live=0');
+      expect((await GET(full)).status).toBe(403);
+    }
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('the live read still needs a signed-in member', async () => {
+    mockPrincipal.mockRejectedValue(new Error('Unauthorized'));
+    expect((await GET(liveRequest())).status).toBe(401);
+    expect(mockLive).not.toHaveBeenCalled();
+  });
 });

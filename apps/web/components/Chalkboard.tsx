@@ -8,7 +8,7 @@ import {
   type AnnouncementItem,
   type AnnouncementPlacement,
 } from './AnnouncementBanner';
-import { pickSaying } from './gymSayings';
+import { GYM_SAYINGS, pickSaying, sayingSource, type LibraryQuote } from './gymSayings';
 import { usePilotSession, type PilotSessionRole } from './usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymMonthDay, formatGymWeekday } from '@/src/lib/gymTime';
@@ -131,6 +131,11 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
   const [reloadNonce, setReloadNonce] = useState(0);
+  // The gym's quote library (#1462 Q-B). [] after a failed read: the board then
+  // falls back to the gym's own GYM_SAYINGS. The saying waits until this read
+  // has settled, so the line is chosen once and never swaps on screen.
+  const [quotes, setQuotes] = useState<LibraryQuote[]>([]);
+  const [quotesSettled, setQuotesSettled] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -169,6 +174,26 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
     })();
     return () => controller.abort();
   }, [load, reloadNonce]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/quotes?live=1`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { ok?: boolean; quotes?: LibraryQuote[] };
+        if (payload.ok === true && Array.isArray(payload.quotes)) setQuotes(payload.quotes);
+      } catch {
+        // Unreadable library: the local sayings stand in, which is what they are for.
+      } finally {
+        if (!controller.signal.aborted) setQuotesSettled(true);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
 
   const mayWrite = CHALK_AUTHOR_ROLES.includes(session.role as PilotSessionRole)
     && session.authProvider === 'microsoft';
@@ -212,10 +237,15 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
     ? [line.author_name, chalkDateLabel(line.created_at)].filter(Boolean).join(' · ')
     : '';
   // While loading or after a failed read there is nothing true to show, so the
-  // board shows one of the gym's own sayings with what it is doing under it
-  // (Jason 2026-10-03). Owner-approved GYM_SAYINGS only; fixed seed per board.
+  // board shows one of the gym's sayings with what it is doing under it (Jason
+  // 2026-10-03). The line comes from the gym's quote library, boxing quotes
+  // included (OD-2026-10-03-015, #1462), and from the owner-approved
+  // GYM_SAYINGS when the library is empty or unread; fixed seed per board.
   const waiting = !loaded || unreadable;
-  const saying = waiting ? pickSaying('anywhere', `chalkboard-${placement}`) : null;
+  const source = sayingSource(quotes, 'anywhere');
+  const saying = waiting && quotesSettled ? pickSaying('anywhere', `chalkboard-${placement}`, source) : null;
+  // Only a library quote carries its speaker here; the gym's own lines read as before.
+  const fromLibrary = source !== GYM_SAYINGS;
 
   return (
     <section
@@ -229,6 +259,8 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
         ) : waiting ? (
           <>
             {saying ? <p className="chalkboard-line chalk">{saying.line}</p> : null}
+            {/* Attributed: a quote from the library is never shown without who said it. */}
+            {saying && fromLibrary ? <p className="chalkboard-by chalk-dim">— {saying.said_by}</p> : null}
             <p className="chalkboard-line chalkboard-line--blank chalk-dim">
               {loaded ? "Can't read the board right now." : 'Loading...'}
             </p>

@@ -3401,7 +3401,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board/summary/route.ts:10-12 getBoardSummary(orgId): aggregates with a minimum cohort of 5 (BOARD_MINIMUM_COHORT_SIZE per board/chat comment). Org-wide, no athlete identifier. platform_owner admitted to an org's aggregate view.",
+    "notes": "board/summary/route.ts:10-12 getBoardSummary(orgId): aggregates with a minimum cohort of 5 (BOARD_MINIMUM_COHORT_SIZE per board/chat comment). Org-wide, no athlete identifier. platform_owner admitted to an org's aggregate view. Optional from/to (both or neither) return the dated board report (boardSummary.ts getBoardReport; #1542 RP-04): exactly one completed calendar month (from the 1st, to that month's last day, before the gym's current month), so no two reports overlap; the same aggregate contract and suppression plus its window, sessions by date and coach reviews by gym day, for every non-deleted athlete of the organization.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10095,11 +10095,9 @@
     "id": "app/api/pilot/quotes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/quotes",
-    "gate": "requirePrincipal + requireRole",
+    "gate": "requirePrincipal (?live=1, words only); otherwise requirePrincipal + requireRole(QUOTE_READ_ROLES)",
     "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
+      "any-authenticated"
     ],
     "athleteData": false,
     "writes": false,
@@ -10107,7 +10105,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "QUOTE_READ_ROLES = coach, organization_admin, admin. Lists the gym's motivational quotes (org content, no athlete identifier).",
+    "notes": "QUOTE_READ_ROLES = coach, organization_admin, admin for the full list. GET ?live=1 (#1462 Q-B) serves any signed-in member of the organization the active quotes' quote_text, speaker and shown only (no ids, sources, types or timestamps) for the chalkboard. Org content, no athlete identifier.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

@@ -14,6 +14,7 @@ import {
   createQuote,
   isQuoteShown,
   isQuoteType,
+  listLiveQuotes,
   listQuotes,
   updateQuote,
   type QuotePatch,
@@ -27,6 +28,12 @@ export const runtime = 'nodejs';
 // write door is the organization admin only). Every call is scoped to the
 // signed-in principal's organization; an organization id in the request is
 // never read.
+//
+// One narrower read is open to every signed-in member of the organization
+// (#1462 Q-B, OVERWATCH 2026-10-12): GET ?live=1 returns the switched-on
+// quotes' words, speaker and moments, and nothing else -- no ids, no source,
+// no type, no timestamps -- because the chalkboard that draws them is seen by
+// athletes and parents. The full list (inactive rows, sources) stays staff-only.
 
 const QUOTE_READ_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const QUOTE_WRITE_ROLES = ['organization_admin', 'admin'] as const;
@@ -84,6 +91,15 @@ function optionalActive(value: unknown): boolean | undefined {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+
+    if (request.nextUrl.searchParams.get('live') === '1') {
+      const live = await listLiveQuotes(principal.organizationId);
+      return NextResponse.json({
+        ok: true,
+        quotes: live.map(({ quote_text, speaker, shown }) => ({ quote_text, speaker, shown })),
+      });
+    }
+
     requireRole(principal, [...QUOTE_READ_ROLES]);
 
     const quotes = await listQuotes(principal.organizationId);
