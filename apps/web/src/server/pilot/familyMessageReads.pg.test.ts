@@ -347,6 +347,59 @@ describe('family message reads migration (FC-04)', () => {
     }
   });
 
+  test("the runner refuses a note-bus index of that name whose columns are in another order", async () => {
+    const client = await freshDatabase('fmread_index_order');
+    try {
+      // Rebuild the scene a wrong index would leave: the reads table and the replies' foreign key
+      // out of the way, and the shared index name taken by a unique index over the same columns
+      // in another order. The file's if-not-exists keeps it, and the foreign keys still build on
+      // it (a key needs the column set, not the order) -- so only readiness can say it is wrong.
+      await client.query('drop table pilot.family_message_reads');
+      await client.query('alter table pilot.family_message_replies drop constraint pilot_family_message_replies_note_fk');
+      await client.query('drop index pilot.uq_pilot_coach_observations_org_note_athlete');
+      await client.query(
+        'create unique index uq_pilot_coach_observations_org_note_athlete on pilot.coach_observations(note_id, organization_id, athlete_id)',
+      );
+
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_MESSAGE_READS_NOT_READY: note_index_ready');
+      const table = await client.query("select to_regclass('pilot.family_message_reads') is not null as present");
+      expect(table.rows[0].present).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("the runner refuses a reader key that includes reader_account_id but is not exactly it", async () => {
+    const client = await freshDatabase('fmread_reader_key');
+    try {
+      // The table pre-created with a two-column cascade key (gym, reader) -> accounts: the
+      // file's if-not-exists keeps it, and only readiness can say the key is the wrong shape.
+      await client.query('drop table pilot.family_message_reads');
+      await client.query('create unique index fmread_accounts_org_account on pilot.accounts(organization_id, account_id)');
+      await client.query(`
+        create table pilot.family_message_reads (
+          organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+          note_id uuid not null,
+          athlete_id text not null,
+          reader_account_id text not null,
+          reader_role text not null,
+          first_read_at timestamptz not null default now(),
+          constraint pilot_family_message_reads_pkey primary key (organization_id, note_id, reader_account_id),
+          constraint pilot_family_message_reads_note_fk
+            foreign key (organization_id, note_id, athlete_id)
+            references pilot.coach_observations(organization_id, note_id, athlete_id) on delete cascade,
+          constraint fmread_reader_two_column
+            foreign key (organization_id, reader_account_id)
+            references pilot.accounts(organization_id, account_id) on delete cascade,
+          constraint pilot_family_message_reads_role_check check (reader_role = 'parent')
+        )`);
+
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_MESSAGE_READS_NOT_READY: reader_fk_cascade');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a result it did not produce', async () => {
     // An empty database: "applying" a statement that creates nothing must not commit.
     const client = await freshDatabase('fmread_not_ready', 'none');
