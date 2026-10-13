@@ -1878,6 +1878,45 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
     expect(screen.queryByText(/wellness is recorded/)).toBeNull();
   });
 
+  test('when the wellness read failed the rail claims nothing about it', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
+  });
+
+  // Left open across gym midnight with no other update: the day has to move on
+  // its own, or yesterday's record is still "today's".
+  test('the rail stops calling a record "today\'s" once the gym day rolls over, with nothing else happening', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-12T20:30:00Z'), advanceTimers: true });
+    try {
+      storedCheckIn = { ...checkedInRecord(), checked_in_on: '2026-10-12' };
+      await renderWorkspace();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+      expect(await screen.findByText("Today's wellness is recorded. No session started yet.")).toBeTruthy();
+
+      await act(async () => {
+        jest.setSystemTime(new Date('2026-10-13T05:00:00Z'));
+        jest.advanceTimersByTime(61_000);
+      });
+
+      expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+      expect(screen.queryByText(/wellness is recorded/)).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('while the wellness read is still loading the rail claims nothing', async () => {
     checkInReadPending = true;
     await renderWorkspace();
