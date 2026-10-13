@@ -42,7 +42,8 @@ export interface FamilyReplyRow {
 type ReadState =
   | { state: 'loading' }
   | { state: 'failed'; athleteId: string }
-  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[]; replies: FamilyReplyRow[] | null };
+  // replies: 'loading' until their own read settles; null when it failed.
+  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[]; replies: FamilyReplyRow[] | null | 'loading' };
 
 async function readReplies(athleteId: string): Promise<FamilyReplyRow[] | null> {
   try {
@@ -79,13 +80,18 @@ export default function FamilyNotesPosted({
           { credentials: 'include' },
         );
         const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
-        const replies = await repliesRead;
         if (mine !== seq.current) return;
         if (!response.ok || !Array.isArray(payload.items)) {
           setRead({ state: 'failed', athleteId });
           return;
         }
-        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies });
+        // The notes show as soon as they answer; the replies fill in when
+        // their own read settles, so a slow or failed replies read never
+        // holds the notes back.
+        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies: 'loading' });
+        const replies = await repliesRead;
+        if (mine !== seq.current) return;
+        setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? { ...held, replies } : held));
       } catch {
         if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
@@ -114,10 +120,14 @@ export default function FamilyNotesPosted({
           <p role="alert" className="t-body mt-[var(--s2)]">
             The family&apos;s replies could not be loaded. This is not a statement that nobody replied. Reload to retry.
           </p>
+        ) : shown.replies === 'loading' ? (
+          <p className="t-muted mt-[var(--s2)]">Loading the family&apos;s replies…</p>
         ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {
-            const replies = shown.replies?.filter((reply) => reply.note_id === note.note_id) ?? [];
+            const replies = Array.isArray(shown.replies)
+              ? shown.replies.filter((reply) => reply.note_id === note.note_id)
+              : [];
             const done = note.task?.completed_at ?? null;
             // A due date is a calendar day, not an instant: printed as the day it is.
             const due = note.task?.due_date ? formatCalendarDay(note.task.due_date) : null;

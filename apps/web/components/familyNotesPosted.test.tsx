@@ -194,6 +194,53 @@ describe('family replies under each note (FC-03)', () => {
     );
   });
 
+  test('the notes show while the replies are still loading, and the replies fill in when they answer', async () => {
+    let finishReplies: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) =>
+      (String(input).includes('/family-message-replies')
+        ? new Promise<Response>((resolve) => { finishReplies = resolve; })
+        : Promise.resolve(jsonResponse({ items: [OPEN] })))) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
+    expect(screen.getByText("Loading the family's replies…")).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+
+    await act(async () => {
+      finishReplies?.(jsonResponse({ items: [REPLIES[0]] }));
+    });
+
+    expect(screen.queryByText(/Loading the family/)).toBeNull();
+    expect(screen.getByRole('list', { name: 'Family replies' }).textContent).toContain('Will do, thanks.');
+  });
+
+  test("a replies answer for the athlete just left never lands under the next athlete's notes", async () => {
+    let finishFirstReplies: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/family-message-replies') && url.includes('athlete_id=ath-1')) {
+        return new Promise<Response>((resolve) => { finishFirstReplies = resolve; });
+      }
+      if (url.includes('/family-message-replies')) return Promise.resolve(jsonResponse({ items: [] }));
+      return Promise.resolve(jsonResponse({ items: [OPEN] }));
+    }) as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+    });
+    await act(async () => {
+      finishFirstReplies?.(jsonResponse({ items: [REPLIES[0]] }));
+    });
+
+    expect(screen.queryByText('Will do, thanks.')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+  });
+
   test('a failed replies read says so, and the notes still show', async () => {
     global.fetch = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ error: 'boom' }, false)) as unknown as typeof fetch;
 
