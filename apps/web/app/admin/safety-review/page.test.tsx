@@ -219,3 +219,42 @@ test('an untruncated all-clear still reads as an all-clear', async () => {
   await screen.findByText('Nothing open right now');
   expect(screen.queryByText(/200 most recently filed/i)).toBeNull();
 });
+
+test('a pain-report escalation badge reads "Pain report", keeps its colour, and a non-pain one keeps its word (#1528)', async () => {
+  const escalation = { athlete_id: 'ath-1', source_type: 'near_miss', status: 'open', created_at: '2026-08-01T00:00:00.000Z' };
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      openHolds: [],
+      failingGates: [],
+      openEscalations: [
+        { ...escalation, escalation_id: 'esc-1', athlete_name: 'Jordan T.', severity: 'critical', metadata: { trigger: 'athlete_pain_report' } },
+        { ...escalation, escalation_id: 'esc-2', athlete_name: 'Sam R.', severity: 'high', metadata: { trigger_key: 'athlete_pain_report' } },
+        { ...escalation, escalation_id: 'esc-3', athlete_name: 'Alex P.', severity: 'moderate', metadata: null },
+      ],
+      openViolations: [],
+      violationsReadLimit: 200,
+      violationsTruncated: false,
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  await screen.findByText('Open Escalations (3)');
+  const badgeFor = (name: string) => (screen.getByText(name).closest('li') as HTMLElement).querySelector('.badge') as HTMLElement;
+  const SEVERITY_WORD = /\b(low|moderate|high|critical)\b/i;
+
+  const fromNearMiss = badgeFor('Jordan T.');
+  expect(fromNearMiss.textContent).toBe('✕Pain report');
+  expect(fromNearMiss.className).toContain('badge--locked');
+  expect((screen.getByText('Jordan T.').closest('li') as HTMLElement).textContent).not.toMatch(SEVERITY_WORD);
+
+  const repeated = badgeFor('Sam R.');
+  expect(repeated.textContent).toBe('▲Pain report');
+  expect(repeated.className).toContain('badge--restricted');
+  expect(repeated.textContent).not.toMatch(SEVERITY_WORD);
+
+  const other = badgeFor('Alex P.');
+  expect(other.textContent).toBe('◉moderate');
+  expect(other.className).toContain('badge--monitor');
+});

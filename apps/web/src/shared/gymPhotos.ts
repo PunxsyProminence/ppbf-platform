@@ -55,6 +55,8 @@
  * people -- not even drawn ones.
  */
 
+import { currentOrganizationProfile } from './organizationProfile';
+
 /** Where a slot is allowed to appear. A slot names its surfaces; a surface asks for its slots. */
 export type GymPhotoSurface = 'public' | 'dashboard';
 
@@ -87,13 +89,16 @@ export interface GymPhotoSlot {
  * it is full, because the empty state is the one nearly everybody will see and
  * a caption that only makes sense beside a photograph reads as a broken page.
  */
+// The gym's street and town, from its one profile (#1469, N9-01).
+const GYM = currentOrganizationProfile();
+
 export const GYM_PHOTO_SLOTS: readonly GymPhotoSlot[] = [
   {
     key: 'entrance',
     title: 'The front door',
-    caption: '220 N Jefferson St. What you are looking for when you pull up the first time.',
+    caption: `${GYM.physical.street}. What you are looking for when you pull up the first time.`,
     file: 'entrance.svg',
-    alt: 'Illustration of the entrance to the gym at 220 N Jefferson St, Punxsutawney — a placeholder until the real photograph is taken.',
+    alt: `Illustration of the entrance to the gym at ${GYM.physical.street}, ${GYM.physical.city} — a placeholder until the real photograph is taken.`,
     surfaces: ['public'],
   },
   {

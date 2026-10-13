@@ -45,6 +45,12 @@ export interface ProfilePortraitProps {
    * is of.
    */
   readonly decorative?: boolean;
+  /**
+   * Where to fetch the photograph, when it is not this member's own id route:
+   * the coach line on a fight card is fetched by the card
+   * (coachPortraitUrl), because a family's card carries no coach id.
+   */
+  readonly src?: string;
 }
 
 export default function ProfilePortrait({
@@ -55,12 +61,14 @@ export default function ProfilePortrait({
   corner = 'none',
   size = 'md',
   decorative = false,
+  src,
 }: ProfilePortraitProps) {
   // A photo that 404s or fails to decode falls back to the plate rather than
   // rendering a broken-image glyph. The server answers 404 for every refusal,
   // so this path is also what a revoked release looks like mid-session.
   const [failed, setFailed] = useState(false);
-  const showPhoto = photoAvailable && accountId !== null && !failed;
+  const photoSrc = src ?? (accountId !== null ? portraitUrl(apiBase(), accountId) : null);
+  const showPhoto = photoAvailable && photoSrc !== null && !failed;
 
   const sizeClass = size === 'sm' ? 'plate--sm' : size === 'lg' ? 'plate--lg' : '';
 
@@ -86,7 +94,7 @@ export default function ProfilePortrait({
            upload policy, so there is nothing for the optimizer to save. */
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={portraitUrl(apiBase(), accountId)}
+          src={photoSrc}
           alt=""
           loading="lazy"
           decoding="async"

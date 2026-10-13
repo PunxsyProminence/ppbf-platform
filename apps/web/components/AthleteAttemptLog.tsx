@@ -1,6 +1,6 @@
 'use client';
 
-import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTime } from '@/src/lib/gymTime';
@@ -125,6 +125,9 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
   const [target, setTarget] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // One save per press (#1529): a ref, because two presses in one tick both
+  // read the same `saving` and both got through.
+  const savingRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -164,7 +167,7 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
 
   const submit = useCallback(async (event: FormEvent) => {
     event.preventDefault();
-    if (!athleteId || saving) return;
+    if (!athleteId || saving || savingRef.current) return;
     setSaveError(null);
     setSaved(false);
 
@@ -182,6 +185,7 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
       }
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -212,6 +216,7 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
     } catch (error) {
       setSaveError(error instanceof Error && error.message ? error.message : 'Attempt was not saved');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, [achieved, athleteId, load, metricKind, note, saving, target]);

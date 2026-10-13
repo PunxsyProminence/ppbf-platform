@@ -80,3 +80,16 @@ test('an invalid limit is a 400', async () => {
   const res = await get('?limit=-1');
   expect(res.status).toBe(400);
 });
+
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. A coach
+// naming an athlete who passes the gate reads that athlete's clips, assigned
+// or not -- "my athletes" no longer narrows a named athlete to nothing.
+test('a coach naming a same-gym athlete who is not on their roster reads that athlete\'s clips', async () => {
+  const res = await get('?athlete_id=ath-other-coach');
+  expect(res.status).toBe(200);
+  expect(mockAssertAccess).toHaveBeenCalledWith(principal(), 'ath-other-coach');
+  expect(mockCoachScope).not.toHaveBeenCalled();
+  expect(mockList).toHaveBeenCalledWith({
+    organizationId: 'org-1', athleteIds: null, athleteId: 'ath-other-coach', competitionId: undefined, limit: 50,
+  });
+});

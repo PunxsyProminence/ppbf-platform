@@ -35,7 +35,7 @@ import { fromAthleteDrillDetail, type DrillDetailView } from './drills/drillDeta
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
-import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDateTime, formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
 import {
   readIssuedWorkouts,
   sectionAssignedWork,
@@ -47,10 +47,10 @@ import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
-type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
+type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
 
 /**
- * The six task-oriented groups the eleven surfaces sit under, approved by the
+ * The five task-oriented groups the eleven surfaces sit under, approved by the
  * owner on 2026-08-16 (see docs/design/ATHLETE_WORKSPACE_IA_MOCKUP.md).
  *
  * Grouping is the whole change: every panel below still renders off its own
@@ -134,8 +134,17 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     ],
   },
   { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
-  { id: 'messages', label: 'Messages', tabs: [{ id: 'message-coach', label: 'Messages' }] },
-  { id: 'shadow', label: 'SHADOW', tabs: [{ id: 'shadow', label: 'SHADOW Intel' }] },
+  // Ask SHADOW lives with SHADOW (WO-N5-02, N5-02-Q1 A). It was a "Messages" group of its own,
+  // which read as messaging a coach; the question is answered by SHADOW and reaches no coach.
+  // The tab id stays 'message-coach' so anything that opens it still does.
+  {
+    id: 'shadow',
+    label: 'SHADOW',
+    tabs: [
+      { id: 'shadow', label: 'SHADOW Intel' },
+      { id: 'message-coach', label: 'Ask SHADOW' },
+    ],
+  },
 ];
 
 /** Which group owns a surface. Derived, never stored -- the tab stays the truth. */
@@ -431,6 +440,165 @@ const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 },
 const POST_SESSION_MINUTES_QUESTION = 'How many minutes did you train?';
 const POST_SESSION_MINUTES_MIN = 1;
 const POST_SESSION_MINUTES_MAX = 300;
+
+/* ---------------------------------------------------------- schedule tab --- */
+
+/**
+ * THE SCHEDULE TAB'S READ (WO-N5-01, OD-2026-10-08-009 D13).
+ *
+ * The unified scheduler stays the booking authority: this view books nothing,
+ * it reads GET /api/pilot/scheduler -- the same call /schedule makes -- and
+ * draws two lists. The route already scopes what an athlete gets: every class
+ * in the gym (the catalogue), and only this athlete's own registrations, each
+ * through the family projection with no staff account id (scheduler route,
+ * filterStateForActor and familyClass / familyRegistration). Nothing here
+ * widens that; the view draws only fields the route sends a family reader.
+ */
+export interface ScheduleClassRow {
+  class_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location: string;
+  capacity: number;
+  status: 'open' | 'full' | 'cancelled';
+  registered_count: number;
+}
+
+export interface ScheduleRegistrationRow {
+  registration_id: string;
+  class_id: string;
+  status: 'registered' | 'waitlisted' | 'cancelled';
+}
+
+const BOOKING_WORD: Record<'registered' | 'waitlisted', string> = {
+  registered: 'Booked',
+  waitlisted: 'Waitlisted',
+};
+
+/** The two lists, from one scheduler read: booked first, the rest of the upcoming catalogue after. */
+export function scheduleLists(
+  classes: ScheduleClassRow[],
+  registrations: ScheduleRegistrationRow[],
+  now: number,
+): {
+  booked: Array<{ registration: ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }; item: ScheduleClassRow }>;
+  available: ScheduleClassRow[];
+} {
+  const upcoming = classes
+    .filter((item) => item.status !== 'cancelled' && Date.parse(item.start_at) > now)
+    .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  // A booked session stays listed until its class ENDS, so one in progress is
+  // still there; and a booked class the gym cancelled stays, labelled as such,
+  // rather than vanishing from the athlete's list.
+  const byId = new Map(
+    classes.filter((item) => Date.parse(item.end_at) > now).map((item) => [item.class_id, item]),
+  );
+  const booked: Array<{ registration: ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }; item: ScheduleClassRow }> = [];
+  const bookedIds = new Set<string>();
+  for (const registration of registrations) {
+    if (registration.status !== 'registered' && registration.status !== 'waitlisted') continue;
+    const item = byId.get(registration.class_id);
+    if (!item || bookedIds.has(item.class_id)) continue;
+    bookedIds.add(item.class_id);
+    booked.push({ registration: registration as ScheduleRegistrationRow & { status: 'registered' | 'waitlisted' }, item });
+  }
+  booked.sort((a, b) => Date.parse(a.item.start_at) - Date.parse(b.item.start_at));
+  return { booked, available: upcoming.filter((item) => !bookedIds.has(item.class_id)) };
+}
+
+function classWhen(item: ScheduleClassRow): string {
+  return formatGymDateTime(item.start_at) ?? item.start_at;
+}
+
+/** The Schedule tab's lists. Reads once when mounted -- the tab mounts it only while open. */
+export function AthleteScheduleView() {
+  const [read, setRead] = useState<
+    | { state: 'loading' }
+    | { state: 'failed' }
+    | { state: 'ready'; classes: ScheduleClassRow[]; registrations: ScheduleRegistrationRow[]; readAt: number }
+  >({ state: 'loading' });
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
+        const payload = (await response.json().catch(() => null)) as
+          | { ok?: boolean; classes?: ScheduleClassRow[]; registrations?: ScheduleRegistrationRow[] }
+          | null;
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
+          throw new Error('unreadable');
+        }
+        // "Upcoming" is measured from the moment of the read, not re-taken on every render.
+        if (live) setRead({ state: 'ready', classes: payload.classes, registrations: payload.registrations, readAt: Date.now() });
+      } catch {
+        if (live) setRead({ state: 'failed' });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (read.state === 'loading') {
+    return <p className="t-body text-[color:var(--bone-300)]" role="status">Loading your schedule...</p>;
+  }
+  if (read.state === 'failed') {
+    // Never an empty list: an unread schedule and an empty one mean opposite things.
+    return <p className="t-body" role="status">Your schedule could not be loaded.</p>;
+  }
+
+  const { booked, available } = scheduleLists(read.classes, read.registrations, read.readAt);
+  return (
+    <div className="space-y-[var(--s5)]">
+      <section className={`${PANEL_RAISED} space-y-[var(--s3)]`} aria-label="Your sessions">
+        <h3 className="t-label">Your sessions</h3>
+        {booked.length === 0 ? (
+          <p className="t-body text-[color:var(--bone-300)]">You have no booked sessions.</p>
+        ) : (
+          <ul className="space-y-[var(--s3)]">
+            {booked.map(({ registration, item }) => (
+              <li key={registration.registration_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
+                <div className="min-w-0">
+                  <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
+                  <p className="t-body text-[color:var(--bone-300)]">
+                    {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
+                  </p>
+                </div>
+                <span className="t-label">{item.status === 'cancelled' ? 'Class cancelled' : BOOKING_WORD[registration.status]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className={`${PANEL_RAISED} space-y-[var(--s3)]`} aria-label="Upcoming classes">
+        <h3 className="t-label">Upcoming classes</h3>
+        {available.length === 0 ? (
+          <p className="t-body text-[color:var(--bone-300)]">No upcoming classes are scheduled.</p>
+        ) : (
+          <ul className="space-y-[var(--s3)]">
+            {available.map((item) => {
+              const left = Math.max(0, item.capacity - item.registered_count);
+              const full = item.status === 'full' || left === 0;
+              return (
+                <li key={item.class_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
+                    </p>
+                  </div>
+                  <span className="t-label">{full ? 'Full' : `${left} ${left === 1 ? 'spot' : 'spots'} left`}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
 
 /**
  * The minutes box as check-out reads it: empty is "not answered" (null), a
@@ -967,6 +1135,7 @@ export default function AthleteWorkspace() {
      timing, because a queued write may not run for several renders. */
   const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const checkingOutRef = useRef(false);
+  const checkingInRef = useRef(false);
   /* The note the session row holds right now, as far as this tab knows -- what
      a coach can read. A publication that lands WHILE check-out is waiting on
      the chain updates it here, synchronously, so the note check-out replays is
@@ -1099,7 +1268,7 @@ export default function AthleteWorkspace() {
      tasks, and it must not block any other tool or capability).
 
      So this gates the FLOOR AND NOTHING ELSE. Dashboard, Goals, Drills,
-     Rabbit Holes, Schedule, Messages and SHADOW stay open all day, checked in
+     Rabbit Holes, Schedule and SHADOW (Ask SHADOW with it) stay open all day, checked in
      or not -- including the pain report, which a child must be able to reach
      without first filling in a form.
 
@@ -1840,8 +2009,10 @@ export default function AthleteWorkspace() {
 
   const handleCheckIn = async () => {
     // A second check-in over an open session would leave the first one open
-    // forever, which is the state this screen exists to get out of.
-    if (isCheckingIn || activeSessionRecord) {
+    // forever, which is the state this screen exists to get out of. The ref
+    // catches two presses in one tick, which both read the same isCheckingIn
+    // (#1529, as checkingOutRef does for Check Out).
+    if (checkingInRef.current || isCheckingIn || activeSessionRecord) {
       return;
     }
 
@@ -1859,6 +2030,7 @@ export default function AthleteWorkspace() {
     }
 
     setCheckInFailed(false);
+    checkingInRef.current = true;
     setIsCheckingIn(true);
 
     const sessionId = `session_${Date.now()}`;
@@ -1947,6 +2119,7 @@ export default function AthleteWorkspace() {
         + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
       setCheckInFailed(true);
     } finally {
+      checkingInRef.current = false;
       setIsCheckingIn(false);
     }
 
@@ -2082,6 +2255,23 @@ export default function AthleteWorkspace() {
        nothing is sent to SHADOW from here. */
   };
 
+  /* One pain report, one save (#1529). The ref stops a second press in the
+     same tick. The pending report -- its id and the moment it was made --
+     lives until it is confirmed saved, so a retry of the SAME answers sends a
+     byte-identical observation: the observations route treats an identical
+     payload under one idempotency key as the same report, and anything that
+     differs under that key as a conflict (repository.ts), so the moment has
+     to be kept as well as the id. Changed answers, or Cancel, start a new
+     report. */
+  const painSavingRef = useRef(false);
+  const pendingPainReportRef = useRef<{
+    id: string;
+    observedAt: string;
+    location: string;
+    type: string;
+    severity: number;
+  } | null>(null);
+
   const handleSavePainReport = async () => {
     /* A-FIN-07. An incomplete pain report is not a quiet partial save: it is
        no write at all. Location, type and severity must each be the athlete's
@@ -2092,14 +2282,31 @@ export default function AthleteWorkspace() {
     if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
       return;
     }
+    if (painSavingRef.current) {
+      return;
+    }
+    painSavingRef.current = true;
 
-    const now = new Date();
+    const pending = pendingPainReportRef.current;
+    const report = pending
+      && pending.location === selectedPainLocation
+      && pending.type === currentPainType
+      && pending.severity === currentPainSeverity
+      ? pending
+      : {
+        id: `pain_${Date.now()}`,
+        observedAt: new Date().toISOString(),
+        location: selectedPainLocation,
+        type: currentPainType,
+        severity: currentPainSeverity,
+      };
+    pendingPainReportRef.current = report;
     const newPainLogEntry: PainLogEntry = {
-      id: `pain_${Date.now()}`,
+      id: report.id,
       location: selectedPainLocation,
       type: currentPainType,
       severity: currentPainSeverity,
-      capturedAt: now.toISOString(),
+      capturedAt: report.observedAt,
     };
 
     setIsSavingPain(true);
@@ -2138,7 +2345,7 @@ export default function AthleteWorkspace() {
             painType: currentPainType,
             injuryFlag: true,
           },
-          observedAt: now.toISOString(),
+          observedAt: report.observedAt,
           idempotencyKey: `${newPainLogEntry.id}-pain_report`,
         }),
       });
@@ -2202,6 +2409,8 @@ export default function AthleteWorkspace() {
       setPainSaveMessage('Logged, and flagged for a coach to look at.');
 
       setShowPainModal(false);
+      // Saved and confirmed: the next report is a new one.
+      pendingPainReportRef.current = null;
       /* A-FIN-07. The stored answers go with the modal. Leaving them set made
          the NEXT report open pre-filled with the last one -- a different way
          of putting words in the athlete's mouth, and a harder one to notice
@@ -2218,6 +2427,7 @@ export default function AthleteWorkspace() {
         ? error.message
         : 'That pain report did not save. Report it again, and tell a coach in person.');
     } finally {
+      painSavingRef.current = false;
       setIsSavingPain(false);
     }
   };
@@ -2366,7 +2576,7 @@ export default function AthleteWorkspace() {
               Athlete workspace · {activeTabLabel}
             </p>
             {/* The standing description of the workspace, kept on Today only.
-                Under "SHADOW" or "Messages" it would be describing a screen
+                Under "SHADOW" or "Schedule" it would be describing a screen
                 the athlete is not looking at. */}
             {activeGroup === 'today' && (
               <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Say how you feel, do today&apos;s work, and keep your goals where you can see them.</p>
@@ -2446,7 +2656,7 @@ export default function AthleteWorkspace() {
             Quick Actions -- including Check-In -- below the fold. */}
 
         {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels.
-            Six groups an athlete can hold in their head, each opening onto the
+            Five groups an athlete can hold in their head, each opening onto the
             surfaces it owns. A group with one surface has no second row: there
             is nothing to choose between, so nothing is drawn. */}
         <div className="mat-leather rounded-[var(--r-md)]">
@@ -3610,18 +3820,19 @@ export default function AthleteWorkspace() {
                   Open Unified Scheduler
                 </Link>
               </div>
+              {/* The athlete's classes and bookings, read in place (WO-N5-01).
+                  Booking stays in the unified scheduler above (N5-01-Q1 A). */}
+              <AthleteScheduleView />
               {/* This tab was a "NOT BUILT YET" wrapper around a link to a
-                  scheduler that IS built. A tab whose whole content is an
-                  apology for itself teaches an athlete to stop opening tabs;
-                  what it actually holds is the door to the real thing, so it
-                  says that and gets out of the way. The scheduler owns
-                  classes, booking and eligibility -- nothing here duplicates
-                  them. */}
+                  scheduler that IS built. It now also lists the athlete's
+                  classes and bookings in place (AthleteScheduleView, below),
+                  read from the same route; the scheduler still owns booking
+                  and eligibility, and nothing here duplicates them. */}
               <HelpPanel
                 title="Schedule Session"
-                description="Classes and sign-ups live in the unified scheduler. This is the door to it."
+                description="Your classes and bookings are listed here. Sign-ups happen in the unified scheduler."
                 usage={[
-                  'Open the unified scheduler to see live classes'
+                  'Open the unified scheduler to sign up for a class'
                 ]}
                 /* "Readiness RED may limit contact work" and "Booking contact
                    work with RED readiness" stood in these two lists until
@@ -3937,7 +4148,16 @@ export default function AthleteWorkspace() {
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
                 </button>
-                <button onClick={() => setShowPainModal(false)} className="btn btn--kiosk btn--ghost flex-1">Cancel</button>
+                <button
+                  onClick={() => {
+                    // A cancelled report is over; the next Save is a new one (#1529).
+                    pendingPainReportRef.current = null;
+                    setShowPainModal(false);
+                  }}
+                  className="btn btn--kiosk btn--ghost flex-1"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

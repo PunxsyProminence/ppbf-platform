@@ -8,6 +8,7 @@ import {
   markPersonalGoalReached,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { readsFullGoals, toFamilyPersonalGoal } from '@/src/server/pilot/goalProjection';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -31,7 +32,10 @@ export const runtime = 'nodejs';
  */
 
 const GOAL_ROLES = ['athlete', 'coach', 'organization_admin', 'admin', 'parent'] as const;
-const GOAL_WRITER_ROLES = ['athlete', 'coach', 'organization_admin', 'admin'] as const;
+/* A goal is the athlete's, in their own words: only the athlete writes it or
+   marks it reached. Coaches and guardians read it (lane N8-05, owner ruling
+   2026-10-12); no staff screen ever wrote one. */
+const GOAL_WRITER_ROLES = ['athlete'] as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +50,12 @@ export async function GET(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, athleteId);
 
     const items = await listPersonalGoals(principal.organizationId, athleteId);
+    // The "why it matters" line is the coach's to read, never the family's:
+    // anyone not named as a full reader (a guardian today) is sent the family
+    // projection, built from named fields.
+    if (!readsFullGoals(principal.role)) {
+      return NextResponse.json({ ok: true, items: items.map(toFamilyPersonalGoal) });
+    }
     return NextResponse.json({ ok: true, items });
   } catch (error) {
     return jsonError(error);

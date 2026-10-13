@@ -90,7 +90,10 @@ const PAIN_ROW = {
 };
 
 describe('POST /api/pilot/shadow/events -- athlete boundary', () => {
-  test("a coach naming another coach's athlete is bound to their own roster, not to the id they asked for", async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+  // boundary is every live athlete of the coach's own gym; an id outside it
+  // (another gym's) is still unreachable however it is asked for.
+  test("a coach naming an athlete outside their gym is bound to their gym's athletes, not to the id they asked for", async () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     answerCoachRoster(['ath-mine']);
     mockQuery.mockResolvedValueOnce([]);
@@ -98,9 +101,9 @@ describe('POST /api/pilot/shadow/events -- athlete boundary', () => {
     const response = await POST(postRequest({ entity_type: 'athlete', entity_id: 'ath-not-mine' }));
     expect(response.status).toBe(200);
 
-    // The roster lookup is keyed on the PRINCIPAL, and nothing from the body
-    // reaches it.
-    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 'coach-1']);
+    // The gym lookup is keyed on the PRINCIPAL's organization, and nothing
+    // from the body reaches it.
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1']);
 
     const eventsParams = mockQuery.mock.calls[1][1];
     // $3 is the caller's entity_id filter -- a narrowing convenience.

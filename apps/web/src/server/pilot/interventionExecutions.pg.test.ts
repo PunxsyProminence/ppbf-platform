@@ -34,7 +34,7 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
-import { ConflictError } from './errors';
+import { listRetiredReviews, reviewOutcome } from './interventionEvidence';
 
 let activeClient: Client | null = null;
 
@@ -812,7 +812,11 @@ describe('the real intervention-execution lifecycle against real rows', () => {
     }
   });
 
-  test('a closed execution with a standing review cannot be corrected back to in progress; every other correction still can', async () => {
+  // Issue #1481 (Jason, 2026-10-12: "6B"): reopening a reviewed record is
+  // allowed, and its standing verdict is retired to history -- the same stamp a
+  // re-review gives a verdict it replaces. This replaces the refusal PR #1472
+  // added. Nothing else about corrections changes.
+  test('a closed, reviewed execution reopens; its verdict is retired to history, evidence stays, and a fresh review is the one verdict', async () => {
     const client = await freshDatabase('executions_reopen');
     activeClient = client;
     try {
@@ -821,6 +825,10 @@ describe('the real intervention-execution lifecycle against real rows', () => {
 
       // Closed and reviewed, with a piece of evidence on it.
       await insertExecution(client, 'exec-reviewed', { status: 'completed' });
+      await client.query(
+        `update pilot.intervention_executions set actual_start = '2026-09-01T09:00:00Z', actual_end = '2026-09-01T10:00:00Z'
+         where execution_id = 'exec-reviewed'`,
+      );
       await client.query(
         `insert into pilot.intervention_evidence_links
            (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
@@ -852,24 +860,7 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         links: (await client.query(`select * from pilot.intervention_evidence_links order by organization_id, link_id`)).rows,
         reviews: (await client.query(`select * from pilot.intervention_outcome_reviews order by organization_id, review_id`)).rows,
       });
-      const before = await everything();
-
-      // A verdict is a statement about finished work. Reopening the work
-      // underneath it would leave the verdict standing on a record that says
-      // the work is still going -- which reviewOutcome itself refuses to write.
-      const reopening = correctExecution({
-        organizationId: ORG_ID,
-        executionId: 'exec-reviewed',
-        correctionReason: 'it had not actually finished',
-        outcome: 'in_progress',
-        correctedByAccountId: COACH_ID,
-      });
-      await expect(reopening).rejects.toBeInstanceOf(ConflictError);
-      await expect(reopening).rejects.toThrow(/outcome review/);
-      // Refused whole: no new version, nothing stamped, nothing moved.
-      expect(await everything()).toEqual(before);
-
-      // The same record corrected and KEPT closed goes through, review and evidence with it.
+      // Corrected and KEPT closed: the review and the evidence come with it, unchanged.
       const kept = await correctExecution({
         organizationId: ORG_ID,
         executionId: 'exec-reviewed',
@@ -885,8 +876,74 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       expect(carried.links.find((row) => row.link_id === 'link-reviewed'))
         .toMatchObject({ execution_id: kept!.execution_id });
 
-      // Reopening is refused only for a verdict that STANDS: a record nobody
-      // reviewed, and one whose only review was itself superseded, both reopen.
+      // REOPENED: the correction succeeds, in one act.
+      const reopened = await correctExecution({
+        organizationId: ORG_ID,
+        executionId: kept!.execution_id,
+        correctionReason: 'it had not actually finished',
+        outcome: 'in_progress',
+        correctedByAccountId: COACH_ID,
+      });
+      expect(reopened).toMatchObject({ version: 3, status: 'in_progress' });
+      // Unfinished work has no end time (Codex P2 on #1507): the closed
+      // record's end does not ride along into the reopened one.
+      expect(reopened!.actual_end).toBeNull();
+      const afterReopen = await everything();
+      // The verdict is retired, not deleted: still there, on the current
+      // record, with its reviewer, its notes and a retirement time.
+      const retired = afterReopen.reviews.find((row) => row.review_id === 'rev-standing');
+      expect(retired).toMatchObject({
+        execution_id: reopened!.execution_id,
+        status: 'superseded',
+        reviewed_by_account_id: COACH_ID,
+        performance_notes: 'held through the third',
+      });
+      expect(new Date(retired!.updated_at).getTime()).toBeGreaterThanOrEqual(new Date(retired!.reviewed_at).getTime());
+      // No verdict stands on the in-progress record.
+      expect(afterReopen.reviews.filter((row) => row.execution_id === reopened!.execution_id && row.status === 'active')).toEqual([]);
+      // The evidence is still attached to the record.
+      expect(afterReopen.links.find((row) => row.link_id === 'link-reviewed'))
+        .toMatchObject({ execution_id: reopened!.execution_id });
+      // History reads it as retired on reopening (no later review names it).
+      const history = await listRetiredReviews(ORG_ID, reopened!.execution_id);
+      expect(history.map((row) => [row.review_id, row.retired_on_reopen])).toEqual([['rev-standing', true]]);
+
+      // CLOSED AGAIN and reviewed afresh: exactly one active verdict, which
+      // supersedes nothing (the retired one stays retired on reopening).
+      const closedAgain = await closeExecution({
+        organizationId: ORG_ID,
+        executionId: reopened!.execution_id,
+        outcome: 'completed',
+      });
+      expect(closedAgain).toMatchObject({ status: 'completed' });
+      // Closed again, it carries the new close time, not the old one.
+      expect(closedAgain!.actual_end).not.toBeNull();
+      expect(new Date(closedAgain!.actual_end!).getTime()).toBeGreaterThan(new Date('2026-09-01T10:00:00Z').getTime());
+      const fresh = await reviewOutcome({
+        organizationId: ORG_ID,
+        executionId: reopened!.execution_id,
+        performanceResult: 'improved',
+        performanceNotes: 'held through all four rounds this time',
+        hypothesisResult: 'supported',
+        learningSignal: 'prior_belief_strengthened',
+        reviewedByAccountId: COACH_ID,
+      });
+      expect(fresh).toMatchObject({ status: 'active', supersedes_review_id: null });
+      const final = await everything();
+      expect(final.reviews.filter((row) => row.status === 'active' && row.execution_id === reopened!.execution_id)
+        .map((row) => row.review_id)).toEqual([fresh!.review_id]);
+      expect((await listRetiredReviews(ORG_ID, reopened!.execution_id)).map((row) => row.review_id)).toEqual(['rev-standing']);
+
+      // A record nobody reviewed, and one whose only review was itself
+      // superseded, reopen as they always did. An already-superseded verdict
+      // keeps its own retirement time: the reopen does not re-stamp it.
+      const withdrawnStamp = async () => (await client.query(
+        `select status, updated_at from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = 'rev-withdrawn'`,
+        [ORG_ID],
+      )).rows;
+      const withdrawnBefore = await withdrawnStamp();
+      expect(withdrawnBefore).toHaveLength(1);
+      await client.query('select pg_sleep(0.01)');
       for (const executionId of ['exec-unreviewed', 'exec-withdrawn']) {
         await expect(correctExecution({
           organizationId: ORG_ID,
@@ -896,10 +953,12 @@ describe('the real intervention-execution lifecycle against real rows', () => {
           correctedByAccountId: COACH_ID,
         })).resolves.toMatchObject({ version: 2, status: 'in_progress' });
       }
+      expect(await withdrawnStamp()).toEqual(withdrawnBefore);
 
-      // And it is the REOPENING that is refused, not correcting. A record that
+      // A correction that does not reopen leaves a review alone. A record that
       // is in progress and somehow already carries a review (nothing writes
-      // that today; the database allows it) can still have its facts corrected.
+      // that today; the database allows it) has its facts corrected and the
+      // review untouched.
       await insertExecution(client, 'exec-odd');
       await client.query(
         `insert into pilot.intervention_outcome_reviews
@@ -908,13 +967,19 @@ describe('the real intervention-execution lifecycle against real rows', () => {
          values ($1, 'rev-odd', 'exec-odd', 'unknown', 'reviewed early', 'unresolved', 'unresolved', 'active', $2)`,
         [ORG_ID, COACH_ID],
       );
-      await expect(correctExecution({
+      const odd = await correctExecution({
         organizationId: ORG_ID,
         executionId: 'exec-odd',
         correctionReason: 'wrong round count',
         actualExposure: { rounds: 4 },
         correctedByAccountId: COACH_ID,
-      })).resolves.toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
+      });
+      expect(odd).toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
+      const oddReview = await client.query(
+        `select execution_id, status from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = 'rev-odd'`,
+        [ORG_ID],
+      );
+      expect(oddReview.rows).toEqual([{ execution_id: odd!.execution_id, status: 'active' }]);
     } finally {
       await client.end();
     }

@@ -473,6 +473,9 @@ export default function CoachVideoPublicationsPage() {
           <Link href="/coach/video-analysis" className="btn btn--ghost">
             Back to Video Analysis
           </Link>
+          <Link href="/coach/video-publications/library" className="btn btn--ghost">
+            Browse the published library
+          </Link>
         </div>
       </div>
     </RoleStandaloneView>

@@ -63,7 +63,7 @@ const DEFAULT_ROUTES = [
   ['/admin', 'admin'],
   ['/admin/shadow', 'admin'],
   ['/board', 'board'],
-  ['/coach/review-queue', 'coach'],
+  ['/coach/drills', 'coach'],
   ['/parent/dashboard', 'parent'],
   ['/athlete/dashboard', 'athlete'],
 ];

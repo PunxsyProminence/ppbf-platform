@@ -309,21 +309,19 @@ const ISSUED_BODY = {
 };
 
 const REFUSED_BODY = {
-  error: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Slip Rope Shuffle. Cannot be assigned as they stand: Jab Ladder.',
+  error: 'Nothing was issued. Cannot be assigned as they stand: Slip Rope Shuffle, Jab Ladder.',
   code: 'WORKOUT_TEMPLATE_ISSUE_REFUSED',
   drills: [
     {
       steps: [2],
       drill_id: 'ref-2',
       name: 'Slip Rope Shuffle',
-      untested_draft: true,
-      reason: 'It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.',
+      reason: 'It has no stop rules.',
     },
     {
       steps: [3, 5],
       drill_id: 'ref-3',
       name: 'Jab Ladder',
-      untested_draft: false,
       reason: 'This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
     },
   ],
@@ -338,6 +336,8 @@ function mockIssuePage(opts: {
   athletes?: Response;
   templates?: unknown[];
   items?: unknown[];
+  /** The detail read's untested_drills, when the case wants one sent. */
+  untested?: unknown;
 } = {}) {
   return mockFetch((url) => {
     if (url.includes(ISSUE_URL)) {
@@ -347,7 +347,11 @@ function mockIssuePage(opts: {
     if (url.includes(ATHLETES_URL)) return opts.athletes ?? jsonResponse({ ok: true, items: ATHLETES });
     if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
     if (url.includes('template_id')) {
-      return jsonResponse({ template: BOXING_FUNDAMENTALS, items: opts.items ?? [item(), item({ item_id: 'wti-2', ordinal: 2 })] });
+      return jsonResponse({
+        template: BOXING_FUNDAMENTALS,
+        items: opts.items ?? [item(), item({ item_id: 'wti-2', ordinal: 2 })],
+        ...(opts.untested === undefined ? {} : { untested_drills: opts.untested }),
+      });
     }
     return jsonResponse({ templates: opts.templates ?? [BOXING_FUNDAMENTALS] });
   });
@@ -892,7 +896,7 @@ describe('issue to athlete', () => {
       expect(alert).toHaveTextContent(REFUSED_BODY.error);
       const rows = within(alert).getAllByRole('listitem');
       expect(rows.map((row) => row.textContent)).toEqual([
-        'Slip Rope Shuffle (step 2): It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.',
+        'Slip Rope Shuffle (step 2): It has no stop rules.',
         'Jab Ladder (steps 3, 5): This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
       ]);
       expect(screen.queryByText(/Issued to/)).not.toBeInTheDocument();
@@ -905,7 +909,7 @@ describe('issue to athlete', () => {
           error: 'Nothing was issued. Cannot be assigned as they stand: Jump rope, easy.',
           code: 'WORKOUT_TEMPLATE_ISSUE_REFUSED',
           drills: [
-            { steps: [2], drill_id: null, name: 'Jump rope, easy', untested_draft: false, reason: 'This step is typed text, not a drill from the library, so it cannot be assigned.' },
+            { steps: [2], drill_id: null, name: 'Jump rope, easy', reason: 'This step is typed text, not a drill from the library, so it cannot be assigned.' },
             null,
             { name: 'No Steps Listed', reason: 'It has no stop rules.' },
             { steps: [4], name: '   ' },
@@ -1562,5 +1566,83 @@ describe('issue to athlete', () => {
       }
       expect(typeof globalThis.crypto.randomUUID).toBe('function');
     });
+  });
+});
+
+// Jason, 2026-10-11: "B" (issue #1473). A workout issues with untested drills,
+// and the coach is told which, twice: in the confirm step before issuing and in
+// the result after. Plain body text: no alert, no alarm colour, no new control.
+describe('drills no coach of this gym has floor-tested', () => {
+  const TWO = [
+    { reference_drill_id: 'ref-2', name: 'Slip Rope Shuffle', steps: [2] },
+    { reference_drill_id: 'ref-5', name: 'Catch and Return', steps: [1, 3] },
+  ];
+  const TWO_SENTENCE = 'These drills have not been floor-tested by a coach of this gym: Slip Rope Shuffle, Catch and Return.';
+
+  it('are named in the confirm step, before issuing, as plain text beside the same two buttons', async () => {
+    const fetchMock = mockIssuePage({ untested: TWO });
+
+    await chooseAndAsk();
+
+    const sentence = screen.getByText(TWO_SENTENCE);
+    expect(sentence.tagName).toBe('P');
+    expect(sentence).toHaveClass('t-body');
+    expect(sentence).not.toHaveClass('font-semibold');
+    expect(sentence.closest('[role="alert"]')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    // Confirm issue is still the next press: no extra control, no box to tick.
+    const control = screen.getByRole('heading', { name: 'Issue to athlete' }).closest('[data-surface="kiosk"]') as HTMLElement;
+    expect(within(control).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['Issue to athlete', 'Confirm issue', 'Cancel']);
+    expect(within(control).queryByRole('checkbox')).toBeNull();
+    // Named before anything was sent.
+    expect(issuePosts(fetchMock)).toHaveLength(0);
+  });
+
+  it('one drill is named in the singular', async () => {
+    mockIssuePage({ untested: [TWO[0]] });
+
+    await chooseAndAsk();
+
+    expect(screen.getByText('This drill has not been floor-tested by a coach of this gym: Slip Rope Shuffle.')).toBeTruthy();
+  });
+
+  it('says nothing when every drill is floor-tested, or when the read sent no list', async () => {
+    mockIssuePage({ untested: [] });
+    await chooseAndAsk();
+    expect(screen.queryByText(/floor-tested/)).toBeNull();
+  });
+
+  it('a reader whose answer carries no list (the field is absent) is shown no sentence', async () => {
+    mockIssuePage();
+    await chooseAndAsk();
+    expect(screen.queryByText(/floor-tested/)).toBeNull();
+  });
+
+  it('are named again in the issued result, from the server answer', async () => {
+    mockIssuePage({
+      untested: TWO,
+      issue: () => statusResponse(201, { ...ISSUED_BODY, untested_drills: TWO }),
+    });
+
+    await issueTo();
+
+    const status = await issuedStatus();
+    const sentence = within(status).getByText(TWO_SENTENCE);
+    expect(sentence).toHaveClass('t-body');
+    expect(sentence).not.toHaveClass('font-semibold');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('the result names what the server says, not what the confirm step showed', async () => {
+    mockIssuePage({
+      untested: TWO,
+      issue: () => statusResponse(201, { ...ISSUED_BODY, untested_drills: [] }),
+    });
+
+    await issueTo();
+
+    const status = await issuedStatus();
+    expect(within(status).queryByText(/floor-tested/)).toBeNull();
   });
 });

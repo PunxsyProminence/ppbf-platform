@@ -23,8 +23,8 @@ import type { ClubRole } from './roleRoutes';
  * ---------------------------------------------------------------------------
  *
  * `roles: OPEN` marks a surface with no role gate at all today — sign-in,
- * help (which needs a sign-in but admits every role), the public pages, and a
- * handful of internal surfaces that are still ungated. They are listed as open because that is what the code does; several
+ * the public pages, and a handful of internal surfaces that are still
+ * ungated. Help needs a sign-in, so it uses SIGNED_IN_GATE instead. They are listed as open because that is what the code does; several
  * of them arguably should be gated, which is a separate piece of work.
  *
  * ---------------------------------------------------------------------------
@@ -140,6 +140,15 @@ const SCOUT_GATE: readonly ClubRole[] = ['admin', 'coach', 'platform_owner'];
    staff-side lab work, not an athlete's or a family's operational surface.
    Both doors stay reachable by URL for every role the pages admit. */
 const RESEARCH_GATE: readonly ClubRole[] = ['coach', 'admin', 'platform_owner', 'staff', 'volunteer'];
+
+/* Every session role, and nobody signed out. /help asks requirePageRole for a
+   sign-in and admits every role (app/help/page.tsx), so OPEN offered a
+   signed-out visitor a door that only leads to /login. The board SEAT roles
+   are not listed, as on every other door: a seat holder's session role is
+   'board' (roleSession.ts; app/admin/door-register/page.tsx). */
+const SIGNED_IN_GATE: readonly ClubRole[] = [
+  'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board',
+];
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
@@ -271,6 +280,9 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
+  { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
+    keywords: 'system routes jobs workflows inventory status',
+    hint: 'The routes and jobs the platform is built from. Read-only; no row says a route or job is working.' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
     keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
   { href: '/staff-credentials', label: 'Certified & Cleared', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
@@ -325,7 +337,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'Your child’s self-talk cue and imagery sessions, in their words. Read-only.' },
   { href: '/', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
-  { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
+  { href: '/help', label: 'Help', room: 'office', roles: SIGNED_IN_GATE, keywords: 'support docs how-to faq' },
   { href: '/store', label: 'Equipment Store', room: 'office', roles: OPEN,
     keywords: 'shop store gear equipment gloves wraps buy price',
     hint: 'Gyms with a store, and what they sell.' },
@@ -337,14 +349,6 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
     keywords: 'profile identity portrait photo ring name nickname corner fight card programme',
     hint: 'Your portrait, ring name, corner and programme.' },
-  /* ADMIN_GATE, not OPEN: part of the Operations V1 lab narrowing recorded at
-     the /simulator entry. The two pages carry no gate of their own, so this is
-     a pure visibility decision -- the lab leaves ordinary navigation, and the
-     data behind both is guarded by its own API checks. */
-  { href: '/source-control', label: 'Source Control', room: 'office', roles: ADMIN_GATE,
-    keywords: 'versions publication workflow provenance' },
-  { href: '/source-control/publication-workflow', label: 'Publication Workflow', room: 'office',
-    roles: ADMIN_GATE, keywords: 'publish review release' },
   /* Two coach routes that are desk work rather than floor work, and both
      already paint .room--office. A cohort is a RULE and a discipline record is
      READ ONLY: neither runs a session, neither is touched with gloves on, and
@@ -391,9 +395,6 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete'], keywords: 'progress load profile improvement' },
   { href: '/athlete/video-analysis', label: 'My Video', room: 'floor', roles: ['athlete'],
     keywords: 'film footage review video' },
-  { href: '/coach/review-queue', label: 'Review Queue', room: 'floor', roles: ['coach'],
-    keywords: 'layer 10 queue approve deny triage decisions pending',
-    hint: 'Planned — the decision queue. Nothing is built behind this door yet.' },
   { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
@@ -445,23 +446,21 @@ export const BUILDING: readonly Door[] = [
     hint: 'See where two coaches labelled the same clip differently. It measures the labelling, not a coach or an athlete.' },
   { href: '/coach/video-publications', label: 'Video Publications', room: 'floor',
     roles: ['coach'], keywords: 'publish film share video' },
-  { href: '/coach/environment/intake-router', label: 'Intake Router', room: 'floor',
-    roles: ['coach'], keywords: 'intake routing new athlete triage' },
-  /* "Passbook Check" until 2026-08-19, and the word was doing two jobs. USA
-     Boxing's passbook is the external competitor book this scaffold is a
-     placeholder for; the athlete's passbook is this platform's own record
-     book -- `/coach/passbook-gaps` below, over `src/server/pilot/passbook.ts`.
-     One label for both taught every reader the wrong thing, so this door now
-     names the external check it is actually about. The route, the page and
-     its "Planned -- Not Yet Implemented" disclosure are untouched: nothing
-     behind this door is built yet, and it must keep saying so. */
-  { href: '/coach/environment/passbook-check', label: 'USA Boxing Eligibility Check', room: 'floor',
-    roles: ['coach'],
-    keywords: 'usa boxing passbook competitor book insurance eligibility verification sanction',
-    hint: 'Planned \u2014 the external USA Boxing check. Nothing is wired to a real source yet.' },
+  { href: '/coach/video-publications/library', label: 'Video Library', room: 'floor',
+    roles: ['coach', 'admin', 'athlete'], keywords: 'video library published clips film browse research library tags',
+    hint: 'Every clip published to the gym\u2019s library, newest first. Read-only.' },
+  /* The coach's home, where sign-in lands a coach (getPilotRoleDestination).
+     "Intake Router" until 2026-10-12: the header named the coach's front door
+     after one of its tabs (#1482 item 6; wording PROPOSED). The old words stay
+     as keywords so the door is still found by them. */
+  { href: '/coach/environment/intake-router', label: 'Coach Workspace', room: 'floor',
+    roles: ['coach'], keywords: 'home dashboard intake router routing new athlete triage' },
   { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook gap retention stopped coming absent last seen queue triage book athlete record',
     hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },
+  { href: '/coach/passbook', label: 'Passbook', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'passbook book athlete record attendance sessions readiness goals corner gaps one athlete',
+    hint: 'One athlete\u2019s book: attendance, sessions, readiness, goals, corner and gaps.' },
   { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'drills exercises techniques practice assign library catalogue',
     hint: 'Drill library and programming.' },
@@ -612,8 +611,7 @@ export const BUILDING: readonly Door[] = [
      .room--office and needs the matching edit (buildingMapRooms.test.ts flagged this
      as PAGE_IS_WRONG until it was removed 2026-10-02). */
   /* OPERATIONS V1 (owner decision, 2026-08-21): the lab doors leave ordinary
-     navigation. /simulator, /knowledge-graph, /source-control and
-     /publication-workflow are development-lab surfaces, not anybody's
+     navigation. /simulator and /knowledge-graph are development-lab surfaces, not anybody's
      operational day, so only the admin desks keep them in a corridor or a
      catalog. Visibility only, per the header note: the pages are unchanged
      and ungated, every one stays reachable by URL, and the data behind each
@@ -762,8 +760,8 @@ export function doorsByRoom(role: ClubRole | null): Array<{ room: Room; doors: D
 }
 
 /**
- * Rank doors against a query. Subsequence match on label first (so "revq"
- * finds "Review Queue"), then keywords, then href. Exact prefix wins.
+ * Rank doors against a query. Subsequence match on label first (so "wtmpl"
+ * finds "Workout Templates"), then keywords, then href. Exact prefix wins.
  * Returns every door when the query is empty, so the catalog opens as a browse.
  */
 export function searchDoors(role: ClubRole | null, query: string): Door[] {

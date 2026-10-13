@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   accessibleAthleteIds,
-  assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
+  assertActorCanAccessAthlete,
 } from '@/src/server/pilot/access';
 import {
   getInjuryById,
@@ -31,9 +30,8 @@ const MAX_ROSTER_IDS = 1000;
  *
  * Who: SHADOW_PHI_ROLES -- coach, organization_admin, admin. An injury names
  * one child's health, so platform_owner and board are refused by the role gate
- * before anything is read. A coach reaches only athletes they coach or cover
- * (assertCoachAssignedToAthlete); an organization admin reaches any live
- * athlete in their organization. For an action on an existing injury, "not
+ * before anything is read. A coach, like an organization admin, reaches any
+ * live athlete in their own organization (2026-10-12, issue #1480). For an action on an existing injury, "not
  * yours" and "not real" are the same 404, so a coach cannot probe ids.
  *
  * NOT DIAGNOSTIC: the record holds what a person reported or a clinician
@@ -75,12 +73,10 @@ function injuryFields(body: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
+// The chokepoint gate: a coach's reach is the whole gym, as an admin's is
+// (2026-10-12, issue #1480); a deleted or another gym's athlete is refused.
 async function assertStanding(principal: PilotPrincipal, athleteId: string): Promise<void> {
-  if (principal.role === 'coach') {
-    await assertCoachAssignedToAthlete(principal.accountId, athleteId, principal.organizationId);
-  } else {
-    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
-  }
+  await assertActorCanAccessAthlete(principal, athleteId);
 }
 
 /** The injury, only if this principal has standing with its athlete; otherwise the same 404 as absent. */
@@ -127,8 +123,8 @@ export async function POST(request: NextRequest) {
     const action = str(body, 'action');
 
     // Which of the given athletes this principal may open here, so the page
-    // offers only those: the roster a coach reads is the whole gym, and this
-    // route admits only the athletes they coach or cover. A read, sent as a
+    // offers only those: every live athlete of the coach's own gym since issue
+    // #1480 (a deleted athlete is left out). A read, sent as a
     // POST so a long roster never rides in a URL.
     if (action === 'accessible_athletes') {
       const ids = body.athlete_ids;

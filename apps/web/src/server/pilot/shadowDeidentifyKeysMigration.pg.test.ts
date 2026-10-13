@@ -162,14 +162,16 @@ let seq = 0;
  * a coach's decision with its outcome, a recommendation and a film-study
  * proposal (the five athlete keys).
  */
-async function seedPerson(options: { deleted?: boolean } = {}): Promise<Person> {
+async function seedPerson(options: { deleted?: boolean; guardianDeletedAgo?: string } = {}): Promise<Person> {
   seq += 1;
   const athleteId = `ath-deid-keys-${seq}`;
   const athleteLogin = `acct-deid-keys-athlete-${seq}`;
   const guardian = `acct-deid-keys-guardian-${seq}`;
   const parentId = `par-deid-keys-${seq}`;
   const deletedAthlete = options.deleted ? "now() - interval '3 years'" : 'null';
-  const deletedGuardian = options.deleted ? "now() - interval '18 months'" : 'null';
+  const deletedGuardian = options.deleted
+    ? `now() - interval '${options.guardianDeletedAgo ?? '18 months'}'`
+    : 'null';
   await client.query(
     `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
      values ($1, $2, 'Keys Athlete', '2013-05-06', 'fly', 'active', 'contact', true, $3, now(), now(), ${deletedAthlete})`,
@@ -531,7 +533,11 @@ describe('shadow-deidentify-keys migration', () => {
   });
 
   test('ORDERING: the retention purge script, applied on the migrated schema, leaves none of these rows naming a purged guardian or child', async () => {
-    const person = await seedPerson({ deleted: true });
+    // Past two years: this guardian has a review-queue row, and the script
+    // holds a flagged guardian until deleted_at + 2 years (Q7;
+    // guardianSafeguardingChatHold.pg.test.ts proves the hold). This test is
+    // about what the purge takes once it runs.
+    const person = await seedPerson({ deleted: true, guardianDeletedAgo: '25 months' });
     expect(await identifiedRows(person)).toEqual(SEEDED);
     const event = await runCleanupScript();
     // A purge that was refused proves nothing below.

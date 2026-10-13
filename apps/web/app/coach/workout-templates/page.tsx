@@ -33,6 +33,8 @@ type TemplateItem = WorkoutTemplateItemWithDrillHead;
 interface TemplateDetail {
   template: Template;
   items: TemplateItem[];
+  /** Names of the drills no coach of this gym has floor-tested (the detail read's untested_drills). */
+  untestedDrills: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +156,17 @@ function namedDrills(value: unknown): string[] {
   });
 }
 
+/**
+ * The plain statement of which drills no coach of this gym has floor-tested
+ * (Jason, 2026-10-11: "B", issue #1473). Body text, not a warning: it stops
+ * nothing and asks for nothing. Wording PROPOSED for Jason's look.
+ */
+function untestedSentence(names: readonly string[]): string {
+  return names.length === 1
+    ? `This drill has not been floor-tested by a coach of this gym: ${names[0]}.`
+    : `These drills have not been floor-tested by a coach of this gym: ${names.join(', ')}.`;
+}
+
 /** How many cards the answer says it made, or null when it does not say. */
 function cardCountFrom(payload: Record<string, unknown>): number | null {
   if (Array.isArray(payload.steps)) return payload.steps.length;
@@ -180,7 +193,7 @@ function newRequestKey(): string | null {
 }
 
 type IssueOutcome =
-  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; updated?: string[]; hold: HoldNote; already?: boolean }
+  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; updated?: string[]; untested?: string[]; hold: HoldNote; already?: boolean }
   // A 201 whose body could not be read: the cards exist, the details do not.
   | { kind: 'issued_unread'; athleteName: string }
   | { kind: 'refused'; message: string; drills: RefusedDrill[] }
@@ -214,10 +227,13 @@ const ALERT_TEXT = 'text-[length:var(--t-md)] font-semibold text-[var(--locked-i
 
 function IssueToAthlete({
   template,
+  untestedDrills,
   onBusyChange,
   requestKeys,
 }: {
   readonly template: Template;
+  /** Named in the confirm step before issuing; the result names the server's own list after. */
+  readonly untestedDrills: readonly string[];
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
   /** The page's keys of unsettled issues: they outlive this control. */
@@ -342,6 +358,7 @@ function IssueToAthlete({
             cards: cardCountFrom(payload),
             adopted: namedDrills(payload.adopted_drills),
             updated: namedDrills(payload.updated_drills),
+            untested: namedDrills(payload.untested_drills),
             hold: holdNoteFrom(payload.hold_warning),
           }
           : { kind: 'issued_unread', athleteName: chosen.full_name });
@@ -462,6 +479,7 @@ function IssueToAthlete({
               <p ref={confirmRef} tabIndex={-1} className="t-body font-semibold">
                 Issue {template.name} to {chosen.full_name} as one workout?
               </p>
+              {untestedDrills.length > 0 && <p className="t-body">{untestedSentence(untestedDrills)}</p>}
               <button
                 type="button"
                 className="btn btn--kiosk"
@@ -506,6 +524,9 @@ function IssueToAthlete({
                   names (OD-2026-10-08-008 D1). Wording PROPOSED for Jason's look. */}
               {outcome.updated && outcome.updated.length > 0 && (
                 <p className="t-body">Moved to the newer version: {outcome.updated.join(', ')}.</p>
+              )}
+              {outcome.untested && outcome.untested.length > 0 && (
+                <p className="t-body">{untestedSentence(outcome.untested)}</p>
               )}
               {/* OD-2026-10-06-024 ruling 1: told beside the action, after the
                   fact, and nothing was blocked. The progression screen's wording. */}
@@ -629,9 +650,17 @@ function CoachWorkoutTemplates() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('That workout template could not be opened.');
-      const payload = (await response.json()) as Partial<TemplateDetail>;
+      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills'>> & {
+        untested_drills?: unknown;
+      };
       if (!payload.template) throw new Error('That workout template could not be opened.');
-      if (latest()) setDetail({ template: payload.template, items: payload.items ?? [] });
+      if (latest()) {
+        setDetail({
+          template: payload.template,
+          items: payload.items ?? [],
+          untestedDrills: namedDrills(payload.untested_drills),
+        });
+      }
     } catch (error) {
       if (latest()) {
         setDetail(null);
@@ -802,7 +831,12 @@ function CoachWorkoutTemplates() {
                     request keys are the one thing that must NOT start clean,
                     so they are this component's and are handed down. */}
                 {detail.items.length > 0 && (
-                  <IssueToAthlete template={detail.template} onBusyChange={setIssuing} requestKeys={requestKeys} />
+                  <IssueToAthlete
+                    template={detail.template}
+                    untestedDrills={detail.untestedDrills}
+                    onBusyChange={setIssuing}
+                    requestKeys={requestKeys}
+                  />
                 )}
               </>
             )}

@@ -417,6 +417,29 @@ describe('Report a Barrier (#95/#96)', () => {
     });
   }
 
+  test('two presses of Send to Coach in the same tick send one report (#1529)', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const fetchMock = installFetch(
+      undefined,
+      undefined,
+      () => new Promise<Response>((resolve) => { finish = resolve; }),
+    );
+    await openParentFloor();
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'No ride most weeknights.' } });
+    const send = screen.getByRole('button', { name: 'Send to Coach' });
+
+    await act(async () => {
+      fireEvent.click(send);
+      fireEvent.click(send);
+    });
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true, note_id: 'note-1' }));
+    });
+
+    const reports = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    expect(reports).toHaveLength(1);
+  });
+
   test('defaults to Home and posts athleteId/barrierType/description', async () => {
     const fetchMock = installFetch();
     await openParentFloor();
@@ -594,7 +617,7 @@ describe('summary tile honesty', () => {
     return tile?.textContent?.replace(label, '').trim() ?? '';
   }
 
-  test('Upcoming says Unavailable -- it has no backend feed to count from; Home Tasks counts from the answered messages read (a real zero here)', async () => {
+  test('Upcoming counts from the answered schedule read and Home Tasks from the answered messages read (a real zero on both here)', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
@@ -604,7 +627,9 @@ describe('summary tile honesty', () => {
     // date is an observation once that read answered. The unanswered case
     // is pinned in parentHubTasks.test.tsx.
     expect(tileValue('Home Tasks')).toBe('0');
-    expect(tileValue('Upcoming')).toBe('Unavailable');
+    // The schedule answered with nothing booked for this child: a real zero.
+    // The unanswered case is pinned in parentHubSummary.test.tsx.
+    expect(tileValue('Upcoming')).toBe('0');
   });
 
   test('a failed messages read renders the Messages tile as Unavailable, not as 0', async () => {

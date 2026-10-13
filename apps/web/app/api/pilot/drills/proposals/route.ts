@@ -7,6 +7,7 @@ import { DRILL_DIFFICULTIES, isDrillDifficulty } from '@/src/server/pilot/drills
 import {
   listDrillChangeProposals,
   proposeDrillChange,
+  type DrillChangeProposalListing,
   type DrillChangeProposalRow,
   type DrillChangeReviewState,
 } from '@/src/server/pilot/drillVersioning';
@@ -22,14 +23,14 @@ export const runtime = 'nodejs';
  * while both of its clients read `drills`, so the drill library rendered empty
  * from the day it shipped, and route tests and component tests both passed
  * because each side was only ever tested against its own idea of the shape.
- * Nothing consumes these yet -- the coach-facing surface is another lane's --
- * so this pins the producing side now and gives that client something to import
- * rather than re-describe. `items` here matches ../route.ts deliberately.
+ * components/drills/DrillLineageReview.tsx imports them rather than
+ * re-describing them. `items` here matches ../route.ts deliberately.
  */
 export interface DrillChangeProposalListResponse {
   ok: true;
   organization_id: string;
-  items: DrillChangeProposalRow[];
+  /** With the queue's own reading of each: current_drill_id, base_is_current, lineage_retired. */
+  items: DrillChangeProposalListing[];
 }
 
 export interface DrillChangeProposalCreatedResponse {

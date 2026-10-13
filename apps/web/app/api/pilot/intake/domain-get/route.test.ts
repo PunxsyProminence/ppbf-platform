@@ -522,3 +522,69 @@ describe('the readiness projection is an explicit column list, never *', () => {
     },
   );
 });
+
+/**
+ * Issue #1475 Part C. The coach-observation read was the last table in this
+ * body still on `select *`, so the athlete and every linked guardian received
+ * coach_account_id -- the author's account id, which for a provisioned staff
+ * account is the sign-in email -- on every note they could read. The row
+ * filter at the top of this file decides WHICH notes; this is what of each.
+ */
+describe('the coach-observation projection is an explicit column list, never *', () => {
+  test.each([...NON_STAFF_READERS, ...STAFF_READERS])(
+    'for %s the coach-observation read names its columns',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(selectListFor('from pilot.coach_observations')).not.toContain('*');
+    },
+  );
+
+  test.each(NON_STAFF_READERS)(
+    '%s receives the note and not the account that wrote it',
+    async (_label, overrides) => {
+      mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+      await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+      expect(selectListFor('from pilot.coach_observations')).toEqual([
+        'note_id',
+        'athlete_id',
+        'note_type',
+        'note_text',
+        'created_at',
+      ]);
+    },
+  );
+
+  test.each(STAFF_READERS)('%s keeps every column of the note', async (_label, overrides) => {
+    mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    // The nine columns the table has, which is what `select *` returned.
+    expect([...selectListFor('from pilot.coach_observations')].sort()).toEqual([
+      'athlete_id',
+      'author_role',
+      'coach_account_id',
+      'created_at',
+      'note_id',
+      'note_text',
+      'note_type',
+      'organization_id',
+      'updated_at',
+    ]);
+  });
+
+  test.each(NON_STAFF_READERS)('the note-type filter still rides on the same read for %s', async (_label, overrides) => {
+    mockRequirePrincipal.mockResolvedValue(principal(overrides));
+
+    await POST(domainRequest({ athlete_id: 'ath-1' }));
+
+    const [sql, params] = observationCall();
+    expect(sql).toContain('note_type = any($3::text[])');
+    expect(params[2]).not.toBeNull();
+  });
+});

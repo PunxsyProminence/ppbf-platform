@@ -1572,6 +1572,14 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   CUSTOMIZE
                 </Link>
               )}
+              {canManagePeople && (
+                <Link
+                  href="/admin/system"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
+                >
+                  SYSTEM
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
@@ -1787,10 +1795,10 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                       Automated Compliance Monitoring Surface
                     </Link>
                   )}
-                  <Link href="/source-control/publication-workflow" className="btn btn--ghost">
-                    Automated Publication Workflow Surface
-                  </Link>
                 </div>
+                <p className="t-body mt-[var(--s3)]">
+                  Automated publication workflow: not built yet. There is no screen for it.
+                </p>
               </article>
 
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
@@ -3024,6 +3032,9 @@ function CapabilityRoomWrongRoleNotice() {
           </Link>
           <Link href="/admin/organizations" className="btn btn--ghost">
             Organization Provisioning
+          </Link>
+          <Link href="/admin/system" className="btn btn--ghost">
+            System
           </Link>
         </div>
       </div>

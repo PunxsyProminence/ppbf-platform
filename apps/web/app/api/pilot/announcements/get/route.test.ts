@@ -176,10 +176,10 @@ describe('the board aggregate-only boundary, on the wire', () => {
     expect(JSON.stringify(body)).not.toContain('Coach Jason');
   });
 
-  test('the live view strips them too, and it has no role check at all', async () => {
-    // This path calls requirePrincipal and nothing else, so every authenticated
-    // principal reaches it. Projecting only the authoring view would leave the
-    // same fields reachable through the weaker gate.
+  test('the live view strips them too', async () => {
+    // Every authenticated principal reaches this path, each for its own
+    // placements. Projecting only the authoring view would leave the same
+    // fields reachable through the weaker gate.
     mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
     mockListLiveAnnouncements.mockResolvedValueOnce([FULL_ROW] as never);
 
@@ -286,5 +286,94 @@ describe('what the authoring view says this caller may do', () => {
 
     expect(body).not.toHaveProperty('editable_announcement_ids');
     expect(body).not.toHaveProperty('author_seats');
+  });
+});
+
+/**
+ * WHICH PLACEMENTS EACH ROLE MAY ASK THE LIVE READ FOR (issue #1475 Part B).
+ *
+ * The placement comes from the request body. Checked on the live app as the
+ * test athlete: asking for 'coach_workspace' or 'parent_hub' answered 200. A
+ * notice body can name an athlete, and the Customize screen tells the admin
+ * that the coaches' board reaches coaches only and the parents' board reaches
+ * guardians only.
+ *
+ * The table is written out here in full rather than imported from the route,
+ * so a row changed there fails here. A refused pair must answer exactly as a
+ * word that is no placement at all, and must not read anything.
+ */
+describe('which placements each role may ask the live read for', () => {
+  const PLACEMENTS = ['gym_notices', 'athlete_workspace', 'coach_workspace', 'parent_hub', 'everywhere'];
+
+  const ALLOWED: Record<string, string[]> = {
+    coach: PLACEMENTS,
+    organization_admin: PLACEMENTS,
+    // The legacy row name for organization_admin.
+    admin: PLACEMENTS,
+    platform_owner: PLACEMENTS,
+    board: PLACEMENTS,
+    athlete: ['athlete_workspace', 'gym_notices', 'everywhere'],
+    parent: ['parent_hub', 'gym_notices', 'everywhere'],
+    staff: ['gym_notices', 'everywhere'],
+    volunteer: ['gym_notices', 'everywhere'],
+  };
+
+  const PAIRS = Object.entries(ALLOWED).flatMap(([role, allowed]) =>
+    PLACEMENTS.map((placement) => [role, placement, allowed.some((item) => item === placement)] as const),
+  );
+
+  const asRole = (role: string) => principal({ role, accountId: `${role}-1` } as Partial<PilotPrincipal>);
+
+  test('the table covers nine roles and all five placements, and refuses some pair', () => {
+    expect(Object.keys(ALLOWED)).toHaveLength(9);
+    expect(PAIRS).toHaveLength(45);
+    expect(PAIRS.filter(([, , allowed]) => !allowed)).toHaveLength(10);
+  });
+
+  test.each(PAIRS.filter(([, , allowed]) => allowed))('%s may read %s', async (role, placement) => {
+    mockResolvePrincipal.mockResolvedValueOnce(asRole(role));
+    mockListLiveAnnouncements.mockResolvedValueOnce([]);
+
+    const res = await POST(request({ placement }));
+
+    expect(res.status).toBe(200);
+    expect(mockListLiveAnnouncements).toHaveBeenCalledWith('org-1', { placement, kind: 'notice', limit: 8 });
+  });
+
+  test.each(PAIRS.filter(([, , allowed]) => !allowed))(
+    '%s asking for %s is answered exactly as an unknown placement, and nothing is read',
+    async (role, placement) => {
+      mockResolvePrincipal.mockResolvedValueOnce(asRole(role));
+      const unknown = await POST(request({ placement: 'billboard' }));
+
+      mockResolvePrincipal.mockResolvedValueOnce(asRole(role));
+      const refused = await POST(request({ placement }));
+
+      expect(unknown.status).toBe(400);
+      expect(refused.status).toBe(unknown.status);
+      expect(await refused.text()).toBe(await unknown.text());
+      expect(mockListLiveAnnouncements).not.toHaveBeenCalled();
+    },
+  );
+
+  test('the motivation kind follows the same table', async () => {
+    // The chalkboard reads kind 'motivation'; the table is about the placement.
+    mockResolvePrincipal.mockResolvedValueOnce(asRole('athlete'));
+    expect((await POST(request({ placement: 'coach_workspace', kind: 'motivation' }))).status).toBe(400);
+
+    mockResolvePrincipal.mockResolvedValueOnce(asRole('athlete'));
+    mockListLiveAnnouncements.mockResolvedValueOnce([]);
+    expect((await POST(request({ placement: 'athlete_workspace', kind: 'motivation' }))).status).toBe(200);
+    expect(mockListLiveAnnouncements).toHaveBeenCalledTimes(1);
+  });
+
+  test('a request that names no placement reads gym_notices, which every role may', async () => {
+    for (const role of Object.keys(ALLOWED)) {
+      mockResolvePrincipal.mockResolvedValueOnce(asRole(role));
+      mockListLiveAnnouncements.mockResolvedValueOnce([]);
+
+      expect((await POST(request({}))).status).toBe(200);
+    }
+    expect(mockListLiveAnnouncements).toHaveBeenCalledTimes(9);
   });
 });

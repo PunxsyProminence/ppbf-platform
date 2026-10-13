@@ -42,6 +42,8 @@ import { requirePrincipal } from './http';
 import {
   ASSESSMENT_IDENTITY_COLUMNS,
   ASSESSMENT_STAFF_COLUMNS,
+  COACH_OBSERVATION_IDENTITY_COLUMNS,
+  COACH_OBSERVATION_STAFF_COLUMNS,
   READINESS_IDENTITY_COLUMNS,
   READINESS_STAFF_COLUMNS,
   WAIVER_IDENTITY_COLUMNS,
@@ -967,5 +969,71 @@ describe('getIntakeCaseAggregate', () => {
     // value, because that is how this one actually escapes.
     expect(JSON.stringify(asGuardian?.coach_observations)).not.toContain('555-0200');
     expect(JSON.stringify(asAthlete?.coach_observations)).not.toContain('555-0200');
+  });
+});
+
+/* Issue #1475 Part C. pilot.coach_observations was the last table in both
+   intake reads still on `select *`: every note a guardian or an athlete could
+   read arrived with coach_account_id, the author's account id. Read here from
+   the real table, so the column list is proven to be SQL the database accepts
+   and the values are proven absent from what a family receives. */
+describe('the coach-observation projection, against the real table', () => {
+  const rows = (body: unknown): Record<string, unknown>[] =>
+    ((body as { coach_observations?: Record<string, unknown>[] } | null)?.coach_observations ?? []);
+
+  it('gives a guardian and an athlete the note without the account that wrote it, on both reads', async () => {
+    const bodies = [
+      await readDomainGet(AS.guardianA()),
+      await readDomainGet(AS.athlete()),
+      await readAggregate(AS.guardianA()),
+      await readAggregate(AS.athlete()),
+    ];
+
+    for (const body of bodies) {
+      // Each of these readers has exactly one note of their own audience.
+      expect(rows(body)).toHaveLength(1);
+      expect(Object.keys(rows(body)[0]).sort()).toEqual([...COACH_OBSERVATION_IDENTITY_COLUMNS].sort());
+      expect(JSON.stringify(rows(body))).not.toContain('acct-coach');
+    }
+  });
+
+  it('keeps the author and every other column for the coach and the organization admin, on both reads', async () => {
+    const bodies = [
+      await readDomainGet(AS.coach()),
+      await readDomainGet(AS.admin()),
+      await readAggregate(AS.coach()),
+      await readAggregate(AS.admin()),
+    ];
+
+    for (const body of bodies) {
+      expect(rows(body)).toHaveLength(3);
+      for (const row of rows(body)) {
+        expect(row.coach_account_id).toBe('acct-coach');
+        expect(Object.keys(row).sort()).toEqual(
+          [...COACH_OBSERVATION_IDENTITY_COLUMNS, ...COACH_OBSERVATION_STAFF_COLUMNS].sort(),
+        );
+      }
+    }
+  });
+
+  it('names every column of pilot.coach_observations exactly once, so staff read what `select *` read', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'coach_observations'`,
+    );
+    const liveColumns = live.rows.map((row) => row.column_name).sort();
+
+    const declared = [...COACH_OBSERVATION_IDENTITY_COLUMNS, ...COACH_OBSERVATION_STAFF_COLUMNS].sort();
+
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual(liveColumns);
+  });
+
+  it('keeps the author columns out of the identity set', () => {
+    for (const column of COACH_OBSERVATION_STAFF_COLUMNS) {
+      expect(COACH_OBSERVATION_IDENTITY_COLUMNS).not.toContain(column);
+    }
+    expect(COACH_OBSERVATION_STAFF_COLUMNS).toContain('coach_account_id');
+    expect(COACH_OBSERVATION_STAFF_COLUMNS).toContain('author_role');
   });
 });

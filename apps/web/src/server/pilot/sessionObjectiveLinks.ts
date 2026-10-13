@@ -299,7 +299,7 @@ export async function listSessionsForObjective(
 ): Promise<ObjectiveSessionRow[]> {
   return query<ObjectiveSessionRow>(
     `select r.run_id,
-            s.name as script_name,
+            coalesce(s.name, 'Plain session') as script_name,
             r.delivered_on::text as delivered_on,
             r.deviation_note,
             r.what_worked,
@@ -309,7 +309,8 @@ export async function listSessionsForObjective(
      from pilot.session_run_block_objective_links l
      join pilot.session_script_runs r
        on r.organization_id = l.organization_id and r.run_id = l.run_id
-     join pilot.session_scripts s
+     -- left: a plain session (issue #1523) has no script and reads as "Plain session"
+     left join pilot.session_scripts s
        on s.organization_id = r.organization_id and s.script_id = r.script_id
      where l.organization_id = $1 and l.objective_id = $2
      order by r.delivered_on desc, r.created_at desc, r.run_id`,
