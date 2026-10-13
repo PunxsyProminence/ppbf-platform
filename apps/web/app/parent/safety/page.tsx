@@ -125,6 +125,37 @@ const GATE_OUTCOME_BADGE: Record<GateSummaryRow['outcome'], string> = {
   not_evaluated: 'badge--monitor',
 };
 
+/* The training-hold gate's last evaluation is written only when someone tries
+   to register the child for a class, so it can read "Not yet checked" while a
+   hold is active. The page already has the hold itself (the route's `hold`),
+   so that row reads from it instead (#1537). */
+const TRAINING_HOLD_GATE_KEY = 'training_hold';
+
+interface SafetyCheckRow {
+  key: string;
+  name: string;
+  label: string;
+  badge: string;
+}
+
+/** The rows the page can answer from what it was sent. The hold row reads the
+ *  hold; any other gate that has never been evaluated is left out, because
+ *  its answer (for contact, a medical clearance) is not something a guardian
+ *  is sent. */
+function safetyCheckRows(item: AthleteSafety): SafetyCheckRow[] {
+  return item.gates.flatMap((gate): SafetyCheckRow[] => {
+    if (gate.gate_key === TRAINING_HOLD_GATE_KEY) {
+      return [
+        item.hold
+          ? { key: gate.gate_key, name: gate.name, label: 'Paused', badge: 'badge--restricted' }
+          : { key: gate.gate_key, name: gate.name, label: 'No pause', badge: 'badge--cleared' },
+      ];
+    }
+    if (gate.outcome === 'not_evaluated') return [];
+    return [{ key: gate.gate_key, name: gate.name, label: GATE_OUTCOME_LABEL[gate.outcome], badge: GATE_OUTCOME_BADGE[gate.outcome] }];
+  });
+}
+
 export default function GuardianSafetyPage() {
   const [items, setItems] = useState<AthleteSafety[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -246,16 +277,14 @@ export default function GuardianSafetyPage() {
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training pause on file right now.</p>
                   )}
 
-                  {item.gates.length > 0 ? (
+                  {safetyCheckRows(item).length > 0 ? (
                     <div className="mt-[var(--s4)]">
                       <p className="t-label">Safety checks</p>
                       <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
-                        {item.gates.map((gate) => (
-                          <div key={gate.gate_key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
-                            <span>{gate.name}</span>
-                            <span className={`badge ${GATE_OUTCOME_BADGE[gate.outcome]}`}>
-                              {GATE_OUTCOME_LABEL[gate.outcome]}
-                            </span>
+                        {safetyCheckRows(item).map((row) => (
+                          <div key={row.key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
+                            <span>{row.name}</span>
+                            <span className={`badge ${row.badge}`}>{row.label}</span>
                           </div>
                         ))}
                       </div>

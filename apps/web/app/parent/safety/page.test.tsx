@@ -132,6 +132,75 @@ test('no linked children renders the empty state', async () => {
   await screen.findByText('No linked children found');
 });
 
+/* ---------------------------------------------------------- safety checks --
+   #1537: with a hold shown at the top of the page, the list under it read
+   "Active Training Hold: NOT YET CHECKED" and "Contact Requires Medical
+   Clearance: NOT YET CHECKED". A gate's last evaluation is an event (a class
+   registration, a logged contact), not the child's state. */
+
+const NEVER_EVALUATED_GATES = [
+  { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'not_evaluated' as const, evaluated_at: null },
+  { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'not_evaluated' as const, evaluated_at: null },
+];
+
+function checkRow(name: string): HTMLElement {
+  const row = screen.getByText(name).parentElement;
+  if (!row) throw new Error(`no row for ${name}`);
+  return row;
+}
+
+test('an active hold reads Paused on the hold row, and nothing reads Not yet checked', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], gates: NEVER_EVALUATED_GATES }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Training is paused right now');
+  expect(within(checkRow('Active Training Hold')).getByText('Paused')).toHaveClass('badge--restricted');
+  expect(screen.queryByText('Not yet checked')).not.toBeInTheDocument();
+});
+
+test('no hold reads No pause on the hold row, whatever the gate last recorded', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      items: [{
+        ...CLEAR_ATHLETE[0],
+        gates: [{ gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'blocked' as const, evaluated_at: '2026-08-01T00:00:00.000Z' }],
+      }],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('No training pause on file right now.');
+  expect(within(checkRow('Active Training Hold')).getByText('No pause')).toHaveClass('badge--cleared');
+  expect(screen.queryByText('Not clear')).not.toBeInTheDocument();
+});
+
+test('a clearance gate never evaluated is left out, since a guardian is not sent medical clearance', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...CLEAR_ATHLETE[0], gates: NEVER_EVALUATED_GATES }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Active Training Hold');
+  expect(screen.queryByText('Contact Requires Medical Clearance')).not.toBeInTheDocument();
+});
+
+test('with no row the page can answer, the Safety checks list is not shown', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...CLEAR_ATHLETE[0], gates: [NEVER_EVALUATED_GATES[0]] }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('No training pause on file right now.');
+  expect(screen.queryByText('Safety checks')).not.toBeInTheDocument();
+});
+
 /* ---------------------------------------------------------------- waivers --
  * Owner decision 2026-09-29 (Q4 A): show the guardian the waiver statuses the
  * route has returned since #799. Only the guardian can sign the travel waiver
