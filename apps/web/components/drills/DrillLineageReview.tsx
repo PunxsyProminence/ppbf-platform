@@ -167,11 +167,18 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
         body: JSON.stringify({ drill_id: v.drill_id, reinstate: true }),
       });
       status = response.status;
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; drill?: { version?: number } };
       if (!response.ok) throw new Error(payload.error || `Version ${v.version} could not be reinstated.`);
       await reread();
       onChanged?.();
-      setResult({ target: v.drill_id, notice: `Reinstated version ${v.version}. It is now the drill's current version.` });
+      // A reinstate copies the earlier version into a NEW latest version (#1470), so say which.
+      const now = payload.drill?.version;
+      setResult({
+        target: v.drill_id,
+        notice: now
+          ? `Reinstated version ${v.version} as version ${now}, now the drill's current version.`
+          : `Reinstated version ${v.version} as the drill's new current version.`,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : `Version ${v.version} could not be reinstated.`;
       setResult({ target: v.drill_id, error: message, explanation: await afterFailure(status) });
@@ -303,8 +310,8 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
                 </button>
                 {canReinstate && !retired && v !== head && (
                   <button type="button" className="btn btn--ghost mt-[var(--s2)] ml-[var(--s3)]" disabled={busyId !== ''}
-                    onClick={() => void reinstate(v)} aria-label={`Reinstate version ${v.version}`}>
-                    {busyId === v.drill_id ? 'Reinstating...' : 'Reinstate this version'}
+                    onClick={() => void reinstate(v)}>
+                    {busyId === v.drill_id ? 'Reinstating...' : `Reinstate version ${v.version}`}
                   </button>
                 )}
                 {expanded[v.drill_id] && (

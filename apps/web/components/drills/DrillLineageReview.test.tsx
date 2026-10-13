@@ -308,7 +308,7 @@ describe('DrillLineageReview', () => {
     test('is offered on each earlier version, never on the current one', async () => {
       await renderPanel({ versions: threeVersions(), items: [] }, false, true);
       const items = versionItems();
-      expect(within(items[0]).getByRole('button', { name: 'Reinstate version 1' })).toHaveTextContent('Reinstate this version');
+      expect(within(items[0]).getByRole('button', { name: 'Reinstate version 1' })).toHaveTextContent('Reinstate version 1');
       expect(within(items[1]).getByRole('button', { name: 'Reinstate version 2' })).toBeInTheDocument();
       expect(within(items[2]).queryByRole('button', { name: /^Reinstate/ })).not.toBeInTheDocument();
     });
@@ -339,7 +339,8 @@ describe('DrillLineageReview', () => {
       expect(button).toBeDisabled();
       expect(within(versionItems()[1]).getByRole('button', { name: 'Reinstate version 2' })).toBeDisabled();
 
-      expect(await screen.findByText("Reinstated version 1. It is now the drill's current version.")).toHaveAttribute('role', 'status');
+      // The reinstate writes a NEW latest version, so the notice names it (here version 4).
+      expect(await screen.findByText("Reinstated version 1 as version 4, now the drill's current version.")).toHaveAttribute('role', 'status');
       const patches = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
       expect(patches.map(([url, init]) => [String(url), JSON.parse(String((init as RequestInit).body))])).toEqual([
         ['/api/pilot/drills', { drill_id: 'jab-1', reinstate: true }],
