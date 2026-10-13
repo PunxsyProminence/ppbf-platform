@@ -229,6 +229,28 @@ describe('/admin/athletes', () => {
     expect(screen.queryByText(/coach-1/)).toBeNull();
   });
 
+  test('a coach who left the active list is still named, and a staff list that could not be read is not read as "not on it"', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ account_id: 'coach-1', login_email: 'jason@example.org', role: 'coach', active_flag: false, membership_active: true }],
+      })
+      : undefined)) as unknown as typeof fetch;
+    const { unmount } = render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+    unmount();
+
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({ error: 'Forbidden' }, false, 403)
+      : undefined)) as unknown as typeof fetch;
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach name not available/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+  });
+
   test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
     const fetchMock = consoleFetch((url) =>
       url.includes('/api/pilot/scheduler/attendance-summary')

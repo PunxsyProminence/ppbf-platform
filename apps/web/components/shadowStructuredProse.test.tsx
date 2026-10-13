@@ -129,3 +129,12 @@ describe('bold', () => {
     expect(container.querySelector('strong')?.textContent).toBe('<img src=x onerror=alert(1)>');
   });
 });
+
+describe('bold needs words inside it', () => {
+  test('arithmetic with ** is left alone', () => {
+    const { container } = render(<ShadowStructuredProse text="Work out x ** 2 + y ** 2 for the drill." />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Work out x ** 2 + y ** 2 for the drill.');
+  });
+});

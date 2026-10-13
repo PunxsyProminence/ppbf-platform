@@ -76,7 +76,9 @@ export function splitProseBlocks(raw: string): ProseBlock[] {
   return blocks;
 }
 
-const BOLD_PAIR = /\*\*([^*\n]+?)\*\*/g;
+// The words inside must start and end on a character that is not a space or a
+// star, as in Markdown: "x ** 2 + y ** 2" is arithmetic, not two bold marks.
+const BOLD_PAIR = /\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*/g;
 
 /** Exported for tests: text with each balanced **pair** as a <strong> text node. */
 export function renderInlineBold(text: string): ReactNode[] {

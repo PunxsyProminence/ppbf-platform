@@ -278,3 +278,20 @@ test('closing session notes drops a read that lands afterwards', async () => {
   expect(screen.queryByLabelText('Session')).toBeNull();
   expect(screen.getByRole('button', { name: 'Session notes' })).toBeTruthy();
 });
+
+test('closing and reopening the capacity notes does not leave a Withdraw question waiting', async () => {
+  serve();
+  renderBlock();
+  fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+  await screen.findByRole('list', { name: 'Capacity notes, newest first' });
+  fireEvent.click(screen.getAllByRole('button', { name: /^Withdraw/ })[0]);
+  expect(screen.getByRole('button', { name: 'Yes, Withdraw It' })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Hide capacity notes' }));
+  await waitFor(() => expect(screen.queryByRole('list', { name: 'Capacity notes, newest first' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+  await screen.findByRole('list', { name: 'Capacity notes, newest first' });
+
+  expect(screen.queryByRole('button', { name: 'Yes, Withdraw It' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: /^Withdraw/ })).toHaveLength(1);
+});

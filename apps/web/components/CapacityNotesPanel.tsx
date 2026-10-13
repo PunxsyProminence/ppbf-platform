@@ -116,6 +116,9 @@ export default function CapacityNotesPanel({
 
   const toggle = useCallback(() => {
     setRefusal(null);
+    // Closing or opening starts clean: a question asked on a previous opening
+    // is not waiting one tap from "Yes".
+    setArmedNoteId(null);
     if (isOpen.current) {
       isOpen.current = false;
       setReading({ state: 'closed' });

@@ -196,7 +196,9 @@ describe('what sits at the top of the room', () => {
 
     await act(async () => { render(<ShadowChatPage />); });
 
-    expect(screen.getAllByText(PLAIN).length).toBeGreaterThan(0);
+    // Once under the heading; the first bubble is only the invitation.
+    expect(screen.getAllByText(PLAIN)).toHaveLength(1);
+    expect(screen.getByText('What would you like to ask?')).toBeTruthy();
     expect(screen.queryByText(/Scoped role-aware/)).toBeNull();
     expect(screen.queryByText('Authority Boundary')).toBeNull();
     expect(screen.queryByText(/Context:/)).toBeNull();

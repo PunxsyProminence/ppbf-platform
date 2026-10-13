@@ -178,6 +178,10 @@ function AthleteRecordsConsoleContent() {
   const [attendanceRateByAthlete, setAttendanceRateByAthlete] = useState<Record<string, number | null>>({});
   const [coaches, setCoaches] = useState<CoachOption[]>([]);
   const [coachesAvailable, setCoachesAvailable] = useState(false);
+  // Every coach the staff list names, active or not: a coach who has left is
+  // still the name on an athlete's record. `coaches` above is only the ones
+  // who can be chosen.
+  const [coachDirectory, setCoachDirectory] = useState<CoachOption[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -244,12 +248,18 @@ function AthleteRecordsConsoleContent() {
       return;
     }
 
-    setCoaches(
-      (staffPayload.members ?? [])
-        .filter((member) => member.role === 'coach' && member.active_flag !== false && member.membership_active !== false)
-        .map((member) => ({ account_id: readString(member.account_id), login_email: member.login_email ?? null }))
-        .filter((coach) => coach.account_id.length > 0),
-    );
+    const everyCoach = (staffPayload.members ?? [])
+      .filter((member) => member.role === 'coach')
+      .map((member) => ({
+        account_id: readString(member.account_id),
+        login_email: member.login_email ?? null,
+        selectable: member.active_flag !== false && member.membership_active !== false,
+      }))
+      .filter((coach) => coach.account_id.length > 0);
+    setCoachDirectory(everyCoach.map(({ account_id, login_email }) => ({ account_id, login_email })));
+    setCoaches(everyCoach
+      .filter((coach) => coach.selectable)
+      .map(({ account_id, login_email }) => ({ account_id, login_email })));
     setCoachesAvailable(true);
   }, []);
 
@@ -346,10 +356,13 @@ function AthleteRecordsConsoleContent() {
   // email-shaped id that is not on it is named from itself; anything else is
   // said plainly rather than printed as an id.
   const coachNameFor = useCallback((coachId: string) => {
-    const known = coaches.find((coach) => coach.account_id === coachId);
+    const known = coachDirectory.find((coach) => coach.account_id === coachId);
     if (known?.login_email) return deriveCoachDisplayName(known.login_email);
-    return coachId.includes('@') ? deriveCoachDisplayName(coachId) : 'coach not on the staff list';
-  }, [coaches]);
+    if (coachId.includes('@')) return deriveCoachDisplayName(coachId);
+    // Not found is only a statement once the staff list has been read; until
+    // then (or if it could not be) the name is simply not known here.
+    return coachesAvailable ? 'coach not on the staff list' : 'coach name not available';
+  }, [coachDirectory, coachesAvailable]);
 
   const visibleRoster = useMemo(() => {
     const needle = filter.trim().toLowerCase();

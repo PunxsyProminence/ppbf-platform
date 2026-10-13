@@ -317,7 +317,7 @@ type ShadowChatMode = 'omega' | 'master' | 'scoped';
 // same scopeSummary the header prints, so the two can never drift apart.
 function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string, subject: string) {
   if (mode === 'scoped' && isFamilyFacingRole(role)) {
-    return FAMILY_SHADOW_SENTENCE;
+    return FAMILY_SHADOW_WELCOME;
   }
   const { scopeSummary } = buildHeading(mode, subject);
   const opening = mode === 'omega'
@@ -338,6 +338,9 @@ function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string
 // WORKSPACE /ATHLETE/DASHBOARD" above a question about their jab. One sentence
 // instead, and staff keep what they have.
 const FAMILY_SHADOW_SENTENCE = 'Ask a question about your training: SHADOW explains, and your coach makes the call.';
+// The first bubble. The sentence above is already under the heading, so this
+// is only the invitation.
+const FAMILY_SHADOW_WELCOME = 'What would you like to ask?';
 
 function isFamilyFacingRole(role: string): boolean {
   const normalized = role.trim().toLowerCase();
