@@ -63,6 +63,16 @@ export async function GET(request: NextRequest) {
     const inReach = <Row extends { athlete_id: string }>(rows: Row[], reachable: Set<string> | null): Row[] =>
       reachable ? rows.filter((row) => reachable.has(row.athlete_id)) : rows;
     const classId = request.nextUrl.searchParams.get('class_id');
+    // The CSV is the by-athlete report only (RP-01): asked of the class roster
+    // or the weekly trend, or narrowed by since (which the file's stated
+    // period would not show), it is refused rather than quietly ignored.
+    const format = request.nextUrl.searchParams.get('format');
+    if (format !== null && format !== 'csv') {
+      throw new Error('Unsupported format: only csv');
+    }
+    if (format === 'csv' && (classId || request.nextUrl.searchParams.get('trend') !== null || request.nextUrl.searchParams.get('since') !== null)) {
+      throw new Error('Unsupported format: a CSV is the report by athlete for a from-to period, with no class_id, trend or since');
+    }
 
     if (classId) {
       const classItem = await getSchedulerClassById(principal.organizationId, classId);
@@ -117,10 +127,6 @@ export async function GET(request: NextRequest) {
     const toDay = calendarDay(request.nextUrl.searchParams.get('to'), 'to');
     if (fromDay && toDay && fromDay > toDay) {
       throw new Error('Unsupported period: from must be on or before to');
-    }
-    const format = request.nextUrl.searchParams.get('format');
-    if (format !== null && format !== 'csv') {
-      throw new Error('Unsupported format: only csv');
     }
     // A report is for a stated period, so the file says which one -- refused
     // before any read.

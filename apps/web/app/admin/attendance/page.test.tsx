@@ -201,6 +201,6 @@ describe('the attendance report download (RP-01)', () => {
     });
 
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('format=csv'))).toBe(false);
-    expect(screen.getByRole('alert').textContent).toBe('Choose a From date on or before the To date.');
+    expect(screen.getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
   });
 });

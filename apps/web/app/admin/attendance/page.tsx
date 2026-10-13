@@ -122,8 +122,10 @@ function AttendanceReportDownload() {
 
   async function download() {
     if (busyRef.current) return;
+    // Cleared first, so the same message said twice is announced twice.
+    setFailure('');
     if (!period.from || !period.to || period.from > period.to) {
-      setFailure('Choose a From date on or before the To date.');
+      setTimeout(() => setFailure('Choose a From date on or before the To date.'), 0);
       return;
     }
     busyRef.current = true;
@@ -187,7 +189,12 @@ function AttendanceReportDownload() {
           {busy ? 'Preparing…' : 'Download CSV'}
         </button>
       </div>
-      {failure ? <p role="alert" className="t-body mt-[var(--s3)]">{failure}</p> : null}
+      {failure ? (
+        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <span className="alert-msg">{failure}</span>
+        </p>
+      ) : null}
     </section>
   );
 }

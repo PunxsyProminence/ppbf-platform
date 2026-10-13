@@ -382,6 +382,9 @@ describe('the attendance-by-athlete report (RP-01)', () => {
     ['a period that ends before it starts', '?from=2026-10-13&to=2026-10-01&format=csv', /^Unsupported period/],
     ['a CSV with no period', '?format=csv', /^Missing from or to/],
     ['another format', '?from=2026-10-01&to=2026-10-13&format=xlsx', /^Unsupported format/],
+    ['a CSV of one class roster', '?class_id=c-1&format=csv', /^Unsupported format/],
+    ['a CSV of the weekly trend', '?trend=1&format=csv', /^Unsupported format/],
+    ['a CSV also narrowed by since', '?since=2026-10-10&from=2026-09-14&to=2026-10-13&format=csv', /^Unsupported format/],
   ])('%s is refused with a sentence', async (_label, query, message) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockSummary.mockResolvedValueOnce([]);
