@@ -27,9 +27,19 @@ jest.mock('@/components/RoleSessionGate', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <>{children}</>,
 }));
 
+import { gymDayIso } from '@/src/lib/gymTime';
+
 import SchedulerPage from './page';
 
 const HOUR = 3600 * 1000;
+
+/* An hour from now, unless that is already tomorrow's gym day (after 11 pm
+   gym time), then half an hour ago: either way a class on today's gym day, so
+   this file passes at every hour of the night (#1536: it failed from 11 pm to
+   midnight Eastern). */
+function laterSameGymDay(): number {
+  return gymDayIso(Date.now() + HOUR) === gymDayIso(Date.now()) ? HOUR : -HOUR / 2;
+}
 const nowIso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
 
 function classRow(id: string, title: string, startOffsetMs: number) {
@@ -161,7 +171,7 @@ describe('family check-in on /schedule (#1524)', () => {
       classes: [
         { ...classRow('class-cancelled', 'Cancelled', -HOUR), status: 'cancelled' },
         classRow('class-other', 'Not mine', 0),
-        classRow('class-mine', 'Mine', HOUR),
+        classRow('class-mine', 'Mine', laterSameGymDay()),
       ],
       registrations: [registration('class-mine', 'athlete-1')],
     });

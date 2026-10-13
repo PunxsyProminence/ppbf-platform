@@ -476,8 +476,11 @@ export default function SchedulerPage() {
   const isFamily = !roleCanOverrideAttendance(role);
   const selectedClass = classes.find((item) => item.class_id === selectedClassId) ?? null;
   const today = gymDayIso(nowMs);
+  // Nobody marks a register for a cancelled class (#1536); the route refuses it.
+  const selectedClassCancelled = selectedClass?.status === 'cancelled';
   const familyCanCheckIn = Boolean(
     selectedClass
+      && !selectedClassCancelled
       && today
       && gymDayIso(selectedClass.start_at) === today
       && targetAthlete
@@ -931,7 +934,7 @@ export default function SchedulerPage() {
                     />
                   ) : null}
 
-                  {!isFamily || familyCanCheckIn ? (
+                  {(!isFamily && !selectedClassCancelled) || familyCanCheckIn ? (
                     <button
                       type="button"
                       onClick={() => {

@@ -186,4 +186,33 @@ describe('Cancel Class (#1536)', () => {
       expect.stringMatching(/^Still On \(.*\)$/),
     ]);
   });
+
+  test('a cancelled class selected for the register offers no attendance action, for staff or a family', async () => {
+    installFetchMock('coach', [classRow('gone', 'Called Off', 1 * HOUR, { status: 'cancelled' })]);
+    await renderPage();
+    expect(screen.queryByRole('button', { name: 'Update Attendance' })).not.toBeInTheDocument();
+  });
+
+  test("a family with a cancelled class of today selected is not offered I'm here", async () => {
+    const fetchMock = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (payload: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
+      if (url.endsWith('/api/pilot/auth/session')) return json({ authenticated: true, role: 'athlete', athlete_id: 'athlete-1' });
+      if (url.endsWith('/api/pilot/scheduler')) {
+        return json({
+          ok: true,
+          role: 'athlete',
+          classes: [classRow('gone', 'Called Off', 0, { status: 'cancelled' })],
+          registrations: [{ registration_id: 'r1', class_id: 'gone', athlete_id: 'athlete-1', requested_by_role: 'athlete', parent_reviewed: true, status: 'registered', created_at: '2026-10-01T00:00:00.000Z' }],
+          coaching_requests: [],
+          attendance: [],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await renderPage();
+
+    expect(screen.queryByRole('button', { name: "I'm here" })).not.toBeInTheDocument();
+  });
 });
