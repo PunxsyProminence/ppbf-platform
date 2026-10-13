@@ -132,6 +132,8 @@ test('a coach observation files under the calling coach in their own organizatio
     entity_type: 'intake_coach_note',
     organization_id: 'org-1',
     actor_account_id: 'acct-coach-1',
+    // Exactly the athlete: only a waiver adds its type and status (#1526).
+    details: { athlete_id: 'ath-1' },
   }), TX_CLIENT);
 });
 

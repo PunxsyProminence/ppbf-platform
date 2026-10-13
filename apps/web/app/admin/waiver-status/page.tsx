@@ -250,6 +250,26 @@ export default function WaiverComplianceAuditPage() {
   // One write per press: two presses in one tick both read the same
   // editSaving, so the guard is a ref.
   const savingRef = useRef(false);
+  // Keyboard focus follows the form: into its first field when it opens, back
+  // to the cell's button when it closes (#1526 review).
+  const editDateRef = useRef<HTMLInputElement | null>(null);
+  const returnFocusTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (edit) {
+      editDateRef.current?.focus();
+      return;
+    }
+    const cell = returnFocusTo.current;
+    returnFocusTo.current = null;
+    if (cell) {
+      document.querySelector<HTMLButtonElement>(`[data-waiver-cell="${cell}"] button`)?.focus();
+    }
+  }, [edit]);
+
+  function closeEdit() {
+    if (edit) returnFocusTo.current = `${edit.athleteId}:${edit.type}`;
+    setEdit(null);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -287,7 +307,9 @@ export default function WaiverComplianceAuditPage() {
   async function saveEdit() {
     if (!edit || savingRef.current) return;
     if (!editName.trim()) {
-      setEditError('Enter the name of the person who signed.');
+      setEditError(edit.action === 'record'
+        ? 'Enter the name of the person who signed.'
+        : 'Enter the name of the person who withdrew it.');
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(editDate)) {
@@ -325,7 +347,7 @@ export default function WaiverComplianceAuditPage() {
       setSavedMessage(
         `${PAPER_NAMES[edit.type]} for ${edit.athleteName}: ${edit.action === 'record' ? 'recorded as signed' : 'withdrawn'}.`,
       );
-      setEdit(null);
+      closeEdit();
       await load();
     } catch (error) {
       setEditError(error instanceof Error && error.message ? error.message : 'The waiver was not saved.');
@@ -480,7 +502,7 @@ export default function WaiverComplianceAuditPage() {
                         const editing = edit?.athleteId === row.athlete_id && edit.type === type;
                         const action: WaiverEdit['action'] = ok ? 'withdraw' : 'record';
                         return (
-                          <td key={type} className="px-[var(--s4)] py-[var(--s3)] align-top">
+                          <td key={type} data-waiver-cell={`${row.athlete_id}:${type}`} className="px-[var(--s4)] py-[var(--s3)] align-top">
                             <span className={`badge ${ok ? 'badge--cleared' : 'badge--restricted'}`}>
                               <i>{ok ? '✓' : '▲'}</i>
                               {status === 'signed' ? 'Signed' : status === 'declined' ? 'Declined' : status === 'withdrawn' ? 'Withdrawn' : 'Missing'}
@@ -503,7 +525,7 @@ export default function WaiverComplianceAuditPage() {
                               >
                                 <label className="field">
                                   <span className="t-label">{edit.action === 'record' ? 'Date on the form' : 'Date withdrawn'}</span>
-                                  <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} className="input" />
+                                  <input ref={editDateRef} type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} className="input" />
                                 </label>
                                 <label className="field">
                                   <span className="t-label">{edit.action === 'record' ? 'Signed by' : 'Withdrawn by'}</span>
@@ -526,7 +548,7 @@ export default function WaiverComplianceAuditPage() {
                                   <button type="button" onClick={() => void saveEdit()} disabled={editSaving} className="btn">
                                     {editSaving ? 'Saving…' : 'Save'}
                                   </button>
-                                  <button type="button" onClick={() => setEdit(null)} disabled={editSaving} className="btn btn--ghost">
+                                  <button type="button" onClick={closeEdit} disabled={editSaving} className="btn btn--ghost">
                                     Cancel
                                   </button>
                                 </div>

@@ -516,15 +516,30 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
     expect((within(form).getByLabelText('They are the') as HTMLSelectElement).value).toBe('organization_admin');
   });
 
-  test('Cancel closes the form and sends nothing', async () => {
+  test('Cancel closes the form, sends nothing, and puts focus back on the button', async () => {
     const posts = installRecording();
     await openRecord('Record signed: Travel, Jordan T.');
+    const form = screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' });
+    // Focus goes into the form when it opens.
+    expect(document.activeElement).toBe(within(form).getByLabelText('Date on the form'));
 
-    fireEvent.click(within(screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' })).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('group', { name: /Record signed/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' })).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' });
+    expect(document.activeElement).toBe(button);
     expect(posts).toEqual([]);
+  });
+
+  test('a withdrawal with no name asks for who withdrew it', async () => {
+    const posts = installRecording();
+    await openRecord('Withdraw: General, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Withdraw: General, Jordan T.' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    expect(posts).toEqual([]);
+    expect(within(form).getByRole('alert').textContent).toBe('Enter the name of the person who withdrew it.');
   });
 
   test('photo and media is never recorded here: no control on that column', async () => {
