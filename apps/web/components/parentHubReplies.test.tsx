@@ -159,6 +159,28 @@ describe('replying to a coach message (FC-03)', () => {
     });
   });
 
+  test('text typed while a send is in flight stays in the box', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    installFetch({
+      repliesPost: () => new Promise<Response>((resolve) => { finish = resolve; }),
+    });
+    await openMessages();
+
+    const gloves = card('Bring gloves Thursday.');
+    const box = within(gloves).getByLabelText('Your reply');
+    fireEvent.change(box, { target: { value: 'First.' } });
+    act(() => {
+      fireEvent.click(within(gloves).getByRole('button', { name: 'Send reply' }));
+    });
+    fireEvent.change(box, { target: { value: 'First. And another thing.' } });
+    await act(async () => {
+      finish?.(jsonResponse({ ok: true, item: { reply_id: 'r-1', note_id: MESSAGES[0]!.note_id, reply_text: 'First.', created_at: '2026-10-13T23:30:00.000Z' } }));
+    });
+
+    expect(within(gloves).getByText('First.')).toBeInTheDocument();
+    expect(box).toHaveValue('First. And another thing.');
+  });
+
   test('a refused send keeps the text, says why under that message, and adds nothing', async () => {
     installFetch({
       repliesPost: async () => jsonResponse({ ok: false, error: 'Not found: that message is not on your page.' }, false),

@@ -310,6 +310,16 @@ describe('a guardian replies to a parent message (createFamilyMessageReply)', ()
     expect(await storedRows()).toHaveLength(1);
   });
 
+  test('a child the gym has deleted takes no new replies', async () => {
+    await activeClient!.query(
+      `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, ATHLETE],
+    );
+
+    await expect(reply(GUARDIAN_A, MESSAGE, 'Hello.')).rejects.toThrow(NOT_YOURS);
+    expect(await storedRows()).toEqual([]);
+  });
+
   test('a guardian whose link was removed can no longer reply on the old message', async () => {
     await reply(GUARDIAN_B, MESSAGE, 'First.');
     await activeClient!.query(`delete from pilot.guardian_links where organization_id = $1 and parent_id = 'P-B'`, [ORG_ID]);
@@ -357,6 +367,30 @@ describe('who reads replies', () => {
     expect((await replies.listRepliesForStaff(OTHER_ORG_ID, ATHLETE)).map((row) => row.reply_text))
       .toEqual(['Other gym reply.']);
     expect(await replies.listRepliesForStaff(ORG_ID, SIBLING)).toEqual([]);
+  });
+
+  test("one login with two parent records: staff see the name on the record linked to that child", async () => {
+    // Guardian A's login also backs a second parent record, under another name,
+    // linked to the sibling. "Alex Married" sorts before "Alex Parent".
+    await activeClient!.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'P-A2', $2, 'Alex Married')`,
+      [ORG_ID, GUARDIAN_A],
+    );
+    await activeClient!.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'P-A2', $2, 'parent')`,
+      [ORG_ID, SIBLING],
+    );
+    await reply(GUARDIAN_A, MESSAGE, 'On the first child.');
+    await reply(GUARDIAN_A, SIBLING_MESSAGE, 'On the sibling.');
+
+    expect((await replies.listRepliesForStaff(ORG_ID, ATHLETE)).map((row) => row.author_name)).toEqual(['Alex Parent']);
+    expect((await replies.listRepliesForStaff(ORG_ID, SIBLING)).map((row) => row.author_name)).toEqual(['Alex Married']);
+
+    // The link to the first child removed after the reply: still named, from
+    // the login's other parent record in this gym.
+    await activeClient!.query(`delete from pilot.guardian_links where organization_id = $1 and parent_id = 'P-A'`, [ORG_ID]);
+    expect((await replies.listRepliesForStaff(ORG_ID, ATHLETE)).map((row) => row.author_name)).toEqual(['Alex Married']);
   });
 
   test('a reply whose author account is gone reads "A guardian" for staff', async () => {

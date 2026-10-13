@@ -340,7 +340,9 @@ export default function ParentHub() {
       }
       const item = payload.item;
       setOwnReplies((held) => [...held, item]);
-      setReplyDrafts((held) => ({ ...held, [noteId]: '' }));
+      // Cleared only if the box still holds what was sent: anything typed
+      // while the send was in flight stays.
+      setReplyDrafts((held) => ((held[noteId] ?? '').trim() === text ? { ...held, [noteId]: '' } : held));
     } catch (error) {
       setReplyNotice({
         noteId,

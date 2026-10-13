@@ -116,8 +116,10 @@ export async function listOwnReplies(
 
 /**
  * Every reply on one athlete's parent messages, for the gym's staff. Oldest
- * first. The name is the guardian's parent record in this gym; an account
- * since removed (author_account_id set null) reads "A guardian".
+ * first. The name is the author's parent record linked to THIS athlete (one
+ * login can back several parent records under different names); if that link
+ * has since gone, any parent record of theirs in this gym; an account since
+ * removed (author_account_id set null) reads "A guardian".
  */
 export async function listRepliesForStaff(
   organizationId: string,
@@ -126,10 +128,20 @@ export async function listRepliesForStaff(
   const rows = await query<FamilyMessageReply & { author_name: string | null }>(
     `select r.reply_id::text as reply_id, r.note_id::text as note_id, r.reply_text,
             to_char(r.created_at at time zone 'UTC', ${ISO_UTC}) as created_at,
-            (select min(p.full_name)
-               from pilot.parents p
-              where p.organization_id = r.organization_id
-                and p.account_id = r.author_account_id) as author_name
+            coalesce(
+              (select min(p.full_name)
+                 from pilot.parents p
+                 join pilot.guardian_links gl
+                   on gl.organization_id = p.organization_id
+                  and gl.parent_id = p.parent_id
+                  and gl.athlete_id = r.athlete_id
+                where p.organization_id = r.organization_id
+                  and p.account_id = r.author_account_id),
+              (select min(p.full_name)
+                 from pilot.parents p
+                where p.organization_id = r.organization_id
+                  and p.account_id = r.author_account_id)
+            ) as author_name
        from pilot.family_message_replies r
       where r.organization_id = $1
         and r.athlete_id = $2
