@@ -1,4 +1,5 @@
 import { isOrganizationAdminRole } from './access';
+import { deriveCoachDisplayName } from './achievements';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 
@@ -209,4 +210,100 @@ export async function setParentTaskCompletion(params: {
   }
 
   return toState(row);
+}
+
+/**
+ * WHAT THE GYM POSTED TO ONE ATHLETE'S FAMILY, AND WHETHER IT WAS DONE (#1542,
+ * FC-01; audit F-041).
+ *
+ * The coach's own read of the family page: every 'parent_message' note for
+ * this athlete, newest first, with the author's name, when it was posted, its
+ * due date if it has one, and whether the family marked it done and when.
+ * Before this the coach could post and then see nothing of it.
+ *
+ * STAFF ONLY, AND THE CALLER HAS ALREADY BEEN CLEARED FOR THE ATHLETE
+ * (coach/family-notes/route.ts: assertActorCanAccessAthlete, the whole gym and
+ * no other). The query is still scoped by organization, so a second gym's
+ * athlete with the same id reads nothing here.
+ *
+ * WHICH GUARDIAN TICKED IT IS NOT RETURNED. parent_task_state keeps one state
+ * per note, shared by the family; completed_by_account_id names the guardian
+ * who pressed Done, and that stays the family's (FC-01 Q2 default A). The
+ * parent read never returns it either.
+ *
+ * The author's name is the login-derived one the athlete and family screens
+ * already show for a coach (achievements.ts deriveCoachDisplayName), since
+ * pilot.accounts has no name column. Its "Your coach" fallback means the
+ * reader's coach; read by staff it would mean the reader, so it is said here
+ * as "A coach".
+ *
+ * THE SAME NOTES THE FAMILY SEES. The author join is an inner join, as in
+ * listParentMessages: a note whose author's account was removed (its
+ * coach_account_id set null by the purge) drops off the family's page, and
+ * listing it here under "On the family's page" would tell the coach the family
+ * still sees it (#1542 review).
+ *
+ * Times go out as ISO-8601 in UTC, which every browser parses; Postgres's own
+ * text form ('2026-10-12 22:40:00+00') is not one Safari promises to read.
+ */
+export interface FamilyNoteForStaff {
+  note_id: string;
+  note_text: string;
+  posted_at: string;
+  posted_by_name: string;
+  task: { due_date: string | null; completed_at: string | null } | null;
+}
+
+interface FamilyNoteRow {
+  note_id: string;
+  note_text: string;
+  posted_at: string;
+  author_login: string | null;
+  author_role: string | null;
+  has_task: boolean;
+  due_date: string | null;
+  completed_at: string | null;
+}
+
+// The role is the one recorded when the note was written
+// (coach_observations.author_role), never the account's role today: a coach
+// who later becomes an admin did not post as one (#1544 review). A note from
+// before that column has no role, and is said by name alone rather than with
+// a role invented for it.
+function staffFacingAuthorName(login: string | null, role: string | null): string {
+  const coachName = deriveCoachDisplayName(login);
+  const bareName = coachName === 'Your coach' ? null : coachName.replace(/^Coach /, '');
+  if (role === 'coach') return bareName ? coachName : 'A coach';
+  if (role === 'organization_admin' || role === 'admin') return bareName ? `Admin ${bareName}` : 'An administrator';
+  return bareName ?? 'A staff member';
+}
+
+export async function listFamilyNotesForStaff(
+  organizationId: string,
+  athleteId: string,
+): Promise<FamilyNoteForStaff[]> {
+  const rows = await query<FamilyNoteRow>(
+    `select co.note_id::text as note_id, co.note_text,
+            to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
+            a.login_email as author_login, co.author_role,
+            (t.note_id is not null) as has_task,
+            t.due_date::text as due_date,
+            to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
+       from pilot.coach_observations co
+       join pilot.accounts a on a.account_id = co.coach_account_id
+       left join pilot.parent_task_state t
+         on t.organization_id = co.organization_id and t.note_id = co.note_id
+      where co.organization_id = $1
+        and co.athlete_id = $2
+        and co.note_type = 'parent_message'
+      order by co.created_at desc, co.note_id`,
+    [organizationId, athleteId],
+  );
+  return rows.map((row) => ({
+    note_id: row.note_id,
+    note_text: row.note_text,
+    posted_at: row.posted_at,
+    posted_by_name: staffFacingAuthorName(row.author_login, row.author_role),
+    task: row.has_task ? { due_date: row.due_date, completed_at: row.completed_at } : null,
+  }));
 }
