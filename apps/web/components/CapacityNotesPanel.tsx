@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 // A coach's physical capacity notes for one athlete (module 013's slice,
 // OD-2026-10-08-002): what a coach saw of the athlete's capacity, in the
@@ -257,7 +257,7 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                     {reading.notes.map((row) => (
                       <li key={row.note_id} className="t-body">
                         <p className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                          {formatGymDateNumeric(row.created_at)} · {row.author_name}
+                          {formatGymDateTimeShort(row.created_at) ?? formatGymDateNumeric(row.created_at)} · {row.author_name}
                         </p>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{row.note}</p>
                         {row.own || row.can_withdraw === true ? (

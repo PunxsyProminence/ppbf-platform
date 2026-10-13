@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import WorkAxis from '@/components/WorkAxis';
 
 // Today's floor (modules 121 + 123): the room split for the people who
@@ -254,7 +255,7 @@ export default function FloorGroupsPage() {
                   <option value="">Select a day…</option>
                   {plans.map((plan) => (
                     <option key={plan.plan_id} value={plan.plan_id}>
-                      {plan.plan_on}{plan.title ? ` — ${plan.title}` : ''}
+                      {formatCalendarDay(plan.plan_on.slice(0, 10))}{plan.title ? ` — ${plan.title}` : ''}
                     </option>
                   ))}
                 </select>

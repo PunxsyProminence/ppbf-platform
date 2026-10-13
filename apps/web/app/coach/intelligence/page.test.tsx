@@ -109,3 +109,18 @@ test('a pain-report escalation badge reads "Pain report" in its severity colour;
   expect(other.textContent).toBe('moderate');
   expect(other.className).toContain('badge--monitor');
 });
+
+// LC-05. Computer-form dates, and a UTC day for an instant.
+test('dates read as dates, and an instant is the gym day, not the UTC day', async () => {
+  global.fetch = mockFetch({});
+
+  await act(async () => {
+    render(<CoachIntelligencePage />);
+  });
+
+  // 2026-08-20T00:00:00Z is 8 PM on August 19 at the gym.
+  expect(screen.getByText(/hold expires Aug 19, 2026/)).toBeTruthy();
+  expect(screen.getByText(/session on Aug 1, 2026, waiting 15 days/)).toBeTruthy();
+  expect(screen.queryByText(/2026-08-/)).toBeNull();
+  expect(screen.queryByText(/deterministic/i)).toBeNull();
+});

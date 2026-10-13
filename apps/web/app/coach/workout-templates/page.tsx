@@ -727,7 +727,7 @@ function CoachWorkoutTemplates() {
                 </div>
                 <p className="t-label mt-[var(--s2)]">
                   {template.session_type.replace(/_/g, ' ')}
-                  {` -- ${template.age_band}`}
+                  {` -- ${template.age_band.replace(/_/g, ' ').toLowerCase()}`}
                   {` -- ${template.duration_minutes} min`}
                 </p>
                 {template.intent.trim() !== '' && (

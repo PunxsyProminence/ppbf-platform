@@ -377,7 +377,9 @@ test('a corrected attempt shows the coach correction beside the athlete source, 
 
   // Athlete source is still shown as recorded (8, missed) ...
   expect(await screen.findByText('missed')).toBeTruthy();
-  expect(screen.getByText(/8reps \/ target 10reps/)).toBeTruthy();
+  expect(screen.getByText(/8 reps \/ target 10 reps/)).toBeTruthy();
+  // LC-17: the unit is said once, not "10reps reps".
+  expect(document.body.textContent).not.toMatch(/reps reps/);
   // ... and the coach correction is shown beside it (10, made).
   expect(screen.getByText(/Coach correction:/)).toBeTruthy();
   expect(screen.getByText(/miscount confirmed on film/)).toBeTruthy();
