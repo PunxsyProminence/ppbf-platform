@@ -149,13 +149,23 @@ export async function createSessionScriptFromTemplate(
   if (!detail) {
     throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_NOT_FOUND', 404);
   }
-  // Blocks cannot be added afterwards, so a script made from no steps could never be delivered.
-  if (detail.items.length === 0) {
-    throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_HAS_NO_STEPS', 422);
-  }
   const { template, items } = detail;
+  // The two refusals issueWorkoutTemplate makes of a template, under its codes:
+  // one withdrawn or replaced by a newer version (the list read leaves those
+  // out), and one with no steps -- blocks cannot be added afterwards, so a
+  // script made from none could never be delivered.
+  if (!template.active || template.superseded_at !== null) {
+    throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_NOT_CURRENT', 409);
+  }
+  if (items.length === 0) {
+    throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_EMPTY', 409);
+  }
   const name = cleanText(params.name ?? template.name, 'SESSION_SCRIPT_NAME_INVALID');
   const blocks = blocksFromTemplateSteps(template.name, items);
+  // An edit accepts no minute past this, so a script that started past it could not be saved again.
+  if (blocks[blocks.length - 1].end_offset_min > MAX_OFFSET_MIN) {
+    throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_TOO_LONG', 422);
+  }
   const scriptId = mintId('scr');
 
   return withTransaction(async (client) => {
@@ -265,21 +275,17 @@ export async function editSessionScript(
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
 
   return withTransaction(async (client) => {
-    // FOR UPDATE: two edits of one script queue here, and so does a run being
-    // started on it (its foreign key takes a key-share lock on this row), so
-    // "has it been run" below is answered once the other writer has finished.
-    const found = await client.query<SessionScriptRow & { is_head: boolean }>(
-      `select s.*,
-              not exists (
-                select 1
-                  from pilot.session_scripts newer
-                 where newer.organization_id = s.organization_id
-                   and newer.lineage_id = s.lineage_id
-                   and newer.version > s.version
-              ) as is_head
-         from pilot.session_scripts s
-        where s.organization_id = $1 and s.script_id = $2
-          for update of s`,
+    // FOR UPDATE: two edits of one script queue here, as does a content import
+    // revising it (which locks the same row) and a run being started on it
+    // (its foreign key takes a key-share lock on this row). The two questions
+    // below -- is it still the current version, has it been run -- are each
+    // asked in a statement of their own AFTER the lock is held, so they see
+    // what the writer this one waited for committed. Asked in the locking
+    // statement itself they would be answered from before the wait.
+    const found = await client.query<SessionScriptRow>(
+      `select * from pilot.session_scripts
+        where organization_id = $1 and script_id = $2
+          for update`,
       [params.organizationId, params.scriptId],
     );
     const script = found.rows[0];
@@ -287,7 +293,12 @@ export async function editSessionScript(
       throw new SessionScriptAuthoringError('SESSION_SCRIPT_NOT_FOUND', 404);
     }
     // Only the current version is edited, the rule startSessionScriptRun holds for starting one.
-    if (!script.is_head) {
+    const newer = await client.query(
+      `select 1 from pilot.session_scripts
+        where organization_id = $1 and lineage_id = $2 and version > $3 limit 1`,
+      [params.organizationId, script.lineage_id, script.version],
+    );
+    if ((newer.rowCount ?? 0) > 0) {
       throw new SessionScriptAuthoringError('SESSION_SCRIPT_SUPERSEDED', 409);
     }
 
@@ -330,7 +341,8 @@ export async function editSessionScript(
       : script.total_minutes;
 
     const run = await client.query(
-      `select 1 from pilot.session_script_runs where organization_id = $1 and script_id = $2 limit 1`,
+      `select 1 from pilot.session_script_runs
+        where organization_id = $1 and script_id = $2 limit 1`,
       [params.organizationId, params.scriptId],
     );
     const hasRun = (run.rowCount ?? 0) > 0;

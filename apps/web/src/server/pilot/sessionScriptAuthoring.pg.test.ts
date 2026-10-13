@@ -175,13 +175,14 @@ async function insertReference(gym: Gym, drillId: string, name: string): Promise
  *   2  'technical'  typed step 'Partner mirror', 10 reps, no minutes
  *   3  ''           drill ref-spar, controlled sparring (so no minutes or reps), no note
  */
-async function insertTemplate(gym: Gym, opts: { steps?: boolean } = {}): Promise<void> {
+async function insertTemplate(gym: Gym, opts: { steps?: boolean; active?: boolean; superseded?: boolean } = {}): Promise<void> {
   await client.query(
     `insert into pilot.workout_templates
        (organization_id, template_id, lineage_id, version, name, session_type, difficulty, age_band, active,
-        duration_minutes, intent)
-     values ($1,$2,$2,3,'Fixture Workout','technical','intermediate','any',true,45,'Coach-typed intent')`,
-    [gym.organizationId, TEMPLATE_ID],
+        duration_minutes, intent, superseded_at)
+     values ($1,$2,$2,3,'Fixture Workout','technical','intermediate','any',$3,45,'Coach-typed intent',
+             case when $4::boolean then now() else null end)`,
+    [gym.organizationId, TEMPLATE_ID, opts.active ?? true, opts.superseded ?? false],
   );
   if (opts.steps === false) return;
   await insertReference(gym, 'ref-jab', 'Jab Drill');
@@ -220,7 +221,7 @@ function edit(gym: Gym, scriptId: string, change: EditChange) {
   });
 }
 
-/** Every stored column of a script and of its blocks, as text: what "unchanged" is compared on. */
+/** Every stored column of a script, its blocks and its renderings, as text: what "unchanged" is compared on. */
 async function storedBytes(gym: Gym, scriptId: string): Promise<string> {
   const script = await client.query(
     `select to_jsonb(s)::text as row from pilot.session_scripts s where organization_id = $1 and script_id = $2`,
@@ -231,7 +232,12 @@ async function storedBytes(gym: Gym, scriptId: string): Promise<string> {
       where organization_id = $1 and script_id = $2 order by block_order`,
     [gym.organizationId, scriptId],
   );
-  return [...script.rows, ...blocks.rows].map((row) => row.row).join('\n');
+  const renderings = await client.query(
+    `select to_jsonb(r)::text as row from pilot.session_script_renderings r
+      where organization_id = $1 and script_id = $2 order by format`,
+    [gym.organizationId, scriptId],
+  );
+  return [...script.rows, ...blocks.rows, ...renderings.rows].map((row) => row.row).join('\n');
 }
 
 async function counts(gym: Gym): Promise<{ scripts: number; blocks: number; audit: number }> {
@@ -394,7 +400,7 @@ describe('making a session script from a workout template', () => {
     expect(created.name).toBe('Tuesday juniors');
   });
 
-  test("another gym's template is not found, and a template with no steps is refused; neither writes", async () => {
+  test("another gym's template is not found; one with no steps, withdrawn or replaced is refused; none writes", async () => {
     const owner = await newGym('owner');
     const other = await newGym('other');
     await insertTemplate(owner);
@@ -404,8 +410,16 @@ describe('making a session script from a workout template', () => {
 
     const empty = await newGym('empty');
     await insertTemplate(empty, { steps: false });
-    await expectRefused(create(empty), 'WORKOUT_TEMPLATE_HAS_NO_STEPS', 422);
+    await expectRefused(create(empty), 'WORKOUT_TEMPLATE_EMPTY', 409);
     expect(await counts(empty)).toEqual({ scripts: 0, blocks: 0, audit: 0 });
+
+    // The rule issuing a template holds: only a current one.
+    for (const state of [{ active: false }, { superseded: true }]) {
+      const gym = await newGym('not-current');
+      await insertTemplate(gym, state);
+      await expectRefused(create(gym), 'WORKOUT_TEMPLATE_NOT_CURRENT', 409);
+      expect(await counts(gym)).toEqual({ scripts: 0, blocks: 0, audit: 0 });
+    }
   });
 
   test('the script is delivered block by block by the existing run module, and a plain session still starts', async () => {
@@ -529,6 +543,33 @@ describe('editing a session script', () => {
 
     // And the replaced version is no longer the one to edit.
     await expectRefused(edit(gym, created.script_id, { name: 'Late edit' }), 'SESSION_SCRIPT_SUPERSEDED', 409);
+    expect(await storedBytes(gym, created.script_id)).toBe(v1Bytes);
+  });
+
+  test('two edits of a delivered script at once: one becomes version 2, the other is told it was replaced', async () => {
+    const gym = await newGym('race');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    const v1Bytes = await storedBytes(gym, created.script_id);
+
+    // Each edit runs on a connection and transaction of its own (the ./db mock above).
+    const settled = await Promise.allSettled([
+      edit(gym, created.script_id, { name: 'First save' }),
+      edit(gym, created.script_id, { name: 'Second save' }),
+    ]);
+
+    const made = settled.filter((result) => result.status === 'fulfilled');
+    const refused = settled.filter((result) => result.status === 'rejected');
+    expect(made).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect((made[0] as PromiseFulfilledResult<{ outcome: string; version: number }>).value).toMatchObject({ outcome: 'new_version', version: 2 });
+    // Not a unique-key error surfacing as a server fault: the same answer a late edit gets.
+    const reason = (refused[0] as PromiseRejectedResult).reason;
+    expect(reason).toBeInstanceOf(SessionScriptAuthoringError);
+    expect(reason.message).toBe('SESSION_SCRIPT_SUPERSEDED');
+    expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1, 2]);
     expect(await storedBytes(gym, created.script_id)).toBe(v1Bytes);
   });
 
