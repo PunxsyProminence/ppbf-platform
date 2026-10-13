@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
-import { getExecution } from './interventionExecutions';
+import { getExecution, recordChanged } from './interventionExecutions';
 import type { FilmStudyProposalReviewState } from './shadowFilmStudyProposals';
 import {
   isReadinessUsableAsMeasurement,
@@ -192,7 +192,8 @@ export interface OutcomeReviewRow {
 /** Links one piece of typed evidence to an execution. The execution must
  * be a current (non-superseded) record in the caller's org; the source
  * must exist in the same org for the same athlete, and -- for film study --
- * must be in an admissible review state. Every other outcome is a hidden
+ * must be in an admissible review state. A record corrected since it was
+ * loaded is refused with the reason (below); every other refusal is a hidden
  * not-found.
  *
  * The admissibility check is the source query itself rather than a second
@@ -202,7 +203,21 @@ export interface OutcomeReviewRow {
  * instead of having to remember it. It also keeps the refusal
  * indistinguishable from "no such proposal", which errors.ts records as the
  * deliberate choice for these per-record lookups: a caller must not be able
- * to probe this route to learn that a proposal about a child exists. */
+ * to probe this route to learn that a proposal about a child exists.
+ *
+ * THE LINK IS WRITTEN ONLY ONTO A RECORD THAT IS STILL CURRENT (lane L2; N3-02
+ * finding R1-5). Reading the execution and then inserting left a gap: a
+ * correction that committed in it had already moved the execution's links to
+ * the new version, so this one was answered 200 and left on the superseded
+ * version, which no screen lists. The INSERT now selects from the execution
+ * row itself, `status <> 'superseded'`, FOR SHARE. A correction holds that row
+ * from its first statement, so this statement either runs before it -- and
+ * the correction then carries the link across -- or waits for it, re-reads the
+ * row as superseded and writes nothing. The coach is told the record changed.
+ *
+ * The same answer covers the same evidence linked in the same role twice (two
+ * coaches, or one press sent twice): the no-duplicates index used to refuse
+ * the second as a bare 500. ON CONFLICT DO NOTHING writes nothing instead. */
 export async function linkEvidence(input: {
   organizationId: string;
   executionId: string;
@@ -213,7 +228,8 @@ export async function linkEvidence(input: {
   linkedByAccountId: string;
 }): Promise<EvidenceLinkRow | null> {
   const execution = await getExecution(input.organizationId, input.executionId);
-  if (!execution || execution.status === 'superseded') return null;
+  if (!execution) return null;
+  if (execution.status === 'superseded') throw recordChanged();
 
   const source = await queryOne<{ ok: number }>(
     EVIDENCE_SOURCES[input.sourceKind],
@@ -222,10 +238,15 @@ export async function linkEvidence(input: {
   if (!source) return null;
 
   const linkId = randomUUID();
-  await queryOne(
+  const written = await queryOne<{ link_id: string }>(
     `insert into pilot.intervention_evidence_links
        (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, note, linked_by_account_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     select e.organization_id, $2::text, e.execution_id, $4::text, $5::text, $6::text, $7::text, $8::text
+     from pilot.intervention_executions e
+     where e.organization_id = $1 and e.execution_id = $3 and e.status <> 'superseded'
+     for share of e
+     on conflict (organization_id, execution_id, evidence_role, source_kind, source_id)
+       where status = 'active' do nothing
      returning link_id`,
     [
       input.organizationId,
@@ -238,6 +259,7 @@ export async function linkEvidence(input: {
       input.linkedByAccountId,
     ],
   );
+  if (!written) throw recordChanged();
 
   return queryOne<EvidenceLinkRow>(
     `select * from pilot.intervention_evidence_links where organization_id = $1 and link_id = $2`,
@@ -286,6 +308,11 @@ export async function getEvidenceLinkOwner(
  * optional on purpose -- an optional guard is one a future caller can omit
  * without anything going red, and this is the guard that decides whether a
  * stranger may strike evidence from a child's intervention record.
+ *
+ * A link that is there but was not stamped -- a correction moved it to the new
+ * version between the caller's lookup and this UPDATE, or someone removed it
+ * first -- is answered "the record changed", not "Not found". Read after the
+ * refused write only to choose between those two answers.
  */
 export async function removeEvidence(input: {
   organizationId: string;
@@ -301,7 +328,14 @@ export async function removeEvidence(input: {
      returning link_id`,
     [input.organizationId, input.linkId, input.removedReason, input.expectedExecutionId],
   );
-  if (!row) return null;
+  if (!row) {
+    const standing = await queryOne<{ link_id: string }>(
+      `select link_id from pilot.intervention_evidence_links where organization_id = $1 and link_id = $2`,
+      [input.organizationId, input.linkId],
+    );
+    if (!standing) return null;
+    throw recordChanged();
+  }
   return queryOne<EvidenceLinkRow>(
     `select * from pilot.intervention_evidence_links where organization_id = $1 and link_id = $2`,
     [input.organizationId, input.linkId],
@@ -410,14 +444,8 @@ export function computeSourceAdmissible(
   return true;
 }
 
-/**
- * Raised inside reviewOutcome's transaction when the active verdict it read
- * has already been superseded by the time the stamp runs. Private to this
- * module: it only rolls the transaction back, and is converted straight back
- * to the null this function already returns when a review cannot be
- * recorded.
- */
-class OutcomeReviewLostRace extends Error {}
+const STANDING_REVIEW_SQL = `select review_id from pilot.intervention_outcome_reviews
+     where organization_id = $1 and execution_id = $2 and status = 'active'`;
 
 /** Records the human review of a CLOSED execution. Reviewing work still in
  * progress is premature and refused; the three answers are separate
@@ -434,11 +462,12 @@ export async function reviewOutcome(input: {
   reviewedByAccountId: string;
 }): Promise<OutcomeReviewRow | null> {
   const execution = await getExecution(input.organizationId, input.executionId);
-  if (!execution || (execution.status !== 'completed' && execution.status !== 'stopped')) return null;
+  if (!execution) return null;
+  if (execution.status === 'superseded') throw recordChanged();
+  if (execution.status !== 'completed' && execution.status !== 'stopped') return null;
 
   const existing = await queryOne<{ review_id: string }>(
-    `select review_id from pilot.intervention_outcome_reviews
-     where organization_id = $1 and execution_id = $2 and status = 'active'`,
+    STANDING_REVIEW_SQL,
     [input.organizationId, input.executionId],
   );
 
@@ -462,10 +491,35 @@ export async function reviewOutcome(input: {
   //
   // The transaction makes the three all-or-nothing, and `and status =
   // 'active'` on the stamp is the compare-and-set that settles the race in
-  // the database: the loser matches zero rows, rolls its own insert back, and
-  // returns null -- the same "could not review" this function already returns
-  // for an execution that is not closed.
+  // the database: the loser matches zero rows and rolls its own insert back.
+  //
+  // THE EXECUTION IS HELD WHILE ITS VERDICT IS WRITTEN (lane L2; N3-02 finding
+  // R1-5). Two gaps were left. A correction that committed after the reads
+  // above had moved the standing verdict to the new version: this review then
+  // stamped that verdict superseded and raised its own on the superseded
+  // version, so the record showed no verdict at all and the reviewer was
+  // answered 200. And two FIRST reviews at once had no verdict to contend for,
+  // so both raised and the second met the one-active index as a 500.
+  //
+  // The first statement takes the execution's row lock -- the same row a
+  // correction holds from its own first statement -- and the transaction goes
+  // on only if the execution is as it was read and the standing verdict is
+  // the one that was read. Whoever comes second is told the record changed,
+  // and nothing of theirs is written.
   const recorded = await withTransaction(async (client) => {
+    const held = await client.query<{ status: string }>(
+      `select status from pilot.intervention_executions
+       where organization_id = $1 and execution_id = $2
+       for update`,
+      [input.organizationId, input.executionId],
+    );
+    if (held.rows[0]?.status !== execution.status) throw recordChanged();
+    const standing = await client.query<{ review_id: string }>(
+      STANDING_REVIEW_SQL,
+      [input.organizationId, input.executionId],
+    );
+    if ((standing.rows[0]?.review_id ?? null) !== (existing?.review_id ?? null)) throw recordChanged();
+
     await client.query(
       `insert into pilot.intervention_outcome_reviews
          (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
@@ -487,15 +541,15 @@ export async function reviewOutcome(input: {
     );
 
     if (existing) {
+      // A backstop now: under the lock and the two checks above, this stamp
+      // cannot miss.
       const stamped = await client.query<{ review_id: string }>(
         `update pilot.intervention_outcome_reviews set status = 'superseded', updated_at = now()
          where organization_id = $1 and review_id = $2 and status = 'active'
          returning review_id`,
         [input.organizationId, existing.review_id],
       );
-      if (stamped.rows.length === 0) {
-        throw new OutcomeReviewLostRace();
-      }
+      if (stamped.rows.length === 0) throw recordChanged();
     }
 
     await client.query(
@@ -505,12 +559,7 @@ export async function reviewOutcome(input: {
     );
 
     return reviewId;
-  }).catch((error: unknown) => {
-    if (error instanceof OutcomeReviewLostRace) return null;
-    throw error;
   });
-
-  if (!recorded) return null;
 
   return queryOne<OutcomeReviewRow>(
     `select * from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = $2`,

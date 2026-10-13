@@ -17,6 +17,7 @@ jest.mock('./db', () => ({
 }));
 
 jest.mock('./interventionExecutions', () => ({
+  ...jest.requireActual('./interventionExecutions'),
   getExecution: jest.fn(async () => null),
 }));
 

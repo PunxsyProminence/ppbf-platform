@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { getProtocol } from './interventionProtocols';
 
 // Intervention executions (register module 026 slice 2) -- what ACTUALLY
@@ -88,6 +89,27 @@ const FIELDS = `e.organization_id, e.execution_id, e.lineage_id, e.version,
   e.trained_context, e.task_constraint, e.partner_context, e.adherence,
   e.deviations, e.deviation_reason, e.stop_change_reason, e.notes,
   e.correction_reason, e.created_at`;
+
+/**
+ * What a coach is told when the record they were saving to is not the record
+ * they loaded: it was closed, corrected or reviewed first. Their own write is
+ * refused whole, and the words say what to do next. They do not say WHO
+ * changed it -- the same refusal answers a coach's own second tab.
+ *
+ * Thrown only AFTER the row was found in the caller's organization, and every
+ * route reaches these functions after authorizing the caller on that row's
+ * athlete, so it tells nobody that a record exists who could not already read
+ * it. A record that is not there at all stays the null the routes answer as a
+ * hidden not-found.
+ */
+export const RECORD_CHANGED_MESSAGE =
+  'This record has changed since you opened it, so this was not saved. '
+  + 'Reload to see it as it stands now, then make your change again.';
+export const RECORD_CHANGED_CODE = 'INTERVENTION_RECORD_CHANGED';
+
+export function recordChanged(): ConflictError {
+  return new ConflictError(RECORD_CHANGED_MESSAGE, RECORD_CHANGED_CODE);
+}
 
 const FROM = `from pilot.intervention_executions e
   left join pilot.athletes a
@@ -196,16 +218,10 @@ export async function listExecutions(organizationId: string, athleteId?: string)
   );
 }
 
-/** Updates ACTUAL facts on an in-progress execution. The planned_* columns
- * are deliberately absent from this statement -- the plan is a snapshot,
- * and deviating from it never edits it. */
-export async function recordExecutionFacts(input: ExecutionFactsInput & {
-  organizationId: string;
-  executionId: string;
-}): Promise<InterventionExecutionRow | null> {
-  const row = await queryOne<{ execution_id: string }>(
-    `update pilot.intervention_executions set
-       actual_exposure = coalesce($3::jsonb, actual_exposure),
+// The ACTUAL facts a record or a close-out may state. The planned_* columns
+// are deliberately absent -- the plan is a snapshot, and deviating from it
+// never edits it. Parameters $3..$11, in factsParams order.
+const FACTS_SET = `actual_exposure = coalesce($3::jsonb, actual_exposure),
        trained_context = coalesce($4, trained_context),
        task_constraint = coalesce($5, task_constraint),
        partner_context = coalesce($6, partner_context),
@@ -214,30 +230,62 @@ export async function recordExecutionFacts(input: ExecutionFactsInput & {
        deviation_reason = coalesce($9, deviation_reason),
        notes = coalesce($10, notes),
        actual_start = coalesce($11, actual_start),
-       updated_at = now()
+       updated_at = now()`;
+
+function factsParams(input: ExecutionFactsInput & { organizationId: string; executionId: string }): unknown[] {
+  return [
+    input.organizationId,
+    input.executionId,
+    input.actualExposure === undefined ? null : JSON.stringify(input.actualExposure),
+    input.trainedContext ?? null,
+    input.taskConstraint ?? null,
+    input.partnerContext ?? null,
+    input.adherence ?? null,
+    input.deviations ?? null,
+    input.deviationReason ?? null,
+    input.notes ?? null,
+    input.actualStart ?? null,
+  ];
+}
+
+/** Why a write to work in progress matched no row. No such record is the null
+ * the routes hide as not-found. A record that IS there was closed or corrected
+ * first, and the coach is told so instead of "Not found". Read after the
+ * refused write only to choose between those two answers. */
+async function notInProgress(organizationId: string, executionId: string): Promise<null> {
+  const standing = await queryOne<{ status: ExecutionStatus }>(
+    `select status from pilot.intervention_executions
+     where organization_id = $1 and execution_id = $2`,
+    [organizationId, executionId],
+  );
+  if (!standing) return null;
+  throw recordChanged();
+}
+
+/** Updates ACTUAL facts on an in-progress execution. */
+export async function recordExecutionFacts(input: ExecutionFactsInput & {
+  organizationId: string;
+  executionId: string;
+}): Promise<InterventionExecutionRow | null> {
+  const row = await queryOne<{ execution_id: string }>(
+    `update pilot.intervention_executions set
+       ${FACTS_SET}
      where organization_id = $1 and execution_id = $2 and status = 'in_progress'
      returning execution_id`,
-    [
-      input.organizationId,
-      input.executionId,
-      input.actualExposure === undefined ? null : JSON.stringify(input.actualExposure),
-      input.trainedContext ?? null,
-      input.taskConstraint ?? null,
-      input.partnerContext ?? null,
-      input.adherence ?? null,
-      input.deviations ?? null,
-      input.deviationReason ?? null,
-      input.notes ?? null,
-      input.actualStart ?? null,
-    ],
+    factsParams(input),
   );
-  if (!row) return null;
+  if (!row) return notInProgress(input.organizationId, input.executionId);
   return getExecution(input.organizationId, input.executionId);
 }
 
 /** Closes an in-progress execution as completed or stopped. A stop
  * requires its reason (also a database constraint). Final facts may be
- * recorded in the same act. */
+ * recorded in the same act.
+ *
+ * ONE STATEMENT. The facts and the status used to be two UPDATEs, each
+ * guarded on 'in_progress', so a correction landing between them kept the
+ * close-out's facts and refused its status: half a write. One UPDATE either
+ * closes the record with its facts or changes nothing. */
 export async function closeExecution(input: ExecutionFactsInput & {
   organizationId: string;
   executionId: string;
@@ -245,36 +293,37 @@ export async function closeExecution(input: ExecutionFactsInput & {
   stopChangeReason?: string;
   actualEnd?: string | null;
 }): Promise<InterventionExecutionRow | null> {
-  const updated = await recordExecutionFacts(input);
-  if (!updated) return null;
-
   const row = await queryOne<{ execution_id: string }>(
     `update pilot.intervention_executions set
-       status = $3,
-       stop_change_reason = coalesce($4, stop_change_reason),
-       actual_end = coalesce($5, actual_end, now()),
-       updated_at = now()
+       ${FACTS_SET},
+       status = $12,
+       stop_change_reason = coalesce($13, stop_change_reason),
+       actual_end = coalesce($14, actual_end, now())
      where organization_id = $1 and execution_id = $2 and status = 'in_progress'
      returning execution_id`,
     [
-      input.organizationId,
-      input.executionId,
+      ...factsParams(input),
       input.outcome,
       input.stopChangeReason ?? null,
       input.actualEnd ?? null,
     ],
   );
-  if (!row) return null;
+  if (!row) return notInProgress(input.organizationId, input.executionId);
   return getExecution(input.organizationId, input.executionId);
 }
 
-/**
- * Raised inside correctExecution's transaction when the record it read has
- * already been superseded by the time the stamp runs. Private to this
- * module: it only rolls the transaction back, and is converted straight back
- * to the null this function has always returned for "not correctable".
- */
-class ExecutionCorrectionLostRace extends Error {}
+/** The record's status and its Postgres row version. xmin names the
+ * transaction that wrote the row as it stands, so it differs after ANY
+ * committed write to the row, whichever columns that write touched and
+ * whatever the clock said -- which a timestamp comparison cannot promise. */
+const ROW_VERSION_SQL = `select status, xmin::text as row_version
+  from pilot.intervention_executions
+  where organization_id = $1 and execution_id = $2`;
+
+interface ExecutionRowVersion {
+  status: ExecutionStatus;
+  row_version: string;
+}
 
 /** Correction is supersession: a NEW version row with a stated reason; the
  * original keeps its values forever and is stamped superseded. Actual
@@ -290,10 +339,10 @@ export async function correctExecution(input: ExecutionFactsInput & {
   actualEnd?: string | null;
   correctedByAccountId: string;
 }): Promise<InterventionExecutionRow | null> {
-  const current = await getExecution(input.organizationId, input.executionId);
-  if (!current || current.status === 'superseded') return null;
+  const seen = await queryOne<ExecutionRowVersion>(ROW_VERSION_SQL, [input.organizationId, input.executionId]);
+  if (!seen) return null;
+  if (seen.status === 'superseded') throw recordChanged();
 
-  const finalStatus = input.outcome ?? current.status;
   const newId = randomUUID();
 
   // ONE TRANSACTION, AND THE FLIP CARRIES THE STATE IT READ.
@@ -316,10 +365,40 @@ export async function correctExecution(input: ExecutionFactsInput & {
   //
   // The transaction makes the three all-or-nothing, and `and status <>
   // 'superseded'` on the stamp is the compare-and-set that settles the race
-  // in the database: the loser matches zero rows, rolls its own insert back,
-  // and returns null -- which is what this function already returns for "not
-  // correctable", and what the route renders as a hidden not-found.
+  // in the database: the loser matches zero rows and rolls its own insert
+  // back.
+  //
+  // THE RECORD IS HELD BEFORE IT IS COPIED (lane L2; N3-02 finding R1-6).
+  //
+  // The stamp settled correction against correction and nothing else. A
+  // close-out is a plain UPDATE of the same row: one that committed after
+  // this function read the record, or between the copy below and the stamp,
+  // was answered 200 and then lost -- the successor was built from the record
+  // as it stood before the close and raised to the stale status, and the
+  // closed original was stamped superseded, out of every current view.
+  //
+  // So the first statement takes the row lock, and the transaction goes on
+  // only if the row is still the version this request read. From there every
+  // other writer of this record waits: a close-out or a recorded fact
+  // re-reads its `status = 'in_progress'` when the lock is released and
+  // matches nothing; an evidence link and an outcome review take their own
+  // lock on this row (interventionEvidence.ts) and find it superseded. Each
+  // is told the record changed. If the row moved first, this correction is
+  // the one told, and nothing of it is written.
+  //
+  // Lock order, for whoever adds a writer: this row first, then the athlete
+  // row (the successor's foreign key). The retention purge
+  // (scripts/pilot-cleanup-deleted-data.mjs) takes the athlete first and
+  // cascades here; it only runs on athletes the routes no longer admit.
   const corrected = await withTransaction(async (client) => {
+    const held = await client.query<ExecutionRowVersion>(
+      `${ROW_VERSION_SQL} for update`,
+      [input.organizationId, input.executionId],
+    );
+    const current = held.rows[0];
+    if (!current || current.row_version !== seen.row_version) throw recordChanged();
+    const finalStatus = input.outcome ?? current.status;
+
     await client.query(
       `insert into pilot.intervention_executions
          (organization_id, execution_id, lineage_id, version, supersedes_execution_id,
@@ -359,15 +438,15 @@ export async function correctExecution(input: ExecutionFactsInput & {
       ],
     );
 
+    // A backstop now: under the lock and the version check above, this stamp
+    // cannot miss.
     const stamped = await client.query<{ execution_id: string }>(
       `update pilot.intervention_executions set status = 'superseded', updated_at = now()
        where organization_id = $1 and execution_id = $2 and status <> 'superseded'
        returning execution_id`,
       [input.organizationId, input.executionId],
     );
-    if (stamped.rows.length === 0) {
-      throw new ExecutionCorrectionLostRace();
-    }
+    if (stamped.rows.length === 0) throw recordChanged();
 
     // THE EVIDENCE AND THE REVIEW FOLLOW THE RECORD.
     //
@@ -437,11 +516,7 @@ export async function correctExecution(input: ExecutionFactsInput & {
     );
 
     return newId;
-  }).catch((error: unknown) => {
-    if (error instanceof ExecutionCorrectionLostRace) return null;
-    throw error;
   });
 
-  if (!corrected) return null;
   return getExecution(input.organizationId, corrected);
 }
