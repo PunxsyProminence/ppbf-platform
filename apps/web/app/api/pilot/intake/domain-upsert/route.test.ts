@@ -132,6 +132,8 @@ test('a coach observation files under the calling coach in their own organizatio
     entity_type: 'intake_coach_note',
     organization_id: 'org-1',
     actor_account_id: 'acct-coach-1',
+    // Exactly the athlete: only a waiver adds its type and status (#1526).
+    details: { athlete_id: 'ath-1' },
   }), TX_CLIENT);
 });
 
@@ -603,5 +605,81 @@ describe('photo and media consent is refused on the general register', () => {
       expect(response.status).toBe(200);
       expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ waiverType }), TX_CLIENT);
     }
+  });
+});
+
+/*
+ * THE OFFICE RECORDS A PAPER WAIVER (Jason 2026-10-12, OD-2026-10-12-009;
+ * Overwatch GO on #1526, Q1 A). /admin/waiver-status posts here. An
+ * organization admin writes in their own gym, recorded as the account that
+ * typed it, with an audit event; another gym's athlete, an athlete and a
+ * parent are refused before anything is written. Coaches keep this path, as
+ * they had it (Q1 A).
+ */
+describe('recording a paper waiver from Waiver Compliance (#1526)', () => {
+  const RECORD = {
+    entity_type: 'waiver',
+    athlete_id: 'ath-1',
+    payload: {
+      waiver_type: 'medical_release',
+      status: 'signed',
+      signed_by_name: 'Pat T.',
+      signed_by_role: 'guardian',
+      signed_at: '2026-10-01T12:00:00.000Z',
+      consent_version: 'v1',
+      notes: '',
+    },
+  };
+
+  beforeEach(() => {
+    mockAccess.mockResolvedValue(undefined);
+    mockUpsertWaiver.mockResolvedValue('waiver-9');
+  });
+
+  test.each(['signed', 'withdrawn'])('an organization admin records %s in their own gym, as themself, with an audit event', async (status) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+
+    const response = await POST(postRequest({ ...RECORD, payload: { ...RECORD.payload, status } }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      athleteId: 'ath-1',
+      waiverType: 'medical_release',
+      status,
+      signedByName: 'Pat T.',
+      recordedByAccountId: 'acct-admin-1',
+    }), TX_CLIENT);
+    // The trail says which waiver and what it now says: a recording and a
+    // withdrawal read apart without a join.
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      organization_id: 'org-1',
+      actor_account_id: 'acct-admin-1',
+      entity_type: 'intake_waiver',
+      details: { athlete_id: 'ath-1', waiver_type: 'medical_release', status },
+    }), TX_CLIENT);
+  });
+
+  // The refusal itself is assertActorCanAccessAthlete's (pinned on Postgres,
+  // e.g. softDeletedAthleteAccess.pg.test.ts); what this pins is that the
+  // waiver write waits for it and writes nothing when it refuses.
+  test("when the athlete gate refuses (another gym's athlete), nothing is written and nothing is audited", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+    mockAccess.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+
+    const response = await POST(postRequest({ ...RECORD, athlete_id: 'ath-other-gym' }));
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent'])('a %s cannot record a waiver', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+
+    const response = await POST(postRequest(RECORD));
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
   });
 });

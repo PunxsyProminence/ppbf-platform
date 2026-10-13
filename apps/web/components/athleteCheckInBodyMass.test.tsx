@@ -175,3 +175,21 @@ describe('correcting a mistyped weight after check-in (Jason 2026-10-04, "Athlet
     expect(screen.queryByRole('button', { name: /^Correct/ })).toBeNull();
   });
 });
+
+test('two presses of Check in in the same tick send one check-in (#1529)', async () => {
+  let finish: ((value: Response) => void) | null = null;
+  const fetchMock = jest.fn(() => new Promise<Response>((resolve) => { finish = resolve; }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  await renderPanel();
+
+  const button = screen.getByRole('button', { name: /check in/i });
+  await act(async () => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  await act(async () => {
+    finish?.(jsonResponse({ item: { check_in_id: 'ci-1' }, already_checked_in: false }));
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

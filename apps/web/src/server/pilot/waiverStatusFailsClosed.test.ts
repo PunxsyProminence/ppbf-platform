@@ -330,7 +330,8 @@ describe('every direct reader of a consent status is registered', () => {
       'Admin worklist rendering. Reads server-normalised values and renders '
         + "anything it does not recognise as 'Missing', which is the honest "
         + 'reading for a worklist whose job is to surface absent waivers. '
-        + 'Display only, no gate.',
+        + 'No gate. Since #1526 it also records and withdraws a paper waiver, '
+        + 'through the intake writer, which holds the status vocabulary.',
     ],
     [
       'app/parent/consent/page.tsx',
@@ -350,6 +351,12 @@ describe('every direct reader of a consent status is registered', () => {
       'NOT A WAIVER STATUS. A competition entry status, same shared word, '
         + 'different vocabulary. Registered for the same reason as the '
         + 'nomination statuses above.',
+    ],
+    [
+      'app/operations/external-competition/page.tsx',
+      'NOT A WAIVER STATUS. The competition page splits entries into Entries '
+        + "and Withdrawn by the same entry status ('entered'/'withdrawn', WO-N8-03). "
+        + 'Display only, no gate; the entry route above runs the safety gates.',
     ],
     [
       'app/api/pilot/parent/safety/route.ts',

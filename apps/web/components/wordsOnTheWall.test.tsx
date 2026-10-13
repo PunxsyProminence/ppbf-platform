@@ -34,9 +34,20 @@ const FAKE: readonly GymSaying[] = [
 describe('the shipped source', () => {
   it('carries the owner-approved lines, and only those', () => {
     // Owner-approved 2026-08-19 (Drive doc 2026-08-19_EGGS-LOAD-FIRST-12.md,
-    // "Jason execute pack") — twelve lines, no more, no fewer, until the
-    // owner adds to them again.
+    // "Jason execute pack"), egg 11 changed by D19 (OD-2026-10-08-009) — twelve
+    // lines, no more, no fewer, until the owner adds to them again.
     expect(GYM_SAYINGS).toHaveLength(12);
+  });
+
+  it('matches the approved list after D19: Steel Town is off the wall, AMPLECTERE MISERIAM is on', () => {
+    // OD-2026-10-08-009 D19, "the gym sayings match his approved list".
+    const lines = GYM_SAYINGS.map((s) => s.line);
+    expect(lines).not.toContain('STEEL TOWN. STEADY HANDS.');
+    expect(GYM_SAYINGS.find((s) => s.line === 'AMPLECTERE MISERIAM')).toEqual({
+      line: 'AMPLECTERE MISERIAM',
+      said_by: 'the wall',
+      shown: ['anywhere'],
+    });
   });
 
   it('has no stock boxing quote hiding in it', () => {

@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
 import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
@@ -26,8 +27,8 @@ import { CONTROL_QUIET } from './sessionBarControls';
  * source of truth, no new table, no new endpoint.
  *
  * A COUNT AND NOTHING ELSE. This bar renders on every surface, including
- * whatever screen happens to be facing the room. So the badge carries a
- * number and a severity word -- never an athlete's name, never the reason,
+ * whatever screen happens to be facing the room. So the badge carries
+ * numbers and a severity word (or "pain report", #1528 Q3) -- never an athlete's name, never the reason,
  * never the source. Those live on the record, behind the same gate they
  * always did, one click away. A safeguarding disclosure must not be readable
  * over a coach's shoulder because the chassis decided to be helpful.
@@ -46,6 +47,7 @@ interface EscalationSummaryRow {
   escalation_id: string;
   severity: 'low' | 'moderate' | 'high' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved';
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -89,6 +91,12 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
 function EscalationBadge({ role }: { readonly role: string | null }) {
   const [criticalCount, setCriticalCount] = useState(0);
   const [highCount, setHighCount] = useState(0);
+  // Pain-report escalations, counted on their own line at both densities
+  // (#1528 Q3): no severity word is attached to a pain report, here or on
+  // its record.
+  const [painCount, setPainCount] = useState(0);
+  // Whether a pain-report escalation holds the critical rung.
+  const [painCritical, setPainCritical] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
 
   const serves = role !== null && ESCALATION_ROLES.has(role);
@@ -110,8 +118,13 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
          resolved, and the row's own severity is the one the ladder recorded.
          Nothing is re-derived here -- a second opinion about how serious a
          safeguarding record is would be a second answer to that question. */
-      setCriticalCount(rows.filter((row) => row.severity === 'critical').length);
-      setHighCount(rows.filter((row) => row.severity === 'high').length);
+      const severe = rows.filter((row) => row.severity === 'critical' || row.severity === 'high');
+      const pain = severe.filter((row) => isPainReportEscalation(row.metadata));
+      const others = severe.filter((row) => !isPainReportEscalation(row.metadata));
+      setCriticalCount(others.filter((row) => row.severity === 'critical').length);
+      setHighCount(others.filter((row) => row.severity === 'high').length);
+      setPainCount(pain.length);
+      setPainCritical(pain.some((row) => row.severity === 'critical'));
       setReadState('loaded');
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') {
@@ -121,6 +134,8 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       // A failed request has not earned it.
       setCriticalCount(0);
       setHighCount(0);
+      setPainCount(0);
+      setPainCritical(false);
       setReadState('unavailable');
     }
   }, []);
@@ -168,7 +183,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  const total = criticalCount + highCount;
+  const total = criticalCount + highCount + painCount;
   if (total === 0) {
     return null;
   }
@@ -179,7 +194,9 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      the design system's own ladder and matches what /admin/escalations puts on
      the individual rows, so the summary and the record cannot describe the
      same escalation at two different severities. */
-  const critical = criticalCount > 0;
+  // The rung is the worst stored severity across every open escalation, a
+  // pain report's included: its tone and alerting are unchanged (#1528 Q3).
+  const critical = criticalCount > 0 || painCritical;
   const rung = critical ? 'badge--locked' : 'badge--restricted';
   const glyph = critical ? '✕' : '▲';
   /* The worst severity as one word, taken off the SAME predicate that chose
@@ -188,10 +205,29 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      says HIGH, and the two would then be describing one set of escalations at
      two different severities -- the thing the paragraph above exists to
      prevent between this summary and /admin/escalations. */
-  const worst = critical ? 'CRITICAL' : 'HIGH';
-  const label = critical
-    ? `${criticalCount} critical${highCount > 0 ? `, ${highCount} high` : ''}`
-    : `${highCount} high`;
+  /* Pain reports (#1528 Q3) are a separate count at both densities, never
+     inside a number captioned CRITICAL or HIGH. When pain reports alone hold
+     the rung (a critical pain report beside ordinary highs, or pain reports
+     only) they are named FIRST, so the rung sits beside what earned it --
+     the same predicate as the rung, as above. The compact form for a set with
+     no pain report is exactly what it was. */
+  const ordinaryCount = criticalCount + highCount;
+  const painLeads = critical ? criticalCount === 0 : highCount === 0;
+  // The ordinary escalations' own worst word. It equals the rung's word unless
+  // a pain report alone holds the rung, and then the pain report leads.
+  const worst = criticalCount > 0 ? 'CRITICAL' : 'HIGH';
+  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}`;
+  const ordinaryParts = [
+    criticalCount > 0 ? `${criticalCount} critical` : null,
+    highCount > 0 ? `${highCount} high` : null,
+  ].filter((part): part is string => part !== null);
+  const label = (painCount === 0 ? ordinaryParts : painLeads ? [painPart, ...ordinaryParts] : [...ordinaryParts, painPart])
+    .join(', ');
+  const ordinaryCompact = ordinaryCount > 0 ? `${ordinaryCount} · ${worst}` : null;
+  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}` : null;
+  const compact = `SAFETY ${[painLeads ? painCompact : ordinaryCompact, painLeads ? ordinaryCompact : painCompact]
+    .filter((part): part is string => part !== null)
+    .join(' · ')}`;
 
   /* NO FIXED WIDTH CAN BE CLAIMED FOR THIS BADGE, at either density or any
      breakpoint. Both summaries below are composed from counts fetched at
@@ -224,6 +260,8 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             the two rungs. It cannot understate either half of what is waiting:
             the number is criticalCount + highCount, and the word is the worst
             severity actually present, off the same predicate as the rung.
+            Pain reports (#1528 Q3) are their own number and words beside it,
+            "SAFETY 1 · HIGH · 2 · PAIN REPORTS", never inside that total.
 
             WHAT IS NOT DONE HERE, because the order that opened this slice
             names each one: the badge is not hidden on the phone, not reduced
@@ -251,7 +289,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             ppbf.css -> current/ppbf-theme.css -> ppbf-golden-era.css:60), so
             the two agree today, and the summary still reads as the design
             lane specified it if that transform ever moves. */}
-        <span className="sm:hidden">{`SAFETY ${total} · ${worst}`}</span>
+        <span className="sm:hidden">{compact}</span>
         <span className="hidden sm:inline">Safety {label}</span>
       </span>
     </ChromeLink>
@@ -267,62 +305,62 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
  * safety_escalations.athlete_id is not null, so a refused team clip files
  * nothing and was on no bar at all. This counts them.
  *
- * WHAT COUNTS: a clip with no athlete, scan_state 'blocked' and still
- * quarantined -- currently refused, however long ago (N4-03-Q1 default A). An
- * admin's "approve" makes it ready, and it leaves the count.
+ * WHAT COUNTS: a clip with no athlete that the content screen refused, still
+ * quarantined, that no administrator has decided yet. An approve or a block
+ * takes it out (Q2 B on #1445; src/server/pilot/refusedTeamClips.ts).
  *
  * WHO: the organization admin only (client role 'admin'). Only that role can
  * approve or block a refused clip (/admin/video-review), and only that role's
  * video list is the whole gym's.
  *
- * A NUMBER AND NOTHING ELSE. The list read carries titles and file names; none
- * of it is rendered, kept, or put in a label.
+ * A NUMBER AND NOTHING ELSE. The count route returns only { count }.
  *
- * THE READ IS CAPPED. /api/pilot/video/list returns at most REFUSED_READ_LIMIT
- * clips, newest first. A full page means older refused clips may exist past
- * it, so the count is shown as a floor, "N+", rather than as a total.
+ * THE SAME SET BEHIND THE LINK. The count is the server's, over every clip,
+ * and the link opens the review filtered to exactly the clips it counted
+ * (REFUSED_REVIEW_HREF): the first version counted a capped page of the
+ * general list and linked to an unfiltered one, so the two could disagree
+ * (#1508 Codex P1s).
  */
-const REFUSED_READ_LIMIT = 100;
+export const REFUSED_REVIEW_HREF = '/admin/video-review?filter=refused-team';
 
-interface VideoListRow {
-  athlete_id: string | null;
-  scan_state: string;
-  status: string;
-}
-
-export function isRefusedTeamClip(row: VideoListRow): boolean {
-  return row.athlete_id === null && row.scan_state === 'blocked' && row.status === 'quarantined';
-}
+/** Fired by the review page after a decision, so the count re-reads at once. */
+export const REFUSED_TEAM_CLIPS_CHANGED = 'ppbf:refused-team-clips-changed';
 
 function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   const [count, setCount] = useState(0);
-  const [atLeast, setAtLeast] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
+  // Only the newest read lands: a timer read started just before a decision
+  // must not answer after the decision's own re-read.
+  const loadSeq = useRef(0);
   // The client carries an organization admin as 'admin' (roleSession.ts
   // mapPilotRoleToClubRole); the server name is accepted too, as above.
   const serves = role === 'admin' || role === 'organization_admin';
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++loadSeq.current;
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/video/list?limit=${REFUSED_READ_LIMIT}`, {
+      const response = await fetch(`${apiBase()}/api/pilot/video/refused-team-clips`, {
         method: 'GET',
         credentials: 'include',
         signal,
       });
       if (!response.ok) {
-        throw new Error('video list');
+        throw new Error('refused team clips');
       }
-      const payload = (await response.json()) as { items?: VideoListRow[] };
-      const rows = payload.items ?? [];
-      setCount(rows.filter(isRefusedTeamClip).length);
-      setAtLeast(rows.length >= REFUSED_READ_LIMIT);
+      const payload = (await response.json()) as { count?: unknown };
+      if (seq !== loadSeq.current) {
+        return;
+      }
+      if (typeof payload.count !== 'number') {
+        throw new Error('refused team clips');
+      }
+      setCount(payload.count);
       setReadState('loaded');
     } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') {
+      if ((error as { name?: string }).name === 'AbortError' || seq !== loadSeq.current) {
         return;
       }
       setCount(0);
-      setAtLeast(false);
       setReadState('unavailable');
     }
   }, []);
@@ -338,9 +376,14 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     const timer = setInterval(() => {
       void load(controller.signal);
     }, REFRESH_INTERVAL_MS);
+    const onChanged = () => {
+      void load(controller.signal);
+    };
+    window.addEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     return () => {
       controller.abort();
       clearInterval(timer);
+      window.removeEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     };
   }, [serves, load]);
 
@@ -351,7 +394,7 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   if (readState === 'unavailable') {
     return (
       <ChromeLink
-        href="/admin/video-review"
+        href={REFUSED_REVIEW_HREF}
         className={CONTROL_QUIET}
         aria-label="Open video review. The count of refused team clips could not be read."
         title="Refused team clips could not be read. This is not a statement that there are none."
@@ -361,21 +404,18 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     );
   }
 
-  // Silent at zero (plan, #1445). KNOWN LIMIT of the capped read: a refused
-  // clip older than the newest REFUSED_READ_LIMIT is not seen, so a full page
-  // with none refused in it also renders nothing. A count-only route would
-  // close that; it is outside this lane's allowlist (PR body, LANE QUESTION).
+  // Silent at zero (plan, #1445). The count is over every clip, so zero is zero.
   if (count === 0) {
     return null;
   }
 
-  const shown = `${count}${atLeast ? '+' : ''}`;
-  const noun = count === 1 && !atLeast ? 'refused team clip' : 'refused team clips';
+  const shown = String(count);
+  const noun = count === 1 ? 'refused team clip' : 'refused team clips';
   return (
     <ChromeLink
-      href="/admin/video-review"
+      href={REFUSED_REVIEW_HREF}
       className="inline-flex min-h-[var(--tap)] items-center no-underline"
-      aria-label={`${atLeast ? 'At least ' : ''}${count} ${noun}. Open video review.`}
+      aria-label={`${count} ${noun}. Open video review.`}
     >
       <span className="badge badge--restricted">
         <i>▲</i>

@@ -7,6 +7,10 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachDrillLibraryPage from './page';
+import type { PilotSessionRole } from '@/components/usePilotSession';
+import type { DrillLineageResponse } from '@/app/api/pilot/drills/lineage/route';
+import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
+import type { DrillChangeProposalListing, PilotDrillVersionRow } from '@/src/server/pilot/drillVersioning';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -21,6 +25,14 @@ jest.mock('next/link', () => ({
 }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+
+// The session's raw pilot role, for who is offered Adopt and Decline (#1471).
+// Mocked so the session read is not one more POST in every test's writes().
+let mockSessionRole: PilotSessionRole = 'coach';
+jest.mock('@/components/usePilotSession', () => ({
+  ...jest.requireActual('@/components/usePilotSession'),
+  usePilotSession: () => ({ loading: false, role: mockSessionRole, organizationId: 'org-1', authProvider: null, accountId: 'acct-hidden', mustChangePin: false }),
+}));
 
 // Each read gets its own copy, as a real response would: a test that changes
 // a payload later cannot reach into what the page already holds.
@@ -157,6 +169,10 @@ interface RouteOptions {
   detailWithoutLifecycle?: boolean;
   /** Answers the Nth read of a drill's detail (1-based) instead, when it returns a response. */
   detailRead?: (readNumber: number) => Response | undefined;
+  /** Every change proposal in the gym (#1471); the queue and lineage reads filter it. */
+  proposals?: DrillChangeProposalListing[];
+  /** The versions the lineage route answers with, for any drill id. */
+  versions?: PilotDrillVersionRow[];
 }
 
 /**
@@ -248,6 +264,19 @@ function routes(options: RouteOptions = {}) {
       return jsonResponse(lifecycle === null ? { drills: references } : { drills: references, lifecycle, floor_tested: floorTested });
     }
     if (url === '/api/pilot/drills') return jsonResponse({ items: operational });
+    if (url.startsWith('/api/pilot/drills/proposals?')) {
+      const params = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+      const items = (options.proposals ?? []).filter((row) =>
+        (!params.get('review_state') || row.review_state === params.get('review_state'))
+        && (!params.get('lineage_id') || row.lineage_id === params.get('lineage_id')));
+      const body: DrillChangeProposalListResponse = { ok: true, organization_id: 'org-1', items };
+      return jsonResponse(body);
+    }
+    if (url.startsWith('/api/pilot/drills/lineage?drill_id=')) {
+      const versions = options.versions ?? [];
+      const body: DrillLineageResponse = { ok: true, organization_id: 'org-1', lineage_id: versions[0]?.lineage_id ?? null, versions };
+      return jsonResponse(body);
+    }
     return jsonResponse({ error: 'unexpected read' }, false, 500);
   });
 }
@@ -2078,5 +2107,90 @@ describe('the notice after an action', () => {
 
     fireEvent.click(back);
     expect(screen.queryByText(/^Retired\./)).not.toBeInTheDocument();
+  });
+});
+
+// #1471 P10-04A: each operational drill's versions and the proposals on it,
+// and the queue of proposals waiting for review.
+describe('versions and proposals', () => {
+  const v1: PilotDrillVersionRow = {
+    organization_id: 'org-1', drill_id: 'corner-v1', name: 'Corner exit', category: 'Footwork',
+    focus: 'Leave the ropes.', cues: ['Turn first'], difficulty: 'beginner', active: false, version: 1,
+    lineage_id: 'corner-v1', supersedes_drill_id: null, superseded_at: null, superseded_by_drill_id: 'authored-1',
+    reference_drill_id: null, created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z',
+  };
+  const v2: PilotDrillVersionRow = { ...v1, drill_id: 'authored-1', focus: 'Leave the ropes safely.', active: true, version: 2, supersedes_drill_id: 'corner-v1', superseded_by_drill_id: null };
+  const waitingProposal = (id: string, state: 'proposed' | 'under_review'): DrillChangeProposalListing => ({
+    proposal_id: id, organization_id: 'org-1', lineage_id: 'corner-v1', based_on_drill_id: 'authored-1',
+    proposed_by_account_id: 'acct-hidden', proposed_by_role: 'coach', rationale: `Why ${id}.`,
+    proposed_change: { focus: 'Pivot off the ropes.' }, observation_note_ids: [], review_state: state,
+    reviewed_by_account_id: null, reviewed_at: null, review_note: null, resulting_drill_id: null,
+    created_at: '2026-10-03T00:00:00.000Z', updated_at: '2026-10-03T00:00:00.000Z',
+    current_drill_id: 'authored-1', base_is_current: true, lineage_retired: false,
+  });
+  const proposals = [waitingProposal('p-review', 'under_review'), waitingProposal('p-new', 'proposed')];
+
+  afterEach(() => {
+    mockSessionRole = 'coach';
+  });
+
+  it('lists proposals waiting, proposed before under review, and opens the panel from one', async () => {
+    global.fetch = routes({ proposals, versions: [v1, v2] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await screen.findByRole('heading', { name: 'Proposals waiting' });
+    const reviews = await screen.findAllByRole('button', { name: 'Review proposal: Corner exit' });
+    const queue = reviews[0].closest('ul') as HTMLElement;
+    expect(within(queue).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Why p-new.'),
+      expect.stringContaining('Why p-review.'),
+    ]);
+
+    fireEvent.click(reviews[0]);
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    expect(await within(panel).findByText('Why p-new.')).toBeInTheDocument();
+    expect(within(panel).getByText('Version 2: Corner exit').parentElement).toHaveTextContent('Current');
+  });
+
+  it('opens from the operational card; a coach sees the proposals without Adopt or Decline', async () => {
+    mockSessionRole = 'coach';
+    global.fetch = routes({ proposals, versions: [v1, v2] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions and proposals: Corner exit' }));
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    await within(panel).findByText('Why p-new.');
+
+    expect(within(panel).queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: /^Decline the proposal/ })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('acct-hidden');
+  });
+
+  it.each(['organization_admin', 'admin'] as const)('offers %s Adopt and Decline', async (role) => {
+    mockSessionRole = role;
+    global.fetch = routes({ proposals, versions: [v1, v2] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions and proposals: Corner exit' }));
+    const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
+    await within(panel).findByText('Why p-new.');
+
+    expect(within(panel).getAllByRole('button', { name: /^Adopt the proposal/ })).toHaveLength(2);
+    expect(within(panel).getAllByRole('button', { name: /^Decline the proposal/ })).toHaveLength(2);
+  });
+
+  it('says an empty queue is empty, and a failed queue read is a failure', async () => {
+    global.fetch = routes() as unknown as typeof fetch;
+    const { unmount } = render(<CoachDrillLibraryPage />);
+    expect(await screen.findByText('No proposed changes are waiting for review.')).toBeInTheDocument();
+    unmount();
+
+    const failing = routes();
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).startsWith('/api/pilot/drills/proposals?')
+        ? jsonResponse({ error: 'down' }, false, 500)
+        : failing(input, init)) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    expect(await screen.findByText(/could not be loaded. This is a failure to load, not an empty queue./)).toBeInTheDocument();
   });
 });

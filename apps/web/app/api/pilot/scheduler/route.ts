@@ -12,7 +12,7 @@ import {
   athleteIdsForCoach,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
-import { parseInstantAsGymTime } from '@/src/lib/gymTime';
+import { gymDayIso, parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -38,6 +38,7 @@ import {
   type SchedulerRegistration,
   type SchedulerRole,
   type SchedulerStore,
+  upsertFamilySchedulerAttendance,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
 import {
@@ -1005,9 +1006,11 @@ export async function POST(request: NextRequest) {
       }
 
       const isSelf = actor.role === 'athlete';
-      if (isSelf && status !== 'present') {
-        throw new Error('Forbidden: athlete self check-in can only mark present');
-      }
+      // An athlete's own check-in or a parent's on their child (Jason
+      // 2026-10-12, issue #1524: "Self check-in, same day only"). Staff -- the
+      // coach running the class and the organization admin -- keep the
+      // register exactly as before.
+      const isFamily = !(actor.role === 'coach' || canManageAll(actor));
 
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
@@ -1017,7 +1020,7 @@ export async function POST(request: NextRequest) {
       const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
 
       let method: SchedulerAttendance['method'];
-      if (actor.role === 'coach' || canManageAll(actor)) {
+      if (!isFamily) {
         // The class register: whole class plus walk-ins (resolveRegisterMark).
         method = await resolveRegisterMark(actor, classItem, athleteId, status, registeredIds);
       } else {
@@ -1031,11 +1034,23 @@ export async function POST(request: NextRequest) {
         if (!registeredIds.has(athleteId)) {
           throw new Error('Missing registration: athlete is not registered for this class');
         }
+        // After who-may-act and the registration, so a refused caller learns
+        // nothing new from these two (#1524).
+        if (status !== 'present') {
+          throw new ValidationError('A family check-in can only say you are here. Absent and Excused are for your coach.');
+        }
+        // The class's day and today, both as the gym's day (gymTime.ts), never
+        // UTC's: an evening class is still today after 8 pm Eastern.
+        if (gymDayIso(classItem.start_at) !== gymDayIso(new Date())) {
+          throw new ValidationError('Check-in is open on the day of the class only.');
+        }
         method = resolveAttendanceMethod(actor, isSelf);
       }
 
       const beyondReach = await athletesBeyondReach(actor, [athleteId]);
-      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      // A family check-in says "I'm here" and nothing else (#1524); the note
+      // is the coach's field (privacyTiers.ts), so one sent anyway is dropped.
+      const note = !isFamily && typeof body.note === 'string' ? body.note.trim() : '';
       assertNoNoteBeyondReach(beyondReach, athleteId, note);
 
       const now = new Date().toISOString();
@@ -1053,9 +1068,17 @@ export async function POST(request: NextRequest) {
         updated_at: now,
       };
 
-      await upsertSchedulerAttendance(actor.organizationId, attendanceRecord, {
-        keepExistingNote: beyondReach.has(athleteId),
-      });
+      // A family write cannot change a coach's or admin's mark
+      // (FAMILY_ATTENDANCE_UPSERT_SQL); `recorded: false` says the staff mark
+      // stood and nothing changed.
+      let recorded = true;
+      if (isFamily) {
+        recorded = await upsertFamilySchedulerAttendance(actor.organizationId, attendanceRecord);
+      } else {
+        await upsertSchedulerAttendance(actor.organizationId, attendanceRecord, {
+          keepExistingNote: beyondReach.has(athleteId),
+        });
+      }
 
       // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active
       // training hold does NOT stop a check-in -- a held athlete may still
@@ -1073,6 +1096,7 @@ export async function POST(request: NextRequest) {
         athlete_id: athleteId,
         // The screen says "marked as a walk-in" from this, not from guessing.
         method,
+        recorded,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       });
     }

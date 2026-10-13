@@ -159,6 +159,10 @@ export async function POST(request: NextRequest) { // NOSONAR
     // the page, which is a separate change.
     const entityId = await withTransaction(async (client) => {
       let entityId = '';
+      // What the audit row says beyond the athlete. A waiver names its type and
+      // the status written, so a recording and a withdrawal read apart in the
+      // trail without a join (#1526 review).
+      let auditExtras: Record<string, unknown> = {};
 
       if (entityType === 'emergency_contact') {
         entityId = await upsertEmergencyContact({
@@ -196,6 +200,8 @@ export async function POST(request: NextRequest) { // NOSONAR
             'Unsupported waiver_type: photo and media consent is recorded guardian by guardian on the Guardian Media Consent desk (/admin/athlete-consent), not on the general register',
           );
         }
+        const waiverStatus = requireWaiverStatus(payload.status, 'payload.status', 'signed');
+        auditExtras = { waiver_type: waiverType, status: waiverStatus };
         entityId = await upsertWaiver({
           organizationId: principal.organizationId,
           athleteId,
@@ -208,7 +214,7 @@ export async function POST(request: NextRequest) { // NOSONAR
           // a bad value is a 400 naming the field rather than a 500 from the
           // constraint. Absent still means 'signed', unchanged; null or any
           // other non-vocabulary value is refused instead of becoming 'signed'.
-          status: requireWaiverStatus(payload.status, 'payload.status', 'signed'),
+          status: waiverStatus,
           notes: typeof payload.notes === 'string' ? payload.notes : undefined,
           // signed_by_name is whatever the caller typed off the paper form. This
           // is the account that typed it -- the only party to this row the
@@ -288,7 +294,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         organization_id: principal.organizationId,
         entity_type: `intake_${entityType}`,
         entity_id: entityId || athleteId,
-        details: { athlete_id: athleteId },
+        details: { athlete_id: athleteId, ...auditExtras },
         shadow_mirror: false,
       }, client);
 
