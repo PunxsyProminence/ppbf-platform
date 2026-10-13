@@ -10466,6 +10466,64 @@
     }
   },
   {
+    "id": "app/api/pilot/session-scripts/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/session-scripts",
+    "gate": "requirePrincipal + requireRole(SESSION_SCRIPT_AUTHOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, name and blocks. A script that has any run is not changed: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SESSION_SCRIPT_AUTHOR_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/session-scripts",
+    "gate": "requirePrincipal + requireRole(SESSION_SCRIPT_AUTHOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L1. A coach or organization admin makes a session script from one of the gym's workout templates (createSessionScriptFromTemplate, sessionScriptAuthoring.ts): the template's steps in order as timed blocks, one transaction, audited. Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only template_id and name. No athlete data. platform_owner and every reader-only role refused.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SESSION_SCRIPT_AUTHOR_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/session-scripts/runs/[runId]/route.ts#PATCH",
     "method": "PATCH",
     "path": "/api/pilot/session-scripts/runs/[runId]",
