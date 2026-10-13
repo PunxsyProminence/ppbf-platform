@@ -201,9 +201,13 @@ function todayGymDay(): string {
   return gymDayIso(Date.now()) ?? '';
 }
 
+// The register page's vocabulary (/admin/consent). The office is a real
+// answer for a withdrawal it makes itself -- a paper entered by mistake, or
+// one that no longer stands -- so a withdrawal starts there (#1526 review).
 const SIGNER_ROLES = [
   { value: 'guardian', label: 'Parent or legal guardian' },
   { value: 'athlete', label: 'Athlete (18 or over)' },
+  { value: 'organization_admin', label: 'Gym administrator, on file' },
 ] as const;
 
 interface WaiverEdit {
@@ -274,7 +278,7 @@ export default function WaiverComplianceAuditPage() {
     setEdit(next);
     setEditDate(todayGymDay());
     setEditName('');
-    setEditRole('guardian');
+    setEditRole(next.action === 'withdraw' ? 'organization_admin' : 'guardian');
     setEditNote('');
     setEditError('');
     setSavedMessage('');

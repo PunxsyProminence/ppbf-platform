@@ -655,6 +655,12 @@ describe('a waiver recorded and withdrawn from Waiver Compliance (#1526)', () =>
     try {
       await insertAthlete(client, ORG_A, ATHLETE_ID, 'Org A Athlete');
       await insertAthlete(client, ORG_B, ATHLETE_ID, 'Org B Athlete');
+      const OFFICE_ID = 'acct-waiver-compliance-admin';
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'organization_admin', $2, 'microsoft')`,
+        [OFFICE_ID, ORG_A],
+      );
       const record = (status: 'signed' | 'withdrawn') => upsertWaiver({
         organizationId: ORG_A,
         athleteId: ATHLETE_ID,
@@ -665,7 +671,7 @@ describe('a waiver recorded and withdrawn from Waiver Compliance (#1526)', () =>
         consentVersion: 'v1',
         status,
         notes: '',
-        recordedByAccountId: COACH_ID,
+        recordedByAccountId: OFFICE_ID,
       });
 
       await record('signed');
@@ -683,8 +689,8 @@ describe('a waiver recorded and withdrawn from Waiver Compliance (#1526)', () =>
         [ORG_A, ATHLETE_ID],
       );
       expect(rows.rows).toEqual([
-        { status: 'signed', recorded_by_account_id: COACH_ID },
-        { status: 'withdrawn', recorded_by_account_id: COACH_ID },
+        { status: 'signed', recorded_by_account_id: OFFICE_ID },
+        { status: 'withdrawn', recorded_by_account_id: OFFICE_ID },
       ]);
 
       expect((await getOrganizationWaiverStatus(ORG_B))[0].waivers.medical_release).toBe('missing');

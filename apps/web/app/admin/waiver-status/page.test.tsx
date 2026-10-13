@@ -507,6 +507,26 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
     expect(await screen.findByText('General waiver for Jordan T.: withdrawn.')).toBeInTheDocument();
   });
 
+  test("the withdraw form starts on the office as the one withdrawing", async () => {
+    installRecording();
+    await openRecord('Withdraw: General, Jordan T.');
+
+    const form = screen.getByRole('group', { name: 'Withdraw: General, Jordan T.' });
+    expect(within(form).getByLabelText('Date withdrawn')).toBeInTheDocument();
+    expect((within(form).getByLabelText('They are the') as HTMLSelectElement).value).toBe('organization_admin');
+  });
+
+  test('Cancel closes the form and sends nothing', async () => {
+    const posts = installRecording();
+    await openRecord('Record signed: Travel, Jordan T.');
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Record signed: Travel, Jordan T.' })).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('group', { name: /Record signed/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Record signed: Travel, Jordan T.' })).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
+
   test('photo and media is never recorded here: no control on that column', async () => {
     installRecording();
     render(<WaiverComplianceAuditPage />);
