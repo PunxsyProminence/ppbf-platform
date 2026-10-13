@@ -30,7 +30,7 @@ const NEEDS_CONSENT = [
     consent_ok: false,
     guardian_count: 1,
     missing_guardian_count: 1,
-    per_guardian: [{ parent_id: 'p1', you: true, status: null, covers_video: null, public_use_allowed: null, signed_at: null }],
+    per_guardian: [{ you: true, status: null, covers_video: null, public_use_allowed: null, signed_at: null }],
   },
 ];
 
@@ -40,7 +40,7 @@ const ALREADY_SIGNED = [
     consent_ok: true,
     guardian_count: 1,
     missing_guardian_count: 0,
-    per_guardian: [{ parent_id: 'p1', you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
+    per_guardian: [{ you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
   },
 ];
 
@@ -212,7 +212,7 @@ test('a consent stored with stray whitespace reads as signed on the guardian’s
       consent_ok: true,
       guardian_count: 1,
       missing_guardian_count: 0,
-      per_guardian: [{ parent_id: 'p1', you: true, status: ' Signed ', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
+      per_guardian: [{ you: true, status: ' Signed ', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
     },
   ];
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: UNTIDY })) as unknown as typeof fetch;
@@ -234,7 +234,7 @@ test('a status this platform does not recognise still reads as NOT signed', asyn
       consent_ok: false,
       guardian_count: 1,
       missing_guardian_count: 1,
-      per_guardian: [{ parent_id: 'p1', you: true, status: 'active', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
+      per_guardian: [{ you: true, status: 'active', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' }],
     },
   ];
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: UNKNOWN })) as unknown as typeof fetch;

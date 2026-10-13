@@ -85,7 +85,7 @@ test.describe('Guardian journey', () => {
                 guardian_count: 1,
                 missing_guardian_count: 1,
                 per_guardian: [
-                  { parent_id: 'par-1', you: true, status: null, covers_video: null, public_use_allowed: null, signed_at: null },
+                  { you: true, status: null, covers_video: null, public_use_allowed: null, signed_at: null },
                 ],
               },
             ],

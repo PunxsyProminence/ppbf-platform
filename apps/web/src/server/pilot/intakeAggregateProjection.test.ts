@@ -99,21 +99,57 @@ describe('the aggregate guardian projection', () => {
     expect(STAFF_READERS.length).toBeGreaterThan(0);
   });
 
+  // #1558: the family read selects no guardian id at all. parent_id is `par-`
+  // plus an email-shaped account id; "is this row mine" is answered in SQL
+  // against the reader's own account (familyGuardianView.ts).
+  const FAMILY_GUARDIAN_SELECT = [
+    '(g.parent_id = any($3::text[])) as you',
+    'p.full_name',
+    'g.relationship_to_athlete',
+  ];
+
   test.each(FAMILY_READERS)(
-    'THE DEFECT: %s receives identity and relationship only',
+    'THE DEFECT: for %s no guardian id or contact column is selected',
     async (role) => {
       await run(role);
 
       // Equality, not containment: "p.*" contains no substring "p.phone", so
       // a containment check passes over exactly the defect it names.
-      expect(selectListFor('from pilot.guardian_links')).toEqual([
-        'p.parent_id',
-        'p.full_name',
-        'g.relationship_to_athlete',
-        'g.athlete_id',
-      ]);
+      expect(selectListFor('from pilot.guardian_links')).toEqual(FAMILY_GUARDIAN_SELECT);
+      // Compared with the guardian records of the reader's own account. This
+      // suite's query mock answers every read with no rows, so that is none;
+      // what matters is that a parent's account is what was looked up.
+      expect(paramsFor('from pilot.guardian_links')).toEqual([ORG, ATHLETE, []]);
+      const ownLookup = mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.parents where'));
+      if (role === 'parent') {
+        expect(ownLookup?.[1]).toEqual([ORG, 'acct-parent']);
+      } else {
+        expect(ownLookup).toBeUndefined();
+      }
     },
   );
+
+  test.each(FAMILY_READERS)('for %s the waiver read selects no parent_id either', async (role) => {
+    await run(role);
+
+    const columns = selectListFor('from pilot.waivers');
+    expect(columns).not.toContain('parent_id');
+    expect(columns).not.toContain('w.parent_id');
+    expect(columns).not.toContain('w.organization_id');
+    expect(columns).not.toContain('w.notes');
+    expect(paramsFor('from pilot.waivers')).toEqual([ORG, ATHLETE, []]);
+  });
+
+  test.each(STAFF_READERS)('%s keeps every waiver column, read as before', async (role) => {
+    await run(role);
+
+    expect(selectListFor('from pilot.waivers')).toEqual([
+      'organization_id', 'waiver_id', 'athlete_id', 'waiver_type', 'signed_by_name', 'signed_by_role',
+      'signed_at', 'consent_version', 'status', 'parent_id', 'covers_video', 'public_use_allowed',
+      'created_at', 'updated_at', 'notes', 'recorded_by_account_id',
+    ]);
+    expect(paramsFor('from pilot.waivers')).toEqual([ORG, ATHLETE]);
+  });
 
   test.each(STAFF_READERS)('%s keeps the contact columns', async (role) => {
     await run(role);
@@ -132,15 +168,12 @@ describe('the aggregate guardian projection', () => {
   /* A caller that forgets the context argument must not be the one path that
      hands out phone numbers. The code comment argues for this default; nothing
      asserted it. */
-  test('a call with no reader named falls to identity only, not to contact', async () => {
+  test('a call with no reader named reads the family columns against no guardian record at all', async () => {
     await run();
 
-    expect(selectListFor('from pilot.guardian_links')).toEqual([
-      'p.parent_id',
-      'p.full_name',
-      'g.relationship_to_athlete',
-      'g.athlete_id',
-    ]);
+    expect(selectListFor('from pilot.guardian_links')).toEqual(FAMILY_GUARDIAN_SELECT);
+    expect(paramsFor('from pilot.guardian_links')).toEqual([ORG, ATHLETE, []]);
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('from pilot.parents where'))).toBe(false);
   });
 
   test('the guardian read is scoped to the organization on both sides of the join', async () => {
@@ -153,20 +186,24 @@ describe('the aggregate guardian projection', () => {
 });
 
 describe('the aggregate emergency-contact projection', () => {
-  test.each(FAMILY_READERS)(
-    'THE SECOND DEFECT: %s learns who the emergency contact is, and not how to reach them',
-    async (role) => {
-      await run(role);
+  test('THE SECOND DEFECT: the athlete learns who the emergency contact is, and not how to reach them', async () => {
+    await run('athlete');
 
-      expect(selectListFor('from pilot.emergency_contacts')).toEqual([
-        'contact_id',
-        'athlete_id',
-        'full_name',
-        'relationship_to_athlete',
-        'is_primary',
-      ]);
-    },
-  );
+    expect(selectListFor('from pilot.emergency_contacts')).toEqual([
+      'contact_id',
+      'athlete_id',
+      'full_name',
+      'relationship_to_athlete',
+      'is_primary',
+    ]);
+  });
+
+  // #1558, Jason 2026-10-13: "A: Relationship only (Recommended)".
+  test('a parent reads the relationship and the primary flag only -- no name', async () => {
+    await run('parent');
+
+    expect(selectListFor('from pilot.emergency_contacts')).toEqual(['relationship_to_athlete', 'is_primary']);
+  });
 
   test.each(STAFF_READERS)('%s keeps the number, the email and the note', async (role) => {
     await run(role);
@@ -183,10 +220,10 @@ describe('the aggregate emergency-contact projection', () => {
     ]);
   });
 
-  test('no reader named means identity only here too', async () => {
+  test('no reader named means the least here too', async () => {
     await run();
 
-    expect(selectListFor('from pilot.emergency_contacts')).not.toContain('phone');
+    expect(selectListFor('from pilot.emergency_contacts')).toEqual(['relationship_to_athlete', 'is_primary']);
   });
 });
 

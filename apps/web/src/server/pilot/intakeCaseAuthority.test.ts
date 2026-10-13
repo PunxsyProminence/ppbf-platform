@@ -17,13 +17,14 @@ import {
   ATHLETE_READABLE_NOTE_TYPES,
   EMERGENCY_CONTACT_CONTACT_COLUMNS,
   EMERGENCY_CONTACT_IDENTITY_COLUMNS,
+  EMERGENCY_CONTACT_PARENT_COLUMNS,
   GUARDIAN_CONTACT_COLUMNS,
   GUARDIAN_IDENTITY_COLUMNS,
   PARENT_READABLE_NOTE_TYPES,
   assertActorCanAccessIntakeCase,
   coachObservationNoteTypesForReader,
+  GUARDIAN_STAFF_COLUMNS,
   emergencyContactColumnsForReader,
-  guardianColumnsForReader,
   resolveIntakeCaseAuthority,
 } from './intake';
 import { query, queryOne } from './db';
@@ -396,41 +397,19 @@ describe('coachObservationNoteTypesForReader', () => {
  * set ships to every coach with nothing going red. Widening is a decision; it
  * should have to change a test that says so.
  */
-describe('guardianColumnsForReader', () => {
-  test('staff keep the contact columns -- they make the emergency call', () => {
-    const withContact = [...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS];
-    expect(guardianColumnsForReader('organization_admin')).toEqual(withContact);
-    expect(guardianColumnsForReader('admin')).toEqual(withContact);
-    expect(guardianColumnsForReader('coach')).toEqual(withContact);
+describe('GUARDIAN_STAFF_COLUMNS', () => {
+  test('staff keep the record id, the name and the contact columns -- they make the emergency call', () => {
+    expect([...GUARDIAN_STAFF_COLUMNS]).toEqual([...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS]);
+    expect([...GUARDIAN_STAFF_COLUMNS]).toEqual(['p.parent_id', 'p.full_name', 'p.account_id', 'p.phone', 'p.email']);
   });
 
-  test.each(['athlete', 'parent'] as PilotRole[])(
-    '%s receives identity and relationship only -- never the other household\'s number',
-    (role) => {
-      expect(guardianColumnsForReader(role)).toEqual([...GUARDIAN_IDENTITY_COLUMNS]);
-    },
-  );
-
-  test.each(['volunteer', 'staff', 'board', 'platform_owner'] as PilotRole[])(
-    'any other role (%s) falls through to identity, not to contact',
-    (role) => {
-      expect(guardianColumnsForReader(role)).toEqual([...GUARDIAN_IDENTITY_COLUMNS]);
-    },
-  );
-
-  test('no contact column can reach a family reader, whatever the set grows to', () => {
-    for (const role of ['athlete', 'parent'] as PilotRole[]) {
-      for (const column of GUARDIAN_CONTACT_COLUMNS) {
-        expect(guardianColumnsForReader(role)).not.toContain(column);
-      }
-    }
-  });
-
-  test('the two guardian-facing reads agree on what a child may read about their parents', () => {
-    // Same drift risk as the note-type readers, and the same answer: passbook
-    // is the other module that hands a guardian row to these two readers, and
-    // it selects parent id and name. If one widens, this fails.
-    expect(guardianColumnsForReader('athlete')).toEqual(['p.parent_id', 'p.full_name']);
+  // #1558: the per-role function is gone on purpose. Its family branch handed
+  // out parent_id, which is `par-` plus an email-shaped account id. A family
+  // reader's guardians are built by familyGuardianView.ts (its own suite).
+  test('intake.ts exports no per-role guardian or waiver column function for a family role to fall through', async () => {
+    const intake = await import('./intake');
+    expect(Object.keys(intake)).not.toContain('guardianColumnsForReader');
+    expect(Object.keys(intake)).not.toContain('waiverColumnsForReader');
   });
 });
 
@@ -448,17 +427,25 @@ describe('emergencyContactColumnsForReader', () => {
     expect(emergencyContactColumnsForReader('coach')).toEqual(withContact);
   });
 
-  test.each(['athlete', 'parent'] as PilotRole[])(
-    '%s learns who the emergency contact is, and not how to reach them',
-    (role) => {
-      expect(emergencyContactColumnsForReader(role)).toEqual([...EMERGENCY_CONTACT_IDENTITY_COLUMNS]);
-    },
-  );
+  test('the athlete learns who the emergency contact is, and not how to reach them', () => {
+    expect(emergencyContactColumnsForReader('athlete')).toEqual([...EMERGENCY_CONTACT_IDENTITY_COLUMNS]);
+    expect(emergencyContactColumnsForReader('athlete')).toEqual([
+      'contact_id', 'athlete_id', 'full_name', 'relationship_to_athlete', 'is_primary',
+    ]);
+  });
 
-  test.each(['volunteer', 'staff', 'board', 'platform_owner'] as PilotRole[])(
-    'any other role (%s) falls through to identity, not to contact',
+  // #1558, Jason 2026-10-13: "A: Relationship only (Recommended)". The other
+  // parent is the ordinary emergency contact, so the name was the co-guardian's
+  // name by a second door.
+  test('a parent learns the relationship and the primary flag only -- no name, no record id', () => {
+    expect(emergencyContactColumnsForReader('parent')).toEqual(['relationship_to_athlete', 'is_primary']);
+    expect([...EMERGENCY_CONTACT_PARENT_COLUMNS]).toEqual(['relationship_to_athlete', 'is_primary']);
+  });
+
+  test.each(['volunteer', 'staff', 'board', 'platform_owner', null] as Array<PilotRole | null>)(
+    'any other reader (%s) falls through to the least, not to the name',
     (role) => {
-      expect(emergencyContactColumnsForReader(role)).toEqual([...EMERGENCY_CONTACT_IDENTITY_COLUMNS]);
+      expect(emergencyContactColumnsForReader(role)).toEqual([...EMERGENCY_CONTACT_PARENT_COLUMNS]);
     },
   );
 

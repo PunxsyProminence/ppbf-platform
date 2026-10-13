@@ -9,7 +9,6 @@ import { apiBase } from '@/lib/apiBase';
 // status only (owner ruling 2026-10-05).
 type GuardianConsentRow =
   | {
-      parent_id: string;
       you: true;
       status: string | null;
       covers_video: boolean | null;

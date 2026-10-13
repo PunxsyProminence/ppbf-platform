@@ -716,6 +716,19 @@ describe('assigning a drill requires an operational drill', () => {
     return posts;
   }
 
+  // F-051. The gap's description reaches the athlete word for word under
+  // "Identified gaps"; the form did not say so.
+  test('the gap form says the athlete reads the description', async () => {
+    await renderWithAthlete(assignFetch([DRILL], []));
+    await screen.findByText('Rear foot stays flat through the cross.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Gap' }));
+    });
+
+    expect(screen.getByLabelText('Description (the athlete reads this)')).toBeTruthy();
+    expect(screen.queryByLabelText('Description')).toBeNull();
+  });
+
   test('the drill picker is required and the typed name/description inputs are gone', async () => {
     await openAssignForm([DRILL]);
 

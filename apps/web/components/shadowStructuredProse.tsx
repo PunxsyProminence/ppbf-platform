@@ -10,10 +10,13 @@ import type { ReactNode } from 'react';
  *
  * The split is deliberately conservative: blank-line paragraphs, and runs of
  * bullet ("-", "*", "•") or numbered ("1.", "2)") lines become real lists.
- * Nothing else is guessed at -- no heading inference, no emphasis parsing --
- * because a wrong guess about a safety sentence is worse than a plain
- * paragraph. Everything renders as React text nodes; there is no HTML path,
- * so model output can never inject markup.
+ * Nothing else is guessed at -- no heading inference, no italics -- because a
+ * wrong guess about a safety sentence is worse than a plain paragraph. The one
+ * mark that is read is a balanced **bold** pair: the words inside are printed
+ * exactly as they were and only their weight changes, so reading it cannot
+ * change what a sentence says; the athlete used to see the asterisks (F-053).
+ * An unmatched ** is left as typed. Everything renders as React text nodes;
+ * there is no HTML path, so model output can never inject markup.
  */
 
 const BULLET_PATTERN = /^\s*[-*•]\s+/;
@@ -73,6 +76,30 @@ export function splitProseBlocks(raw: string): ProseBlock[] {
   return blocks;
 }
 
+// A bold pair is a **word or phrase** standing on its own, as a person writes
+// it: the words inside start and end on something that is not a space or a
+// star, and the pair is not stuck to a letter or digit on either side. So
+// "x ** 2 + y ** 2" and "x**2 + y**2" are arithmetic and are left alone, and
+// "**jab**," or "(**guard**)" are bold. Group 1 is the one character before the
+// opening pair (or nothing at the start), kept as plain text. No lookbehind:
+// the gym tablets are not all on a browser that parses one.
+const BOLD_PAIR = /(^|[^\p{L}\p{N}*])\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*(?![\p{L}\p{N}*])/gu;
+
+/** Exported for tests: text with each balanced **pair** as a <strong> text node. */
+export function renderInlineBold(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(BOLD_PAIR)) {
+    const start = match.index ?? 0;
+    const boldStart = start + match[1].length;
+    if (boldStart > last) nodes.push(text.slice(last, boldStart));
+    nodes.push(<strong key={`bold-${boldStart}`}>{match[2]}</strong>);
+    last = start + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
 interface ShadowStructuredProseProps {
   readonly text: string;
   /**
@@ -93,10 +120,10 @@ export default function ShadowStructuredProse({ text, className }: ShadowStructu
       {blocks.map((block, blockIndex) => {
         const key = `${block.kind}-${blockIndex}`;
         if (block.kind === 'paragraph') {
-          return <p key={key}>{block.text}</p>;
+          return <p key={key}>{renderInlineBold(block.text)}</p>;
         }
         const items = block.items.map((item, itemIndex) => (
-          <li key={`${key}-item-${itemIndex}`}>{item}</li>
+          <li key={`${key}-item-${itemIndex}`}>{renderInlineBold(item)}</li>
         ));
         return block.kind === 'bullets'
           ? <ul key={key} className="list-disc pl-[var(--s5)]">{items}</ul>

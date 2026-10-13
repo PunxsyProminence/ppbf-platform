@@ -14,6 +14,12 @@ import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount } from './deletedAccountSignIn';
 import { upsertAthlete } from './entities';
 import { ConflictError, ValidationError } from './errors';
+import {
+  listFamilyGuardians,
+  listFamilyWaivers,
+  readsStaffGuardianRows,
+  resolveFamilyReader,
+} from './familyGuardianView';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
@@ -1174,32 +1180,30 @@ export function coachObservationNoteTypesForReader(role: PilotRole): string[] | 
  * report; this stops the same crossing through the column list rather than
  * through the row filter.
  *
- * The identity set is byte-for-byte the one passbook.ts already hands these
- * two readers, so the two guardian-facing reads cannot give different answers
- * to "what may this child see about their parents". Contact details stay with
- * the coach of record and the organization admins, who need them to make the
- * emergency call -- that is the whole reason the columns exist. (The literal
- * 'staff' role is NOT one of them: it cannot reach either call site, because
- * both routes admit organization_admin, coach, athlete and parent only. It
- * falls through to identity for the same reason every unenumerated role
- * does.) The platform is stricter still one step further out:
- * duplicateGuardians.ts masks a guardian email even for an organization admin.
+ * Contact details stay with the coach of record and the organization admins,
+ * who need them to make the emergency call -- that is the whole reason the
+ * columns exist. (The literal 'staff' role is NOT one of them: it cannot reach
+ * either call site, because both routes admit organization_admin, coach,
+ * athlete and parent only.) The platform is stricter still one step further
+ * out: duplicateGuardians.ts masks a guardian email even for an organization
+ * admin.
  *
  * Column lists, not `*`: a table that grows a column must not widen a response
- * by default. Any role outside the four falls through to identity only, the
- * closed side, for the same reason the note-type sets do.
+ * by default. Since #1558 these lists are the STAFF read only; what the
+ * athlete and a guardian receive is built by familyGuardianView.ts, and any
+ * role outside coach and organization admin gets that answer, the closed side.
  */
 export const GUARDIAN_IDENTITY_COLUMNS = ['p.parent_id', 'p.full_name'] as const;
 
 export const GUARDIAN_CONTACT_COLUMNS = ['p.account_id', 'p.phone', 'p.email'] as const;
 
-export function guardianColumnsForReader(role: PilotRole): string[] {
-  if (isOrganizationAdminRole(role) || role === 'coach') {
-    return [...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS];
-  }
-
-  return [...GUARDIAN_IDENTITY_COLUMNS];
-}
+/* STAFF ONLY SINCE #1558. The identity set above used to go to the athlete and
+   to every linked guardian. parent_id is minted as `par-${accountId}` and an
+   account id is email-shaped, so the email held back as a contact column left
+   inside the id, and each of two guardians read the other's name. A family
+   reader's guardians are now built by familyGuardianView.ts from named fields;
+   there is deliberately no per-role function here for one to fall through. */
+export const GUARDIAN_STAFF_COLUMNS = [...GUARDIAN_IDENTITY_COLUMNS, ...GUARDIAN_CONTACT_COLUMNS] as const;
 
 /**
  * WHICH COLUMNS OF AN EMERGENCY CONTACT A READER MAY SEE.
@@ -1243,12 +1247,26 @@ export const EMERGENCY_CONTACT_IDENTITY_COLUMNS = [
 
 export const EMERGENCY_CONTACT_CONTACT_COLUMNS = ['phone', 'email', 'notes'] as const;
 
-export function emergencyContactColumnsForReader(role: PilotRole): string[] {
-  if (isOrganizationAdminRole(role) || role === 'coach') {
+/* A PARENT IS NOT SENT THE NAME (#1558; Jason 2026-10-13, question card: "A:
+   Relationship only (Recommended)"). The other parent is the ordinary
+   emergency contact, so the name on this row was the co-guardian's name
+   reaching the other household by a second door after the guardian list
+   stopped sending it. A parent reads that a contact is on file, how they are
+   related to the child and whether they are the primary one. The athlete
+   keeps the names; staff keep everything. */
+export const EMERGENCY_CONTACT_PARENT_COLUMNS = ['relationship_to_athlete', 'is_primary'] as const;
+
+export function emergencyContactColumnsForReader(role: PilotRole | null): string[] {
+  if (role !== null && (isOrganizationAdminRole(role) || role === 'coach')) {
     return [...EMERGENCY_CONTACT_IDENTITY_COLUMNS, ...EMERGENCY_CONTACT_CONTACT_COLUMNS];
   }
 
-  return [...EMERGENCY_CONTACT_IDENTITY_COLUMNS];
+  if (role === 'athlete') {
+    return [...EMERGENCY_CONTACT_IDENTITY_COLUMNS];
+  }
+
+  // A parent, any other role, and a read that names no reader: the least.
+  return [...EMERGENCY_CONTACT_PARENT_COLUMNS];
 }
 
 /**
@@ -1270,16 +1288,18 @@ export function emergencyContactColumnsForReader(role: PilotRole): string[] {
  * if anything the likelier place for it, because a waiver is where a custody
  * or safeguarding qualification on who may consent gets recorded.
  *
- * What the guardian and the athlete keep is everything a waiver IS: its type,
- * status, version, when it was signed and by whom, and the media-consent flags
- * a parent checks their child's permissions against. Only the staff note goes.
+ * What the athlete keeps, and a guardian keeps of their OWN waiver, is
+ * everything a waiver IS: its type, status, version, when it was signed and by
+ * whom, and the media-consent flags. The staff columns go, and since #1558 so
+ * does parent_id; of a waiver that is not theirs a guardian reads the type and
+ * current status only (familyGuardianView.ts).
  *
  * AN ALLOWLIST, NOT A DENYLIST, and deliberately so. A column added to
  * pilot.waivers by a later migration does not reach a guardian until somebody
  * adds it here. That fails closed: the cost is a missing field somebody
- * notices, rather than a disclosure nobody does. waiverColumnsForReader is
- * pinned against the live table by guardianContactProjection.pg.test.ts, so a
- * new column fails that test rather than vanishing quietly.
+ * notices, rather than a disclosure nobody does. The two lists are pinned
+ * against the live table by guardianContactProjection.pg.test.ts, so a new
+ * column fails that test rather than vanishing quietly.
  */
 export const WAIVER_IDENTITY_COLUMNS = [
   'organization_id',
@@ -1310,13 +1330,11 @@ export const WAIVER_IDENTITY_COLUMNS = [
    ['recorded_by_account_id'], for exactly this reason. */
 export const WAIVER_STAFF_COLUMNS = ['notes', 'recorded_by_account_id'] as const;
 
-export function waiverColumnsForReader(role: PilotRole): string[] {
-  if (isOrganizationAdminRole(role) || role === 'coach') {
-    return [...WAIVER_IDENTITY_COLUMNS, ...WAIVER_STAFF_COLUMNS];
-  }
-
-  return [...WAIVER_IDENTITY_COLUMNS];
-}
+/* The staff read: every column, as before. A family reader's waivers come from
+   familyGuardianView.ts (#1558): the identity list above carries parent_id and
+   every column of the OTHER guardian's rows, which a co-guardian may not have
+   (OD-2026-10-05-024 item 4: the other's consent status only). */
+export const WAIVER_STAFF_READ_COLUMNS = [...WAIVER_IDENTITY_COLUMNS, ...WAIVER_STAFF_COLUMNS] as const;
 
 /**
  * WHICH COLUMNS OF A MEDICAL INTAKE A READER MAY SEE.
@@ -2108,8 +2126,8 @@ export async function getIntakeCaseAggregate(
   // is reachable by the same roles: /api/pilot/intake/cases/get admits
   // 'athlete' and 'parent', and assertActorCanAccessIntakeCase gates on
   // assertActorCanAccessAthlete for every subject the case names. Without a
-  // context there is no reader to scope to, so this falls to identity only --
-  // the closed side.
+  // context there is no reader to scope to, so each table falls to its
+  // closed side.
   //
   // All THREE of the route's reader scopings, not one of them. The note-type
   // filter was the first one written, and this aggregate never received it:
@@ -2120,9 +2138,16 @@ export async function getIntakeCaseAggregate(
   // wrote to a coach in confidence and the 'parent_message' rows addressed to
   // the other household. Two reads of one table cannot give two answers to
   // "what may this reader see".
-  const guardianColumns = guardianColumnsForReader(readerRole);
-  const emergencyContactColumns = emergencyContactColumnsForReader(readerRole);
-  const waiverColumns = waiverColumnsForReader(readerRole);
+  // Guardians and waivers: staff keep their columns; everyone else, and a call
+  // that names no reader at all, gets familyGuardianView's named fields.
+  const guardianColumns = GUARDIAN_STAFF_COLUMNS;
+  const waiverColumns = WAIVER_STAFF_READ_COLUMNS;
+  const familyReader = readsStaffGuardianRows(context?.actorRole ?? null)
+    ? null
+    : await resolveFamilyReader(organizationId, context?.actorRole ?? null, context?.actorAccountId ?? null);
+  const familyWaivers = familyReader && listFamilyWaivers(organizationId, intakeCase.primary_athlete_id, familyReader);
+  const familyGuardians = familyReader && listFamilyGuardians(organizationId, intakeCase.primary_athlete_id, familyReader);
+  const emergencyContactColumns = emergencyContactColumnsForReader(context?.actorRole ?? null);
   const medicalIntakeColumns = medicalIntakeColumnsForReader(readerRole);
   const attendanceColumns = attendanceColumnsForReader(readerRole);
   const assessmentColumns = assessmentColumnsForReader(readerRole);
@@ -2147,7 +2172,7 @@ export async function getIntakeCaseAggregate(
        where organization_id = $1 and athlete_id = $2 order by created_at desc`,
       [organizationId, intakeCase.primary_athlete_id],
     ),
-    query(
+    familyWaivers ?? query(
       `select ${waiverColumns.join(', ')} from pilot.waivers
        where organization_id = $1 and athlete_id = $2 order by created_at desc`,
       [organizationId, intakeCase.primary_athlete_id],
@@ -2175,7 +2200,7 @@ export async function getIntakeCaseAggregate(
        order by created_at desc`,
       [organizationId, intakeCase.primary_athlete_id, readableNoteTypes],
     ),
-    query(
+    familyGuardians ?? query(
       `select ${guardianColumns.join(', ')}, g.relationship_to_athlete, g.athlete_id
        from pilot.guardian_links g
        join pilot.parents p

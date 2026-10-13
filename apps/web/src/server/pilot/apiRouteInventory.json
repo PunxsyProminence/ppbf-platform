@@ -7770,7 +7770,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads one intake case aggregate (documents, notes). intake/cases/get/route.ts:12-13 role gate; :28 assertActorCanAccessIntakeCase before read (intake.ts:411-438: calls assertActorCanAccessAthlete per subject athlete; owner-less case = org admin or submitter only). Read-only.",
+    "notes": "Reads one intake case aggregate (documents, notes). intake/cases/get/route.ts:12-13 role gate; :28 assertActorCanAccessIntakeCase before read (intake.ts:411-438: calls assertActorCanAccessAthlete per subject athlete; owner-less case = org admin or submitter only). Read-only. Family readers (#1558): guardians and waivers come from familyGuardianView.ts as named fields; no parent_id; a parent gets their own guardian row marked you and of a co-guardian only the relationship, their own waivers whole and the type and current status of any other waiver, and an emergency contact's relationship and primary flag only (no name); the athlete gets guardians and emergency contacts by name with no id. Staff rows unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7862,7 +7862,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads one athlete emergency contacts, medical intake, waivers, assessments, attendance, readiness, coach notes and guardians, with per-role column narrowing. intake/domain-get/route.ts:22-23 role gate; :31 assertActorCanAccessAthlete. Read-only.",
+    "notes": "Reads one athlete emergency contacts, medical intake, waivers, assessments, attendance, readiness, coach notes and guardians, with per-role column narrowing. intake/domain-get/route.ts:22-23 role gate; :31 assertActorCanAccessAthlete. Read-only. Family readers (#1558): guardians and waivers come from familyGuardianView.ts as named fields; no parent_id; a parent gets their own guardian row marked you and of a co-guardian only the relationship, their own waivers whole and the type and current status of any other waiver, and an emergency contact's relationship and primary flag only (no name); the athlete gets guardians and emergency contacts by name with no id. Staff rows unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8520,7 +8520,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "Lists media consent state for the caller guardian own children; gate consent/route.ts:121-122, scoped by principal.accountId in listConsentForGuardian (helper not opened in depth).",
+    "notes": "Lists media consent state for the caller guardian own children; gate consent/route.ts:121-122, scoped by principal.accountId in listConsentForGuardian (helper not opened in depth). The caller's own row is marked you and carries no parent_id (#1558).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8745,7 +8745,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads athlete passbook (or guardian view for parent); gate passbook/route.ts:11-12 and :19 (access.ts coach-reach, self, linked child).",
+    "notes": "Reads athlete passbook (or guardian view for parent); gate passbook/route.ts:11-12 and :19 (access.ts coach-reach, self, linked child). The athlete's corner page lists guardians by name and relationship with no parent_id (#1558); staff keep the id.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10462,6 +10462,64 @@
       ],
       "roleLiterals": [
         "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/session-scripts",
+    "gate": "requirePrincipal + requireRole(SESSION_SCRIPT_AUTHOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name and blocks. A script another coach saved since the editor read it is refused (409), not overwritten. A script that has any run is not changed: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/session-scripts",
+    "gate": "requirePrincipal + requireRole(SESSION_SCRIPT_AUTHOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L1. A coach or organization admin makes a session script from one of the gym's workout templates (createSessionScriptFromTemplate, sessionScriptAuthoring.ts): the template's steps in order as timed blocks, one transaction, audited. Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only template_id and name. No athlete data. platform_owner and every reader-only role refused.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
       ]
     }
   },

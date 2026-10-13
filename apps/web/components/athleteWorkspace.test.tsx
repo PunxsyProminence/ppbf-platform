@@ -1735,6 +1735,46 @@ describe('reporting progress writes it', () => {
     });
   });
 
+  // F-048. The one status line under the workspace is shared by every tab, so
+  // a goal's "Progress saved" stayed on screen over Wellness, Drills and the
+  // rest until something else overwrote it.
+  test('"Progress saved" is said on Goals and is gone from the other tabs', async () => {
+    storedGoals = [storedGoal()];
+    await openGoals();
+
+    fireEvent.change(await screen.findByLabelText('Report progress for Land 100 clean jabs'), {
+      target: { value: '30' },
+    });
+    expect(await screen.findByText('Progress saved: 30%.')).toBeTruthy();
+
+    openTab('Drills');
+    expect(screen.queryByText('Progress saved: 30%.')).toBeNull();
+
+    // Coming back does not resurrect a message that was already left behind.
+    openTab('Goals');
+    expect(screen.queryByText('Progress saved: 30%.')).toBeNull();
+  });
+
+  // A save can land after the athlete has moved on. Its message has nobody to
+  // tell on another tab and must not be waiting for them on the way back.
+  test('a goal that finishes saving after the athlete left Goals does not say so on return', async () => {
+    await openGoals();
+    fireEvent.click(screen.getByRole('button', { name: '+ New SMART Goal' }));
+    fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Read a chapter a night' } });
+    fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: 'chapters logged' } });
+    fireEvent.change(screen.getByLabelText('Goal target date'), { target: { value: '2026-09-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Goal' }));
+
+    openTab('Drills');
+    await act(async () => {
+      resolveGoalPost?.(null);
+      await Promise.resolve();
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText("Goal's on the board. Now go work it.")).toBeNull();
+  });
+
   test('clearing the report sends null rather than 0', async () => {
     storedGoals = [storedGoal({ progress_percent: 60 })];
     await openGoals();
@@ -1813,11 +1853,57 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   });
 
   test('Today reports an un-checked-in athlete as not checked in', async () => {
+    // No wellness check on record either: nothing today has been done.
+    storedCheckIn = null;
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
     expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+  });
+
+  // F-050. The athlete did the daily wellness check (the page says "Recorded
+  // today", the Floor opens) and the chip under the tabs read "Not checked in
+  // yet", which sounds like it did not count. It is about the training session.
+  test('with the wellness check on record and no session open, Today says both, not "not checked in"', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText("Today's wellness is recorded. No session started yet.")).toBeTruthy();
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+  });
+
+  test('when the wellness read failed the rail claims nothing about it', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
+  });
+
+  test('while the wellness read is still loading the rail claims nothing', async () => {
+    checkInReadPending = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+    expect(screen.queryByText(/wellness is recorded/)).toBeNull();
   });
 
   test('after check-out Today says checked out, with the time', async () => {
@@ -1836,6 +1922,7 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   });
 
   test('a check-out from a previous gym day is not counted as today', async () => {
+    storedCheckIn = null;
     storedSessions = [openSessionRow({ completed_flag: true, created_at: STALE_CREATED_AT, updated_at: STALE_CREATED_AT })];
     await renderWorkspace();
 

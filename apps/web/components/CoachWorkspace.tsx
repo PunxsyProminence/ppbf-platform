@@ -121,6 +121,8 @@ interface Athlete {
   id: string;
   name: string;
   track: string;
+  /** An admin marked this athlete inactive. Still listed, still the coach's to read. */
+  inactive?: boolean;
   // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders.
   // Readiness now has a backend feed (/api/pilot/coach/readiness-board:
   // latest fresh check-in only), but injury status and today's attendance
@@ -1739,7 +1741,7 @@ export default function CoachWorkspace() {
       });
       if (!response.ok) throw new Error('Failed to load athletes');
 
-      const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
+      const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string; active_flag?: boolean }> };
       const items = data.items || [];
 
       // Convert PilotAthlete to Athlete format. Readiness and injury flag have
@@ -1752,6 +1754,9 @@ export default function CoachWorkspace() {
         id: item.athlete_id,
         name: item.full_name || 'Unknown',
         track: item.gym_status || 'Foundations',
+        // Marked inactive by an admin (they stay on the roster, F-057). Absent
+        // reads as active: only an explicit false is a statement.
+        inactive: item.active_flag === false,
         readiness: 'UNKNOWN',
         injuryFlag: null,
         // Today's mark arrives from its own read, below. 'Unknown' is the
@@ -2708,6 +2713,7 @@ export default function CoachWorkspace() {
               // coverage; the floor says it from the same place, or from the
               // faces read when that is all there is.
               isMine: athlete.isMine === false || athlete.attendance === 'NotCovered' ? false : athlete.isMine,
+              isInactive: athlete.inactive === true,
             }))}
             readinessState={readinessFeedState}
             painWindowDays={painReportWindowDays}

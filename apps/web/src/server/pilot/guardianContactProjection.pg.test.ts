@@ -38,6 +38,11 @@ import type { Readable } from 'node:stream';
 import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
+import {
+  GUARDIAN_FAMILY_COLUMNS,
+  GUARDIAN_WITHHELD_FROM_FAMILY_COLUMNS,
+  WAIVER_FAMILY_COLUMNS,
+} from './familyGuardianView';
 import { requirePrincipal } from './http';
 import {
   ASSESSMENT_IDENTITY_COLUMNS,
@@ -98,6 +103,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let domainGet: typeof import('@/app/api/pilot/intake/domain-get/route').POST;
 let getIntakeCaseAggregate: typeof import('./intake').getIntakeCaseAggregate;
+let casesGet: typeof import('@/app/api/pilot/intake/cases/get/route').POST;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
@@ -166,6 +172,20 @@ async function readDomainGet(actor: PilotPrincipal, athleteId = ATHLETE): Promis
     throw new Error(`refused ${response.status}: ${payload.error ?? ''}`);
   }
   return payload;
+}
+
+/** POST /api/pilot/intake/cases/get, the real handler and its real gate. */
+async function readCase(actor: PilotPrincipal): Promise<{ found?: boolean; aggregate?: Record<string, unknown[]> }> {
+  mockRequirePrincipal.mockResolvedValue(actor);
+  const response = await casesGet(new NextRequest('http://localhost/api/pilot/intake/cases/get', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ intake_case_id: CASE_ID }),
+  }));
+  if (response.status !== 200) {
+    throw new Error(`refused ${response.status}`);
+  }
+  return response.json();
 }
 
 async function readGuardiansVia(actor: PilotPrincipal, athleteId = ATHLETE): Promise<Record<string, unknown>[]> {
@@ -367,6 +387,24 @@ beforeAll(async () => {
     [ORG, ATHLETE, 'Countersigned after a call to 555-0200; welfare lead aware of the household situation.'],
   );
 
+  // #1558: Guardian A's OWN consent row, and a paper form staff entered that
+  // is keyed to no guardian record but signed in Guardian B's name. Older
+  // than the row above, so that one stays first in every read.
+  await db.query(
+    `insert into pilot.waivers
+       (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role,
+        signed_at, consent_version, status, notes, parent_id, created_at)
+     values
+       ($1, '77777777-6666-4555-8444-aaaaaaaaaaaa', $2, 'photo_media', 'Guardian A', 'parent',
+        now(), 'v1', 'declined', 'Guardian A declined on the phone.', 'par-a', now() - interval '1 day'),
+       ($1, '77777777-6666-4555-8444-bbbbbbbbbbbb', $2, 'general', 'Guardian B', 'parent',
+        now(), 'v1', 'signed', 'Paper form, filed by the front desk.', null, now() - interval '2 days'),
+       -- Guardian B's EARLIER decision: history, which the co-guardian must not read.
+       ($1, '77777777-6666-4555-8444-cccccccccccc', $2, 'photo_media', 'Guardian B', 'parent',
+        now() - interval '3 days', 'v1', 'withdrawn', 'Withdrawn at the desk.', 'par-b', now() - interval '3 days')`,
+    [ORG, ATHLETE],
+  );
+
   // The shared coach_observations bus, with one row of each audience: a
   // guardian-authored barrier report written to a coach in confidence, a
   // message addressed to a guardian, and an ordinary training note.
@@ -395,6 +433,7 @@ beforeAll(async () => {
 
   domainGet = (await import('@/app/api/pilot/intake/domain-get/route')).POST;
   getIntakeCaseAggregate = (await import('./intake')).getIntakeCaseAggregate;
+  casesGet = (await import('@/app/api/pilot/intake/cases/get/route')).POST;
 });
 
 afterAll(async () => {
@@ -436,47 +475,48 @@ describe('the fixture', () => {
 });
 
 describe('POST /api/pilot/intake/domain-get', () => {
-  /* THE CHILD. An athlete reading their own record is the reader with the
-     least business holding either parent's contact details, and the reader the
-     old `select p.*` served them to first. */
-  it('gives the athlete both guardians by name, and neither by number', async () => {
+  /* THE CHILD (#1558). An athlete reading their own record gets both
+     guardians by name and relationship -- and no record id: parent_id is
+     `par-` plus an email-shaped account id. */
+  it('gives the athlete both guardians by name, with no id and no number', async () => {
     const guardians = await readGuardiansVia(AS.athlete());
 
-    expect(guardians).toHaveLength(2);
     // Equality on the whole row, not a check that some key is absent: a
-    // containment assertion would pass over a row that grew a new contact
-    // column tomorrow.
+    // containment assertion would pass over a row that grew a new column
+    // tomorrow.
     expect(guardians).toEqual([
-      { parent_id: 'par-a', full_name: 'Guardian A', relationship_to_athlete: 'mother' },
-      { parent_id: 'par-b', full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { full_name: 'Guardian A', relationship_to_athlete: 'mother' },
     ]);
   });
 
-  /* THE OTHER HOUSEHOLD. Guardian A is legitimately here -- they are linked to
-     this athlete and the gate admits them. What they may not leave with is
-     Guardian B's number. */
-  it('gives Guardian A nothing of Guardian B but the name and the relationship', async () => {
+  /* THE OTHER HOUSEHOLD (#1558; OD-2026-10-12-024: each guardian sees only
+     their own). Guardian A is legitimately here. What they leave with is their
+     own row, and that a co-guardian exists and is the child's father -- not
+     the name, and not the id the email used to ride out in. */
+  it('gives Guardian A their own row marked you, and of Guardian B only the relationship', async () => {
     const guardians = await readGuardiansVia(AS.guardianA());
-    const other = guardians.find((row) => row.full_name === 'Guardian B');
 
-    expect(other).toEqual({ parent_id: 'par-b', full_name: 'Guardian B', relationship_to_athlete: 'father' });
-    for (const key of CONTACT_KEYS) {
-      expect(Object.keys(other ?? {})).not.toContain(key);
+    expect(guardians).toEqual([
+      { you: true, full_name: 'Guardian A', relationship_to_athlete: 'mother' },
+      { you: false, relationship_to_athlete: 'father' },
+    ]);
+    for (const leaked of ['Guardian B', 'par-', '555-0200', 'guardian.b@example.test', 'acct-guardian-b']) {
+      expect(JSON.stringify(guardians)).not.toContain(leaked);
     }
-    // Said as values too, because a key check alone would pass if the column
-    // were renamed rather than removed.
-    expect(JSON.stringify(guardians)).not.toContain('555-0200');
-    expect(JSON.stringify(guardians)).not.toContain('guardian.b@example.test');
-    expect(JSON.stringify(guardians)).not.toContain('acct-guardian-b');
   });
 
   /* And symmetrically, so this cannot pass by accident of row order. */
-  it('gives Guardian B nothing of Guardian A but the name and the relationship', async () => {
+  it('gives Guardian B their own row marked you, and of Guardian A only the relationship', async () => {
     const guardians = await readGuardiansVia(AS.guardianB());
 
-    expect(JSON.stringify(guardians)).not.toContain('555-0100');
-    expect(JSON.stringify(guardians)).not.toContain('guardian.a@example.test');
-    expect(JSON.stringify(guardians)).not.toContain('acct-guardian-a');
+    expect(guardians).toEqual([
+      { you: true, full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { you: false, relationship_to_athlete: 'mother' },
+    ]);
+    for (const leaked of ['Guardian A', 'par-', '555-0100', 'guardian.a@example.test', 'acct-guardian-a']) {
+      expect(JSON.stringify(guardians)).not.toContain(leaked);
+    }
   });
 
   /* A guardian cannot read their OWN number back here either. That is not the
@@ -563,10 +603,53 @@ describe('the whole domain-get body', () => {
     }
   });
 
-  /* The emergency contact by name and relationship is legitimate -- knowing
-     who is called for you is your own record. The number is not. */
-  it('names the emergency contact to a guardian without giving up the number or the note', async () => {
+  /* #1558 DONE-WHEN, on the whole body: no family reader receives any
+     parent_id, in any key of any table of this answer. */
+  it.each([
+    ['Guardian A', AS.guardianA],
+    ['Guardian B', AS.guardianB],
+    ['the athlete', AS.athlete],
+  ] as const)('contains no guardian id anywhere, for %s', async (_label, actor) => {
+    const body = JSON.stringify(await readDomainGet(actor()));
+
+    for (const id of ['par-a', 'par-b', 'parent_id']) {
+      expect(body).not.toContain(id);
+    }
+  });
+
+  /* ... and neither guardian receives the other's NAME, anywhere in the body:
+     not from the guardian list, not from a waiver the other signed, not from a
+     paper form, and not from the emergency contacts -- where the other parent
+     is the ordinary entry, and is in this fixture. */
+  it.each([
+    ['Guardian A', AS.guardianA, 'Guardian B'],
+    ['Guardian B', AS.guardianB, 'Guardian A'],
+  ] as const)('contains the co-guardian\'s name nowhere, for %s', async (_label, actor, otherName) => {
+    const body = await readDomainGet(actor());
+
+    // Not vacuous: the tables the name used to arrive in are all populated.
+    expect(body.guardians).toHaveLength(2);
+    expect(body.emergency_contacts).toHaveLength(1);
+    expect(body.waivers?.length).toBeGreaterThan(1);
+    expect(JSON.stringify(body)).not.toContain(otherName);
+  });
+
+  /* Jason 2026-10-13, question card: "A: Relationship only (Recommended)". A
+     parent reads that a contact is on file, how they are related to the child
+     and whether they are the primary one -- not the name: the emergency
+     contact here IS the other guardian. */
+  it('tells a guardian the emergency contact\'s relationship and primary flag only', async () => {
     const body = await readDomainGet(AS.guardianA());
+
+    expect(body.emergency_contacts).toEqual([{ relationship_to_athlete: 'father', is_primary: true }]);
+    // The staff-only note is the one that says "do not call the father".
+    expect(JSON.stringify(body.emergency_contacts)).not.toContain('welfare lead');
+  });
+
+  /* The emergency contact by name and relationship is the athlete's own
+     record -- knowing who is called for you. The number is not. */
+  it('names the emergency contact to the athlete without giving up the number or the note', async () => {
+    const body = await readDomainGet(AS.athlete());
 
     expect(body.emergency_contacts).toEqual([{
       contact_id: '99999999-8888-4777-8666-555555555555',
@@ -575,7 +658,6 @@ describe('the whole domain-get body', () => {
       relationship_to_athlete: 'father',
       is_primary: true,
     }]);
-    // The staff-only note is the one that says "do not call the father".
     expect(JSON.stringify(body.emergency_contacts)).not.toContain('welfare lead');
   });
 
@@ -606,46 +688,81 @@ describe('the whole domain-get body', () => {
      The two sweeps above are what caught it, once this fixture carried a
      waiver at all. These say the same thing directly, so the property does
      not depend on a secret happening to be spelled into a note. */
-  it('gives a guardian the waiver itself without the staff note on it', async () => {
+  it('gives a guardian their own waiver whole, and of every other waiver the current status only', async () => {
     const body = await readDomainGet(AS.guardianA());
-    const waiver = body.waivers?.[0];
 
-    // Everything a waiver IS, which a guardian is entitled to: what was
-    // signed, by whom, when, under which version, and the media flags a
-    // parent checks their child's permissions against.
-    expect(waiver).toMatchObject({
-      waiver_type: 'photo_media',
-      signed_by_name: 'Guardian B',
-      signed_by_role: 'parent',
-      consent_version: 'v1',
-      status: 'signed',
-      parent_id: 'par-b',
-      covers_video: true,
-      public_use_allowed: false,
-    });
-    // Every staff column, not just the note: the response is what a guardian
-    // actually receives, and it is the only place a mis-filed column shows up
-    // as a disclosure rather than as a list entry.
-    for (const column of WAIVER_STAFF_COLUMNS) {
-      expect(Object.keys(waiver ?? {})).not.toContain(column);
+    // Equality on every row. Guardian A's own first; then what else is on
+    // file, by type, as a status. OD-2026-10-05-024 item 4: the other
+    // guardian's consent STATUS only -- no record id, date, scope flags or
+    // name -- and the CURRENT one: Guardian B's earlier withdrawal is not
+    // listed. The paper form is a status too: nothing on an unkeyed row says
+    // it is not the other guardian's (the retention purge clears parent_id).
+    expect(body.waivers).toEqual([
+      {
+        you: true,
+        waiver_id: '77777777-6666-4555-8444-aaaaaaaaaaaa',
+        athlete_id: ATHLETE,
+        waiver_type: 'photo_media',
+        signed_by_name: 'Guardian A',
+        signed_by_role: 'parent',
+        signed_at: expect.anything(),
+        consent_version: 'v1',
+        status: 'declined',
+        covers_video: true,
+        public_use_allowed: false,
+        created_at: expect.anything(),
+        updated_at: expect.anything(),
+      },
+      { you: false, waiver_type: 'general', status: 'signed' },
+      { you: false, waiver_type: 'photo_media', status: 'signed' },
+    ]);
+    /* Named, as well as looped, and the loop is why. It reads the same list an
+       edit would move a column OUT of, so it cannot see a column that has been
+       promoted into the guardian's own set. These survive an edit to either
+       list. */
+    for (const waiver of body.waivers ?? []) {
+      for (const column of [...WAIVER_STAFF_COLUMNS, 'notes', 'recorded_by_account_id', 'parent_id', 'organization_id']) {
+        expect(Object.keys(waiver)).not.toContain(column);
+      }
     }
-    /* Named, as well as looped, and the loop above is why. It reads the same
-       list an edit would move a column OUT of, so it cannot see a column that
-       has been promoted into the guardian's own set -- the exact direction
-       that is a disclosure. These two are the assertions that survive an edit
-       to either list. */
-    expect(Object.keys(waiver ?? {})).not.toContain('notes');
-    expect(Object.keys(waiver ?? {})).not.toContain('recorded_by_account_id');
   });
 
-  it('gives the athlete the same waiver without the note', async () => {
+  it('gives Guardian B the mirror image: their own history whole, Guardian A\'s as a status', async () => {
+    const body = await readDomainGet(AS.guardianB());
+
+    expect(body.waivers?.map((waiver) => [waiver.you, waiver.waiver_type, waiver.status, waiver.signed_by_name])).toEqual([
+      [true, 'photo_media', 'signed', 'Guardian B'],
+      [true, 'photo_media', 'withdrawn', 'Guardian B'],
+      [false, 'general', 'signed', undefined],
+      [false, 'photo_media', 'declined', undefined],
+    ]);
+    expect(Object.keys(body.waivers?.[3] ?? {}).sort()).toEqual(['status', 'waiver_type', 'you']);
+  });
+
+  it('gives the athlete every waiver by the name it was signed under, with no guardian id and no note', async () => {
     const body = await readDomainGet(AS.athlete());
 
-    expect(body.waivers).toHaveLength(1);
-    for (const column of WAIVER_STAFF_COLUMNS) {
-      expect(Object.keys(body.waivers?.[0] ?? {})).not.toContain(column);
+    expect(body.waivers).toHaveLength(4);
+    for (const waiver of body.waivers ?? []) {
+      expect(Object.keys(waiver).sort()).toEqual([...WAIVER_FAMILY_COLUMNS].sort());
     }
+    expect(body.waivers?.map((waiver) => waiver.signed_by_name)).toEqual(['Guardian B', 'Guardian A', 'Guardian B', 'Guardian B']);
   });
+
+  /* STAFF, UNCHANGED (#1558 stop condition): every column of the table, the
+     record id and the note included, exactly as `select <all columns>` reads. */
+  it.each([['the coach', AS.coach], ['the organization admin', AS.admin]] as const)(
+    'gives %s every waiver column, parent_id and the staff note included',
+    async (_label, actor) => {
+      const body = await readDomainGet(actor());
+
+      expect(body.waivers).toHaveLength(4);
+      for (const waiver of body.waivers ?? []) {
+        expect(Object.keys(waiver).sort()).toEqual([...WAIVER_IDENTITY_COLUMNS, ...WAIVER_STAFF_COLUMNS].sort());
+      }
+      expect(body.waivers?.map((waiver) => waiver.parent_id)).toEqual(['par-b', 'par-a', null, 'par-b']);
+    },
+  );
 
   /* THE MEDICAL INTAKE, and the reader who makes it different: this route
      admits 'athlete', and access.ts resolves that to a strict self-read. So
@@ -766,7 +883,7 @@ describe('the whole domain-get body', () => {
 });
 
 /* THE ALLOWLIST AGAINST THE REAL TABLE.
-   waiverColumnsForReader is an allowlist, which fails closed on a column a
+   The waiver column lists are an allowlist, which fails closed on a column a
    later migration adds: the column simply stops reaching a guardian. That is
    the right direction and the wrong way to find out. This pins the two column
    sets against pilot.waivers as the database actually has it, so adding a
@@ -804,6 +921,57 @@ describe('the waiver allowlist covers the whole table', () => {
     // A staff account_id resolves to a login email on this platform, so this
     // one is a staff member's address, not just an opaque key.
     expect(WAIVER_STAFF_COLUMNS).toContain('recorded_by_account_id');
+  });
+});
+
+/* #1558 DONE-WHEN: A NEW GUARDIAN COLUMN IS A DECISION.
+   A family reader's guardian is built from GUARDIAN_FAMILY_COLUMNS and
+   nothing else. Every column of pilot.parents and pilot.guardian_links has to
+   be on that list or on the withheld list, so a migration that adds one fails
+   HERE, with the column named, until somebody places it. */
+describe('the family guardian lists cover both guardian tables', () => {
+  it('places every column of pilot.parents and pilot.guardian_links on exactly one list', async () => {
+    const live = await db.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name in ('parents', 'guardian_links')`,
+    );
+    const columnsOf = (table: string) =>
+      live.rows.filter((row) => row.table_name === table).map((row) => row.column_name).sort();
+
+    // Each table by name, so a new column whose name the OTHER table already
+    // has (an athlete_id on pilot.parents, say) is still a new column here.
+    expect(columnsOf('parents')).toEqual(
+      ['account_id', 'created_at', 'email', 'full_name', 'organization_id', 'parent_id', 'phone', 'updated_at'],
+    );
+    expect(columnsOf('guardian_links')).toEqual(
+      ['athlete_id', 'created_at', 'organization_id', 'parent_id', 'relationship_to_athlete', 'updated_at'],
+    );
+
+    const declared = [...GUARDIAN_FAMILY_COLUMNS, ...GUARDIAN_WITHHELD_FROM_FAMILY_COLUMNS].sort();
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual([...new Set(live.rows.map((row) => row.column_name))].sort());
+  });
+
+  it('keeps every identifier and contact column on the withheld side', () => {
+    expect([...GUARDIAN_FAMILY_COLUMNS]).toEqual(['full_name', 'relationship_to_athlete']);
+    for (const column of ['parent_id', 'account_id', 'phone', 'email']) {
+      expect(GUARDIAN_WITHHELD_FROM_FAMILY_COLUMNS).toContain(column);
+    }
+  });
+
+  it('builds the family waiver from columns pilot.waivers really has', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'waivers'`,
+    );
+    const liveColumns = live.rows.map((row) => row.column_name);
+
+    for (const column of WAIVER_FAMILY_COLUMNS) {
+      expect(liveColumns).toContain(column);
+      expect(WAIVER_STAFF_COLUMNS as readonly string[]).not.toContain(column);
+    }
+    expect(WAIVER_FAMILY_COLUMNS as readonly string[]).not.toContain('parent_id');
+    expect(WAIVER_FAMILY_COLUMNS as readonly string[]).not.toContain('organization_id');
   });
 });
 
@@ -858,23 +1026,24 @@ describe('the assessment and readiness allowlists cover their whole tables', () 
    argument rather than off a request, so the risk here is a caller that passes
    none -- which is why the default is asserted as identity-only. */
 describe('getIntakeCaseAggregate', () => {
-  it('gives the athlete identity only', async () => {
+  it('gives the athlete both guardians by name, with no id', async () => {
     const guardians = await readGuardiansViaAggregate(AS.athlete());
 
     expect(guardians).toEqual([
-      { parent_id: 'par-a', full_name: 'Guardian A', relationship_to_athlete: 'mother', athlete_id: ATHLETE },
-      { parent_id: 'par-b', full_name: 'Guardian B', relationship_to_athlete: 'father', athlete_id: ATHLETE },
+      { full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { full_name: 'Guardian A', relationship_to_athlete: 'mother' },
     ]);
   });
 
-  it('gives a guardian identity only, in both directions', async () => {
-    const asA = JSON.stringify(await readGuardiansViaAggregate(AS.guardianA()));
-    const asB = JSON.stringify(await readGuardiansViaAggregate(AS.guardianB()));
-
-    for (const secret of ['555-0100', '555-0200', 'guardian.a@example.test', 'guardian.b@example.test']) {
-      expect(asA).not.toContain(secret);
-      expect(asB).not.toContain(secret);
-    }
+  it('gives each guardian their own row and only the relationship of the other, in both directions', async () => {
+    expect(await readGuardiansViaAggregate(AS.guardianA())).toEqual([
+      { you: true, full_name: 'Guardian A', relationship_to_athlete: 'mother' },
+      { you: false, relationship_to_athlete: 'father' },
+    ]);
+    expect(await readGuardiansViaAggregate(AS.guardianB())).toEqual([
+      { you: true, full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { you: false, relationship_to_athlete: 'mother' },
+    ]);
   });
 
   it('keeps the contact columns for a coach and for an organization admin', async () => {
@@ -886,15 +1055,58 @@ describe('getIntakeCaseAggregate', () => {
     }
   });
 
-  /* No reader named means no reader trusted. A caller that forgets the context
-     argument must not be the one path that hands out phone numbers. */
-  it('falls to identity only when no reader is named at all', async () => {
-    const guardians = await readGuardiansViaAggregate(null);
-
-    expect(guardians).toEqual([
-      { parent_id: 'par-a', full_name: 'Guardian A', relationship_to_athlete: 'mother', athlete_id: ATHLETE },
-      { parent_id: 'par-b', full_name: 'Guardian B', relationship_to_athlete: 'father', athlete_id: ATHLETE },
+  /* STAFF, UNCHANGED: the whole row, in the shape this read has always had. */
+  it('gives the coach the same guardian rows as before, athlete_id included', async () => {
+    expect(await readGuardiansViaAggregate(AS.coach())).toEqual([
+      {
+        parent_id: 'par-a', full_name: 'Guardian A', account_id: 'acct-guardian-a', phone: '555-0100',
+        email: 'guardian.a@example.test', relationship_to_athlete: 'mother', athlete_id: ATHLETE,
+      },
+      {
+        parent_id: 'par-b', full_name: 'Guardian B', account_id: 'acct-guardian-b', phone: '555-0200',
+        email: 'guardian.b@example.test', relationship_to_athlete: 'father', athlete_id: ATHLETE,
+      },
     ]);
+  });
+
+  /* No reader named means no reader trusted. A caller that forgets the context
+     argument learns that two guardians exist and how they are related: no
+     name, no id, and the waivers as a status. */
+  it('falls to the closed answer when no reader is named at all', async () => {
+    const aggregate = await readAggregate(null);
+
+    expect(aggregate?.guardians).toEqual([
+      { you: false, relationship_to_athlete: 'father' },
+      { you: false, relationship_to_athlete: 'mother' },
+    ]);
+    expect(aggregate?.emergency_contacts).toEqual([{ relationship_to_athlete: 'father', is_primary: true }]);
+    for (const leaked of ['par-a', 'par-b', 'parent_id', 'Guardian A', 'Guardian B']) {
+      expect(JSON.stringify(aggregate)).not.toContain(leaked);
+    }
+  });
+
+  /* #1558 done-when on the whole aggregate, as on the route. */
+  it.each([
+    ['Guardian A', AS.guardianA],
+    ['Guardian B', AS.guardianB],
+    ['the athlete', AS.athlete],
+  ] as const)('contains no guardian id anywhere, for %s', async (_label, actor) => {
+    const body = JSON.stringify(await readAggregate(actor()));
+
+    for (const id of ['par-a', 'par-b', 'parent_id']) {
+      expect(body).not.toContain(id);
+    }
+  });
+
+  it.each([
+    ['Guardian A', AS.guardianA, 'Guardian B'],
+    ['Guardian B', AS.guardianB, 'Guardian A'],
+  ] as const)('contains the co-guardian\'s name nowhere, for %s', async (_label, actor, otherName) => {
+    const aggregate = await readAggregate(actor());
+
+    expect(aggregate?.guardians).toHaveLength(2);
+    expect(aggregate?.emergency_contacts).toEqual([{ relationship_to_athlete: 'father', is_primary: true }]);
+    expect(JSON.stringify(aggregate)).not.toContain(otherName);
   });
 
   /* The same three scopings the route applies, on the same rows. This function
@@ -1035,5 +1247,55 @@ describe('the coach-observation projection, against the real table', () => {
     }
     expect(COACH_OBSERVATION_STAFF_COLUMNS).toContain('coach_account_id');
     expect(COACH_OBSERVATION_STAFF_COLUMNS).toContain('author_role');
+  });
+});
+
+/* #1558: THE OTHER FIXED ROUTE, END TO END. getIntakeCaseAggregate is driven
+   directly above; this is POST /api/pilot/intake/cases/get itself, with its
+   real gate, as each of the two guardians and as the athlete. */
+describe('POST /api/pilot/intake/cases/get', () => {
+  it.each([
+    ['Guardian A', AS.guardianA, 'Guardian B', { you: true, full_name: 'Guardian A', relationship_to_athlete: 'mother' }, 'father'],
+    ['Guardian B', AS.guardianB, 'Guardian A', { you: true, full_name: 'Guardian B', relationship_to_athlete: 'father' }, 'mother'],
+  ] as const)(
+    'gives %s their own guardian row, no guardian id, and the other guardian\'s name nowhere',
+    async (_label, actor, otherName, ownRow, otherRelationship) => {
+      const body = await readCase(actor());
+
+      expect(body.found).toBe(true);
+      expect(body.aggregate?.guardians).toEqual([ownRow, { you: false, relationship_to_athlete: otherRelationship }]);
+      expect(body.aggregate?.emergency_contacts).toEqual([{ relationship_to_athlete: 'father', is_primary: true }]);
+      expect(body.aggregate?.waivers.length).toBeGreaterThan(1);
+      for (const leaked of ['par-a', 'par-b', 'parent_id', otherName]) {
+        expect(JSON.stringify(body)).not.toContain(leaked);
+      }
+    },
+  );
+
+  it('gives the athlete both guardians by name and no guardian id', async () => {
+    const body = await readCase(AS.athlete());
+
+    expect(body.aggregate?.guardians).toEqual([
+      { full_name: 'Guardian B', relationship_to_athlete: 'father' },
+      { full_name: 'Guardian A', relationship_to_athlete: 'mother' },
+    ]);
+    for (const leaked of ['par-a', 'par-b', 'parent_id']) {
+      expect(JSON.stringify(body)).not.toContain(leaked);
+    }
+  });
+
+  it('gives the coach the guardian rows whole, as before', async () => {
+    const body = await readCase(AS.coach());
+
+    expect(body.aggregate?.guardians).toEqual([
+      {
+        parent_id: 'par-a', full_name: 'Guardian A', account_id: 'acct-guardian-a', phone: '555-0100',
+        email: 'guardian.a@example.test', relationship_to_athlete: 'mother', athlete_id: ATHLETE,
+      },
+      {
+        parent_id: 'par-b', full_name: 'Guardian B', account_id: 'acct-guardian-b', phone: '555-0200',
+        email: 'guardian.b@example.test', relationship_to_athlete: 'father', athlete_id: ATHLETE,
+      },
+    ]);
   });
 });

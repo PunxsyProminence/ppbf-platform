@@ -77,6 +77,7 @@ import {
   correctExecution,
   getExecution,
   listExecutions,
+  RECORD_CHANGED_MESSAGE,
   recordExecutionFacts,
   startExecution,
 } from './interventionExecutions';
@@ -611,13 +612,19 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         `update pilot.intervention_executions set status = 'completed' where organization_id = $1 and execution_id = $2`,
         [ORG_ID, executionId],
       );
-      await expect(recordExecutionFacts({ organizationId: ORG_ID, executionId, notes: 'too late' })).resolves.toBeNull();
+      // Closed since: the write is refused with the reason, and writes nothing.
+      await expect(recordExecutionFacts({ organizationId: ORG_ID, executionId, notes: 'too late' }))
+        .rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      expect((await getExecution(ORG_ID, executionId))!.notes).toBe('checked in mid-block');
+      // A record that is not there at all stays the quiet null the route hides.
+      await expect(recordExecutionFacts({ organizationId: ORG_ID, executionId: 'no-such-execution', notes: 'x' }))
+        .resolves.toBeNull();
     } finally {
       await client.end();
     }
   });
 
-  test('closeExecution enforces the stop-reason rule, records final facts, and is a no-op once already closed', async () => {
+  test('closeExecution enforces the stop-reason rule, records final facts, and tells a second close-out the record changed', async () => {
     const client = await freshDatabase('executions_close');
     activeClient = client;
     try {
@@ -634,7 +641,10 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         organizationId: ORG_ID,
         executionId,
         outcome: 'stopped',
+        notes: 'a note sent with the refused stop',
       })).rejects.toThrow(/stop_reason|check constraint/i);
+      // The close-out is one statement: a refused one leaves no facts behind.
+      expect(await getExecution(ORG_ID, executionId)).toMatchObject({ status: 'in_progress', notes: '' });
 
       const closed = await closeExecution({
         organizationId: ORG_ID,
@@ -645,13 +655,23 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       expect(closed).toMatchObject({ status: 'completed', notes: 'finished the block' });
 
       // Already closed: the guarded UPDATE's status = 'in_progress' predicate
-      // matches nothing, so this is a quiet null, not an error or a second
-      // close.
+      // matches nothing. Not a second close and not "Not found": the coach is
+      // told the record changed, and the first close-out stands untouched.
       await expect(closeExecution({
         organizationId: ORG_ID,
         executionId,
         outcome: 'stopped',
         stopChangeReason: 'too late anyway',
+        notes: 'a second close-out',
+      })).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      expect(await getExecution(ORG_ID, executionId)).toMatchObject({
+        status: 'completed', notes: 'finished the block', stop_change_reason: '',
+      });
+      // A record that is not there at all stays the quiet null the route hides.
+      await expect(closeExecution({
+        organizationId: ORG_ID,
+        executionId: 'no-such-execution',
+        outcome: 'completed',
       })).resolves.toBeNull();
     } finally {
       await client.end();
@@ -798,15 +818,23 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         ['link-struck', corrected!.execution_id],
       ]);
 
-      // A superseded record cannot itself be corrected again -- and the
-      // refusal leaves the evidence where the correction put it.
+      // A superseded record cannot itself be corrected again: the coach is
+      // told the record changed, and the refusal leaves the evidence where the
+      // correction put it.
       await expect(correctExecution({
         organizationId: ORG_ID,
         executionId: originalId,
         correctionReason: 'trying to correct history itself',
         correctedByAccountId: COACH_ID,
-      })).resolves.toBeNull();
+      })).rejects.toThrow(RECORD_CHANGED_MESSAGE);
       expect(await attached()).toEqual(moved);
+      // A record that is not there at all stays the quiet null the route hides.
+      await expect(correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'no-such-execution',
+        correctionReason: 'nothing to correct',
+        correctedByAccountId: COACH_ID,
+      })).resolves.toBeNull();
     } finally {
       await client.end();
     }

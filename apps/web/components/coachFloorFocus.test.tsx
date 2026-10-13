@@ -509,3 +509,26 @@ test('a band or an unvalidated staff reading still wins over a check-in, and onl
   expect(gauge('Readings').textContent).toContain('3 of 3');
   expect(gauge('Readings').textContent).toContain('1 not validated');
 });
+
+describe('an athlete an admin marked inactive', () => {
+  test('is marked on the roster, and still listed and counted', () => {
+    render(
+      <CoachFloorFocus
+        {...props({
+          athletes: [
+            { id: 'ath_1', name: 'Ada Rivera', readiness: 'GREEN' },
+            { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN', isInactive: true },
+          ],
+        })}
+      />,
+    );
+
+    const roster = screen.getByRole('region', { name: 'The floor' });
+    const row = within(roster).getByRole('button', { name: /^Marcus Bell \(inactive\)/ });
+    expect(within(row).getByText('Inactive')).toBeTruthy();
+    expect(within(roster).getByRole('button', { name: /^Ada Rivera: readiness/ })).toBeTruthy();
+    expect(within(roster).queryAllByText('Inactive')).toHaveLength(1);
+    // Marked, not removed: the count still reads what the roster holds.
+    expect(screen.getByLabelText('Today at a glance').textContent).toMatch(/Athletes.*2.*on the roster/);
+  });
+});
