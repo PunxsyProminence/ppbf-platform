@@ -41,7 +41,7 @@ const HELD_ATHLETE = [
       placed_by_name: 'Coach Neale',
     },
     gates: [
-      { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'flagged' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
+      { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'flagged' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
     ],
   },
 ];
@@ -52,12 +52,20 @@ const CLEAR_ATHLETE = [
     athlete_name: 'Sam R.',
     hold: null,
     gates: [
-      { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'passed' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
+      { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'passed' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
     ],
   },
 ];
 
 const originalFetch = global.fetch;
+
+/** The badge on the Safety checks row named `name`. */
+function badgeIn(name: string): HTMLElement {
+  const row = screen.getByText(name).parentElement;
+  const badge = row?.querySelector('.badge');
+  if (!(badge instanceof HTMLElement)) throw new Error(`no badge on the ${name} row`);
+  return badge;
+}
 
 afterEach(() => {
   global.fetch = originalFetch;
@@ -101,8 +109,8 @@ test('gate outcomes render with human labels, not raw enum values', async () => 
 
   render(<GuardianSafetyPage />);
 
-  await screen.findByText('Contact Requires Medical Clearance');
-  expect(screen.getByText('Clear')).toBeInTheDocument();
+  await screen.findByText('Mouthguard On File');
+  expect(badgeIn('Mouthguard On File')).toHaveTextContent('✓Clear');
   expect(screen.queryByText('passed')).not.toBeInTheDocument();
 });
 
@@ -130,6 +138,142 @@ test('no linked children renders the empty state', async () => {
   render(<GuardianSafetyPage />);
 
   await screen.findByText('No linked children found');
+});
+
+/* ---------------------------------------------------------- safety checks --
+   #1537: with a hold shown at the top of the page, the list under it read
+   "Active Training Hold: NOT YET CHECKED" and "Contact Requires Medical
+   Clearance: NOT YET CHECKED". A gate's last evaluation is an event (a class
+   registration, a logged contact), not the child's state. */
+
+const NEVER_EVALUATED_GATES = [
+  { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'not_evaluated' as const, evaluated_at: null },
+  { gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'not_evaluated' as const, evaluated_at: null },
+];
+
+
+test('an active hold reads Paused on the hold row, and nothing reads Not yet checked', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], gates: NEVER_EVALUATED_GATES }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Training is paused right now');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
+  expect(badgeIn('Active Training Hold')).toHaveClass('badge--restricted');
+  expect(screen.queryByText('Not yet checked')).not.toBeInTheDocument();
+});
+
+test('no hold reads No pause on the hold row, whatever the gate last recorded', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      items: [{
+        ...CLEAR_ATHLETE[0],
+        gates: [{ gate_key: 'training_hold', name: 'Active Training Hold', category: 'training_level', outcome: 'blocked' as const, evaluated_at: '2026-08-01T00:00:00.000Z' }],
+      }],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('No training pause on file right now.');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('✓No pause');
+  expect(badgeIn('Active Training Hold')).toHaveClass('badge--cleared');
+  expect(screen.queryByText('Not clear')).not.toBeInTheDocument();
+});
+
+test('a clearance gate never evaluated is left out, since a guardian is not sent medical clearance', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...CLEAR_ATHLETE[0], gates: NEVER_EVALUATED_GATES }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Active Training Hold');
+  expect(screen.queryByText('Contact Requires Medical Clearance')).not.toBeInTheDocument();
+});
+
+test('a clearance gate is left out even when evaluated: its last outcome is not clearance on file now', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      items: [{
+        ...CLEAR_ATHLETE[0],
+        gates: [
+          { gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'passed' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
+          NEVER_EVALUATED_GATES[1],
+        ],
+      }],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Active Training Hold');
+  expect(screen.queryByText('Contact Requires Medical Clearance')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Clear$/)).not.toBeInTheDocument();
+});
+
+test('a scoped hold names its scope on the hold row, as the heading above does', async () => {
+  for (const [scope, label, heading] of [
+    ['contact_only', 'Contact paused', 'Contact work is paused right now'],
+    ['conditioning_only', 'Conditioning paused', 'Conditioning is paused right now'],
+  ] as const) {
+    global.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], hold: { ...HELD_ATHLETE[0].hold, scope }, gates: NEVER_EVALUATED_GATES }] }),
+    ) as unknown as typeof fetch;
+
+    const { unmount } = render(<GuardianSafetyPage />);
+
+    await screen.findByText(heading);
+    expect(badgeIn('Active Training Hold')).toHaveTextContent(`▲${label}`);
+    unmount();
+  }
+});
+
+test('an evaluated gate the page can answer stays listed beside the hold row', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], gates: [...HELD_ATHLETE[0].gates, NEVER_EVALUATED_GATES[1]] }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Training is paused right now');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
+  expect(badgeIn('Mouthguard On File')).toHaveTextContent('▲Needs a look');
+});
+
+test('any other gate never evaluated is left out rather than read as Not yet checked', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      items: [{
+        ...CLEAR_ATHLETE[0],
+        gates: [
+          { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'not_evaluated' as const, evaluated_at: null },
+          NEVER_EVALUATED_GATES[1],
+        ],
+      }],
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Active Training Hold');
+  expect(screen.queryByText('Mouthguard On File')).not.toBeInTheDocument();
+});
+
+test('the hold row is shown even when the response sends no training-hold gate', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], gates: [] }] }),
+  ) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Training is paused right now');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
 });
 
 /* ---------------------------------------------------------------- waivers --
@@ -327,8 +471,7 @@ test('adding waivers leaves the hold and the safety checks as they were', async 
   expect(screen.getByText('You need a doctor note before training resumes.')).toBeInTheDocument();
   expect(screen.getByText('Coach Neale')).toBeInTheDocument();
   expect(screen.getByText('Safety checks')).toBeInTheDocument();
-  expect(screen.getByText('Contact Requires Medical Clearance')).toBeInTheDocument();
-  expect(screen.getByText('Needs a look')).toBeInTheDocument();
+  expect(badgeIn('Mouthguard On File')).toHaveTextContent('▲Needs a look');
 });
 
 test('a failed load shows the error state, never a false empty state', async () => {
