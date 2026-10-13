@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import {
+  getClassAttendanceReport,
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
@@ -13,6 +14,9 @@ import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 jest.mock('@/src/server/pilot/attendanceReporting', () => ({
   // The CSV writer is pure and stays real, so the file this route sends is the shipped one.
   attendanceByAthleteCsv: jest.requireActual('@/src/server/pilot/attendanceReporting').attendanceByAthleteCsv,
+  attendanceByClassCsv: jest.requireActual('@/src/server/pilot/attendanceReporting').attendanceByClassCsv,
+  classReportTotals: jest.requireActual('@/src/server/pilot/attendanceReporting').classReportTotals,
+  getClassAttendanceReport: jest.fn(),
   getOrganizationAttendanceSummary: jest.fn(),
   getClassAttendanceRoster: jest.fn(),
   getWeeklyAttendanceTrend: jest.fn(),
@@ -404,5 +408,99 @@ describe('the attendance-by-athlete report (RP-01)', () => {
       expect(response.status).toBe(403);
     }
     expect(mockSummary).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * THE REPORT BY CLASS (RP-02): ?report=classes&from=&to=, JSON or CSV, the
+ * same roles and scope as the athlete report, refusals before any read.
+ */
+describe('the attendance report by class (RP-02)', () => {
+  const mockClassReport = jest.mocked(getClassAttendanceReport);
+  const ROW = {
+    class_id: 'c-1',
+    title: 'Sparring',
+    start_at: '2026-10-08T22:00:00.000Z',
+    status: 'open' as const,
+    registered_count: 3,
+    present_count: 1,
+    absent_count: 1,
+    excused_count: 0,
+    unmarked_count: 1,
+    attendance_rate: 0.5,
+  };
+
+  test('an admin gets the whole gym: rows and totals for the period', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+    mockClassReport.mockResolvedValue([ROW]);
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?report=classes&from=2026-10-01&to=2026-10-13'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.classes).toEqual([ROW]);
+    expect(body.totals).toMatchObject({ classes: 1, registered_count: 3, attendance_rate: 0.5 });
+    expect(mockClassReport).toHaveBeenCalledWith('org-a', {
+      fromDay: '2026-10-01',
+      toDay: '2026-10-13',
+      coachAccountId: undefined,
+      athleteIds: undefined,
+    });
+    expect(mockReachable).not.toHaveBeenCalled();
+  });
+
+  test("a coach's report is their own classes, counted over the athletes they reach", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockReachable.mockResolvedValue(['ath-1', 'ath-2']);
+    mockClassReport.mockResolvedValue([]);
+
+    await GET(request('/api/pilot/scheduler/attendance-summary?report=classes&from=2026-10-01&to=2026-10-13'));
+
+    expect(mockClassReport).toHaveBeenCalledWith('org-a', {
+      fromDay: '2026-10-01',
+      toDay: '2026-10-13',
+      coachAccountId: 'acct-caller',
+      athleteIds: ['ath-1', 'ath-2'],
+    });
+  });
+
+  test('the CSV: its name, the shipped writer, no names', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('admin'));
+    mockClassReport.mockResolvedValue([ROW]);
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?report=classes&from=2026-10-01&to=2026-10-13&format=csv'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="attendance-by-class_2026-10-01_2026-10-13.csv"');
+    const text = new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()));
+    expect(text).toContain('"Sparring"');
+    expect(text).toContain('"Total, 1 classes held"');
+    expect(mockSummary).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['another report', '?report=athletes&from=2026-10-01&to=2026-10-13'],
+    ['no period', '?report=classes'],
+    ['half a period', '?report=classes&from=2026-10-01'],
+    ['a date that is not a date', '?report=classes&from=2026-02-30&to=2026-03-01'],
+    ['a period that ends before it starts', '?report=classes&from=2026-10-13&to=2026-10-01'],
+    ['with a class_id', '?report=classes&from=2026-10-01&to=2026-10-13&class_id=c-1'],
+    ['with since', '?report=classes&from=2026-10-01&to=2026-10-13&since=2026-10-01'],
+  ])('%s is refused, and nothing is read', async (_label, query) => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+
+    const response = await GET(request(`/api/pilot/scheduler/attendance-summary${query}`));
+
+    expect(response.status).toBe(400);
+    expect(mockClassReport).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent', 'board'])('%s cannot have it', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?report=classes&from=2026-10-01&to=2026-10-13'));
+
+    expect(response.status).toBe(403);
+    expect(mockClassReport).not.toHaveBeenCalled();
   });
 });

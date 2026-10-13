@@ -3,6 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   attendanceByAthleteCsv,
+  attendanceByClassCsv,
+  classReportTotals,
+  getClassAttendanceReport,
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
@@ -71,7 +74,47 @@ export async function GET(request: NextRequest) {
       throw new Error('Unsupported format: only csv');
     }
     if (format === 'csv' && (classId || request.nextUrl.searchParams.get('trend') !== null || request.nextUrl.searchParams.get('since') !== null)) {
-      throw new Error('Unsupported format: a CSV is the report by athlete for a from-to period, with no class_id, trend or since');
+      throw new Error('Unsupported format: a CSV is a report for a from-to period, with no class_id, trend or since');
+    }
+
+    /* THE REPORT BY CLASS (RP-02): ?report=classes&from=&to=, as JSON or, with
+       format=csv, a file. One row per class occurrence in the period, counts
+       only, no names. The same people and scope as the athlete report: a coach
+       gets the classes they own, counted over the athletes they reach. */
+    const report = request.nextUrl.searchParams.get('report');
+    if (report !== null) {
+      if (report !== 'classes') {
+        throw new Error('Unsupported report: only classes');
+      }
+      if (classId || request.nextUrl.searchParams.get('trend') !== null || request.nextUrl.searchParams.get('since') !== null) {
+        throw new Error('Unsupported report: the class report is for a from-to period, with no class_id, trend or since');
+      }
+      const fromDay = calendarDay(request.nextUrl.searchParams.get('from'), 'from');
+      const toDay = calendarDay(request.nextUrl.searchParams.get('to'), 'to');
+      if (!fromDay || !toDay) {
+        throw new Error('Missing from or to: the class report needs both');
+      }
+      if (fromDay > toDay) {
+        throw new Error('Unsupported period: from must be on or before to');
+      }
+      const reachable = await coachReach();
+      const classes = await getClassAttendanceReport(principal.organizationId, {
+        fromDay,
+        toDay,
+        coachAccountId,
+        athleteIds: reachable ? [...reachable] : undefined,
+      });
+      if (format === 'csv') {
+        return new NextResponse(attendanceByClassCsv(classes, { fromDay, toDay }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="attendance-by-class_${fromDay}_${toDay}.csv"`,
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
+      return NextResponse.json({ ok: true, classes, totals: classReportTotals(classes) });
     }
 
     if (classId) {

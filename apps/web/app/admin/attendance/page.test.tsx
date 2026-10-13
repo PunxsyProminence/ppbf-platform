@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import AttendanceDashboardPage from './page';
 
@@ -132,6 +132,9 @@ describe.each([
  * default period does not depend on the hour the suite runs.
  */
 describe('the attendance report download (RP-01)', () => {
+  // Scoped to its own section: the class report beside it (RP-02) has the same controls.
+  const athleteReport = () => within(screen.getByRole('region', { name: 'Attendance report' }));
+
   const GYM_NOON = Date.parse('2026-10-13T16:00:00.000Z');
   const createObjectURL = jest.fn(() => 'blob:report');
   const revokeObjectURL = jest.fn();
@@ -164,11 +167,11 @@ describe('the attendance report download (RP-01)', () => {
     const fetchMock = installReport({ ok: true });
     render(<AttendanceDashboardPage />);
 
-    expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('2026-09-14');
-    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('2026-10-13');
+    expect((athleteReport().getByLabelText('From') as HTMLInputElement).value).toBe('2026-09-14');
+    expect((athleteReport().getByLabelText('To') as HTMLInputElement).value).toBe('2026-10-13');
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+      fireEvent.click(athleteReport().getByRole('button', { name: 'Download CSV' }));
     });
 
     const reportCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('format=csv'));
@@ -176,7 +179,7 @@ describe('the attendance report download (RP-01)', () => {
     expect(String(reportCalls[0]![0])).toContain('from=2026-09-14&to=2026-10-13&format=csv');
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(athleteReport().queryByRole('alert')).toBeNull();
   });
 
   test('a refused download says why and saves nothing', async () => {
@@ -184,23 +187,163 @@ describe('the attendance report download (RP-01)', () => {
     render(<AttendanceDashboardPage />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+      fireEvent.click(athleteReport().getByRole('button', { name: 'Download CSV' }));
     });
 
-    expect(screen.getByRole('alert').textContent).toContain('Forbidden');
+    expect(athleteReport().getByRole('alert').textContent).toContain('Forbidden');
     expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   test('a period that ends before it starts is not sent', async () => {
     const fetchMock = installReport({ ok: true });
     render(<AttendanceDashboardPage />);
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
+    fireEvent.change(athleteReport().getByLabelText('From'), { target: { value: '2026-10-20' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+      fireEvent.click(athleteReport().getByRole('button', { name: 'Download CSV' }));
     });
 
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('format=csv'))).toBe(false);
-    expect(screen.getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
+    expect(athleteReport().getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
+  });
+});
+
+/*
+ * THE REPORT BY CLASS (RP-02): the last 30 gym days by default; Show reads
+ * the classes for the period and lists them with a total over the classes
+ * held; Download CSV saves the same report; a refused report says why; a
+ * period changed while one is loading drops its answer.
+ */
+describe('the attendance report by class (RP-02)', () => {
+  const classReport = () => within(screen.getByRole('region', { name: 'Class attendance report' }));
+  const GYM_NOON = Date.parse('2026-10-13T16:00:00.000Z');
+  const createObjectURL = jest.fn(() => 'blob:class-report');
+
+  const BODY = {
+    ok: true,
+    classes: [
+      {
+        class_id: 'c-1', title: 'Sparring', start_at: '2026-10-08T22:00:00.000Z', status: 'open',
+        registered_count: 3, present_count: 1, absent_count: 1, excused_count: 0, unmarked_count: 1, attendance_rate: 0.5,
+      },
+      {
+        class_id: 'c-2', title: 'Open Gym', start_at: '2026-10-09T22:00:00.000Z', status: 'cancelled',
+        registered_count: 1, present_count: 0, absent_count: 1, excused_count: 0, unmarked_count: 0, attendance_rate: null,
+      },
+    ],
+    totals: {
+      classes: 1, cancelled: 1, registered_count: 3, present_count: 1, absent_count: 1, excused_count: 0, unmarked_count: 1, attendance_rate: 0.5,
+    },
+  };
+
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(GYM_NOON);
+    createObjectURL.mockClear();
+    Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function installClassReport(answer: (url: string) => Promise<Response>) {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('report=classes')) return answer(String(url));
+      if (String(url).includes('trend=1')) return jsonResponse({ ok: true, trend: [] });
+      return jsonResponse({ ok: true, athletes: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  const reportCalls = (fetchMock: jest.Mock) => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('report=classes'));
+
+  test('Show lists each class for the default 30 gym days, with a total over the classes held', async () => {
+    const fetchMock = installClassReport(async () => jsonResponse(BODY));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    expect((classReport().getByLabelText('From') as HTMLInputElement).value).toBe('2026-09-14');
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Show' }));
+    });
+
+    expect(reportCalls(fetchMock)).toEqual([
+      expect.stringContaining('/api/pilot/scheduler/attendance-summary?report=classes&from=2026-09-14&to=2026-10-13'),
+    ]);
+    const table = classReport().getByRole('table');
+    const sparring = within(table).getByText('Sparring').closest('tr')!;
+    // 22:00 UTC on Oct 8 is 6:00 pm in the gym.
+    expect(sparring.textContent).toMatch(/6:00\sPM/);
+    expect(Array.from(sparring.querySelectorAll('td')).map((cell) => cell.textContent).slice(1)).toEqual(['3', '1', '1', '0', '1', '50%']);
+    const cancelled = within(table).getByText('Open Gym').closest('tr')!;
+    expect(cancelled.textContent).toContain('(cancelled)');
+    expect(cancelled.querySelectorAll('td')[6]!.textContent).toBe('—');
+    expect(table.querySelector('tfoot')!.textContent).toContain('Total, 1 held (1 cancelled, not included)');
+  });
+
+  test('Download CSV asks for the same report as a file', async () => {
+    const fetchMock = installClassReport(async () => ({ ok: true, blob: async () => new Blob(['x']) } as unknown as Response));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Download CSV' }));
+    });
+
+    expect(reportCalls(fetchMock)).toEqual([
+      expect.stringContaining('report=classes&from=2026-09-14&to=2026-10-13&format=csv'),
+    ]);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused report says why and shows no table', async () => {
+    installClassReport(async () => ({ ok: false, json: async () => ({ error: 'Forbidden: attendance reporting is available to coach and organization_admin/admin only' }) } as unknown as Response));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Show' }));
+    });
+
+    expect(classReport().getByRole('alert').textContent).toContain('Forbidden');
+    expect(classReport().queryByRole('table')).toBeNull();
+  });
+
+  test('a reversed period is not sent', async () => {
+    const fetchMock = installClassReport(async () => jsonResponse(BODY));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    fireEvent.change(classReport().getByLabelText('From'), { target: { value: '2026-10-20' } });
+    await act(async () => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Show' }));
+    });
+
+    expect(reportCalls(fetchMock)).toHaveLength(0);
+    expect(classReport().getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
+  });
+
+  test('a period changed while a report is loading drops its answer', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    installClassReport(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    await act(async () => {
+      render(<AttendanceDashboardPage />);
+    });
+
+    act(() => {
+      fireEvent.click(classReport().getByRole('button', { name: 'Show' }));
+    });
+    fireEvent.change(classReport().getByLabelText('From'), { target: { value: '2026-10-01' } });
+    await act(async () => {
+      finish?.(jsonResponse(BODY));
+    });
+
+    expect(classReport().queryByRole('table')).toBeNull();
   });
 });

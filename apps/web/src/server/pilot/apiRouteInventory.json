@@ -10360,7 +10360,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. ?report=classes&from=&to= (RP-02, #1542): one row per class occurrence in the period by gym day -- registered, present, absent, excused, unmarked and rate, counts only, no names -- as JSON with totals or format=csv; same roles and coach scope (own classes, athletes in reach).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

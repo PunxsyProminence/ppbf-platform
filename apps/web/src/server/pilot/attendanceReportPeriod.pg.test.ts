@@ -31,7 +31,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { getOrganizationAttendanceSummary } from './attendanceReporting';
+import { classReportTotals, getClassAttendanceReport, getOrganizationAttendanceSummary } from './attendanceReporting';
 
 jest.setTimeout(180_000);
 
@@ -276,6 +276,162 @@ describe("a coach's report (RP-01, Q2 default A)", () => {
         total_marked: 4,
         attendance_rate: 0.667,
       });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+/*
+ * THE REPORT BY CLASS (RP-02), on the same seeded gym plus two more classes:
+ *   c-big (Oct 8): Ada registered and present, Bo registered and never marked,
+ *     Cy registered and absent, Di waitlisted (with a stray mark), Ed's
+ *     registration cancelled, Fay registered and present but since deleted,
+ *     and a mark for Gus, who was never registered.
+ *   c-cancelled (Oct 9): a cancelled class, Ada registered and marked absent.
+ */
+async function addClassReportSeeds(client: Client) {
+  for (const [athleteId, name, deleted] of [
+    ['ATH-CY', 'Cy Absent', false],
+    ['ATH-DI', 'Di Waitlisted', false],
+    ['ATH-ED', 'Ed Cancelled', false],
+    ['ATH-FAY', 'Fay Deleted', true],
+    ['ATH-GUS', 'Gus Unregistered', false],
+  ] as const) {
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+         emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, $3, '2011-05-06', 'fly', 'active', 'contact', true, $4, now(), now(),
+               case when $5 then now() else null end)`,
+      [ORG, athleteId, name, COACH, deleted],
+    );
+  }
+  for (const [classId, wallClock, status] of [
+    ['c-big', '2026-10-08 18:00', 'open'],
+    ['c-cancelled', '2026-10-09 18:00', 'cancelled'],
+  ] as const) {
+    await client.query(
+      `insert into pilot.scheduler_classes
+         (organization_id, class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id, coach_account_id, status)
+       values ($1, $2, $3, ($4::timestamp at time zone 'America/New_York'),
+               ($4::timestamp at time zone 'America/New_York') + interval '1 hour', 'Main Floor', 20, $5, $5, $6)`,
+      [ORG, classId, classId === 'c-big' ? 'Sparring' : 'Open Gym', wallClock, COACH, status],
+    );
+  }
+  const registrations: Array<[string, string, string]> = [
+    ['c-big', ATHLETE, 'registered'],
+    ['c-big', NEVER_MARKED, 'registered'],
+    ['c-big', 'ATH-CY', 'registered'],
+    ['c-big', 'ATH-DI', 'waitlisted'],
+    ['c-big', 'ATH-ED', 'cancelled'],
+    ['c-big', 'ATH-FAY', 'registered'],
+    ['c-cancelled', ATHLETE, 'registered'],
+  ];
+  for (const [classId, athleteId, status] of registrations) {
+    await client.query(
+      `insert into pilot.scheduler_registrations
+         (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+       values ($1, $2, $3, $4, 'coach', $5, $6)`,
+      [ORG, `reg-${classId}-${athleteId}`, classId, athleteId, COACH, status],
+    );
+  }
+  const marks: Array<[string, string, string]> = [
+    ['c-big', ATHLETE, 'present'],
+    ['c-big', 'ATH-CY', 'absent'],
+    ['c-big', 'ATH-DI', 'present'],
+    ['c-big', 'ATH-ED', 'present'],
+    ['c-big', 'ATH-FAY', 'present'],
+    ['c-big', 'ATH-GUS', 'present'],
+    ['c-cancelled', ATHLETE, 'absent'],
+  ];
+  for (const [classId, athleteId, status] of marks) {
+    await client.query(
+      `insert into pilot.scheduler_attendance
+         (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role, checked_in_by_account_id, note, checked_in_at)
+       values ($1, $2, $3, $4, $5, 'coach_override', 'coach', $6, '', now())`,
+      [ORG, `att-${classId}-${athleteId}`, classId, athleteId, status, COACH],
+    );
+  }
+}
+
+describe('the report by class (RP-02)', () => {
+  test('one row per class in the period by gym day; unmarked is not absent; only live registrations of athletes on record count', async () => {
+    const client = await seededDatabase('arp_classes');
+    try {
+      await addClassReportSeeds(client);
+      const rows = await getClassAttendanceReport(ORG, { fromDay: '2026-10-01', toDay: '2026-10-13' });
+
+      // In start order; the 11:30 pm classes either side of the period fall on their own gym days.
+      expect(rows.map((row) => row.class_id)).toEqual([
+        'c-first', 'c-mid', 'c-other-coach', 'c-big', 'c-cancelled', 'c-excused', 'c-last-night',
+      ]);
+      expect(rows.find((row) => row.class_id === 'c-big')).toEqual({
+        class_id: 'c-big',
+        title: 'Sparring',
+        start_at: '2026-10-08T22:00:00.000Z',
+        status: 'open',
+        registered_count: 3,
+        present_count: 1,
+        absent_count: 1,
+        excused_count: 0,
+        unmarked_count: 1,
+        attendance_rate: 0.5,
+      });
+      // A cancelled class keeps its row and its counts, and has no rate.
+      expect(rows.find((row) => row.class_id === 'c-cancelled')).toMatchObject({
+        status: 'cancelled',
+        registered_count: 1,
+        absent_count: 1,
+        attendance_rate: null,
+      });
+      // Excused only: nothing to count, so no rate -- never 0.
+      expect(rows.find((row) => row.class_id === 'c-excused')).toMatchObject({ excused_count: 1, attendance_rate: null });
+
+      // The period's totals are over the six classes held; the cancelled one is counted, not added.
+      expect(classReportTotals(rows)).toEqual({
+        classes: 6,
+        cancelled: 1,
+        registered_count: 8,
+        present_count: 4,
+        absent_count: 2,
+        excused_count: 1,
+        unmarked_count: 1,
+        attendance_rate: 0.667,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a coach's report: their own classes, counted over the athletes they reach", async () => {
+    const client = await seededDatabase('arp_classes_coach');
+    try {
+      await addClassReportSeeds(client);
+      const own = await getClassAttendanceReport(ORG, { fromDay: '2026-10-01', toDay: '2026-10-13', coachAccountId: COACH });
+      expect(own.map((row) => row.class_id)).not.toContain('c-other-coach');
+
+      const reached = await getClassAttendanceReport(ORG, {
+        fromDay: '2026-10-01',
+        toDay: '2026-10-13',
+        coachAccountId: COACH,
+        athleteIds: [ATHLETE],
+      });
+      expect(reached.find((row) => row.class_id === 'c-big')).toMatchObject({
+        registered_count: 1,
+        present_count: 1,
+        unmarked_count: 0,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('another gym reads only its own classes', async () => {
+    const client = await seededDatabase('arp_classes_other');
+    try {
+      await addClassReportSeeds(client);
+      const rows = await getClassAttendanceReport(OTHER_ORG, { fromDay: '2026-10-01', toDay: '2026-10-13' });
+      expect(rows.map((row) => row.class_id)).toEqual(['o-first']);
     } finally {
       await client.end();
     }
