@@ -10077,7 +10077,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "QUOTE_READ_ROLES = coach, organization_admin, admin. Lists the gym's motivational quotes (org content, no athlete identifier).",
+    "notes": "QUOTE_READ_ROLES = coach, organization_admin, admin for the full list. GET ?live=1 (#1462 Q-B) serves any signed-in member of the organization the active quotes' quote_text, speaker and shown only (no ids, sources, types or timestamps) for the chalkboard. Org content, no athlete identifier.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

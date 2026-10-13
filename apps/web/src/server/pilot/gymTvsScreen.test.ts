@@ -12,6 +12,11 @@ jest.mock('./db', () => ({
   withTransaction: jest.fn(),
 }));
 
+jest.mock('./orgQuotes', () => ({
+  ...jest.requireActual('./orgQuotes'),
+  listLiveQuotes: jest.fn(async () => []),
+}));
+
 jest.mock('./wallDisplayDb', () => ({
   loadWallBoard: jest.fn(),
   loadPublicWallBoard: jest.fn(),
@@ -19,12 +24,14 @@ jest.mock('./wallDisplayDb', () => ({
 
 import { query, queryOne } from './db';
 import { readGymTvScreen } from './gymTvs';
+import { listLiveQuotes } from './orgQuotes';
 import type { WallBoard } from './wallDisplay';
 import { loadWallBoard } from './wallDisplayDb';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockLoadWallBoard = jest.mocked(loadWallBoard);
+const mockLiveQuotes = jest.mocked(listLiveQuotes);
 
 const TV = {
   organization_id: 'org-b',
@@ -63,7 +70,7 @@ it("a paired TV with nothing on it gets its name, session: null, and the board f
 
   const read = await readGymTvScreen('k'.repeat(64), { mode: 'consent' });
 
-  expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
+  expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: [] });
   expect(mockLoadWallBoard).toHaveBeenCalledTimes(1);
   expect(mockLoadWallBoard).toHaveBeenCalledWith({ organizationId: 'org-b', mode: 'consent' });
   // One resolution of the key (one last_seen_at touch), not one per read.
@@ -78,10 +85,43 @@ it('a board load failure is best-effort: board null, board_status unavailable, t
   const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   try {
     const read = await readGymTvScreen('k'.repeat(64), { mode: 'initials' });
-    expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: null, board_status: 'unavailable' });
+    expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: null, board_status: 'unavailable', quotes: [] });
     expect(logged).toHaveBeenCalledTimes(1);
     expect(logged.mock.calls[0][0]).toBe('tv-board-read-failed');
     expect(logged.mock.calls[0][1]).toEqual({ name: 'Error', code: '42P01' });
+    expect(JSON.stringify(logged.mock.calls[0])).not.toContain('db.internal');
+  } finally {
+    logged.mockRestore();
+  }
+});
+
+it("the paired read carries the TV organization's live quotes, words only (#1462 Q-A)", async () => {
+  mockQueryOne.mockResolvedValueOnce(TV);
+  mockLoadWallBoard.mockResolvedValue(BOARD);
+  mockLiveQuotes.mockResolvedValueOnce([{
+    quote_id: 'q-1', organization_id: 'org-b', quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall',
+    quote_type: 'gym_saying', source: 'hand-off', shown: ['anywhere'], active: true,
+    created_at: '2026-10-12T00:00:00Z', updated_at: '2026-10-12T00:00:00Z',
+  }]);
+
+  const read = await readGymTvScreen('k'.repeat(64), { mode: 'initials' });
+
+  expect(mockLiveQuotes).toHaveBeenCalledWith('org-b');
+  expect(read?.quotes).toEqual([{ quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall', shown: ['anywhere'] }]);
+  for (const field of ['quote_id', 'source', 'quote_type', 'active']) {
+    expect(JSON.stringify(read?.quotes)).not.toContain(field);
+  }
+});
+
+it('a quotes read failure is best-effort: quotes [], the board and session still served', async () => {
+  mockQueryOne.mockResolvedValueOnce(TV);
+  mockLoadWallBoard.mockResolvedValue(BOARD);
+  mockLiveQuotes.mockRejectedValueOnce(Object.assign(new Error('timeout at db.internal'), { code: '57014' }));
+  const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  try {
+    const read = await readGymTvScreen('k'.repeat(64), { mode: 'initials' });
+    expect(read).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: [] });
+    expect(logged.mock.calls[0][0]).toBe('tv-quotes-read-failed');
     expect(JSON.stringify(logged.mock.calls[0])).not.toContain('db.internal');
   } finally {
     logged.mockRestore();

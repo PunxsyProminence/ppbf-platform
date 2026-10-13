@@ -39,6 +39,9 @@ function stubFetch(options: {
   role?: string | null;
   authProvider?: string | null;
   announcementsOk?: boolean;
+  /** The live library (#1462). Undefined: the read is not answered (throws), as an unreachable library. */
+  quotes?: Array<{ quote_text: string; speaker: string; shown: string[] }>;
+  quotesOk?: boolean;
 }) {
   const mock = jest.fn(async (url: unknown) => {
     const href = String(url);
@@ -59,6 +62,12 @@ function stubFetch(options: {
       return {
         ok: options.announcementsOk ?? true,
         json: async () => ({ ok: true, announcements: options.announcements ?? [] }),
+      } as Response;
+    }
+    if (href.includes('/api/pilot/quotes') && options.quotes !== undefined) {
+      return {
+        ok: options.quotesOk ?? true,
+        json: async () => ({ ok: true, quotes: options.quotes }),
       } as Response;
     }
     if (href.includes('/api/pilot/announcements/post')) {
@@ -264,5 +273,52 @@ describe('it is the existing announcements system, not a second one', () => {
     // The database column is free text. The cap is what keeps a chalkboard from
     // becoming a memo, and it is stated in one place.
     expect(CHALK_MAX_LENGTH).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('the line under a board with nothing real on it comes from the quote library (#1462)', () => {
+  const ALI = { quote_text: 'FLOAT LIKE A BUTTERFLY, STING LIKE A BEE.', speaker: 'Muhammad Ali', shown: ['anywhere'] };
+
+  it('reads the live library, and shows an attributed boxing quote with who said it', async () => {
+    const mock = await renderBoard({ announcementsOk: false, role: 'parent', authProvider: 'ppbf_local', quotes: [ALI] });
+
+    expect(mock.mock.calls.some(([url]) => String(url).includes('/api/pilot/quotes?live=1'))).toBe(true);
+    expect(screen.getByText(ALI.quote_text)).toBeTruthy();
+    expect(screen.getByText('— Muhammad Ali')).toBeTruthy();
+    expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
+  });
+
+  it('picks from the library on the same fixed seed, so the line does not reshuffle', async () => {
+    const library = [
+      ALI,
+      { quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall', shown: ['anywhere'] },
+      { quote_text: 'HANDS UP. HEAD CLEAR.', speaker: 'the wall', shown: ['after-hard-session'] },
+    ];
+    await renderBoard({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', quotes: library });
+    const expected = pickSaying('anywhere', 'chalkboard-athlete_workspace', [
+      { line: ALI.quote_text, said_by: ALI.speaker, shown: ['anywhere'] },
+      { line: 'AMPLECTERE MISERIAM', said_by: 'the wall', shown: ['anywhere'] },
+      { line: 'HANDS UP. HEAD CLEAR.', said_by: 'the wall', shown: ['after-hard-session'] },
+    ]);
+    expect(screen.getByText(expected!.line)).toBeTruthy();
+  });
+
+  it.each([
+    ['empty', { quotes: [] as Array<{ quote_text: string; speaker: string; shown: string[] }> }],
+    ['refused', { quotes: [ALI], quotesOk: false }],
+    ['unreachable', {}],
+  ])('falls back to the gym\'s own sayings when the library is %s', async (_label, library) => {
+    await renderBoard({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local', ...library });
+
+    const local = pickSaying('anywhere', 'chalkboard-athlete_workspace');
+    expect(screen.getByText(local!.line)).toBeTruthy();
+    expect(screen.queryByText(ALI.quote_text)).toBeNull();
+  });
+
+  it('a written line still wins: the library never covers what somebody wrote', async () => {
+    await renderBoard({ announcements: [item()], role: 'athlete', authProvider: 'ppbf_local', quotes: [ALI] });
+
+    expect(screen.getByText('Gloves on at five. Bring water.')).toBeTruthy();
+    expect(screen.queryByText(ALI.quote_text)).toBeNull();
   });
 });

@@ -111,6 +111,38 @@ export const GYM_SAYINGS: readonly GymSaying[] = [
   { line: 'WE BUILD PEOPLE, NOT JUST FIGHTERS.', said_by: 'the wall', shown: ['at-a-milestone'] },
 ];
 
+/** A quote as the library's live reads serve it (/api/pilot/quotes?live=1, the paired TV). */
+export interface LibraryQuote {
+  readonly quote_text: string;
+  readonly speaker: string;
+  readonly shown: readonly string[];
+}
+
+const SAYING_CONTEXTS: readonly SayingContext[] = ['after-hard-session', 'at-a-milestone', 'anywhere'];
+
+/**
+ * The gym's quote library as sayings (#1462): the editable library is the
+ * source, and GYM_SAYINGS is the fallback when it is empty or could not be
+ * read. A row with no words or no moment this file knows is dropped rather
+ * than guessed at. Pass the result to pickSaying, so the same fixed seed
+ * still picks the line and nothing reshuffles on a poll.
+ */
+export function librarySayings(quotes: readonly LibraryQuote[] | null | undefined): GymSaying[] {
+  return (quotes ?? []).flatMap((quote) => {
+    const line = typeof quote.quote_text === 'string' ? quote.quote_text.trim() : '';
+    const shown = (Array.isArray(quote.shown) ? quote.shown : [])
+      .filter((moment): moment is SayingContext => SAYING_CONTEXTS.includes(moment as SayingContext));
+    if (!line || shown.length === 0) return [];
+    return [{ line, said_by: typeof quote.speaker === 'string' ? quote.speaker.trim() : '', shown }];
+  });
+}
+
+/** The library when it has something for the moment, otherwise the gym's own lines. */
+export function sayingSource(quotes: readonly LibraryQuote[] | null | undefined, context: SayingContext): readonly GymSaying[] {
+  const library = librarySayings(quotes);
+  return sayingsFor(context, library).length > 0 ? library : GYM_SAYINGS;
+}
+
 /**
  * The sayings eligible for a moment. 'anywhere' matches every context; a line
  * tagged only 'at-a-milestone' never shows up after a hard session.

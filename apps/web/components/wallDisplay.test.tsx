@@ -746,6 +746,60 @@ describe('empty states', () => {
   });
 });
 
+describe('the idle band reads the gym\'s quote library on a paired TV (#1462 Q-A)', () => {
+  const LIBRARY = [
+    { quote_text: 'FLOAT LIKE A BUTTERFLY, STING LIKE A BEE.', speaker: 'Muhammad Ali', shown: ['anywhere'] },
+    { quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall', shown: ['anywhere'] },
+  ];
+  const asSayings = LIBRARY.map((q) => ({ line: q.quote_text, said_by: q.speaker, shown: ['anywhere' as const] }));
+
+  async function renderPaired(quotes: unknown) {
+    fetchMock = respondWith({ board: board({ gym_day: '2026-08-03' }), board_status: 'ok', quotes });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const view = render(<WallDisplay />);
+    await settle();
+    return view;
+  }
+
+  it('a paired TV says a line from the library, attributed, on the gym day seed', async () => {
+    const { container } = await renderPaired(LIBRARY);
+    const expected = sayings.pickSaying('anywhere', '2026-08-03', asSayings)!;
+    const line = container.querySelector('.marquee-idle-line')?.textContent ?? '';
+    expect(line).toContain(expected.line);
+    expect(line).toContain(expected.said_by);
+    expect(GYM_SAYINGS.some((saying) => line.includes(saying.line))).toBe(false);
+  });
+
+  it('the same day says the same library line on every poll', async () => {
+    const { container } = await renderPaired(LIBRARY);
+    const first = container.querySelector('.marquee-idle-line')?.textContent;
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+    expect(container.querySelector('.marquee-idle-line')?.textContent).toBe(first);
+  });
+
+  it.each([
+    ['empty', []],
+    ['missing', undefined],
+  ])('an %s library falls back to the gym\'s own sayings', async (_label, quotes) => {
+    const { container } = await renderPaired(quotes);
+    const line = container.querySelector('.marquee-idle-line')?.textContent ?? '';
+    expect(GYM_SAYINGS.some((saying) => line.includes(saying.line))).toBe(true);
+  });
+
+  it('an unpaired TV never draws from the library: its public board carries none', async () => {
+    fetchMock = respondByUrl({ ok: true, board: publicBoard(), quotes: LIBRARY });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    const line = container.querySelector('.marquee-idle-line')?.textContent ?? '';
+    expect(GYM_SAYINGS.some((saying) => line.includes(saying.line))).toBe(true);
+    expect(line).not.toContain('Muhammad Ali');
+  });
+});
+
 /* ------------------------------------------------------------- nothing to
    touch --------------------------------------------------------------- */
 

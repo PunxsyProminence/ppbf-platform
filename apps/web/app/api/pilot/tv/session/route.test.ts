@@ -56,6 +56,7 @@ const BOARD: WallBoard = {
 const LIVE: GymTvScreen = {
   tv: { tv_name: 'Gym main' },
   board: BOARD,
+  quotes: [],
   board_status: 'ok',
   session: {
     run_id: 'ssrun_1',
@@ -119,7 +120,7 @@ it('the body is exactly the module result: nothing added by the route', async ()
   mockRead.mockResolvedValue(LIVE);
   const body = (await (await read(KEY)).json()) as GymTvScreen;
   expect(body).toEqual(LIVE);
-  expect(Object.keys(body).sort()).toEqual(['board', 'board_status', 'session', 'tv']);
+  expect(Object.keys(body).sort()).toEqual(['board', 'board_status', 'quotes', 'session', 'tv']);
   const serialized = JSON.stringify(body);
   for (const forbidden of [KEY, 'tv_id', 'error', 'what_to', 'account', 'athlete', 'hash', 'organization']) {
     expect(serialized).not.toContain(forbidden);
@@ -165,10 +166,10 @@ it("the operator's name mode reaches the paired board exactly as before; nothing
 });
 
 it('a paired TV with nothing on it gets session: null, still the board, and still the slide', async () => {
-  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
+  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: [] });
   const response = await read(KEY);
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
+  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok', quotes: [] });
   expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.maxAge).toBe(400 * 24 * 60 * 60);
 });
 

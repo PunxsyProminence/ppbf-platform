@@ -21,7 +21,7 @@
 import { render, screen } from '@testing-library/react';
 
 import WordsOnTheWall, { AnniversaryNote, BoxingNumberNote } from './WordsOnTheWall';
-import { GYM_SAYINGS, pickSaying, sayingsFor, type GymSaying } from './gymSayings';
+import { GYM_SAYINGS, librarySayings, pickSaying, sayingSource, sayingsFor, type GymSaying } from './gymSayings';
 
 /* Obviously not a coach's words, and obviously never rendered in production:
    the shipped source is empty and these are handed in as a test seam. */
@@ -41,7 +41,10 @@ describe('the shipped source', () => {
 
   it('has no stock boxing quote hiding in it', () => {
     // Belt and braces for the day somebody adds lines: whatever arrives must
-    // not be the usual internet furniture.
+    // not be the usual internet furniture. This is about the LOCAL file, the
+    // gym's own lines. Attributed boxing quotes are allowed on the chalkboard
+    // and the TV (OD-2026-10-03-015) and arrive through the editable library
+    // instead; see "the quote library" below.
     const all = GYM_SAYINGS.map((s) => `${s.line} ${s.said_by}`.toLowerCase()).join(' | ');
     for (const stock of [
       'punched in the mouth',
@@ -151,5 +154,43 @@ describe('the asides', () => {
     const text = container.textContent?.toLowerCase() ?? '';
     expect(text).not.toMatch(/congratulat|unlocked|achievement|badge|points|level|rank|leaderboard|top \d/);
     expect(container.textContent).not.toContain('!');
+  });
+});
+
+describe('the quote library (#1462): attributed quotes, the local lines as fallback', () => {
+  it('an attributed boxing quote from the library keeps its words and its speaker', () => {
+    const [ali] = librarySayings([
+      { quote_text: '  FLOAT LIKE A BUTTERFLY, STING LIKE A BEE. ', speaker: ' Muhammad Ali ', shown: ['anywhere'] },
+    ]);
+    expect(ali).toEqual({ line: 'FLOAT LIKE A BUTTERFLY, STING LIKE A BEE.', said_by: 'Muhammad Ali', shown: ['anywhere'] });
+  });
+
+  it('drops a row with no words or no moment this file knows, rather than guessing', () => {
+    expect(librarySayings([
+      { quote_text: '   ', speaker: 'x', shown: ['anywhere'] },
+      { quote_text: 'NO MOMENT', speaker: 'x', shown: ['at-the-bell'] },
+      { quote_text: 'KEEP', speaker: 'x', shown: ['at-the-bell', 'at-a-milestone'] },
+    ])).toEqual([{ line: 'KEEP', said_by: 'x', shown: ['at-a-milestone'] }]);
+    expect(librarySayings(null)).toEqual([]);
+  });
+
+  it('the library is the source when it has a line for the moment, the gym\'s own lines otherwise', () => {
+    const library = [{ quote_text: 'AMPLECTERE MISERIAM', speaker: 'the wall', shown: ['anywhere'] }];
+    expect(sayingSource(library, 'anywhere')).toEqual([{ line: 'AMPLECTERE MISERIAM', said_by: 'the wall', shown: ['anywhere'] }]);
+    expect(sayingSource([], 'anywhere')).toBe(GYM_SAYINGS);
+    expect(sayingSource(undefined, 'anywhere')).toBe(GYM_SAYINGS);
+    // Nothing for this moment in the library: the local lines, not silence.
+    expect(sayingSource([{ quote_text: 'ONLY MILESTONES', speaker: 'x', shown: ['at-a-milestone'] }], 'after-hard-session'))
+      .toBe(GYM_SAYINGS);
+  });
+
+  it('the same seed picks the same library line every time', () => {
+    const source = sayingSource([
+      { quote_text: 'ONE', speaker: 'a', shown: ['anywhere'] },
+      { quote_text: 'TWO', speaker: 'b', shown: ['anywhere'] },
+      { quote_text: 'THREE', speaker: 'c', shown: ['anywhere'] },
+    ], 'anywhere');
+    const first = pickSaying('anywhere', '2026-10-13', source);
+    for (let i = 0; i < 5; i += 1) expect(pickSaying('anywhere', '2026-10-13', source)).toEqual(first);
   });
 });
