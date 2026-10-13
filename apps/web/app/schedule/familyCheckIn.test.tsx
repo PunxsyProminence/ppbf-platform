@@ -113,6 +113,17 @@ async function renderPage() {
   await screen.findByText('Class Schedule');
 }
 
+/* THE CLOCK IS NOON IN THE GYM. These cases place classes an hour or a day
+   either side of "now" and ask whether each falls on today's gym day; run
+   against the real clock after 11 pm Eastern, "an hour from now" is
+   tomorrow and two cases failed on CI at 23:05 Eastern. Date.now is the one
+   clock the page and these fixtures read (page.tsx nowMs, gymDayIso). */
+const GYM_NOON = Date.parse('2026-10-14T16:00:00.000Z');
+
+beforeEach(() => {
+  jest.spyOn(Date, 'now').mockReturnValue(GYM_NOON);
+});
+
 afterEach(() => {
   jest.restoreAllMocks();
 });
