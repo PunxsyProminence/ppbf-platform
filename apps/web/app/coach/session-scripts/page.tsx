@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import { apiBase } from '@/lib/apiBase';
+import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type {
   SessionScriptBlockRow,
@@ -87,6 +88,12 @@ function CoachSessionScripts() {
   // Which start the error belongs to: a script's id, or PLAIN_START. The error is shown beside the
   // button that was pressed, so a failed plain start is never silent (review 2 of #1523 PR 2).
   const [startErrorFor, setStartErrorFor] = useState<string | null>(null);
+
+  // Changing the open plan (lane L1): its name, block titles and minutes. The
+  // notice says what the save did, in the server's terms -- changed where it
+  // was, or kept as a new version because the plan had been delivered.
+  const [editing, setEditing] = useState(false);
+  const [editNotice, setEditNotice] = useState('');
 
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
@@ -245,6 +252,8 @@ function CoachSessionScripts() {
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
+    setEditing(false);
+    setEditNotice('');
     setDeliveries([]);
     setDeliveriesState('loading');
 
@@ -269,6 +278,34 @@ function CoachSessionScripts() {
 
     await Promise.all([detailRead, historyRead]);
   }, [loadDeliveries]);
+
+  // A link from the workout templates page names the script it just made
+  // (?script=...), so the coach lands on that plan rather than on the list.
+  useEffect(() => {
+    void (async () => {
+      const scriptId = await Promise.resolve(new URLSearchParams(window.location.search).get('script'));
+      if (scriptId) await openScript(scriptId);
+    })();
+  }, [openScript]);
+
+  const planSaved = useCallback((outcome: SessionScriptEditOutcome, saved: ScriptDetail) => {
+    setEditing(false);
+    // A new version is a new row with its own id: the open plan becomes it.
+    setDetail(saved);
+    setOpenScriptId(saved.script_id);
+    if (outcome === 'unchanged') {
+      setEditNotice('Nothing was changed, so nothing was saved.');
+      return;
+    }
+    setEditNotice(
+      outcome === 'new_version'
+        ? `This plan has been delivered before, so your changes were saved as version ${saved.version}. `
+          + 'The sessions already delivered keep the version they ran.'
+        : 'Saved.',
+    );
+    void load();
+    if (outcome === 'new_version') void loadDeliveries(saved.script_id);
+  }, [load, loadDeliveries]);
 
   return (
     /* data-surface="kiosk" -- Law 5, the app's one-attribute device for a
@@ -373,9 +410,15 @@ function CoachSessionScripts() {
           )}
 
           {!loading && !loadError && scripts.length === 0 && (
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              No session scripts yet.
-            </p>
+            <div className="mt-[var(--s3)]">
+              <p className="t-body text-[color:var(--bone-300)]">No session scripts yet.</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                A workout template can be made into one: open the template and choose Make a session script.
+              </p>
+              <Link href="/coach/workout-templates" className="btn btn--ghost mt-[var(--s3)]">
+                Workout templates
+              </Link>
+            </div>
           )}
 
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
@@ -444,15 +487,34 @@ function CoachSessionScripts() {
                     The button only exists when the script has blocks -- the
                     server refuses a blockless start anyway; offering the
                     button just to show its refusal would be a fake control. */}
-                {detail.blocks.length > 0 && (
-                  <div className="mt-[var(--s4)]">
+                {editNotice && (
+                  <p role="status" className="t-body mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
+                    {editNotice}
+                  </p>
+                )}
+
+                {/* While the plan is being edited the start button is put
+                    away: what it would start is the stored plan, not the one
+                    on screen. */}
+                {!editing && (
+                  <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                    {detail.blocks.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void startDelivery(detail.script_id)}
+                        disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
+                        className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => void startDelivery(detail.script_id)}
-                      disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
-                      className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => { setEditing(true); setEditNotice(''); }}
+                      disabled={startBusyScriptId !== null}
+                      className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}
+                      Edit minutes and titles
                     </button>
                   </div>
                 )}
@@ -464,7 +526,16 @@ function CoachSessionScripts() {
 
                 <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">The plan</h3>
 
-                {detail.blocks.length === 0 && (
+                {editing && (
+                  <SessionScriptEditor
+                    key={detail.script_id}
+                    script={detail}
+                    onSaved={planSaved}
+                    onCancel={() => setEditing(false)}
+                  />
+                )}
+
+                {!editing && detail.blocks.length === 0 && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
                     This script has no blocks yet. It cannot be delivered live until it has blocks.
                   </p>
@@ -480,7 +551,7 @@ function CoachSessionScripts() {
                   aria-label="Session blocks, in the order they run"
                   className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]"
                 >
-                  {detail.blocks.map((block) => (
+                  {(editing ? [] : detail.blocks).map((block) => (
                     <li
                       key={block.block_id}
                       className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
