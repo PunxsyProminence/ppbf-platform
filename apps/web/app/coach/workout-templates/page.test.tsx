@@ -1646,3 +1646,84 @@ describe('drills no coach of this gym has floor-tested', () => {
     expect(within(status).queryByText(/floor-tested/)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// MAKE A SESSION SCRIPT (lane L1): the page's second write. The control's own
+// answers are in MakeSessionScript.test.tsx; these pin where the page puts it.
+// ---------------------------------------------------------------------------
+describe('make a session script from an open template', () => {
+  function templateFetch(items: unknown[]) {
+    const posts: Array<Record<string, unknown>> = [];
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/coach/athletes')) return jsonResponse({ ok: true, items: [] });
+      if (url.includes('/api/pilot/session-scripts')) {
+        posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ script: { script_id: 'scr-9', name: 'Boxing Fundamentals 60', blocks: [{}] } }),
+        } as Response;
+      }
+      return url.includes('template_id')
+        ? jsonResponse({ template: BOXING_FUNDAMENTALS, items })
+        : jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+    });
+    return posts;
+  }
+
+  it('is offered on an open template with blocks, and makes the script from THAT template', async () => {
+    const posts = templateFetch([item()]);
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Make a session script' }));
+
+    expect(await screen.findByText('Made the session script Boxing Fundamentals 60: 1 block.')).toBeInTheDocument();
+    expect(posts).toEqual([{ template_id: 'wt-1' }]);
+    expect(screen.getByRole('link', { name: 'Open it in Session Scripts' }))
+      .toHaveAttribute('href', '/coach/session-scripts?script=scr-9');
+  });
+
+  it('is not offered on a template with no blocks, which could not be delivered', async () => {
+    templateFetch([]);
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    await screen.findByText('This template has no items yet.');
+    expect(screen.queryByRole('button', { name: 'Make a session script' })).toBeNull();
+  });
+
+  it('keeps the other templates closed while a script is being made, so its answer has somewhere to land', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    mockFetch((url) => {
+      if (url.includes('/api/pilot/coach/athletes')) return jsonResponse({ ok: true, items: [] });
+      if (url.includes('/api/pilot/session-scripts')) {
+        return new Promise<Response>((resolve) => { finish = resolve; }) as unknown as Response;
+      }
+      return url.includes('template_id')
+        ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] })
+        : jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /open template/i }))[0]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Make a session script' }));
+
+    await screen.findByRole('button', { name: 'Making...' });
+    for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) {
+      expect(open).toBeDisabled();
+    }
+    await act(async () => {
+      finish?.({ ok: true, status: 201, json: async () => ({ script: { script_id: 'scr-9', name: 'X', blocks: [] } }) } as Response);
+    });
+    expect(await screen.findByText(/Made the session script X/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it('says in the header that a session script can be made from a template', async () => {
+    mockFetch(() => jsonResponse({ templates: [] }));
+    render(<CoachWorkoutTemplatesPage />);
+
+    expect(await screen.findByText(/or to make a session script from\s+it/i)).toBeInTheDocument();
+  });
+});
