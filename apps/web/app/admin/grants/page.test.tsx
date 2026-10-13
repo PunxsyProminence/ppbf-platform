@@ -194,6 +194,35 @@ describe('the obligations report section (RP-03)', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
 
+  test('the report states its scope, so a filtered printout reads as filtered', async () => {
+    reportFetch(true);
+    render(<GrantObligationsPage />);
+    const report = await screen.findByRole('region', { name: 'Obligations report' });
+
+    expect(within(report).getByText('Showing: All obligations, due any date to any date.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'open' } });
+    fireEvent.change(screen.getByLabelText('Due from'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText('Due to'), { target: { value: '2026-10-31' } });
+    const scope = within(report).getByText('Showing: Open obligations, due 2026-10-01 to 2026-10-31.');
+    expect(scope.className).not.toContain('print:hidden');
+    expect(scope.closest(String.raw`.print\:hidden`)).toBeNull();
+  });
+
+  test('a reversed range is not printed as an empty report', async () => {
+    reportFetch(true);
+    const print = jest.spyOn(window, 'print').mockImplementation(() => undefined);
+    render(<GrantObligationsPage />);
+    const report = await screen.findByRole('region', { name: 'Obligations report' });
+
+    fireEvent.change(screen.getByLabelText('Due from'), { target: { value: '2026-10-13' } });
+    fireEvent.change(screen.getByLabelText('Due to'), { target: { value: '2026-10-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+    expect(print).not.toHaveBeenCalled();
+    expect(within(report).getByRole('alert').textContent).toContain('on or before');
+    expect(within(report).queryByText('No obligations match.')).toBeNull();
+  });
+
   test('a reversed range is not sent, and the sentence clears once the dates change', async () => {
     const fetchMock = reportFetch(true);
     render(<GrantObligationsPage />);

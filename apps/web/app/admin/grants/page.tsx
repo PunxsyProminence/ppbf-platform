@@ -98,11 +98,25 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
     return [...byGrant.values()].sort((a, b) => a.grant.localeCompare(b.grant) || a.funder.localeCompare(b.funder));
   }, [items, state, dueFrom, dueTo]);
 
+  const STATE_WORDS: Record<ReportState, string> = { all: 'All obligations', open: 'Open obligations', settled: 'Settled obligations' };
+  const reversed = Boolean(dueFrom && dueTo && dueFrom > dueTo);
+  const RANGE_SENTENCE = 'Choose a From date on or before the To date.';
+
+  // A printout carries its own scope line, so a filtered report on paper
+  // reads as filtered. A reversed range is not printed as an empty report.
+  function print() {
+    if (reversed) {
+      setFailure(RANGE_SENTENCE);
+      return;
+    }
+    window.print();
+  }
+
   async function download() {
     if (busyRef.current) return;
     setFailure('');
-    if (dueFrom && dueTo && dueFrom > dueTo) {
-      setFailure('Choose a From date on or before the To date.');
+    if (reversed) {
+      setFailure(RANGE_SENTENCE);
       return;
     }
     busyRef.current = true;
@@ -139,6 +153,9 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
       <p className="t-body mt-[var(--s2)]">
         By grant and funder, as of {gymToday()} (gym day). Overdue means open or in progress past its due date.
       </p>
+      <p className="t-body mt-[var(--s2)] font-semibold">
+        Showing: {STATE_WORDS[state]}, due {dueFrom || 'any date'} to {dueTo || 'any date'}.
+      </p>
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)] print:hidden">
         <label className="field">
           <span className="t-label">Show</span>
@@ -156,7 +173,7 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
           <span className="t-label">Due to</span>
           <input type="date" className="input" value={dueTo} onChange={(event) => { setFailure(''); setDueTo(event.target.value); }} />
         </label>
-        <button type="button" className="btn btn--ghost" onClick={() => window.print()}>Print</button>
+        <button type="button" className="btn btn--ghost" onClick={print}>Print</button>
         <button type="button" className="btn" onClick={() => void download()} disabled={busy}>
           {busy ? 'Preparing…' : 'Download CSV'}
         </button>
@@ -171,7 +188,7 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
         </div>
       ) : null}
       {groups.length === 0 ? (
-        <p className="t-muted mt-[var(--s3)]">No obligations match.</p>
+        <p className="t-muted mt-[var(--s3)]">{reversed ? RANGE_SENTENCE : 'No obligations match.'}</p>
       ) : (
         <table className="mt-[var(--s3)] w-full text-left">
           <thead>
