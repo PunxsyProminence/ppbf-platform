@@ -175,6 +175,13 @@ async function waiverStatusesFor(
   return Object.fromEntries(entries);
 }
 
+/* The clearance gate's last evaluation says whether medical clearance was
+   current when contact was last logged. Medical status is staff-only, and that
+   outcome is not "clearance on file now", so it is not sent to a guardian:
+   the Safety page could not explain it, and the Parent Hub would count it as
+   "awaiting clearance" with nowhere to read why (#1537). */
+const GATE_KEYS_WITHHELD_FROM_GUARDIANS: ReadonlySet<string> = new Set(['contact_medical_clearance']);
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -204,7 +211,7 @@ export async function GET(request: NextRequest) {
           athlete_id: athleteId,
           athlete_name: athlete?.full_name ?? null,
           hold: hold ? await athleteFacing(principal.organizationId, hold) : null,
-          gates: gates.map((gate) => ({
+          gates: gates.filter((gate) => !GATE_KEYS_WITHHELD_FROM_GUARDIANS.has(gate.gate_key)).map((gate) => ({
             gate_key: gate.gate_key,
             name: gate.name,
             category: gate.category,
