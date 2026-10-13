@@ -50,7 +50,8 @@ jest.mock('./db', () => ({
 
 import { getOrganizationClearedTonight } from './clearedTonight';
 import { findContactEventBlockingHold, findRegistrationBlockingHold } from './trainingHolds';
-import { getOrganizationWaiverStatus } from './waiverCompliance';
+import { getAthleteWaiverStatus, getOrganizationWaiverStatus } from './waiverCompliance';
+import { upsertWaiver } from './intake';
 
 jest.setTimeout(180_000);
 
@@ -628,6 +629,66 @@ describe('cleared tonight against real Postgres', () => {
       // The expiry leaves as ISO, read from the real timestamptz column.
       expect(row.tonight.medical).toEqual({ status: 'cleared_expired', current: false, expires_at: '2026-02-01T00:00:00.000Z' });
       expect(row.tonight.answer).toBe('cleared_to_train');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+/*
+ * THE OFFICE RECORDS, THEN WITHDRAWS, A PAPER WAIVER (Jason 2026-10-12,
+ * OD-2026-10-12-009; #1526). Through the production writer
+ * /admin/waiver-status posts to: the grid's reader and the parent Safety
+ * page's reader both say Signed, then Withdrawn; the signed row stays as
+ * history with who recorded it; and the other gym's athlete with the same id
+ * never sees either.
+ */
+describe('a waiver recorded and withdrawn from Waiver Compliance (#1526)', () => {
+  afterEach(() => {
+    activeClient = null;
+  });
+
+  test('both readers follow it, history is kept, and the other gym sees nothing', async () => {
+    const client = await freshDatabase('ppbf_test_waiver_office_record');
+    activeClient = client;
+    try {
+      await insertAthlete(client, ORG_A, ATHLETE_ID, 'Org A Athlete');
+      await insertAthlete(client, ORG_B, ATHLETE_ID, 'Org B Athlete');
+      const record = (status: 'signed' | 'withdrawn') => upsertWaiver({
+        organizationId: ORG_A,
+        athleteId: ATHLETE_ID,
+        waiverType: 'medical_release',
+        signedByName: 'Pat T.',
+        signedByRole: 'guardian',
+        signedAt: '2026-10-01T12:00:00.000Z',
+        consentVersion: 'v1',
+        status,
+        notes: '',
+        recordedByAccountId: COACH_ID,
+      });
+
+      await record('signed');
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.medical_release).toBe('signed');
+      expect(await getAthleteWaiverStatus(ORG_A, ATHLETE_ID, 'medical_release')).toBe('signed');
+
+      await record('withdrawn');
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.medical_release).toBe('withdrawn');
+      expect(await getAthleteWaiverStatus(ORG_A, ATHLETE_ID, 'medical_release')).toBe('withdrawn');
+
+      const rows = await client.query(
+        `select status, recorded_by_account_id from pilot.waivers
+         where organization_id = $1 and athlete_id = $2 and waiver_type = 'medical_release'
+         order by created_at`,
+        [ORG_A, ATHLETE_ID],
+      );
+      expect(rows.rows).toEqual([
+        { status: 'signed', recorded_by_account_id: COACH_ID },
+        { status: 'withdrawn', recorded_by_account_id: COACH_ID },
+      ]);
+
+      expect((await getOrganizationWaiverStatus(ORG_B))[0].waivers.medical_release).toBe('missing');
+      expect(await getAthleteWaiverStatus(ORG_B, ATHLETE_ID, 'medical_release')).toBe('missing');
     } finally {
       activeClient = null;
       await client.end();
