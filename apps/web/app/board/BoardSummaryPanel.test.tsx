@@ -13,7 +13,7 @@ import BoardSummaryPanel, {
   type BoardReport,
   boardMetricDisplay,
   lastCompletedMonth,
-  monthsWindow,
+  monthWindow,
   formatMeasuredAt,
   type BoardSummary,
 } from './BoardSummaryPanel';
@@ -166,13 +166,14 @@ describe('the board report section (RP-04)', () => {
     return fetchMock;
   }
 
-  test('the default is the last completed month in the gym, and months become whole-month windows', () => {
+  test('the default is the last completed month in the gym, and a month becomes its whole-month window', () => {
     // 03:30 UTC on Nov 1 is still Oct 31 in the gym: October is not complete.
     expect(lastCompletedMonth(Date.parse('2026-11-01T03:30:00.000Z'))).toBe('2026-09');
     expect(lastCompletedMonth(Date.parse('2026-11-01T05:00:00.000Z'))).toBe('2026-10');
     expect(lastCompletedMonth(Date.parse('2026-01-05T15:00:00.000Z'))).toBe('2025-12');
-    expect(monthsWindow('2026-09', '2026-09')).toEqual({ from: '2026-09-01', to: '2026-09-30' });
-    expect(monthsWindow('2028-01', '2028-02')).toEqual({ from: '2028-01-01', to: '2028-02-29' });
+    expect(monthWindow('2026-09')).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    expect(monthWindow('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
+    expect(monthWindow('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
   });
 
   test('makes the report for the window chosen, with its window, time made, figures in words and definitions', async () => {
@@ -181,8 +182,7 @@ describe('the board report section (RP-04)', () => {
       render(<BoardSummaryPanel />);
     });
 
-    fireEvent.change(screen.getByLabelText('From month'), { target: { value: '2026-09' } });
-    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-09' } });
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-09' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
     });
@@ -205,17 +205,17 @@ describe('the board report section (RP-04)', () => {
     expect(definitions).toEqual([
       expect.stringMatching(/^Scope: the whole organization\./),
       'Active athletes: athletes marked active and not deleted, as of when this report was made.',
-      expect.stringMatching(/^Training sessions: sessions dated in the reporting window/),
-      expect.stringMatching(/^Coach reviews: reviews written on a gym day in the reporting window/),
+      expect.stringMatching(/^Training sessions: sessions dated in the month, for every athlete on record \(not deleted\), including athletes no longer active\./),
+      expect.stringMatching(/^Coach reviews: reviews written on a gym day in the month/),
       expect.stringMatching(/^Goals: the current goals of active athletes, as of when this report was made/),
       expect.stringMatching(/^Suppressed: fewer than 5 athletes contributed/),
       'Active athletes and goals have no stored history, so they are not figures for the window.',
       expect.stringMatching(/^The organization figures above this report cover a rolling 30 days/),
-      expect.stringMatching(/^Reports cover whole, completed calendar months/),
+      expect.stringMatching(/^A report covers one completed calendar month, so no two reports overlap\. Figures are read from the records as they stand/),
     ]);
 
     // A new month chosen takes the old report off the screen.
-    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-08' } });
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-08' } });
     expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
     expect(report.textContent).toContain('No individual athlete appears in this report.');
   });
@@ -251,19 +251,18 @@ describe('the board report section (RP-04)', () => {
     expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
   });
 
-  test('a reversed window is not sent', async () => {
+  test('no month chosen is not sent', async () => {
     const fetchMock = routedFetch(() => ({ ok: true, json: async () => ({ success: true, report: reportFixture() }) }));
     await act(async () => {
       render(<BoardSummaryPanel />);
     });
 
-    fireEvent.change(screen.getByLabelText('From month'), { target: { value: '2026-09' } });
-    fireEvent.change(screen.getByLabelText('To month'), { target: { value: '2026-08' } });
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '' } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
     });
 
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('from='))).toHaveLength(0);
-    expect(screen.getByRole('alert').textContent).toContain('on or before');
+    expect(screen.getByRole('alert').textContent).toContain('Choose a month.');
   });
 });

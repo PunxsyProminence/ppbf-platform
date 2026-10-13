@@ -26,16 +26,16 @@ function lastDayOfMonth(day: string): string {
 }
 
 /*
- * WHOLE, COMPLETED CALENDAR MONTHS ONLY (RP-04 Q-F default A). Months never
- * overlap, so no two reports can be subtracted to isolate one day -- which,
- * with free windows, could show one athlete's session or review even when each
- * window passes the 5-athlete floor. A month still in progress could be read
- * on two days and subtracted the same way, so the window must end before the
- * gym's current month.
+ * ONE COMPLETED CALENDAR MONTH PER REPORT (RP-04 Q-F default A). Reports never
+ * overlap, so no two can be subtracted to single out what was withheld: free
+ * windows let two reports isolate one day, and multi-month spans let
+ * "July to September" minus "July to August" reveal a September that was
+ * suppressed on its own. A month still in progress could be read on two days
+ * and subtracted the same way, so the month must be over in the gym.
  */
-function requireCompletedMonths(from: string, to: string): void {
-  if (!from.endsWith('-01') || lastDayOfMonth(to) !== to) {
-    throw new ValidationError('A board report covers whole calendar months: from must be the first of a month and to the last day of a month.');
+function requireOneCompletedMonth(from: string, to: string): void {
+  if (!from.endsWith('-01') || to !== lastDayOfMonth(from)) {
+    throw new ValidationError('A board report covers one whole calendar month: from must be the first of a month and to the last day of that month.');
   }
   const today = gymDayIso(new Date(Date.now())) ?? new Date().toISOString().slice(0, 10);
   if (to >= `${today.slice(0, 7)}-01`) {
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       if (from > to) {
         throw new ValidationError('from must be on or before to.');
       }
-      requireCompletedMonths(from, to);
+      requireOneCompletedMonth(from, to);
       const report = await getBoardReport(principal.organizationId, { from, to });
       return NextResponse.json(
         { success: true, report },

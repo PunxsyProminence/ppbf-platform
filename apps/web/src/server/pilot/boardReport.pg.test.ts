@@ -249,17 +249,19 @@ afterEach(async () => {
 });
 
 describe('the dated board report on real rows (RP-04)', () => {
-  test('September: sessions on both end days, reviews by the gym day, no deleted, inactive or other-gym rows', async () => {
+  test("September: sessions on both end days, reviews by the gym day, an inactive athlete's month counted, no deleted or other-gym rows", async () => {
     const report = await board.getBoardReport(ORG_ID, SEPTEMBER);
 
     expect(report.window).toEqual(SEPTEMBER);
     expect(report.timeZone).toBe('America/New_York');
     expect(report.activeAthletes).toEqual({ status: 'available', count: 5 });
+    // 10 from the five active athletes and 1 from the athlete since made
+    // inactive; the deleted athlete's session is not counted.
     expect(report.trainingSessions30Days).toEqual({
       status: 'available',
-      count: 10,
-      completedCount: 5,
-      completionRate: 0.5,
+      count: 11,
+      completedCount: 6,
+      completionRate: 0.5455,
     });
     expect(report.coachReviews30Days).toEqual({
       status: 'available',
@@ -290,6 +292,18 @@ describe('the dated board report on real rows (RP-04)', () => {
     const january = await board.getBoardReport(ORG_ID, { from: '2026-01-01', to: '2026-01-31' });
     expect(january.trainingSessions30Days.status).toBe('unavailable');
     expect(january.coachReviews30Days.status).toBe('unavailable');
+  });
+
+  test('deactivating an athlete later does not change a past month', async () => {
+    const before = await board.getBoardReport(ORG_ID, SEPTEMBER);
+    await activeClient!.query(
+      `update pilot.athletes set active_flag = false where organization_id = $1 and athlete_id = 'ATH-B1'`,
+      [ORG_ID],
+    );
+    const after = await board.getBoardReport(ORG_ID, SEPTEMBER);
+
+    expect(after.trainingSessions30Days).toEqual(before.trainingSessions30Days);
+    expect(after.coachReviews30Days).toEqual(before.coachReviews30Days);
   });
 
   test('the same window read twice gives the same figures', async () => {

@@ -163,6 +163,10 @@ describe('getBoardReport (RP-04)', () => {
     expect(sql).toContain('s.date between $2::date and $3::date');
     expect(sql).toContain('(cr.created_at at time zone $4::text)::date between $2::date and $3::date');
     expect(sql).not.toContain("interval '30 days'");
+    // A past month counts every athlete on record, not only those active now:
+    // active_flag is read once, for the active-athletes figure alone.
+    expect(sql.match(/active_flag = true/g)).toHaveLength(1);
+    expect(sql).toContain('join period_athletes a on a.athlete_id = s.athlete_id');
     expect(sql.match(/organization_id = \$1/g)?.length).toBeGreaterThanOrEqual(4);
     expect(sql).not.toMatch(/\b(full_name|notes|content|message)\b/i);
     expect(Object.keys(report)).toEqual([
@@ -188,6 +192,8 @@ describe('getBoardReport (RP-04)', () => {
     expect(params).toEqual(['org-authenticated']);
     expect(sql).toContain("s.date >= current_date - interval '30 days'");
     expect(sql).toContain("cr.created_at >= now() - interval '30 days'");
+    // The rolling figures keep counting active athletes only, as before.
+    expect(sql.match(/active_flag = true/g)).toHaveLength(2);
   });
 
   test('a report needs an organization', async () => {

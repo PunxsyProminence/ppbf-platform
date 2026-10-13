@@ -178,11 +178,14 @@ export function buildBoardSummary(
 
 /*
  * THE DATED BOARD REPORT (#1542, RP-04). The same aggregate contract and the
- * same suppression as the summary, for a chosen reporting window: training
- * sessions by their date and coach reviews by the gym day they were written,
- * both inclusive of the window's first and last day. Active athletes and goal
- * status have no stored history, so they are as of when the report was made
- * (RP-04 Q-E default A), and the report says so in its definitions.
+ * same suppression as the summary, for one completed calendar month (the route
+ * enforces it; RP-04 Q-F default A): training sessions by their date and coach
+ * reviews by the gym day they were written, both inclusive of the window's
+ * first and last day, for every athlete of the organization not deleted --
+ * not only those active today, so deactivating an athlete later does not
+ * change a past month (and cannot be read off by comparing two reads). Active
+ * athletes and goal status have no stored history, so they are as of when the
+ * report was made (RP-04 Q-E default A), and the report says so.
  *
  * Without a window, getBoardSummary is unchanged: the dashboard keeps its
  * rolling 30 days and its single query parameter.
@@ -202,7 +205,7 @@ const ROLLING_REVIEWS = `cr.created_at >= now() - interval '30 days'`;
 const WINDOW_SESSIONS = `s.date between $2::date and $3::date`;
 const WINDOW_REVIEWS = `(cr.created_at at time zone $4::text)::date between $2::date and $3::date`;
 
-function boardSummarySql(sessionsInPeriod: string, reviewsInPeriod: string): string {
+function boardSummarySql(sessionsInPeriod: string, reviewsInPeriod: string, periodAthletesActiveOnly: boolean): string {
   return `with active_athletes as (
        select athlete_id
        from pilot.athletes
@@ -214,10 +217,16 @@ function boardSummarySql(sessionsInPeriod: string, reviewsInPeriod: string): str
          -- deleted with them (scope B).
          and deleted_at is null
      ),
+     period_athletes as (
+       select athlete_id
+       from pilot.athletes
+       where organization_id = $1
+         and deleted_at is null${periodAthletesActiveOnly ? '\n         and active_flag = true' : ''}
+     ),
      recent_sessions as (
        select s.athlete_id, s.completed_flag
        from pilot.sessions s
-       join active_athletes a on a.athlete_id = s.athlete_id
+       join period_athletes a on a.athlete_id = s.athlete_id
        where s.organization_id = $1
          and ${sessionsInPeriod}
      ),
@@ -238,7 +247,7 @@ function boardSummarySql(sessionsInPeriod: string, reviewsInPeriod: string): str
        join pilot.sessions s
          on s.organization_id = cr.organization_id
         and s.session_id = cr.session_id
-       join active_athletes a on a.athlete_id = s.athlete_id
+       join period_athletes a on a.athlete_id = s.athlete_id
        where cr.organization_id = $1
          and ${reviewsInPeriod}
      )
@@ -270,7 +279,7 @@ export async function getBoardSummary(
   requireOrganization(organizationId);
 
   const row = await queryOne<BoardSummaryRow>(
-    boardSummarySql(ROLLING_SESSIONS, ROLLING_REVIEWS),
+    boardSummarySql(ROLLING_SESSIONS, ROLLING_REVIEWS, true),
     [organizationId],
   );
 
@@ -287,7 +296,7 @@ export async function getBoardReport(
   requireOrganization(organizationId);
 
   const row = await queryOne<BoardSummaryRow>(
-    boardSummarySql(WINDOW_SESSIONS, WINDOW_REVIEWS),
+    boardSummarySql(WINDOW_SESSIONS, WINDOW_REVIEWS, false),
     [organizationId, window.from, window.to, GYM_TIME_ZONE],
   );
 

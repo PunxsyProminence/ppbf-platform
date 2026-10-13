@@ -134,11 +134,11 @@ export function formatMeasuredAt(generatedAt: string): string | null {
 }
 
 /** A month (YYYY-MM) as the window of days it covers, first to last. */
-export function monthsWindow(fromMonth: string, toMonth: string): BoardReportWindow {
-  const [year, month] = toMonth.split('-').map(Number);
+export function monthWindow(month: string): BoardReportWindow {
+  const [year, monthNumber] = month.split('-').map(Number);
   return {
-    from: `${fromMonth}-01`,
-    to: new Date(Date.UTC(year!, month!, 0)).toISOString().slice(0, 10),
+    from: `${month}-01`,
+    to: new Date(Date.UTC(year!, monthNumber!, 0)).toISOString().slice(0, 10),
   };
 }
 
@@ -188,20 +188,17 @@ function reportFigures(report: BoardReport): ReportFigure[] {
 }
 
 /*
- * THE DATED BOARD REPORT (#1542, RP-04). Whole, completed calendar months the
- * board chooses (the last completed month by default; Q-F A: months never
- * overlap, so two reports cannot be subtracted to isolate one day), the same
- * aggregate figures and suppression as the
+ * THE DATED BOARD REPORT (#1542, RP-04). One completed calendar month the
+ * board chooses (the last completed month by default; Q-F A: reports never
+ * overlap, so two cannot be subtracted to single out what was withheld), the
+ * same aggregate figures and suppression as the
  * tiles above, when it was made, and what each figure counts. Print prints the
  * report alone; the browser's "Save as PDF" makes the file. Aggregate only: no
  * athlete appears. The definitions are written from the query in
  * src/server/pilot/boardSummary.ts.
  */
 function BoardReportSection() {
-  const [months, setMonths] = useState(() => {
-    const last = lastCompletedMonth(Date.now());
-    return { from: last, to: last };
-  });
+  const [month, setMonth] = useState(() => lastCompletedMonth(Date.now()));
   const [report, setReport] = useState<BoardReport | null>(null);
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
@@ -210,11 +207,11 @@ function BoardReportSection() {
   async function makeReport() {
     if (busyRef.current) return;
     setFailure('');
-    if (!months.from || !months.to || months.from > months.to) {
-      setFailure('Choose a From month on or before the To month.');
+    if (!month) {
+      setFailure('Choose a month.');
       return;
     }
-    const range = monthsWindow(months.from, months.to);
+    const range = monthWindow(month);
     busyRef.current = true;
     setBusy(true);
     try {
@@ -239,21 +236,12 @@ function BoardReportSection() {
       <h3 className="t-label">Board report</h3>
       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
         <label className="field">
-          <span className="t-label">From month</span>
+          <span className="t-label">Month</span>
           <input
             type="month"
             className="input"
-            value={months.from}
-            onChange={(event) => { setFailure(''); setReport(null); setMonths((held) => ({ ...held, from: event.target.value })); }}
-          />
-        </label>
-        <label className="field">
-          <span className="t-label">To month</span>
-          <input
-            type="month"
-            className="input"
-            value={months.to}
-            onChange={(event) => { setFailure(''); setReport(null); setMonths((held) => ({ ...held, to: event.target.value })); }}
+            value={month}
+            onChange={(event) => { setFailure(''); setReport(null); setMonth(event.target.value); }}
           />
         </label>
         <button type="button" className="btn" onClick={() => void makeReport()} disabled={busy}>
@@ -313,12 +301,12 @@ function BoardReportSection() {
               <li>Scope: the whole organization. No individual athlete appears in this report.</li>
               <li>Active athletes: athletes marked active and not deleted, as of when this report was made.</li>
               <li>
-                Training sessions: sessions dated in the reporting window, for athletes active when the report was made.
-                Completed means the session is marked completed.
+                Training sessions: sessions dated in the month, for every athlete on record (not deleted), including
+                athletes no longer active. Completed means the session is marked completed.
               </li>
               <li>
-                Coach reviews: reviews written on a gym day in the reporting window, on sessions of athletes active when
-                the report was made. Approved means the review is marked approved.
+                Coach reviews: reviews written on a gym day in the month, on those athletes&apos; sessions. Approved
+                means the review is marked approved.
               </li>
               <li>
                 Goals: the current goals of active athletes, as of when this report was made, by status. Active is
@@ -333,8 +321,9 @@ function BoardReportSection() {
                 The organization figures above this report cover a rolling 30 days to today and will differ from it.
               </li>
               <li>
-                Reports cover whole, completed calendar months, so two reports never overlap and cannot be subtracted to
-                single out a day.
+                A report covers one completed calendar month, so no two reports overlap. Figures are read from the
+                records as they stand when the report is made: a record added, corrected or deleted later changes the
+                month.
               </li>
             </ul>
           </article>
