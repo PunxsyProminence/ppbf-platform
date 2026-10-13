@@ -154,6 +154,18 @@ describe('GET with a reporting window (RP-04)', () => {
     expect(mockGetBoardSummary).not.toHaveBeenCalled();
   });
 
+  test("on the gym's last evening of a month, that month is still in progress though UTC has moved on", async () => {
+    // 03:30 UTC on Nov 1 is 11:30 pm on Oct 31 in the gym.
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T03:30:00.000Z'));
+    mockRequirePrincipal.mockResolvedValueOnce(principalFor('board'));
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/board/summary?from=2026-10-01&to=2026-10-31'));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('A board report covers completed months only: to must be before the start of this month.');
+    expect(mockGetBoardReport).not.toHaveBeenCalled();
+  });
+
   test.each(['coach', 'organization_admin', 'admin', 'athlete', 'parent'])('%s cannot make a board report', async (role) => {
     mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
 
