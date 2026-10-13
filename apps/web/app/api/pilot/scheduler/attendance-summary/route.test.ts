@@ -11,6 +11,8 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 
 jest.mock('@/src/server/pilot/attendanceReporting', () => ({
+  // The CSV writer is pure and stays real, so the file this route sends is the shipped one.
+  attendanceByAthleteCsv: jest.requireActual('@/src/server/pilot/attendanceReporting').attendanceByAthleteCsv,
   getOrganizationAttendanceSummary: jest.fn(),
   getClassAttendanceRoster: jest.fn(),
   getWeeklyAttendanceTrend: jest.fn(),
@@ -324,5 +326,83 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
       expect(payload.roster).toHaveLength(2);
       expect(mockReachable).not.toHaveBeenCalled();
     });
+  });
+});
+
+/*
+ * THE ATTENDANCE-BY-ATHLETE REPORT (RP-01): a dated CSV of the same summary,
+ * for a period counted by class date in gym time, under the same roles and the
+ * same coach scope as the JSON.
+ */
+describe('the attendance-by-athlete report (RP-01)', () => {
+  const ROW = {
+    athlete_id: 'ath-1',
+    full_name: 'Ada Rivera',
+    present_count: 3,
+    absent_count: 1,
+    excused_count: 1,
+    total_marked: 5,
+    last_marked_at: '2026-10-08 23:30:00+00',
+    attendance_rate: 0.75,
+  };
+
+  test('a CSV for a period: the file, its name, and the period passed down', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSummary.mockResolvedValueOnce([ROW]);
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?from=2026-09-14&to=2026-10-13&format=csv'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="attendance-by-athlete_2026-09-14_2026-10-13.csv"');
+    expect(mockSummary).toHaveBeenCalledWith('org-a', expect.objectContaining({ fromDay: '2026-09-14', toDay: '2026-10-13' }));
+    // The raw bytes: Response.text() would strip the byte order mark it is checking for.
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const body = new TextDecoder().decode(bytes);
+    expect(body).toContain('"Ada Rivera","3","1","1","5","75%"');
+  });
+
+  test("a coach's file holds only the athletes their dashboard holds", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach' }));
+    mockReachable.mockResolvedValueOnce(['ath-1']);
+    mockSummary.mockResolvedValueOnce([ROW, { ...ROW, athlete_id: 'ath-out', full_name: 'Not Mine' }]);
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?from=2026-09-14&to=2026-10-13&format=csv'));
+
+    expect(mockSummary).toHaveBeenCalledWith('org-a', expect.objectContaining({ coachAccountId: 'acct-coach' }));
+    const body = await response.text();
+    expect(body).toContain('Ada Rivera');
+    expect(body).not.toContain('Not Mine');
+  });
+
+  test.each([
+    ['a date that is not a date', '?from=2026-02-30&to=2026-03-01&format=csv', /^Unsupported from/],
+    ['a date in another shape', '?from=10/01/2026&to=2026-10-13&format=csv', /^Unsupported from/],
+    ['a period that ends before it starts', '?from=2026-10-13&to=2026-10-01&format=csv', /^Unsupported period/],
+    ['a CSV with no period', '?format=csv', /^Missing from or to/],
+    ['another format', '?from=2026-10-01&to=2026-10-13&format=xlsx', /^Unsupported format/],
+    ['a CSV of one class roster', '?class_id=c-1&format=csv', /^Unsupported format/],
+    ['a CSV of the weekly trend', '?trend=1&format=csv', /^Unsupported format/],
+    ['a CSV also narrowed by since', '?since=2026-10-10&from=2026-09-14&to=2026-10-13&format=csv', /^Unsupported format/],
+  ])('%s is refused with a sentence', async (_label, query, message) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSummary.mockResolvedValueOnce([]);
+
+    const response = await GET(request(`/api/pilot/scheduler/attendance-summary${query}`));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(message);
+    // Refused before any read.
+    expect(mockSummary).not.toHaveBeenCalled();
+  });
+
+  test('an athlete or a parent cannot download it', async () => {
+    for (const role of ['athlete', 'parent']) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+      const response = await GET(request('/api/pilot/scheduler/attendance-summary?from=2026-09-14&to=2026-10-13&format=csv'));
+      expect(response.status).toBe(403);
+    }
+    expect(mockSummary).not.toHaveBeenCalled();
   });
 });

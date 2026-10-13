@@ -38,7 +38,7 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne, withTransaction } from './db';
-import { listExecutions, correctExecution } from './interventionExecutions';
+import { listExecutions, correctExecution, RECORD_CHANGED_MESSAGE } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
 import { reviseProtocol } from './interventionProtocols';
 
@@ -61,6 +61,10 @@ let faultOn: RegExp | null = null;
  * which is how a second writer reaches its stamp believing the predecessor is
  * still current. */
 let staleRead: { pattern: RegExp; rows: StoredRow[] } | null = null;
+/** Stands in for Postgres's xmin: every write to an execution row stamps the
+ * next value on it, so a row read twice with a write in between reads
+ * differently, whatever that write changed. */
+let rowWrites = 0;
 
 function emptyStore(): Store {
   return {
@@ -157,6 +161,20 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   }
 
   /* ---- executions ---- */
+  // The record's status and row version: what a correction reads first, and
+  // reads again under its row lock. The lock itself is not modelled -- one
+  // writer runs at a time here; interventionWriteRaces.pg.test.ts runs two.
+  if (/select status, xmin::text as row_version\s+from pilot\.intervention_executions/.test(sql)) {
+    return store.intervention_executions
+      .filter((r) => r.organization_id === params[0] && r.execution_id === params[1])
+      .map((r) => ({ status: r.status, row_version: String(r.xmin ?? 0) }));
+  }
+  // The execution's status, read under the lock a review takes.
+  if (/select status from pilot\.intervention_executions/.test(sql)) {
+    return store.intervention_executions
+      .filter((r) => r.organization_id === params[0] && r.execution_id === params[1])
+      .map((r) => ({ status: r.status }));
+  }
   if (/from pilot\.intervention_executions e/.test(sql)) {
     const rows = store.intervention_executions.filter((r) => {
       if (r.organization_id !== params[0]) return false;
@@ -179,6 +197,7 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
         supersedes_execution_id: source.execution_id,
         correction_reason: params[15],
         status: 'superseded',
+        xmin: (rowWrites += 1),
       });
     });
     return [{ execution_id: params[2] }];
@@ -193,7 +212,10 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   if (/update pilot\.intervention_executions set actual_end = null/.test(sql)) {
     applyChecked((candidate) => {
       for (const row of candidate.intervention_executions) {
-        if (row.organization_id === params[0] && row.execution_id === params[1]) row.actual_end = null;
+        if (row.organization_id === params[0] && row.execution_id === params[1]) {
+          row.actual_end = null;
+          row.xmin = (rowWrites += 1);
+        }
       }
     });
     return [];
@@ -265,8 +287,13 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
 /**
  * The state predicate is read OUT OF the SQL rather than assumed. A stamp that
  * carries no `and status ...` clause matches unconditionally, exactly as
- * Postgres would -- so dropping the guard makes these tests fail rather than
- * quietly pass on a guard the harness supplied for the code.
+ * Postgres would -- so dropping the guard makes reviseProtocol's tests fail
+ * rather than quietly pass on a guard the harness supplied for the code.
+ *
+ * correctExecution and reviewOutcome no longer reach their stamps in the
+ * two-writer case: each now takes the execution's row lock and re-checks what
+ * it read before it inserts anything, so the second writer is refused there.
+ * Their stamp predicates remain as backstops that no test here can reach.
  */
 function updateStatus(
   sql: string,
@@ -285,6 +312,7 @@ function updateStatus(
       if (equals && row.status !== equals[1]) continue;
       if (notEquals && row.status === notEquals[1]) continue;
       row.status = nextStatus;
+      row.xmin = (rowWrites += 1);
       matched.push({ [idColumn]: row[idColumn] });
     }
   });
@@ -297,6 +325,7 @@ beforeEach(() => {
   store = emptyStore();
   faultOn = null;
   staleRead = null;
+  rowWrites = 0;
 
   (query as jest.Mock).mockImplementation(async (sql: string, params: unknown[] = []) => execute(sql, params));
   (queryOne as jest.Mock).mockImplementation(async (sql: string, params: unknown[] = []) => execute(sql, params)[0] ?? null);
@@ -581,19 +610,21 @@ describe('correctExecution', () => {
     ]);
   });
 
-  test('a second correction that read the same record loses cleanly: null, and nothing stranded', async () => {
+  test('a second correction that read the same record loses cleanly: told the record changed, and nothing stranded', async () => {
     seedExecution();
     seedLink();
-    const recordAsBothWritersReadIt = { ...store.intervention_executions[0] };
+    const versionAsBothWritersReadIt = { status: 'completed', row_version: '0' };
 
     const first = await correctExecution(correction);
     expect(first?.version).toBe(2);
 
-    staleRead = { pattern: /from pilot\.intervention_executions e/, rows: [recordAsBothWritersReadIt] };
+    staleRead = { pattern: /select status, xmin::text as row_version/, rows: [versionAsBothWritersReadIt] };
 
-    const second = await correctExecution({ ...correction, correctionReason: 'A different correction.' });
+    // The second writer's first read is the stale one; its read under the lock
+    // is the record as the first correction left it.
+    await expect(correctExecution({ ...correction, correctionReason: 'A different correction.' }))
+      .rejects.toThrow(RECORD_CHANGED_MESSAGE);
 
-    expect(second).toBeNull();
     expect(liveExecutions()).toHaveLength(1);
     expect(store.intervention_executions).toHaveLength(2);
     // The evidence stays on the correction that won, not on the loser's
@@ -630,7 +661,7 @@ describe('reviewOutcome', () => {
     expect(store.intervention_outcome_reviews).toHaveLength(1);
   });
 
-  test('a second reviewer who read the same verdict loses cleanly: null, and nothing stranded', async () => {
+  test('a second reviewer who read the same verdict loses cleanly: told the record changed, and nothing stranded', async () => {
     seedExecution();
     seedReview();
 
@@ -641,9 +672,9 @@ describe('reviewOutcome', () => {
     // the first committed.
     staleRead = { pattern: /select review_id from pilot\.intervention_outcome_reviews/, rows: [{ review_id: 'review-0' }] };
 
-    const second = await reviewOutcome({ ...verdict, reviewedByAccountId: 'acct-coach-3' });
+    await expect(reviewOutcome({ ...verdict, reviewedByAccountId: 'acct-coach-3' }))
+      .rejects.toThrow(RECORD_CHANGED_MESSAGE);
 
-    expect(second).toBeNull();
     expect(activeReviews()).toHaveLength(1);
     expect(activeReviews()[0].reviewed_by_account_id).toBe('acct-coach-2');
     expect(store.intervention_outcome_reviews).toHaveLength(2);

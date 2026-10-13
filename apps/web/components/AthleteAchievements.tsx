@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
+import { gymDayIso } from '@/src/lib/gymTime';
 import {
   DEFAULT_PROGRAM,
   PROGRAMS,
@@ -579,9 +580,14 @@ function TrackPanel({
   );
 }
 
-/** Dates arrive as ISO or YYYY-MM-DD; render without inventing a timezone. */
+/**
+ * Dates arrive as an instant (created_at) or a bare YYYY-MM-DD (a calendar
+ * day). A bare day is printed as it is. An instant is first reduced to the
+ * gym's day: slicing the ISO text names the UTC day, which is tomorrow for a
+ * note sent after 8 PM gym time (F-045).
+ */
 function formatDay(raw: string): string {
-  const ymd = raw.slice(0, 10);
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return raw;
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import AttendanceDashboardPage from './page';
 
@@ -122,5 +122,85 @@ describe.each([
     await screen.findByText(/attendance could not be loaded/i);
     expect(tileValue('Athletes tracked')).toBe('—');
     expect(tileValue('Never checked in')).toBe('—');
+  });
+});
+
+/*
+ * THE ATTENDANCE-BY-ATHLETE REPORT (RP-01): From and To default to the last 30
+ * gym days, the download asks the server for that period's CSV, and a refused
+ * or failed download says so. The clock is fixed at noon in the gym so the
+ * default period does not depend on the hour the suite runs.
+ */
+describe('the attendance report download (RP-01)', () => {
+  const GYM_NOON = Date.parse('2026-10-13T16:00:00.000Z');
+  const createObjectURL = jest.fn(() => 'blob:report');
+  const revokeObjectURL = jest.fn();
+
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(GYM_NOON);
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function installReport(csv: { ok: boolean; error?: string }) {
+    const fetchMock = jest.fn(async (url: string) => {
+      if (String(url).includes('format=csv')) {
+        return csv.ok
+          ? ({ ok: true, blob: async () => new Blob(['a,b']) } as unknown as Response)
+          : ({ ok: false, json: async () => ({ error: csv.error }) } as unknown as Response);
+      }
+      if (String(url).includes('trend=1')) return jsonResponse({ ok: true, trend: [] });
+      return jsonResponse({ ok: true, athletes: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test('defaults to the last 30 gym days and downloads that period as CSV', async () => {
+    const fetchMock = installReport({ ok: true });
+    render(<AttendanceDashboardPage />);
+
+    expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('2026-09-14');
+    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('2026-10-13');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    });
+
+    const reportCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('format=csv'));
+    expect(reportCalls).toHaveLength(1);
+    expect(String(reportCalls[0]![0])).toContain('from=2026-09-14&to=2026-10-13&format=csv');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a refused download says why and saves nothing', async () => {
+    installReport({ ok: false, error: 'Forbidden: attendance reporting is available to coach and organization_admin/admin only' });
+    render(<AttendanceDashboardPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Forbidden');
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test('a period that ends before it starts is not sent', async () => {
+    const fetchMock = installReport({ ok: true });
+    render(<AttendanceDashboardPage />);
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    });
+
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('format=csv'))).toBe(false);
+    expect(screen.getByRole('alert').textContent).toContain('Choose a From date on or before the To date.');
   });
 });

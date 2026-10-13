@@ -62,7 +62,8 @@ describe('getOrganizationAttendanceSummary', () => {
     await getOrganizationAttendanceSummary('org-1');
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', null, null]);
+    // No period: fromDay and toDay are null too; the gym time zone always rides along.
+    expect(params).toEqual(['org-1', null, null, null, null, 'America/New_York']);
   });
 
   test('a coach-scoped call passes the coach account id and since timestamp through', async () => {
@@ -76,7 +77,7 @@ describe('getOrganizationAttendanceSummary', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('from pilot.athletes ath');
     expect(sql).toContain('pilot.scheduler_attendance');
-    expect(params).toEqual(['org-1', 'acct-coach-1', '2026-07-01T00:00:00.000Z']);
+    expect(params).toEqual(['org-1', 'acct-coach-1', '2026-07-01T00:00:00.000Z', null, null, 'America/New_York']);
   });
 
   // A mark with no live registration appears on no class roster, so counting

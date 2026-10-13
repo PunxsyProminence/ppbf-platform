@@ -400,7 +400,7 @@ describe('a check-in that exists is read back exactly as stored', () => {
     await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
     await pickAthlete('Jordan P.');
 
-    expect(within(panel()).getByText(/checked in on 2026-09-22\./)).not.toBeNull();
+    expect(within(panel()).getByText(/checked in on Sep 22, 2026\./)).not.toBeNull();
     expect(within(panel()).getByText(/Today's report for Jordan P\./)).not.toBeNull();
 
     // Sleep is a quantity: the stored hours, not a rating and not rounded.

@@ -1,3 +1,4 @@
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { SLEEP_HOURS_TYPICAL_MAX } from '@/src/shared/wellnessScales';
 
 // Map item 20: the sleep hours an athlete reported on their recent check-ins,
@@ -34,7 +35,7 @@ export default function SleepTrend({ items, heading }: { items: readonly SleepTr
               className="grid grid-cols-[7rem_1fr_6.5rem] items-center gap-[var(--s2)]"
               style={{ fontSize: 'var(--t-sm)' }}
             >
-              <span className="t-data">{item.checked_in_on}</span>
+              <span className="t-data">{formatCalendarDay(item.checked_in_on)}</span>
               <span aria-hidden="true" className="block h-[0.5rem] rounded-[var(--r-sm)] bg-[rgba(0,0,0,.28)]">
                 {item.sleep_hours !== null && (
                   <span
