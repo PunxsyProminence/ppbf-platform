@@ -75,16 +75,27 @@ function position(reading: WallRoundReading): number {
   return reading.round * 3 + phase;
 }
 
+/** How far a running round's count may step back on a poll (rounding, latency) and still be the same set. */
+export const RESTART_TOLERANCE_SECONDS = 2;
+
 /**
  * A new set of rounds on the same run: the coach ended or reset the timer, or ended, reconfigured
- * and started again between two polls (a fresh round that is EARLIER than the last reading). A
- * poll's small backwards correction never looks like this: it lands near the end of a period, not
- * at the start of one.
+ * and started again between two polls -- a fresh round that is EARLIER than the last reading, or
+ * the same round of a running set jumped back to its start by more than a poll's correction. A
+ * poll's small backwards correction never looks like this: it lands near the end of a period, or
+ * moves the count back by a second or two at most.
  */
 export function isNewSet(prev: WallRoundReading | null, next: WallRoundReading, config: RoundConfig, fresh: number): boolean {
   if (next.state === 'ready' || next.state === 'ended') return true;
   if (!prev) return false;
-  return next.phase === 'work' && position(next) < position(prev) && periodAge(next, config) <= fresh;
+  if (next.phase !== 'work' || periodAge(next, config) > fresh) return false;
+  if (position(next) < position(prev)) return true;
+  return (
+    position(next) === position(prev)
+    && next.state === 'running'
+    && prev.state === 'running'
+    && next.seconds_left - prev.seconds_left > RESTART_TOLERANCE_SECONDS
+  );
 }
 
 const BEFORE_START: WallRoundReading = { state: 'ready', phase: 'ready', round: 0, rounds_total: 0, seconds_left: 0 };

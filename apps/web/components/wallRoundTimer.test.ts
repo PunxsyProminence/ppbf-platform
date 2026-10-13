@@ -126,6 +126,20 @@ describe('roundSounds', () => {
     expect(isNewSet(reading({ round: 2, seconds_left: 179 }), reading({ round: 1, seconds_left: 1 }), { round_seconds: 180, rest_seconds: 0 }, 7)).toBe(false);
   });
 
+  // Codex on #1504: ended, reconfigured and started again between polls, both readings in round 1.
+  test('a restart within the same round is a new set: its start bell rings again', () => {
+    const prev = reading({ round: 1, seconds_left: 150 });
+    const next = reading({ round: 1, seconds_left: 178 });
+    expect(isNewSet(prev, next, CONFIG, 7)).toBe(true);
+    expect(roundSounds('r#2', prev, next, CONFIG, 7)).toEqual([{ voice: 'bell', keys: ['r#2:1:start'] }]);
+    // A poll that steps the count back a second or two is the same set, and rings nothing.
+    expect(isNewSet(reading({ seconds_left: 176 }), reading({ seconds_left: 178 }), CONFIG, 7)).toBe(false);
+    expect(roundSounds('r#1', reading({ seconds_left: 176 }), reading({ seconds_left: 178 }), CONFIG, 7)).toEqual([]);
+    // A jump back late in a round is not a fresh start, and a paused reading is not a restart.
+    expect(isNewSet(reading({ seconds_left: 40 }), reading({ seconds_left: 60 }), CONFIG, 7)).toBe(false);
+    expect(isNewSet(reading({ seconds_left: 150 }), reading({ state: 'paused', seconds_left: 178 }), CONFIG, 7)).toBe(false);
+  });
+
   test('no knock for a jump straight past it (a tab that slept, or a late poll)', () => {
     expect(roundSounds('r', reading({ seconds_left: 40 }), reading({ seconds_left: 1 }), CONFIG, 7)).toEqual([]);
   });

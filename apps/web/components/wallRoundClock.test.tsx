@@ -282,4 +282,38 @@ describe('the round clock on a paired TV', () => {
     await seconds(3);
     expect(played).toEqual(['bell']);
   });
+
+  // Codex on #1504: the clock follows its own good reading, not the board's.
+  test('a first page whose board missed still shows the round clock and rings its bells', async () => {
+    boardMiss = true;
+    serverTimer = { startedAt: T0 - 27_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Round 1 of 3');
+    await seconds(4);
+    expect(played).toEqual(['bell']);
+  });
+
+  test('while only the board misses, the short poll holds', async () => {
+    serverTimer = { startedAt: T0, state: 'running', config: { rounds_total: 50 } };
+    render(<WallDisplay />);
+    await settle();
+    boardMiss = true;
+    const start = sessionReads();
+    await seconds((WALL_ROUND_POLL_MS / 1000) * 6);
+    expect(sessionReads()).toBe(start + 6);
+  });
+
+  test('a restart in the same round between two polls rings the new start bell', async () => {
+    serverTimer = { startedAt: T0 - 2_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    // 16 seconds into a 30-second round: before the knock, and one second before the next poll.
+    await seconds(14);
+    expect(played).toEqual([]);
+    // Ended, set again and started, all between two polls: round 1 again, just begun.
+    serverTimer = { startedAt: Date.now(), state: 'running' };
+    await seconds(2);
+    expect(played).toEqual(['bell']);
+  });
 });

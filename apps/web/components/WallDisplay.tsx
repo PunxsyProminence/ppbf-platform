@@ -61,7 +61,9 @@ export const WALL_ROUND_FRESH_SECONDS = 7;
  * genuinely dead backend is not hammered forever.
  */
 export function nextPollDelayMs(consecutiveFailures: number, roundsLive = false): number {
-  if (consecutiveFailures <= 0) return roundsLive ? WALL_ROUND_POLL_MS : WALL_POLL_MS;
+  // roundsLive after a failure means the paired read itself answered (only the board missed): the
+  // timer is good, so the short poll holds and a coach's press reaches the wall in time.
+  if (consecutiveFailures <= 0 || roundsLive) return roundsLive ? WALL_ROUND_POLL_MS : WALL_POLL_MS;
   return Math.min(5_000 * 2 ** (consecutiveFailures - 1), WALL_POLL_MS);
 }
 
@@ -309,8 +311,11 @@ export default function WallDisplay() {
           roundsLive = roundsAreLive(error.timer);
           setRoundTimer(error.timer ? { ...error.timer, readAt: Date.now() } : null);
         }
-        if (error instanceof UnpairedReadError) {
+        if (!(error instanceof BoardMissError)) {
+          // The read itself failed: no fresh timer, so back off as for any outage.
           roundsLive = false;
+        }
+        if (error instanceof UnpairedReadError) {
           setRoundTimer(null);
           setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
@@ -359,8 +364,11 @@ export default function WallDisplay() {
   const health: WallHealth = now === null ? 'never' : boardHealth(lastGoodAt, now);
   const zone = board?.time_zone;
   const showLive = board !== null && health !== 'abandoned';
+  // The round clock follows its own reading, not the board's: a paired read that brought a timer
+  // but missed its board still shows and rings it. It goes when that reading is as old as an
+  // abandoned board.
   const roundReading =
-    roundTimer && now !== null && showLive
+    roundTimer && now !== null && now - roundTimer.readAt < WALL_ABANDON_MS
       ? advanceRoundTimer(roundTimer.view, Math.floor((now - roundTimer.readAt) / 1000))
       : null;
 
