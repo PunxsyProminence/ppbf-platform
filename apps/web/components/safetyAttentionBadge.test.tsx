@@ -25,7 +25,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import SafetyAttentionBadge, { isRefusedTeamClip } from './SafetyAttentionBadge';
+import SafetyAttentionBadge from './SafetyAttentionBadge';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -401,33 +401,16 @@ describe('the badge reads the existing record, not a second one', () => {
  * on the bar -- for the organization admin, the one role that can act on it.
  */
 describe('refused team clips are counted on the organization admin bar', () => {
-  interface ClipFixture {
-    video_session_id: string;
-    title?: string;
-    file_name?: string;
-    athlete_id: string | null;
-    scan_state: string;
-    status: string;
-  }
-
-  function clip(overrides: Partial<ClipFixture> = {}): ClipFixture {
-    return {
-      video_session_id: 'v1',
-      title: 'Tuesday sparring, Jordan and Sam',
-      file_name: 'IMG_4471.MOV',
-      athlete_id: null,
-      scan_state: 'blocked',
-      status: 'quarantined',
-      ...overrides,
-    };
-  }
-
-  function installRouted(clips: ClipFixture[] | 'fail'): jest.Mock {
+  // The server's count (/api/pilot/video/refused-team-clips; the set is proven
+  // on real rows in refusedTeamClips.pg.test.ts). 'fail' is a refused read;
+  // 'garbled' is a 200 that carries no number.
+  function installRouted(count: number | 'fail' | 'garbled'): jest.Mock {
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/api/pilot/video/list')) {
-        if (clips === 'fail') return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
-        return { ok: true, status: 200, json: async () => ({ items: clips }) } as unknown as Response;
+      if (url.includes('/api/pilot/video/refused-team-clips')) {
+        if (count === 'fail') return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+        if (count === 'garbled') return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({ count }) } as unknown as Response;
       }
       return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
     });
@@ -441,58 +424,93 @@ describe('refused team clips are counted on the organization admin bar', () => {
     });
   }
 
-  test('only clips with no athlete, refused by the screen and still held, are counted', async () => {
-    installRouted([
-      clip({ video_session_id: 'v1' }),
-      clip({ video_session_id: 'v2' }),
-      clip({ video_session_id: 'v3', athlete_id: 'ath-1' }),
-      clip({ video_session_id: 'v4', status: 'ready' }),
-      clip({ video_session_id: 'v5', scan_state: 'needs_human_review' }),
-      clip({ video_session_id: 'v6', scan_state: 'clean', status: 'ready' }),
-    ]);
+  test("the server's count is shown exactly, and links to the review filtered to those clips", async () => {
+    const fetchMock = installRouted(2);
     await renderFor('admin');
 
     const link = await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
-    expect(link.getAttribute('href')).toBe('/admin/video-review');
+    expect(link.getAttribute('href')).toBe('/admin/video-review?filter=refused-team');
     expect(link.textContent).toContain('2 refused team clips');
+    // The count route, and not the general list: no capped page to count.
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(urls.filter((url) => url.includes('/video/'))).toEqual([expect.stringContaining('/api/pilot/video/refused-team-clips')]);
   });
 
-  test('the bar carries the number and nothing about the clip', async () => {
-    installRouted([clip()]);
+  test('a count past any page size is still the count, never a floor', async () => {
+    installRouted(250);
     await renderFor('admin');
 
-    await screen.findByRole('link', { name: '1 refused team clip. Open video review.' });
-    const bar = document.body.textContent ?? '';
-    expect(bar).not.toContain('Tuesday sparring');
-    expect(bar).not.toContain('IMG_4471');
-    expect(bar).not.toContain('v1');
+    const link = await screen.findByRole('link', { name: '250 refused team clips. Open video review.' });
+    expect(link.textContent).not.toContain('+');
+  });
+
+  test('a decision on the review page re-reads the count at once', async () => {
+    let count = 2;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return { ok: true, status: 200, json: async () => ({ count }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
+
+    count = 1;
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('an older count read that answers last does not overwrite the newer one', async () => {
+    const pending: ((value: Response) => void)[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return new Promise<Response>((resolve) => { pending.push(resolve); });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response);
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+    expect(pending).toHaveLength(2);
+
+    const answer = (count: number) => ({ ok: true, status: 200, json: async () => ({ count }) } as unknown as Response);
+    await act(async () => {
+      pending[1]!(answer(1));
+    });
+    await act(async () => {
+      pending[0]!(answer(2));
+    });
+
+    expect(screen.getByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('one clip reads in the singular', async () => {
+    installRouted(1);
+    await renderFor('admin');
+
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
   });
 
   test('none refused renders nothing', async () => {
-    installRouted([clip({ scan_state: 'clean', status: 'ready' })]);
+    installRouted(0);
     await renderFor('admin');
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // Settle the read: the badge renders nothing while loading too, so absence
+    // before the answer lands would prove nothing.
+    await act(async () => {});
     expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
     expect(screen.queryByText(/Clips: unread/)).toBeNull();
   });
 
-  test('a full page of clips makes the count a floor, never a total', async () => {
-    const page = Array.from({ length: 100 }, (_, index) => clip({
-      video_session_id: `v${index}`,
-      ...(index < 3 ? {} : { scan_state: 'clean', status: 'ready' }),
-    }));
-    installRouted(page);
-    await renderFor('admin');
-
-    const link = await screen.findByRole('link', { name: 'At least 3 refused team clips. Open video review.' });
-    expect(link.textContent).toContain('3+ refused team clips');
-  });
-
   test('an organization admin with an open escalation and a refused clip sees both counts', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes('/api/pilot/video/list')) {
-        return { ok: true, status: 200, json: async () => ({ items: [clip()] }) } as unknown as Response;
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return { ok: true, status: 200, json: async () => ({ count: 1 }) } as unknown as Response;
       }
       return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [escalation({ severity: 'critical' })] }) } as unknown as Response;
     }) as unknown as typeof fetch;
@@ -502,35 +520,24 @@ describe('refused team clips are counted on the organization admin bar', () => {
     expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
   });
 
-  test('a failed read says so rather than claiming none', async () => {
-    installRouted('fail');
+  test.each(['fail', 'garbled'] as const)('a %s read says so rather than claiming none', async (kind) => {
+    installRouted(kind);
     await renderFor('admin');
 
-    expect(await screen.findByText('Clips: unread')).toBeTruthy();
+    const unread = await screen.findByText('Clips: unread');
+    expect(unread.closest('a')?.getAttribute('href')).toBe('/admin/video-review?filter=refused-team');
   });
 
   test.each(['coach', 'platform_owner', 'athlete', 'parent', 'board', 'staff'])(
-    'the %s session never reads the video list for this count',
+    'the %s session never reads this count',
     async (role) => {
-      const fetchMock = installRouted([clip()]);
+      const fetchMock = installRouted(3);
       await renderFor(role);
 
-      expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/video/list'))).toEqual([]);
+      expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/video/'))).toEqual([]);
       expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
     },
   );
-});
-
-describe('isRefusedTeamClip', () => {
-  test.each([
-    [{ athlete_id: null, scan_state: 'blocked', status: 'quarantined' }, true],
-    [{ athlete_id: 'ath-1', scan_state: 'blocked', status: 'quarantined' }, false],
-    [{ athlete_id: null, scan_state: 'passed', status: 'ready' }, false],
-    [{ athlete_id: null, scan_state: 'needs_human_review', status: 'quarantined' }, false],
-    [{ athlete_id: null, scan_state: 'infected', status: 'infected' }, false],
-  ])('%o -> %s', (row, expected) => {
-    expect(isRefusedTeamClip(row)).toBe(expected);
-  });
 });
 
 describe('a pain report is counted on its own line, never under a severity word (#1528 Q3)', () => {

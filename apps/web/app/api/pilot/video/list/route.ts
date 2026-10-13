@@ -10,6 +10,7 @@ import {
 import { query } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
+import { listRefusedTeamClips } from '@/src/server/pilot/refusedTeamClips';
 import { untaggedVideoSql } from '@/src/server/pilot/videoClipTags';
 import { isFamilyVideoCaller, toFamilyVideoListItem } from '@/src/server/pilot/videoFamilyView';
 
@@ -90,6 +91,8 @@ interface VideoSessionRow {
  */
 const FILM_STUDY_ONLY = 'and capture_take_id is null';
 
+const REFUSED_TEAM_LIST_MAX = 101;
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -116,6 +119,28 @@ export async function GET(request: NextRequest) {
       throw new Error('Forbidden: only an organization admin may list every video');
     }
     const mediaFilter = scope === 'all' ? '' : FILM_STUDY_ONLY;
+
+    /*
+     * filter=refused_team: the refused team clips no administrator has decided
+     * yet, and nothing else (#1445; refusedTeamClips.ts). The same predicate as
+     * the top bar's count route, so the review page behind the badge shows
+     * exactly the clips the badge counted. Only with scope=all, which already
+     * admits organization admins alone.
+     */
+    const filter = searchParams.get('filter');
+    if (filter !== null && filter !== 'refused_team') {
+      return NextResponse.json({ error: 'Invalid filter parameter' }, { status: 400 });
+    }
+    if (filter === 'refused_team') {
+      if (scope !== 'all') {
+        return NextResponse.json({ error: 'Invalid filter parameter: refused_team needs scope=all' }, { status: 400 });
+      }
+      // One past the review page's 100, so it can tell "more than 100" from
+      // "exactly 100" (admin/video-review REFUSED_TEAM_LIMIT). Local to this
+      // branch: the general list keeps its ceiling.
+      const refusedLimit = parseSafeLimit(searchParams.get('limit'), 50, REFUSED_TEAM_LIST_MAX);
+      return NextResponse.json({ items: await listRefusedTeamClips(principal.organizationId, refusedLimit ?? limit) });
+    }
 
     let rows: VideoSessionRow[];
 

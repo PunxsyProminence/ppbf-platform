@@ -6876,7 +6876,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Version history of one drill lineage, org-scoped (getDrillLineage). Drill content only. Role gate line 38.",
+    "notes": "Version history of one drill lineage, org-scoped: by lineage_id (getDrillLineage) or by any version's drill_id (getDrillLineageForDrill); another gym's id reads empty. Drill content only. Role gate line 43.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7107,7 +7107,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event. Drill content only.",
+    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event; reinstate: true brings back an earlier version as the newest (reinstateDrillVersion, audit row in its transaction). Drill content only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13622,7 +13622,7 @@
     "missingGate": false,
     "looksWrong": "Every athlete-less (unassigned) clip in the gym is listed to any coach; owner-confirmed breadth (2026-08-08), see the route comment.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. filter=refused_team (with scope=all only) lists the refused team clips no administrator has decided yet, the same set the refused-team-clips count reads (#1445).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13634,6 +13634,34 @@
       ],
       "roleLiterals": [
         "admin,athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/video/refused-team-clips/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/video/refused-team-clips",
+    "gate": "requirePrincipal + requireRole(organization_admin, admin)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Returns only { count }: team clips (no athlete) the content screen refused, still quarantined, with no administrator decision yet (refusedTeamClips.ts REFUSED_TEAM_CLIP_SQL), for the caller's organization. The top bar's count (#1445 Q2 B); the clips themselves are listed by video/list scope=all&filter=refused_team over the same predicate.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
       ]
     }
   },
