@@ -223,7 +223,10 @@ describe('replying to a coach message (FC-03)', () => {
 
     const gloves = card('Bring gloves Thursday.');
     const medical = card('Medical form is due.');
-    // No limit in the box: a long reply reaches the server, whose sentence shows.
+    // No limit in the box: a long reply reaches the server, whose sentence
+    // shows. (jsdom ignores maxlength on a scripted change, so the attribute
+    // itself is what is checked.)
+    expect(within(gloves).getByLabelText(/^Your reply/)).not.toHaveAttribute('maxlength');
     fireEvent.change(within(gloves).getByLabelText(/^Your reply/), { target: { value: 'x'.repeat(2001) } });
     await act(async () => {
       fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
