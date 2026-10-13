@@ -19,6 +19,7 @@ import WallDisplay, {
   boardHealth,
   floorDensity,
   formatClock,
+  keepDailySaying,
   nextPollDelayMs,
   PAIR_MESSAGES,
   parseTimestamp,
@@ -794,6 +795,27 @@ describe('the idle band reads the gym\'s quote library on a paired TV (#1462 Q-A
     expect(first).toContain(sayings.pickSaying('anywhere', '2026-08-03', asSayings)!.line);
   });
 
+  it('an admin adding or switching off another quote mid-day does not change the line on the wall (#1462)', async () => {
+    const picked = sayings.pickSaying('anywhere', '2026-08-03', asSayings)!;
+    const { container } = await renderPaired(LIBRARY);
+    expect(container.querySelector('.marquee-idle-line')?.textContent).toContain(picked.line);
+
+    const others = LIBRARY.filter((q) => q.quote_text !== picked.line);
+    const reshaped = [
+      { quote_text: 'A NEW LINE ADDED AT NOON.', speaker: 'Coach Dan', shown: ['anywhere'] },
+      { quote_text: 'AND ANOTHER.', speaker: 'Coach Dan', shown: ['anywhere'] },
+      LIBRARY.find((q) => q.quote_text === picked.line)!,
+      ...others.slice(1),
+    ];
+    fetchMock = respondWith({ board: board({ gym_day: '2026-08-03' }), board_status: 'ok', quotes: reshaped });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+    expect(container.querySelector('.marquee-idle-line')?.textContent).toContain(picked.line);
+  });
+
   it.each([
     ['empty', []],
     ['missing on the first read', undefined],
@@ -850,5 +872,31 @@ describe('it is a display, not an interface', () => {
     for (const selector of ['button', 'a', 'input', 'select', 'textarea', 'form', '[role="button"]', '[tabindex]']) {
       expect({ selector, found: container.querySelectorAll(selector).length }).toEqual({ selector, found: 0 });
     }
+  });
+});
+
+describe('keepDailySaying (#1462)', () => {
+  const A = { line: 'A', said_by: 'x', shown: ['anywhere' as const] };
+  const B = { line: 'B', said_by: 'y', shown: ['anywhere' as const] };
+  const C = { line: 'C', said_by: 'z', shown: ['anywhere' as const] };
+
+  it('keeps the day\'s line while it is still live, whatever else changed', () => {
+    const first = keepDailySaying(null, '2026-10-13', [A, B]);
+    expect(keepDailySaying(first, '2026-10-13', [C, B, A, C])).toBe(first);
+  });
+
+  it('picks again when that line is switched off, or when the day changes', () => {
+    const first = keepDailySaying(null, '2026-10-13', [A, B])!;
+    const without = [A, B, C].filter((s) => s.line !== first.saying.line);
+    expect(keepDailySaying(first, '2026-10-13', without)?.saying.line).not.toBe(first.saying.line);
+    expect(keepDailySaying(first, '2026-10-14', [A, B])).toEqual({
+      day: '2026-10-14',
+      saying: sayings.pickSaying('anywhere', '2026-10-14', [A, B]),
+    });
+  });
+
+  it('a speaker change is a different line, picked again', () => {
+    const first = keepDailySaying(null, '2026-10-13', [A])!;
+    expect(keepDailySaying(first, '2026-10-13', [{ ...A, said_by: 'someone else' }])?.saying.said_by).toBe('someone else');
   });
 });

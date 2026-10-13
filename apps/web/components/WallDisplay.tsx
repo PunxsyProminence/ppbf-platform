@@ -6,7 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
-import { pickSaying, sayingSource, type LibraryQuote } from './gymSayings';
+import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
@@ -192,6 +192,37 @@ export function roundsAreLive(timer: WallRoundTimer | null): boolean {
   return timer !== null && timer.view.state !== 'ended';
 }
 
+/** The idle band's line for one gym day. */
+export interface DailySaying {
+  readonly day: string;
+  readonly saying: GymSaying;
+}
+
+/**
+ * Today's line, kept while it is still live (#1462). The day seed picks it, as
+ * always; but an admin adding or switching off another quote changes the
+ * list it was picked from, and re-picking by index would change the line
+ * mid-day. So the line already on the wall stays until the gym day changes or
+ * that very quote is no longer in the list.
+ */
+export function keepDailySaying(
+  previous: DailySaying | null,
+  day: string,
+  source: readonly GymSaying[],
+): DailySaying | null {
+  if (
+    previous
+    && previous.day === day
+    && sayingsFor('anywhere', source).some(
+      (s) => s.line === previous.saying.line && s.said_by === previous.saying.said_by,
+    )
+  ) {
+    return previous;
+  }
+  const saying = pickSaying('anywhere', day, source);
+  return saying ? { day, saying } : null;
+}
+
 /** One poll: the paired read first, the public read if this screen is not paired. */
 export async function readBoard(base: string): Promise<{
   board: WallBoard;
@@ -248,7 +279,10 @@ export async function readBoard(base: string): Promise<{
 
 export default function WallDisplay() {
   const [board, setBoard] = useState<WallBoard | null>(null);
-  const [quotes, setQuotes] = useState<LibraryQuote[]>([]);
+  // The quotes last read (null on a failed quotes read keeps these), and the
+  // day's line picked from them.
+  const quotesRef = useRef<LibraryQuote[]>([]);
+  const [daily, setDaily] = useState<DailySaying | null>(null);
   const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
   const [connected, setConnected] = useState(true);
   const [now, setNow] = useState<number | null>(null);
@@ -311,7 +345,9 @@ export default function WallDisplay() {
         failures = 0;
         roundsLive = roundsAreLive(nextTimer);
         setBoard(next);
-        if (library !== null) setQuotes(library);
+        if (library !== null) quotesRef.current = library;
+        const source = sayingSource(quotesRef.current, 'anywhere');
+        setDaily((previous) => keepDailySaying(previous, next.gym_day, source));
         setPaired(isPaired);
         setRoundTimer(nextTimer ? { ...nextTimer, readAt: Date.now() } : null);
         setLastGoodAt(Date.now());
@@ -336,7 +372,8 @@ export default function WallDisplay() {
           setRoundTimer(null);
           setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
-          setQuotes([]);
+          quotesRef.current = [];
+          setDaily(null);
         }
       } finally {
         // In `finally` so the early returns above cannot leave the display
@@ -427,7 +464,7 @@ export default function WallDisplay() {
       />
 
       {showLive ? (
-        <LiveBoard board={board} zone={zone} quotes={quotes} />
+        <LiveBoard board={board} zone={zone} daily={daily} />
       ) : (
         <StandingBoard health={health} />
       )}
@@ -667,7 +704,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
 
 /* ----------------------------------------------------------- live board --- */
 
-function LiveBoard({ board, zone, quotes }: { board: WallBoard; zone?: string; quotes: readonly LibraryQuote[] }) {
+function LiveBoard({ board, zone, daily }: { board: WallBoard; zone?: string; daily: DailySaying | null }) {
   return (
     <>
       {/* The golden section, not a half. --split-major / --split-minor are the
@@ -676,7 +713,7 @@ function LiveBoard({ board, zone, quotes }: { board: WallBoard; zone?: string; q
         <OnTheFloor board={board} />
         <Today sessions={board.sessions} zone={zone} />
       </main>
-      <Marquee board={board} quotes={quotes} />
+      <Marquee board={board} daily={daily} />
     </>
   );
 }
@@ -776,7 +813,7 @@ function Today({ sessions, zone }: { sessions: readonly WallSession[]; zone?: st
  * a travelling sign is what a marquee IS. Under prefers-reduced-motion it
  * stops dead and becomes a list.
  */
-function Marquee({ board, quotes }: { board: WallBoard; quotes: readonly LibraryQuote[] }) {
+function Marquee({ board, daily }: { board: WallBoard; daily: DailySaying | null }) {
   const items = board.marquee;
 
   if (items.length === 0) {
@@ -807,8 +844,9 @@ function Marquee({ board, quotes }: { board: WallBoard; quotes: readonly Library
        lettering slot, already sized for fifteen feet, and the attribution sits
        in the label the band already has. */
     // From the gym's quote library on a paired TV (#1462 Q-A), the gym's own
-    // GYM_SAYINGS otherwise; the same day seed either way.
-    const saying = pickSaying('anywhere', board.gym_day, sayingSource(quotes, 'anywhere'));
+    // GYM_SAYINGS otherwise; the same day seed either way, and kept for the
+    // day while it stays live (keepDailySaying).
+    const saying = daily && daily.day === board.gym_day ? daily.saying : pickSaying('anywhere', board.gym_day);
     return (
       <section className="marquee marquee--idle" aria-label={saying ? 'Words on the wall' : 'Milestones'}>
         {saying ? (
