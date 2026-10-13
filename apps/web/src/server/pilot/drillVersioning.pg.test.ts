@@ -106,7 +106,10 @@ import {
   getDrillLineageForDrill,
   listDrillChangeProposals,
   proposeDrillChange,
+  reinstateDrillVersion,
+  updateDrillToReferenceVersion,
 } from './drillVersioning';
+import { withTransaction } from './db';
 import { updateDrill } from './drills';
 
 jest.setTimeout(180_000);
@@ -1477,5 +1480,369 @@ describe('a retired drill cannot be changed through a change proposal (OD-2026-1
       activeClient = null;
       await client.end();
     }
+  });
+});
+
+describe('reinstating an earlier version of a drill (#1470), real database', () => {
+  const RETIRED_REFUSAL = 'This drill is retired, so an earlier version cannot be reinstated. Restore the drill first.';
+  const HEAD_REFUSAL = 'This is already the newest version.';
+
+  async function insertReferenceVersion(
+    client: Client,
+    organizationId: string,
+    drillId: string,
+    version: number,
+  ): Promise<void> {
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, version, name, category, target_behavior, purpose,
+          standard_setup, execution, what_good_looks_like, what_bad_looks_like)
+       values ($1, $2, 'lin-jab', $3, $2, 'footwork', 't', 'p', 's', 'e', 'g', 'b')`,
+      [organizationId, drillId, version],
+    );
+  }
+
+  /**
+   * One gym drill at v3: v1 (ref-v1), v2 (ref-v2, its own content) and v3
+   * (ref-v3, active), each stamped superseded by the next, plus work issued on
+   * v2 and on v3. The same ids are reused for every gym on purpose.
+   */
+  async function seedLineage(client: Client, organizationId = ORG_A): Promise<void> {
+    for (const [index, ref] of ['ref-v1', 'ref-v2', 'ref-v3'].entries()) {
+      await insertReferenceVersion(client, organizationId, ref, index + 1);
+    }
+    const versions = [
+      { id: 'drill-v1', name: 'Jab Return', focus: 'v1 focus.', cues: ['Hand home'], difficulty: 'beginner', ref: 'ref-v1' },
+      { id: 'drill-v2', name: 'Jab Return Snap', focus: 'v2 focus.', cues: ['Snap back', 'Chin down'], difficulty: 'advanced', ref: 'ref-v2' },
+      { id: 'drill-v3', name: 'Jab Return', focus: 'v3 focus.', cues: ['Hand home first'], difficulty: 'intermediate', ref: 'ref-v3' },
+    ];
+    for (const [index, v] of versions.entries()) {
+      const last = index === versions.length - 1;
+      await client.query(
+        `insert into pilot.drills
+           (organization_id, drill_id, name, category, focus, cues, difficulty, active, version, lineage_id,
+            supersedes_drill_id, superseded_at, reference_drill_id)
+         values ($1, $2, $3, 'Striking', $4, $5::text[], $6, $7, $8, 'drill-v1', $9, $10, $11)`,
+        [
+          organizationId, v.id, v.name, v.focus, v.cues, v.difficulty, last, index + 1,
+          index === 0 ? null : versions[index - 1].id, last ? null : '2026-10-01T00:00:00Z', v.ref,
+        ],
+      );
+      if (index > 0) {
+        await client.query(
+          `update pilot.drills set superseded_by_drill_id = $3 where organization_id = $1 and drill_id = $2`,
+          [organizationId, versions[index - 1].id, v.id],
+        );
+      }
+    }
+
+    const coach = organizationId === ORG_A ? COACH_A : `acct-drillver-coach-${organizationId}`;
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+      [coach, organizationId],
+    );
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+         emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'ath-1', 'Athlete One', '2011-05-06', 'fly', 'active', 'contact', true, $2, now(), now())`,
+      [organizationId, coach],
+    );
+    await client.query(
+      `insert into pilot.progression_gaps
+         (gap_id, organization_id, athlete_id, coach_account_id, gap_type, gap_description, detected_from)
+       values ($1, $2, 'ath-1', $3, 'technique', 'Drops the hand.', 'coach')`,
+      [`gap-${organizationId}`, organizationId, coach],
+    );
+    for (const drillId of ['drill-v2', 'drill-v3']) {
+      await client.query(
+        `insert into pilot.drill_assignments
+           (assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id, drill_id,
+            drill_name, drill_description)
+         values ($1, $2, $3, 'ath-1', $4, $5, $6, $7)`,
+        [
+          `asg-${organizationId}-${drillId}`, organizationId, `gap-${organizationId}`, coach, drillId,
+          `Name on ${drillId}`, `Instruction issued on ${drillId}.`,
+        ],
+      );
+    }
+  }
+
+  async function lineageRows(client: Client, organizationId = ORG_A) {
+    const { rows } = await client.query(
+      `select drill_id, name, category, focus, cues, difficulty, active, version, lineage_id,
+              supersedes_drill_id, superseded_at, superseded_by_drill_id, reference_drill_id, created_at, updated_at
+       from pilot.drills where organization_id = $1 and lineage_id = 'drill-v1' order by version`,
+      [organizationId],
+    );
+    return rows;
+  }
+
+  async function assignmentRows(client: Client, organizationId = ORG_A) {
+    const { rows } = await client.query(
+      `select assignment_id, drill_id, drill_name, drill_description
+       from pilot.drill_assignments where organization_id = $1 order by assignment_id`,
+      [organizationId],
+    );
+    return rows;
+  }
+
+  async function auditRows(client: Client, organizationId = ORG_A) {
+    const { rows } = await client.query(
+      `select event_type, actor_account_id, actor_role, entity_type, entity_id, details
+       from pilot.audit_events where organization_id = $1 and entity_type = 'drill' order by audit_id`,
+      [organizationId],
+    );
+    return rows;
+  }
+
+  function reinstate(drillId: string, organizationId = ORG_A) {
+    return reinstateDrillVersion({ organizationId, drillId, actorAccountId: COACH_A, actorRole: 'coach' });
+  }
+
+  async function withSeededGym(name: string, run: (client: Client) => Promise<void>): Promise<void> {
+    const client = await freshDatabase(name);
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await seedLineage(client);
+      await run(client);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  }
+
+  test("v2 of a v3 drill comes back as v4: v2's content and reference, v1..v3 kept, one version runs, work untouched", async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate', async (client) => {
+      const before = await lineageRows(client);
+      const assignmentsBefore = await assignmentRows(client);
+
+      const { drill, previous, source } = await reinstate('drill-v2');
+
+      expect(source.drill_id).toBe('drill-v2');
+      expect(previous.drill_id).toBe('drill-v3');
+      expect(drill).toMatchObject({
+        organization_id: ORG_A,
+        name: 'Jab Return Snap',
+        category: 'Striking',
+        focus: 'v2 focus.',
+        cues: ['Snap back', 'Chin down'],
+        difficulty: 'advanced',
+        active: true,
+        version: 4,
+        lineage_id: 'drill-v1',
+        supersedes_drill_id: 'drill-v3',
+        superseded_at: null,
+        superseded_by_drill_id: null,
+        reference_drill_id: 'ref-v2',
+      });
+
+      const after = await lineageRows(client);
+      expect(after).toHaveLength(4);
+      // v1 and v2 are exactly as they were.
+      expect(after[0]).toEqual(before[0]);
+      expect(after[1]).toEqual(before[1]);
+      // v3 is changed only by the head stamps.
+      const stamped = new Set(['active', 'superseded_at', 'superseded_by_drill_id', 'updated_at']);
+      const pick = (row: Record<string, unknown>) =>
+        Object.fromEntries(Object.entries(row).filter(([key]) => !stamped.has(key)));
+      expect(pick(after[2])).toEqual(pick(before[2]));
+      expect(after[2].active).toBe(false);
+      expect(after[2].superseded_at).not.toBeNull();
+      expect(after[2].superseded_by_drill_id).toBe(drill.drill_id);
+      expect(after.filter((row) => row.active).map((row) => row.drill_id)).toEqual([drill.drill_id]);
+
+      // Work issued on v2 and v3 keeps the version and the instruction it pinned.
+      expect(await assignmentRows(client)).toEqual(assignmentsBefore);
+
+      expect(await auditRows(client)).toEqual([
+        {
+          event_type: 'update',
+          actor_account_id: COACH_A,
+          actor_role: 'coach',
+          entity_type: 'drill',
+          entity_id: drill.drill_id,
+          details: {
+            action: 'reinstate_version',
+            reinstated_from_drill_id: 'drill-v2',
+            reinstated_from_version: 2,
+            from_drill_id: 'drill-v3',
+            version: 4,
+            lineage_id: 'drill-v1',
+            reference_drill_id: 'ref-v2',
+            name: 'Jab Return Snap',
+            category: 'Striking',
+            difficulty: 'advanced',
+          },
+        },
+      ]);
+    });
+  });
+
+  test('a legacy lineage with an earlier version still running ends with exactly one active version', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_legacy', async (client) => {
+      // v1 also running beside v3 (different names, so the name index allows it).
+      await client.query(
+        `update pilot.drills set name = 'Jab Return Old', active = true where organization_id = $1 and drill_id = 'drill-v1'`,
+        [ORG_A],
+      );
+
+      const { drill } = await reinstate('drill-v2');
+
+      const rows = await lineageRows(client);
+      expect(rows.filter((row) => row.active).map((row) => row.drill_id)).toEqual([drill.drill_id]);
+    });
+  });
+
+  test('a retired drill is refused, DRILL_RETIRED, and nothing is written', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_retired', async (client) => {
+      await updateDrill({ organizationId: ORG_A, drillId: 'drill-v3', active: false });
+      const before = await lineageRows(client);
+
+      await expect(reinstate('drill-v2')).rejects.toMatchObject({
+        message: RETIRED_REFUSAL,
+        code: 'DRILL_RETIRED',
+        status: 409,
+      });
+      expect(await lineageRows(client)).toEqual(before);
+      expect(await auditRows(client)).toEqual([]);
+    });
+  });
+
+  test('the newest version is refused, and nothing is written', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_head', async (client) => {
+      const before = await lineageRows(client);
+
+      await expect(reinstate('drill-v3')).rejects.toMatchObject({ message: HEAD_REFUSAL, status: 409 });
+      expect(await lineageRows(client)).toEqual(before);
+      expect(await auditRows(client)).toEqual([]);
+    });
+  });
+
+  test("an earlier version whose reference was withdrawn is refused with Restore's rule and code, and nothing is written", async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_withdrawn', async (client) => {
+      await client.query(`update pilot.drill_library set active = false where organization_id = $1 and drill_id = 'ref-v2'`, [ORG_A]);
+      const before = await lineageRows(client);
+
+      await expect(reinstate('drill-v2')).rejects.toMatchObject({ status: 409, code: 'reference_withdrawn' });
+      expect(await lineageRows(client)).toEqual(before);
+      expect(await auditRows(client)).toEqual([]);
+    });
+  });
+
+  test('two reinstates at once on two connections serialize on the lineage: v4 and v5, no duplicate, one runs', async () => {
+    const database = 'ppbf_test_drillver_reinstate_race';
+    await withSeededGym(database, async (client) => {
+      // The lineage is held on a third connection, so both reinstates are
+      // seen waiting before either can read the head.
+      const holder = new Client({ connectionString: connectionStringFor(database) });
+      await holder.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query(`select 1 from pilot.drills where organization_id = $1 and lineage_id = 'drill-v1' for update`, [ORG_A]);
+
+        const both = Promise.allSettled([reinstate('drill-v1'), reinstate('drill-v2')]);
+
+        let waiting = 0;
+        for (let attempt = 0; attempt < 400 && waiting < 2; attempt += 1) {
+          const result = await client.query(
+            `select count(*)::int as n from pg_stat_activity
+             where datname = current_database() and wait_event_type = 'Lock'`,
+          );
+          waiting = result.rows[0].n;
+          if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect(waiting).toBe(2);
+        await holder.query('COMMIT');
+
+        const outcomes = await both;
+        expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => {});
+        await holder.end();
+      }
+
+      const rows = await lineageRows(client);
+      expect(rows.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(rows.filter((row) => row.active).map((row) => row.version)).toEqual([5]);
+      expect(rows[3].supersedes_drill_id).toBe('drill-v3');
+      expect(rows[4].supersedes_drill_id).toBe(rows[3].drill_id);
+      expect(rows[3].superseded_by_drill_id).toBe(rows[4].drill_id);
+      expect((await auditRows(client)).map((row) => row.details.version)).toEqual([4, 5]);
+    });
+  });
+
+  test('another gym holding the very same ids is untouched, and its drill id names nothing here', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_gyms', async (client) => {
+      await seedLineage(client, ORG_B);
+      // The other gym is a version ahead on the same lineage id, so a head read
+      // that strayed across gyms would number this gym's new version wrongly.
+      await reinstate('drill-v1', ORG_B);
+      const otherBefore = await lineageRows(client, ORG_B);
+      const otherAssignments = await assignmentRows(client, ORG_B);
+      const otherAudit = await auditRows(client, ORG_B);
+
+      const { drill } = await reinstate('drill-v2');
+
+      expect(drill).toMatchObject({ version: 4, supersedes_drill_id: 'drill-v3', reference_drill_id: 'ref-v2' });
+      expect((await lineageRows(client)).map((row) => [row.version, row.active])).toEqual([
+        [1, false], [2, false], [3, false], [4, true],
+      ]);
+      expect(await lineageRows(client, ORG_B)).toEqual(otherBefore);
+      expect(await assignmentRows(client, ORG_B)).toEqual(otherAssignments);
+      expect(await auditRows(client, ORG_B)).toEqual(otherAudit);
+
+      // A drill that exists only in the other gym is not found from this one.
+      await client.query(
+        `insert into pilot.drills (organization_id, drill_id, name, category, focus)
+         values ($1, 'drill-only-b', 'Only B', 'Striking', 'B focus.')`,
+        [ORG_B],
+      );
+      await expect(reinstate('drill-only-b')).rejects.toThrow('DRILL_NOT_FOUND');
+      expect((await lineageRows(client)).length).toBe(4);
+    });
+  });
+
+  test('the audit row is on the same transaction: a failure after it leaves no audit row and no new version', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_rollback', async (client) => {
+      const before = await lineageRows(client);
+
+      await expect(
+        withTransaction(async (tx) => {
+          await reinstateDrillVersion(
+            { organizationId: ORG_A, drillId: 'drill-v2', actorAccountId: COACH_A, actorRole: 'coach' },
+            tx,
+          );
+          const seen = await tx.query(`select count(*)::int as n from pilot.audit_events where organization_id = $1`, [ORG_A]);
+          expect(seen.rows[0].n).toBe(1);
+          throw new Error('forced failure after the reinstate');
+        }),
+      ).rejects.toThrow('forced failure after the reinstate');
+
+      expect(await lineageRows(client)).toEqual(before);
+      expect(await auditRows(client)).toEqual([]);
+    });
+  });
+
+  test('the D1 update to a newer reference still works after a reinstatement', async () => {
+    await withSeededGym('ppbf_test_drillver_reinstate_then_d1', async (client) => {
+      const { drill: v4 } = await reinstate('drill-v2');
+      expect(v4.reference_drill_id).toBe('ref-v2');
+
+      const { drill: v5, previous } = await updateDrillToReferenceVersion({
+        organizationId: ORG_A,
+        drillId: 'drill-v1',
+        referenceDrillId: 'ref-v3',
+        content: { name: 'Jab Return', category: 'Striking', focus: 'ref-v3 purpose.', cues: ['Hand home first'], difficulty: 'intermediate' },
+        actorAccountId: COACH_A,
+        actorRole: 'coach',
+      });
+
+      expect(previous.drill_id).toBe(v4.drill_id);
+      expect(v5).toMatchObject({ version: 5, active: true, reference_drill_id: 'ref-v3', supersedes_drill_id: v4.drill_id });
+      const rows = await lineageRows(client);
+      expect(rows.filter((row) => row.active).map((row) => row.version)).toEqual([5]);
+    });
   });
 });
