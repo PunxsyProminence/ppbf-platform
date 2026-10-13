@@ -120,6 +120,11 @@ function mockFetch(handlers: Handlers = {}) {
     if (url.includes('/api/pilot/coach/intervention-protocols')) {
       return handlers.protocols ? handlers.protocols() : jsonResponse({ items: DEFAULT_LOG_PROTOCOLS });
     }
+    // The round timer (WO-N1-03) has its own route and its own suite (roundTimerControls.test.tsx);
+    // here it simply has no rounds set.
+    if (url.endsWith('/timer')) {
+      return jsonResponse({ timer: null });
+    }
     if (url.includes('/api/pilot/session-scripts/runs/')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       if (handlers.patch) return handlers.patch(body);
@@ -140,7 +145,7 @@ function mockFetch(handlers: Handlers = {}) {
 
 function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
   return fetchMock.mock.calls
-    .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/'))
+    .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/') && !String(call[0]).endsWith('/timer'))
     .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
 }
 
@@ -227,7 +232,7 @@ describe('the server owns the clock', () => {
     // Presentation only: the tick produced zero requests.
     expect(patchCalls(fetchMock)).toHaveLength(0);
     expect(
-      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/runs')),
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/runs') && !String(call[0]).endsWith('/timer')),
     ).toHaveLength(0);
   });
 
@@ -730,6 +735,21 @@ describe('readiness is not presence', () => {
     });
     expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }]);
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
+  });
+});
+
+describe('the round timer (WO-N1-03)', () => {
+  it("the live screen carries the run's round timer, read from its own route with a GET only", async () => {
+    const { fetchMock } = await renderLive(liveRun());
+    const section = await screen.findByRole('region', { name: 'Round timer' });
+    expect(within(section).getByText('No rounds set for this session.')).toBeInTheDocument();
+    const timerCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/runs/ssrun_1/timer'));
+    expect(timerCalls.length).toBeGreaterThan(0);
+    for (const call of timerCalls) {
+      expect((call[1] as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
+    }
+    // A timer read is never a session action.
+    expect(patchCalls(fetchMock)).toEqual([]);
   });
 });
 
