@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTime, gymDayIso } from '@/src/lib/gymTime';
 
 // The board aggregate contract, mirrored on the client so this component never
 // pulls a server module (and its database driver) across the client boundary.
@@ -35,6 +36,16 @@ export interface BoardSummary {
     other: BoardCountMetric;
   };
   coachReviews30Days: BoardReviewRateMetric;
+}
+
+export interface BoardReportWindow {
+  from: string;
+  to: string;
+}
+
+export interface BoardReport extends BoardSummary {
+  window: BoardReportWindow;
+  timeZone: string;
 }
 
 export const BOARD_SUMMARY_ENDPOINT = '/api/pilot/board/summary';
@@ -120,6 +131,195 @@ export function formatMeasuredAt(generatedAt: string): string | null {
     return null;
   }
   return `${parsed.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+/** The 30 gym days ending today, inclusive: the report's default window. */
+export function defaultReportWindow(nowMs: number): BoardReportWindow {
+  const to = gymDayIso(new Date(nowMs)) ?? new Date(nowMs).toISOString().slice(0, 10);
+  const [year, month, day] = to.split('-').map(Number);
+  const from = new Date(Date.UTC(year!, month! - 1, day! - 29)).toISOString().slice(0, 10);
+  return { from, to };
+}
+
+interface ReportFigure {
+  label: string;
+  metric: BoardCountMetric;
+  unitLabel: string;
+  detail: string | null;
+}
+
+function reportFigures(report: BoardReport): ReportFigure[] {
+  return [
+    { label: 'Active athletes', metric: report.activeAthletes, unitLabel: 'active athletes', detail: null },
+    {
+      label: 'Training sessions',
+      metric: report.trainingSessions30Days,
+      unitLabel: 'training sessions',
+      detail: boardRateDisplay(
+        report.trainingSessions30Days.completionRate,
+        report.trainingSessions30Days.completedCount,
+        report.trainingSessions30Days.count,
+        'Completed',
+      ),
+    },
+    {
+      label: 'Coach reviews',
+      metric: report.coachReviews30Days,
+      unitLabel: 'coach reviews',
+      detail: boardRateDisplay(
+        report.coachReviews30Days.approvalRate,
+        report.coachReviews30Days.approvedCount,
+        report.coachReviews30Days.count,
+        'Approved',
+      ),
+    },
+    { label: 'Goals active', metric: report.goalStatusBuckets.active, unitLabel: 'active goals', detail: null },
+    { label: 'Goals completed', metric: report.goalStatusBuckets.completed, unitLabel: 'completed goals', detail: null },
+    { label: 'Goals in another status', metric: report.goalStatusBuckets.other, unitLabel: 'goals in another status', detail: null },
+  ];
+}
+
+/*
+ * THE DATED BOARD REPORT (#1542, RP-04). A window the board chooses (the last
+ * 30 gym days by default), the same aggregate figures and suppression as the
+ * tiles above, when it was made, and what each figure counts. Print prints the
+ * report alone; the browser's "Save as PDF" makes the file. Aggregate only: no
+ * athlete appears. The definitions are written from the query in
+ * src/server/pilot/boardSummary.ts.
+ */
+function BoardReportSection() {
+  const [range, setRange] = useState<BoardReportWindow>(() => defaultReportWindow(Date.now()));
+  const [report, setReport] = useState<BoardReport | null>(null);
+  const [failure, setFailure] = useState('');
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  async function makeReport() {
+    if (busyRef.current) return;
+    setFailure('');
+    if (!range.from || !range.to || range.from > range.to) {
+      setFailure('Choose a From date on or before the To date.');
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({ from: range.from, to: range.to });
+      const response = await fetch(`${apiBase()}${BOARD_SUMMARY_ENDPOINT}?${params}`, { credentials: 'include' });
+      const payload = (await response.json().catch(() => ({}))) as { success?: boolean; report?: BoardReport; error?: string };
+      if (!response.ok || payload.success !== true || !payload.report) {
+        throw new Error(payload.error || 'The report could not be made.');
+      }
+      setReport(payload.report);
+    } catch (error) {
+      setReport(null);
+      setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-[var(--s5)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
+      <h3 className="t-label">Board report</h3>
+      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+        <label className="field">
+          <span className="t-label">From</span>
+          <input
+            type="date"
+            className="input"
+            value={range.from}
+            onChange={(event) => { setFailure(''); setRange((held) => ({ ...held, from: event.target.value })); }}
+          />
+        </label>
+        <label className="field">
+          <span className="t-label">To</span>
+          <input
+            type="date"
+            className="input"
+            value={range.to}
+            onChange={(event) => { setFailure(''); setRange((held) => ({ ...held, to: event.target.value })); }}
+          />
+        </label>
+        <button type="button" className="btn" onClick={() => void makeReport()} disabled={busy}>
+          {busy ? 'Making…' : 'Make report'}
+        </button>
+        {report ? (
+          <button type="button" className="btn btn--ghost" onClick={() => window.print()}>Print</button>
+        ) : null}
+      </div>
+      {failure ? (
+        <div role="alert" className="alert alert--critical mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <div className="alert-body">
+            <p className="alert-title">Report not made</p>
+            <p className="alert-msg">{failure}</p>
+          </div>
+        </div>
+      ) : null}
+      {report ? (
+        <>
+          {/* On paper, only the report: everything else on the page is hidden
+              while printing, and the report sits at the top of the sheet. */}
+          <style>{'@media print { body * { visibility: hidden !important; } .board-report-print, .board-report-print * { visibility: visible !important; } .board-report-print { position: absolute; left: 0; top: 0; width: 100%; } }'}</style>
+          <article aria-label="Board report" className="board-report-print mt-[var(--s4)]">
+            <h4 className="t-command text-[length:var(--t-md)]">Board summary report</h4>
+            <p className="t-body mt-[var(--s2)]">
+              Reporting window: {report.window.from} to {report.window.to} (gym days, inclusive).
+            </p>
+            <p className="t-data">Made {formatGymDateTime(report.generatedAt) ?? report.generatedAt} (gym time).</p>
+            <table className="mt-[var(--s3)] w-full text-left">
+              <thead>
+                <tr className="t-eyebrow">
+                  <th scope="col" className="py-[var(--s2)]">Figure</th>
+                  <th scope="col" className="py-[var(--s2)]">Value</th>
+                  <th scope="col" className="py-[var(--s2)]">Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportFigures(report).map((figure) => {
+                  const display = boardMetricDisplay(figure.metric, report.minimumCohortSize, figure.unitLabel);
+                  return (
+                    <tr key={figure.label} className="t-body">
+                      <th scope="row" className="py-[var(--s2)] font-normal">{figure.label}</th>
+                      <td className="py-[var(--s2)]">{display.value}</td>
+                      <td className="py-[var(--s2)]">
+                        {display.note}
+                        {figure.metric.status === 'available' && figure.detail ? ` ${figure.detail}.` : ''}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <h5 className="t-label mt-[var(--s4)]">Definitions</h5>
+            <ul className="t-body mt-[var(--s2)] list-disc space-y-[var(--s1)] pl-[var(--s4)]">
+              <li>Scope: the whole organization. No individual athlete appears in this report.</li>
+              <li>Active athletes: athletes marked active and not deleted, as of when this report was made.</li>
+              <li>
+                Training sessions: sessions dated in the reporting window, for athletes active when the report was made.
+                Completed means the session is marked completed.
+              </li>
+              <li>
+                Coach reviews: reviews written on a gym day in the reporting window, on sessions of athletes active when
+                the report was made. Approved means the review is marked approved.
+              </li>
+              <li>
+                Goals: the current goals of active athletes, as of when this report was made, by status. Active is
+                active, open or in progress; completed is completed, complete or achieved; another status is anything else.
+              </li>
+              <li>
+                Suppressed: fewer than {report.minimumCohortSize} athletes contributed, so the figure is withheld rather
+                than reduced. No records: nothing was recorded, which is not a measured zero.
+              </li>
+              <li>Active athletes and goals have no stored history, so they are not figures for the window.</li>
+            </ul>
+          </article>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 interface BoardSummaryPanelProps {
@@ -284,6 +484,8 @@ export default function BoardSummaryPanel({
           </p>
         </>
       ) : null}
+
+      <BoardReportSection />
     </section>
   );
 }

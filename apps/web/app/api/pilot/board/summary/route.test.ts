@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
-import { getBoardSummary } from '@/src/server/pilot/boardSummary';
+import { getBoardReport, getBoardSummary } from '@/src/server/pilot/boardSummary';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -10,6 +10,7 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/boardSummary', () => ({
+  getBoardReport: jest.fn(),
   getBoardSummary: jest.fn(),
 }));
 
@@ -89,3 +90,63 @@ test.each(['coach', 'organization_admin', 'admin', 'athlete'] as const)(
     expect(mockGetBoardSummary).not.toHaveBeenCalled();
   },
 );
+
+/*
+ * THE DATED BOARD REPORT (RP-04): from and to, both or neither; real dates;
+ * from on or before to; the same roles and the caller's own organization.
+ */
+describe('GET with a reporting window (RP-04)', () => {
+  const mockGetBoardReport = jest.mocked(getBoardReport);
+
+  function principalFor(role: string) {
+    return {
+      accountId: 'acct',
+      role,
+      organizationId: 'org-authenticated',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'ppbf_local',
+    } as never;
+  }
+
+  test.each(['board', 'platform_owner'])('%s gets a report for their own organization and the window asked for', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+    const report = { ...summary, window: { from: '2026-09-01', to: '2026-09-30' }, timeZone: 'America/New_York' };
+    mockGetBoardReport.mockResolvedValueOnce(report);
+
+    const response = await GET(new NextRequest(
+      'http://localhost/api/pilot/board/summary?from=2026-09-01&to=2026-09-30&organizationId=org-other',
+    ));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toEqual({ success: true, report });
+    expect(mockGetBoardReport).toHaveBeenCalledWith('org-authenticated', { from: '2026-09-01', to: '2026-09-30' });
+    expect(mockGetBoardSummary).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['only a from', 'from=2026-09-01'],
+    ['only a to', 'to=2026-09-30'],
+    ['a date that is not a date', 'from=2026-02-30&to=2026-03-01'],
+    ['a date in another shape', 'from=09/01/2026&to=2026-09-30'],
+    ['a window that ends before it starts', 'from=2026-09-30&to=2026-09-01'],
+  ])('%s is refused with a sentence, and nothing is read', async (_label, query) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principalFor('board'));
+
+    const response = await GET(new NextRequest(`http://localhost/api/pilot/board/summary?${query}`));
+
+    expect(response.status).toBe(400);
+    expect(mockGetBoardReport).not.toHaveBeenCalled();
+    expect(mockGetBoardSummary).not.toHaveBeenCalled();
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'athlete', 'parent'])('%s cannot make a board report', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/board/summary?from=2026-09-01&to=2026-09-30'));
+
+    expect(response.status).toBe(403);
+    expect(mockGetBoardReport).not.toHaveBeenCalled();
+  });
+});

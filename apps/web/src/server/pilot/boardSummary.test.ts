@@ -2,6 +2,7 @@ import { queryOne } from './db';
 import {
   BOARD_MINIMUM_COHORT_SIZE,
   buildBoardSummary,
+  getBoardReport,
   getBoardSummary,
 } from './boardSummary';
 
@@ -138,5 +139,59 @@ describe('aggregate-only Board summary', () => {
     expect(params).toEqual(['org-authenticated']);
     expect(sql.match(/organization_id = \$1/g)?.length).toBeGreaterThanOrEqual(4);
     expect(sql).not.toMatch(/\b(full_name|notes|content|message)\b/i);
+  });
+});
+
+/*
+ * THE DATED BOARD REPORT (RP-04): the same contract plus its window, read with
+ * the window and the gym's time zone as parameters. The rolling summary keeps
+ * its single parameter (pinned above). The window's SQL is proved on real rows
+ * in boardReport.pg.test.ts.
+ */
+describe('getBoardReport (RP-04)', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  test('reads with the organization, the window and the gym time zone, and returns the contract plus its window', async () => {
+    mockQueryOne.mockResolvedValueOnce(availableRow);
+
+    const report = await getBoardReport('org-authenticated', { from: '2026-09-01', to: '2026-09-30' });
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(params).toEqual(['org-authenticated', '2026-09-01', '2026-09-30', 'America/New_York']);
+    expect(sql).toContain('s.date between $2::date and $3::date');
+    expect(sql).toContain('(cr.created_at at time zone $4::text)::date between $2::date and $3::date');
+    expect(sql).not.toContain("interval '30 days'");
+    expect(sql.match(/organization_id = \$1/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(sql).not.toMatch(/\b(full_name|notes|content|message)\b/i);
+    expect(Object.keys(report)).toEqual([
+      'scope',
+      'minimumCohortSize',
+      'generatedAt',
+      'activeAthletes',
+      'trainingSessions30Days',
+      'goalStatusBuckets',
+      'coachReviews30Days',
+      'window',
+      'timeZone',
+    ]);
+    expect(report.window).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+  });
+
+  test('the rolling summary still reads the last 30 days with one parameter', async () => {
+    mockQueryOne.mockResolvedValueOnce(availableRow);
+
+    await getBoardSummary('org-authenticated');
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(params).toEqual(['org-authenticated']);
+    expect(sql).toContain("s.date >= current_date - interval '30 days'");
+    expect(sql).toContain("cr.created_at >= now() - interval '30 days'");
+  });
+
+  test('a report needs an organization', async () => {
+    await expect(getBoardReport('  ', { from: '2026-09-01', to: '2026-09-30' })).rejects.toThrow(/^Forbidden/);
+    expect(mockQueryOne).not.toHaveBeenCalled();
   });
 });
