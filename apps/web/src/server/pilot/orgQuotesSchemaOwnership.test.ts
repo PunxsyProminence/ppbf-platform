@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { GYM_SAYINGS } from '../../../components/gymSayings';
+import { ORG_QUOTES_SEEDED_SAYINGS } from './orgQuotesSeed.fixture';
 
 const repositoryRoot = path.resolve(__dirname, '../../../../..');
 const read = (relative: string) => fs.readFileSync(path.join(repositoryRoot, relative), 'utf8');
@@ -41,15 +41,15 @@ describe('org quotes schema ownership', () => {
     expect(migration).toMatch(/create index if not exists idx_org_quotes_org_active/i);
   });
 
-  test('the migration seeds exactly the existing gymSayings, and only for the club organization', () => {
+  test('the migration seeds exactly its twelve seed lines, and only for the club organization', () => {
     expect(migration).toContain("where o.organization_id = 'punxsy_prominence'");
     expect(migration).toMatch(/on conflict do nothing/i);
-    for (const saying of GYM_SAYINGS) {
+    for (const saying of ORG_QUOTES_SEEDED_SAYINGS) {
       expect(migration).toContain(`('${saying.line.replace(/'/g, "''")}', '${saying.said_by}'`);
     }
     // One values row per saying, no extras.
     const valueRows = migration.match(/^\s+\('[^\n]*array\['[a-z-]+'\]::text\[\]\),?$/gm) ?? [];
-    expect(valueRows).toHaveLength(GYM_SAYINGS.length);
+    expect(valueRows).toHaveLength(ORG_QUOTES_SEEDED_SAYINGS.length);
   });
 
   test('the migration carries no transaction boundary, because this runner opens one', () => {

@@ -2,7 +2,8 @@
 //
 // Proves the module's real INSERT/SELECT/UPDATE against base schema + the
 // org-quotes migration: organization scoping on every read and write, the
-// seed (exactly the twelve gymSayings.ts lines, for the club organization
+// seed (exactly the twelve lines that migration writes -- gymSayings.ts as of
+// 2026-08-19, see orgQuotesSeed.fixture.ts -- for the club organization
 // only), idempotent re-runs, the duplicate-text guard and the check
 // constraints. Spins up the same disposable, local-only embedded Postgres the
 // other migration suites use. It NEVER connects to production or staging.
@@ -18,7 +19,7 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
-import { GYM_SAYINGS } from '../../../components/gymSayings';
+import { ORG_QUOTES_SEEDED_SAYINGS as SEEDED_SAYINGS } from './orgQuotesSeed.fixture';
 
 jest.setTimeout(180_000);
 
@@ -174,10 +175,10 @@ describe('org_quotes migration and orgQuotes.ts against the real schema', () => 
     await closePool();
   });
 
-  test('the club organization is seeded with exactly the existing gymSayings, active, as gym sayings', async () => {
+  test('the club organization is seeded with exactly the twelve seed lines, active, as gym sayings', async () => {
     const rows = await quotes.listLiveQuotes(SEEDED_ORG);
-    expect(rows).toHaveLength(GYM_SAYINGS.length);
-    for (const saying of GYM_SAYINGS) {
+    expect(rows).toHaveLength(SEEDED_SAYINGS.length);
+    for (const saying of SEEDED_SAYINGS) {
       const row = rows.find((r) => r.quote_text === saying.line);
       expect(row).toBeDefined();
       expect(row?.speaker).toBe(saying.said_by);
@@ -198,7 +199,7 @@ describe('org_quotes migration and orgQuotes.ts against the real schema', () => 
     await applyMigrationTransaction(main, migrationSql);
 
     const rows = await quotes.listQuotes(SEEDED_ORG);
-    expect(rows).toHaveLength(GYM_SAYINGS.length);
+    expect(rows).toHaveLength(SEEDED_SAYINGS.length);
     const edited = rows.find((r) => r.quote_id === first.quote_id);
     expect(edited?.quote_text).toBe('EDITED BY THE GYM');
     expect(edited?.active).toBe(false);

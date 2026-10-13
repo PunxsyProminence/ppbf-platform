@@ -90,7 +90,13 @@ export interface GymSaying {
 }
 
 /**
- * THE SOURCE. Owner-approved 2026-08-19 — the gym's own first 12 lines.
+ * THE SOURCE. Owner-approved 2026-08-19 — the gym's own first 12 lines, with
+ * egg 11 changed by owner ruling D19 (OD-2026-10-08-009: "the gym sayings
+ * match his approved list"): STEEL TOWN. STEADY HANDS. is off the wall and
+ * AMPLECTERE MISERIAM is on. Its wording is the approved list's egg 11 as this
+ * repository records it second-hand (OWNER_DECISIONS.md, ACTIVE_WORK.md);
+ * speaker and placement are those of the line it replaces. The quotes library
+ * gets the same change from its own migration (PR #1491, org-quotes-d19).
  *
  * A test asserts every entry here is attributable and free of stock boxing
  * quotes, so a scraped-off-the-internet line cannot arrive in a later patch
@@ -107,7 +113,7 @@ export const GYM_SAYINGS: readonly GymSaying[] = [
   { line: 'NO HYPE. JUST WORK.', said_by: 'the wall', shown: ['anywhere'] },
   { line: 'SHADOW NOTICES THE PATTERN', said_by: 'the wall', shown: ['at-a-milestone'] },
   { line: 'CHECK IN. THEN WORK.', said_by: 'the wall', shown: ['anywhere'] },
-  { line: 'STEEL TOWN. STEADY HANDS.', said_by: 'the wall', shown: ['anywhere'] },
+  { line: 'AMPLECTERE MISERIAM', said_by: 'the wall', shown: ['anywhere'] },
   { line: 'WE BUILD PEOPLE, NOT JUST FIGHTERS.', said_by: 'the wall', shown: ['at-a-milestone'] },
 ];
 
