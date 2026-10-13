@@ -13,7 +13,9 @@ import type { DrillChangeProposalListing, PilotDrillVersionRow } from '@/src/ser
 // the lineage and proposal routes and typed from their own response contracts.
 // Adopt and Decline are offered only where the server would take them: to a
 // reviewer (canReview), and Adopt only on a proposal the queue says is written
-// against the current version of a drill still in use.
+// against the current version of a drill still in use. Reinstate is offered on
+// each earlier version of a drill still in use, to the roles the drills route's
+// PATCH admits (canReinstate): it brings that version back as the newest.
 
 type Version = PilotDrillVersionRow;
 type Proposal = DrillChangeProposalListing;
@@ -42,15 +44,17 @@ function shown(value: unknown): string {
   return Array.isArray(value) ? value.join('; ') : String(value);
 }
 
-interface Result { proposalId: string; notice?: string; error?: string; explanation?: string }
+interface Result { target: string; notice?: string; error?: string; explanation?: string }
 
 const read = (url: string) => fetch(`${apiBase()}${url}`, { method: 'GET', credentials: 'include' });
 
-export default function DrillLineageReview({ drillId, canReview, onClose, onChanged }: {
+export default function DrillLineageReview({ drillId, canReview, canReinstate = false, onClose, onChanged }: {
   /** Any version of the drill: the lineage route resolves the rest. */
   drillId: string;
   /** Whether this session's role is one the review route admits. */
   canReview: boolean;
+  /** Whether this session's role is one the drills route admits to reinstate a version. */
+  canReinstate?: boolean;
   onClose: () => void;
   /** After a review that may have changed the gym's drills or the queue. */
   onChanged?: () => void;
@@ -106,7 +110,7 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
     const id = proposal.proposal_id;
     const note = (notes[id] ?? '').trim();
     if (action === 'decline' && !note) {
-      setResult({ proposalId: id, error: 'Declining needs a review note.', explanation: OUTCOMES.refused });
+      setResult({ target: id, error: 'Declining needs a review note.', explanation: OUTCOMES.refused });
       return;
     }
     busyRef.current = true;
@@ -127,24 +131,68 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
       }
       await reread();
       onChanged?.();
-      setResult({ proposalId: id, notice: action === 'adopt' ? 'Adopted.' : 'Declined.' });
+      setResult({ target: id, notice: action === 'adopt' ? 'Adopted.' : 'Declined.' });
     } catch (error) {
-      // A refusal changed nothing. A 409 changed nothing either, but this panel
-      // may be out of date; a fault may have landed after the write committed.
-      const unknown = status === null || status >= 500;
-      let explanation = OUTCOMES.refused;
-      if (unknown || status === 409) {
-        const readAgain = await reread();
-        onChanged?.();
-        explanation = unknown
-          ? (readAgain ? OUTCOMES.unknown : OUTCOMES.unknownUnread)
-          : (readAgain ? OUTCOMES.reread : OUTCOMES.rereadFailed);
-      }
-      setResult({ proposalId: id, error: error instanceof Error ? error.message : 'The review could not be saved.', explanation });
+      setResult({ target: id, error: error instanceof Error ? error.message : 'The review could not be saved.', explanation: await afterFailure(status) });
     } finally {
       busyRef.current = false;
       setBusyId('');
     }
+  }
+
+  // A refusal changed nothing. A 409 changed nothing either, but this panel
+  // may be out of date; a fault may have landed after the write committed.
+  async function afterFailure(status: number | null): Promise<string> {
+    const unknown = status === null || status >= 500;
+    if (!unknown && status !== 409) return OUTCOMES.refused;
+    const readAgain = await reread();
+    onChanged?.();
+    return unknown
+      ? (readAgain ? OUTCOMES.unknown : OUTCOMES.unknownUnread)
+      : (readAgain ? OUTCOMES.reread : OUTCOMES.rereadFailed);
+  }
+
+  // Bring an earlier version back as the drill's newest (the drills route's PATCH).
+  async function reinstate(v: Version) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusyId(v.drill_id);
+    setResult(null);
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drill_id: v.drill_id, reinstate: true }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || `Version ${v.version} could not be reinstated.`);
+      await reread();
+      onChanged?.();
+      setResult({ target: v.drill_id, notice: `Reinstated version ${v.version}. It is now the drill's current version.` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Version ${v.version} could not be reinstated.`;
+      setResult({ target: v.drill_id, error: message, explanation: await afterFailure(status) });
+    } finally {
+      busyRef.current = false;
+      setBusyId('');
+    }
+  }
+
+  function renderResult(mine: Result | null) {
+    return (
+      <>
+        {mine?.notice && <p role="status" className="t-body mt-[var(--s2)]">{mine.notice}</p>}
+        {mine?.error && (
+          <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+            <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{mine.error}</p>
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{mine.explanation}</p>
+          </div>
+        )}
+      </>
+    );
   }
 
   const all = versions ?? [];
@@ -165,7 +213,7 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
         ? `Written against ${versionOf(p.based_on_drill_id)}. The drill is now at ${versionOf(p.current_drill_id)}.`
         : '';
     const changed = FIELDS.filter(([key]) => Object.prototype.hasOwnProperty.call(p.proposed_change, key));
-    const mine = result?.proposalId === p.proposal_id ? result : null;
+    const mine = result?.target === p.proposal_id ? result : null;
     const busy = busyId !== '';
     return (
       <li key={p.proposal_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -217,13 +265,7 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
           <p className="t-body mt-[var(--s2)]">{p.review_state === 'declined' ? 'Declined' : 'Superseded'} on {day(p.reviewed_at)}.</p>
         )}
         {!open && p.review_note && <p className="t-body mt-[var(--s2)]"><span className="font-semibold">Review note:</span> {p.review_note}</p>}
-        {mine?.notice && <p role="status" className="t-body mt-[var(--s2)]">{mine.notice}</p>}
-        {mine?.error && (
-          <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-            <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{mine.error}</p>
-            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{mine.explanation}</p>
-          </div>
-        )}
+        {renderResult(mine)}
       </li>
     );
   }
@@ -259,6 +301,12 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
                 >
                   {expanded[v.drill_id] ? `Hide version ${v.version}` : `Show version ${v.version}`}
                 </button>
+                {canReinstate && !retired && v !== head && (
+                  <button type="button" className="btn btn--ghost mt-[var(--s2)] ml-[var(--s3)]" disabled={busyId !== ''}
+                    onClick={() => void reinstate(v)} aria-label={`Reinstate version ${v.version}`}>
+                    {busyId === v.drill_id ? 'Reinstating...' : 'Reinstate this version'}
+                  </button>
+                )}
                 {expanded[v.drill_id] && (
                   <dl id={`version-content-${v.drill_id}`} className="t-body mt-[var(--s3)] space-y-[var(--s1)] text-[color:var(--bone-300)]">
                     {FIELDS.filter(([key]) => key !== 'name').map(([key, name]) => (
@@ -266,6 +314,7 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
                     ))}
                   </dl>
                 )}
+                {renderResult(result?.target === v.drill_id ? result : null)}
               </li>
             ))}
           </ol>

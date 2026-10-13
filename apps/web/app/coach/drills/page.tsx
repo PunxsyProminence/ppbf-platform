@@ -60,12 +60,11 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
   newer_version_retired: 'Newer version of a drill this gym retired',
 };
 
-// What a coach reads on that drill instead of a Promote button: what is true
-// today. The server updates the gym's drill in place (OD-2026-10-08-008 D1);
-// from this page that happens when a template using this version is issued.
-// The button is the coach-screen PR's. Wording PROPOSED for Jason's look.
+// What Update to newer version does, before it is taken. The promote route
+// updates the gym's drill in place (OD-2026-10-08-008 D1): a new version of the
+// same drill, the earlier versions kept as its history.
 const NEWER_VERSION_EXPLANATION =
-  "This gym runs an earlier version of this drill. The gym's drill moves to this version when a workout template that uses this version is issued.";
+  "This gym runs an earlier version of this drill. Updating moves the gym's drill to this version; its earlier versions are kept in its history.";
 
 // What Restore does on the newer version's card, before it is taken. It brings
 // back the gym's OWN drill at the version the gym adopted -- not this version --
@@ -140,6 +139,7 @@ const NO_FILTERS: Record<FilterKey, string> = {
 // as event handlers.
 function ReferenceActions({
   referenceDrillId,
+  name,
   state,
   detail,
   floorTested,
@@ -152,6 +152,8 @@ function ReferenceActions({
   onMarkFloorTested,
 }: {
   referenceDrillId: string;
+  /** The drill's name, so a control's accessible name says which drill it acts on. */
+  name: string;
   state: ReferenceLifecycle | undefined;
   detail: DrillWithDetail | null;
   /** This gym's current floor-tested mark for the drill, if a coach made one. */
@@ -238,12 +240,23 @@ function ReferenceActions({
       </>
     );
   }
-  // No Promote: the server refuses a separate promotion of a newer version of
-  // a drill this gym already has, so the page says why instead of offering it.
+  // The promote route, given this newer version, updates the gym's drill to it
+  // in place (D1) rather than adopting a second drill -- so the same request,
+  // named for what it does here.
   if (state.state === 'newer_version_available') {
     return (
       <>
         {label}
+        <button
+          type="button"
+          id={`lifecycle-${referenceDrillId}`}
+          onClick={() => onPromote(referenceDrillId)}
+          disabled={busy}
+          className="btn"
+          aria-label={`Update ${name} to the newer version`}
+        >
+          {promotingReferenceId === referenceDrillId ? 'Updating...' : 'Update to newer version'}
+        </button>
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_EXPLANATION}</p>
       </>
     );
@@ -343,6 +356,8 @@ function CoachDrillLibrary() {
   // the review route admits; everyone here reads the same history and queue.
   const pilotSession = usePilotSession();
   const canReview = isOrganizationAdminSessionRole(pilotSession.role);
+  // Reinstate is a drill edit, and the drills route's PATCH admits coaches too.
+  const canReinstate = canReview || pilotSession.role === 'coach';
   const [lineageDrillId, setLineageDrillId] = useState('');
   const [waiting, setWaiting] = useState<DrillChangeProposalListResponse['items']>([]);
   const [waitingError, setWaitingError] = useState('');
@@ -655,7 +670,7 @@ function CoachDrillLibrary() {
       });
       status = response.status;
 
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; missing?: string[] };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; missing?: string[]; updated_from_drill_id?: string };
       if (!response.ok) {
         const missing = Array.isArray(payload.missing) && payload.missing.length > 0 ? ` ${payload.missing.join(' ')}` : '';
         throw new Error(`${payload.error || 'The drill could not be promoted.'}${missing}`);
@@ -665,7 +680,10 @@ function CoachDrillLibrary() {
       // gym has adopted, and the lifecycle shown should be its answer, not this
       // component's optimism.
       await Promise.all([load(), loadReferenceLibrary()]);
-      setPromoteNotice('Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
+      // The route says which it did: updated the gym's drill in place, or adopted a new one.
+      setPromoteNotice(payload.updated_from_drill_id
+        ? "Updated. The gym's drill now runs this version; its earlier versions are kept in its history."
+        : 'Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
     } catch (error) {
       const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
       setActionOutcome(outcome);
@@ -980,6 +998,7 @@ function CoachDrillLibrary() {
                   actions={(
                     <ReferenceActions
                       referenceDrillId={openReference.id}
+                      name={openReference.name}
                       state={lifecycle[openReference.id]}
                       detail={openReferenceDetail}
                       floorTested={floorTested[openReference.id]}
@@ -1157,6 +1176,7 @@ function CoachDrillLibrary() {
               key={lineageDrillId}
               drillId={lineageDrillId}
               canReview={canReview}
+              canReinstate={canReinstate}
               onClose={() => setLineageDrillId('')}
               onChanged={() => void Promise.all([load(), loadWaiting()])}
             />
