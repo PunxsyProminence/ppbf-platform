@@ -111,19 +111,91 @@ const SCOPE_HEADLINE: Record<TrainingHoldScope, string> = {
   conditioning_only: 'Conditioning is paused right now',
 };
 
-const GATE_OUTCOME_LABEL: Record<GateSummaryRow['outcome'], string> = {
+type EvaluatedOutcome = Exclude<GateSummaryRow['outcome'], 'not_evaluated'>;
+
+const GATE_OUTCOME_LABEL: Record<EvaluatedOutcome, string> = {
   passed: 'Clear',
   blocked: 'Not clear',
   flagged: 'Needs a look',
-  not_evaluated: 'Not yet checked',
 };
 
-const GATE_OUTCOME_BADGE: Record<GateSummaryRow['outcome'], string> = {
-  passed: 'badge--cleared',
-  blocked: 'badge--restricted',
-  flagged: 'badge--restricted',
-  not_evaluated: 'badge--monitor',
+// Glyph + label, never colour alone (Law 3), as the waiver badges below.
+const GATE_OUTCOME_DISPLAY: Record<EvaluatedOutcome, { glyph: string; badge: string }> = {
+  passed: { glyph: '✓', badge: 'badge--cleared' },
+  blocked: { glyph: '▲', badge: 'badge--restricted' },
+  flagged: { glyph: '▲', badge: 'badge--restricted' },
 };
+
+/* The hold row reads the hold itself (the route's `hold`), in the scope the
+   heading above names. The training-hold gate's last evaluation is written
+   only when someone tries to register the child for a class, so it read "Not
+   yet checked" under an active hold, and could read "Not clear" after one was
+   lifted (#1537). The route no longer sends that gate; it is skipped here too
+   in case an older response does. The name is the seeded gate's. */
+const TRAINING_HOLD_GATE_KEY = 'training_hold';
+const TRAINING_HOLD_ROW_NAME = 'Active Training Hold';
+
+const HOLD_ROW_LABEL: Record<TrainingHoldScope, string> = {
+  all_training: 'Paused',
+  contact_only: 'Contact paused',
+  conditioning_only: 'Conditioning paused',
+};
+
+/* The clearance gate's last evaluation says whether clearance was current
+   when contact was last logged, not whether it is on file now, and a guardian
+   is not sent medical status. The route no longer sends it; the page leaves
+   it out as well (#1537). */
+const UNANSWERABLE_GATE_KEYS: ReadonlySet<string> = new Set([TRAINING_HOLD_GATE_KEY, 'contact_medical_clearance']);
+
+interface SafetyCheckRow {
+  key: string;
+  name: string;
+  label: string;
+  glyph: string;
+  badge: string;
+}
+
+function holdRow(hold: AthleteFacingHold | null): SafetyCheckRow {
+  return hold
+    ? {
+        key: TRAINING_HOLD_GATE_KEY,
+        name: TRAINING_HOLD_ROW_NAME,
+        label: HOLD_ROW_LABEL[hold.scope] ?? HOLD_ROW_LABEL.all_training,
+        glyph: '▲',
+        badge: 'badge--restricted',
+      }
+    : { key: TRAINING_HOLD_GATE_KEY, name: TRAINING_HOLD_ROW_NAME, label: 'No pause', glyph: '✓', badge: 'badge--cleared' };
+}
+
+/** The rows the page can answer from what it was sent: the hold row, then
+ *  each other gate that has been evaluated and whose answer a guardian may
+ *  read. */
+function safetyCheckRows(item: AthleteSafety): SafetyCheckRow[] {
+  const gateRows = item.gates.flatMap((gate): SafetyCheckRow[] => {
+    if (gate.outcome === 'not_evaluated' || UNANSWERABLE_GATE_KEYS.has(gate.gate_key)) return [];
+    return [{ key: gate.gate_key, name: gate.name, label: GATE_OUTCOME_LABEL[gate.outcome], ...GATE_OUTCOME_DISPLAY[gate.outcome] }];
+  });
+  return [holdRow(item.hold), ...gateRows];
+}
+
+function SafetyChecks({ rows }: { readonly rows: readonly SafetyCheckRow[] }) {
+  return (
+    <div className="mt-[var(--s4)]">
+      <p className="t-label">Safety checks</p>
+      <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
+            <span>{row.name}</span>
+            <span className={`badge ${row.badge}`}>
+              <i aria-hidden="true">{row.glyph}</i>
+              {row.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function GuardianSafetyPage() {
   const [items, setItems] = useState<AthleteSafety[] | null>(null);
@@ -246,21 +318,7 @@ export default function GuardianSafetyPage() {
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training pause on file right now.</p>
                   )}
 
-                  {item.gates.length > 0 ? (
-                    <div className="mt-[var(--s4)]">
-                      <p className="t-label">Safety checks</p>
-                      <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
-                        {item.gates.map((gate) => (
-                          <div key={gate.gate_key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
-                            <span>{gate.name}</span>
-                            <span className={`badge ${GATE_OUTCOME_BADGE[gate.outcome]}`}>
-                              {GATE_OUTCOME_LABEL[gate.outcome]}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+                  <SafetyChecks rows={safetyCheckRows(item)} />
 
                   <MyInjuries athleteId={item.athlete_id} />
 

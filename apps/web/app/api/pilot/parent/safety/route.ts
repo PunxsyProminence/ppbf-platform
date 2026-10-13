@@ -175,6 +175,17 @@ async function waiverStatusesFor(
   return Object.fromEntries(entries);
 }
 
+/* Gates whose last evaluation a guardian is not sent (#1537):
+   - contact_medical_clearance: its outcome says whether medical clearance was
+     current when contact was last logged. Medical status is staff-only, and
+     that outcome is not "clearance on file now".
+   - training_hold: its outcome is the last class-registration attempt, not
+     the hold. The hold itself is sent as `hold`, and that is what the Safety
+     page and the Parent Hub read.
+   Withheld here, at the one response both screens read, so the hub's
+   "awaiting clearance" count and the Safety page's rows cannot disagree. */
+const GATE_KEYS_WITHHELD_FROM_GUARDIANS: ReadonlySet<string> = new Set(['contact_medical_clearance', 'training_hold']);
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -204,7 +215,7 @@ export async function GET(request: NextRequest) {
           athlete_id: athleteId,
           athlete_name: athlete?.full_name ?? null,
           hold: hold ? await athleteFacing(principal.organizationId, hold) : null,
-          gates: gates.map((gate) => ({
+          gates: gates.filter((gate) => !GATE_KEYS_WITHHELD_FROM_GUARDIANS.has(gate.gate_key)).map((gate) => ({
             gate_key: gate.gate_key,
             name: gate.name,
             category: gate.category,

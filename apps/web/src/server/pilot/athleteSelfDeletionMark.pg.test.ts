@@ -211,7 +211,9 @@ async function seed(client: Client): Promise<void> {
     );
   }
 
-  const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  // Today: a family check-in is open on the class's gym day only (#1524), and
+  // the live control below checks in as the athlete.
+  const start = new Date();
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   for (const title of ['Seeded class', 'Open class']) {
     const created = await okJson<{ class_id: string }>(

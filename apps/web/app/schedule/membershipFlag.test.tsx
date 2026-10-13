@@ -31,8 +31,8 @@ const classes = [
   {
     class_id: 'class-1',
     title: 'Morning Fundamentals',
-    start_at: '2026-08-03T13:00:00.000Z',
-    end_at: '2026-08-03T14:00:00.000Z',
+    start_at: '2099-08-03T13:00:00.000Z',
+    end_at: '2099-08-03T14:00:00.000Z',
     location: 'Main Floor',
     capacity: 16,
     coach_account_id: 'account-coach',

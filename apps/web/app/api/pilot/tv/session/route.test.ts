@@ -69,6 +69,7 @@ const LIVE: GymTvScreen = {
     current_block: { ...BLOCK, seconds_to_scheduled_end: 360 },
     next_block: { ...BLOCK, block_id: 'blk-2', block_order: 2, start_offset_min: 10, end_offset_min: 20 },
     blocks: [BLOCK, { ...BLOCK, block_id: 'blk-2', block_order: 2, start_offset_min: 10, end_offset_min: 20 }],
+    timer: null,
   },
 };
 
