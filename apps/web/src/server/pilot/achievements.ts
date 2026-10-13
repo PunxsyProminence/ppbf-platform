@@ -9,6 +9,8 @@ import {
   type Program,
   type RecognitionKind,
 } from '@/src/shared/achievementPaths';
+import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+
 import { query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 
@@ -244,36 +246,9 @@ const RECOGNITION_FIELDS = 'recognition_id, athlete_id, coach_display_name, kind
 /** Nothing calls for more than this at once; the cap keeps one athlete's wall bounded. */
 export const RECOGNITION_PAGE_MAX = 100;
 
-/**
- * The name a recognition is signed with.
- *
- * Derived server-side from the coach's own login, never taken from the request
- * body: a signature the sender supplies is a signature anybody in the coach
- * role can forge, and the whole value of this feature is that an athlete can
- * believe a named person said it.
- *
- * pilot.accounts has no display-name column today (logged as a gap — identity
- * work is in flight elsewhere), so the local part of the login address is the
- * best true thing available. When accounts grow a real name, this is the one
- * function to change.
- */
-export function deriveCoachDisplayName(loginEmail: string | null | undefined): string {
-  const local = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
-  if (!local) {
-    return 'Your coach';
-  }
-
-  const spoken = local
-    .replace(/[._-]+/g, ' ')
-    .replace(/\d+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-
-  return spoken ? `Coach ${spoken}` : 'Your coach';
-}
+// The name a recognition is signed with: one function, shared with the
+// client (src/shared/coachDisplayName.ts carries its reasoning).
+export { deriveCoachDisplayName };
 
 export async function getCoachDisplayName(
   organizationId: string,
