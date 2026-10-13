@@ -7,10 +7,13 @@
 // pin that all three survive rendering, because a suppressed safeguarding
 // figure drawn as a blank or a zero reads to a director as a measurement.
 
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import BoardSummaryPanel, {
+  type BoardReport,
   boardMetricDisplay,
+  lastCompletedMonth,
+  monthWindow,
   formatMeasuredAt,
   type BoardSummary,
 } from './BoardSummaryPanel';
@@ -141,5 +144,151 @@ describe('boardMetricDisplay', () => {
 describe('formatMeasuredAt', () => {
   test('returns null rather than an invented time for an unparseable stamp', () => {
     expect(formatMeasuredAt('not-a-timestamp')).toBeNull();
+  });
+});
+
+/*
+ * THE DATED BOARD REPORT (RP-04): the last 30 gym days by default, the window
+ * sent as asked, the report with its window, when it was made, the same three
+ * states in words, and its definitions; Print; a refused report says why.
+ */
+describe('the board report section (RP-04)', () => {
+  function reportFixture(): BoardReport {
+    return { ...summaryFixture(), window: { from: '2026-09-01', to: '2026-09-30' }, timeZone: 'America/New_York' };
+  }
+
+  function routedFetch(reportResponse: () => { ok: boolean; json: () => Promise<unknown> }): jest.Mock {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('from=')) return reportResponse();
+      return { ok: true, json: async () => ({ success: true, summary: summaryFixture() }) };
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test('the default is the last completed month in the gym, and a month becomes its whole-month window', () => {
+    // 03:30 UTC on Nov 1 is still Oct 31 in the gym: October is not complete.
+    expect(lastCompletedMonth(Date.parse('2026-11-01T03:30:00.000Z'))).toBe('2026-09');
+    expect(lastCompletedMonth(Date.parse('2026-11-01T05:00:00.000Z'))).toBe('2026-10');
+    expect(lastCompletedMonth(Date.parse('2026-01-05T15:00:00.000Z'))).toBe('2025-12');
+    expect(monthWindow('2026-09')).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    expect(monthWindow('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
+    expect(monthWindow('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+  });
+
+  test('makes the report for the window chosen, with its window, time made, figures in words and definitions', async () => {
+    const fetchMock = routedFetch(() => ({ ok: true, json: async () => ({ success: true, report: reportFixture() }) }));
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-09' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+
+    const reportCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('from='));
+    expect(reportCalls).toHaveLength(1);
+    expect(String(reportCalls[0]![0])).toContain('/api/pilot/board/summary?from=2026-09-01&to=2026-09-30');
+
+    const report = screen.getByRole('article', { name: 'Board report' });
+    expect(report.textContent).toContain('Reporting window: 2026-09-01 to 2026-09-30 (gym days, inclusive).');
+    // 12:00 UTC on Jul 24 is 8:00 am in the gym.
+    expect(report.textContent).toMatch(/Made [^(]*8:00[^(]*\(gym time\)/);
+    const row = (label: string) => Array.from(within(report).getByText(label).closest('tr')!.querySelectorAll('td')).map((cell) => cell.textContent);
+    expect(row('Active athletes')[0]).toBe('12');
+    expect(row('Training sessions')[0]).toBe('Suppressed');
+    expect(row('Goals completed')[0]).toBe('No records');
+    expect(row('Coach reviews')[1]).toContain('Approved 75% (6 of 8)');
+    expect(within(report).getByText('Definitions')).toBeTruthy();
+    const definitions = Array.from(report.querySelectorAll('li')).map((item) => item.textContent ?? '');
+    expect(definitions).toEqual([
+      expect.stringMatching(/^Scope: the whole organization\./),
+      'Active athletes: athletes marked active and not deleted, as of when this report was made.',
+      expect.stringMatching(/^Training sessions: sessions dated in the month, for every athlete on record \(not deleted\), including athletes no longer active\./),
+      expect.stringMatching(/^Coach reviews: reviews written on a gym day in the month/),
+      expect.stringMatching(/^Goals: the current goals of active athletes, as of when this report was made/),
+      expect.stringMatching(/^Suppressed: fewer than 5 athletes contributed/),
+      'Active athletes and goals have no stored history, so they are not figures for the window.',
+      expect.stringMatching(/^The organization figures above this report cover a rolling 30 days/),
+      expect.stringMatching(/^A report covers one completed calendar month, so no two reports overlap\. Figures are read from the records as they stand/),
+    ]);
+
+    // A new month chosen takes the old report off the screen.
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-08' } });
+    expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
+    expect(report.textContent).toContain('No individual athlete appears in this report.');
+  });
+
+  test('Print prints once a report is made', async () => {
+    routedFetch(() => ({ ok: true, json: async () => ({ success: true, report: reportFixture() }) }));
+    const print = jest.spyOn(window, 'print').mockImplementation(() => undefined);
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+    expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+  });
+
+  test('a refused report says why and shows no report', async () => {
+    routedFetch(() => ({ ok: false, json: async () => ({ error: 'from must be on or before to.' }) }));
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('from must be on or before to.');
+    expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
+  });
+
+  test("a report still loading when another month is chosen is dropped, not shown under the new month", async () => {
+    let finish: ((value: { ok: boolean; json: () => Promise<unknown> }) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('from=')) {
+        return new Promise((resolve) => { finish = resolve; });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ success: true, summary: summaryFixture() }) });
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-09' } });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '2026-08' } });
+    await act(async () => {
+      finish?.({ ok: true, json: async () => ({ success: true, report: reportFixture() }) });
+    });
+
+    expect(screen.queryByRole('article', { name: 'Board report' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Make report' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('no month chosen is not sent', async () => {
+    const fetchMock = routedFetch(() => ({ ok: true, json: async () => ({ success: true, report: reportFixture() }) }));
+    await act(async () => {
+      render(<BoardSummaryPanel />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make report' }));
+    });
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('from='))).toHaveLength(0);
+    expect(screen.getByRole('alert').textContent).toContain('Choose a month.');
   });
 });
