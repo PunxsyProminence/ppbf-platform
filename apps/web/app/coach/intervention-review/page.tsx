@@ -152,8 +152,14 @@ export default function InterventionReviewPage() {
     return () => controller.abort();
   }, [reload]);
 
-  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, failure: string) => {
+  /** Resolves null when the write failed, otherwise what the server answered. */
+  const send = async (
+    method: 'POST' | 'PATCH',
+    body: Record<string, unknown>,
+    failure: string,
+  ): Promise<{ item?: unknown } | null> => {
     setBusy(true);
+    let answered: { item?: unknown } = {};
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-review`, {
         method,
@@ -165,10 +171,11 @@ export default function InterventionReviewPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `${failure} (${response.status})`);
       }
+      answered = (await response.json().catch(() => ({}))) as { item?: unknown };
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : failure);
       setBusy(false);
-      return false;
+      return null;
     }
     // The write is done from here on. A reload that fails is reported as
     // that, and the caller still closes its form: leaving it open would
@@ -181,7 +188,7 @@ export default function InterventionReviewPage() {
     } finally {
       setBusy(false);
     }
-    return true;
+    return answered;
   };
 
   const post = (body: Record<string, unknown>, failure: string) => send('POST', body, failure);
@@ -239,6 +246,15 @@ export default function InterventionReviewPage() {
       ...reviewForm,
     }, 'Unable to record the review.');
     if (ok) {
+      // Shown here as the server recorded it, so the verdict stands on screen
+      // even when the reload did not come back -- and the next review from
+      // this screen names it. After a good reload this changes nothing.
+      const recorded = ok.item as OutcomeReview | undefined;
+      if (recorded?.review_id) {
+        setItems((current) => current.map((entry) => (entry.execution.execution_id === executionId
+          ? { ...entry, review: recorded }
+          : entry)));
+      }
       setReviewingFor(null);
       setReviewForm({
         performance_result: 'unknown', performance_notes: '',

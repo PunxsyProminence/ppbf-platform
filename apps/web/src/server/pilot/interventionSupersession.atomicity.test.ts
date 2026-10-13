@@ -511,14 +511,17 @@ describe('a protocol that is not there, and one that has changed since it was lo
     expect(liveProtocols()[0].status).toBe('active');
   });
 
-  test('revising or retiring one already revised or retired says the record changed, and changes nothing', async () => {
-    seedProtocol({ status: 'retired' });
-    const before = JSON.stringify(store.intervention_protocols);
+  test.each(['retired', 'superseded'])(
+    'revising or retiring one already %s says the record changed, and changes nothing',
+    async (status) => {
+      seedProtocol({ status });
+      const before = JSON.stringify(store.intervention_protocols);
 
-    await expect(reviseProtocol(revision)).rejects.toThrow(RECORD_CHANGED_MESSAGE);
-    await expect(retireProtocol(ORG, 'proto-1')).rejects.toThrow(RECORD_CHANGED_MESSAGE);
-    expect(JSON.stringify(store.intervention_protocols)).toBe(before);
-  });
+      await expect(reviseProtocol(revision)).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      await expect(retireProtocol(ORG, 'proto-1')).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      expect(JSON.stringify(store.intervention_protocols)).toBe(before);
+    },
+  );
 
   test('retiring an active protocol retires it', async () => {
     seedProtocol();

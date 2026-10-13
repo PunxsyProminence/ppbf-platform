@@ -492,3 +492,52 @@ describe('the verdict the screen was showing travels with the review', () => {
     expect(posts[0]).toHaveProperty('expected_review_id', 'rev-7');
   });
 });
+
+describe('a review that is saved while the reload after it fails', () => {
+  test('the verdict the server recorded is shown, and the next review from this screen names it', async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posts.push(body);
+        // The route answers a review with the row it wrote.
+        const item = {
+          review_id: `rev-${posts.length}`, performance_result: body.performance_result,
+          performance_notes: body.performance_notes, hypothesis_result: body.hypothesis_result,
+          learning_signal: body.learning_signal, learning_notes: '', reviewed_at: '2026-10-13T15:00:00.000Z',
+        };
+        return { ok: true, json: async () => ({ item }) } as Response;
+      }
+      if (posts.length > 0) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    const review = async (button: string, notes: string) => {
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: button }));
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), { target: { value: notes } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+      });
+    };
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+
+    await review('Review outcome', 'held output through the third');
+
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).not.toContain('Failed');
+    expect(screen.queryByText('Not yet reviewed by a human.')).toBeNull();
+    expect(screen.getByText(/held output through the third/)).toBeTruthy();
+
+    // The same coach reviews again without reloading: it names their own verdict.
+    await review('Re-review (supersedes)', 'and the fourth');
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toHaveProperty('expected_review_id', null);
+    expect(posts[1]).toHaveProperty('expected_review_id', 'rev-1');
+  });
+});

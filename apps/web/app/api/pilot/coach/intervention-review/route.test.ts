@@ -447,4 +447,13 @@ test('the verdict the screen showed is handed to the review: an id, null for non
 
   expect((await POST(bodyRequest('POST', REVIEW_BODY))).status).toBe(200);
   expect(expectedOf()).toBeUndefined();
+
+  // Sent, but neither an id nor null: refused, and no review is attempted.
+  const callsBefore = mockReview.mock.calls.length;
+  for (const notAnId of ['', '  ', 7, {}, false]) {
+    const refused = await POST(bodyRequest('POST', { ...REVIEW_BODY, expected_review_id: notAnId }));
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/expected_review_id/);
+  }
+  expect(mockReview.mock.calls.length).toBe(callsBefore);
 });

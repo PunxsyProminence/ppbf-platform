@@ -160,9 +160,6 @@ export async function reviseProtocol(input: ProtocolContentInput & {
 }): Promise<InterventionProtocolRow | null> {
   const current = await getProtocol(input.organizationId, input.protocolId);
   if (!current) return null;
-  // Revised or retired since the coach's screen loaded it: told so, with the
-  // same sentence a changed execution gets, instead of "Not found".
-  if (current.status !== 'active') throw recordChanged();
 
   const newId = randomUUID();
 
@@ -192,7 +189,9 @@ export async function reviseProtocol(input: ProtocolContentInput & {
   // The transaction makes the three all-or-nothing, and `and status =
   // 'active'` on the stamp is the compare-and-set that decides the race
   // inside the database: the loser matches zero rows, rolls back its own
-  // insert, and is told the record changed.
+  // insert, and is told the record changed. The same stamp answers a protocol
+  // that was revised or retired before this request began (a screen that has
+  // not reloaded), with the same sentence, where it used to read "Not found".
   return withTransaction(async (client) => {
     await client.query(
       `insert into pilot.intervention_protocols

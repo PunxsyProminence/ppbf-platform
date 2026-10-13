@@ -922,10 +922,13 @@ describe('a save from a screen that was loaded before someone else changed the r
     expect((await closeOut(executionId)).status).toBe(200);
     const before = await everyColumnOf(executionId);
 
+    const auditBefore = await auditCount('intervention_execution', [executionId]);
+
     // Minutes later, from the screen that still shows work in progress.
     expectToldToReload(await correct(executionId, undefined, { expected_row_version: loaded }));
 
     expect(await everyColumnOf(executionId)).toBe(before);
+    expect(await auditCount('intervention_execution', [executionId])).toBe(auditBefore);
     expect((await versionsOf(executionId)).map((row) => [row.version, row.status, row.notes]))
       .toEqual([[1, 'completed', 'closing note']]);
     // Reloaded, the same correction goes through against the record as it stands.
@@ -941,13 +944,46 @@ describe('a save from a screen that was loaded before someone else changed the r
     expect(added.status).toBe(200);
     const before = await everyColumnOf(executionId);
 
+    const auditBefore = await auditCount('intervention_execution', [executionId]);
+
     expectToldToReload(await closeOut(executionId, { expected_row_version: loaded }));
     expectToldToReload(await recordFacts(executionId, 'from the stale screen', { expected_row_version: loaded }));
 
     expect(await everyColumnOf(executionId)).toBe(before);
+    expect(await auditCount('intervention_execution', [executionId])).toBe(auditBefore);
     // The save's own answer carries the new version, and a save holding it goes through.
     expect(added.body.item?.row_version).toBe(await versionOnScreen(executionId));
     expect((await closeOut(executionId, { expected_row_version: added.body.item?.row_version })).status).toBe(200);
+  });
+
+  test('a save naming a version, sent while another save of the record is still being written, waits and is told', async () => {
+    const executionId = await startExecution();
+    const loaded = await versionOnScreen(executionId);
+
+    // Someone else's save has run and not yet committed, held open on a second
+    // connection, so the two saves below meet the row while it is locked.
+    const inFlight = new Client({ connectionString: connectionStringFor(DB_NAME) });
+    await inFlight.connect();
+    try {
+      await inFlight.query('begin');
+      await inFlight.query(
+        `update pilot.intervention_executions set notes = 'saved first', updated_at = now()
+         where organization_id = $1 and execution_id = $2`,
+        [ORG_ID, executionId],
+      );
+      const recording = recordFacts(executionId, 'from the stale screen', { expected_row_version: loaded });
+      const closing = closeOut(executionId, { expected_row_version: loaded });
+      expect(await finishedOrWaitingOnALock(recording)).toBe('waiting on a lock');
+      expect(await finishedOrWaitingOnALock(closing)).toBe('waiting on a lock');
+      await inFlight.query('commit');
+
+      expectToldToReload(await recording);
+      expectToldToReload(await closing);
+    } finally {
+      await inFlight.end();
+    }
+    expect((await versionsOf(executionId)).map((row) => [row.version, row.status, row.notes]))
+      .toEqual([[1, 'in_progress', 'saved first']]);
   });
 
   test('evidence linked since does not make the screen out of date: the record itself has not changed', async () => {
@@ -1031,6 +1067,8 @@ describe('a save from a screen that was loaded before someone else changed the r
       { version: 1, status: 'superseded', hypothesis: 'it is a habit, not fatigue' },
       { version: 2, status: 'retired', hypothesis: 'it is fatigue' },
     ]);
+    // Filed, revised, retired: three audit rows, and none for the four refusals.
+    expect(await auditCount('intervention_protocol', [String(firstId), String(revised.body.item?.protocol_id)])).toBe(3);
     // A protocol that does not exist is still Not found.
     expect(await patchProtocol({ action: 'retire', protocol_id: 'no-such-protocol' }))
       .toEqual({ status: 404, body: { error: 'Not found' } });

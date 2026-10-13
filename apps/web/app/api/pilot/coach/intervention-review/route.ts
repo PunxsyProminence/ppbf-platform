@@ -145,6 +145,15 @@ export async function POST(request: NextRequest) {
         throw new ValidationError('performance_notes is required -- what happened, in human words.');
       }
 
+      // The verdict the screen was showing when the form opened: its id, or
+      // null for "not yet reviewed". Left out, the review replaces whatever
+      // stands. Sent as anything else, it is refused rather than guessed at.
+      const sentReview = body.expected_review_id;
+      if (sentReview !== undefined && sentReview !== null
+        && (typeof sentReview !== 'string' || !sentReview.trim())) {
+        throw new ValidationError('expected_review_id must be the review_id the screen was showing, or null.');
+      }
+
       const item = await reviewOutcome({
         organizationId: principal.organizationId,
         executionId,
@@ -154,12 +163,7 @@ export async function POST(request: NextRequest) {
         learningSignal: body.learning_signal as LearningSignal,
         learningNotes: optionalString(body.learning_notes),
         reviewedByAccountId: principal.accountId,
-        // The verdict the screen was showing when the form opened: its id, or
-        // null for "not yet reviewed". Left out, the review replaces whatever
-        // stands.
-        expectedReviewId: 'expected_review_id' in body
-          ? (optionalString(body.expected_review_id)?.trim() || null)
-          : undefined,
+        expectedReviewId: typeof sentReview === 'string' ? sentReview.trim() : sentReview,
       });
       if (!item) return hiddenNotFound();
       await audit(principal, 'create', 'intervention_outcome_review', item.review_id, {

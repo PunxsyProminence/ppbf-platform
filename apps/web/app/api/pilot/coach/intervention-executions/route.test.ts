@@ -300,10 +300,18 @@ test('the version the screen loaded is handed to record, close and correct; with
     expect((await PATCH(bodyRequest('PATCH', bodies[action]))).status).toBe(200);
     expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
 
-    // Not a string, or blank: treated as not sent, never as a version.
-    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: 7001 }))).status).toBe(200);
+    // null is "none named", the same as leaving it out.
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: null }))).status).toBe(200);
     expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
-    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: '  ' }))).status).toBe(200);
-    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+
+    // Sent, but not a version: refused, and the write is not attempted. Letting
+    // it through as "none named" would save over the record unguarded.
+    const callsBefore = mocks[action].mock.calls.length;
+    for (const notAVersion of [7001, '  ', '', {}, true]) {
+      const refused = await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: notAVersion }));
+      expect(refused.status).toBe(400);
+      expect(((await refused.json()) as { error: string }).error).toMatch(/expected_row_version/);
+    }
+    expect(mocks[action].mock.calls.length).toBe(callsBefore);
   }
 });
