@@ -2551,6 +2551,34 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/coach-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/coach-messages",
+    "gate": "requirePrincipal + requireRole(athlete) + assertActorCanAccessAthlete(principal.athleteId)",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The athlete's own athlete_message notes (what their coaches wrote to them), newest first, staff-written rows only (author_role coach, organization_admin or admin), named by the writer's login-derived name, never an account id (OD-2026-10-06-025); the athlete id comes from the session, never the request (athleteCoachMessages.ts; #1542 FC-06). Guardians do not read these (FC-06 Q-2 default A).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/development-blocks/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/development-blocks",

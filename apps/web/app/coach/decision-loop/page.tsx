@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import MessageAthlete from '@/components/MessageAthlete';
 import { formatGymDate, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
@@ -1589,7 +1590,7 @@ export default function DecisionLoopReviewPage() {
                 <p className="t-muted mt-[var(--s2)]">
                   A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
                   Give it a due date to mark it as something the family needs to do by then.
-                  There&apos;s no reply yet; call the family directly for anything that needs a conversation.
+                  The family can reply under each message, and their replies show below it.
                 </p>
 
                 {messageHomeMessage && (
@@ -1622,6 +1623,11 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
+              </section>
+
+              {/* Message the athlete (#1542, FC-06): read on their Dashboard. */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <MessageAthlete key={athleteId} athleteId={athleteId} />
               </section>
 
               {/* Decision Outcomes */}

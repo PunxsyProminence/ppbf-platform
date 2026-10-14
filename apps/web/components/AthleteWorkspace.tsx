@@ -26,6 +26,7 @@ import {
 import ShadowChatButton from './ShadowChatButton';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
+import FromYourCoach from './FromYourCoach';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { allTrackIds, trackManifests, type TrackID } from './trackAssignments';
 import { cx } from './uiStyles';
@@ -2839,6 +2840,9 @@ export default function AthleteWorkspace() {
                   why photographs cannot do this here. Renders nothing until
                   the athlete's identity resolves and history exists. */}
               <ThenAndNow athleteId={backendAthleteId} />
+
+              {/* What the athlete's coaches wrote to them (#1542, FC-06). */}
+              <FromYourCoach />
 
               {/* TODAY moved to MY CORNER at the top of the workspace (above the
                   fight card), restyled, with the same handlers and reads. See

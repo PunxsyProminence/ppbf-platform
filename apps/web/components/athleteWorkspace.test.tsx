@@ -251,6 +251,10 @@ beforeEach(() => {
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
     }
+    // "From your coach" on the Dashboard (#1542, FC-06): no messages here.
+    if (url.includes('/api/pilot/athlete/coach-messages')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     if (url.includes('/api/pilot/athlete/tracks')) {
       if (tracksReadStatus === 'offline') throw new Error('tracks offline');
       if (tracksReadStatus === 'refused') return jsonResponse({ error: 'Forbidden: role not allowed' }, false);
