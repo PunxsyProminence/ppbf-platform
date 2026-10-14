@@ -65,6 +65,7 @@ export default function BehaviorStandardsPage() {
      claiming there are no notes. null = still loading. */
   const [notes, setNotes] = useState<BehaviourNote[] | null>(null);
   const [notesUnreadable, setNotesUnreadable] = useState(false);
+  const [notesTruncated, setNotesTruncated] = useState(false);
 
   const [recognizeForm, setRecognizeForm] = useState({ standard_id: '', athlete_id: '', note: '' });
   const [concernForm, setConcernForm] = useState({ athlete_id: '', reason: '', severity: 'moderate' });
@@ -124,9 +125,10 @@ export default function BehaviorStandardsPage() {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('Unable to load notes.');
-        const payload = (await response.json()) as { items?: BehaviourNote[] };
+        const payload = (await response.json()) as { items?: BehaviourNote[]; truncated?: boolean };
         if (!controller.signal.aborted) {
           setNotes(payload.items ?? []);
+          setNotesTruncated(payload.truncated === true);
           setNotesUnreadable(false);
         }
       } catch {
@@ -414,6 +416,12 @@ export default function BehaviorStandardsPage() {
             ) : notes.length === 0 ? (
               <p className="t-body">No notes saved yet. Log one from the Decision Loop.</p>
             ) : (
+              <>
+              {notesTruncated && (
+                <p className="t-body mb-[var(--s3)]" data-testid="behaviour-notes-truncated">
+                  Showing the newest {notes.length} notes. Older notes are kept and are not listed here.
+                </p>
+              )}
               <ul className="space-y-[var(--s3)]">
                 {notes.map((note) => (
                   <li key={note.note_id}>
@@ -428,6 +436,7 @@ export default function BehaviorStandardsPage() {
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </section>
 

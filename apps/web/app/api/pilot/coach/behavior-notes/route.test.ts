@@ -17,7 +17,7 @@ jest.mock('@/src/server/pilot/access', () => {
 });
 
 jest.mock('@/src/server/pilot/behaviourNotes', () => ({
-  listBehaviourNotes: jest.fn().mockResolvedValue([]),
+  listBehaviourNotes: jest.fn().mockResolvedValue({ items: [], truncated: false }),
 }));
 
 const mockPrincipal = requirePrincipal as jest.Mock;
@@ -39,7 +39,7 @@ function request(query = ''): NextRequest {
 
 beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
-  mockList.mockResolvedValue([{ note_id: 'n1', athlete_id: 'ath-1', note_text: 'x' }]);
+  mockList.mockResolvedValue({ items: [{ note_id: 'n1', athlete_id: 'ath-1', note_text: 'x' }], truncated: false });
 });
 
 afterEach(() => {
@@ -51,7 +51,9 @@ test.each(['coach', 'organization_admin', 'admin'])('a %s reads the notes of the
   mockPrincipal.mockResolvedValue(principal(role));
   const response = await GET(request());
   expect(response.status).toBe(200);
-  expect((await response.json()).items).toHaveLength(1);
+  const body = await response.json();
+  expect(body.items).toHaveLength(1);
+  expect(body.truncated).toBe(false);
   expect(mockList).toHaveBeenCalledWith('org-1', { athleteId: undefined });
 });
 

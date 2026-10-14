@@ -34,12 +34,12 @@ const NOTES = [
     created_at: '2026-10-08T22:30:00.000Z' },
 ];
 
-function mockFetch(capture?: { posts: unknown[] }, notesResponse?: { ok: boolean; items?: unknown[] }) {
+function mockFetch(capture?: { posts: unknown[] }, notesResponse?: { ok: boolean; items?: unknown[]; truncated?: boolean }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/behavior-notes')) {
       const r = notesResponse ?? { ok: true, items: NOTES };
-      return { ok: r.ok, json: async () => ({ items: r.items ?? [] }) } as Response;
+      return { ok: r.ok, json: async () => ({ items: r.items ?? [], truncated: r.truncated }) } as Response;
     }
     if (init?.method === 'POST') {
       capture?.posts.push(JSON.parse(String(init.body)));
@@ -326,4 +326,22 @@ test('the organization admin retires a standard through retire_standard', async 
   expect((screen.getByLabelText('Standard', { selector: '#rec-standard' }) as HTMLSelectElement).value).toBe('');
   expect(capture.posts).toEqual([{ action: 'retire_standard', standard_id: 's1' }]);
   expect(await screen.findByText(/Standard retired/)).toBeTruthy();
+});
+
+test('a partial notes list says it is partial (F-070 review)', async () => {
+  global.fetch = mockFetch(undefined, { ok: true, items: NOTES, truncated: true });
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  expect(await screen.findByTestId('behaviour-notes-truncated')).toBeTruthy();
+  expect(screen.getByText(/Showing the newest 1 notes\. Older notes are kept and are not listed here\./)).toBeTruthy();
+});
+
+test('a complete notes list shows no partial-list sentence', async () => {
+  global.fetch = mockFetch();
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  await screen.findByText('Stayed after to help re-rack the bags.');
+  expect(screen.queryByTestId('behaviour-notes-truncated')).toBeNull();
 });

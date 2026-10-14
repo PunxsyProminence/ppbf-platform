@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
       await assertActorCanAccessAthlete(principal, athleteId);
     }
 
-    const items = await listBehaviourNotes(principal.organizationId, {
+    const { items, truncated } = await listBehaviourNotes(principal.organizationId, {
       athleteId: athleteId || undefined,
     });
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, items, truncated });
   } catch (error) {
     return jsonError(error);
   }

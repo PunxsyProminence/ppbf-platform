@@ -29,9 +29,27 @@ test('the list is scoped to one gym and to the behaviour note type, and drops de
   expect(BEHAVIOUR_NOTE_TYPE).toBe('behavior_standard');
 });
 
-test('the page size is bounded', async () => {
+const rowOf = (n: number) => ({
+  note_id: String(n), athlete_id: 'a', athlete_name: 'A', note_text: 't', author_role: 'coach', created_at: 'x',
+});
+
+test('the page size is bounded, and one extra row is read to tell a partial list', async () => {
   await listBehaviourNotes('org-1', { limit: 100000 });
-  expect(mockQuery.mock.calls[0][1][3]).toBe(100);
+  expect(mockQuery.mock.calls[0][1][3]).toBe(101);
+});
+
+test('a list longer than the page says it is truncated and returns only the page', async () => {
+  mockQuery.mockResolvedValueOnce(Array.from({ length: 101 }, (_, n) => rowOf(n)));
+  const page = await listBehaviourNotes('org-1');
+  expect(page.items).toHaveLength(100);
+  expect(page.truncated).toBe(true);
+});
+
+test('a list within the page is not truncated', async () => {
+  mockQuery.mockResolvedValueOnce(Array.from({ length: 100 }, (_, n) => rowOf(n)));
+  const page = await listBehaviourNotes('org-1');
+  expect(page.items).toHaveLength(100);
+  expect(page.truncated).toBe(false);
 });
 
 // OD-2026-10-10-003 item 3: a coach's note is staff only. These are the

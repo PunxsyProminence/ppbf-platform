@@ -29,13 +29,20 @@ export interface BehaviourNoteRow {
 
 export const BEHAVIOUR_NOTES_PAGE = 100;
 
-/** Notes in one gym, newest first. Deleted athletes' notes are not listed. */
+export interface BehaviourNotesPage {
+  items: BehaviourNoteRow[];
+  /** True when older notes exist that this page does not list. */
+  truncated: boolean;
+}
+
+/** Notes in one gym, newest first. Deleted athletes' notes are not listed.
+ *  One extra row is read so a partial list says it is partial. */
 export async function listBehaviourNotes(
   organizationId: string,
   options: { athleteId?: string; limit?: number } = {},
-): Promise<BehaviourNoteRow[]> {
+): Promise<BehaviourNotesPage> {
   const limit = Math.min(Math.max(options.limit ?? BEHAVIOUR_NOTES_PAGE, 1), BEHAVIOUR_NOTES_PAGE);
-  return query<BehaviourNoteRow>(
+  const rows = await query<BehaviourNoteRow>(
     `select co.note_id::text as note_id,
             co.athlete_id,
             a.full_name as athlete_name,
@@ -52,6 +59,7 @@ export async function listBehaviourNotes(
         and ($3::text is null or co.athlete_id = $3)
       order by co.created_at desc
       limit $4`,
-    [organizationId, BEHAVIOUR_NOTE_TYPE, options.athleteId ?? null, limit],
+    [organizationId, BEHAVIOUR_NOTE_TYPE, options.athleteId ?? null, limit + 1],
   );
+  return { items: rows.slice(0, limit), truncated: rows.length > limit };
 }
