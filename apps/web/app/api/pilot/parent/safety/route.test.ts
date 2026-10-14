@@ -292,6 +292,37 @@ test('the placer is named by the family name reader, asked about the placer in t
   expect(JSON.stringify(payload)).not.toMatch(/mike1987/i);
 });
 
+// Codex on #1592: the placer's role reaches the reader, so a hold an
+// organization admin placed is not "Coach ..." to the parent.
+test("the placer's role reaches the family name reader", async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockFamilyHoldPlacerName.mockResolvedValueOnce('The gym');
+  mockGetActiveTrainingHold.mockResolvedValueOnce({
+    organization_id: 'org-a',
+    hold_id: 'hold-o',
+    athlete_id: 'ath-1',
+    scope: 'all_training',
+    reason_category: 'medical',
+    reason_text: 'staff only',
+    athlete_explanation: 'Rest this week.',
+    lift_condition_text: '',
+    placed_by_account_id: 'acct-org-admin-1',
+    placed_by_role: 'organization_admin',
+    placed_at: '2026-08-01T00:00:00.000Z',
+    expires_at: null,
+    lifted_by_account_id: null,
+    lifted_at: null,
+    lift_note: '',
+    status: 'active',
+  } as never);
+
+  const payload = await (await get()).json();
+
+  expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'acct-org-admin-1', 'organization_admin');
+  expect(payload.items[0].hold.placed_by_name).toBe('The gym');
+});
+
 test('no active hold reads as hold: null, not omitted', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
