@@ -7,6 +7,7 @@ import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 
 /** A row of pilot.athletes as GET /api/pilot/athletes/list returns it. */
@@ -384,6 +385,33 @@ function AthleteRecordsConsoleContent() {
       : [{ account_id: selected.coach_id, login_email: null }, ...coaches];
   }, [coaches, selected]);
 
+  // The picker names coaches the way the row and the notes do. Two coaches who
+  // would read the same get their login address added, so the choice is still
+  // unambiguous; otherwise the address is not shown.
+  const coachOptionLabel = useMemo(() => {
+    // The address a coach signs in with, from the option itself, the staff
+    // list (a coach who has left is not among the choosable ones) or an
+    // email-shaped id.
+    const addressFor = (coach: CoachOption): string | null => (
+      coach.login_email
+      ?? coachDirectory.find((entry) => entry.account_id === coach.account_id)?.login_email
+      ?? (coach.account_id.includes('@') ? coach.account_id : null)
+    );
+    const names = coachChoices.map((coach) => {
+      const address = addressFor(coach);
+      return address ? deriveCoachDisplayName(address) : coachNameFor(coach.account_id);
+    });
+    return new Map(coachChoices.map((coach, index) => {
+      const duplicated = names.filter((name) => name === names[index]).length > 1;
+      if (!duplicated) return [coach.account_id, names[index]];
+      const address = addressFor(coach);
+      if (address) return [coach.account_id, `${names[index]} (${address})`];
+      // Nothing to tell them apart by: number them within the group.
+      const sameName = names.map((name, at) => (name === names[index] ? at : -1)).filter((at) => at >= 0);
+      return [coach.account_id, `${names[index]} (no login address on file, ${sameName.indexOf(index) + 1} of ${sameName.length})`];
+    }));
+  }, [coachChoices, coachDirectory, coachNameFor]);
+
   function openRecord(athlete: RosterAthlete) {
     setSelectedId(athlete.athlete_id);
     setConfirmingStatusChange(false);
@@ -604,7 +632,7 @@ function AthleteRecordsConsoleContent() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{athlete.full_name}</p>
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {athlete.athlete_id} · born {athlete.dob} · {coachNameFor(athlete.coach_id)}
+                          {athlete.athlete_id} · born {formatCalendarDay(athlete.dob.slice(0, 10))} · {coachNameFor(athlete.coach_id)}
                           {typeof attendanceRate === 'number' && (
                             <> · attendance {Math.round(attendanceRate * 100)}%</>
                           )}
@@ -749,7 +777,7 @@ function AthleteRecordsConsoleContent() {
                     onChange={(event) => setDraftDob(event.target.value)}
                     className="input"
                   />
-                  <p className="t-muted mt-[var(--s2)]">Currently stored as {selected.dob}.</p>
+                  <p className="t-muted mt-[var(--s2)]">Currently stored as {formatCalendarDay(selected.dob.slice(0, 10))}.</p>
                 </div>
 
                 <div className="field">
@@ -829,7 +857,7 @@ function AthleteRecordsConsoleContent() {
                 >
                   {coachChoices.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
-                      {coach.login_email || coach.account_id}
+                      {coachOptionLabel.get(coach.account_id) ?? 'coach name not available'}
                     </option>
                   ))}
                 </select>
