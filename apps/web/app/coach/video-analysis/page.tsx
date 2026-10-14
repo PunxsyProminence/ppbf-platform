@@ -10,8 +10,6 @@ import OperationsLink from '@/components/OperationsLink';
 import ClipTagsPanel from '@/components/ClipTagsPanel';
 import TaggedClipsList from '@/components/TaggedClipsList';
 
-const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
-
 interface VideoSession {
   video_session_id: string;
   title: string;
@@ -133,14 +131,6 @@ interface FilmStudyValidationReport {
   };
   byDeployment: FilmStudyDeploymentAcceptance[];
 }
-
-const mlPanels = [
-  { title: 'Skill Recognition', detail: ML_PLACEHOLDER },
-  { title: 'Punch Detection', detail: ML_PLACEHOLDER },
-  { title: 'Footwork Analysis', detail: ML_PLACEHOLDER },
-  { title: 'Technique Scoring', detail: ML_PLACEHOLDER },
-  { title: 'Movement Analysis', detail: ML_PLACEHOLDER },
-];
 
 // Film Study jobs are enqueued but nothing here forces the SHADOW worker to be
 // running (the route enqueues unconditionally -- see PR discussion on
@@ -776,8 +766,7 @@ export default function CoachVideoAnalysisPage() {
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Upload session footage and review athlete film. An upload is held until you release it, and only then can it
             be played. A released video can be sent for Film Study -- a vision-based observation that waits for your
-            review below before it touches any athlete record. Per-skill scoring (punch detection, footwork, and the
-            rest) remains planned and is not yet active.
+            review below before it touches any athlete record.
           </p>
         </header>
 
@@ -1229,19 +1218,6 @@ export default function CoachVideoAnalysisPage() {
             >
               {missedSubmitting ? 'Recording...' : 'Add to review queue'}
             </button>
-          </div>
-        </section>
-
-        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-          <h2 className="t-eyebrow">AI/ML Analysis — Planned Features</h2>
-          <p className="mt-[var(--s3)]"><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-          <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2 lg:grid-cols-3">
-            {mlPanels.map((p) => (
-              <div key={p.title} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="text-[length:var(--t-xs)] font-semibold text-[color:var(--bone-300)]">{p.title}</p>
-                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{p.detail}</p>
-              </div>
-            ))}
           </div>
         </section>
 

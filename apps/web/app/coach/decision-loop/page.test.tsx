@@ -2825,6 +2825,31 @@ describe('the medical status on file, stated beside the Record Decision form', (
     expect(within(section).getAllByText(/Medical status on file then:/)).toHaveLength(2);
   });
 
+  test('a decision shows when it was made in gym time, not the raw UTC string', async () => {
+    installFetch({
+      decisions: () => jsonResponse({
+        decisions: [{
+          decision_id: 'dec-1',
+          athlete_id: 'ath-1',
+          recommendation_id: null,
+          decision_text: 'Easy skipping only today.',
+          expected_outcome: 'Calf settles.',
+          decided_by_account_id: 'acct-1',
+          decided_by_role: 'coach',
+          status: 'active',
+          // 2026-10-12 00:30 UTC is the evening of Oct 11 at the gym.
+          decided_at: '2026-10-12T00:30:00.000Z',
+        }],
+      }),
+    });
+    await selectAthlete();
+
+    const section = decisionsSection();
+    await within(section).findByText('Easy skipping only today.');
+    expect(section.textContent).toContain('By coach, October 11, 2026 at 8:30 PM');
+    expect(section.textContent).not.toContain('2026-10-12T00:30');
+  });
+
   test('the page no longer says decisions or recommendations are gated by the medical status', async () => {
     installFetch({ medicalStatus: statusIs({ ...STATUS_ROW, expires_at: '2026-10-01 16:00:00+00' }, 'cleared_expired') });
     await selectAthlete();
