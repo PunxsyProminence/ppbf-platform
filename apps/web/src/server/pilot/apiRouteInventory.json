@@ -10611,7 +10611,7 @@
     "id": "app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/session-scripts/runs/[runId]/athletes",
-    "gate": "requirePrincipal + requireRole; athletes filtered in SQL to the live athletes of the caller's own gym (staffPermittedAthleteIds: active staff membership) in sessionRunAthletes.ts listPresentAthletes",
+    "gate": "requirePrincipal + requireRole; athletes filtered in SQL to the live athletes of the caller's own gym (staffPermittedAthletes: active staff membership) in sessionRunAthletes.ts listPresentAthletes; the picker list `gym` is that same set, id and name only (OD-2026-10-11-007)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",

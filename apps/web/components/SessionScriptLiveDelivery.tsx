@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import RoundTimerControls from '@/components/RoundTimerControls';
+import SessionRunPresence from '@/components/SessionRunPresence';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
@@ -77,16 +78,16 @@ interface LoggedIntervention {
 //
 // The panel is therefore removed rather than repointed.
 //
-// What remains is athletes_present: a COUNT the coach enters at finish, a
-// human stating HOW MANY they observed. It is not a record of who, and this
-// comment said it was until review caught it -- which is the same conflation
-// of a number with a roster of named children that the panel above committed,
-// written into the note explaining the removal. Nothing in the platform
-// currently records who was in the room during a session.
+// WHO WAS IN THE ROOM IS NOW RECORDED BY THE COACH (audit finding F-067), not
+// inferred from any other table: SessionRunPresence lists the gym's athletes
+// and the delivering coach taps each one who is here. That is its own record
+// (sessionRunAthletes.ts on the server), session detail and not attendance (CT-13); it
+// touches no athlete's own check-in.
 //
-// Restoring a live presence panel needs the separate arrival surface the
-// check-in route already names; that is a product decision, not a swap of one
-// query for another.
+// athletes_present stays what it was: a COUNT the coach states at finish. It
+// starts from the number marked here, until the coach types in it; what the
+// coach leaves in the box is what is saved. Nobody marked leaves it empty, so
+// an empty room is never recorded that nobody counted.
 
 /** The four authored coaching fields, omitting the ones the author left empty. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
@@ -373,6 +374,15 @@ export default function SessionScriptLiveDelivery({
   const [settleOpen, setSettleOpen] = useState(false);
   const [blocksCompleted, setBlocksCompleted] = useState('');
   const [athletesPresent, setAthletesPresent] = useState('');
+  // Once the coach types in the box, the marks no longer fill it.
+  const [athletesPresentTyped, setAthletesPresentTyped] = useState(false);
+  const presentFromMarks = useCallback(
+    (count: number | null) => {
+      if (athletesPresentTyped || count === null) return;
+      setAthletesPresent(count > 0 ? String(count) : '');
+    },
+    [athletesPresentTyped, setAthletesPresent],
+  );
   const [resetProtocolUsed, setResetProtocolUsed] = useState(false);
   const [deviationNote, setDeviationNote] = useState('');
   const [whatWorked, setWhatWorked] = useState('');
@@ -600,6 +610,8 @@ export default function SessionScriptLiveDelivery({
         </>
       )}
 
+      <SessionRunPresence runId={run.run_id} onPresentCount={presentFromMarks} />
+
       {/* Logging an intervention against THIS run. A protocol run once here is
           tied to the run in progress via session_run_id -- the same link
           startExecution has always accepted, just never had a caller for
@@ -728,15 +740,23 @@ export default function SessionScriptLiveDelivery({
                   />
                 </label>
               )}
-              <label className="field">
-                <span className="t-label">Athletes present</span>
-                <input
-                  value={athletesPresent}
-                  onChange={(event) => setAthletesPresent(event.target.value)}
-                  inputMode="numeric"
-                  className="input"
-                />
-              </label>
+              <div>
+                <label className="field">
+                  <span className="t-label">Athletes present</span>
+                  <input
+                    value={athletesPresent}
+                    onChange={(event) => { setAthletesPresentTyped(true); setAthletesPresent(event.target.value); }}
+                    inputMode="numeric"
+                    className="input"
+                    aria-describedby={!athletesPresentTyped && athletesPresent !== '' ? 'athletes-present-from-marks' : undefined}
+                  />
+                </label>
+                {!athletesPresentTyped && athletesPresent !== '' && (
+                  <p id="athletes-present-from-marks" className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
+                    Filled in from the athletes marked here. Change it if your count is different.
+                  </p>
+                )}
+              </div>
             </div>
             <label className="inline-flex min-h-[var(--tap)] items-center gap-[var(--s2)]">
               <input
