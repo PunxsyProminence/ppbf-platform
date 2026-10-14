@@ -60,6 +60,7 @@ jest.mock('./db', () => ({
 
 import { registerForClassTransactionally } from './schedulerDb';
 import {
+  closeEndedHoldNotices,
   findRegistrationBlockingHold,
   flagContactDuringHold,
   getActiveTrainingHold,
@@ -499,6 +500,9 @@ describe('the real hold lifecycle against real rows (#82 acceptance)', () => {
           observedAt: new Date().toISOString(),
         }),
       ).resolves.toEqual({ flagged: false });
+      // The escalation list closes ended hold notices first; with no holds
+      // table there is nothing to close, and the list still loads.
+      await expect(closeEndedHoldNotices(ORG_ID)).resolves.toBeUndefined();
     } finally {
       await client.end();
     }
@@ -732,6 +736,93 @@ describe('a hold that ends closes the escalation it filed (F-069)', () => {
         resolution_note: 'Hold expired.',
       });
       expect(closed.resolved_at).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('ended holds\' notices left open are closed with the values a lift or lapse writes (#1596)', async () => {
+    const client = await freshDatabase('ppbf_test_holds_esc_leftovers', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    const THIRD_ATHLETE_ID = 'ATH-HOLD-3';
+    try {
+      for (const [athleteId, name] of [[OTHER_ATHLETE_ID, 'Other Athlete'], [THIRD_ATHLETE_ID, 'Third Athlete']]) {
+        await client.query(
+          `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+           values ($1, $2, $3, '2011-05-06', 'fly', 'active', 'contact', true, $4, now(), now())`,
+          [ORG_ID, athleteId, name, COACH_ID],
+        );
+      }
+      // Notices as they were left before F-069: the hold ended in storage,
+      // its notice still open (or acknowledged) with nothing resolved.
+      const reopen = (holdId: string, status: string, note: string) => client.query(
+        `update pilot.safety_escalations
+         set status = $3, resolved_by_account_id = null, resolved_at = null, resolution_note = $4
+         where organization_id = $1 and source_type = 'training_hold' and source_id = $2`,
+        [ORG_ID, holdId, status, note],
+      );
+      const lifted = await placeTrainingHold(placeInput());
+      await liftTrainingHold(ORG_ID, lifted.hold_id, ADMIN_ID, 'Cleared.');
+      await reopen(lifted.hold_id, 'open', '');
+
+      const oldExpired = await placeTrainingHold(placeInput({ athleteId: OTHER_ATHLETE_ID }));
+      await client.query(
+        `update pilot.training_holds
+         set status = 'expired', placed_at = now() - interval '10 days', expires_at = now() - interval '9 days',
+             updated_at = now() - interval '9 days'
+         where organization_id = $1 and hold_id = $2`,
+        [ORG_ID, oldExpired.hold_id],
+      );
+      await reopen(oldExpired.hold_id, 'acknowledged', 'Coach saw it.');
+
+      // Lapsed, never swept: still 'active' in storage.
+      const lapsed = await placeTrainingHold(placeInput({ athleteId: OTHER_ATHLETE_ID }));
+      await client.query(
+        `update pilot.training_holds
+         set placed_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+         where organization_id = $1 and hold_id = $2`,
+        [ORG_ID, lapsed.hold_id],
+      );
+
+      const stillActive = await placeTrainingHold(placeInput({ athleteId: THIRD_ATHLETE_ID }));
+      // A hold notice whose hold row is gone is not guessed at.
+      await client.query(
+        `insert into pilot.safety_escalations
+           (organization_id, escalation_id, source_type, source_id, athlete_id, severity, reason, escalated_to_role, triggered_by)
+         values ($1, 'esc-orphan', 'training_hold', 'hold-gone', $2, 'high', 'A hold notice.', 'coach', 'system')`,
+        [ORG_ID, THIRD_ATHLETE_ID],
+      );
+
+      await closeEndedHoldNotices(ORG_ID);
+
+      const liftedHold = (await client.query(
+        'select lifted_at from pilot.training_holds where organization_id = $1 and hold_id = $2',
+        [ORG_ID, lifted.hold_id],
+      )).rows[0];
+      const closedLift = await escalationFor(client, 'training_hold', lifted.hold_id);
+      expect(closedLift).toMatchObject({ status: 'resolved', resolved_by_account_id: ADMIN_ID, resolution_note: 'Hold lifted.' });
+      expect(closedLift.resolved_at).toEqual(liftedHold.lifted_at);
+
+      const closedOld = await escalationFor(client, 'training_hold', oldExpired.hold_id);
+      expect(closedOld).toMatchObject({ status: 'resolved', resolved_by_account_id: null, resolution_note: 'Coach saw it.' });
+      expect(closedOld.resolved_at).not.toBeNull();
+
+      expect(await escalationFor(client, 'training_hold', lapsed.hold_id)).toMatchObject({
+        status: 'resolved', resolved_by_account_id: null, resolution_note: 'Hold expired.',
+      });
+      const lapsedHold = (await client.query(
+        'select status from pilot.training_holds where organization_id = $1 and hold_id = $2',
+        [ORG_ID, lapsed.hold_id],
+      )).rows[0];
+      expect(lapsedHold.status).toBe('expired');
+
+      expect((await escalationFor(client, 'training_hold', stillActive.hold_id)).status).toBe('open');
+      expect((await escalationFor(client, 'training_hold', 'hold-gone')).status).toBe('open');
+
+      // A second run matches nothing and changes nothing.
+      const before = (await client.query('select escalation_id, updated_at from pilot.safety_escalations order by 1')).rows;
+      await closeEndedHoldNotices(ORG_ID);
+      expect((await client.query('select escalation_id, updated_at from pilot.safety_escalations order by 1')).rows).toEqual(before);
     } finally {
       await client.end();
     }

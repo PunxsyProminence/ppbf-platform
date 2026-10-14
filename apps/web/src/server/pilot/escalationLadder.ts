@@ -391,45 +391,6 @@ export interface EscalationListFilters {
  * the screen until somebody resolves it: deleting a child does not deal with
  * a red flag about them. See deletedAthletes.ts for the mark.
  */
-/**
- * THE ESCALATIONS AS THEY READ (#1596). A training-hold escalation is a notice
- * that a hold was placed, and the hold's end resolves it (#1580 does that in
- * the same statement as a lift or a lapse from now on). Notices whose hold
- * ended before that change still sit Open in the table. Every read below sees
- * such a notice as resolved, from the hold row itself: the hold exists and is
- * lifted, expired, or past its expiry. Nothing is written here, and a notice
- * whose hold row cannot be found keeps its stored status.
- */
-const TRAINING_HOLD_ENDED = `(e.source_type = 'training_hold'
-       and e.status in ('open', 'acknowledged')
-       and exists (
-         select 1 from pilot.training_holds ended_hold
-          where ended_hold.organization_id = e.organization_id
-            and ended_hold.hold_id = e.source_id
-            and (ended_hold.status <> 'active'
-                 or (ended_hold.expires_at is not null and ended_hold.expires_at <= now()))))`;
-
-const ESCALATIONS_AS_READ = `(
-       select e.escalation_id, e.organization_id, e.source_type, e.source_id, e.athlete_id, e.severity, e.reason,
-              e.escalated_to_role, e.triggered_by, e.triggered_by_account_id, e.triggered_by_role,
-              case when ${TRAINING_HOLD_ENDED} then 'resolved' else e.status end as status,
-              e.acknowledged_by_account_id, e.acknowledged_at,
-              e.resolved_by_account_id, e.resolved_at,
-              case when ${TRAINING_HOLD_ENDED} and e.resolution_note = '' then 'Hold ended.' else e.resolution_note end
-                as resolution_note,
-              e.metadata, e.created_at, e.updated_at
-         from pilot.safety_escalations e
-     ) safety_escalations`;
-
-// The board's count-only read sees the same statuses, from only the columns it
-// counts: it never selects a reason or a row's detail.
-const ESCALATION_COUNTS_AS_READ = `(
-       select e.organization_id, e.severity,
-              case when ${TRAINING_HOLD_ENDED} then 'resolved' else e.status end as status,
-              e.athlete_id
-         from pilot.safety_escalations e
-     ) safety_escalations`;
-
 export async function listEscalations(
   organizationId: string,
   filters: EscalationListFilters = {},
@@ -440,12 +401,12 @@ export async function listEscalations(
             status, acknowledged_by_account_id, acknowledged_at::text,
             resolved_by_account_id, resolved_at::text, resolution_note, metadata,
             created_at::text, updated_at::text
-     from ${ESCALATIONS_AS_READ}
+     from pilot.safety_escalations
      where organization_id = $1
        and ($2::text is null or status = $2)
        and ($3::text[] is null or athlete_id = any($3))
        and ($4::boolean is not true or source_type <> 'athlete_voice')
-       and (status <> 'resolved' or ${athleteNotDeletedSql('safety_escalations')})
+       and (status <> 'resolved' or ${athleteNotDeletedSql('pilot.safety_escalations')})
      order by
        case severity when 'critical' then 0 when 'high' then 1 when 'moderate' then 2 else 3 end asc,
        created_at desc`,
@@ -657,7 +618,7 @@ export async function getBoardEscalationSummary(organizationId: string): Promise
        count(distinct athlete_id) filter (where severity = 'moderate' and status = 'open') as open_moderate_athletes,
        count(*) filter (where severity = 'low' and status = 'open') as open_low,
        count(distinct athlete_id) filter (where severity = 'low' and status = 'open') as open_low_athletes
-     from ${ESCALATION_COUNTS_AS_READ}
+     from pilot.safety_escalations
      where organization_id = $1`,
     [organizationId],
   );

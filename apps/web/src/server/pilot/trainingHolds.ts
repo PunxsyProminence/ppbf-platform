@@ -418,6 +418,50 @@ export async function listTrainingHolds(
 }
 
 /**
+ * Closes every training-hold notice whose hold has ended, so the escalation
+ * list a coach or admin reads (and the board's counts) never shows a hold
+ * notice Open after the hold is gone (#1596, from the live coach audit).
+ *
+ * Two kinds of leftover, both closed with the values a lift or a lapse
+ * writes since F-069 (#1580):
+ *   - a hold whose clock ran out but that nothing has swept yet: the sweep
+ *     above expires it and closes its notice ('Hold expired.');
+ *   - a hold lifted or expired before F-069, whose notice was never
+ *     closed: 'Hold lifted.' with the lifter and lift time, or 'Hold
+ *     expired.' with the time the hold was swept.
+ * A note already written is kept. Only notices still open or acknowledged
+ * are touched, so after the first run this matches no rows. It never lifts,
+ * places or extends a hold.
+ *
+ * Missing table (pre-migration window) reads as nothing to close: the
+ * escalation list must still load.
+ */
+export async function closeEndedHoldNotices(organizationId: string): Promise<void> {
+  try {
+    await sweepExpiredHolds(organizationId, undefined, undefined);
+    await query(
+      `update pilot.safety_escalations e
+       set status = 'resolved',
+           resolved_by_account_id = case when h.status = 'lifted' then h.lifted_by_account_id else null end,
+           resolved_at = case when h.status = 'lifted' then coalesce(h.lifted_at, h.updated_at) else h.updated_at end,
+           resolution_note = case when e.resolution_note <> '' then e.resolution_note
+                                  when h.status = 'lifted' then 'Hold lifted.' else 'Hold expired.' end,
+           updated_at = now()
+       from pilot.training_holds h
+       where e.organization_id = $1 and e.source_type = 'training_hold'
+         and e.status in ('open', 'acknowledged')
+         and h.organization_id = e.organization_id and h.hold_id = e.source_id
+         and h.status <> 'active'`,
+      [organizationId],
+    );
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error;
+    }
+  }
+}
+
+/**
  * The enforcement read: does an active hold stop this activity?
  *
  * 'registration' is stopped only by an 'all_training' hold -- classes are

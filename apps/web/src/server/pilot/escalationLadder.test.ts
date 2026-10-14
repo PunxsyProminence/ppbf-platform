@@ -467,22 +467,6 @@ describe('getBoardEscalationSummary', () => {
     expect(summary.openBySeverity.critical).toEqual({ status: 'available', count: 8 });
   });
 
-  test('counts a training-hold notice whose hold has ended as resolved, like the list (#1596)', async () => {
-    mockQueryOne.mockResolvedValueOnce({
-      open_critical: 0, open_critical_athletes: 0,
-      open_high: 0, open_high_athletes: 0,
-      open_moderate: 0, open_moderate_athletes: 0,
-      open_low: 0, open_low_athletes: 0,
-    });
-
-    await getBoardEscalationSummary('org-1');
-
-    const [sql] = mockQueryOne.mock.calls[0];
-    expect(String(sql)).toContain("e.source_type = 'training_hold'");
-    expect(String(sql)).toContain('from pilot.training_holds ended_hold');
-    expect(String(sql)).toContain("then 'resolved' else e.status end as status");
-  });
-
   test('never reads an individual escalation row -- counts only', async () => {
     mockQueryOne.mockResolvedValueOnce({
       open_critical: 0, open_critical_athletes: 0,

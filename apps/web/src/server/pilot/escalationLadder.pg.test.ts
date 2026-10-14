@@ -53,7 +53,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { fileIncidentReport, getBoardEscalationSummary, listEscalations } from './escalationLadder';
+import { fileIncidentReport, listEscalations } from './escalationLadder';
 
 jest.setTimeout(180_000);
 
@@ -652,73 +652,6 @@ describe('safety escalations against real Postgres', () => {
 describe('the real listEscalations against real rows', () => {
   afterEach(() => {
     activeClient = null;
-  });
-
-  // #1596: a training-hold notice whose hold ended before #1580 still sits
-  // Open in the table. Every read sees it as resolved, from the hold row
-  // itself; nothing is written.
-  test('a training-hold notice whose hold has ended reads as resolved; one whose hold is active, or missing, keeps its status', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_ended_holds', {
-      dropEscalationsTableFirst: true,
-      applyIncrement: true,
-    });
-    activeClient = client;
-    try {
-      // One active hold per athlete (idx_training_holds_one_active): the two
-      // active holds go on two athletes.
-      const SECOND = 'ATH-ESCALATIONS-2';
-      await client.query(
-        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
-         values ($1, $2, 'Second Athlete', '2012-01-01', 'fly', 'active', 'contact', true, $3, now(), now())`,
-        [ORG_ID, SECOND, COACH_ID],
-      );
-      const hold = async (holdId: string, status: string, expiresSql: string, athleteId = ATHLETE_ID) => client.query(
-        `insert into pilot.training_holds (organization_id, hold_id, athlete_id, scope, reason_category,
-           athlete_explanation, placed_by_account_id, placed_by_role, status, placed_at, expires_at)
-         values ($1, $2, $3, 'contact_only', 'medical', 'Resting the wrist.', $4, 'coach', $5,
-                 now() - interval '10 days', ${expiresSql})`,
-        [ORG_ID, holdId, athleteId, COACH_ID, status],
-      );
-      await hold('hold-lifted', 'lifted', 'null');
-      await hold('hold-expired', 'expired', `now() - interval '1 day'`);
-      await hold('hold-lapsed', 'active', `now() - interval '1 hour'`);
-      await hold('hold-active', 'active', `now() + interval '7 days'`, SECOND);
-      for (const [id, source, status] of [
-        ['esc-lifted', 'hold-lifted', 'open'],
-        ['esc-expired', 'hold-expired', 'acknowledged'],
-        ['esc-lapsed', 'hold-lapsed', 'open'],
-        ['esc-active', 'hold-active', 'open'],
-        ['esc-missing', 'hold-gone', 'open'],
-      ]) {
-        await insertEscalation(client, { escalation_id: id, source_type: 'training_hold', source_id: source, status, severity: 'high' });
-      }
-      await insertEscalation(client, { escalation_id: 'esc-nm', source_type: 'near_miss', severity: 'high' });
-
-      const open = await listEscalations(ORG_ID, { status: 'open' });
-      expect(open.map((row) => row.escalation_id).sort()).toEqual(['esc-active', 'esc-missing', 'esc-nm']);
-
-      const all = new Map((await listEscalations(ORG_ID, {})).map((row) => [row.escalation_id, row]));
-      for (const id of ['esc-lifted', 'esc-expired', 'esc-lapsed']) {
-        expect(all.get(id)).toEqual(expect.objectContaining({ status: 'resolved', resolution_note: 'Hold ended.' }));
-      }
-      expect(all.get('esc-active')?.status).toBe('open');
-      expect(all.get('esc-missing')?.status).toBe('open');
-
-      // Nothing was written: the table still holds what it held.
-      const stored = await client.query(
-        `select escalation_id, status from pilot.safety_escalations where organization_id = $1 order by escalation_id`,
-        [ORG_ID],
-      );
-      expect(stored.rows.find((row) => row.escalation_id === 'esc-lifted')?.status).toBe('open');
-      expect(stored.rows.find((row) => row.escalation_id === 'esc-expired')?.status).toBe('acknowledged');
-
-      // The board's count-only read runs against the same rows without error
-      // (its numbers sit below the cohort minimum here, so they are not compared).
-      await expect(getBoardEscalationSummary(ORG_ID)).resolves.toBeTruthy();
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
   });
 
   test('excludeAthleteVoice strips athlete_voice rows and nothing else; omitting it returns them', async () => {
