@@ -113,7 +113,22 @@ test('a picker whose only class is cancelled shows nothing chosen, not a class i
   await renderPage();
   const picker = screen.getByLabelText('Class') as HTMLSelectElement;
   expect(picker.value).toBe('');
-  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['Choose a class']);
+  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['No class to mark']);
+  // Nothing is marked for a class nobody can mark: no athlete groups, no button.
+  expect(screen.queryByLabelText('Athlete to mark')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Update Attendance' })).toBeNull();
+});
+
+test('with a live class beside a cancelled one, the picker reads Choose a class until one is chosen', async () => {
+  install('coach', [
+    classRow('gone', 'Called Off', HOUR, { status: 'cancelled' }),
+    classRow('on', 'Still On', 2 * HOUR),
+  ]);
+  await renderPage();
+  const picker = screen.getByLabelText('Class') as HTMLSelectElement;
+  // Staff open on the class still running (#1536), so it is chosen.
+  expect(picker.value).toBe('on');
+  expect(screen.getByLabelText('Athlete to mark')).toBeInTheDocument();
 });
 
 test("a coach reads the class's coach by name, never the login", async () => {
@@ -128,6 +143,17 @@ test('Register names the athlete a coach is registering', async () => {
   await renderPage();
   expect(screen.getByRole('button', { name: 'Register Jordan Price' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Register' })).toBeNull();
+});
+
+test('Register names an athlete with no name by the id the picker shows', async () => {
+  install('coach', [classRow('on', 'Still On', DAY)]);
+  const json = (payload: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
+  const base = global.fetch as jest.Mock;
+  global.fetch = jest.fn((input: RequestInfo | URL) => (String(input).endsWith('/api/pilot/athletes/list')
+    ? json({ items: [{ athlete_id: 'athlete-9', full_name: '  ' }] })
+    : base(input))) as unknown as typeof fetch;
+  await renderPage();
+  expect(screen.getByRole('button', { name: 'Register athlete-9' })).toBeInTheDocument();
 });
 
 test('an athlete registering themselves still reads plain Register', async () => {
@@ -150,6 +176,19 @@ test('a family with no class today reads one sentence instead of pickers with no
     expect(screen.queryByRole('button', { name: "I'm here" })).toBeNull();
     view.unmount();
   }
+});
+
+test('a family whose schedule could not be read is not told there is no class today', async () => {
+  install('parent', []);
+  const base = global.fetch as jest.Mock;
+  global.fetch = jest.fn((input: RequestInfo | URL) => (String(input).endsWith('/api/pilot/scheduler')
+    ? Promise.resolve({ ok: false, json: () => Promise.resolve({ ok: false, error: 'down' }) } as Response)
+    : base(input))) as unknown as typeof fetch;
+  await act(async () => {
+    render(<SchedulerPage />);
+  });
+  await screen.findByText('The schedule could not be loaded just now.');
+  expect(screen.queryByText('There is no class today to check in to.')).toBeNull();
 });
 
 test('a family with a class today keeps the picker, and staff never see the no-class sentence', async () => {

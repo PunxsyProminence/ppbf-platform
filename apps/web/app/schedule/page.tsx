@@ -459,9 +459,15 @@ export default function SchedulerPage() {
     }
   }
 
+  // The class a register is marked for: the selected class unless it is
+  // cancelled, which the picker no longer offers (#1596). With none, the
+  // picker reads unchosen and no group claims a cancelled class's athletes.
+  const markClassId = classes.some((item) => item.class_id === selectedClassId && item.status !== 'cancelled')
+    ? selectedClassId
+    : '';
   const registeredForSelectedClass = new Set(
     registrations
-      .filter((row) => row.class_id === selectedClassId && row.status === 'registered')
+      .filter((row) => row.class_id === markClassId && row.status === 'registered')
       .map((row) => row.athlete_id),
   );
 
@@ -481,14 +487,15 @@ export default function SchedulerPage() {
   const selectedClassCancelled = selectedClass?.status === 'cancelled';
   // A family with no class at all today has nothing to check in to; the card
   // says so in one sentence instead of offering pickers with no button (#1596).
+  // Only when the schedule was read: a failed read says nothing about today.
   const familyHasClassToday = Boolean(
     today && classes.some((item) => item.status !== 'cancelled' && gymDayIso(item.start_at) === today),
   );
-  const noClassToday = isFamily && !familyHasClassToday;
+  const noClassToday = isFamily && !schedulerFailed && !familyHasClassToday;
   // The picker offers only classes that are not cancelled; a selection that is
   // not among them shows as unchosen rather than as a class it is not.
   const pickerClasses = classes.filter((item) => item.status !== 'cancelled');
-  const pickerHasSelection = pickerClasses.some((item) => item.class_id === selectedClassId);
+  const pickerHasSelection = markClassId !== '';
   const familyCanCheckIn = Boolean(
     selectedClass
       && !selectedClassCancelled
@@ -521,19 +528,20 @@ export default function SchedulerPage() {
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
+  /* WHO REGISTER REGISTERS (#1596). For an athlete it is themselves. For a
+     parent or staff it is the athlete selected in the picker above, which
+     the button used to leave unnamed: a coach's tap on a class row
+     registered whoever that picker happened to show. The button now says
+     who, as the picker does: the name, or the id when there is no name. */
+  const registerTarget = athletes.find((item) => item.athlete_id === targetAthlete);
+  const registerTargetName = role === 'athlete' || !targetAthlete
+    ? null
+    : registerTarget?.full_name?.trim() || targetAthlete;
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
   // staff list when there is one, otherwise from the stored account id, which
   // is the coach's login on this platform.
-  /* WHO REGISTER REGISTERS (#1596). For an athlete it is themselves. For a
-     parent or staff it is the athlete selected in the picker above, which
-     the button used to leave unnamed: a coach's tap on a class row
-     registered whoever that picker happened to show. The button now says
-     who. */
-  const registerTargetName = role === 'athlete'
-    ? null
-    : athletes.find((item) => item.athlete_id === targetAthlete)?.full_name || null;
   const coachLogins = new Map(coachOptions.map((option) => [option.account_id, option.login]));
   const staffName = (accountId: string) => deriveCoachDisplayName(coachLogins.get(accountId) ?? accountId);
 
@@ -884,7 +892,9 @@ export default function SchedulerPage() {
                     }}
                     className="input"
                   >
-                    {pickerHasSelection ? null : <option value="">Choose a class</option>}
+                    {pickerHasSelection ? null : (
+                      <option value="">{pickerClasses.length > 0 ? 'Choose a class' : 'No class to mark'}</option>
+                    )}
                     {/* A cancelled class is not offered (#1596): nobody marks a
                         register for it, and the route refuses it. */}
                     {pickerClasses.map((item) => (
@@ -901,7 +911,7 @@ export default function SchedulerPage() {
                       present as a walk-in. The groups say which is which before
                       the tap, not after a refusal. A parent's list is their own
                       children and stays flat. */}
-                  {roleCanOverrideAttendance(role) && athletes.length > 0 ? (
+                  {roleCanOverrideAttendance(role) && athletes.length > 0 && markClassId ? (
                     <select
                       aria-label="Athlete to mark"
                       value={selectedAthleteId}
@@ -938,7 +948,7 @@ export default function SchedulerPage() {
                     </select>
                   ) : null}
 
-                  {!isFamily ? (
+                  {!isFamily && markClassId ? (
                     <select
                       value={attendanceStatus}
                       onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
@@ -956,7 +966,7 @@ export default function SchedulerPage() {
                       already uses .textarea correctly a few dozen lines above;
                       @layer base does not floor a textarea, so the tap height
                       is stated here. */}
-                  {!isFamily ? (
+                  {!isFamily && markClassId ? (
                     <textarea
                       value={attendanceNote}
                       onChange={(e) => setAttendanceNote(e.target.value)}
@@ -965,7 +975,7 @@ export default function SchedulerPage() {
                     />
                   ) : null}
 
-                  {(!isFamily && !selectedClassCancelled) || familyCanCheckIn ? (
+                  {(!isFamily && markClassId) || familyCanCheckIn ? (
                     <button
                       type="button"
                       onClick={() => {
