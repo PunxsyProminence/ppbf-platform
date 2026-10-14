@@ -139,10 +139,11 @@ export default function FinishedSessions() {
                 key={run.run_id}
                 className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
               >
-                <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
+                {/* Each session is a heading, so moving by heading tells one from the next. */}
+                <h3 className="flex flex-wrap items-baseline gap-[var(--s3)]">
                   <span className="plaque">{when(run)}</span>
                   <span className="t-label">{run.run_state === 'completed' ? 'Completed' : 'Abandoned'}</span>
-                </div>
+                </h3>
                 <p className="t-body mt-[var(--s2)] font-semibold">
                   {run.script_id === null
                     ? 'Plain session'
@@ -161,9 +162,11 @@ export default function FinishedSessions() {
                 <EndNote label="Worked" text={run.what_worked} />
                 <EndNote label="Did not work" text={run.what_did_not} />
 
-                <h3 className="t-label mt-[var(--s3)]">Marked here</h3>
+                <h4 className="t-label mt-[var(--s3)]">Marked here</h4>
                 {run.present.length === 0 ? (
-                  <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]">Nobody was marked here in this session.</p>
+                  // The list holds only athletes on the gym's current list: one marked and since
+                  // removed is not shown, so "nobody was marked" would claim more than is known.
+                  <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]">No athlete on the gym’s current list was marked here.</p>
                 ) : (
                   <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label={`Marked here, ${when(run)}`}>
                     {run.present.map((athlete) => (
@@ -172,7 +175,7 @@ export default function FinishedSessions() {
                         <SessionStaffNotesPanel
                           runId={run.run_id}
                           athleteId={athlete.athlete_id}
-                          buttonLabel={`Staff notes on ${athlete.full_name}`}
+                          buttonLabel={`Staff notes on ${athlete.full_name}, ${when(run)}`}
                         />
                       </li>
                     ))}

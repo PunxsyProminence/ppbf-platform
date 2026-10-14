@@ -23,8 +23,9 @@ const PLAIN = {
   script_name: null,
   run_state: 'completed',
   delivered_on: '2026-10-13',
-  started_at: '2026-10-13T22:00:00.000Z',
-  ended_at: '2026-10-13T23:05:00.000Z',
+  // 02:30 on the 14th in UTC is 10:30 PM on the 13th at the gym: the day shown must be the gym's.
+  started_at: '2026-10-14T02:30:00.000Z',
+  ended_at: '2026-10-14T03:35:00.000Z',
   athletes_present: 2,
   blocks_completed: null,
   deviation_note: 'Finished early.',
@@ -91,7 +92,7 @@ test('reads the finished sessions once, by GET, and shows each with gym time, pl
   expect(scripted.textContent).toContain('4 blocks completed.');
   expect(scripted.textContent).not.toContain('athletes present');
   expect(scripted.textContent).not.toContain('Deviation:');
-  expect(scripted.textContent).toContain('Nobody was marked here in this session.');
+  expect(scripted.textContent).toContain('No athlete on the gym’s current list was marked here.');
 
   expect(plain.textContent).toContain('Plain session · You ran it');
   expect(plain.textContent).toContain('Completed');
@@ -102,6 +103,12 @@ test('reads the finished sessions once, by GET, and shows each with gym time, pl
   // The gym's day and times, from the session's own start and end.
   const expected = `${formatGymDate(PLAIN.started_at)}, ${formatGymTimeOfDay(PLAIN.started_at)} to ${formatGymTimeOfDay(PLAIN.ended_at)}`;
   expect(within(plain).getByText(expected)).toBeTruthy();
+  expect(expected).toBe('October 13, 2026, 10:30 PM to 11:35 PM');
+  // Each session is its own heading.
+  expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+    `${expected}Abandoned`,
+    `${expected}Completed`,
+  ]);
 });
 
 test('each athlete marked here has a staff notes box for that session, which reads nothing until opened, then by run', async () => {
@@ -115,7 +122,7 @@ test('each athlete marked here has a staff notes box for that session, which rea
   expect(urls).toHaveLength(1);
 
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ben Ortiz' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ben Ortiz, October 13, 2026, 10:30 PM to 11:35 PM' }));
   });
   expect(urls[1]).toEqual({ url: '/api/pilot/coach/session-staff-notes?run_id=ssrun_1&athlete_id=ath-2', method: 'GET' });
 });
