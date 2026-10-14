@@ -58,6 +58,15 @@ jest.mock('./db', () => ({
   }),
 }));
 
+jest.mock('./http', () => ({
+  ...jest.requireActual('./http'),
+  requirePrincipal: jest.fn(),
+}));
+
+import { NextRequest } from 'next/server';
+
+import { GET as escalationsGET } from '@/app/api/pilot/escalations/route';
+import { requirePrincipal } from './http';
 import { registerForClassTransactionally } from './schedulerDb';
 import {
   closeEndedHoldNotices,
@@ -736,6 +745,40 @@ describe('a hold that ends closes the escalation it filed (F-069)', () => {
         resolution_note: 'Hold expired.',
       });
       expect(closed.resolved_at).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a lapsed hold seen only through GET /api/pilot/escalations?status=open leaves the Needs You list (#1596)', async () => {
+    const client = await freshDatabase('ppbf_test_holds_esc_route', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    const openHoldNotices = async (role: string, accountId: string) => {
+      (requirePrincipal as jest.Mock).mockResolvedValueOnce({ accountId, role, organizationId: ORG_ID, athleteId: null });
+      const response = await escalationsGET(new NextRequest('http://localhost/api/pilot/escalations?status=open'));
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { escalations: Array<{ source_type: string; source_id: string }> };
+      return body.escalations.filter((row) => row.source_type === 'training_hold').map((row) => row.source_id);
+    };
+    try {
+      const placed = await placeTrainingHold(placeInput());
+      // Positive control: while the hold is live its notice is on the list.
+      expect(await openHoldNotices('organization_admin', ADMIN_ID)).toEqual([placed.hold_id]);
+      expect(await openHoldNotices('coach', COACH_ID)).toEqual([placed.hold_id]);
+
+      await client.query(
+        `update pilot.training_holds
+         set placed_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+         where organization_id = $1 and hold_id = $2`,
+        [ORG_ID, placed.hold_id],
+      );
+
+      // Nothing else reads the hold: the escalations read alone must close it.
+      expect(await openHoldNotices('coach', COACH_ID)).toEqual([]);
+      expect(await openHoldNotices('organization_admin', ADMIN_ID)).toEqual([]);
+      expect(await escalationFor(client, 'training_hold', placed.hold_id)).toMatchObject({
+        status: 'resolved', resolved_by_account_id: null, resolution_note: 'Hold expired.',
+      });
     } finally {
       await client.end();
     }
