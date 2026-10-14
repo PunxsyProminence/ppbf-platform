@@ -512,6 +512,10 @@ describe.each([
     expect(row.metadata).toEqual({ closing_note: null });
     expect(row.research_requirement).toBe('Review promoted intake case');
     expect(text).not.toContain(LEGACY_REVIEWER_NOTE);
+    // The row they can list they can also open: the two routes agree.
+    const detail = await readSubmissions(actor(), legacyRowAboutAthlete);
+    expect(detail.status).toBe(200);
+    expect(detail.items).toEqual([]);
   });
 
   it('receives no staff account id, no email-shaped value and no guardian record id', async () => {

@@ -40,12 +40,13 @@ import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/s
 
 export const runtime = 'nodejs';
 
-// POST resolve only -- a parent may only resolve requirements tied to their
-// own linked athletes, never any family in the org. Returns [] (not
-// undefined) when the parent has no linked athletes at all, so the caller can
-// short-circuit instead of querying with an unbounded filter. The list read
-// does not use this: scopeToReachableSubjects decides for a parent as it does
-// for every other role.
+// POST resolve only. No parent closes a requirement (staff close, below);
+// this scope decides which refusal a parent gets and is carried into the
+// write as a second bound. Returns [] (not undefined) when the parent has no
+// linked athletes at all, so the caller can short-circuit instead of querying
+// with an unbounded filter. The list read does not use this:
+// scopeToReachableSubjects decides for a parent as it does for every other
+// role.
 async function resolveParentAthleteScope(organizationId: string, accountId: string): Promise<string[]> {
   return guardianAthleteIds(organizationId, accountId);
 }

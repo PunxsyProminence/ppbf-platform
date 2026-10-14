@@ -402,8 +402,9 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
   // THE LEGITIMATE PATH, PART 2. A parent is no longer narrowed in SQL: the
   // same filter decides for them as for every other role (#1475 Part F), so
-  // they read rows about their own children, in either writer shape, and no
-  // other family's.
+  // they read rows about their own children and no other family's, in either
+  // writer shape (the legacy shape about their own child is proved on real
+  // rows in researchFamilyProjection.pg.test.ts).
   test('a parent reads their own linked athlete requirements and no other child rows', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
@@ -1024,14 +1025,25 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     });
   });
 
-  // Preserved exactly as it was: a guardian's athleteIds scope has only ever
-  // matched on subject_id, which never matches a subject-less row, and the
-  // list they read is scoped the same way. Widening a guardian to the gym's
-  // doctrine backlog is not this fix's business.
+  // Preserved exactly as it was: a parent is refused the close of a
+  // subject-less row with the plain 404. The list now shows a parent the
+  // subject-less row they filed themselves (#1475 Part F); closing it is
+  // still not theirs, and the refusal is the same 404.
   test('a parent is still refused an organization-wide requirement', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockGetById.mockResolvedValue(storedOrgWide());
+
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('a parent is refused the close of the question they filed themselves, with the same 404', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockGetById.mockResolvedValue({ ...storedOrgWide(), created_by_account_id: 'acct-1', created_by_role: 'parent' });
 
     const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
 
