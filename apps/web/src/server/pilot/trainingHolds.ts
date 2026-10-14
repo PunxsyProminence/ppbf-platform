@@ -111,19 +111,6 @@ function isMissingTableError(error: unknown): boolean {
 }
 
 /**
- * F-069: the escalation a hold files is a notice that the hold was placed. When
- * the hold ends (lifted or lapsed) the notice is over, so it is marked
- * resolved instead of reading Open on the coach's Needs You list for good.
- * Resolving never lifts or places a hold; this only closes the notice.
- */
-const CLOSE_HOLD_ESCALATION_SQL = `update pilot.safety_escalations
-     set status = 'resolved', resolved_by_account_id = $3,
-         resolved_at = now(), resolution_note = coalesce(resolution_note, nullif($4, '')),
-         updated_at = now()
-     where organization_id = $1 and source_type = 'training_hold' and source_id = $2
-       and status in ('open', 'acknowledged')`;
-
-/**
  * There is no cron in this codebase (see shadowRecommendations.ts's
  * listRecommendations for the same idiom on provisional recommendations),
  * so a hold whose clock ran out is swept to 'expired' the moment anything
@@ -148,24 +135,32 @@ async function sweepExpiredHolds(
   athleteId: string | undefined,
   client: PoolClient | undefined,
 ): Promise<void> {
-  const sql = `update pilot.training_holds
-     set status = 'expired', updated_at = now()
-     where organization_id = $1
-       and ($2::text is null or athlete_id = $2)
-       and status = 'active' and expires_at is not null and expires_at <= now()
-     returning hold_id`;
+  // F-069: the escalation a hold files is a notice that the hold was placed.
+  // The hold's end (here, a lapse) resolves it in the SAME statement, so it
+  // cannot stay Open on a coach's Needs You list. Resolving never lifts or
+  // places a hold; it only closes the notice.
+  const sql = `with swept as (
+       update pilot.training_holds
+       set status = 'expired', updated_at = now()
+       where organization_id = $1
+         and ($2::text is null or athlete_id = $2)
+         and status = 'active' and expires_at is not null and expires_at <= now()
+       returning hold_id
+     )
+     update pilot.safety_escalations
+     set status = 'resolved', resolved_at = now(),
+         resolution_note = case when resolution_note = '' then 'Hold expired.' else resolution_note end,
+         updated_at = now()
+     where organization_id = $1 and source_type = 'training_hold'
+       and source_id in (select hold_id from swept)
+       and status in ('open', 'acknowledged')`;
   const params = [organizationId, athleteId ?? null];
-  const swept = client ? (await client.query(sql, params))?.rows : await query(sql, params);
-  // A hold that lapsed no longer needs its escalation on a coach's list.
-  for (const row of (swept ?? []) as { hold_id: string }[]) {
-    if (client) {
-      await client.query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, row.hold_id, null, 'Hold expired.']);
-    } else {
-      await query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, row.hold_id, null, 'Hold expired.']);
-    }
+  if (client) {
+    await client.query(sql, params);
+  } else {
+    await query(sql, params);
   }
 }
-
 
 export interface PlaceHoldInput {
   organizationId: string;
@@ -294,18 +289,28 @@ export async function liftTrainingHold(
   // so this guarded UPDATE would happily "lift" it -- stamping
   // lifted_by_account_id/lifted_at on an action nobody took.
   const lifted = await queryOne<TrainingHoldRow>(
-    `update pilot.training_holds
-     set status = 'lifted', lifted_by_account_id = $3, lifted_at = now(),
-         lift_note = coalesce(nullif($4, ''), lift_note), updated_at = now()
-     where organization_id = $1 and hold_id = $2 and status = 'active'
-       and (expires_at is null or expires_at > now())
-     returning ${HOLD_COLUMNS}`,
+    `with lifted as (
+       update pilot.training_holds
+       set status = 'lifted', lifted_by_account_id = $3, lifted_at = now(),
+           lift_note = coalesce(nullif($4, ''), lift_note), updated_at = now()
+       where organization_id = $1 and hold_id = $2 and status = 'active'
+         and (expires_at is null or expires_at > now())
+       returning ${HOLD_COLUMNS}
+     ), closed as (
+       -- F-069: the lift also resolves the escalation the hold filed, in the
+       -- same statement, so it leaves the coach's list when the hold ends.
+       update pilot.safety_escalations
+       set status = 'resolved', resolved_by_account_id = $3, resolved_at = now(),
+           resolution_note = case when resolution_note = '' then 'Hold lifted.' else resolution_note end,
+           updated_at = now()
+       where organization_id = $1 and source_type = 'training_hold'
+         and source_id in (select hold_id from lifted)
+         and status in ('open', 'acknowledged')
+     )
+     select * from lifted`,
     [organizationId, holdId, liftedByAccountId, liftNote],
   );
-  if (lifted) {
-    await query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, holdId, liftedByAccountId, 'Hold lifted.']);
-    return lifted;
-  }
+  if (lifted) return lifted;
 
   const existing = await queryOne<{ status: TrainingHoldStatus; expires_at: string | null }>(
     'select status, expires_at::text from pilot.training_holds where organization_id = $1 and hold_id = $2',

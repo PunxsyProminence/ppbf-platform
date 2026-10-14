@@ -214,18 +214,17 @@ describe('liftTrainingHold', () => {
     expect(params).toEqual(['org-1', 'hold-1', 'acct-admin-1', 'Cleared by doctor.']);
   });
 
-  test('lifting resolves the escalation the hold filed, so it leaves the coach list (F-069)', async () => {
+  test('lifting resolves the escalation the hold filed, in the same statement (F-069)', async () => {
     mockQueryOne.mockResolvedValueOnce({ ...HOLD_ROW, status: 'lifted' });
-    mockQuery.mockClear();
 
     await liftTrainingHold('org-1', 'hold-1', 'acct-admin-1', 'Cleared by doctor.');
 
-    const closing = mockQuery.mock.calls.find(([sql]) => String(sql).includes('pilot.safety_escalations'));
-    expect(closing).toBeDefined();
-    const [sql, params] = closing as [string, unknown[]];
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toContain('update pilot.safety_escalations');
     expect(String(sql)).toContain("source_type = 'training_hold'");
     expect(String(sql)).toContain("status = 'resolved'");
-    expect(params.slice(0, 3)).toEqual(['org-1', 'hold-1', 'acct-admin-1']);
+    expect(String(sql)).toContain('source_id in (select hold_id from lifted)');
+    expect(params).toEqual(['org-1', 'hold-1', 'acct-admin-1', 'Cleared by doctor.']);
   });
 
   test('a missing hold returns null', async () => {

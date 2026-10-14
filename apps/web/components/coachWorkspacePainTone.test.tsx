@@ -153,6 +153,6 @@ test.each(['moderate', 'high'])('a %s training-hold escalation reads "Training h
   const holdBadges = badges.filter((badge) => badgeText(badge).startsWith('Training hold'));
   // Escalation card and the floor's current item.
   expect(holdBadges.length).toBeGreaterThanOrEqual(2);
-  expect(badges.filter((badge) => new RegExp(`^${severity}\b`).test(badgeText(badge))
+  expect(badges.filter((badge) => new RegExp(`^${severity}\\b`).test(badgeText(badge))
     && !badgeText(badge).startsWith('5/10'))).toEqual([]);
 });
