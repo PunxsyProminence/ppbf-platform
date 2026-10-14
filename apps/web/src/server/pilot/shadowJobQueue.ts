@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 23;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 24;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -123,6 +123,9 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 23;
 // and its review sentence for a pain report names the escalation rule
 // instead of HIGH or CRITICAL. A v22 job still queued at deploy is refused
 // as STALE.
+// 24: an unanswered SHADOW question files its own research row (F-054):
+// the chat route now calls shadowResearchFiling.ts and returns researchFiled.
+// No job context changed; the route is a watched file, so the version moves.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -201,6 +204,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 21, sha256: '6302cd7217394f98d6019444a0301beb14b191586e945448650b5a9dbe8e3eca' },
   { version: 22, sha256: '8ec827159f06678d1a977b203bc4c35c74f18c3824b5edf2dfdb1018bf185216' },
   { version: 23, sha256: '7fee0cfd153d03ed993bbfba5b617bbc6e00e2f6de9431940c3fa01ffbdd7c3d' },
+  { version: 24, sha256: 'aeb6f7e39ce986109f9f9a6ce29fe25f5f5d75ed98bccb2e21a52dc509a3998b' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
