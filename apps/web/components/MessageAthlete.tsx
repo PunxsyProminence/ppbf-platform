@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 /**
  * MESSAGE THE ATHLETE (#1542, FC-06).
@@ -15,12 +16,49 @@ import { apiBase } from '@/lib/apiBase';
  * (FC-06 Q-2 default A). One send per press; a refused or failed send keeps
  * the words and says why. Rendered with key={athleteId}, so switching athletes
  * starts a fresh form and an answer for the athlete just left lands nowhere.
+ *
+ * SENT TO THIS ATHLETE: under the form, what the gym's staff have written to
+ * this athlete, newest first (GET /api/pilot/coach/athlete-messages), read
+ * when the form opens and again after each send -- so a coach whose
+ * confirmation was lost (a switch mid-send) sees the message landed instead of
+ * sending it twice, and the gym can see what was written to a child.
  */
+interface SentMessage {
+  note_id: string;
+  note_text: string;
+  created_at: string;
+  from_name: string;
+}
+
+type SentState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: SentMessage[] };
 export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: string }>) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'sent' | 'failed'; text: string } | null>(null);
   const sendingRef = useRef(false);
+  const [sent, setSent] = useState<SentState>({ state: 'loading' });
+  const [sentReads, setSentReads] = useState(0);
+
+  useEffect(() => {
+    if (!athleteId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/coach/athlete-messages?athlete_id=${encodeURIComponent(athleteId)}`,
+          { credentials: 'include', signal: controller.signal },
+        );
+        const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+        if (controller.signal.aborted) return;
+        setSent(response.ok && Array.isArray(payload.items)
+          ? { state: 'loaded', items: payload.items as SentMessage[] }
+          : { state: 'failed' });
+      } catch {
+        if (!controller.signal.aborted) setSent({ state: 'failed' });
+      }
+    })();
+    return () => controller.abort();
+  }, [athleteId, sentReads]);
 
   async function send(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,6 +92,7 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
       }
       setText('');
       setNotice({ tone: 'sent', text: "Sent. It is on the athlete's Dashboard under From your coach." });
+      setSentReads((count) => count + 1);
     } catch (error) {
       setNotice({
         tone: 'failed',
@@ -86,6 +125,28 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
       <button type="submit" className="btn btn--ghost" disabled={busy || !text.trim()}>
         {busy ? 'Sending…' : 'Send to athlete'}
       </button>
+
+      <h4 className="t-label">Sent to this athlete</h4>
+      {sent.state === 'loading' ? (
+        <p className="t-muted">Loading what was sent…</p>
+      ) : sent.state === 'failed' ? (
+        <p role="alert" className="t-body">
+          What was sent to this athlete could not be loaded. This is not a statement that nothing was sent.
+        </p>
+      ) : sent.items.length === 0 ? (
+        <p className="t-muted">Nothing has been sent to this athlete yet.</p>
+      ) : (
+        <ul aria-label="Sent to this athlete" className="space-y-[var(--s2)]">
+          {sent.items.map((message) => (
+            <li key={message.note_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
+              <p className="t-body whitespace-pre-wrap">{message.note_text}</p>
+              <p className="t-muted mt-[var(--s1)]">
+                {message.from_name} · {formatGymDateTimeShort(message.created_at) ?? message.created_at}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </form>
   );
 }

@@ -5519,6 +5519,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-messages",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "What the gym's staff wrote to one athlete (athlete_message notes, staff-written only, newest first, named, no account id) for the coach's 'Sent to this athlete' list on /coach/decision-loop (athleteCoachMessages.ts; #1542 FC-06). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-notes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-notes",

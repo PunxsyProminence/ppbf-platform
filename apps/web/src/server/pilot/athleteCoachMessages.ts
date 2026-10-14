@@ -13,6 +13,11 @@
  * admin or admin): the label alone is not proof of who wrote it. Guardians do
  * not read these (FC-06 Q-2 default A, open with the owner). Nothing here
  * writes, sends or notifies.
+ *
+ * Staff of the athlete's gym read the same list (GET
+ * /api/pilot/coach/athlete-messages) under the coach's form: what was sent to
+ * this athlete, so a coach can see a message landed and the gym has a record
+ * of what was written to a child.
  */
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 

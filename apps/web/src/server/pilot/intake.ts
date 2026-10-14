@@ -1092,7 +1092,7 @@ export async function listBarrierReports(
  *   'coach_observation'   intake/domain-upsert default            (staff)
  *   'behavior_standard'   coach/decision-loop                     (staff)
  *   'parent_message'      coach/admin -> guardian                 (staff)
-   'athlete_message'     coach/admin -> the athlete (FC-06)      (staff)
+ *   'athlete_message'     coach/admin -> the athlete (FC-06)      (staff)
  *   'home_barrier' /      parent/barrier-report -- authored by a GUARDIAN,
  *   'transportation_barrier'   addressed to the coach
  *
@@ -1133,13 +1133,14 @@ export async function listBarrierReports(
  *   narrower list wins, because a shared bus with two different answers to
  *   "what may this child read about themselves" is the drift this whole
  *   comment exists to prevent.
-
-   `athlete_message` (FC-06) is addressed to the athlete, but it is read
-   through its own inbox -- GET /api/pilot/athlete/coach-messages
-   (athleteCoachMessages.ts), the athlete's own record, staff-written rows
-   only -- not through these generic readers. Adding it here would also mean
-   adding it to the passbook's list in step, and the passbook is not where a
-   message to the athlete belongs.
+ *
+ *   `athlete_message` (FC-06) is addressed to the athlete, but it is read
+ *   through its own inbox -- GET /api/pilot/athlete/coach-messages
+ *   (athleteCoachMessages.ts), the athlete's own record, staff-written rows
+ *   only -- not through these generic readers; staff see what was sent
+ *   through GET /api/pilot/coach/athlete-messages. Adding it here would also
+ *   mean adding it to the passbook's list in step, and the passbook is not
+ *   where a message to the athlete belongs.
  * - parent: `parent_message` only, byte-for-byte the set `listParentMessages`
  *   already decided for the guardian-facing read. It also closes a case that
  *   set never had to consider: two guardians linked to one athlete, where an
