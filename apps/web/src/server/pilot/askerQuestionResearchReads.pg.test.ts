@@ -458,4 +458,25 @@ describe('after a coach closes one, and the other ways in', () => {
     const listed = await listAs(principal({ accountId: 'acct-aq-coach-2', role: 'coach' }));
     expect(listed.text).toContain('COACHFILED-5521');
   });
+
+  test('a resolver cannot rewrite the tie that keeps the row on its asker athlete deletion', async () => {
+    mockRequirePrincipal.mockResolvedValue(AS.coach());
+    const response = await requirementsPost(new NextRequest('http://localhost/api/pilot/shadow/research-requirements', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'resolve',
+        research_requirement_id: ids.parentRow,
+        closing_note: 'Done.',
+        metadata: { asker_athlete_id: 'ath-somebody-else' },
+      }),
+    }));
+    expect(response.status).toBe(400);
+    const row = await db.query(
+      `select metadata->>'asker_athlete_id' as a, status from pilot.shadow_research_requirements where research_requirement_id = $1`,
+      [ids.parentRow],
+    );
+    expect(row.rows[0].a).toBe(ATHLETE_B);
+    expect(row.rows[0].status).toBe('open');
+  });
 });

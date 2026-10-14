@@ -97,6 +97,10 @@ const COVERAGE_CHECK_METADATA_KEYS = [
 /** The closing record (A-Q13) is written from closing_note and
  *  closing_submission_id, never from caller metadata. */
 const CLOSING_METADATA_KEYS = ['closing_note', 'closing_submission_id'] as const;
+/** The tie an asker's unanswered question has to the athlete it is about
+ *  (shadowResearchFiling.ts). Server-written: a resolver who could rewrite it
+ *  would detach the row from that athlete's deletion (F-054 review). */
+const ASKER_TIE_METADATA_KEYS = ['asker_athlete_id'] as const;
 const CLOSING_NOTE_MAX = 2000;
 
 /**
@@ -420,6 +424,14 @@ export async function POST(request: NextRequest) {
       if (reservedKey) {
         return NextResponse.json(
           { ok: false, error: `resolve metadata cannot set ${reservedKey}; the coverage check writes it` },
+          { status: 400 },
+        );
+      }
+
+      const askerTieKey = ASKER_TIE_METADATA_KEYS.find((key) => key in metadata);
+      if (askerTieKey) {
+        return NextResponse.json(
+          { ok: false, error: `resolve metadata cannot set ${askerTieKey}; the filing writes it` },
           { status: 400 },
         );
       }
