@@ -265,8 +265,7 @@ describe('/admin/athletes', () => {
     expect(screen.queryByText(/not on the staff list/)).toBeNull();
   });
 
-  // The row said "born 2012-04-07T00:00:00.000Z"-shaped text and the picker
-  // listed coaches by email.
+  // The row printed the stored date text and the picker listed coaches by email.
   test('the row writes the date of birth as a date, and the coach picker names coaches', async () => {
     global.fetch = consoleFetch() as unknown as typeof fetch;
 
@@ -299,6 +298,27 @@ describe('/admin/athletes', () => {
     const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
     expect([...picker.querySelectorAll('option')].map((option) => option.textContent))
       .toEqual(['Coach Sam (sam@a.org)', 'Coach Sam (sam@b.org)']);
+  });
+
+  test('coaches with no login address on file are still told apart in the picker', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-1', login_email: null, role: 'coach', active_flag: true, membership_active: true },
+          { account_id: 'coach-2', login_email: null, role: 'coach', active_flag: true, membership_active: true },
+        ],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
+    const labels = [...picker.querySelectorAll('option')].map((option) => option.textContent);
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
+    expect(labels.join(' ')).not.toMatch(/coach-1|coach-2/);
   });
 
   test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
