@@ -1851,6 +1851,41 @@ export default function AthleteWorkspace() {
   }, [loadStoredSessions]);
 
   /**
+   * THE GYM DAY CHANGES UNDER AN OPEN WORKSPACE (F-075). The check-in and the
+   * session list are read once per identity load, so a tablet left open past
+   * gym midnight kept showing yesterday's wellness record and yesterday's
+   * sessions as today's, and the Floor could open on yesterday's check-in.
+   * Once a minute, and whenever the tab becomes visible or focused again (a
+   * sleeping tablet pauses timers), compare today's gym day with the one the
+   * reads belong to; when it moved, read all three again. The day is state so
+   * the day-derived values below (gymToday) re-render with the new day.
+   */
+  const [, setGymDay] = useState<string | null>(() => gymDayIso(new Date()));
+  useEffect(() => {
+    let current = gymDayIso(new Date());
+    const check = () => {
+      const next = gymDayIso(new Date());
+      if (next === current) return;
+      current = next;
+      setGymDay(next);
+      void loadCheckIn();
+      void loadTrainingCard();
+      void loadStoredSessions();
+    };
+    const timer = window.setInterval(check, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', check);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', check);
+    };
+  }, [loadCheckIn, loadTrainingCard, loadStoredSessions]);
+
+  /**
    * Publish the notes box to the open session -- or withdraw what was
    * published -- only when the athlete says so.
    *
