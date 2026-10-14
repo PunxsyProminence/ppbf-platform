@@ -284,7 +284,8 @@ describe('opened by the family (FC-05)', () => {
 
     const items = screen.getAllByRole('listitem');
     expect(items[0]!.textContent).toMatch(/Opened by the family · .*7:10/);
-    expect(items[1]!.textContent).toContain('Not opened by the family yet');
+    expect(items[1]!.textContent).toContain('No open recorded on the Messages tab yet');
+    expect(screen.getByText(/An open is recorded when a message is shown on the family's Messages tab/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/pilot/coach/family-message-reads?athlete_id=ath-1'),
       expect.anything(),
@@ -303,7 +304,7 @@ describe('opened by the family (FC-05)', () => {
     });
 
     expect(screen.getByRole('alert').textContent).toContain('Whether the family opened these could not be loaded');
-    expect(screen.queryByText('Not opened by the family yet')).toBeNull();
+    expect(screen.queryByText('No open recorded on the Messages tab yet')).toBeNull();
     expect(screen.queryByText(/Opened by the family/)).toBeNull();
     expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
   });
@@ -331,6 +332,6 @@ describe('opened by the family (FC-05)', () => {
     });
 
     expect(screen.queryByText(/Opened by the family/)).toBeNull();
-    expect(screen.getByText('Not opened by the family yet')).toBeInTheDocument();
+    expect(screen.getByText('No open recorded on the Messages tab yet')).toBeInTheDocument();
   });
 });

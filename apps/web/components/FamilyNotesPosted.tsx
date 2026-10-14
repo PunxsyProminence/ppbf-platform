@@ -24,7 +24,10 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * read says so and leaves the notes showing.
  *
  * OPENED BY THE FAMILY (FC-05): under each note, "Opened by the family" and
- * when it was first opened (gym time), or "Not opened by the family yet".
+ * when it was first opened (gym time), or "No open recorded on the Messages
+ * tab yet" -- not "not opened": an open before this was built, a task ticked
+ * on the Parent Floor, or a write that failed leaves no record. One line
+ * above the list says how opens are recorded.
  * Never which guardian. Read from GET /api/pilot/coach/family-message-reads on
  * its own, like the replies: a failed read says so once and the notes stay.
  */
@@ -154,6 +157,12 @@ export default function FamilyNotesPosted({
         ) : shown.replies === 'loading' ? (
           <p className="t-muted mt-[var(--s2)]">Loading the family&apos;s replies…</p>
         ) : null}
+        {shown.opened instanceof Map ? (
+          <p className="t-muted mt-[var(--s2)]">
+            An open is recorded when a message is shown on the family&apos;s Messages tab, from this release on.
+            Ticking a task on the Parent Floor is not counted as opening it.
+          </p>
+        ) : null}
         {shown.opened === null ? (
           <p role="alert" className="t-body mt-[var(--s2)]">
             Whether the family opened these could not be loaded. This is not a statement that they did not. Reload to retry.
@@ -178,7 +187,7 @@ export default function FamilyNotesPosted({
                   <p className="t-muted mt-[var(--s1)]">
                     {shown.opened.has(note.note_id)
                       ? `Opened by the family · ${formatGymDateTimeShort(shown.opened.get(note.note_id)!) ?? shown.opened.get(note.note_id)}`
-                      : 'Not opened by the family yet'}
+                      : 'No open recorded on the Messages tab yet'}
                   </p>
                 ) : null}
                 {note.task ? (

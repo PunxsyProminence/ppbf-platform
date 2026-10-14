@@ -299,7 +299,12 @@ export default function ParentHub() {
     if (typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting || entry.intersectionRatio < 0.5) continue;
+        // Half of the message on screen -- or, for a message taller than the
+        // screen, half of the screen filled with it, since such a message can
+        // never be half on screen at once.
+        const fillsHalfTheScreen = entry.rootBounds !== null
+          && entry.intersectionRect.height >= 0.5 * entry.rootBounds.height;
+        if (!entry.isIntersecting || (entry.intersectionRatio < 0.5 && !fillsHalfTheScreen)) continue;
         const noteId = (entry.target as HTMLElement).dataset.readNote;
         if (!noteId || readsSentRef.current.has(noteId)) continue;
         readsSentRef.current.add(noteId);
@@ -317,7 +322,7 @@ export default function ParentHub() {
             readsSentRef.current.delete(noteId);
           });
       }
-    }, { threshold: 0.5 });
+    }, { threshold: [0, 0.1, 0.25, 0.5] });
     document.querySelectorAll<HTMLElement>('[data-read-note]').forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [activeTab, messagesLoaded, messages]);

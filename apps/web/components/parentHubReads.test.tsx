@@ -29,18 +29,24 @@ class FakeObserver {
   observe(element: Element) { this.observed.add(element); }
   unobserve(element: Element) { this.observed.delete(element); }
   disconnect() { this.observed.clear(); }
-  show(noteId: string, ratio: number) {
+  show(noteId: string, ratio: number, visibleHeight = 0, screenHeight = 800) {
     const target = [...this.observed].find((element) => (element as HTMLElement).dataset.readNote === noteId);
     if (!target) return;
     this.callback(
-      [{ target, isIntersecting: ratio > 0, intersectionRatio: ratio } as unknown as IntersectionObserverEntry],
+      [{
+        target,
+        isIntersecting: ratio > 0,
+        intersectionRatio: ratio,
+        intersectionRect: { height: visibleHeight },
+        rootBounds: { height: screenHeight },
+      } as unknown as IntersectionObserverEntry],
       this as unknown as IntersectionObserver,
     );
   }
 }
 
-function showMessage(noteId: string, ratio = 1) {
-  for (const observer of FakeObserver.instances) observer.show(noteId, ratio);
+function showMessage(noteId: string, ratio = 1, visibleHeight = 0) {
+  for (const observer of FakeObserver.instances) observer.show(noteId, ratio, visibleHeight);
 }
 
 const MESSAGES = [
@@ -163,7 +169,37 @@ describe('a message counts as opened when it is on screen on the Messages tab (F
     expect(readPosts(fetchMock)).toEqual([MESSAGES[0]!.note_id]);
   });
 
-  test('a failed write is not shown, and is tried again the next time the message is on screen', async () => {
+  test('a message taller than the screen counts once it fills half the screen', async () => {
+    const fetchMock = installFetch();
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText('Bring gloves Thursday.');
+
+    await act(async () => {
+      // 30% of a long message on screen, filling 300px of an 800px screen: not yet.
+      showMessage(MESSAGES[0]!.note_id, 0.3, 300);
+    });
+    expect(readPosts(fetchMock)).toEqual([]);
+    await act(async () => {
+      // 40% of it, filling 600px of 800: opened.
+      showMessage(MESSAGES[0]!.note_id, 0.4, 600);
+    });
+    expect(readPosts(fetchMock)).toEqual([MESSAGES[0]!.note_id]);
+  });
+
+  test('what is watched is the message itself, not the replies and reply box under it', async () => {
+    installFetch();
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText('Bring gloves Thursday.');
+
+    const watched = document.querySelector<HTMLElement>(`[data-read-note="${MESSAGES[0]!.note_id}"]`)!;
+    expect(watched.textContent).toContain('Bring gloves Thursday.');
+    expect(watched.querySelector('textarea')).toBeNull();
+    expect(watched.textContent).not.toContain('Send reply');
+  });
+
+  test('a failed write is not shown, and is tried again when the tab is next opened', async () => {
     let calls = 0;
     const fetchMock = installFetch({
       readsPost: async () => {
