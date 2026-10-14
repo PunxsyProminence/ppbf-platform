@@ -5,13 +5,12 @@ import {
   assertCoachReachesAthlete,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
-import { deriveCoachDisplayName } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import {
   OPERATIONAL_TRAINING_HOLD_SCOPES,
   TRAINING_HOLD_REASON_CATEGORIES,
@@ -46,9 +45,9 @@ const TEXT_FIELD_MAX = 2000;
  * athlete or guardian reading a hold has a real point of contact to ask
  * about it, not just an unattributed note. Resolved through the same
  * getSubjectIdentity() every other staff-facing-name lookup in the app
- * uses, so a coach whose account has no email shows as their account id
- * rather than a fabricated name -- the same honest-gap behavior
- * getSubjectIdentity documents for itself.
+ * uses -- since #1558 item three, the family name reader (familyHoldPlacerName),
+ * because the staff name falls back to the account id when the login email
+ * gives no name.
  */
 
 interface AthleteFacingHold {
@@ -61,7 +60,6 @@ interface AthleteFacingHold {
 }
 
 async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Promise<AthleteFacingHold> {
-  const placer = await getSubjectIdentity(organizationId, hold.placed_by_account_id);
   return {
     scope: hold.scope,
     athlete_explanation: hold.athlete_explanation,
@@ -71,7 +69,13 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     // A placer who resolves to nobody (a login deleted since, or unknown) is
     // named by the existing phrase, never by the account id: a staff id is
     // often the login email (OD-2026-10-06 Q6: a display name, never the id).
-    placed_by_name: placer?.fullName ?? deriveCoachDisplayName(null),
+    // Named by the family name reader (#1558 item three; OD-2026-10-06-025
+    // ruling 2): the staff name getSubjectIdentity gives staff screens falls
+    // back to the account id, or keeps the login's digits ("Mike1987"), and
+    // either is most of a login email. A deleted placer is the floor phrase.
+    // By the placer's role (Codex on #1592): an organization admin is not
+    // "Coach" to the family; see familyHoldPlacerName.
+    placed_by_name: await familyHoldPlacerName(organizationId, hold.placed_by_account_id, hold.placed_by_role),
   };
 }
 
