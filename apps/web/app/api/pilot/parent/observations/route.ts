@@ -131,6 +131,10 @@ export async function POST(request: NextRequest) {
         entity_type: 'parent_observation',
         entity_id: id,
         details: { athlete_id: athleteId, category, rated: rating !== null },
+        // Audited, not mirrored into the SHADOW feed (#1558 item two): each
+        // guardian sees only their own, and the mirror reached the other
+        // guardian and the child. See parent/barrier-report.
+        shadow_mirror: false,
       }, client);
       return id;
     });
