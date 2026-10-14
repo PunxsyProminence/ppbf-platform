@@ -24,8 +24,13 @@ interface CoachMessage {
 
 type ReadState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: CoachMessage[] };
 
+// The newest ten first; older ones a press away, so a season of notes does
+// not bury the Dashboard.
+const PAGE_SIZE = 10;
+
 export default function FromYourCoach() {
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,21 +61,28 @@ export default function FromYourCoach() {
         <p className="t-muted mt-[var(--s2)]">Loading messages from your coach…</p>
       ) : read.state === 'failed' ? (
         <p role="alert" className="t-body mt-[var(--s2)]">
-          Messages from your coach could not be loaded. This is not a statement that there are none. Reload to retry.
+          We couldn&apos;t load your coach&apos;s messages, so we can&apos;t tell if there are any. Reload to try again.
         </p>
       ) : read.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">No messages from your coach yet.</p>
       ) : (
+        <>
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
-          {read.items.map((message) => (
+          {read.items.slice(0, shownCount).map((message) => (
             <li key={message.note_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
-              <p className="t-body whitespace-pre-wrap">{message.note_text}</p>
+              <p className="t-body whitespace-pre-wrap break-words">{message.note_text}</p>
               <p className="t-muted mt-[var(--s1)]">
                 {message.from_name} · {formatGymDateTimeShort(message.created_at) ?? message.created_at}
               </p>
             </li>
           ))}
         </ul>
+        {read.items.length > shownCount ? (
+          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setShownCount((count) => count + PAGE_SIZE)}>
+            Show {Math.min(PAGE_SIZE, read.items.length - shownCount)} more ({read.items.length - shownCount} older)
+          </button>
+        ) : null}
+        </>
       )}
     </section>
   );

@@ -41,6 +41,28 @@ test('each message reads with its words, who it is from and when, in gym time', 
   expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/pilot/athlete/coach-messages'), expect.anything());
 });
 
+test('the newest ten show first; Show more reveals older ones and says how many are left', async () => {
+  const many = Array.from({ length: 13 }, (_, index) => ({
+    note_id: `n-${index}`,
+    note_text: `Note ${index}`,
+    created_at: new Date(Date.UTC(2026, 9, 30 - index, 15)).toISOString(),
+    from_name: 'Coach Pat',
+  }));
+  global.fetch = jest.fn(async () => jsonResponse({ ok: true, items: many })) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<FromYourCoach />);
+  });
+
+  const items = () => within(screen.getByRole('region', { name: 'From your coach' })).getAllByRole('listitem');
+  expect(items()).toHaveLength(10);
+  await act(async () => {
+    screen.getByRole('button', { name: 'Show 3 more (3 older)' }).click();
+  });
+  expect(items()).toHaveLength(13);
+  expect(screen.queryByRole('button', { name: /more/ })).toBeNull();
+});
+
 test('an empty inbox says no messages yet', async () => {
   global.fetch = jest.fn(async () => jsonResponse({ ok: true, items: [] })) as unknown as typeof fetch;
 
@@ -58,6 +80,6 @@ test('a failed read says so, and never that there are no messages', async () => 
     render(<FromYourCoach />);
   });
 
-  expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+  expect(screen.getByRole('alert').textContent).toContain("couldn't load your coach's messages");
   expect(screen.queryByText('No messages from your coach yet.')).toBeNull();
 });

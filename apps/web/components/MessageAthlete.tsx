@@ -8,7 +8,7 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 /**
  * MESSAGE THE ATHLETE (#1542, FC-06).
  *
- * On /coach/decision-loop, beside "Post to the Family's Page": a note the
+ * On /coach/decision-loop, in its own section after the family's page: a note the
  * selected athlete reads under "From your coach" on their Dashboard. It goes
  * through the existing coach-note write (intake/domain-upsert) with
  * note_type 'athlete_message'; that route admits coach and organization admin
@@ -31,6 +31,8 @@ interface SentMessage {
 }
 
 type SentState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: SentMessage[] };
+
+const PAGE_SIZE = 10;
 export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: string }>) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,7 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
   const sendingRef = useRef(false);
   const [sent, setSent] = useState<SentState>({ state: 'loading' });
   const [sentReads, setSentReads] = useState(0);
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -107,8 +110,8 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
   if (!athleteId) return null;
 
   return (
-    <form onSubmit={(event) => void send(event)} className="mt-[var(--s4)] space-y-[var(--s3)]">
-      <h3 className="t-label">Message the athlete</h3>
+    <form onSubmit={(event) => void send(event)} className="space-y-[var(--s3)]">
+      <h2 className="t-command text-[length:var(--t-lg)]">Message the Athlete</h2>
       <p className="t-muted">The athlete reads it on their Dashboard. Their family does not see it.</p>
       <label className="field">
         <span className="t-label">Message to the athlete</span>
@@ -136,16 +139,23 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
       ) : sent.items.length === 0 ? (
         <p className="t-muted">Nothing has been sent to this athlete yet.</p>
       ) : (
+        <>
         <ul aria-label="Sent to this athlete" className="space-y-[var(--s2)]">
-          {sent.items.map((message) => (
+          {sent.items.slice(0, shownCount).map((message) => (
             <li key={message.note_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
-              <p className="t-body whitespace-pre-wrap">{message.note_text}</p>
+              <p className="t-body whitespace-pre-wrap break-words">{message.note_text}</p>
               <p className="t-muted mt-[var(--s1)]">
                 {message.from_name} · {formatGymDateTimeShort(message.created_at) ?? message.created_at}
               </p>
             </li>
           ))}
         </ul>
+        {sent.items.length > shownCount ? (
+          <button type="button" className="btn btn--ghost" onClick={() => setShownCount((count) => count + PAGE_SIZE)}>
+            Show {Math.min(PAGE_SIZE, sent.items.length - shownCount)} more ({sent.items.length - shownCount} older)
+          </button>
+        ) : null}
+        </>
       )}
     </form>
   );

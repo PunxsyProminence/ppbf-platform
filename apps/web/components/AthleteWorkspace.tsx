@@ -2839,10 +2839,11 @@ export default function AthleteWorkspace() {
                   the record rather than photographs -- see ThenAndNow.tsx for
                   why photographs cannot do this here. Renders nothing until
                   the athlete's identity resolves and history exists. */}
-              <ThenAndNow athleteId={backendAthleteId} />
-
-              {/* What the athlete's coaches wrote to them (#1542, FC-06). */}
+              {/* What the athlete's coaches wrote to them (#1542, FC-06): first
+                  on the Dashboard, so a message is not below the fold. */}
               <FromYourCoach />
+
+              <ThenAndNow athleteId={backendAthleteId} />
 
               {/* TODAY moved to MY CORNER at the top of the workspace (above the
                   fight card), restyled, with the same handlers and reads. See
