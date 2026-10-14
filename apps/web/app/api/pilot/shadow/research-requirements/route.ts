@@ -35,7 +35,7 @@ import {
 // first, so a caller who could file one could send their own text out of the
 // platform under it (CL-C5).
 const SERVER_WRITTEN_EVENT_NAMES = new Set([CAPABILITY_GAP_SOURCE_EVENT_NAME, 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED']);
-const SERVER_WRITTEN_ENTITY_TYPES = new Set([CAPABILITY_GAP_SOURCE_ENTITY_TYPE, 'shadow_library_claim']);
+const SERVER_WRITTEN_ENTITY_TYPES = new Set([CAPABILITY_GAP_SOURCE_ENTITY_TYPE, 'shadow_library_claim', 'shadow_asker_question']);
 import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';

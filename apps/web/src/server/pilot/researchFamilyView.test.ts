@@ -210,7 +210,7 @@ describe('an asker-filed unanswered question', () => {
   const asked = (overrides: Partial<ShadowResearchRequirementRow> = {}) => requirement({
     source_event_name: 'shadow_unanswered_question',
     source_entity_type: 'shadow_question',
-    source_entity_id: `acct:${ASKER}:${WORDS}`,
+    source_entity_id: `acct:${ASKER}:0123abcd`,
     research_requirement: 'My coach hits me and I am scared to go to the gym',
     knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
     evidence_label: null,
@@ -266,5 +266,6 @@ describe('an asker-filed unanswered question', () => {
     const closed = asked({ status: 'resolved', metadata: { closing_note: 'Answered in the Library.', auto_filed: true } });
     const row = wholeResearchRowFor('coach', closed);
     expect(row.metadata).toEqual({ closing_note: 'Answered in the Library.' });
+    expect(Object.keys(row).sort()).not.toContain('created_by_role_kind');
   });
 });

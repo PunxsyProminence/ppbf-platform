@@ -374,3 +374,88 @@ describe('who reads an athlete\'s or parent\'s unanswered question', () => {
     }
   });
 });
+
+describe('after a coach closes one, and the other ways in', () => {
+  test('the coach list shows it resolved with the sentence, and the asker sees the closing note', async () => {
+    // Closed in the "a coach closing one gets no row back" test above.
+    const coach = await listAs(AS.coach());
+    const row = coach.items.find((item) => Number(item.research_requirement_id) === ids.athleteRow);
+    expect(row).toMatchObject({ status: 'resolved', research_requirement: COACH_SENTENCE });
+    expect(coach.text).not.toContain(ATHLETE_FRAGMENT);
+
+    const asker = await listAs(AS.athleteA());
+    const own = asker.items.find((item) => Number(item.research_requirement_id) === ids.athleteRow);
+    expect(own).toMatchObject({ status: 'resolved', is_mine: true });
+    expect((own?.metadata as { closing_note?: string }).closing_note).toBe('Answered with the family.');
+  });
+
+  test('asking the same words again reaches the same row; another asker of them gets their own', async () => {
+    const before = await db.query(
+      `select count(*)::int as n from pilot.shadow_research_requirements where organization_id = $1`,
+      [ORG],
+    );
+    await fileQuestion({
+      organizationId: ORG, accountId: 'acct-aq-guardian-b1', role: 'parent', question: PARENT_WORDS, athleteId: ATHLETE_B,
+    });
+    const same = await db.query(
+      `select count(*)::int as n from pilot.shadow_research_requirements where organization_id = $1`,
+      [ORG],
+    );
+    expect(same.rows[0].n).toBe(before.rows[0].n);
+
+    await fileQuestion({
+      organizationId: ORG, accountId: 'acct-aq-guardian-b2', role: 'parent', question: PARENT_WORDS, athleteId: ATHLETE_B,
+    });
+    const other = await db.query(
+      `select count(*)::int as n from pilot.shadow_research_requirements where organization_id = $1`,
+      [ORG],
+    );
+    expect(other.rows[0].n).toBe(before.rows[0].n + 1);
+
+    // And that second asker reads theirs, not the first asker's.
+    const listed = await listAs(AS.guardianB2());
+    expect(listed.items).toHaveLength(1);
+    expect(listed.text).toContain(PARENT_FRAGMENT);
+  });
+
+  test('a coach cannot create a row under the asker entity type, so no key can be pre-claimed', async () => {
+    mockRequirePrincipal.mockResolvedValue(AS.coach());
+    const response = await requirementsPost(new NextRequest('http://localhost/api/pilot/shadow/research-requirements', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        source_event_name: 'shadow_unanswered_question',
+        source_entity_type: 'shadow_asker_question',
+        source_entity_id: 'acct:acct-aq-athlete-a:whatever',
+        research_requirement: 'pre-claim',
+        knowledge_gap: 'pre-claim',
+      }),
+    }));
+    expect(response.status).toBe(400);
+  });
+
+  test('a row a coach filed themselves stays whole to another coach', async () => {
+    mockRequirePrincipal.mockResolvedValue(AS.coach());
+    const created = await requirementsPost(new NextRequest('http://localhost/api/pilot/shadow/research-requirements', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        source_event_name: 'shadow_unanswered_question',
+        source_entity_type: 'shadow_question',
+        source_entity_id: 'how long should a round be',
+        research_requirement: 'COACHFILED-5521 how long should a round be',
+        knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
+      }),
+    }));
+    expect(created.status).toBe(200);
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-aq-coach-2', 'coach', $1, 'microsoft') on conflict do nothing`,
+      [ORG],
+    );
+    const listed = await listAs(principal({ accountId: 'acct-aq-coach-2', role: 'coach' }));
+    expect(listed.text).toContain('COACHFILED-5521');
+  });
+});

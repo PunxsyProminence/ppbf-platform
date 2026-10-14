@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { PilotRole } from './contracts';
 import { createShadowResearchRequirement, getShadowResearchRequirementById, isResearchStaff } from './shadowResearch';
 
@@ -72,6 +74,10 @@ export function mayFileUnansweredQuestion(facts: UnansweredFilingFacts): boolean
 
 export const SHADOW_UNANSWERED_EVENT = 'shadow_unanswered_question';
 export const SHADOW_UNANSWERED_ENTITY = 'shadow_question';
+/** An athlete's or parent's own filing lives under its own entity type, which
+ *  the create route refuses to a caller, so no staff text can ever land on the
+ *  same upsert key (F-054 review). */
+export const SHADOW_ASKER_ENTITY = 'shadow_asker_question';
 
 export function normalizeUnansweredQuestion(question: string): string {
   return question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
@@ -85,7 +91,7 @@ export function unansweredQuestionKey(question: string, athleteId: string | null
 
 /**
  * Files the question. Returns true only when a row exists afterwards, so the
- * caller can say "passed to the coaches" truthfully. Never throws: a failed
+ * caller can say "passed on" truthfully. Never throws: a failed
  * filing must not take the answer down with it, it just reads as not filed.
  */
 export async function fileUnansweredShadowQuestion(input: {
@@ -99,15 +105,19 @@ export async function fileUnansweredShadowQuestion(input: {
   const subjectId = staff ? (input.athleteId?.trim() || null) : null;
   const base = unansweredQuestionKey(input.question, subjectId);
   if (!base) return false;
-  // A non-staff asker's row is their own: keyed on the account, so it cannot
-  // pre-claim a key a coach files an athlete's question under, and a second
-  // asker of the same words still gets a row they can read.
-  const key = staff ? base : `acct:${input.accountId}:${base}`;
+  // A non-staff asker's row is their own: its own entity type (so no staff key
+  // can collide with it) and a key of the account plus a hash of the WHOLE
+  // question. A hash, so the key carries neither the words nor a 500-character
+  // prefix two long questions could share; the account, so a second asker of
+  // the same words still gets a row they can read.
+  const key = staff
+    ? base
+    : `acct:${input.accountId}:${createHash('sha256').update(input.question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 2000)).digest('hex')}`;
   try {
     const id = await createShadowResearchRequirement({
       organizationId: input.organizationId,
       sourceEventName: SHADOW_UNANSWERED_EVENT,
-      sourceEntityType: SHADOW_UNANSWERED_ENTITY,
+      sourceEntityType: staff ? SHADOW_UNANSWERED_ENTITY : SHADOW_ASKER_ENTITY,
       sourceEntityId: key,
       researchRequirement: input.question.trim().slice(0, 2000),
       knowledgeGap: 'No verified Library evidence matched this question in SHADOW.',
@@ -121,7 +131,7 @@ export async function fileUnansweredShadowQuestion(input: {
       metadata: { asked_in: 'shadow', auto_filed: true },
     });
     // The upsert returns an existing row unchanged, which may already be
-    // closed. "Passed to the coaches" is true only while the row is open.
+    // closed. "Passed on" is true only while the row is open.
     const stored = await getShadowResearchRequirementById(input.organizationId, id);
     return stored?.status === 'open';
   } catch {

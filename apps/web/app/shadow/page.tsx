@@ -1845,7 +1845,7 @@ function ShadowChatPageContent() {
                       (F-054), and says so only when the row exists. Staff see the
                       stored status below instead. */}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && !mayFileResearch && msg.researchFiled ? (
-                    <p className="t-body mt-[var(--s2)]" data-testid="research-passed">Passed to the coaches.</p>
+                    <p className="t-body mt-[var(--s2)]" data-testid="research-passed">Passed to the gym administrator.</p>
                   ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
                     ? (() => {

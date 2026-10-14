@@ -148,16 +148,34 @@ export function isAskerFiledQuestion(
     && !isResearchStaff(row.created_by_role as PilotRole);
 }
 
-/** The stored row as a COACH receives it when it is an asker's question. */
+/** The stored row as a COACH receives it when it is an asker's question.
+ *  Built from NAMED fields, like the family view: a column a later writer adds
+ *  stays out until someone names it here. The kind of asker (created_by_role),
+ *  the key, the account id, the label and the metadata are not named. */
 export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowResearchRequirementRow {
+  const meta = row.metadata ?? {};
+  const closing: Record<string, unknown> = {};
+  if (typeof meta.closing_note === 'string') closing.closing_note = meta.closing_note;
+  if (typeof meta.closing_submission_id === 'string') closing.closing_submission_id = meta.closing_submission_id;
   return {
-    ...row,
+    research_requirement_id: row.research_requirement_id,
+    organization_id: row.organization_id,
+    source_event_name: row.source_event_name,
+    source_entity_type: row.source_entity_type,
     source_entity_id: String(row.research_requirement_id),
     research_requirement: ASKER_QUESTION_COACH_SENTENCE,
     knowledge_gap: ASKER_QUESTION_COACH_SENTENCE,
     evidence_label: null,
+    source_status: row.source_status,
+    source_confidence_tier: row.source_confidence_tier,
+    source_verification_state: row.source_verification_state,
+    status: row.status,
     created_by_account_id: '',
-    metadata: { closing_note: (row.metadata ?? {}).closing_note ?? null },
+    created_by_role: '',
+    metadata: closing,
+    created_at: row.created_at,
+    resolved_at: row.resolved_at,
+    subject_id: null,
   };
 }
 

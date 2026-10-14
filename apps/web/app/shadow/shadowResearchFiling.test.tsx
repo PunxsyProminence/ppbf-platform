@@ -349,7 +349,7 @@ test.each(['athlete', 'parent'])('a %s is told the question was passed to the co
   mockServer({ role, researchFiled: true });
   await askUnansweredQuestion();
 
-  expect(await screen.findByText('Passed to the coaches.')).toBeTruthy();
+  expect(await screen.findByText('Passed to the gym administrator.')).toBeTruthy();
   expect(screen.queryByTestId('research-filing')).toBeNull();
 });
 
@@ -358,5 +358,5 @@ test('an athlete is never told it was passed on when the server did not file it'
   mockServer({ role: 'athlete', researchFiled: false });
   await askUnansweredQuestion();
 
-  expect(screen.queryByText('Passed to the coaches.')).toBeNull();
+  expect(screen.queryByText('Passed to the gym administrator.')).toBeNull();
 });

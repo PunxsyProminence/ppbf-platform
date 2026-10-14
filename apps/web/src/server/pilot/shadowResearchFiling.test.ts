@@ -28,7 +28,9 @@ test('an athlete files a subject-less row keyed on the normalized question', asy
   expect(ok).toBe(true);
   const input = create.mock.calls[0][0];
   expect(input.subjectId).toBeNull();
-  expect(input.sourceEntityId).toBe('acct:acct-1:what should i eat?');
+  expect(input.sourceEntityId).toMatch(/^acct:acct-1:[0-9a-f]{64}$/);
+  expect(input.sourceEntityId).not.toContain('eat');
+  expect(input.sourceEntityType).toBe('shadow_asker_question');
   expect(input.sourceEventName).toBe('shadow_unanswered_question');
 });
 
@@ -61,9 +63,27 @@ test('a question whose stored row is already closed is not reported as passed on
   expect(await fileUnansweredShadowQuestion({ ...base, role: 'athlete' })).toBe(false);
 });
 
-test('a non-staff question cannot pre-claim a coach athlete-scoped key', async () => {
+test('a non-staff question cannot land on a key a coach can file', async () => {
   await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: 'athlete:ath-9:what should i eat?' });
-  expect(create.mock.calls[0][0].sourceEntityId.startsWith('acct:acct-1:')).toBe(true);
+  const input = create.mock.calls[0][0];
+  // Its own entity type, which the create route refuses to a caller, and a
+  // hashed key: staff text cannot reproduce either.
+  expect(input.sourceEntityType).toBe('shadow_asker_question');
+  expect(input.sourceEntityId.startsWith('acct:acct-1:')).toBe(true);
+});
+
+test('a coach filing keeps the staff entity type and the plain key', async () => {
+  await fileUnansweredShadowQuestion({ ...base, role: 'coach' });
+  const input = create.mock.calls[0][0];
+  expect(input.sourceEntityType).toBe('shadow_question');
+  expect(input.sourceEntityId).toBe('what should i eat?');
+});
+
+test('two long questions sharing a 500 character prefix do not collapse', async () => {
+  const prefix = 'x'.repeat(600);
+  await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: `${prefix} one` });
+  await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: `${prefix} two` });
+  expect(create.mock.calls[0][0].sourceEntityId).not.toBe(create.mock.calls[1][0].sourceEntityId);
 });
 
 describe('mayFileUnansweredQuestion: a flagged exchange is never copied to the research feed', () => {
