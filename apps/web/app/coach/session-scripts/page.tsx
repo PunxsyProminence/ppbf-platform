@@ -51,8 +51,9 @@ const NOTABLE_KINDS: Record<string, string> = {
 const RETIRE_REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
 
 const RETIRE_REFUSALS: Readonly<Record<string, string>> = {
+  // Not "another coach": it may be this coach's own earlier try, whose answer was lost.
   SESSION_SCRIPT_CHANGED:
-    'Another coach saved this plan after you opened it, so it was not changed. Open the plan again to see it, then try again.',
+    'This plan was saved after you opened it, so it was not changed. Open the plan again to see how it stands, then try again.',
   SESSION_SCRIPT_SUPERSEDED:
     'This plan has been replaced by a newer version, so it was not changed. Reload the list and open the current version.',
   SESSION_SCRIPT_NOT_FOUND: 'This plan could not be found, so nothing was changed.',
@@ -129,7 +130,14 @@ function CoachSessionScripts() {
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
   // has even left.
+  //
+  // Only the LATEST list read may set the list. Two reads can overlap (the
+  // retired toggle pressed twice, or pressed right after a retire), and a late
+  // answer to the earlier one would otherwise show a list that contradicts
+  // the toggle.
+  const listRead = useRef(0);
   const load = useCallback(async () => {
+    const read = ++listRead.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts${showRetired ? '?include_retired=true' : ''}`, {
         method: 'GET',
@@ -137,13 +145,15 @@ function CoachSessionScripts() {
       });
       if (!response.ok) throw new Error('The session scripts could not be loaded.');
       const payload = (await response.json()) as { scripts?: Script[] };
+      if (read !== listRead.current) return;
       setScripts(payload.scripts ?? []);
       setLoadError('');
     } catch (error) {
+      if (read !== listRead.current) return;
       setScripts([]);
       setLoadError(error instanceof Error ? error.message : 'The session scripts could not be loaded.');
     } finally {
-      setLoading(false);
+      if (read === listRead.current) setLoading(false);
     }
   }, [showRetired]);
 
@@ -290,6 +300,8 @@ function CoachSessionScripts() {
     setEditing(false);
     setEditNotice('');
     setRetireError('');
+    // "X is retired" must not sit above X once it is opened and brought back.
+    setLiveNotice('');
     setDeliveries([]);
     setDeliveriesState('loading');
 
@@ -384,6 +396,7 @@ function CoachSessionScripts() {
         void load();
         if (!retired && payload?.script) {
           setDetail(payload.script);
+          setLiveNotice('');
           setEditNotice('This plan is back in the list.');
           return;
         }
@@ -392,7 +405,7 @@ function CoachSessionScripts() {
         setOpenScriptId(null);
         setDetail(null);
         setLiveNotice(retired
-          ? `${plan.name} is retired. It is kept. Retired plans are left out of the list unless Show retired plans is on.`
+          ? `${plan.name} is retired. It is kept, and is left out of the list unless retired plans are shown.`
           : 'The plan was brought back, but the answer could not be read here. Open it from the list to see it.');
         return;
       }
@@ -448,7 +461,7 @@ function CoachSessionScripts() {
         )}
 
         {liveNotice && (
-          <p className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
+          <p role="status" className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
             {liveNotice}
           </p>
         )}
@@ -501,7 +514,6 @@ function CoachSessionScripts() {
             <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
             <button
               type="button"
-              aria-pressed={showRetired}
               onClick={() => setShowRetired((shown) => !shown)}
               disabled={saving}
               className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
@@ -523,7 +535,14 @@ function CoachSessionScripts() {
 
           {!loading && !loadError && scripts.length === 0 && (
             <div className="mt-[var(--s3)]">
-              <p className="t-body text-[color:var(--bone-300)]">No session scripts yet.</p>
+              <p className="t-body text-[color:var(--bone-300)]">
+                {showRetired ? 'No session scripts yet.' : 'No session scripts in the list.'}
+              </p>
+              {!showRetired && (
+                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                  Retired plans are kept and are not shown here. Show retired plans lists them.
+                </p>
+              )}
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 A workout template can be made into one: open the template and choose Make a session script.
               </p>
@@ -614,7 +633,7 @@ function CoachSessionScripts() {
                 {detail.authoring_state === 'retired' && (
                   <div className="mt-[var(--s4)]">
                     <p className="t-body text-[color:var(--bone-300)]">
-                      This plan is retired. It is kept, and is left out of the list.
+                      This plan is retired. It is kept, and is left out of the list unless retired plans are shown.
                     </p>
                     <button
                       type="button"
@@ -633,7 +652,7 @@ function CoachSessionScripts() {
                       <button
                         type="button"
                         onClick={() => void startDelivery(detail.script_id)}
-                        disabled={startBusyScriptId !== null || liveRunCheck !== 'checked'}
+                        disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving}
                         className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}
@@ -642,7 +661,7 @@ function CoachSessionScripts() {
                     <button
                       type="button"
                       onClick={() => { setEditing(true); setEditNotice(''); }}
-                      disabled={startBusyScriptId !== null}
+                      disabled={startBusyScriptId !== null || saving}
                       className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Edit minutes and titles

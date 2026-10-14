@@ -956,3 +956,58 @@ describe('retiring a session script', () => {
     expect(await listed(owner)).toEqual([v2.script_id]);
   });
 });
+
+describe('retiring and the other writes', () => {
+  const retireAs = (gym: Gym, scriptId: string, retired: boolean) => setSessionScriptRetired({
+    organizationId: gym.organizationId,
+    actorAccountId: gym.coachId,
+    actorRole: 'coach',
+    scriptId,
+    retired,
+  });
+
+  test('a retire counts as a save: an edit made from before it is refused, not applied to a retired plan', async () => {
+    const gym = await newGym('retire-then-stale-edit');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    // One coach opens the editor; another retires the plan; the first then saves.
+    const opened = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const readAt = new Date(opened!.updated_at).toISOString();
+
+    await retireAs(gym, created.script_id, true);
+
+    const after = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(new Date(after!.updated_at).getTime()).toBeGreaterThan(new Date(opened!.updated_at).getTime());
+    const bytes = await storedBytes(gym, created.script_id);
+    await expectRefused(
+      edit(gym, created.script_id, { name: 'Saved from before the retire', expectedUpdatedAt: readAt }),
+      'SESSION_SCRIPT_CHANGED',
+      409,
+    );
+    expect(await storedBytes(gym, created.script_id)).toBe(bytes);
+  });
+
+  // WRITTEN DOWN, NOT DESIGNED HERE: the server lets a retired plan be edited
+  // (the screen does not offer it), and the state travels with the plan, as it
+  // does across a content import.
+  test('an edit of a retired plan keeps it retired, in place and on a new version', async () => {
+    const gym = await newGym('edit-retired');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await retireAs(gym, created.script_id, true);
+
+    const inPlace = await edit(gym, created.script_id, { name: 'Renamed while retired' });
+    expect(inPlace.outcome).toBe('updated');
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('retired');
+
+    // Delivered (the server's start does not read the state), then edited: version 2 is retired too.
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    const v2 = await edit(gym, created.script_id, { name: 'Version two, still retired' });
+    expect(v2.outcome).toBe('new_version');
+    expect((await getSessionScriptWithDetail(gym.organizationId, v2.script_id))!.authoring_state).toBe('retired');
+    expect(await listSessionScripts(gym.organizationId)).toEqual([]);
+    expect((await listSessionScripts(gym.organizationId, { includeRetired: true })).map((script) => script.script_id))
+      .toEqual([v2.script_id]);
+  });
+});
