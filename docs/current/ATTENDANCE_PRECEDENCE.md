@@ -29,7 +29,7 @@ Every non-test reference to the three tables, checked individually:
 | `wallDisplayDb.ts` | `scheduler_attendance` only | No |
 | `schedulerDb.ts` | `scheduler_attendance` only (sole writer) | No |
 | `performanceAnalytics.ts` | `attendance_reconciled` (OD-2026-10-07-010 Q9) | No |
-| `passbook.ts` | `attendance` only | No |
+| `passbook.ts` | gap queue (`getCoachPassbookGapQueue`): `attendance_reconciled` (LC-07); the athlete passbook attendance page: `attendance` only | No |
 | `intake.ts`, `intake/domain-get`, `intake/domain-upsert`, `intake/review-action` | `attendance` only (sole writer) | No |
 
 Two files name more than one table; none of them queries across them:
