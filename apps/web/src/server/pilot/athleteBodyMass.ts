@@ -515,7 +515,7 @@ export async function correctBodyMass(
  * (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES, auditReadAllowlist.ts) is empty, so the
  * athlete and their guardians read no SHADOW_AUDIT_* row in
  * /api/pilot/shadow/events anyway; this keeps "body mass corrected, <time>"
- * off the feed for every reader and if that list is ever filled. A child's
+ * off the feed for every reader, and would if that list were ever filled. A child's
  * weight record is health data (OD-2026-10-04-029: the athlete or their
  * coach), and whether the family feed carries it is not decided;
  * athleteMinorLimits.ts holds the same line for a child's limits. The audit
