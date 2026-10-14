@@ -19,6 +19,9 @@
 //    the timestamp the database itself wrote.
 // 6. What a family reader is sent of a coach-made script (the projection the
 //    route applies), read off the rows this module really wrote.
+// 7. RETIRING. A retired script leaves the list and comes back when asked for;
+//    every column but its state and updated_at is as it was; a delivered plan
+//    gets no new version; and the server's start does not read the state.
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
@@ -82,6 +85,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  setSessionScriptRetired,
 } from './sessionScriptAuthoring';
 import {
   finishSessionScriptRun,
@@ -792,5 +796,218 @@ describe('editing a session script', () => {
 
     expect(await storedBytes(owner, created.script_id)).toBe(bytes);
     expect(await counts(owner)).toEqual({ scripts: 1, blocks: 3, audit: 1 });
+  });
+});
+
+describe('retiring a session script', () => {
+  function retire(gym: Gym, scriptId: string, retired: boolean, expectedUpdatedAt?: string) {
+    return setSessionScriptRetired({
+      organizationId: gym.organizationId,
+      actorAccountId: gym.otherCoachId,
+      actorRole: 'coach',
+      scriptId,
+      retired,
+      expectedUpdatedAt,
+    });
+  }
+
+  /** The script row without the two columns a retire may change, then its blocks and renderings. */
+  async function allButState(gym: Gym, scriptId: string): Promise<string> {
+    const script = await client.query(
+      `select (to_jsonb(s) - 'authoring_state' - 'updated_at')::text as row
+         from pilot.session_scripts s where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, scriptId],
+    );
+    const whole = await storedBytes(gym, scriptId);
+    return [script.rows[0].row, ...whole.split('\n').slice(1)].join('\n');
+  }
+
+  const listed = async (gym: Gym, includeRetired = false) =>
+    (await listSessionScripts(gym.organizationId, { includeRetired })).map((script) => script.script_id);
+
+  test('a retired plan leaves the list and is kept whole; brought back, it returns as coach reviewed', async () => {
+    const gym = await newGym('retire');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    // An imported plan in use, so "brought back" has a different state to return to than it left.
+    await client.query(
+      `update pilot.session_scripts set authoring_state = 'in_use' where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, created.script_id],
+    );
+    const before = await allButState(gym, created.script_id);
+    const auditBefore = (await counts(gym)).audit;
+
+    const retired = await retire(gym, created.script_id, true);
+
+    expect(retired).toEqual({ outcome: 'retired', script_id: created.script_id, version: 1 });
+    expect(await listed(gym)).toEqual([]);
+    expect(await listed(gym, true)).toEqual([created.script_id]);
+    // Kept, not deleted, and not a new version: one row, every other column as it was.
+    expect(await counts(gym)).toEqual({ scripts: 1, blocks: 3, audit: auditBefore + 1 });
+    expect(await allButState(gym, created.script_id)).toBe(before);
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('retired');
+
+    // Asked again, nothing is written.
+    expect((await retire(gym, created.script_id, true)).outcome).toBe('unchanged');
+    expect((await counts(gym)).audit).toBe(auditBefore + 1);
+
+    const back = await retire(gym, created.script_id, false);
+
+    expect(back).toEqual({ outcome: 'brought_back', script_id: created.script_id, version: 1 });
+    expect(await listed(gym)).toEqual([created.script_id]);
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('coach_reviewed');
+    expect(await allButState(gym, created.script_id)).toBe(before);
+    expect((await retire(gym, created.script_id, false)).outcome).toBe('unchanged');
+
+    const audit = await query<{ event_type: string; actor_account_id: string; details: Record<string, unknown> }>(
+      `select event_type, actor_account_id, details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script' and details ? 'state_after'
+        order by created_at, details->>'state_after' desc`,
+      [gym.organizationId],
+    );
+    expect(audit.map((row) => [row.event_type, row.actor_account_id, row.details.outcome, row.details.state_before, row.details.state_after])).toEqual([
+      ['update', gym.otherCoachId, 'retired', 'in_use', 'retired'],
+      ['update', gym.otherCoachId, 'brought_back', 'retired', 'coach_reviewed'],
+    ]);
+  });
+
+  test('retiring a delivered plan makes no new version and leaves the delivered night as it was', async () => {
+    const gym = await newGym('retire-delivered');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed', whatWorked: 'The jab round.' });
+    const before = await allButState(gym, created.script_id);
+    const runBefore = await client.query(
+      `select to_jsonb(r)::text as row from pilot.session_script_runs r where organization_id = $1 and run_id = $2`,
+      [gym.organizationId, run.run_id],
+    );
+
+    const retired = await retire(gym, created.script_id, true);
+
+    expect(retired.outcome).toBe('retired');
+    // An edit of a delivered plan makes version 2. A retire does not: nothing a night ran from changed.
+    expect((await getSessionScriptLineage(gym.organizationId, created.script_id)).map((row) => row.version)).toEqual([1]);
+    expect(await allButState(gym, created.script_id)).toBe(before);
+    const runAfter = await client.query(
+      `select to_jsonb(r)::text as row from pilot.session_script_runs r where organization_id = $1 and run_id = $2`,
+      [gym.organizationId, run.run_id],
+    );
+    expect(runAfter.rows[0].row).toBe(runBefore.rows[0].row);
+    const history = await listSettledRunsForScript(gym.organizationId, created.script_id);
+    expect(history.map((row) => [row.run_id, row.what_worked])).toEqual([[run.run_id, 'The jab round.']]);
+  });
+
+  test('a session live on a plan that is then retired finishes normally', async () => {
+    const gym = await newGym('retire-live');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+
+    expect((await retire(gym, created.script_id, true)).outcome).toBe('retired');
+
+    const moved = await moveSessionScriptRunCursor(gym.organizationId, gym.coachId, run.run_id, detail!.blocks[1].block_id);
+    expect(moved.current_block_id).toBe(detail!.blocks[1].block_id);
+    const settled = await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    expect(settled.run_state).toBe('completed');
+  });
+
+  // TODAY'S BEHAVIOUR, WRITTEN DOWN (Overwatch on the H plan): the server's
+  // start does not read authoring_state. The screen is what stops offering
+  // Start on a retired plan. If the server is ever to refuse it, that is a
+  // decision someone makes on purpose, and this case is what it changes.
+  test('the server still starts a retired plan when asked by id: retired hides, it does not refuse', async () => {
+    const gym = await newGym('retire-start');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await retire(gym, created.script_id, true);
+
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+
+    expect(run).toMatchObject({ script_id: created.script_id, script_version: 1, run_state: 'in_progress' });
+  });
+
+  test("another gym's plan, a plan saved since it was read, and a replaced version are each refused and unchanged", async () => {
+    const owner = await newGym('retire-owner');
+    const other = await newGym('retire-other');
+    await insertTemplate(owner);
+    const created = await create(owner);
+    const opened = await getSessionScriptWithDetail(owner.organizationId, created.script_id);
+    const readAt = new Date(opened!.updated_at).toISOString();
+    const bytes = await storedBytes(owner, created.script_id);
+
+    // The script id is real and correct; only the gym is wrong.
+    await expectRefused(retire(other, created.script_id, true), 'SESSION_SCRIPT_NOT_FOUND', 404);
+    expect(await storedBytes(owner, created.script_id)).toBe(bytes);
+
+    // Another coach renamed it after this one opened it: told, not retired from under them.
+    await edit(owner, created.script_id, { name: 'Renamed meanwhile', expectedUpdatedAt: readAt });
+    const afterRename = await storedBytes(owner, created.script_id);
+    await expectRefused(retire(owner, created.script_id, true, readAt), 'SESSION_SCRIPT_CHANGED', 409);
+    expect(await storedBytes(owner, created.script_id)).toBe(afterRename);
+    expect(await listed(owner)).toEqual([created.script_id]);
+
+    // A version that has been replaced is not the one to retire.
+    const run = await startSessionScriptRun(owner.organizationId, owner.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(owner.organizationId, owner.coachId, run.run_id, { runState: 'completed' });
+    const v2 = await edit(owner, created.script_id, { name: 'Version two' });
+    await expectRefused(retire(owner, created.script_id, true), 'SESSION_SCRIPT_SUPERSEDED', 409);
+    expect(await listed(owner)).toEqual([v2.script_id]);
+  });
+});
+
+describe('retiring and the other writes', () => {
+  const retireAs = (gym: Gym, scriptId: string, retired: boolean) => setSessionScriptRetired({
+    organizationId: gym.organizationId,
+    actorAccountId: gym.coachId,
+    actorRole: 'coach',
+    scriptId,
+    retired,
+  });
+
+  test('a retire counts as a save: an edit made from before it is refused, not applied to a retired plan', async () => {
+    const gym = await newGym('retire-then-stale-edit');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    // One coach opens the editor; another retires the plan; the first then saves.
+    const opened = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const readAt = new Date(opened!.updated_at).toISOString();
+
+    await retireAs(gym, created.script_id, true);
+
+    const after = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(new Date(after!.updated_at).getTime()).toBeGreaterThan(new Date(opened!.updated_at).getTime());
+    const bytes = await storedBytes(gym, created.script_id);
+    await expectRefused(
+      edit(gym, created.script_id, { name: 'Saved from before the retire', expectedUpdatedAt: readAt }),
+      'SESSION_SCRIPT_CHANGED',
+      409,
+    );
+    expect(await storedBytes(gym, created.script_id)).toBe(bytes);
+  });
+
+  // WRITTEN DOWN, NOT DESIGNED HERE: the server lets a retired plan be edited
+  // (the screen does not offer it), and the state travels with the plan, as it
+  // does across a content import.
+  test('an edit of a retired plan keeps it retired, in place and on a new version', async () => {
+    const gym = await newGym('edit-retired');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await retireAs(gym, created.script_id, true);
+
+    const inPlace = await edit(gym, created.script_id, { name: 'Renamed while retired' });
+    expect(inPlace.outcome).toBe('updated');
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('retired');
+
+    // Delivered (the server's start does not read the state), then edited: version 2 is retired too.
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    const v2 = await edit(gym, created.script_id, { name: 'Version two, still retired' });
+    expect(v2.outcome).toBe('new_version');
+    expect((await getSessionScriptWithDetail(gym.organizationId, v2.script_id))!.authoring_state).toBe('retired');
+    expect(await listSessionScripts(gym.organizationId)).toEqual([]);
+    expect((await listSessionScripts(gym.organizationId, { includeRetired: true })).map((script) => script.script_id))
+      .toEqual([v2.script_id]);
   });
 });

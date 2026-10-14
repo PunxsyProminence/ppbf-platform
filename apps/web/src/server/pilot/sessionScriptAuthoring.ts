@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
@@ -18,6 +20,8 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 //     template's order, become timed blocks: minutes from the start, running
 //     on from one step to the next.
 //   editSessionScript  the name, and each block's title and minutes.
+//   setSessionScriptRetired  retires a script (kept, left out of the browse
+//     list) or brings a retired one back. In place, never a new version.
 //
 // AN EDIT NEVER CHANGES A NIGHT ALREADY DELIVERED. A run pins script_id and
 // script_version (sessionScriptRuns.ts startSessionScriptRun) and reads that
@@ -275,6 +279,54 @@ function cleanBlockEdits(edits: readonly SessionScriptBlockEdit[]): Map<string, 
 }
 
 /**
+ * The script a write is about to change, locked, and known to be the current
+ * version in the state the writer read. Every write in this module starts here.
+ *
+ * FOR UPDATE: two writes to one script queue here, as does a content import
+ * revising it (which locks the same row) and a run being started on it
+ * (startSessionScriptRun share-locks this row before it asks the same
+ * question, so neither can answer from before the other committed). The
+ * questions -- is it still the current version, was it saved since the writer
+ * read it -- are each asked AFTER the lock is held, so they see what the writer
+ * this one waited for committed. Asked in the locking statement itself they
+ * would be answered from before the wait.
+ */
+async function lockCurrentScript(
+  client: PoolClient,
+  params: { organizationId: string; scriptId: string; expectedUpdatedAt?: string },
+): Promise<SessionScriptRow> {
+  const found = await client.query<SessionScriptRow>(
+    `select * from pilot.session_scripts
+      where organization_id = $1 and script_id = $2
+        for update`,
+    [params.organizationId, params.scriptId],
+  );
+  const script = found.rows[0];
+  if (!script) {
+    throw new SessionScriptAuthoringError('SESSION_SCRIPT_NOT_FOUND', 404);
+  }
+  // Only the current version is written to, the rule startSessionScriptRun holds for starting one.
+  const newer = await client.query(
+    `select 1 from pilot.session_scripts
+      where organization_id = $1 and lineage_id = $2 and version > $3 limit 1`,
+    [params.organizationId, script.lineage_id, script.version],
+  );
+  if ((newer.rowCount ?? 0) > 0) {
+    throw new SessionScriptAuthoringError('SESSION_SCRIPT_SUPERSEDED', 409);
+  }
+  // Compared to the millisecond, which is what a timestamp keeps on its way
+  // to a browser and back; every in-place write below moves updated_at on by
+  // at least that much.
+  if (
+    params.expectedUpdatedAt !== undefined
+    && new Date(script.updated_at).getTime() !== Date.parse(params.expectedUpdatedAt)
+  ) {
+    throw new SessionScriptAuthoringError('SESSION_SCRIPT_CHANGED', 409);
+  }
+  return script;
+}
+
+/**
  * Change a script's name and its blocks' titles and minutes. A block the edit
  * does not name keeps what it has; blocks are never added, removed or
  * reordered here.
@@ -292,42 +344,7 @@ export async function editSessionScript(
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
 
   return withTransaction(async (client) => {
-    // FOR UPDATE: two edits of one script queue here, as does a content import
-    // revising it (which locks the same row) and a run being started on it
-    // (startSessionScriptRun share-locks this row before it asks the same
-    // question, so neither can answer from before the other committed). The two questions
-    // below -- is it still the current version, has it been run -- are each
-    // asked in a statement of their own AFTER the lock is held, so they see
-    // what the writer this one waited for committed. Asked in the locking
-    // statement itself they would be answered from before the wait.
-    const found = await client.query<SessionScriptRow>(
-      `select * from pilot.session_scripts
-        where organization_id = $1 and script_id = $2
-          for update`,
-      [params.organizationId, params.scriptId],
-    );
-    const script = found.rows[0];
-    if (!script) {
-      throw new SessionScriptAuthoringError('SESSION_SCRIPT_NOT_FOUND', 404);
-    }
-    // Only the current version is edited, the rule startSessionScriptRun holds for starting one.
-    const newer = await client.query(
-      `select 1 from pilot.session_scripts
-        where organization_id = $1 and lineage_id = $2 and version > $3 limit 1`,
-      [params.organizationId, script.lineage_id, script.version],
-    );
-    if ((newer.rowCount ?? 0) > 0) {
-      throw new SessionScriptAuthoringError('SESSION_SCRIPT_SUPERSEDED', 409);
-    }
-    // Compared to the millisecond, which is what a timestamp keeps on its way
-    // to a browser and back; the in-place save below always moves updated_at
-    // on by at least that much.
-    if (
-      params.expectedUpdatedAt !== undefined
-      && new Date(script.updated_at).getTime() !== Date.parse(params.expectedUpdatedAt)
-    ) {
-      throw new SessionScriptAuthoringError('SESSION_SCRIPT_CHANGED', 409);
-    }
+    const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
       `select * from pilot.session_script_blocks
@@ -468,5 +485,73 @@ export async function editSessionScript(
       client,
     );
     return result;
+  });
+}
+
+export interface RetiredSessionScript {
+  outcome: 'unchanged' | 'retired' | 'brought_back';
+  script_id: string;
+  version: number;
+}
+
+/** What a plan a coach brings back is: a coach has looked at it and chosen to run it. */
+const BROUGHT_BACK_STATE = 'coach_reviewed';
+
+/**
+ * Retire a script, or bring a retired one back.
+ *
+ * RETIRED IS KEPT, NOT DELETED. The row, its blocks, its renderings and every
+ * night delivered from it stay exactly as they are; the browse list leaves a
+ * retired script out (sessionScripts.ts listSessionScripts) and returns it
+ * again when asked to include retired ones.
+ *
+ * IN PLACE, NEVER A NEW VERSION, delivered or not. authoring_state is the
+ * script's place in its life, not its content -- the rule content import
+ * holds (contentImport/datasets/sessionScripts.ts) -- so retiring changes no
+ * name and no block, and no delivered night's plan. It is the same question as
+ * an edit in one respect: it is asked of the current version, in the state the
+ * coach read (lockCurrentScript).
+ *
+ * WHAT IT DOES NOT DO. startSessionScriptRun does not read authoring_state, so
+ * this stops nothing: a session live on a script that is then retired finishes
+ * normally, and the screen is what stops offering Start on a retired plan.
+ */
+export async function setSessionScriptRetired(
+  params: Actor & { scriptId: string; retired: boolean; expectedUpdatedAt?: string },
+): Promise<RetiredSessionScript> {
+  return withTransaction(async (client) => {
+    const script = await lockCurrentScript(client, params);
+    const isRetired = script.authoring_state === 'retired';
+    if (isRetired === params.retired) {
+      return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
+    }
+    const stateAfter = params.retired ? 'retired' : BROUGHT_BACK_STATE;
+    await client.query(
+      `update pilot.session_scripts
+          set authoring_state = $3,
+              updated_at = greatest(now(), updated_at + interval '1 millisecond')
+        where organization_id = $1 and script_id = $2`,
+      [params.organizationId, script.script_id, stateAfter],
+    );
+    const outcome = params.retired ? 'retired' : 'brought_back';
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: params.actorAccountId,
+        actor_role: params.actorRole,
+        organization_id: params.organizationId,
+        entity_type: 'session_script',
+        entity_id: script.script_id,
+        details: {
+          name: script.name,
+          version: script.version,
+          outcome,
+          state_before: script.authoring_state,
+          state_after: stateAfter,
+        },
+      },
+      client,
+    );
+    return { outcome, script_id: script.script_id, version: script.version };
   });
 }
