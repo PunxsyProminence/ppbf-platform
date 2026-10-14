@@ -186,6 +186,26 @@ describe('a message counts as opened when it is on screen on the Messages tab (F
     expect(readPosts(fetchMock)).toEqual([MESSAGES[0]!.note_id]);
   });
 
+  test('the watch fires at every 1%, so a message many screens tall is seen as it scrolls', () => {
+    installFetch();
+    const seen: Array<number[] | number | undefined> = [];
+    (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = class extends FakeObserver {
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        super(callback);
+        seen.push(options?.threshold);
+      }
+    };
+    return (async () => {
+      await renderHub();
+      await openTab('Messages');
+      await screen.findByText('Bring gloves Thursday.');
+      const thresholds = seen.at(-1) as number[];
+      expect(thresholds).toHaveLength(101);
+      expect(thresholds).toContain(0.05);
+      expect(thresholds).toContain(0.5);
+    })();
+  });
+
   test('what is watched is the message itself, not the replies and reply box under it', async () => {
     installFetch();
     await renderHub();

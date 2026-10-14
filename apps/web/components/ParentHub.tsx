@@ -322,7 +322,10 @@ export default function ParentHub() {
             readsSentRef.current.delete(noteId);
           });
       }
-    }, { threshold: [0, 0.1, 0.25, 0.5] });
+    // Every 1%: a message many screens tall changes its visible share only a
+    // little as it scrolls, so coarse steps could never fire again after the
+    // first sliver, and it would never be seen filling half the screen.
+    }, { threshold: Array.from({ length: 101 }, (_, step) => step / 100) });
     document.querySelectorAll<HTMLElement>('[data-read-note]').forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [activeTab, messagesLoaded, messages]);
