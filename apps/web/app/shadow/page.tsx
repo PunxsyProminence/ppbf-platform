@@ -65,6 +65,7 @@ interface ShadowMessage {
   state?: ShadowResponseState;
   evidenceTier?: ShadowEvidenceTier;
   evidenceNotice?: string;
+  researchFiled?: boolean;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
 }
@@ -84,6 +85,7 @@ interface ShadowAIResult {
   error?: string;
   evidenceTier?: ShadowEvidenceTier;
   evidenceNotice?: string;
+  researchFiled?: boolean;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
   unlockHints?: ShadowUnlockHint[];
@@ -783,7 +785,7 @@ function ShadowChatPageContent() {
     return '';
   }
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'handoff' | 'citations'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'researchFiled' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -1191,6 +1193,7 @@ function ShadowChatPageContent() {
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
       evidenceNotice: data.evidenceNotice,
+      researchFiled: data.researchFiled === true,
       handoff: data.handoff,
       // The server has always computed and returned these; the client dropped
       // them on the floor, so evidence-backed answers showed no receipts.
@@ -1837,6 +1840,12 @@ function ShadowChatPageContent() {
                       No verified Library evidence matched this question. Treat the answer above as
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
+                  ) : null}
+                  {/* PROPOSED copy. The server files the question before it answers
+                      (F-054), and says so only when the row exists. Staff see the
+                      stored status below instead. */}
+                  {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && !mayFileResearch && msg.researchFiled ? (
+                    <p className="t-body mt-[var(--s2)]" data-testid="research-passed">Passed to the coaches.</p>
                   ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
                     ? (() => {

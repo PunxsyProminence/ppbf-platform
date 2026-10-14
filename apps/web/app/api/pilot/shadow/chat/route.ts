@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, sanitizedSqlState } from '@/src/server/pilot/db';
 import { isUuid, requirePrincipal, jsonError } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { fileUnansweredShadowQuestion } from '@/src/server/pilot/shadowResearchFiling';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   validateShadowRequest,
@@ -1706,6 +1707,18 @@ async function handleShadowChat(
       : undefined;
     const responseRequiresHumanReview = persistedRequiresHumanReview;
 
+    // An answer served with no verified evidence files its question as research
+    // so "passed to the coaches" is true (F-054). Same condition as the notice.
+    const researchFiled = unsupportedAnswer && !libraryEmpty && !evidenceBundle.retrievalDegraded
+      ? await fileUnansweredShadowQuestion({
+        organizationId,
+        accountId: userId,
+        role: userRole,
+        question: message,
+        athleteId: athleteId || null,
+      })
+      : false;
+
     return NextResponse.json({
       success: state === 'ok' || state === 'queued',
       state,
@@ -1730,6 +1743,7 @@ async function handleShadowChat(
       evidenceNotice: evidenceBundle.retrievalDegraded
         ? 'EVIDENCE_RETRIEVAL_UNAVAILABLE'
         : (unsupportedAnswer && !libraryEmpty ? 'NO_VERIFIED_EVIDENCE' : undefined),
+      researchFiled,
       handoff: persistedHandoff,
       unlockHints: buildShadowUnlockHints(unlockState),
       tier: effectiveTier,
