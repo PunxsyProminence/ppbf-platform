@@ -210,11 +210,12 @@ describe('marking', () => {
 describe('what is shown always belongs to this run', () => {
   test('a different run shows nothing of the old one, and a late answer for the old run is dropped', async () => {
     let releaseOld: (response: Response) => void = () => {};
+    let releaseNew: (response: Response) => void = () => {};
     let call = 0;
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       call += 1;
       if (call === 1) return read([ADA]);
-      if (String(input).includes('ssrun_2')) return read([CY]);
+      if (String(input).includes('ssrun_2')) return new Promise<Response>((resolve) => { releaseNew = resolve; });
       return new Promise<Response>((resolve) => { releaseOld = resolve; });
     }) as unknown as typeof fetch;
 
@@ -227,6 +228,13 @@ describe('what is shown always belongs to this run', () => {
 
     await act(async () => {
       view!.rerender(<SessionRunPresence runId="ssrun_2" />);
+    });
+    // Until the new run's answer lands, nothing of the old run is shown: no list to tap into.
+    expect(screen.getByText('Reading who is marked here…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Here Ada Reyes' })).toBeNull();
+    expect(screen.queryByText('1 marked here.')).toBeNull();
+    await act(async () => {
+      releaseNew(read([CY]));
     });
     // Cy is the new run's; Ada was the old run's and is not shown as here.
     expect(rowNames()[0]).toBe('Cy Marsh');
