@@ -17,6 +17,11 @@
  * these rows and sets their author to NULL (D-9), and an inner join on the
  * author would silently drop exactly the observations whose guardian has gone.
  *
+ * Only a guardian's own writing: author_role 'parent', which the parent
+ * observations route always records. The note_type label alone is not proof
+ * -- staff writes (intake/domain-upsert) take a free note_type, and a staff
+ * note labelled 'parent_observation' must never be shown as "a guardian".
+ *
  * The athlete gate is the route's (assertActorCanAccessAthlete); this read
  * scopes by organization and athlete in the query.
  */
@@ -35,6 +40,7 @@ export async function listFamilyObservationsForStaff(
       where co.organization_id = $1
         and co.athlete_id = $2
         and co.note_type = 'parent_observation'
+        and co.author_role = 'parent'
       order by co.created_at desc, co.note_id`,
     [organizationId, athleteId],
   );

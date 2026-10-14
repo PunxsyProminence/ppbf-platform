@@ -188,6 +188,8 @@ async function freshDatabase(name: string): Promise<Client> {
     [ORG_ID, ATHLETE, COACH, 'coach', 'parent_message', 'Bring gloves Thursday.', '2026-10-11T12:00:00Z'],
     [ORG_ID, ATHLETE, GUARDIAN, 'parent', 'home_barrier', 'No lift on Thursdays.', '2026-10-11T13:00:00Z'],
     [ORG_ID, ATHLETE, COACH, 'coach', 'coach_observation', 'Good footwork.', '2026-10-11T14:00:00Z'],
+    // A staff note given the guardians' label through a staff write: never shown as the family's.
+    [ORG_ID, ATHLETE, COACH, 'coach', 'parent_observation', 'Sleep & recovery\n\nWritten by staff.', '2026-10-12T20:00:00Z'],
     [ORG_ID, SIBLING, GUARDIAN, 'parent', 'parent_observation', 'Motivation · 9 out of 10\n\nCannot wait for Saturday.', '2026-10-12T12:00:00Z'],
     [OTHER_ORG_ID, ATHLETE, OTHER_GUARDIAN, 'parent', 'parent_observation', 'Energy · 2 out of 10\n\nOther gym.', '2026-10-12T12:00:00Z'],
   ];
@@ -221,6 +223,11 @@ describe('listFamilyObservationsForStaff on real rows (F-073)', () => {
       // Text outside the grammar is still shown, as written.
       { category: 'general_development', rating: null, notes: 'free text that is not in the grammar', created_at: '2026-10-01T12:00:00.000Z' },
     ]);
+  });
+
+  test("a staff note labelled as the family's is not shown as the family's", async () => {
+    const items = await observations.listFamilyObservationsForStaff(ORG_ID, ATHLETE);
+    expect(items.map((item) => item.notes)).not.toContain('Written by staff.');
   });
 
   test('no author and no account id leave the read', async () => {
