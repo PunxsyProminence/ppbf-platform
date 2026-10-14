@@ -551,6 +551,8 @@ function CoachDrillLibrary() {
     openRequestRef.current = request;
     openerRef.current = openerId;
     setPromoteNotice('');
+    setRestoreCueNeededFor('');
+    setRestoreCues('');
     setOpenReferenceId(referenceDrillId);
     setOpenReference(null);
     setOpenReferenceDetail(null);
@@ -606,6 +608,8 @@ function CoachDrillLibrary() {
     // A notice ("Retired. It can no longer...") speaks of the drill being
     // left; above the library it would name no drill at all.
     setPromoteNotice('');
+    setRestoreCueNeededFor('');
+    setRestoreCues('');
     setOpenReferenceId('');
     setOpenReference(null);
     setOpenReferenceDetail(null);
