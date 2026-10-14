@@ -51,6 +51,7 @@ const CHILD_D = 'ath-ad-d';
 const A_WORDS = 'ZEBRA-ATHLETE-7731 my coach hits me and I am scared to go to the gym';
 const C_WORDS = 'OTTER-CONTROL-2208 how long should I rest between rounds';
 const P_WORDS = 'QUOKKA-PARENT-4419 my son says an adult at the gym touched him';
+const P2_WORDS = 'LLAMA-PARENT-8812 who do I talk to about a worry I have';
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 
@@ -195,6 +196,7 @@ beforeAll(async () => {
     ['acct-ad-athlete-a', 'athlete', ATHLETE_A],
     ['acct-ad-athlete-c', 'athlete', ATHLETE_C],
     ['acct-ad-parent', 'parent', null],
+    ['acct-ad-parent-2', 'parent', null],
   ];
   for (const [accountId, role, athleteId] of accounts) {
     await db.query(
@@ -215,7 +217,8 @@ beforeAll(async () => {
   );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
-     values ($1, 'par-ad-p', 'acct-ad-parent', 'Parent of D', '555-0100', 'p@example.test')`,
+     values ($1, 'par-ad-p', 'acct-ad-parent', 'Parent of D', '555-0100', 'p@example.test'),
+            ($1, 'par-ad-p2', 'acct-ad-parent-2', 'Parent Two', '555-0200', 'p2@example.test')`,
     [ORG],
   );
   await db.query(
@@ -237,6 +240,8 @@ beforeAll(async () => {
   await fileQuestion({ organizationId: ORG, accountId: 'acct-ad-athlete-a', role: 'athlete', question: A_WORDS, askerAthleteId: ATHLETE_A });
   await fileQuestion({ organizationId: ORG, accountId: 'acct-ad-athlete-c', role: 'athlete', question: C_WORDS, askerAthleteId: ATHLETE_C });
   await fileQuestion({ organizationId: ORG, accountId: 'acct-ad-parent', role: 'parent', question: P_WORDS, athleteId: CHILD_D });
+  // A parent asking with no child named: tied to the account alone.
+  await fileQuestion({ organizationId: ORG, accountId: 'acct-ad-parent-2', role: 'parent', question: P2_WORDS });
   // A coach's own research filing about athlete A: research work, not A's words.
   await fileQuestion({ organizationId: ORG, accountId: 'acct-ad-coach', role: 'coach', question: 'COACHFILED-5521 rest between rounds', athleteId: ATHLETE_A });
 });
@@ -264,7 +269,7 @@ afterAll(async () => {
 describe('an asker question and its asker deletion', () => {
   test('before any deletion the organization admin reads all three, each asker row tied to its athlete', async () => {
     const text = await listText(AS.admin());
-    for (const words of ['ZEBRA-ATHLETE-7731', 'OTTER-CONTROL-2208', 'QUOKKA-PARENT-4419']) {
+    for (const words of ['ZEBRA-ATHLETE-7731', 'OTTER-CONTROL-2208', 'QUOKKA-PARENT-4419', 'LLAMA-PARENT-8812']) {
       expect(text).toContain(words);
     }
     const tied = await db.query(
@@ -272,7 +277,7 @@ describe('an asker question and its asker deletion', () => {
         where organization_id = $1 and source_entity_type = 'shadow_asker_question' order by research_requirement_id`,
       [ORG],
     );
-    expect(tied.rows.map((row) => row.a)).toEqual([ATHLETE_A, ATHLETE_C, CHILD_D]);
+    expect(tied.rows.map((row) => row.a)).toEqual([ATHLETE_A, ATHLETE_C, CHILD_D, null]);
   });
 
   test('deleting the athlete hides the row from every reader at once, and leaves the others', async () => {
@@ -321,6 +326,19 @@ describe('an asker question and its asker deletion', () => {
     expect(event.asker_research_questions_deleted).toBe(1);
     expect(await rowCount(`research_requirement like '%QUOKKA-PARENT-4419%'`)).toBe(0);
     expect(await rowCount(`research_requirement like '%OTTER-CONTROL-2208%'`)).toBe(1);
+  });
+
+  test('a parent who named no child is tied to the account alone: hidden at the mark, deleted with the account', async () => {
+    expect(await rowCount(`research_requirement like '%LLAMA-PARENT-8812%'`)).toBe(1);
+    await deleteGuardianAccount(ADMIN, 'acct-ad-parent-2', 'Family left');
+    expect(await listText(AS.admin())).not.toContain('LLAMA-PARENT-8812');
+    expect(await rowCount(`research_requirement like '%LLAMA-PARENT-8812%'`)).toBe(1);
+
+    await db.query(`update pilot.accounts set deleted_at = now() - interval '3 years' where account_id = 'acct-ad-parent-2'`);
+    const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.asker_research_questions_deleted).toBe(1);
+    expect(await rowCount(`research_requirement like '%LLAMA-PARENT-8812%'`)).toBe(0);
   });
 
   test('a dry run reports what it would delete and deletes nothing', async () => {
