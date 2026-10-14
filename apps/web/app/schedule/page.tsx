@@ -45,6 +45,7 @@ type SchedulerClass = {
 type CoachOption = {
   account_id: string;
   label: string;
+  login: string;
 };
 
 type SchedulerRegistration = {
@@ -208,7 +209,7 @@ function coachOptionsFrom(members: unknown): CoachOption[] {
       return [];
     }
     const login = typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : member.account_id;
-    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})` }];
+    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})`, login }];
   });
 }
 
@@ -478,6 +479,16 @@ export default function SchedulerPage() {
   const today = gymDayIso(nowMs);
   // Nobody marks a register for a cancelled class (#1536); the route refuses it.
   const selectedClassCancelled = selectedClass?.status === 'cancelled';
+  // A family with no class at all today has nothing to check in to; the card
+  // says so in one sentence instead of offering pickers with no button (#1596).
+  const familyHasClassToday = Boolean(
+    today && classes.some((item) => item.status !== 'cancelled' && gymDayIso(item.start_at) === today),
+  );
+  const noClassToday = isFamily && !familyHasClassToday;
+  // The picker offers only classes that are not cancelled; a selection that is
+  // not among them shows as unchosen rather than as a class it is not.
+  const pickerClasses = classes.filter((item) => item.status !== 'cancelled');
+  const pickerHasSelection = pickerClasses.some((item) => item.class_id === selectedClassId);
   const familyCanCheckIn = Boolean(
     selectedClass
       && !selectedClassCancelled
@@ -510,10 +521,21 @@ export default function SchedulerPage() {
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
-  // The admin reads coaches by name (#1536, Q3); a coach keeps the stored
-  // value until a coach-readable name source exists.
-  const coachNames = new Map(coachOptions.map((option) => [option.account_id, option.label]));
-  const staffName = (accountId: string) => coachNames.get(accountId) ?? accountId;
+  // A class row names its coach, never the login (#1596; OD-2026-10-06-025
+  // "Show coach name, hide ID"). The name is derived as the server derives a
+  // coach's signature (coachDisplayName.ts): from the login on the admin's
+  // staff list when there is one, otherwise from the stored account id, which
+  // is the coach's login on this platform.
+  /* WHO REGISTER REGISTERS (#1596). For an athlete it is themselves. For a
+     parent or staff it is the athlete selected in the picker above, which
+     the button used to leave unnamed: a coach's tap on a class row
+     registered whoever that picker happened to show. The button now says
+     who. */
+  const registerTargetName = role === 'athlete'
+    ? null
+    : athletes.find((item) => item.athlete_id === targetAthlete)?.full_name || null;
+  const coachLogins = new Map(coachOptions.map((option) => [option.account_id, option.login]));
+  const staffName = (accountId: string) => deriveCoachDisplayName(coachLogins.get(accountId) ?? accountId);
 
   /* One class row, in the upcoming list or under Past and cancelled (#1536).
      A cancelled class offers nothing; Cancel Class shows where the server
@@ -554,7 +576,7 @@ export default function SchedulerPage() {
             disabled={actionInFlight}
             className="btn disabled:opacity-60 disabled:grayscale"
           >
-            Register
+            {registerTargetName ? `Register ${registerTargetName}` : 'Register'}
           </button>
         ) : null}
         {roleCanManageClasses(role) && classIsUpcoming(item) ? (
@@ -849,20 +871,29 @@ export default function SchedulerPage() {
               <section className="grid gap-4 lg:grid-cols-2">
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
+                  {noClassToday ? (
+                    <p className="t-body">There is no class today to check in to.</p>
+                  ) : null}
+                  {noClassToday ? null : (
                   <select
-                    value={selectedClassId}
+                    aria-label="Class"
+                    value={pickerHasSelection ? selectedClassId : ''}
                     onChange={(e) => {
                       setSelectedClassId(e.target.value);
                       setCheckInHold(null);
                     }}
                     className="input"
                   >
-                    {classes.map((item) => (
+                    {pickerHasSelection ? null : <option value="">Choose a class</option>}
+                    {/* A cancelled class is not offered (#1596): nobody marks a
+                        register for it, and the route refuses it. */}
+                    {pickerClasses.map((item) => (
                       <option key={item.class_id} value={item.class_id}>
-                        {item.title} ({formatGymDateNumeric(item.start_at)}){item.status === 'cancelled' ? ' (cancelled)' : ''}
+                        {item.title} ({formatGymDateNumeric(item.start_at)})
                       </option>
                     ))}
                   </select>
+                  )}
 
                   {/* The class register (OD-2026-10-07-008 ruling 4): the coach,
                       cover or scheduler marks everyone registered to the
@@ -892,7 +923,7 @@ export default function SchedulerPage() {
                         ))}
                       </optgroup>
                     </select>
-                  ) : role === 'parent' && athletes.length > 0 ? (
+                  ) : role === 'parent' && athletes.length > 0 && !noClassToday ? (
                     <select
                       aria-label="Athlete to mark"
                       value={selectedAthleteId}

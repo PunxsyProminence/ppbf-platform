@@ -134,20 +134,24 @@ describe('the coaching-request coach picker (#1536)', () => {
     expect(screen.queryByRole('textbox', { name: /Coach to assign/ })).not.toBeInTheDocument();
   });
 
-  test('the admin reads coaches by name on the class row and on an approved request', async () => {
+  // OD-2026-10-06-025 "Show coach name, hide ID" (#1596): a row names the
+  // coach and never prints the login; the admin's picker keeps its own label.
+  test('the admin reads coaches by name, without the login, on the class row and on an approved request', async () => {
     installFetchMock('organization_admin');
     await renderPage();
     await screen.findByLabelText(/Coach to assign/);
 
-    expect(screen.getByText(/Coach: Coach Jane Doe \(jane\.doe@gym\.example\) \| Cover: Coach Sam Ruiz/)).toBeInTheDocument();
-    expect(screen.getByText(/Status: approved \| Coach: Coach Sam Ruiz \(sam_ruiz2@gym\.example\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Coach: Coach Jane Doe \| Cover: Coach Sam Ruiz$/)).toBeInTheDocument();
+    expect(screen.getByText(/Status: approved \| Coach: Coach Sam Ruiz$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Coach: .*@gym\.example/)).toBeNull();
   });
 
-  test('a coach keeps the stored value and never asks for the staff list (follow-up)', async () => {
+  test('a coach reads a name derived from the stored id and never asks for the staff list (#1596)', async () => {
     const fetchMock = installFetchMock('coach');
     await renderPage();
 
-    expect(await screen.findByText(/Coach: acct-jane \| Cover: acct-sam/)).toBeInTheDocument();
+    expect(await screen.findByText(/Coach: Coach Acct Jane \| Cover: Coach Acct Sam/)).toBeInTheDocument();
+    expect(screen.queryByText(/Coach: acct-jane/)).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/pilot/admin/staff'))).toBe(false);
   });
 });

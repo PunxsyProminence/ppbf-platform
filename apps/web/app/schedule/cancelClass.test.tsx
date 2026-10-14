@@ -172,7 +172,7 @@ describe('Cancel Class (#1536)', () => {
     expect(posts(fetchMock).map((body) => body.action)).toEqual(['cover_class']);
   });
 
-  test('staff open the register on a class still running, and a cancelled one is marked in the picker', async () => {
+  test('staff open the register on a class still running, and a cancelled one is not offered in the picker (#1596)', async () => {
     installFetchMock('coach', [
       classRow('gone', 'Called Off', 1 * HOUR, { status: 'cancelled' }),
       classRow('upcoming', 'Still On', 24 * HOUR, { can_cancel: true }),
@@ -182,7 +182,6 @@ describe('Cancel Class (#1536)', () => {
     const picker = screen.getByDisplayValue(/Still On/) as HTMLSelectElement;
     expect(picker.value).toBe('upcoming');
     expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
-      expect.stringMatching(/^Called Off \(.*\) \(cancelled\)$/),
       expect.stringMatching(/^Still On \(.*\)$/),
     ]);
   });
