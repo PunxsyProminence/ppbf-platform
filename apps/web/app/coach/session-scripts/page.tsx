@@ -45,6 +45,28 @@ const NOTABLE_KINDS: Record<string, string> = {
   reflection: 'Reflection',
 };
 
+// RETIRING A PLAN, AND BRINGING ONE BACK (lane L1, item H). What the PATCH
+// answers when it refuses before or inside its transaction; any other status
+// says nothing about whether the plan was changed (the rule the editor keeps).
+const RETIRE_REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
+const RETIRE_REFUSALS: Readonly<Record<string, string>> = {
+  SESSION_SCRIPT_CHANGED:
+    'Another coach saved this plan after you opened it, so it was not changed. Open the plan again to see it, then try again.',
+  SESSION_SCRIPT_SUPERSEDED:
+    'This plan has been replaced by a newer version, so it was not changed. Reload the list and open the current version.',
+  SESSION_SCRIPT_NOT_FOUND: 'This plan could not be found, so nothing was changed.',
+};
+
+const RETIRE_REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
+  401: 'You are signed out, so the plan was not changed. Sign in and open the plan again.',
+  403: 'Your account may not retire session scripts, so the plan was not changed.',
+};
+
+// An ordinary message, so not the medical-stop colour (--locked means a
+// medical stop and nothing else: AGENT_KERNEL.md, OD-2026-09-29-001).
+const PLAIN_ALERT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
+
 function blockWindow(block: Block): string {
   return `${block.start_offset_min}-${block.end_offset_min} min`;
 }
@@ -99,12 +121,17 @@ function CoachSessionScripts() {
   // to nobody (the rule the workout templates page keeps for an issue).
   const [saving, setSaving] = useState(false);
 
+  // A retired plan is kept and left out of the list. This asks for them too,
+  // so a coach can find one and bring it back.
+  const [showRetired, setShowRetired] = useState(false);
+  const [retireError, setRetireError] = useState('');
+
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
   // has even left.
   const load = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/session-scripts`, {
+      const response = await fetch(`${apiBase()}/api/pilot/session-scripts${showRetired ? '?include_retired=true' : ''}`, {
         method: 'GET',
         credentials: 'include',
       });
@@ -118,7 +145,7 @@ function CoachSessionScripts() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showRetired]);
 
   useEffect(() => {
     void (async () => {
@@ -262,6 +289,7 @@ function CoachSessionScripts() {
     setDetailLoading(true);
     setEditing(false);
     setEditNotice('');
+    setRetireError('');
     setDeliveries([]);
     setDeliveriesState('loading');
 
@@ -327,6 +355,58 @@ function CoachSessionScripts() {
     void load();
     if (outcome === 'new_version') void loadDeliveries(saved.script_id);
   }, [load, loadDeliveries]);
+
+  // Retire the open plan, or bring a retired one back. The plan is kept either
+  // way: retired only leaves it out of the list. Sent in the state this screen
+  // read, so a plan another coach has saved since is refused, not changed.
+  const retireInFlight = useRef(false);
+  const setPlanRetired = useCallback(async (plan: ScriptDetail, retired: boolean) => {
+    if (retireInFlight.current) return;
+    retireInFlight.current = true;
+    setSaving(true);
+    setRetireError('');
+    setEditNotice('');
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/session-scripts`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script_id: plan.script_id, expected_updated_at: plan.updated_at, retired }),
+        });
+      } catch {
+        setRetireError('No answer arrived, so it is not known whether the plan was changed. Reload the list to see which.');
+        return;
+      }
+      const payload = (await response.json().catch(() => null)) as { script?: ScriptDetail | null; error?: unknown } | null;
+      if (response.ok) {
+        void load();
+        if (!retired && payload?.script) {
+          setDetail(payload.script);
+          setEditNotice('This plan is back in the list.');
+          return;
+        }
+        // Retired, or brought back with an answer that cannot be shown: the
+        // plan on screen is the one from before, so it is closed.
+        setOpenScriptId(null);
+        setDetail(null);
+        setLiveNotice(retired
+          ? `${plan.name} is retired. It is kept. Retired plans are left out of the list unless Show retired plans is on.`
+          : 'The plan was brought back, but the answer could not be read here. Open it from the list to see it.');
+        return;
+      }
+      if (RETIRE_REFUSAL_STATUSES.includes(response.status)) {
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        setRetireError(RETIRE_REFUSALS[code] ?? RETIRE_REFUSALS_BY_STATUS[response.status] ?? 'The server refused, so the plan was not changed.');
+        return;
+      }
+      setRetireError('The server did not answer properly, so it is not known whether the plan was changed. Reload the list to see which.');
+    } finally {
+      retireInFlight.current = false;
+      setSaving(false);
+    }
+  }, [load]);
 
   return (
     /* data-surface="kiosk" -- Law 5, the app's one-attribute device for a
@@ -417,7 +497,18 @@ function CoachSessionScripts() {
         </section>
 
         <section data-surface="kiosk" className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+            <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
+            <button
+              type="button"
+              aria-pressed={showRetired}
+              onClick={() => setShowRetired((shown) => !shown)}
+              disabled={saving}
+              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {showRetired ? 'Hide retired plans' : 'Show retired plans'}
+            </button>
+          </div>
 
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
@@ -518,7 +609,25 @@ function CoachSessionScripts() {
                 {/* While the plan is being edited the start button is put
                     away: what it would start is the stored plan, not the one
                     on screen. */}
-                {!editing && (
+                {/* A retired plan is kept and can be read here. It offers one
+                    thing: bringing it back. Start and Edit return with it. */}
+                {detail.authoring_state === 'retired' && (
+                  <div className="mt-[var(--s4)]">
+                    <p className="t-body text-[color:var(--bone-300)]">
+                      This plan is retired. It is kept, and is left out of the list.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void setPlanRetired(detail, false)}
+                      disabled={saving}
+                      className="btn mt-[var(--s3)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Bring this plan back
+                    </button>
+                  </div>
+                )}
+
+                {!editing && detail.authoring_state !== 'retired' && (
                   <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
                     {detail.blocks.length > 0 && (
                       <button
@@ -538,7 +647,18 @@ function CoachSessionScripts() {
                     >
                       Edit minutes and titles
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void setPlanRetired(detail, true)}
+                      disabled={startBusyScriptId !== null || saving}
+                      className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Retire this plan
+                    </button>
                   </div>
+                )}
+                {retireError && (
+                  <p role="alert" className={`mt-[var(--s3)] ${PLAIN_ALERT}`}>{retireError}</p>
                 )}
                 {!editing && startError && startErrorFor === detail.script_id && (
                   <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
