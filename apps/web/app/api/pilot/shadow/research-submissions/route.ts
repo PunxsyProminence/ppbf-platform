@@ -5,6 +5,7 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
+import { researchSubmissionsForReader } from '@/src/server/pilot/researchFamilyView';
 import {
   getShadowResearchRequirementById,
   mayReadSubjectlessResearchRow,
@@ -150,8 +151,11 @@ export async function GET(request: NextRequest) {
     if (status === null) return hiddenNotFound();
 
     const items = await listSubmissionsForRequirement(organizationId, requirementId);
+    // The ladder is computed from the stored rows; what the reader is sent
+    // of them is the named family fields unless they are research staff or
+    // the platform shelf's curator (#1475 Part F, researchFamilyView.ts).
     return NextResponse.json({
-      items,
+      items: researchSubmissionsForReader(principal, items, onPlatformShelf),
       answer_state: deriveAnswerState(status, items),
     });
   } catch (error) {

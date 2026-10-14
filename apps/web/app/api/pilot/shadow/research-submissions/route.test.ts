@@ -472,6 +472,90 @@ describe('the subject gate on a requirement that names a child', () => {
   });
 });
 
+// #1475 Part F: what a submission row carries depends on the reader. Proved
+// against real rows in researchFamilyProjection.pg.test.ts.
+describe('what a submission row carries', () => {
+  const STORED = {
+    organization_id: 'org-1',
+    submission_id: 'sub-1',
+    research_requirement_id: 7,
+    source_id: 'src-1',
+    document_id: 'doc-1',
+    provenance: { provider: 'Penn State library' },
+    submission_note: 'Curator note.',
+    applicability_state: 'responsive',
+    reviewed_by_account_id: 'admin.one@gym.example.test',
+    reviewed_at: '2026-10-02T00:00:00.000Z',
+    review_note: 'Reviewer note about the family.',
+    submitted_by_account_id: 'admin.one@gym.example.test',
+    created_at: '2026-10-01T00:00:00.000Z',
+    updated_at: '2026-10-02T00:00:00.000Z',
+  };
+
+  beforeEach(() => {
+    mockGetRequirement.mockResolvedValue({
+      research_requirement_id: 7, organization_id: 'org-1', subject_id: 'ath-mine', metadata: {},
+    });
+    mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockList.mockResolvedValue([STORED]);
+  });
+
+  test.each(['athlete', 'parent'] as const)('a %s receives the named family fields and the ladder from the stored rows', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-family', role, athleteId: role === 'athlete' ? 'ath-mine' : null }));
+
+    const text = await (await GET(getRequest('research_requirement_id=7'))).text();
+
+    expect(JSON.parse(text)).toEqual({
+      items: [{
+        submission_id: 'sub-1',
+        research_requirement_id: 7,
+        applicability_state: 'responsive',
+        created_at: '2026-10-01T00:00:00.000Z',
+        reviewed_at: '2026-10-02T00:00:00.000Z',
+      }],
+      answer_state: 'partially_answered',
+    });
+    expect(text).not.toContain('@');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)('a %s receives the stored row whole', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([STORED]);
+  });
+
+  test('platform_owner on a gym shelf receives the family fields, even on a question it filed', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-owner', role: 'platform_owner' }));
+    mockGetRequirement.mockResolvedValue({
+      research_requirement_id: 7, organization_id: 'org-1', subject_id: null, metadata: {}, created_by_account_id: 'acct-owner',
+    });
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([{
+      submission_id: 'sub-1',
+      research_requirement_id: 7,
+      applicability_state: 'responsive',
+      created_at: '2026-10-01T00:00:00.000Z',
+      reviewed_at: '2026-10-02T00:00:00.000Z',
+    }]);
+  });
+
+  test('platform_owner receives the platform shelf rows whole', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-owner', role: 'platform_owner' }));
+    mockGetRequirement.mockResolvedValue({
+      research_requirement_id: 7, organization_id: '__platform__', subject_id: null, metadata: {},
+    });
+
+    const payload = await (await GET(getRequest('research_requirement_id=7&shelf=platform'))).json();
+
+    expect(payload.items).toEqual([STORED]);
+  });
+});
+
 // Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
 // the curator got a 500 for what is their own malformed request.
 describe('malformed JSON bodies (CL-C24)', () => {

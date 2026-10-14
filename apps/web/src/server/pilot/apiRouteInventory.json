@@ -12561,7 +12561,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "research-requirements/route.ts handleList: role gate, parent narrowed to guardian children, then scopeToReachableSubjects (accessibleAthleteIds for non-admins; subject-less rows only for staff or the filer). Org admin unfiltered except deleted athletes.",
+    "notes": "research-requirements/route.ts handleList: role gate, then scopeToReachableSubjects for every role, parents included (accessibleAthleteIds for non-admins; subject-less rows only for staff or the filer). Org admin unfiltered except deleted athletes. Rows go whole to coach and org admin only; every other reader gets the named fields of researchFamilyView.ts (no account id, no raw metadata; #1475 Part F).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12630,7 +12630,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "research-submissions/route.ts GET: role gate, then mayReadRequirement per id (org admin always; else subject athlete via accessibleAthleteIds, subject-less via mayReadSubjectlessResearchRow or platform shelf). Returns submissions attached to requirements, which may be athlete-subject.",
+    "notes": "research-submissions/route.ts GET: role gate, then mayReadRequirement per id (org admin always; else subject athlete via accessibleAthleteIds, subject-less via mayReadSubjectlessResearchRow or platform shelf). Returns submissions attached to requirements, which may be athlete-subject. Rows go whole to coach, org admin and the platform owner on the platform shelf; every other reader gets the named fields of researchFamilyView.ts (no account id, no notes, no provenance; #1475 Part F).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

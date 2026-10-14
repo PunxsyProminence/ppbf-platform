@@ -52,18 +52,22 @@ interface OpenRequirement {
   status: 'open' | 'resolved';
 }
 
+/* A reader the server does not count as research staff or as the shelf's
+   curator is sent only the id, the requirement, the verdict and the two dates
+   (#1475 Part F, researchFamilyView.ts). This page admits the platform owner,
+   who is such a reader off its own shelf, so the rest is optional here. */
 interface SubmissionRow {
   submission_id: string;
   research_requirement_id: number;
-  source_id: string;
-  document_id: string | null;
-  provenance: Record<string, unknown>;
-  submission_note: string;
+  source_id?: string;
+  document_id?: string | null;
+  provenance?: Record<string, unknown>;
+  submission_note?: string;
   applicability_state: ApplicabilityState;
-  reviewed_by_account_id: string | null;
+  reviewed_by_account_id?: string | null;
   reviewed_at: string | null;
-  review_note: string;
-  submitted_by_account_id: string;
+  review_note?: string;
+  submitted_by_account_id?: string;
   created_at: string;
 }
 
@@ -73,8 +77,8 @@ interface LibrarySourceOption {
   source_type: string;
 }
 
-function formatProvenance(provenance: Record<string, unknown>): string | null {
-  const entries = Object.entries(provenance).filter(([, value]) => typeof value === 'string' && value.trim());
+function formatProvenance(provenance: Record<string, unknown> | undefined): string | null {
+  const entries = Object.entries(provenance ?? {}).filter(([, value]) => typeof value === 'string' && value.trim());
   if (entries.length === 0) return null;
   return entries.map(([key, value]) => `${key.replaceAll('_', ' ')}: ${String(value)}`).join(' · ');
 }
@@ -290,7 +294,10 @@ export default function ResearchSubmissionReviewPage() {
               <div className="space-y-[var(--s3)]">
                 {submissions.map((submission) => {
                   const badge = APPLICABILITY_BADGES[submission.applicability_state];
-                  const source = sourceTitles[submission.source_id];
+                  const source = submission.source_id ? sourceTitles[submission.source_id] : undefined;
+                  const sourceLabel = source
+                    ? `${source.title} (${source.source_type})`
+                    : submission.source_id ? `Source ${submission.source_id}` : 'Unnamed source';
                   const provenanceLine = formatProvenance(submission.provenance);
                   const busy = busySubmissionId === submission.submission_id;
                   const message = submissionMessages[submission.submission_id];
@@ -303,7 +310,7 @@ export default function ResearchSubmissionReviewPage() {
                       <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                         <div>
                           <p className="t-typed text-[length:var(--t-md)] font-bold">
-                            {source ? `${source.title} (${source.source_type})` : `Source ${submission.source_id}`}
+                            {sourceLabel}
                           </p>
                           {submission.submission_note ? (
                             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">{submission.submission_note}</p>
