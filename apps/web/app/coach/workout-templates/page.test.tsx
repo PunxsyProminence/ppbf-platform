@@ -1079,10 +1079,12 @@ describe('issue to athlete', () => {
     });
   });
 
-  describe('a refusal or failure is drawn in the error ink, not the body ink', () => {
+  describe('a refusal or failure is boxed and bold, not the body ink, and not the medical-stop colour', () => {
     // `.t-body` sets its own colour in the unlayered sheet, which outranks a
     // Tailwind colour utility. So the error text must NOT wear t-body, or it
-    // renders exactly like a success.
+    // renders exactly like a success. And it must not wear --locked, which
+    // means a medical stop and nothing else (AGENT_KERNEL.md): an ordinary
+    // refusal is brass-boxed and bold, and its words say what happened.
     it.each([
       ['a refusal', () => statusResponse(409, REFUSED_BODY), REFUSED_BODY.error],
       ['a failure', () => statusResponse(404, {}), 'That athlete or template could not be found, or you can no longer reach that athlete. Nothing was issued.'],
@@ -1092,8 +1094,9 @@ describe('issue to athlete', () => {
       await issueTo();
 
       const text = await screen.findByText(sentence);
-      expect(text).toHaveClass('text-[var(--locked-ink)]', 'text-[length:var(--t-md)]');
+      expect(text).toHaveClass('border-[color:var(--brass-300)]', 'font-semibold', 'text-[length:var(--t-md)]');
       expect(text).not.toHaveClass('t-body');
+      expect(text.className).not.toMatch(/locked/);
     });
   });
 
@@ -1737,5 +1740,27 @@ describe('the age group on a template row', () => {
 
     expect(await screen.findByText(/youth and adult/)).toBeTruthy();
     expect(screen.queryByText(/YOUTH_AND_ADULT/)).toBeNull();
+  });
+});
+
+// The medical-stop colour (--locked) means a medical stop and nothing else
+// (AGENT_KERNEL.md, OD-2026-09-29-001). Nothing on this page is one.
+describe('ordinary errors on this page', () => {
+  it('a failed load is said in a plain boxed alert, not the medical-stop colour', async () => {
+    mockFetch(() => jsonResponse({ error: 'boom' }, false));
+    render(<CoachWorkoutTemplatesPage />);
+
+    const message = await screen.findByText('The workout templates could not be loaded.');
+    expect(message.className).not.toMatch(/locked/);
+    expect(message.parentElement?.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
+  });
+
+  it('no part of the page or its Make control names the medical-stop token', () => {
+    // A source check on purpose: it covers the alerts no case here renders.
+    const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+    const path = jest.requireActual('node:path') as typeof import('node:path');
+    for (const file of ['page.tsx', 'MakeSessionScript.tsx']) {
+      expect(fs.readFileSync(path.join(__dirname, file), 'utf8')).not.toMatch(/var\(--locked/);
+    }
   });
 });

@@ -1061,3 +1061,38 @@ describe('retiring a plan', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+// The medical-stop colour (--locked) means a medical stop and nothing else
+// (AGENT_KERNEL.md, OD-2026-09-29-001). Nothing on this page is one.
+describe('ordinary errors on this page', () => {
+  it('a failed load, a failed live-run check and a failed start are plain boxed alerts, not the medical-stop colour', async () => {
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        if (init?.method === 'POST') return jsonResponse({ error: 'boom' }, false);
+        return jsonResponse({ run: null });
+      }
+      return jsonResponse({ error: 'boom' }, false);
+    });
+    render(<CoachSessionScriptsPage />);
+
+    const loadError = await screen.findByText('The session scripts could not be loaded.');
+    expect(loadError.className).not.toMatch(/locked/);
+    expect(loadError.parentElement?.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
+
+    const start = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    const startError = await screen.findByRole('alert');
+    expect(startError.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
+    expect(startError.className).not.toMatch(/locked/);
+  });
+
+  it('no part of the page or its editor names the medical-stop token', () => {
+    // A source check on purpose: it covers the alerts no case here renders.
+    const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+    const path = jest.requireActual('node:path') as typeof import('node:path');
+    for (const file of ['page.tsx', 'SessionScriptEditor.tsx']) {
+      expect(fs.readFileSync(path.join(__dirname, file), 'utf8')).not.toMatch(/var\(--locked/);
+    }
+  });
+});
