@@ -8,7 +8,7 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { familyCoachName } from '@/src/server/pilot/videoFamilyView';
+import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import {
   getActiveTrainingHold,
   getTrainingHoldById,
@@ -36,7 +36,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 // videoFamilyView and achievements; guardianContactProjection.pg.test.ts runs
 // the real thing through this route.
 jest.mock('@/src/server/pilot/videoFamilyView', () => ({
-  familyCoachName: jest.fn(),
+  familyHoldPlacerName: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -63,7 +63,7 @@ const mockLift = liftTrainingHold as jest.Mock;
 const mockList = listTrainingHolds as jest.Mock;
 const mockPlace = placeTrainingHold as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
-const mockFamilyCoachName = familyCoachName as jest.Mock;
+const mockFamilyHoldPlacerName = familyHoldPlacerName as jest.Mock;
 
 const FULL_HOLD = {
   hold_id: 'hold-1',
@@ -111,7 +111,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Default for the two athlete-facing GET paths, which resolve the placer's
   // name through the family name reader.
-  mockFamilyCoachName.mockResolvedValue('Coach Neale');
+  mockFamilyHoldPlacerName.mockResolvedValue('Coach Neale');
 });
 
 describe('GET /api/pilot/training-holds', () => {
@@ -131,7 +131,7 @@ describe('GET /api/pilot/training-holds', () => {
       expires_at: null,
       placed_by_name: 'Coach Neale',
     });
-    expect(mockFamilyCoachName).toHaveBeenCalledWith('org-a', 'acct-coach-1');
+    expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'acct-coach-1', 'coach');
     // The staff-facing fields never reach the athlete.
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain('Concussion');
@@ -152,10 +152,21 @@ describe('GET /api/pilot/training-holds', () => {
     expect(mockGetActive).not.toHaveBeenCalled();
   });
 
+  test("the placer's role reaches the family name reader, so an organization admin is not called Coach", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockGetActive.mockResolvedValueOnce({ ...FULL_HOLD, placed_by_role: 'organization_admin' });
+    mockFamilyHoldPlacerName.mockResolvedValueOnce('The gym');
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'acct-coach-1', 'organization_admin');
+    expect(payload.hold.placed_by_name).toBe('The gym');
+  });
+
   test('the placer name is whatever the family name reader gives, never the account id (its floor for a deleted login included)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
     mockGetActive.mockResolvedValueOnce(FULL_HOLD);
-    mockFamilyCoachName.mockResolvedValueOnce('Your coach');
+    mockFamilyHoldPlacerName.mockResolvedValueOnce('Your coach');
 
     const response = await GET(getRequest());
     const payload = await response.json();

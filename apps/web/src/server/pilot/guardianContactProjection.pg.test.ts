@@ -106,6 +106,7 @@ let domainGet: typeof import('@/app/api/pilot/intake/domain-get/route').POST;
 let getIntakeCaseAggregate: typeof import('./intake').getIntakeCaseAggregate;
 let casesGet: typeof import('@/app/api/pilot/intake/cases/get/route').POST;
 let holdsGet: typeof import('@/app/api/pilot/training-holds/route').GET;
+let safetyGet: typeof import('@/app/api/pilot/parent/safety/route').GET;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
@@ -437,6 +438,7 @@ beforeAll(async () => {
   getIntakeCaseAggregate = (await import('./intake')).getIntakeCaseAggregate;
   casesGet = (await import('@/app/api/pilot/intake/cases/get/route')).POST;
   holdsGet = (await import('@/app/api/pilot/training-holds/route')).GET;
+  safetyGet = (await import('@/app/api/pilot/parent/safety/route')).GET;
 });
 
 afterAll(async () => {
@@ -1315,18 +1317,22 @@ describe('the staff name on a training hold, for a family reader', () => {
   const LETTERLESS = 'letterless.9911@example.test';
   const NAMED = 'named.coach@example.test';
   const HANDLE = 'mike1987';
+  const ADMIN_NAMED = 'admin.named@example.test';
+  const ADMIN_NAMELESS = 'admin.nameless.5521@example.test';
 
   beforeAll(async () => {
-    for (const [accountId, loginEmail] of [
-      [NAMELESS, null],
-      [LETTERLESS, '9911-07@example.test'],
-      [NAMED, 'jane.okafor@example.test'],
-      [HANDLE, 'mike1987@example.test'],
+    for (const [accountId, loginEmail, role] of [
+      [NAMELESS, null, 'coach'],
+      [LETTERLESS, '9911-07@example.test', 'coach'],
+      [NAMED, 'jane.okafor@example.test', 'coach'],
+      [HANDLE, 'mike1987@example.test', 'coach'],
+      [ADMIN_NAMED, 'pat.reyes@example.test', 'organization_admin'],
+      [ADMIN_NAMELESS, null, 'organization_admin'],
     ] as const) {
       await db.query(
         `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email)
-         values ($1, 'coach', $2, 'microsoft', $3)`,
-        [accountId, ORG, loginEmail],
+         values ($1, $4, $2, 'microsoft', $3)`,
+        [accountId, ORG, loginEmail, role],
       );
     }
     await db.query(
@@ -1345,11 +1351,22 @@ describe('the staff name on a training hold, for a family reader', () => {
     return { status: response.status, raw: await response.text() };
   }
 
-  async function placedBy(accountId: string) {
+  async function placedBy(accountId: string, role: 'coach' | 'organization_admin' = 'coach') {
     await db.query(
-      `update pilot.training_holds set placed_by_account_id = $3 where organization_id = $1 and hold_id = $2`,
-      [ORG, 'hold-names-1', accountId],
+      `update pilot.training_holds set placed_by_account_id = $3, placed_by_role = $4
+       where organization_id = $1 and hold_id = $2`,
+      [ORG, 'hold-names-1', accountId, role],
     );
+  }
+
+  async function readSafetyHoldName(actor: PilotPrincipal): Promise<{ name: unknown; raw: string }> {
+    mockRequirePrincipal.mockResolvedValue(actor);
+    const response = await safetyGet(new NextRequest('http://localhost/api/pilot/parent/safety'));
+    expect(response.status).toBe(200);
+    const raw = await response.text();
+    const item = (JSON.parse(raw).items as Array<{ hold: { placed_by_name: unknown } | null }>)
+      .find((i) => i.hold !== null);
+    return { name: item?.hold?.placed_by_name, raw };
   }
 
   it.each([
@@ -1385,6 +1402,37 @@ describe('the staff name on a training hold, for a family reader', () => {
       expect(JSON.parse(raw).hold.placed_by_name).toBe('Coach Jane Okafor');
       expect(raw).not.toContain(NAMED);
     }
+  });
+
+  /* Codex on #1592: a hold an ORGANIZATION ADMIN placed is not "Coach ..." to
+     the family -- that sends them to the wrong person about a safety decision.
+     Named without the title, or "The gym" (PROPOSED) when nothing is left. */
+  it('an organization admin placer is named without "Coach", on training-holds and on parent/safety', async () => {
+    await placedBy(ADMIN_NAMED, 'organization_admin');
+
+    for (const actor of [AS.athlete(), AS.guardianA(), AS.guardianB()]) {
+      const { raw } = await readHold(actor);
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('Pat Reyes');
+      expect(raw).not.toContain(ADMIN_NAMED);
+    }
+    for (const actor of [AS.guardianA(), AS.guardianB()]) {
+      const { name, raw } = await readSafetyHoldName(actor);
+      expect(name).toBe('Pat Reyes');
+      expect(raw).not.toContain(ADMIN_NAMED);
+    }
+  });
+
+  it('an organization admin placer with no usable name is "The gym", never "Your coach" and never the id', async () => {
+    await placedBy(ADMIN_NAMELESS, 'organization_admin');
+
+    for (const actor of [AS.athlete(), AS.guardianA()]) {
+      const { raw } = await readHold(actor);
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('The gym');
+      expect(raw).not.toMatch(/5521|admin\.nameless/);
+    }
+    const { name, raw } = await readSafetyHoldName(AS.guardianB());
+    expect(name).toBe('The gym');
+    expect(raw).not.toMatch(/5521|admin\.nameless/);
   });
 
   it('control: the coach reads the hold as before, the placer\'s account id included', async () => {

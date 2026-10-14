@@ -4,7 +4,7 @@ import { GET } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { familyCoachName } from '@/src/server/pilot/videoFamilyView';
+import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import { callerParentIdSet, checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold } from '@/src/server/pilot/trainingHolds';
@@ -26,7 +26,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 // The family name reader (#1558 item three); its own rules are tested where
 // it lives, and guardianContactProjection.pg.test.ts runs it for real.
 jest.mock('@/src/server/pilot/videoFamilyView', () => ({
-  familyCoachName: jest.fn(),
+  familyHoldPlacerName: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
@@ -61,7 +61,7 @@ const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockGetAthleteById = jest.mocked(getAthleteById);
 const mockGetActiveTrainingHold = jest.mocked(getActiveTrainingHold);
 const mockGetGuardianGateSummary = jest.mocked(getGuardianGateSummary);
-const mockFamilyCoachName = jest.mocked(familyCoachName);
+const mockFamilyHoldPlacerName = jest.mocked(familyHoldPlacerName);
 const mockGetAthleteWaiverStatus = jest.mocked(getAthleteWaiverStatus);
 const mockCheckGuardianMediaConsent = jest.mocked(checkGuardianMediaConsent);
 const mockCallerParentIdSet = jest.mocked(callerParentIdSet);
@@ -114,7 +114,7 @@ beforeEach(() => {
   mockGetAthleteWaiverStatus.mockResolvedValue('signed');
   mockCallerParentIdSet.mockResolvedValue(new Set(['par-1']));
   mockCheckGuardianMediaConsent.mockResolvedValue(consent([{ parentId: 'par-1', status: 'signed' }]));
-  mockFamilyCoachName.mockResolvedValue('Coach Neale');
+  mockFamilyHoldPlacerName.mockResolvedValue('Coach Neale');
 });
 
 test('returns hold and gate status for every linked athlete', async () => {
@@ -250,7 +250,7 @@ test("the placer name falls back to the existing phrase, never the account id, w
     lift_note: '',
     status: 'active',
   } as never);
-  mockFamilyCoachName.mockResolvedValueOnce('Your coach');
+  mockFamilyHoldPlacerName.mockResolvedValueOnce('Your coach');
 
   const response = await get();
   const payload = await response.json();
@@ -265,7 +265,7 @@ test("the placer name falls back to the existing phrase, never the account id, w
 test('the placer is named by the family name reader, asked about the placer in this gym', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
-  mockFamilyCoachName.mockResolvedValueOnce('Coach Mike');
+  mockFamilyHoldPlacerName.mockResolvedValueOnce('Coach Mike');
   mockGetActiveTrainingHold.mockResolvedValueOnce({
     organization_id: 'org-a',
     hold_id: 'hold-n',
@@ -287,7 +287,7 @@ test('the placer is named by the family name reader, asked about the placer in t
 
   const payload = await (await get()).json();
 
-  expect(mockFamilyCoachName).toHaveBeenCalledWith('org-a', 'mike1987@example.org');
+  expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'mike1987@example.org', 'coach');
   expect(payload.items[0].hold.placed_by_name).toBe('Coach Mike');
   expect(JSON.stringify(payload)).not.toMatch(/mike1987/i);
 });

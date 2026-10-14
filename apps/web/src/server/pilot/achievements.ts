@@ -9,7 +9,7 @@ import {
   type Program,
   type RecognitionKind,
 } from '@/src/shared/achievementPaths';
-import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { deriveCoachDisplayName, deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
 
 import { query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
@@ -254,6 +254,26 @@ export async function getCoachDisplayName(
   organizationId: string,
   accountId: string,
 ): Promise<string> {
+  return deriveCoachDisplayName(await memberLoginEmail(organizationId, accountId));
+}
+
+/**
+ * The same person named without the "Coach" title, or null when they cannot
+ * be named. For a record a non-coach can author (a training hold placed by an
+ * organization admin, #1558 item three): calling an admin "Coach" points a
+ * family at the wrong person.
+ */
+export async function getStaffDisplayName(
+  organizationId: string,
+  accountId: string,
+): Promise<string | null> {
+  return deriveStaffDisplayName(await memberLoginEmail(organizationId, accountId));
+}
+
+async function memberLoginEmail(
+  organizationId: string,
+  accountId: string,
+): Promise<string | null | undefined> {
   /* HOMED HERE, *OR* ACTIVELY A MEMBER HERE.
    *
    * pilot.accounts holds ONE row per account with ONE home organization_id, so
@@ -303,7 +323,7 @@ export async function getCoachDisplayName(
     [organizationId, accountId],
   );
 
-  return deriveCoachDisplayName(row?.login_email);
+  return row?.login_email;
 }
 
 export async function createRecognition(params: {
