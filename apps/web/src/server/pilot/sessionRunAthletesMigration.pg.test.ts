@@ -3,26 +3,31 @@
 // finding F-067): who was marked present in a session run, and a staff note on
 // an athlete in a run.
 //
-// THE MIGRATION IS TESTED WHERE IT WILL RUN: on the schema production has just
-// before it. `before` is the base schema plus every migration ahead of this
-// one in the apply workflow's own order (scripts/lib/full-schema.mjs); the
-// migration is then applied THROUGH ITS RUNNER, so the runner's readiness gate
-// is exercised too.
+// THE MIGRATION IS TESTED ON THE SCHEMA IT WILL MEET: `before` is the base
+// schema plus every migration ahead of this one in the apply workflow's own
+// order (scripts/lib/full-schema.mjs); the migration is then applied THROUGH
+// ITS RUNNER, so the runner's readiness gate is exercised too. It is the same
+// schema, not the same server: this is the embedded Postgres the suites use
+// (18), and the runner's exact-text checks have not been run on the version
+// staging and production run.
 //
 // What needs a real database to prove:
 //
 // 1. ADDITIVE. It creates one table and widens one, changes no existing row,
 //    leaves the athlete's own tables (pilot.sessions, pilot.athlete_check_ins)
 //    and the run table as they were, and re-applies as a no-op.
-// 2. The runner refuses a database where it never ran, and one where any single
-//    piece of it is missing or loosened.
+// 2. The runner refuses a database where it never ran, and, for each key of
+//    its readiness gate, at least one database where that rule is missing or
+//    looser (the cases are listed below; they are examples, not every way a
+//    rule could be loosened).
 // 3. The rules the DATABASE holds: one mark per run and athlete; a mark names a
 //    run and an athlete of the SAME gym; only a staff role marks; a mark taken
 //    back keeps its row; a note is on a session or on a run, never both and
 //    never neither; and a run note can only name an athlete marked present in
 //    THAT run.
-// 4. The attendance view does not read the new table: a mark is session
-//    detail, not attendance.
+// 4. As the schema stands with this migration applied, the attendance view
+//    does not read the new table: a mark is session detail, not attendance.
+//    (A LATER migration changing that view is not something this suite sees.)
 //
 // No module is under test here: nothing on main reads or writes these objects
 // yet. Spins up the same disposable, local-only embedded Postgres the other
@@ -390,7 +395,7 @@ describe('the migration is additive', () => {
     }
   });
 
-  test('the attendance view does not read the new table: a mark is session detail, not attendance', async () => {
+  test('with this migration applied, the attendance view does not read the new table: a mark adds no attendance', async () => {
     const client = await cloneOf(AFTER);
     try {
       const view = await client.query(`select pg_get_viewdef('pilot.attendance_reconciled'::regclass, true) as definition`);
@@ -408,10 +413,13 @@ describe('the migration is additive', () => {
 });
 
 describe('the runner', () => {
+  /** The gate's refusal, naming exactly this key (not a longer key that ends with it). */
+  const refusalNaming = (key: string) => new RegExp(`SESSION_RUN_ATHLETES_NOT_READY: (.*, )?${key}(, .*)?$`);
+
   test('refuses a database where the migration never ran, naming what is missing', async () => {
     const client = await cloneOf(BEFORE);
     try {
-      await expect(readinessOnly(client)).rejects.toThrow(/SESSION_RUN_ATHLETES_NOT_READY: .*table_ready/);
+      await expect(readinessOnly(client)).rejects.toThrow(refusalNaming('table_ready'));
     } finally {
       await client.end();
     }
@@ -426,51 +434,131 @@ describe('the runner', () => {
     }
   });
 
+  const MARKS_TABLE = 'pilot.session_run_athletes';
+  const NOTES_TABLE = 'pilot.session_staff_notes';
+
+  // At least one case for EVERY key of the gate. Each is the migrated database with one rule
+  // missing or looser and everything else right.
   test.each([
+    // columns_ready
+    ['the role column allowed to be null (a null role passes a check)', 'columns_ready',
+      `alter table ${MARKS_TABLE} alter column marked_by_role drop not null`],
+    ['who marked allowed to be null', 'columns_ready',
+      `alter table ${MARKS_TABLE} alter column marked_by_account_id drop not null`],
+    ['an extra column on the marks table', 'columns_ready',
+      `alter table ${MARKS_TABLE} add column note text`],
+    // primary_key_ready (dropping it takes the notes foreign key with it; both are named)
+    ['the one-mark-per-run-and-athlete key dropped', 'primary_key_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_pkey cascade`],
+    // organization_fk_ready
+    ['the organization foreign key dropped', 'organization_fk_ready',
+      `alter table ${MARKS_TABLE} drop constraint session_run_athletes_organization_id_fkey`],
+    // run_fk_ready
     ['the run foreign key dropped', 'run_fk_ready',
-      'alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_run_fk'],
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_run_fk`],
     ['the run foreign key without its cascade', 'run_fk_ready',
-      `alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_run_fk,
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_run_fk,
          add constraint pilot_session_run_athletes_run_fk foreign key (organization_id, run_id)
          references pilot.session_script_runs(organization_id, run_id)`],
+    ['the run foreign key present but NOT VALID', 'run_fk_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_run_fk,
+         add constraint pilot_session_run_athletes_run_fk foreign key (organization_id, run_id)
+         references pilot.session_script_runs(organization_id, run_id) on delete cascade not valid`],
+    // athlete_fk_ready
     ['the athlete foreign key dropped', 'athlete_fk_ready',
-      'alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_athlete_fk'],
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_athlete_fk`],
+    ['the athlete foreign key without its cascade', 'athlete_fk_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_athlete_fk,
+         add constraint pilot_session_run_athletes_athlete_fk foreign key (organization_id, athlete_id)
+         references pilot.athletes(organization_id, athlete_id)`],
+    // marked_by_fk_ready / removed_by_fk_ready
+    ['the who-marked foreign key dropped', 'marked_by_fk_ready',
+      `alter table ${MARKS_TABLE} drop constraint session_run_athletes_marked_by_account_id_fkey`],
+    ['the who-took-it-back foreign key dropped', 'removed_by_fk_ready',
+      `alter table ${MARKS_TABLE} drop constraint session_run_athletes_removed_by_account_id_fkey`],
+    // role_check_ready
     ['the role check widened to an athlete', 'role_check_ready',
-      `alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_role_check,
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_role_check,
          add constraint pilot_session_run_athletes_role_check
          check (marked_by_role in ('coach', 'organization_admin', 'admin', 'athlete'))`],
     ['the role check widened to the platform owner', 'role_check_ready',
-      `alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_role_check,
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_role_check,
          add constraint pilot_session_run_athletes_role_check
          check (marked_by_role in ('coach', 'organization_admin', 'admin', 'platform_owner'))`],
-    ['the role check widened to the board', 'role_check_ready',
-      `alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_role_check,
+    ['the role check holding the three names and "or true"', 'role_check_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_role_check,
          add constraint pilot_session_run_athletes_role_check
-         check (marked_by_role in ('coach', 'organization_admin', 'admin', 'board'))`],
+         check (marked_by_role in ('coach', 'organization_admin', 'admin') or true)`],
+    ['the role check turned inside out (anything BUT the three)', 'role_check_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_role_check,
+         add constraint pilot_session_run_athletes_role_check
+         check (marked_by_role not in ('coach', 'organization_admin', 'admin')) not valid`],
+    // removed_pair_ready
     ['the removed pair check dropped', 'removed_pair_ready',
-      'alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_removed_pair'],
-    ['the removed pair check emptied', 'removed_pair_ready',
-      `alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_removed_pair,
-         add constraint pilot_session_run_athletes_removed_pair check (true)`],
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_removed_pair`],
+    ['the removed pair check made one-directional', 'removed_pair_ready',
+      `alter table ${MARKS_TABLE} drop constraint pilot_session_run_athletes_removed_pair,
+         add constraint pilot_session_run_athletes_removed_pair
+         check ((removed_at is null) >= (removed_by_account_id is null))`],
+    // athlete_index_ready
+    ['the per-athlete index dropped', 'athlete_index_ready', 'drop index pilot.idx_session_run_athletes_athlete'],
+    // notes_run_id_ready
+    ['run_id on the notes table made NOT NULL', 'notes_run_id_ready',
+      `delete from ${NOTES_TABLE}; alter table ${NOTES_TABLE} alter column run_id set not null`],
+    // notes_session_id_nullable
+    ['session_id made NOT NULL again', 'notes_session_id_nullable',
+      `alter table ${NOTES_TABLE} alter column session_id set not null`],
+    // notes_one_subject_ready
     ['the one-subject check dropped', 'notes_one_subject_ready',
-      'alter table pilot.session_staff_notes drop constraint pilot_session_staff_notes_one_subject'],
+      `alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_one_subject`],
     ['the one-subject check loosened to "at least one"', 'notes_one_subject_ready',
-      `alter table pilot.session_staff_notes drop constraint pilot_session_staff_notes_one_subject,
+      `alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_one_subject,
          add constraint pilot_session_staff_notes_one_subject check (num_nonnulls(session_id, run_id) >= 1)`],
+    // notes_run_athlete_fk_ready
     ['the present-in-this-run foreign key dropped', 'notes_run_athlete_fk_ready',
-      'alter table pilot.session_staff_notes drop constraint pilot_session_staff_notes_run_athlete_fk'],
+      `alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_run_athlete_fk`],
     ['the present-in-this-run foreign key pointed at the run only', 'notes_run_athlete_fk_ready',
-      `alter table pilot.session_staff_notes drop constraint pilot_session_staff_notes_run_athlete_fk,
+      `alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_run_athlete_fk,
          add constraint pilot_session_staff_notes_run_athlete_fk foreign key (organization_id, run_id)
          references pilot.session_script_runs(organization_id, run_id) on delete cascade`],
-    ['session_id made NOT NULL again', 'notes_session_id_nullable',
-      'alter table pilot.session_staff_notes alter column session_id set not null'],
+    ['the present-in-this-run foreign key without its cascade', 'notes_run_athlete_fk_ready',
+      `alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_run_athlete_fk,
+         add constraint pilot_session_staff_notes_run_athlete_fk foreign key (organization_id, run_id, athlete_id)
+         references ${MARKS_TABLE}(organization_id, run_id, athlete_id)`],
+    ['the present-in-this-run foreign key cross-wired (run and athlete swapped on the far side)', 'notes_run_athlete_fk_ready',
+      `create unique index f067_swapped on ${MARKS_TABLE}(organization_id, athlete_id, run_id);
+       alter table ${NOTES_TABLE} drop constraint pilot_session_staff_notes_run_athlete_fk,
+         add constraint pilot_session_staff_notes_run_athlete_fk foreign key (organization_id, run_id, athlete_id)
+         references ${MARKS_TABLE}(organization_id, athlete_id, run_id) on delete cascade`],
+    // notes_run_index_ready
     ['the run notes index dropped', 'notes_run_index_ready', 'drop index pilot.idx_session_staff_notes_run'],
+    ['the run notes index restricted to live notes (no use to the cascade)', 'notes_run_index_ready',
+      `drop index pilot.idx_session_staff_notes_run;
+       create index idx_session_staff_notes_run on ${NOTES_TABLE}(organization_id, run_id, athlete_id, created_at)
+        where deleted_at is null and run_id is not null`],
   ])('refuses a database with %s, and names it (%s)', async (_label, missing, breakIt) => {
     const client = await cloneOf(AFTER);
     try {
+      // Outside the expectation: if the sabotage itself fails, the test fails here, not "passes".
       await client.query(breakIt);
-      await expect(readinessOnly(client)).rejects.toThrow(new RegExp(`SESSION_RUN_ATHLETES_NOT_READY: .*${missing}`));
+      await expect(readinessOnly(client)).rejects.toThrow(refusalNaming(missing));
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every key of the gate has a case above', async () => {
+    const client = await cloneOf(BEFORE);
+    try {
+      // On a database where nothing of it exists, the refusal names every key the gate has.
+      const error = await readinessOnly(client).then(() => null, (caught: Error) => caught);
+      const keys = (error?.message ?? '').replace('SESSION_RUN_ATHLETES_NOT_READY: ', '').split(', ').sort();
+      expect(keys).toEqual([
+        'athlete_fk_ready', 'athlete_index_ready', 'columns_ready', 'marked_by_fk_ready', 'notes_one_subject_ready',
+        'notes_run_athlete_fk_ready', 'notes_run_id_ready', 'notes_run_index_ready', 'notes_session_id_nullable',
+        'organization_fk_ready', 'primary_key_ready', 'removed_by_fk_ready', 'removed_pair_ready', 'role_check_ready',
+        'run_fk_ready', 'table_ready',
+      ]);
     } finally {
       await client.end();
     }
@@ -505,6 +593,75 @@ describe('what the database itself holds', () => {
         await mark(client, { marked_by_role: role, athlete_id: index === 0 ? ATHLETE : SECOND_ATHLETE, run_id: index === 2 ? SECOND_RUN : RUN });
       }
       expect((await client.query(`select count(*)::int as n from pilot.session_run_athletes`)).rows[0].n).toBe(3);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a mark names an account that exists, and a scripted run holds marks as a plain one does', async () => {
+    const client = await cloneOf(AFTER);
+    try {
+      await expect(mark(client, { marked_by_account_id: 'nobody@nowhere' })).rejects.toThrow(/marked_by_account_id_fkey/);
+
+      // A script needs its gym's discipline row (pilot_session_scripts_discipline_fk).
+      await client.query(
+        `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+         values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+        [ORG],
+      );
+      await client.query(
+        `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+         values ($1, 'scr-f067', 'scr-f067', 1, 'Scripted', $2)`,
+        [ORG, COACH],
+      );
+      await client.query(
+        `insert into pilot.session_script_runs
+           (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+            run_state, started_at, ended_at, paused_seconds)
+         values ($1, 'ssrun-f067-scripted', 'scr-f067', 1, $2, current_date, 'completed', now() - interval '1 hour', now(), 0)`,
+        [ORG, COACH],
+      );
+      await mark(client, { run_id: 'ssrun-f067-scripted' });
+      await note(client, { run_id: 'ssrun-f067-scripted' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('deleting a run, an athlete or a mark row takes what hangs off it and nothing else', async () => {
+    const client = await cloneOf(AFTER);
+    try {
+      const count = async (sql: string) => (await client.query(`select count(*)::int as n from ${sql}`)).rows[0].n;
+      // The app deletes none of these (a mark taken back keeps its row); the retention purge
+      // deletes athletes. This is what the foreign keys do when a row does go.
+      await mark(client);
+      await mark(client, { athlete_id: SECOND_ATHLETE });
+      await mark(client, { run_id: SECOND_RUN });
+      await note(client, { run_id: RUN });
+      await note(client, { run_id: RUN, athlete_id: SECOND_ATHLETE });
+      await note(client, { run_id: SECOND_RUN });
+      const sessionNotes = await count(`pilot.session_staff_notes where session_id is not null`);
+
+      // One mark row: its own run notes go; the other athlete's and the other run's stay.
+      await client.query(
+        `delete from pilot.session_run_athletes where organization_id = $1 and run_id = $2 and athlete_id = $3`,
+        [ORG, RUN, SECOND_ATHLETE],
+      );
+      expect(await count(`pilot.session_staff_notes where run_id is not null`)).toBe(2);
+
+      // A run: its marks and their notes go.
+      await client.query(`delete from pilot.session_script_runs where organization_id = $1 and run_id = $2`, [ORG, RUN]);
+      expect(await count(`pilot.session_run_athletes where run_id = '${RUN}'`)).toBe(0);
+      expect(await count(`pilot.session_staff_notes where run_id = '${RUN}'`)).toBe(0);
+      expect(await count(`pilot.session_run_athletes`)).toBe(1);
+
+      // An athlete (what the retention purge does): their marks and run notes go.
+      await client.query(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, ATHLETE]);
+      expect(await count(`pilot.session_run_athletes`)).toBe(0);
+      expect(await count(`pilot.session_staff_notes where run_id is not null`)).toBe(0);
+      // The athlete's session notes went with the athlete too, as they did before this migration.
+      expect(sessionNotes).toBe(1);
+      expect(await count(`pilot.session_staff_notes`)).toBe(0);
     } finally {
       await client.end();
     }

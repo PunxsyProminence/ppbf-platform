@@ -16,9 +16,12 @@
 -- 1. pilot.session_run_athletes -- one row per (run, athlete): this athlete
 --    was marked present in this run, by whom, in what role, and when.
 --
---    A MARK TAKEN BACK IS KEPT. removed_at / removed_by_account_id are set and
---    the row stays (nothing is deleted); marking the athlete again clears them.
---    The two are set and cleared together (pilot_session_run_athletes_removed_pair).
+--    A MARK TAKEN BACK KEEPS ITS ROW. removed_at / removed_by_account_id are
+--    set and the row stays (nothing is deleted); the two are set and cleared
+--    together (pilot_session_run_athletes_removed_pair). The row holds the
+--    mark's CURRENT state only: marking the athlete again clears both, so the
+--    history of a mark made, taken back and made again is the audit trail's to
+--    keep (the module writes it), not this table's.
 --
 --    SESSION DETAIL, NOT ATTENDANCE. This is who a coach saw in one session. It
 --    is not the athlete-day record: pilot.activity_log is (CT-13,
@@ -28,11 +31,12 @@
 --    (Overwatch, 2026-10-13: "a 'present' mark is session detail only and feeds
 --    NO attendance report, reconciled view, board or grant figure").
 --
---    WHO MAY WRITE AND READ is the module's business, not this file's: the
+--    WHO MAY WRITE AND READ is the module's business, not this file's, and
+--    NOTHING HERE ENFORCES IT: the rule the module is to hold is the
 --    delivering coach, while the run is live; staff of the gym read, each
 --    athlete through the usual reach check; never an athlete, a parent, the
 --    board or the platform owner (OD-2026-10-11-007, OD-2026-10-10-003 items 3
---    and 4). The table holds the facts those rules are checked against.
+--    and 4). This file only refuses a mark made in a non-staff ROLE.
 --
 -- 2. pilot.session_staff_notes -- a note may now belong to a RUN instead of to
 --    an athlete's own session:
@@ -41,9 +45,11 @@
 --      * pilot_session_staff_notes_one_subject: exactly one of the two is set;
 --      * pilot_session_staff_notes_run_athlete_fk: (organization, run, athlete)
 --        must be a row of pilot.session_run_athletes. So a run note can only
---        name an athlete who was marked present in THAT run, in the only place
---        that can hold the rule. (Whether the mark has since been taken back is
---        the module's check: the row is still there.)
+--        name an athlete who has a mark row in THAT run. That is half of the
+--        rule: whether the mark has since been taken back is the module's
+--        check (the row is still there), and the module must lock the mark row
+--        while it writes the note, because this foreign key's lock does not
+--        stop a mark being taken back at the same moment.
 --    Every existing row has a session_id and no run_id, satisfies the new
 --    check, and is not touched. One notes table keeps one policy: the author
 --    alone edits, a removed note keeps its row, staff only read.
@@ -101,7 +107,7 @@ create index if not exists idx_session_run_athletes_athlete
   on pilot.session_run_athletes(organization_id, athlete_id, marked_at desc);
 
 comment on table pilot.session_run_athletes is
-  'An athlete a coach marked present in one session run (F-067). Session detail, NOT attendance: pilot.attendance_reconciled does not read it (CT-13). A mark taken back keeps its row (removed_at, removed_by_account_id). Staff only; the delivering coach writes while the run is live.';
+  'An athlete a coach marked present in one session run (F-067). Session detail, NOT attendance: pilot.attendance_reconciled does not read it (CT-13). Holds the current state of each mark: one taken back keeps its row (removed_at, removed_by_account_id). Who may write and read it is the module''s rule, not a constraint here.';
 
 -- ---------------------------------------------------------------------------
 -- A staff note on a run.
@@ -137,10 +143,20 @@ begin
   end if;
 end $$;
 
--- The read "the notes on this run", as idx_session_staff_notes_session is for a session.
+-- One index for two readers. The read "the notes on this run" (and "on this
+-- athlete in this run"), and the foreign key above: when a mark row or a run
+-- is deleted, Postgres looks the notes up by (organization_id, run_id,
+-- athlete_id), removed ones included, so the index is not restricted to live
+-- notes as idx_session_staff_notes_session is.
 create index if not exists idx_session_staff_notes_run
-  on pilot.session_staff_notes(organization_id, run_id, created_at)
-  where deleted_at is null and run_id is not null;
+  on pilot.session_staff_notes(organization_id, run_id, athlete_id, created_at)
+  where run_id is not null;
+
+-- The session-staff-notes migration describes this table as a note on "one
+-- athlete's session" and re-stamps that on every dispatch. This file runs after
+-- it, so the description that stands is this one.
+comment on table pilot.session_staff_notes is
+  'A coach''s or organization admin''s own note on one athlete, in the author''s name: on the athlete''s own session (session_id) or on the athlete in a session run (run_id, F-067), exactly one of the two. Author-only edit and removal (deleted_at); staff-only read. The athlete''s own note stays on pilot.sessions.notes. OD-2026-10-06-025 ruling 4; overwatch ruling B 2026-10-07.';
 
 comment on column pilot.session_staff_notes.run_id is
   'Set when the note is on an athlete in a session RUN rather than on the athlete''s own session row (F-067). Exactly one of session_id and run_id is set; (organization_id, run_id, athlete_id) must be a row of pilot.session_run_athletes.';
