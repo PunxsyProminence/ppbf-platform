@@ -111,6 +111,19 @@ function isMissingTableError(error: unknown): boolean {
 }
 
 /**
+ * F-069: the escalation a hold files is a notice that the hold was placed. When
+ * the hold ends (lifted or lapsed) the notice is over, so it is marked
+ * resolved instead of reading Open on the coach's Needs You list for good.
+ * Resolving never lifts or places a hold; this only closes the notice.
+ */
+const CLOSE_HOLD_ESCALATION_SQL = `update pilot.safety_escalations
+     set status = 'resolved', resolved_by_account_id = $3,
+         resolved_at = now(), resolution_note = coalesce(resolution_note, nullif($4, '')),
+         updated_at = now()
+     where organization_id = $1 and source_type = 'training_hold' and source_id = $2
+       and status in ('open', 'acknowledged')`;
+
+/**
  * There is no cron in this codebase (see shadowRecommendations.ts's
  * listRecommendations for the same idiom on provisional recommendations),
  * so a hold whose clock ran out is swept to 'expired' the moment anything
@@ -139,14 +152,20 @@ async function sweepExpiredHolds(
      set status = 'expired', updated_at = now()
      where organization_id = $1
        and ($2::text is null or athlete_id = $2)
-       and status = 'active' and expires_at is not null and expires_at <= now()`;
+       and status = 'active' and expires_at is not null and expires_at <= now()
+     returning hold_id`;
   const params = [organizationId, athleteId ?? null];
-  if (client) {
-    await client.query(sql, params);
-  } else {
-    await query(sql, params);
+  const swept = client ? (await client.query(sql, params))?.rows : await query(sql, params);
+  // A hold that lapsed no longer needs its escalation on a coach's list.
+  for (const row of (swept ?? []) as { hold_id: string }[]) {
+    if (client) {
+      await client.query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, row.hold_id, null, 'Hold expired.']);
+    } else {
+      await query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, row.hold_id, null, 'Hold expired.']);
+    }
   }
 }
+
 
 export interface PlaceHoldInput {
   organizationId: string;
@@ -283,7 +302,10 @@ export async function liftTrainingHold(
      returning ${HOLD_COLUMNS}`,
     [organizationId, holdId, liftedByAccountId, liftNote],
   );
-  if (lifted) return lifted;
+  if (lifted) {
+    await query(CLOSE_HOLD_ESCALATION_SQL, [organizationId, holdId, liftedByAccountId, 'Hold lifted.']);
+    return lifted;
+  }
 
   const existing = await queryOne<{ status: TrainingHoldStatus; expires_at: string | null }>(
     'select status, expires_at::text from pilot.training_holds where organization_id = $1 and hold_id = $2',
