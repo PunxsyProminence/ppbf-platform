@@ -50,6 +50,14 @@ jest.mock('@/src/server/pilot/db', () => ({
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
+
+// The hold reader's expiry sweep. Since F-069 it is one statement that expires
+// the lapsed hold AND resolves the escalation that hold filed (a data-modifying
+// CTE), so the notice leaves the coach's list when the hold lapses. It touches
+// only holds whose own clock ran out and the escalation row for that hold, and
+// writes nothing about the athlete's check-in. The test still refuses any other
+// non-select.
+const SWEEP_SQL = /^with swept as \( update pilot\.training_holds set status = 'expired'/;
 const mockQueryOne = queryOne as jest.Mock;
 
 interface FakeAthlete {
@@ -267,12 +275,13 @@ beforeEach(() => {
 
   // This route has no list read. A call here means it grew one -- except the
   // hold reader's own expiry sweep (sweepExpiredHolds), the one statement the
-  // existing reader issues that is not a select. Named here, and refused for
-  // anything else on pilot.training_holds, so it cannot quietly widen.
+  // existing reader issues that is not a select (now also closing the lapsed
+  // hold's own escalation, F-069). Named here, and refused for anything else,
+  // so it cannot quietly widen.
   mockQuery.mockImplementation(async (sql: string) => {
     const text = normalize(sql);
     statements.push(text);
-    if (/^update pilot\.training_holds set status = 'expired'/.test(text)) return [];
+    if (SWEEP_SQL.test(text)) return [];
     throw new Error(`unexpected list query: ${text}`);
   });
 });
@@ -594,7 +603,7 @@ describe('read only', () => {
     const writes = statements.filter((sql) => !/^select\b/i.test(sql));
     expect(writes.length).toBeGreaterThan(0);
     for (const sql of writes) {
-      expect(sql).toMatch(/^update pilot\.training_holds set status = 'expired'/);
+      expect(sql).toMatch(SWEEP_SQL);
     }
     expect(mockQuery).toHaveBeenCalledTimes(writes.length);
   });
