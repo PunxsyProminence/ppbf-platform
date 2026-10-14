@@ -119,7 +119,7 @@ test('a picker whose only class is cancelled shows nothing chosen, not a class i
   expect(screen.queryByRole('button', { name: 'Update Attendance' })).toBeNull();
 });
 
-test('with a live class beside a cancelled one, the picker reads Choose a class until one is chosen', async () => {
+test('with a live class beside a cancelled one, the live class is chosen and its register shown', async () => {
   install('coach', [
     classRow('gone', 'Called Off', HOUR, { status: 'cancelled' }),
     classRow('on', 'Still On', 2 * HOUR),
