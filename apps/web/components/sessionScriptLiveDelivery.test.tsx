@@ -518,6 +518,42 @@ describe('finishing a session', () => {
     expect(patchCalls(fetchMock)).toEqual([{ action: 'finish', run_state: 'completed', athletes_present: 3 }]);
   });
 
+  it('a number the coach typed stays when more athletes are marked afterwards (ruling G)', async () => {
+    const settledRow = { ...liveRun(), run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' };
+    const { fetchMock } = await renderLive(liveRun(), {
+      presence: () => jsonResponse({
+        present: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-08-14T22:05:00.000Z' }],
+        gym: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }, { athlete_id: 'ath-3', full_name: 'Cy Marsh' }],
+      }),
+      patch: () => jsonResponse({ run: settledRow }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('1');
+    fireEvent.change(screen.getByLabelText('Athletes present'), { target: { value: '5' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark here Cy Marsh' }));
+    });
+    expect(screen.getByText('2 marked here.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('5');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'finish', run_state: 'completed', athletes_present: 5 }]);
+  });
+
+  it('a count stated when the session started is kept; the marks do not replace it', async () => {
+    await renderLive(liveRun({ athletes_present: 11 }), {
+      presence: () => jsonResponse({
+        present: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-08-14T22:05:00.000Z' }],
+        gym: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }],
+      }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('11');
+    expect(screen.queryByText('Filled in from the athletes marked here. Change it if your count is different.')).not.toBeInTheDocument();
+  });
+
   it('with nobody marked the box stays empty, so no empty room is recorded that nobody counted', async () => {
     const settledRow = { ...liveRun(), run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' };
     const { fetchMock } = await renderLive(liveRun(), {

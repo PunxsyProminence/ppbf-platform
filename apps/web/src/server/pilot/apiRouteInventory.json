@@ -10623,7 +10623,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "F-067. The athletes marked present in one session run, by name. Staff only (OD-2026-10-10-003 items 3 and 4); platform_owner refused like every route under runs/. Names only athletes the caller may reach: the ids are the live athletes of the caller's own organization (staffPermittedAthleteIds, for a coach and an organization admin alike: a coach's reach is the whole gym, OD-2026-10-11-007), never from the request, and listPresentAthletes filters on them in SQL with the organization on both tables. Another gym's run id returns nobody. Session detail, not attendance (CT-13).",
+    "notes": "F-067. The athletes marked present in one session run, by name, and (field `gym`) the athletes the caller may mark: the same server-computed set, id and name only, for the live screen's picker. Staff only (OD-2026-10-10-003 items 3 and 4); platform_owner refused like every route under runs/. Names only athletes the caller may reach: the ids are the live athletes of the caller's own organization (staffPermittedAthleteIds, for a coach and an organization admin alike: a coach's reach is the whole gym, OD-2026-10-11-007), never from the request, and listPresentAthletes filters on them in SQL with the organization on both tables. Another gym's run id returns nobody. Session detail, not attendance (CT-13).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

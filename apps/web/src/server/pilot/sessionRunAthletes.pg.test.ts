@@ -578,6 +578,9 @@ describe('reading who was in a session', () => {
     }
     // The other gym's coach, signed in there, gets the other gym.
     expect((await staffPermittedAthletes(other.coach)).map((athlete) => athlete.athlete_id)).toEqual([other.ada, 'athlete-only-there', other.cy]);
+    // The other gym's coach, with THIS gym named as the organization (no membership here): nobody.
+    // The session never carries such a pair today; this pins the membership check's organization.
+    expect(await staffPermittedAthletes({ ...other.coach, organizationId: gym.organizationId })).toEqual([]);
     await client.query(
       `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`,
       [gym.otherCoach.accountId, gym.organizationId],

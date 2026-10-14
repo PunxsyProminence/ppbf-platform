@@ -373,11 +373,16 @@ export default function SessionScriptLiveDelivery({
   // must never settle a session.
   const [settleOpen, setSettleOpen] = useState(false);
   const [blocksCompleted, setBlocksCompleted] = useState('');
-  const [athletesPresent, setAthletesPresent] = useState('');
-  // Once the coach types in the box, the marks no longer fill it.
-  const [athletesPresentTyped, setAthletesPresentTyped] = useState(false);
+  // A count the coach stated when starting is theirs: it is kept, and the marks do not replace it.
+  const startCount = typeof initialRun.athletes_present === 'number' ? String(initialRun.athletes_present) : '';
+  const [athletesPresent, setAthletesPresent] = useState(startCount);
+  // Once the coach types in the box (or stated a count at start), the marks no longer fill it.
+  const [athletesPresentTyped, setAthletesPresentTyped] = useState(startCount !== '');
+  // Whether the number in the box is the marks as last read; a failed read makes it unknown.
+  const [marksKnown, setMarksKnown] = useState(false);
   const presentFromMarks = useCallback(
     (count: number | null) => {
+      setMarksKnown(count !== null);
       if (athletesPresentTyped || count === null) return;
       setAthletesPresent(count > 0 ? String(count) : '');
     },
@@ -610,7 +615,13 @@ export default function SessionScriptLiveDelivery({
         </>
       )}
 
-      <SessionRunPresence runId={run.run_id} onPresentCount={presentFromMarks} />
+      {/* Keyed by run: a run swapped in by a resync starts its own list, never the old run's. */}
+      <SessionRunPresence
+        key={run.run_id}
+        runId={run.run_id}
+        onPresentCount={presentFromMarks}
+        onRunNotLive={() => void resyncAfterNotLive()}
+      />
 
       {/* Logging an intervention against THIS run. A protocol run once here is
           tied to the run in progress via session_run_id -- the same link
@@ -748,10 +759,10 @@ export default function SessionScriptLiveDelivery({
                     onChange={(event) => { setAthletesPresentTyped(true); setAthletesPresent(event.target.value); }}
                     inputMode="numeric"
                     className="input"
-                    aria-describedby={!athletesPresentTyped && athletesPresent !== '' ? 'athletes-present-from-marks' : undefined}
+                    aria-describedby={!athletesPresentTyped && marksKnown && athletesPresent !== '' ? 'athletes-present-from-marks' : undefined}
                   />
                 </label>
-                {!athletesPresentTyped && athletesPresent !== '' && (
+                {!athletesPresentTyped && marksKnown && athletesPresent !== '' && (
                   <p id="athletes-present-from-marks" className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
                     Filled in from the athletes marked here. Change it if your count is different.
                   </p>

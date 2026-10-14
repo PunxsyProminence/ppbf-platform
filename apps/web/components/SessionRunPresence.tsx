@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
@@ -22,6 +22,12 @@ import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 // HONEST ABOUT WHAT IS KNOWN. A read that failed is "could not be read", never "nobody here". A
 // tap the server refused (400, 401, 403, 404, 409, 422) says nothing was saved; a tap whose answer
 // never arrived, or came back as any other error, says it is not known and reads the list again.
+// What is shown always belongs to THIS run: a read for another run, or one sent before a tap
+// landed, is dropped rather than painted over the newer answer.
+//
+// A GYM OF HUNDREDS. Everyone marked is always listed. The rest of the gym is listed while it is
+// small; past COLLAPSE_AT athletes it is behind "Show all" or the name filter, so the controls
+// below this section (log an intervention, End session) stay within reach on a tablet.
 
 interface Athlete {
   athlete_id: string;
@@ -29,12 +35,14 @@ interface Athlete {
 }
 
 type Reading =
-  | { state: 'loading' }
-  | { state: 'unavailable' }
-  | { state: 'loaded'; gym: Athlete[]; present: Set<string> };
+  | { runId: string; state: 'unavailable' }
+  | { runId: string; state: 'loaded'; gym: Athlete[]; present: Set<string> };
 
 // The route's own refusals: when one of these comes back, the server said no and wrote nothing.
 const REFUSAL_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+
+// Up to this many athletes, the whole gym is listed; past it, only those marked here until asked.
+const COLLAPSE_AT = 30;
 
 function isAthlete(value: unknown): value is Athlete {
   if (!value || typeof value !== 'object') return false;
@@ -44,7 +52,7 @@ function isAthlete(value: unknown): value is Athlete {
 
 function refusalText(code: unknown): string {
   if (code === 'SESSION_RUN_NOT_LIVE') return 'This session has already ended, so nothing was saved.';
-  if (code === 'SESSION_RUN_NOT_FOUND') return 'Only the coach delivering this session can mark who is here. Nothing was saved.';
+  if (code === 'SESSION_RUN_NOT_FOUND') return 'This session could not be found for this account, so nothing was saved.';
   if (code === 'SESSION_RUN_ATHLETE_NOT_PERMITTED') return 'This account cannot mark that athlete here. Nothing was saved.';
   return 'The server refused, so nothing was saved.';
 }
@@ -55,16 +63,27 @@ const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(-
 export default function SessionRunPresence({
   runId,
   onPresentCount,
+  onRunNotLive,
 }: {
   runId: string;
   /** The number of athletes marked here, each time the server says so; null while it is not known. */
   onPresentCount?: (count: number | null) => void;
+  /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
+  onRunNotLive?: () => void;
 }) {
-  const [reading, setReading] = useState<Reading>({ state: 'loading' });
+  const [readingState, setReading] = useState<Reading | null>(null);
   const [filter, setFilter] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const latestRead = useRef(0);
+  const headingId = useId();
+
+  // An answer for another run is not this run's: until this run's read lands, it is loading.
+  const reading: Reading | { state: 'loading' } = useMemo(
+    () => (readingState && readingState.runId === runId ? readingState : { state: 'loading' }),
+    [readingState, runId],
+  );
 
   const read = useCallback(async () => {
     const ticket = latestRead.current + 1;
@@ -87,12 +106,13 @@ export default function SessionRunPresence({
       }
       if (latestRead.current !== ticket) return;
       setReading({
+        runId,
         state: 'loaded',
         gym: payload.gym as Athlete[],
         present: new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id)),
       });
     } catch {
-      if (latestRead.current === ticket) setReading({ state: 'unavailable' });
+      if (latestRead.current === ticket) setReading({ runId, state: 'unavailable' });
     }
   }, [runId]);
 
@@ -111,6 +131,8 @@ export default function SessionRunPresence({
       if (busy) return;
       setBusy(athlete.athlete_id);
       setMessage('');
+      // A read already on its way was asked before this tap: its answer must not paint over this one.
+      latestRead.current += 1;
       try {
         let response: Response;
         try {
@@ -131,7 +153,7 @@ export default function SessionRunPresence({
         if (response.ok) {
           // A yes from the server is a yes, whatever its body: the mark is now what was asked for.
           setReading((current) => {
-            if (current.state !== 'loaded') return current;
+            if (!current || current.runId !== runId || current.state !== 'loaded') return current;
             const next = new Set(current.present);
             if (present) next.add(athlete.athlete_id);
             else next.delete(athlete.athlete_id);
@@ -141,7 +163,9 @@ export default function SessionRunPresence({
         }
         const payload = (await response.json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
         if (REFUSAL_STATUSES.has(response.status)) {
-          setMessage(refusalText(payload?.code ?? payload?.error));
+          const code = payload?.code ?? payload?.error;
+          setMessage(refusalText(code));
+          if (code === 'SESSION_RUN_NOT_LIVE' || code === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
           return;
         }
         setMessage(`It is not known whether ${athlete.full_name} was ${present ? 'marked' : 'unmarked'} (${response.status}); the list has been read again.`);
@@ -150,23 +174,22 @@ export default function SessionRunPresence({
         setBusy(null);
       }
     },
-    [busy, read, runId],
+    [busy, onRunNotLive, read, runId],
   );
 
+  const needle = filter.trim().toLowerCase();
+  const collapsed = reading.state === 'loaded' && reading.gym.length > COLLAPSE_AT && !showAll && needle === '';
   const shown = useMemo(() => {
     if (reading.state !== 'loaded') return [];
-    const needle = filter.trim().toLowerCase();
     const matching = reading.gym.filter((athlete) => needle === '' || athlete.full_name.toLowerCase().includes(needle));
-    // Here first, then everyone else; each in the server's name order.
-    return [
-      ...matching.filter((athlete) => reading.present.has(athlete.athlete_id)),
-      ...matching.filter((athlete) => !reading.present.has(athlete.athlete_id)),
-    ];
-  }, [filter, reading]);
+    const marked = matching.filter((athlete) => reading.present.has(athlete.athlete_id));
+    // Here first, then everyone else (unless the gym is too big to list), each in the server's name order.
+    return collapsed ? marked : [...marked, ...matching.filter((athlete) => !reading.present.has(athlete.athlete_id))];
+  }, [collapsed, needle, reading]);
 
   return (
-    <div className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]" aria-label="Who is here">
-      <h3 className="t-label">Who is here</h3>
+    <section className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]" aria-labelledby={headingId}>
+      <h3 id={headingId} className="t-label">Who is here</h3>
 
       {reading.state === 'loading' ? (
         <p className="t-body mt-[var(--s2)]" role="status">Reading who is marked here…</p>
@@ -175,7 +198,7 @@ export default function SessionRunPresence({
       {reading.state === 'unavailable' ? (
         <div role="alert" className={ALERT}>
           <p>Who is marked here could not be read just now. That is not the same as nobody.</p>
-          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => void read()}>
+          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => { setMessage(''); void read(); }}>
             Check again
           </button>
         </div>
@@ -207,8 +230,17 @@ export default function SessionRunPresence({
                   autoComplete="off"
                 />
               </label>
+              {reading.gym.length > COLLAPSE_AT && needle === '' ? (
+                <button type="button" className="btn btn--ghost mt-[var(--s3)]" aria-expanded={showAll} onClick={() => setShowAll((open) => !open)}>
+                  {showAll ? 'Show only those marked here' : `Show all ${reading.gym.length} athletes`}
+                </button>
+              ) : null}
               {shown.length === 0 ? (
-                <p className="t-body mt-[var(--s3)]">No athlete’s name matches “{filter.trim()}”.</p>
+                <p className="t-body mt-[var(--s3)]">
+                  {needle !== ''
+                    ? `No athlete’s name matches “${filter.trim()}”.`
+                    : 'Find an athlete by name, or show the whole gym, to mark who is here.'}
+                </p>
               ) : (
                 <ul className="mt-[var(--s3)] space-y-[var(--s3)]" aria-label="Athletes of this gym">
                   {shown.map((athlete) => {
@@ -221,12 +253,12 @@ export default function SessionRunPresence({
                             type="button"
                             className={here ? 'btn' : 'btn btn--ghost'}
                             aria-pressed={here}
-                            aria-label={here ? `${athlete.full_name} is marked here. Tap to take the mark back.` : `Mark ${athlete.full_name} here`}
                             disabled={busy !== null}
                             aria-busy={busy === athlete.athlete_id}
                             onClick={() => void mark(athlete, !here)}
                           >
                             {busy === athlete.athlete_id ? 'Saving…' : here ? 'Here' : 'Mark here'}
+                            <span className="sr-only">{athlete.full_name}</span>
                           </button>
                         </div>
                         {here ? (
@@ -245,6 +277,6 @@ export default function SessionRunPresence({
           )}
         </>
       ) : null}
-    </div>
+    </section>
   );
 }
