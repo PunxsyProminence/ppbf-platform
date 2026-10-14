@@ -7,7 +7,8 @@
 // requirePrincipal is stubbed, the same seam the other route-driving .pg
 // suites use.
 //
-// Two gyms, two families in the first one, and the platform shelf. Spins up the same disposable,
+// Two gyms, two families and a parent with no linked child in the first one,
+// and the platform shelf. Spins up the same disposable,
 // local-only embedded Postgres the other suites use. It NEVER connects to
 // production or staging.
 
@@ -67,6 +68,7 @@ const REVIEW_NOTE = 'Reviewer note: weak design, do not rely on it for this chil
 const SUBMISSION_NOTE = 'Curator note: pulled from the Penn State library on request.';
 const CLOSING_NOTE = 'Closed after the coach meeting.';
 const INTAKE_REVIEWER_NOTE = 'Intake reviewer: family situation discussed with the welfare lead.';
+const LEGACY_REVIEWER_NOTE = 'Legacy reviewer note: safeguarding concern on file.';
 
 /* Every field a reader outside research staff receives, and no other. */
 const FAMILY_REQUIREMENT_KEYS = [
@@ -92,6 +94,10 @@ let askedByVolunteer: number;
 let intakeReviewRow: number;
 let platformShelfRow: number;
 let askedByOwner: number;
+let askedByGuardianC: number;
+let askedByStaffSeat: number;
+let legacyRowAboutAthlete: number;
+let otherGymRowWithSameAthleteId: number;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -130,9 +136,12 @@ const AS = {
   athlete: () => principal({ accountId: 'acct-athlete', role: 'athlete', athleteId: ATHLETE }),
   guardianA: () => principal({ accountId: 'acct-guardian-a', role: 'parent' }),
   guardianB: () => principal({ accountId: 'acct-guardian-b', role: 'parent' }),
+  // A parent account with a guardian record and no linked child.
+  guardianC: () => principal({ accountId: 'acct-guardian-c', role: 'parent' }),
   otherOrgCoach: () => principal({ accountId: OTHER_ORG_COACH_ID, role: 'coach', organizationId: OTHER_ORG }),
   otherOrgAdmin: () => principal({ accountId: OTHER_ORG_ADMIN_ID, role: 'organization_admin', organizationId: OTHER_ORG }),
   volunteer: () => principal({ accountId: 'acct-volunteer', role: 'volunteer' }),
+  staffSeat: () => principal({ accountId: 'acct-staff', role: 'staff' }),
   // The platform owner signed into the gym, and on its own shelf.
   ownerInGym: () => principal({ accountId: OWNER_ID, role: 'platform_owner' }),
   ownerAtHome: () => principal({ accountId: OWNER_ID, role: 'platform_owner', organizationId: OWNER_ORG }),
@@ -235,9 +244,11 @@ beforeAll(async () => {
     ['acct-athlete', 'athlete', ORG, ATHLETE],
     ['acct-guardian-a', 'parent', ORG, null],
     ['acct-guardian-b', 'parent', ORG, null],
+    ['acct-guardian-c', 'parent', ORG, null],
     [OTHER_ORG_COACH_ID, 'coach', OTHER_ORG, null],
     [OTHER_ORG_ADMIN_ID, 'organization_admin', OTHER_ORG, null],
     ['acct-volunteer', 'volunteer', ORG, null],
+    ['acct-staff', 'staff', ORG, null],
     [OWNER_ID, 'platform_owner', OWNER_ORG, null],
   ];
   for (const [accountId, role, organizationId, athleteId] of accounts) {
@@ -264,7 +275,8 @@ beforeAll(async () => {
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
      values
        ($1, 'par-a', 'acct-guardian-a', 'Guardian A', '555-0100', 'guardian.a@example.test'),
-       ($1, 'par-b', 'acct-guardian-b', 'Guardian B', '555-0200', 'guardian.b@example.test')`,
+       ($1, 'par-b', 'acct-guardian-b', 'Guardian B', '555-0200', 'guardian.b@example.test'),
+       ($1, 'par-c', 'acct-guardian-c', 'Guardian C', '555-0300', 'guardian.c@example.test')`,
     [ORG],
   );
   await db.query(
@@ -286,7 +298,8 @@ beforeAll(async () => {
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
 
   // The rows are written by the same server functions the routes call, so
-  // they carry exactly what production rows carry.
+  // every column and the resolve record are the ones those functions write.
+  // The requirement texts are the fixture's own.
   const research = await import('./shadowResearch');
   const submissions = await import('./shadowResearchSubmissions');
 
@@ -335,6 +348,33 @@ beforeAll(async () => {
   askedByGuardianB = Number(await ask('general:global:guardian-b-question', 'acct-guardian-b', 'parent'));
   gymBacklogRow = Number(await ask('general:global:coach-question', COACH_ID, 'coach'));
   askedByVolunteer = Number(await ask('general:global:volunteer-question', 'acct-volunteer', 'volunteer'));
+  askedByGuardianC = Number(await ask('general:global:guardian-c-question', 'acct-guardian-c', 'parent'));
+  askedByStaffSeat = Number(await ask('general:global:staff-seat-question', 'acct-staff', 'staff'));
+
+  // THE LEGACY WRITER SHAPE: the child is named only in metadata.athlete_id,
+  // the subject_id column is NULL (the column's backfill never read that key).
+  legacyRowAboutAthlete = Number(await research.createShadowResearchRequirement({
+    organizationId: ORG,
+    sourceEventName: 'SHADOW_INTAKE_CASE_PROMOTED',
+    sourceEntityType: 'intake_case',
+    sourceEntityId: '22222222-3333-4444-8555-666666666666',
+    researchRequirement: 'Review promoted intake case',
+    knowledgeGap: 'Confirm the promoted intake against Library evidence',
+    evidenceLabel: null,
+    sourceStatus: 'observed',
+    sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
+    sourceVerificationState: 'unknown',
+    createdByAccountId: ADMIN_ID,
+    createdByRole: 'organization_admin',
+    // A guardian record id in a key no reader names, as a later writer might add.
+    metadata: { action: 'promote', notes: LEGACY_REVIEWER_NOTE, athlete_id: ATHLETE, guardian_parent_id: 'par-b' },
+    subjectId: null,
+  }));
+
+  // ANOTHER GYM'S ROW WHOSE SUBJECT ID IS SPELLED LIKE THIS GYM'S ATHLETE.
+  // subject_id is text with no foreign key, so only the organization predicate
+  // keeps it out of Guardian A's and the athlete's list.
+  otherGymRowWithSameAthleteId = Number(await create(OTHER_ORG, 'note-collision', ATHLETE, OTHER_ORG_COACH_ID));
   platformShelfRow = Number(await ask('general:global:platform-question', OWNER_ID, 'platform_owner', PLATFORM_ORG));
   askedByOwner = Number(await ask('general:global:owner-question', OWNER_ID, 'platform_owner', OWNER_ORG));
 
@@ -457,10 +497,21 @@ describe.each([
     const { status, items } = await readRequirements(actor());
     expect(status).toBe(200);
     const ids = idsOf(items);
-    expect(ids).toEqual(expect.arrayContaining([requirementAboutAthlete, intakeReviewRow]));
+    expect(ids).toEqual(expect.arrayContaining([requirementAboutAthlete, intakeReviewRow, legacyRowAboutAthlete]));
     expect(ids).not.toContain(requirementAboutSecondAthlete);
     expect(ids).not.toContain(gymBacklogRow);
     expect(ids).not.toContain(askedByGuardianB);
+    expect(ids).not.toContain(askedByGuardianC);
+    expect(ids).not.toContain(otherGymRowWithSameAthleteId);
+  });
+
+  it('reads the legacy row that names their athlete only in metadata, in the family fields', async () => {
+    const { text, items } = await readRequirements(actor());
+    const row = rowFor(items, legacyRowAboutAthlete);
+    expect(Object.keys(row).sort()).toEqual(FAMILY_REQUIREMENT_KEYS);
+    expect(row.metadata).toEqual({ closing_note: null });
+    expect(row.research_requirement).toBe('Review promoted intake case');
+    expect(text).not.toContain(LEGACY_REVIEWER_NOTE);
   });
 
   it('receives no staff account id, no email-shaped value and no guardian record id', async () => {
@@ -518,7 +569,6 @@ describe.each([
     expect(text).not.toContain(SUBMISSION_NOTE);
     expect(text).not.toContain('Penn State');
     expect(text).not.toContain('src-1');
-    // The ladder is still computed from the stored rows.
     expect(answerState).toBe('resolved');
   });
 });
@@ -534,25 +584,74 @@ describe('a question that names no athlete (CL-A3: members see only their own)',
     expect(rowFor(items, askedByAthlete).is_mine).toBe(true);
   });
 
+  it('the parent who asked reads their own, marked as theirs, beside the rows about their child', async () => {
+    const { items } = await readRequirements(AS.guardianA());
+    expect(idsOf(items).sort((a, b) => a - b)).toEqual(
+      [requirementAboutAthlete, askedByGuardianA, intakeReviewRow, legacyRowAboutAthlete].sort((a, b) => a - b),
+    );
+    expect(rowFor(items, askedByGuardianA).is_mine).toBe(true);
+    expect(rowFor(items, requirementAboutAthlete).is_mine).toBe(false);
+  });
+
   it('a parent never reads another member question', async () => {
     const ids = idsOf((await readRequirements(AS.guardianA())).items);
     expect(ids).not.toContain(askedByGuardianB);
+    expect(ids).not.toContain(askedByGuardianC);
     expect(ids).not.toContain(askedByAthlete);
+    expect(ids).not.toContain(askedByVolunteer);
     expect(ids).not.toContain(gymBacklogRow);
     expect((await readSubmissions(AS.guardianA(), askedByGuardianB)).status).toBe(404);
   });
 
-  it('a volunteer reads only the one they asked, in the family fields', async () => {
-    const { text, items } = await readRequirements(AS.volunteer());
-    expect(idsOf(items)).toEqual([askedByVolunteer]);
+  it('a parent with no linked child reads only the question they filed', async () => {
+    const { text, items } = await readRequirements(AS.guardianC());
+    expect(idsOf(items)).toEqual([askedByGuardianC]);
     expect(Object.keys(items[0]).sort()).toEqual(FAMILY_REQUIREMENT_KEYS);
     expect(items[0].is_mine).toBe(true);
-    expect(text).not.toContain('acct-volunteer');
+    // No row about anyone's child, no other member's question, no other gym.
+    expect(text).not.toContain('training load');
+    expect(text).not.toContain('intake');
+    expect(text).not.toContain('@');
+    for (const requirementId of [requirementAboutAthlete, legacyRowAboutAthlete, askedByGuardianA, gymBacklogRow]) {
+      expect((await readSubmissions(AS.guardianC(), requirementId)).status).toBe(404);
+    }
+  });
+
+  it.each([
+    ['volunteer', AS.volunteer, () => askedByVolunteer],
+    ['staff seat', AS.staffSeat, () => askedByStaffSeat],
+  ] as const)('a %s reads only the one they asked, in the family fields', async (_label, actor, own) => {
+    const { text, items } = await readRequirements(actor());
+    expect(idsOf(items)).toEqual([own()]);
+    expect(Object.keys(items[0]).sort()).toEqual(FAMILY_REQUIREMENT_KEYS);
+    expect(items[0].is_mine).toBe(true);
+    expect(text).not.toContain('acct-');
+    expect(text).not.toContain('@');
+  });
+
+  it('the batch ladder read answers a family reader only for the rows they may read', async () => {
+    mockRequirePrincipal.mockResolvedValue(AS.guardianA());
+    const ids = [requirementAboutAthlete, requirementAboutSecondAthlete, askedByGuardianA, askedByGuardianB, gymBacklogRow];
+    const response = await submissionsGet(new NextRequest(
+      `http://localhost/api/pilot/shadow/research-submissions?research_requirement_ids=${ids.join(',')}`,
+    ));
+    const text = await response.text();
+    expect(response.status).toBe(200);
+    expect(JSON.parse(text)).toEqual({
+      answer_states: {
+        [String(requirementAboutAthlete)]: 'resolved',
+        [String(askedByGuardianA)]: 'needs_evidence',
+      },
+    });
   });
 
   it('a coach reads the whole gym backlog', async () => {
     const ids = idsOf((await readRequirements(AS.coach())).items);
-    expect(ids).toEqual(expect.arrayContaining([askedByAthlete, askedByGuardianA, askedByGuardianB, askedByVolunteer, gymBacklogRow]));
+    expect(ids).toEqual(expect.arrayContaining([
+      askedByAthlete, askedByGuardianA, askedByGuardianB, askedByGuardianC, askedByVolunteer, askedByStaffSeat,
+      gymBacklogRow, legacyRowAboutAthlete,
+    ]));
+    expect(ids).not.toContain(otherGymRowWithSameAthleteId);
   });
 });
 
@@ -594,11 +693,13 @@ describe('the platform owner', () => {
 describe('gym isolation and staff', () => {
   it("a parent cannot read another family's requirement or its submissions", async () => {
     const list = await readRequirements(AS.guardianB());
-    const ids = idsOf(list.items);
-    expect(ids).toContain(requirementAboutSecondAthlete);
-    expect(ids).not.toContain(requirementAboutAthlete);
-    expect(ids).not.toContain(intakeReviewRow);
+    // Exactly their child's row and their own question: nothing about the
+    // other family's child in either writer shape, and nothing from another gym.
+    expect(idsOf(list.items).sort((a, b) => a - b)).toEqual(
+      [requirementAboutSecondAthlete, askedByGuardianB].sort((a, b) => a - b),
+    );
     expect(list.text).not.toContain(CLOSING_NOTE);
+    expect((await readSubmissions(AS.guardianB(), legacyRowAboutAthlete)).status).toBe(404);
     expect((await readSubmissions(AS.guardianB(), requirementAboutAthlete)).status).toBe(404);
   });
 
@@ -607,8 +708,11 @@ describe('gym isolation and staff', () => {
     ['organization admin', AS.otherOrgAdmin],
   ] as const)("another gym's %s reads none of this gym's rows", async (_label, actor) => {
     const list = await readRequirements(actor());
-    expect(list.items).toHaveLength(1);
-    expect(list.items[0].created_by_account_id).toBe(OTHER_ORG_COACH_ID);
+    expect(list.items.length).toBeGreaterThan(0);
+    for (const item of list.items) {
+      expect(item.organization_id).toBe(OTHER_ORG);
+      expect(item.created_by_account_id).toBe(OTHER_ORG_COACH_ID);
+    }
     for (const staffId of STAFF_IDS) {
       expect(list.text).not.toContain(staffId);
     }

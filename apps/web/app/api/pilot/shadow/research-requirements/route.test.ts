@@ -400,20 +400,38 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
     expect(mockDeletedAmong).toHaveBeenCalledWith('org-real', ['ath-mine', 'ath-other', 'ath-other']);
   });
 
-  // THE LEGITIMATE PATH, PART 2. The parent branch's existing SQL scope is
-  // untouched: it still resolves the guardian's own linked athletes and still
-  // short-circuits to [] when there are none. This filter narrows; it never
-  // widens a parent to the org-wide rows they could not see before.
-  test('a parent still reads their own linked athlete requirements', async () => {
+  // THE LEGITIMATE PATH, PART 2. A parent is no longer narrowed in SQL: the
+  // same filter decides for them as for every other role (#1475 Part F), so
+  // they read rows about their own children, in either writer shape, and no
+  // other family's.
+  test('a parent reads their own linked athlete requirements and no other child rows', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
-    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
-    mockList.mockResolvedValue([MINE]);
 
     const response = await GET(getRequest());
 
-    expect(mockList).toHaveBeenCalledWith('org-real', { athleteIds: ['ath-mine'] });
+    expect(mockList).toHaveBeenCalledWith('org-real');
+    expect(mockGuardianAthleteIds).not.toHaveBeenCalled();
+    expect(mockAccessibleAthleteIds).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'parent', accountId: 'acct-1' }),
+      ['ath-mine', 'ath-other', 'ath-other'],
+    );
     expect(await idsFrom(response)).toEqual([11]);
+  });
+
+  // CL-A3 (Jason 2026-10-06): "members and athletes see only their own".
+  test('a parent with no linked athletes reads only the question they filed about nobody', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
+    mockList.mockResolvedValue([
+      ...ALL_ROWS,
+      requirement({ research_requirement_id: 20, created_by_account_id: 'acct-1', created_by_role: 'parent' }),
+      requirement({ research_requirement_id: 21, created_by_account_id: 'acct-other-parent', created_by_role: 'parent' }),
+    ]);
+
+    const response = await GET(getRequest());
+
+    expect(await idsFrom(response)).toEqual([20]);
   });
 
   // #1475 Part F: which rows is the scope above; what a row carries depends
@@ -441,7 +459,6 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
     beforeEach(() => {
       mockList.mockResolvedValue([FILED_BY_STAFF]);
-      mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
       mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
     });
 
@@ -488,14 +505,13 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
     });
   });
 
-  test('a parent with no linked athletes reads nothing and never queries', async () => {
+  test('a parent with no linked athletes who filed nothing reads nothing', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
-    mockGuardianAthleteIds.mockResolvedValue([]);
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
 
     const response = await GET(getRequest());
 
     expect(await idsFrom(response)).toEqual([]);
-    expect(mockList).not.toHaveBeenCalled();
   });
 });
 

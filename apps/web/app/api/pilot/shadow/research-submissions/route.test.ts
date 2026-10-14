@@ -472,8 +472,6 @@ describe('the subject gate on a requirement that names a child', () => {
   });
 });
 
-// Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
-// the curator got a 500 for what is their own malformed request.
 // #1475 Part F: what a submission row carries depends on the reader. Proved
 // against real rows in researchFamilyProjection.pg.test.ts.
 describe('what a submission row carries', () => {
@@ -558,6 +556,8 @@ describe('what a submission row carries', () => {
   });
 });
 
+// Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
+// the curator got a 500 for what is their own malformed request.
 describe('malformed JSON bodies (CL-C24)', () => {
   const raw = (method: 'POST' | 'PATCH', body: string) =>
     new NextRequest('http://localhost/api/pilot/shadow/research-submissions', {

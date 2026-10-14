@@ -14,14 +14,16 @@
 // Rulings (docs/current/OWNER_DECISIONS.md):
 // - OD-2026-10-06-025 "Show coach name, hide ID": no account id in a family
 //   answer. No name is added: no family screen shows an author on these rows.
-// - OD-2026-10-06-003 (CL-A3) "Staff only": coaches and organization admins
-//   read the gym's research rows whole; everyone else gets this view.
+// - OD-2026-10-06-003 (CL-A3) "Staff only": that ruling's staff, coaches and
+//   organization admins (isResearchStaff), are who receive the stored rows.
 // - OD-2026-10-06-010 "Family reads, staff closes": on a question about their
 //   child the family keeps the text a coach wrote: the requirement, the gap
 //   and the closing note, all of which /research shows them.
-// - OD-2026-10-11-008 "strip them": text no family screen shows or uses is
-//   not sent: the intake reviewer's notes, submission_note, review_note,
-//   provenance and evidence_label.
+// - OD-2026-10-11-008 "strip them" names workout-template and session-script
+//   fields, not these. Its principle (staff text no family screen shows or
+//   uses is not sent) is applied here on Overwatch's reading, 2026-10-13, to
+//   the intake reviewer's notes, submission_note, review_note, provenance and
+//   evidence_label: working notes about a case or a source, not the question.
 //
 // WHO SEES WHICH ROW is not decided here. The routes scope first
 // (scopeToReachableSubjects, mayReadRequirement); this shapes what is left.
@@ -73,8 +75,9 @@ export function readsWholeResearchRows(role: PilotRole | null | undefined): bool
 
 /**
  * The platform shelf's submissions go whole to the platform owner, who
- * curates that shelf and reviews on it (OD-2026-10-02-015 D3). The role is
- * asked again here rather than taken from the shelf check upstream.
+ * works that shelf and reviews on it (OD-2026-10-02-013 answer 1B;
+ * OD-2026-10-02-015 D2). The role is asked again here rather than taken from
+ * the shelf check upstream.
  */
 export function readsWholeResearchSubmissions(
   role: PilotRole | null | undefined,
