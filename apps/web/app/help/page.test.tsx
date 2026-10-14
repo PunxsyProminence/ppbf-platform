@@ -54,7 +54,7 @@ test('asks the server guard for a signed-in member, admitting every role', async
   expect(mockRequirePageRole).toHaveBeenCalledTimes(1);
   const [allowed] = mockRequirePageRole.mock.calls[0] as [PilotRole[]];
   expect([...allowed].sort()).toEqual([...EVERY_ROLE].sort());
-  expect(screen.getByText('PPBF MASTER TUTORIAL')).toBeTruthy();
+  expect(screen.getByText('Help for coaches and staff')).toBeTruthy();
 });
 
 test('a visitor who is not signed in is redirected and gets none of the help content', async () => {
@@ -79,4 +79,55 @@ test.each([
   const { container } = render(await HelpCenterPage());
   const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
   expect(hrefs.includes('/admin')).toBe(offered);
+});
+
+// F-064: a reader is shown their own role's help, chosen on the server.
+const OTHER_ROLE_MARKERS = [
+  'Coach Workspace Guide', 'Board Workspace Guide', 'Admin Hub Guide', 'Revenue & Funding Guide',
+  'Development Lab Guide', 'Tester Guide', 'Coach Guide', 'Board Guide', 'Admin Guide', 'Revenue Guide', 'Parent Guide', 'Athlete Guide', 'FRONT-END SAFE', 'MIXED LIVE + PLACEHOLDER',
+  'owner decision on 2026-08-26', 'PPBF MASTER TUTORIAL',
+];
+
+test.each(['parent', 'athlete', 'coach', 'staff', 'board', 'volunteer'] as const)(
+  'a %s is sent none of the builder tutorial, in the HTML itself',
+  async (role) => {
+    mockRequirePageRole.mockResolvedValue({ role });
+    const { container } = render(await HelpCenterPage());
+    for (const marker of OTHER_ROLE_MARKERS) {
+      expect(container.innerHTML).not.toContain(marker);
+    }
+  },
+);
+
+test('a parent reads parent help in plain words and no other roles sections', async () => {
+  mockRequirePageRole.mockResolvedValue({ role: 'parent' });
+  render(await HelpCenterPage());
+  expect(screen.getByText('Help for parents and guardians')).toBeTruthy();
+  expect(screen.getByText('Messages')).toBeTruthy();
+  expect(screen.queryByText(/Clearance|Revenue|Treasurer/)).toBeNull();
+});
+
+test('a role the page does not know gets the smallest set', async () => {
+  mockRequirePageRole.mockResolvedValue({ role: 'something_new' });
+  const { container } = render(await HelpCenterPage());
+  expect(screen.getByText('Help')).toBeTruthy();
+  expect(container.querySelectorAll('article').length).toBe(1);
+});
+
+test.each(['organization_admin', 'admin'] as const)('a gym administrator (%s) sees administrator sections but not the tester or dev-lab guides', async (role) => {
+  mockRequirePageRole.mockResolvedValue({ role });
+  const { container } = render(await HelpCenterPage());
+  expect(container.innerHTML).toContain('Admin Guide');
+  expect(container.innerHTML).not.toContain('Tester Guide');
+  expect(container.innerHTML).not.toContain('Development Lab Guide');
+  expect(container.innerHTML).not.toContain('Board Workspace Guide');
+  expect(container.innerHTML).not.toContain('FRONT-END SAFE');
+  expect(container.innerHTML).not.toContain('owner decision on 2026-08-26');
+});
+
+test('the platform owner keeps the whole tutorial', async () => {
+  mockRequirePageRole.mockResolvedValue({ role: 'platform_owner' });
+  const { container } = render(await HelpCenterPage());
+  expect(container.innerHTML).toContain('Tester Guide');
+  expect(container.innerHTML).toContain('Development Lab Guide');
 });
