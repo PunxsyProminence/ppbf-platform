@@ -4830,6 +4830,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/behavior-notes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behavior-notes",
+    "gate": "requirePrincipal + requireRole(READERS) + assertActorCanAccessAthlete (when athlete_id is named)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists the behaviour notes (note_type behavior_standard) a coach saved from the Decision Loop, for coaches and the organization admin of the gym only (OD-2026-10-10-003 items 3 and 4); no athlete or parent read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/behavior-standards/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/behavior-standards",
