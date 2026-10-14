@@ -585,6 +585,18 @@ describe('reading who was in a session', () => {
     expect((await listPresentAthletes(other.organizationId, [otherRunId], everyone)).map((row) => row.athlete_id)).toEqual([other.ada]);
   });
 
+  test('an athlete deleted after the permitted ids were computed is not named, even with a standing mark', async () => {
+    const gym = await newGym('read-deleted');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    await mark(gym.coach, runId, gym.ben);
+    // The ids as a reader computed them a moment ago, then Ben is deleted before the presence read.
+    const permitted = await staffPermittedAthleteIds(gym.coach);
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.ben]);
+
+    expect((await listPresentAthletes(gym.organizationId, [runId], permitted)).map((row) => row.athlete_id)).toEqual([gym.ada]);
+  });
+
   test("a coach's permitted athletes are the gym's live athletes; an admin's the same; every other role none", async () => {
     const gym = await newGym('permitted');
     const other = await newGym('permitted-other');
@@ -715,6 +727,42 @@ describe('a staff note on an athlete in a session run', () => {
     const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = $1`, [gym.organizationId]);
     expect(rows[0].n).toBe(0);
     expect(await auditOf(gym, 'session_staff_note')).toEqual([]);
+  });
+
+  test('changing a run note waits for the writer\'s membership being ended at that moment, and is refused (text kept, no audit)', async () => {
+    const gym = await newGym('note-edit-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    const written = await createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'As written.' });
+    const auditBefore = (await auditOf(gym, 'session_staff_note')).length;
+
+    const outcome = await writeWhileHeldOpen(
+      `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`,
+      [gym.otherCoach.accountId, gym.organizationId],
+      () => updateOwnSessionStaffNote({ actor: gym.otherCoach, noteId: written.note_id, note: 'Rewritten as access ended.' }),
+    );
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select note, deleted_at is not null as removed from pilot.session_staff_notes where note_id = $1`, [written.note_id]);
+    expect(rows).toEqual([{ note: 'As written.', removed: false }]);
+    expect(await auditOf(gym, 'session_staff_note')).toHaveLength(auditBefore);
+  });
+
+  test('removing a run note waits for the athlete being deleted at that moment, and is refused (note kept, no audit)', async () => {
+    const gym = await newGym('note-remove-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    const written = await createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Kept.' });
+    const auditBefore = (await auditOf(gym, 'session_staff_note')).length;
+
+    const outcome = await writeWhileAthleteIsBeingDeleted(gym.organizationId, gym.ada, () =>
+      removeOwnSessionStaffNote({ actor: gym.otherCoach, noteId: written.note_id }));
+
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select deleted_at is not null as removed from pilot.session_staff_notes where note_id = $1`, [written.note_id]);
+    expect(rows).toEqual([{ removed: false }]);
+    expect(await auditOf(gym, 'session_staff_note')).toHaveLength(auditBefore);
   });
 
   test('a note waits for a mark being taken back at that moment, and is then refused', async () => {

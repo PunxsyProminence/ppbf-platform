@@ -180,6 +180,7 @@ export async function listPresentAthletes(
        from pilot.session_run_athletes m
        join pilot.athletes a
          on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
+        and a.deleted_at is null -- a live athlete at the moment of this read, not only when the ids were computed
       where m.organization_id = $1
         and m.run_id = any($2::text[])
         and m.athlete_id = any($3::text[])

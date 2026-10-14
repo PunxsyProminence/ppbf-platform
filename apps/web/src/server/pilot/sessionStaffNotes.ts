@@ -203,6 +203,22 @@ export async function lockLiveAthlete(client: PoolClient, organizationId: string
 }
 
 /**
+ * Inside a note write's transaction, before the note row is touched: the
+ * writer must STILL be staff here (lockStaffMembership) and the athlete STILL
+ * live (lockLiveAthlete), both share-locked until commit, in that order.
+ * Returns the role held now. One refusal for either, as before the transaction.
+ * Every note write (add on a run, change, remove) goes through this, so access
+ * ended between the first check and the write stops the write.
+ */
+async function relockNoteWriter(client: PoolClient, actor: ActorIdentity, athleteId: string): Promise<StaffNoteRole> {
+  const lockedRole = await lockStaffMembership(client, actor);
+  if (!lockedRole || !(await lockLiveAthlete(client, actor.organizationId, athleteId))) {
+    throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
+  }
+  return lockedRole;
+}
+
+/**
  * Throws ForbiddenError unless this actor is staff here AND reaches this
  * athlete. One message for every refusal, so the response cannot be used to
  * learn whether an athlete id exists or whose it is.
@@ -305,10 +321,7 @@ export async function createRunStaffNote(input: {
   return withTransaction(async (client) => {
     // The writer must still be staff here, and the athlete still live, now: not only when the
     // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
-    const lockedRole = await lockStaffMembership(client, input.actor);
-    if (!lockedRole || !(await lockLiveAthlete(client, input.actor.organizationId, input.athleteId))) {
-      throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
-    }
+    const lockedRole = await relockNoteWriter(client, input.actor, input.athleteId);
     // FOR UPDATE on the mark row: taking a mark back updates that row, so it
     // queues behind this lock and this note is written against a mark that
     // stands. The table's own foreign key would not stop it (it proves the row
@@ -447,9 +460,11 @@ export async function updateOwnSessionStaffNote(input: {
   const shapeError = staffNoteShapeError(input.note);
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
-  const { row: before, role } = await ownLiveNote(input.actor, input.noteId);
+  const { row: before } = await ownLiveNote(input.actor, input.noteId);
 
   return withTransaction(async (client) => {
+    // Access is checked again inside the write, as for adding a note.
+    const role = await relockNoteWriter(client, input.actor, before.athlete_id);
     const updated = await client.query<SessionStaffNoteRow>(
       `update pilot.session_staff_notes
           set note = $4, updated_at = clock_timestamp()
@@ -480,9 +495,11 @@ export async function removeOwnSessionStaffNote(input: {
   actor: ActorIdentity;
   noteId: string;
 }): Promise<void> {
-  const { row: before, role } = await ownLiveNote(input.actor, input.noteId);
+  const { row: before } = await ownLiveNote(input.actor, input.noteId);
 
   await withTransaction(async (client) => {
+    // Access is checked again inside the write, as for adding a note.
+    const role = await relockNoteWriter(client, input.actor, before.athlete_id);
     const removed = await client.query(
       `update pilot.session_staff_notes
           set deleted_at = clock_timestamp(), updated_at = clock_timestamp()
