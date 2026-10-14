@@ -989,3 +989,17 @@ describe('the office writes its own record in its own hand', () => {
     expect(screen.getByText('PPBF ADMIN DESK').className).toContain('t-eyebrow');
   });
 });
+
+describe('the capability console lists no features that are not built (F-019, #1444)', () => {
+  it('has no planned stamps, wiring list or "not built yet" sentences', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+
+    await renderPage(fetchMock);
+    await screen.findByLabelText('Athlete');
+
+    expect(document.body.textContent).not.toMatch(/Not Yet Implemented|Still Owe You|not built yet|what still needs wiring/i);
+    expect(screen.queryByRole('button', { name: /what still needs wiring/i })).toBeNull();
+    // The working links stay.
+    expect(screen.getByRole('link', { name: 'Edit Public Page Surface' })).toBeTruthy();
+  });
+});

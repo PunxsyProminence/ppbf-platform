@@ -6,9 +6,6 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
-// capabilityStatus constant available for future use in capability assessment framework
-  // const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
-
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -18,13 +15,6 @@ interface ShadowObservationItem {
   review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
   created_at: string;
 }
-
-/* NOT BUILT YET, said the way the athlete workspace already says it. The
-   pipe-delimited status enum this used to render -- 'PLANNED | ML REQUIRED |
-   NOT YET AUTOMATED' -- is a release-board cell, on a child's screen, telling
-   them nothing they can act on. The fact is unchanged: nothing scores their
-   technique automatically, and nothing here pretends to. */
-const ML_PLACEHOLDER = 'Not built. Nothing here watches your film and scores it.';
 
 /* The family shape of a video row (videoFamilyView.ts): metadata only. The
    coach's notes arrive with the playback response below, after the server's
@@ -259,18 +249,6 @@ export default function AthleteVideoAnalysisPage() {
             {!observationError && observations.length === 0 ? (
               <p className="t-muted">Nothing noticed yet.</p>
             ) : null}
-          </div>
-        </section>
-
-        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-label m-0">Automatic scoring — not built</h2>
-          <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
-            {['Skill Recognition', 'Technique Scoring'].map((p) => (
-              <div key={p} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-300)]">{p}</p>
-                <p className="t-label mt-[var(--s2)]">{ML_PLACEHOLDER}</p>
-              </div>
-            ))}
           </div>
         </section>
 

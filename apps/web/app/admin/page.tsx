@@ -268,14 +268,6 @@ const TRACK_CAPABILITY_PREVIEW: Record<TrackID, string[]> = {
   spec_ops: ['CAP-002'],
 };
 
-const INTEGRATION_STUBS = [
-  'Capability CRUD adapter (replace localStorage repository)',
-  'Role-assignment policy adapter (replace local matrix toggles)',
-  'Audit telemetry dispatcher (replace local event trace list)',
-  'Authoritative timestamp source (replace local Date values)',
-  'Track-capability mapping service (replace preview map)',
-];
-
 // `missing` is what the board says when a cut comes back empty. The button
 // labels read as commands ("Show Only Draft") and do not fit inside a sentence,
 // so each option carries the noun phrase its own empty state needs.
@@ -931,7 +923,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
 
   const [eventTraces, setEventTraces] = useState<EventTrace[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
-  const [showIntegrationStubs, setShowIntegrationStubs] = useState(false);
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
   const [capabilityStoreError, setCapabilityStoreError] = useState('');
   const [gymCapabilityStoreError, setGymCapabilityStoreError] = useState('');
@@ -1586,22 +1577,12 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
               >
                 MISSION CONTROL
               </Link>
-              {/*
-                The "(PLANNED)" that used to be baked into this label is real
-                signalling and it stays -- automated monitoring behind this
-                surface is not built. What changes is how it speaks: a
-                parenthetical in a button label is a Jira ticket, and Law 7
-                says governance speaks in ink. The claim moves onto the design
-                system's stamp, the same treatment CoachWorkspace uses for
-                every surface that is drawn but not yet wired.
-              */}
               {canOpenComplianceCenter && (
                 <Link
                   href="/admin/compliance-center"
                   className="btn btn--ghost"
                 >
                   COMPLIANCE CENTER
-                  <span className="stamp stamp--brass stamp--flat">Planned</span>
                 </Link>
               )}
               <button
@@ -1766,23 +1747,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
               </article>
 
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-                {/*
-                  This panel used to lead with
-                  "PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED",
-                  which is a build-status field pasted onto a live console. The
-                  honesty behind it is the point and it stays -- these screens
-                  open but nothing behind them runs on its own yet -- it just
-                  says so the way the rest of the platform says it: one brass
-                  stamp, then a sentence a person can act on.
-                */}
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Surfaces We Still Owe You</h2>
-                <p className="mt-[var(--s3)]">
-                  <span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span>
-                </p>
-                <p className="t-body mt-[var(--s3)]">
-                  These screens open, but nothing behind them runs on its own yet — no automation, no
-                  backend. The buttons below take you to each surface exactly as it stands today.
-                </p>
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Public Page and Login</h2>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <Link href="/public" className="btn btn--ghost">
                     Edit Public Page Surface
@@ -1796,9 +1761,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                     </Link>
                   )}
                 </div>
-                <p className="t-body mt-[var(--s3)]">
-                  Automated publication workflow: not built yet. There is no screen for it.
-                </p>
               </article>
 
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
@@ -2974,34 +2936,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
               </div>
             )}
 
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setShowIntegrationStubs((current) => !current)}
-                className="btn btn--ghost"
-              >
-                {showIntegrationStubs ? 'Hide' : 'Show'} what still needs wiring
-              </button>
-
-              {showIntegrationStubs && (
-                <div className="panel-settle mt-3 border border-[var(--hide-700)] bg-[var(--hide-900)]">
-                  {/*
-                    This list is the platform being honest about its own seams,
-                    which is the convention and stays. What it lacked was any
-                    mark saying so -- it read as a feature list. The brass stamp
-                    is how the rest of the app says "drawn, not wired".
-                  */}
-                  <p className="border-b border-[var(--hide-700)] px-4 py-3">
-                    <span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span>
-                  </p>
-                  {INTEGRATION_STUBS.map((item) => (
-                    <div key={item} className="border-b border-[var(--hide-700)] px-4 py-3 text-[length:var(--t-sm)] text-[var(--bone-400)] last:border-b-0">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </section>
         </div>
       </main>

@@ -193,3 +193,14 @@ describe("coach notes on the athlete's film screen", () => {
     expect(screen.queryByText('Coach notes')).toBeNull();
   });
 });
+
+describe('the athlete film screen lists no features that are not built (F-019, #1444)', () => {
+  test('no "not built" or planned scoring panels', async () => {
+    global.fetch = mockFetch() as unknown as typeof fetch;
+
+    render(<AthleteVideoAnalysisPage />);
+
+    await screen.findByRole('button', { name: 'Play' });
+    expect(document.body.textContent).not.toMatch(/not built|planned|Skill Recognition|Technique Scoring|Automatic scoring/i);
+  });
+});
