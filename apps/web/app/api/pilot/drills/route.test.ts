@@ -442,6 +442,29 @@ describe('the cue rule on an edit', () => {
     expect(mockUpdateDrill).not.toHaveBeenCalled();
   });
 
+  test('restoring a retired cue-less technique drill succeeds when the same request brings its cues (F-068)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: false, cues: [] }));
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true, cues: ['Chin down'] }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true, cues: ['Chin down'] }));
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateDrill).toHaveBeenCalledWith(expect.objectContaining({
+      drillId: 'drill-1', active: true, cues: ['Chin down'],
+    }));
+  });
+
+  test('restoring with only blank cues is still refused (the rule stays)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: false, cues: [] }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true, cues: ['   '] }));
+
+    expect(res.status).toBe(409);
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
   test('restoring a retired conditioning drill with no cue is allowed (the exemption)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockGetDrill.mockResolvedValueOnce(drill({ active: false, cues: [], category: 'conditioning' }));
