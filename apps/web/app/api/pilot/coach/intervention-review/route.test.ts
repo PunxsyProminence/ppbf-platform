@@ -430,3 +430,30 @@ test("GET carries each execution's earlier verdicts as review_history", async ()
   expect(payload.items[0].review_history).toEqual(history);
   expect(jest.mocked(listRetiredReviews)).toHaveBeenCalledWith(expect.any(String), payload.items[0].execution.execution_id);
 });
+
+// Lane L2, item two: the verdict the screen was showing reaches the module --
+// an id, or null for "none shown". A caller that sends nothing passes
+// undefined, which the module reads as "replace whatever stands".
+test('the verdict the screen showed is handed to the review: an id, null for none, undefined when not sent', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockReview.mockResolvedValue({ review_id: 'rev-2', supersedes_review_id: null });
+  const expectedOf = () => mockReview.mock.calls.at(-1)?.[0].expectedReviewId;
+
+  expect((await POST(bodyRequest('POST', { ...REVIEW_BODY, expected_review_id: ' rev-1 ' }))).status).toBe(200);
+  expect(expectedOf()).toBe('rev-1');
+
+  expect((await POST(bodyRequest('POST', { ...REVIEW_BODY, expected_review_id: null }))).status).toBe(200);
+  expect(expectedOf()).toBeNull();
+
+  expect((await POST(bodyRequest('POST', REVIEW_BODY))).status).toBe(200);
+  expect(expectedOf()).toBeUndefined();
+
+  // Sent, but neither an id nor null: refused, and no review is attempted.
+  const callsBefore = mockReview.mock.calls.length;
+  for (const notAnId of ['', '  ', 7, {}, false]) {
+    const refused = await POST(bodyRequest('POST', { ...REVIEW_BODY, expected_review_id: notAnId }));
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/expected_review_id/);
+  }
+  expect(mockReview.mock.calls.length).toBe(callsBefore);
+});

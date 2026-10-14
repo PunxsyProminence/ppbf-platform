@@ -276,3 +276,42 @@ test('an unknown action is a 400', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   expect((await PATCH(bodyRequest('PATCH', { action: 'delete', execution_id: 'ex-1' }))).status).toBe(400);
 });
+
+// Lane L2, item two: the version the screen was showing reaches the module on
+// all three writes; a caller that sends none passes none.
+test('the version the screen loaded is handed to record, close and correct; without one, none is passed', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  const item = { execution_id: 'ex-1', lineage_id: 'ex-1', version: 1, adherence: 'unknown' };
+  mockRecord.mockResolvedValue(item);
+  mockClose.mockResolvedValue(item);
+  mockCorrect.mockResolvedValue(item);
+
+  const bodies = {
+    record: { action: 'record', execution_id: 'ex-1', notes: 'n' },
+    close: { action: 'close', execution_id: 'ex-1', outcome: 'completed' },
+    correct: { action: 'correct', execution_id: 'ex-1', correction_reason: 'miscounted rounds' },
+  };
+  const mocks = { record: mockRecord, close: mockClose, correct: mockCorrect };
+
+  for (const action of ['record', 'close', 'correct'] as const) {
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: ' 7001 ' }))).status).toBe(200);
+    expect(mocks[action]).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRowVersion: '7001' }));
+
+    expect((await PATCH(bodyRequest('PATCH', bodies[action]))).status).toBe(200);
+    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+
+    // null is "none named", the same as leaving it out.
+    expect((await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: null }))).status).toBe(200);
+    expect(mocks[action].mock.calls.at(-1)?.[0].expectedRowVersion).toBeUndefined();
+
+    // Sent, but not a version: refused, and the write is not attempted. Letting
+    // it through as "none named" would save over the record unguarded.
+    const callsBefore = mocks[action].mock.calls.length;
+    for (const notAVersion of [7001, '  ', '', {}, true]) {
+      const refused = await PATCH(bodyRequest('PATCH', { ...bodies[action], expected_row_version: notAVersion }));
+      expect(refused.status).toBe(400);
+      expect(((await refused.json()) as { error: string }).error).toMatch(/expected_row_version/);
+    }
+    expect(mocks[action].mock.calls.length).toBe(callsBefore);
+  }
+});

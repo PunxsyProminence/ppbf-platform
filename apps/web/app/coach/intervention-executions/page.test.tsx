@@ -585,3 +585,159 @@ describe('correcting a record', () => {
     });
   });
 });
+
+// Lane L2, item two: a form is filled from the record as it was when the form
+// opened, and sends every field it shows. The version it was filled from goes
+// back with the save, so the server can refuse a record that has changed since
+// instead of letting the form overwrite it.
+describe('the version the form was opened on travels with the save', () => {
+  const VERSIONED: ExecutionFixture & { row_version: string } = { ...EXECUTION, row_version: '7001' };
+
+  test('a correction sends the version of the record the form was filled from', async () => {
+    const server = correctionServer(VERSIONED);
+    await openCorrection(server);
+    await change('What was wrong? (required)', 'logged three rounds; it was four');
+    await press('Record correction');
+
+    expect(server.patches).toHaveLength(1);
+    expect(server.patches[0]).toMatchObject({
+      action: 'correct', execution_id: 'ex-1', expected_row_version: '7001',
+    });
+  });
+
+  test('a close-out sends it too', async () => {
+    const server = correctionServer(VERSIONED);
+    global.fetch = server.fetchMock;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close out' }));
+    });
+    await press('Record close-out');
+
+    expect(server.patches).toHaveLength(1);
+    expect(server.patches[0]).toMatchObject({
+      action: 'close', execution_id: 'ex-1', expected_row_version: '7001',
+    });
+  });
+
+  test('it is the version the form was OPENED on, not the one a later refresh of the list brought', async () => {
+    // The list is read again while the form is open (here: this coach starts
+    // another execution), and by then someone has added to the record. The
+    // form still holds the old facts, so it must still name the old version.
+    const patches: Array<Record<string, unknown>> = [];
+    let listed = VERSIONED;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/intervention-executions') && init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (url.includes('/intervention-executions') && init?.method === 'POST') {
+        listed = { ...VERSIONED, notes: 'added by another coach', row_version: '7002' };
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (url.includes('/intervention-executions')) {
+        return { ok: true, json: async () => ({ items: [listed] }) } as Response;
+      }
+      if (url.includes('/intervention-protocols')) {
+        return {
+          ok: true,
+          json: async () => ({ items: [{ protocol_id: 'p-1', title: 'Round-3 endurance block', version: 1, athlete_id: null, status: 'active' }] }),
+        } as Response;
+      }
+      if (url.includes('/athletes/list')) {
+        return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
+    });
+    await change('Athlete', 'ath-1');
+    await change('Protocol (its intended exposure becomes the frozen plan)', 'p-1');
+    await press('Start execution');
+    await change('What was wrong? (required)', 'logged three rounds; it was four');
+    await press('Record correction');
+
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({ action: 'correct', expected_row_version: '7001' });
+  });
+
+  test('a saved correction hands the screen the new version, so the next save from it names that one', async () => {
+    const patches: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        const item = {
+          ...VERSIONED, execution_id: 'ex-2', version: 2, row_version: '7005',
+          actual_exposure: body.actual_exposure, correction_reason: body.correction_reason,
+        };
+        return { ok: true, json: async () => ({ item }) } as Response;
+      }
+      if (url.includes('/intervention-executions')) {
+        // The reload after the save never comes back.
+        if (patches.length > 0) return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items: [VERSIONED] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
+    });
+    await change('What was wrong? (required)', 'wrong round count');
+    await press('Record correction');
+    await press('Correct record');
+    await change('What was wrong? (required)', 'and the adherence');
+    await press('Record correction');
+
+    expect(patches.map((body) => [body.execution_id, body.expected_row_version]))
+      .toEqual([['ex-1', '7001'], ['ex-2', '7005']]);
+  });
+
+  test('switching straight from one record\'s form to another\'s sends the second record\'s version, not the first\'s', async () => {
+    const other = { ...VERSIONED, execution_id: 'ex-other', athlete_name: 'Sam R.', row_version: '8002' };
+    const patches: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') patches.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      const items = String(input).includes('/intervention-executions') ? [VERSIONED, other] : [];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Correct record' }))[0]);
+    });
+    // The first record's form is open, so the one Correct record button left is the second record's.
+    await press('Correct record');
+    await change('What was wrong? (required)', 'twenty minutes, not thirty');
+    await press('Record correction');
+
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({ execution_id: 'ex-other', expected_row_version: '8002' });
+  });
+
+  test('the server\'s refusal of a changed record is shown as it was sent, and the form is left open', async () => {
+    const sentence = 'This record has changed since you opened it, so this was not saved. '
+      + 'Reload to see it as it stands now, then make your change again.';
+    const server = correctionServer(VERSIONED, { status: 409, error: sentence });
+    await openCorrection(server);
+    await change('What was wrong? (required)', 'logged three rounds; it was four');
+    await press('Record correction');
+
+    expect(screen.getByRole('alert').textContent).toContain(sentence);
+    expect(screen.getByRole('button', { name: 'Record correction' })).toBeTruthy();
+    expect(valueOf('What was wrong? (required)')).toBe('logged three rounds; it was four');
+  });
+});

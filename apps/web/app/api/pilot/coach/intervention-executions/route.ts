@@ -150,12 +150,26 @@ export async function PATCH(request: NextRequest) {
     if (!target) return hiddenNotFound();
     await assertActorCanAccessAthlete(principal, target.athlete_id);
 
+    // The version of the record the screen was showing when its form opened
+    // (the row_version the GET handed out). Sent, a save against any other
+    // version is refused with the reason; a caller that sends none is judged
+    // on the record's state alone. One that is sent but is not a version is
+    // refused rather than dropped: dropping it would let the save through
+    // unguarded, which is the opposite of what the caller asked for.
+    const sentVersion = body.expected_row_version;
+    if (sentVersion !== undefined && sentVersion !== null
+      && (typeof sentVersion !== 'string' || !sentVersion.trim())) {
+      throw new ValidationError('expected_row_version must be the row_version the record was loaded with.');
+    }
+    const expectedRowVersion = optionalString(sentVersion)?.trim();
+
     // One act per call: record facts, close, or correct.
     if (body.action === 'record') {
       const item = await recordExecutionFacts({
         ...parseFacts(body),
         organizationId: principal.organizationId,
         executionId,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, { action: 'record' });
@@ -178,6 +192,7 @@ export async function PATCH(request: NextRequest) {
         outcome,
         stopChangeReason,
         actualEnd: optionalString(body.actual_end) || null,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, { action: 'close', outcome, adherence: item.adherence });
@@ -202,6 +217,7 @@ export async function PATCH(request: NextRequest) {
         stopChangeReason: optionalString(body.stop_change_reason),
         actualEnd: optionalString(body.actual_end) || null,
         correctedByAccountId: principal.accountId,
+        expectedRowVersion,
       });
       if (!item) return hiddenNotFound();
       await auditUpdate(principal, item.execution_id, {

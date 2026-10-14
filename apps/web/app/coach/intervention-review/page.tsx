@@ -115,6 +115,10 @@ export default function InterventionReviewPage() {
   const [linkingFor, setLinkingFor] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState({ evidence_role: 'baseline', source_kind: 'training_attempt', source_id: '', note: '' });
   const [reviewingFor, setReviewingFor] = useState<string | null>(null);
+  // The verdict this screen was showing when the review form opened (null:
+  // none). It goes back with the review, so a verdict someone else recorded
+  // since is not replaced unseen.
+  const [reviewingOver, setReviewingOver] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({
     performance_result: 'unknown', performance_notes: '',
     hypothesis_result: 'unresolved', learning_signal: 'unresolved', learning_notes: '',
@@ -148,8 +152,16 @@ export default function InterventionReviewPage() {
     return () => controller.abort();
   }, [reload]);
 
-  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, failure: string) => {
+  /** Resolves null when the write failed; otherwise what the server answered,
+   * and whether the list was read again after it. */
+  const send = async (
+    method: 'POST' | 'PATCH',
+    body: Record<string, unknown>,
+    failure: string,
+  ): Promise<{ item?: unknown; refreshed: boolean } | null> => {
     setBusy(true);
+    let answered: { item?: unknown } = {};
+    let refreshed = false;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-review`, {
         method,
@@ -161,23 +173,25 @@ export default function InterventionReviewPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `${failure} (${response.status})`);
       }
+      answered = (await response.json().catch(() => ({}))) as { item?: unknown };
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : failure);
       setBusy(false);
-      return false;
+      return null;
     }
     // The write is done from here on. A reload that fails is reported as
     // that, and the caller still closes its form: leaving it open would
     // invite sending the same write again.
     try {
       await reload();
+      refreshed = true;
       setErrorMessage(null);
     } catch {
       setErrorMessage(NOT_REFRESHED);
     } finally {
       setBusy(false);
     }
-    return true;
+    return { ...answered, refreshed };
   };
 
   const post = (body: Record<string, unknown>, failure: string) => send('POST', body, failure);
@@ -231,9 +245,21 @@ export default function InterventionReviewPage() {
     const ok = await post({
       action: 'review_outcome',
       execution_id: executionId,
+      expected_review_id: reviewingOver,
       ...reviewForm,
     }, 'Unable to record the review.');
     if (ok) {
+      // When the reload did not come back, the verdict is shown as the server
+      // recorded it, so it stands on screen and the next review from this
+      // screen names it. When the reload did come back the list is the truth
+      // and is left alone: it may already hold a verdict someone else recorded
+      // after this one, and this answer is the older of the two.
+      const recorded = ok.item as OutcomeReview | undefined;
+      if (!ok.refreshed && recorded?.review_id) {
+        setItems((current) => current.map((entry) => (entry.execution.execution_id === executionId
+          ? { ...entry, review: recorded }
+          : entry)));
+      }
       setReviewingFor(null);
       setReviewForm({
         performance_result: 'unknown', performance_notes: '',
@@ -418,7 +444,11 @@ export default function InterventionReviewPage() {
                       )}
                       {(execution.status === 'completed' || execution.status === 'stopped') && reviewingFor !== execution.execution_id && (
                         <button type="button" className="btn btn--ghost" disabled={busy}
-                          onClick={() => { setReviewingFor(execution.execution_id); setLinkingFor(null); }}>
+                          onClick={() => {
+                            setReviewingFor(execution.execution_id);
+                            setReviewingOver(review?.review_id ?? null);
+                            setLinkingFor(null);
+                          }}>
                           {review ? 'Re-review (supersedes)' : 'Review outcome'}
                         </button>
                       )}

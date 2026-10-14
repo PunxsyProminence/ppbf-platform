@@ -33,6 +33,8 @@ interface ExecutionRow {
   notes: string;
   correction_reason: string;
   created_at: string;
+  /** The record's version as the server read it; handed back with a save. */
+  row_version?: string;
 }
 
 interface AthleteOption {
@@ -191,15 +193,22 @@ export default function InterventionExecutionsPage() {
     ));
   };
 
+  // The version of the record the open form was filled from. It goes back
+  // with the save, so a record someone else has closed or added to since is
+  // refused instead of being overwritten by what this form still holds.
+  const [factsVersion, setFactsVersion] = useState<string | undefined>(undefined);
+
   const startClosing = (row: ExecutionRow) => {
     setCorrecting(null);
     setClosing(row.execution_id);
+    setFactsVersion(row.row_version);
     loadFacts(row);
   };
 
   const startCorrecting = (row: ExecutionRow) => {
     setClosing(null);
     setCorrecting(row.execution_id);
+    setFactsVersion(row.row_version);
     loadFacts(row);
   };
 
@@ -243,6 +252,7 @@ export default function InterventionExecutionsPage() {
         body: JSON.stringify({
           action: 'correct',
           execution_id: row.execution_id,
+          expected_row_version: factsVersion,
           correction_reason: reason,
           ...(closed ? { outcome: closeForm.outcome } : {}),
           adherence: closeForm.adherence,
@@ -285,6 +295,7 @@ export default function InterventionExecutionsPage() {
         body: JSON.stringify({
           action: 'close',
           execution_id: executionId,
+          expected_row_version: factsVersion,
           outcome: closeForm.outcome,
           adherence: closeForm.adherence,
           trained_context: closeForm.trained_context,

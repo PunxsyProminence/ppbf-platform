@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
+import { recordChanged } from './interventionRecordChanged';
 
 // Intervention protocols (register module 026 slice 1) -- what PPBF
 // INTENDED to do: the hypothesis, the designed intervention, the intended
@@ -149,15 +150,6 @@ export async function listProtocols(organizationId: string): Promise<Interventio
   );
 }
 
-/**
- * Raised inside reviseProtocol's transaction when the head it read is no
- * longer active by the time the stamp runs -- a concurrent revision or
- * retirement won. Private to this module: it exists only to roll the
- * transaction back and is converted straight back to the null this function
- * has always returned for "not revisable".
- */
-class ProtocolRevisionLostRace extends Error {}
-
 /** Supersession: a NEW version row in the lineage; the old head is stamped,
  * never edited. The new row re-states full content -- a version is a
  * complete statement of intent, not a diff. */
@@ -167,7 +159,7 @@ export async function reviseProtocol(input: ProtocolContentInput & {
   revisedByAccountId: string;
 }): Promise<InterventionProtocolRow | null> {
   const current = await getProtocol(input.organizationId, input.protocolId);
-  if (!current || current.status !== 'active') return null;
+  if (!current) return null;
 
   const newId = randomUUID();
 
@@ -197,8 +189,9 @@ export async function reviseProtocol(input: ProtocolContentInput & {
   // The transaction makes the three all-or-nothing, and `and status =
   // 'active'` on the stamp is the compare-and-set that decides the race
   // inside the database: the loser matches zero rows, rolls back its own
-  // insert, and returns null, which the route already renders as a hidden
-  // not-found.
+  // insert, and is told the record changed. The same stamp answers a protocol
+  // that was revised or retired before this request began (a screen that has
+  // not reloaded), with the same sentence, where it used to read "Not found".
   return withTransaction(async (client) => {
     await client.query(
       `insert into pilot.intervention_protocols
@@ -235,9 +228,7 @@ export async function reviseProtocol(input: ProtocolContentInput & {
        returning protocol_id`,
       [input.organizationId, input.protocolId],
     );
-    if (stamped.rows.length === 0) {
-      throw new ProtocolRevisionLostRace();
-    }
+    if (stamped.rows.length === 0) throw recordChanged();
 
     await client.query(
       `update pilot.intervention_protocols set status = 'active', updated_at = now()
@@ -251,12 +242,6 @@ export async function reviseProtocol(input: ProtocolContentInput & {
       [input.organizationId, newId],
     );
     return revised.rows[0] ?? null;
-  }).catch((error) => {
-    // The lost race is a caller-visible "someone else revised it first",
-    // which this function has always reported as null (hidden not-found at
-    // the route). Every other error is a real fault and still propagates.
-    if (error instanceof ProtocolRevisionLostRace) return null;
-    throw error;
   });
 }
 
@@ -269,6 +254,11 @@ export async function retireProtocol(organizationId: string, protocolId: string)
      returning protocol_id`,
     [organizationId, protocolId],
   );
-  if (!row) return null;
+  if (!row) {
+    // Not there at all is the null the route hides; there but already revised
+    // or retired is "the record changed".
+    if (!(await getProtocol(organizationId, protocolId))) return null;
+    throw recordChanged();
+  }
   return getProtocol(organizationId, protocolId);
 }

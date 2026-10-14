@@ -19,6 +19,11 @@
 // the first is let go. What is asserted is what the database holds afterwards
 // and what each coach was told.
 //
+// The last block is the slower version of the same loss (lane L2, item two):
+// a screen that was loaded before someone else's save, and sends its own save
+// minutes later. No lock can see that; the screen hands back the version it
+// loaded, and the server refuses a save against any other.
+//
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
 
@@ -119,6 +124,7 @@ const ATTEMPT_ID = 'att-races-1';
 
 const EXECUTIONS = '/api/pilot/coach/intervention-executions';
 const REVIEW = '/api/pilot/coach/intervention-review';
+const PROTOCOLS = '/api/pilot/coach/intervention-protocols';
 
 // The statements a request can be held before. Each exists in the module
 // before and after the fix, so the same interleaving is driven on both.
@@ -133,6 +139,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let executionsRoute: typeof import('@/app/api/pilot/coach/intervention-executions/route');
 let reviewRoute: typeof import('@/app/api/pilot/coach/intervention-review/route');
+let protocolsRoute: typeof import('@/app/api/pilot/coach/intervention-protocols/route');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -241,6 +248,7 @@ beforeAll(async () => {
 
   executionsRoute = await import('@/app/api/pilot/coach/intervention-executions/route');
   reviewRoute = await import('@/app/api/pilot/coach/intervention-review/route');
+  protocolsRoute = await import('@/app/api/pilot/coach/intervention-protocols/route');
 });
 
 afterAll(async () => {
@@ -291,7 +299,10 @@ async function startExecution(): Promise<string> {
 
 // The close-out and the correction are sent in the shape their screens send
 // them: every field the form shows, the optional ones as empty strings.
-const closeOut = (executionId: string) => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+type Extra = Record<string, unknown>;
+
+const closeOut = (executionId: string, extra: Extra = {}) => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+  ...extra,
   action: 'close',
   execution_id: executionId,
   outcome: 'completed',
@@ -303,11 +314,12 @@ const closeOut = (executionId: string) => answer(executionsRoute.PATCH(send('PAT
   actual_exposure: { rounds: 5 },
 })));
 
-const recordFacts = (executionId: string, notes: string) => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
-  action: 'record', execution_id: executionId, notes,
+const recordFacts = (executionId: string, notes: string, extra: Extra = {}) => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+  ...extra, action: 'record', execution_id: executionId, notes,
 })));
 
-const correct = (executionId: string, outcome?: 'completed') => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+const correct = (executionId: string, outcome?: 'completed', extra: Extra = {}) => answer(executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+  ...extra,
   action: 'correct',
   execution_id: executionId,
   correction_reason: 'the context was controlled, not unknown',
@@ -328,7 +340,8 @@ const linkEvidence = (executionId: string) => answer(reviewRoute.POST(send('POST
   source_id: ATTEMPT_ID,
 })));
 
-const reviewOutcome = (executionId: string, performanceNotes: string) => answer(reviewRoute.POST(send('POST', REVIEW, {
+const reviewOutcome = (executionId: string, performanceNotes: string, extra: Extra = {}) => answer(reviewRoute.POST(send('POST', REVIEW, {
+  ...extra,
   action: 'review_outcome',
   execution_id: executionId,
   performance_result: 'improved',
@@ -887,5 +900,179 @@ describe('evidence or a review written while the same execution is being correct
     expect(screen.review?.review_id).toBe(winner.body.item?.review_id);
     expect(await rowCount('intervention_outcome_reviews', executionId)).toBe(1);
     expect(await auditCountAbout('intervention_outcome_review', executionId)).toBe(1);
+  });
+});
+
+/* ------------------------------------- a screen loaded before someone's save -- */
+
+describe('a save from a screen that was loaded before someone else changed the record', () => {
+  /** The version of the record a screen loading The Work right now would hold. */
+  async function versionOnScreen(executionId: string): Promise<string> {
+    const response = await executionsRoute.GET(new NextRequest(`http://localhost${EXECUTIONS}`));
+    expect(response.status).toBe(200);
+    const { items } = (await response.json()) as { items: Array<{ execution_id: string; row_version: string }> };
+    const version = items.find((item) => item.execution_id === executionId)?.row_version;
+    expect(typeof version).toBe('string');
+    return version as string;
+  }
+
+  test('a correction of work someone has closed out since is told, and the close-out stands', async () => {
+    const executionId = await startExecution();
+    const loaded = await versionOnScreen(executionId);
+    expect((await closeOut(executionId)).status).toBe(200);
+    const before = await everyColumnOf(executionId);
+
+    const auditBefore = await auditCount('intervention_execution', [executionId]);
+
+    // Minutes later, from the screen that still shows work in progress.
+    expectToldToReload(await correct(executionId, undefined, { expected_row_version: loaded }));
+
+    expect(await everyColumnOf(executionId)).toBe(before);
+    expect(await auditCount('intervention_execution', [executionId])).toBe(auditBefore);
+    expect((await versionsOf(executionId)).map((row) => [row.version, row.status, row.notes]))
+      .toEqual([[1, 'completed', 'closing note']]);
+    // Reloaded, the same correction goes through against the record as it stands.
+    const reloaded = await versionOnScreen(executionId);
+    expect(reloaded).not.toBe(loaded);
+    expect((await correct(executionId, 'completed', { expected_row_version: reloaded })).status).toBe(200);
+  });
+
+  test('a close-out or a recorded fact from a screen loaded before a fact was added is told, and the fact stands', async () => {
+    const executionId = await startExecution();
+    const loaded = await versionOnScreen(executionId);
+    const added = await recordFacts(executionId, 'added by another coach');
+    expect(added.status).toBe(200);
+    const before = await everyColumnOf(executionId);
+
+    const auditBefore = await auditCount('intervention_execution', [executionId]);
+
+    expectToldToReload(await closeOut(executionId, { expected_row_version: loaded }));
+    expectToldToReload(await recordFacts(executionId, 'from the stale screen', { expected_row_version: loaded }));
+
+    expect(await everyColumnOf(executionId)).toBe(before);
+    expect(await auditCount('intervention_execution', [executionId])).toBe(auditBefore);
+    // The save's own answer carries the new version, and a save holding it goes through.
+    expect(added.body.item?.row_version).toBe(await versionOnScreen(executionId));
+    expect((await closeOut(executionId, { expected_row_version: added.body.item?.row_version })).status).toBe(200);
+  });
+
+  test('a save naming a version, sent while another save of the record is still being written, waits and is told', async () => {
+    const executionId = await startExecution();
+    const loaded = await versionOnScreen(executionId);
+
+    // Someone else's save has run and not yet committed, held open on a second
+    // connection, so the two saves below meet the row while it is locked.
+    const inFlight = new Client({ connectionString: connectionStringFor(DB_NAME) });
+    await inFlight.connect();
+    try {
+      await inFlight.query('begin');
+      await inFlight.query(
+        `update pilot.intervention_executions set notes = 'saved first', updated_at = now()
+         where organization_id = $1 and execution_id = $2`,
+        [ORG_ID, executionId],
+      );
+      const recording = recordFacts(executionId, 'from the stale screen', { expected_row_version: loaded });
+      const closing = closeOut(executionId, { expected_row_version: loaded });
+      expect(await finishedOrWaitingOnALock(recording)).toBe('waiting on a lock');
+      expect(await finishedOrWaitingOnALock(closing)).toBe('waiting on a lock');
+      await inFlight.query('commit');
+
+      expectToldToReload(await recording);
+      expectToldToReload(await closing);
+    } finally {
+      await inFlight.end();
+    }
+    expect((await versionsOf(executionId)).map((row) => [row.version, row.status, row.notes]))
+      .toEqual([[1, 'in_progress', 'saved first']]);
+  });
+
+  test('evidence linked since does not make the screen out of date: the record itself has not changed', async () => {
+    const executionId = await startExecution();
+    expect((await closeOut(executionId)).status).toBe(200);
+    const loaded = await versionOnScreen(executionId);
+    expect((await linkEvidence(executionId)).status).toBe(200);
+
+    expect(await versionOnScreen(executionId)).toBe(loaded);
+    expect((await correct(executionId, 'completed', { expected_row_version: loaded })).status).toBe(200);
+    expect((await onTheReviewScreen(executionId)).evidence).toHaveLength(1);
+  });
+
+  test('a caller that names no version is judged on the record as it stands, as before', async () => {
+    const executionId = await startExecution();
+    expect((await recordFacts(executionId, 'a first note')).status).toBe(200);
+
+    expect((await recordFacts(executionId, 'a second note')).status).toBe(200);
+    expect((await correct(executionId)).status).toBe(200);
+  });
+
+  test('a review from a screen that showed no verdict does not replace one recorded since', async () => {
+    const executionId = await startExecution();
+    expect((await closeOut(executionId)).status).toBe(200);
+    const standing = await reviewOutcome(executionId, 'recorded by another coach', { expected_review_id: null });
+    expect(standing.status).toBe(200);
+
+    // The second reviewer's screen still says "Not yet reviewed".
+    expectToldToReload(await reviewOutcome(executionId, 'from the stale screen', { expected_review_id: null }));
+
+    const screen = await onTheReviewScreen(executionId);
+    expect(screen.review).toMatchObject({ review_id: standing.body.item?.review_id, performance_notes: 'recorded by another coach' });
+    expect(await rowCount('intervention_outcome_reviews', executionId)).toBe(1);
+    expect(await auditCountAbout('intervention_outcome_review', executionId)).toBe(1);
+  });
+
+  test('a re-review names the verdict it replaces: the one on screen goes through, an older one is told', async () => {
+    const executionId = await startExecution();
+    expect((await closeOut(executionId)).status).toBe(200);
+    const first = await reviewOutcome(executionId, 'the first verdict');
+    const second = await reviewOutcome(executionId, 'the second verdict', { expected_review_id: first.body.item?.review_id });
+    expect(second.status).toBe(200);
+
+    // A screen still showing the first verdict.
+    expectToldToReload(await reviewOutcome(executionId, 'from the stale screen', { expected_review_id: first.body.item?.review_id }));
+
+    expect((await onTheReviewScreen(executionId)).review?.review_id).toBe(second.body.item?.review_id);
+    expect(await rowCount('intervention_outcome_reviews', executionId)).toBe(2);
+    // A caller with no screen replaces whatever stands, as before.
+    expect((await reviewOutcome(executionId, 'no version named')).status).toBe(200);
+  });
+
+  test('a protocol revised or retired since the screen loaded it: the coach is told, not "Not found"', async () => {
+    const content = {
+      title: 'Guard recovery', target_problem: 'guard drops when tired', hypothesis: 'it is a habit, not fatigue',
+      intervention_description: 'cue on every exit', expected_outcome: 'guard returns unprompted',
+      intended_task_context: '', contradicting_evidence: '', alternative_explanations: '', evaluation_plan: '',
+      intended_exposure: { rounds: 4 },
+    };
+    const patchProtocol = (body: Extra) => answer(protocolsRoute.PATCH(send('PATCH', PROTOCOLS, body)));
+    const filed = await answer(protocolsRoute.POST(send('POST', PROTOCOLS, { ...content, athlete_id: ATHLETE_ID })));
+    expect(filed.status).toBe(200);
+    const firstId = filed.body.item?.protocol_id;
+
+    const revised = await patchProtocol({ action: 'revise', protocol_id: firstId, ...content, hypothesis: 'it is fatigue' });
+    expect(revised.status).toBe(200);
+    // From a screen still showing version 1.
+    expectToldToReload(await patchProtocol({ action: 'revise', protocol_id: firstId, ...content, hypothesis: 'a stale revision' }));
+    expectToldToReload(await patchProtocol({ action: 'retire', protocol_id: firstId }));
+
+    expect((await patchProtocol({ action: 'retire', protocol_id: revised.body.item?.protocol_id })).status).toBe(200);
+    expectToldToReload(await patchProtocol({ action: 'retire', protocol_id: revised.body.item?.protocol_id }));
+    expectToldToReload(await patchProtocol({ action: 'revise', protocol_id: revised.body.item?.protocol_id, ...content }));
+
+    const versions = await db.query(
+      `select version, status, hypothesis from pilot.intervention_protocols
+       where organization_id = $1 and lineage_id = $2 order by version`,
+      [ORG_ID, firstId],
+    );
+    expect(versions.rows).toEqual([
+      { version: 1, status: 'superseded', hypothesis: 'it is a habit, not fatigue' },
+      { version: 2, status: 'retired', hypothesis: 'it is fatigue' },
+    ]);
+    // Filed, revised, retired: three audit rows, and none for the four refusals.
+    expect(await auditCount('intervention_protocol', [String(firstId), String(revised.body.item?.protocol_id)])).toBe(3);
+    // A protocol that does not exist is still Not found.
+    expect(await patchProtocol({ action: 'retire', protocol_id: 'no-such-protocol' }))
+      .toEqual({ status: 404, body: { error: 'Not found' } });
+    expect(await patchProtocol({ action: 'revise', protocol_id: 'no-such-protocol', ...content }))
+      .toEqual({ status: 404, body: { error: 'Not found' } });
   });
 });

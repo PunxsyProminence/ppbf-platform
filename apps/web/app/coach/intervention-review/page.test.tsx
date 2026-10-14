@@ -436,3 +436,155 @@ test('an empty history list shows no "Earlier verdicts" section and reads as not
   expect(await screen.findByText('Not yet reviewed by a human.')).toBeTruthy();
   expect(screen.queryByText('Earlier verdicts')).toBeNull();
 });
+
+// Lane L2, item two: a review replaces whatever verdict stands. The verdict
+// the screen was showing goes with it, so the server can refuse to replace one
+// this reviewer has not seen.
+describe('the verdict the screen was showing travels with the review', () => {
+  async function reviewFrom(item: typeof CHAIN_ITEM | Record<string, unknown>, button: string) {
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/intervention-review') && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [item] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: button }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), {
+        target: { value: 'held output through the third' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+    return posts;
+  }
+
+  test('a first review says the screen showed no verdict', async () => {
+    const posts = await reviewFrom(CHAIN_ITEM, 'Review outcome');
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ action: 'review_outcome', execution_id: 'ex-1' });
+    expect(posts[0]).toHaveProperty('expected_review_id', null);
+  });
+
+  test('a re-review names the verdict it replaces', async () => {
+    const reviewed = {
+      ...CHAIN_ITEM,
+      review: {
+        review_id: 'rev-7', performance_result: 'improved', performance_notes: 'held through four rounds',
+        hypothesis_result: 'supported', learning_signal: 'prior_belief_strengthened', learning_notes: '',
+        reviewed_at: '2026-10-10T15:00:00.000Z',
+      },
+    };
+    const posts = await reviewFrom(reviewed, 'Re-review (supersedes)');
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toHaveProperty('expected_review_id', 'rev-7');
+  });
+});
+
+describe('a review that is saved while the reload after it fails', () => {
+  test('the verdict the server recorded is shown, and the next review from this screen names it', async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posts.push(body);
+        // The route answers a review with the row it wrote.
+        const item = {
+          review_id: `rev-${posts.length}`, performance_result: body.performance_result,
+          performance_notes: body.performance_notes, hypothesis_result: body.hypothesis_result,
+          learning_signal: body.learning_signal, learning_notes: '', reviewed_at: '2026-10-13T15:00:00.000Z',
+        };
+        return { ok: true, json: async () => ({ item }) } as Response;
+      }
+      if (posts.length > 0) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    const review = async (button: string, notes: string) => {
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: button }));
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), { target: { value: notes } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+      });
+    };
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+
+    await review('Review outcome', 'held output through the third');
+
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).not.toContain('Failed');
+    expect(screen.queryByText('Not yet reviewed by a human.')).toBeNull();
+    expect(screen.getByText(/held output through the third/)).toBeTruthy();
+
+    // The same coach reviews again without reloading: it names their own verdict.
+    await review('Re-review (supersedes)', 'and the fourth');
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toHaveProperty('expected_review_id', null);
+    expect(posts[1]).toHaveProperty('expected_review_id', 'rev-1');
+  });
+});
+
+describe('a review that is saved, and the reload after it brings a newer verdict from someone else', () => {
+  test('the list read after the save is what is shown, not the older answer to this save', async () => {
+    // Codex P2 on #1568: another reviewer's verdict lands after this POST and
+    // before the reload. The reload has it; the POST's answer must not put the
+    // older one back over it.
+    const posts: Array<Record<string, unknown>> = [];
+    const verdict = (reviewId: string, notes: string) => ({
+      review_id: reviewId, performance_result: 'improved', performance_notes: notes,
+      hypothesis_result: 'supported', learning_signal: 'prior_belief_strengthened', learning_notes: '',
+      reviewed_at: '2026-10-13T15:00:00.000Z',
+    });
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ item: verdict('rev-mine', 'my verdict') }) } as Response;
+      }
+      const review = posts.length > 0 ? verdict('rev-theirs', 'recorded by another coach just after') : null;
+      return { ok: true, json: async () => ({ items: [{ ...CHAIN_ITEM, review }] }) } as Response;
+    }) as unknown as typeof fetch;
+    const review = async (button: string, notes: string) => {
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: button }));
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('What happened, in your words (required)'), { target: { value: notes } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+      });
+    };
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+
+    await review('Review outcome', 'my verdict');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/recorded by another coach just after/)).toBeTruthy();
+    expect(screen.queryByText(/my verdict/)).toBeNull();
+
+    // A re-review from this refreshed screen names the verdict it shows.
+    await review('Re-review (supersedes)', 'having read theirs');
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toHaveProperty('expected_review_id', 'rev-theirs');
+  });
+});

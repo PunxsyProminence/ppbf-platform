@@ -460,6 +460,11 @@ export async function reviewOutcome(input: {
   learningSignal: LearningSignal;
   learningNotes?: string;
   reviewedByAccountId: string;
+  /** The verdict the reviewer's screen was showing: its review_id, or null
+   * for "not yet reviewed". Given, the review is recorded only if that is
+   * still the standing verdict, so it never replaces one the reviewer has not
+   * seen. Left out (a caller with no screen), it replaces whatever stands. */
+  expectedReviewId?: string | null;
 }): Promise<OutcomeReviewRow | null> {
   const execution = await getExecution(input.organizationId, input.executionId);
   if (!execution) return null;
@@ -518,7 +523,9 @@ export async function reviewOutcome(input: {
       STANDING_REVIEW_SQL,
       [input.organizationId, input.executionId],
     );
-    if ((standing.rows[0]?.review_id ?? null) !== (existing?.review_id ?? null)) throw recordChanged();
+    const standingId = standing.rows[0]?.review_id ?? null;
+    if (standingId !== (existing?.review_id ?? null)) throw recordChanged();
+    if (input.expectedReviewId !== undefined && standingId !== input.expectedReviewId) throw recordChanged();
 
     await client.query(
       `insert into pilot.intervention_outcome_reviews

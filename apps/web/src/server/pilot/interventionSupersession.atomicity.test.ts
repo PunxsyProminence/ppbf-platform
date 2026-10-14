@@ -40,7 +40,7 @@ jest.mock('./db', () => ({
 import { query, queryOne, withTransaction } from './db';
 import { listExecutions, correctExecution, RECORD_CHANGED_MESSAGE } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
-import { reviseProtocol } from './interventionProtocols';
+import { retireProtocol, reviseProtocol } from './interventionProtocols';
 
 /* ------------------------------------------------------------- THE STORE -- */
 
@@ -155,6 +155,9 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   }
   if (/update pilot\.intervention_protocols set status = 'superseded'/.test(sql)) {
     return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'superseded');
+  }
+  if (/update pilot\.intervention_protocols set status = 'retired'/.test(sql)) {
+    return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'retired');
   }
   if (/update pilot\.intervention_protocols set status = 'active'/.test(sql)) {
     return updateStatus(sql, params, 'intervention_protocols', 'protocol_id', 'active');
@@ -476,7 +479,7 @@ describe('reviseProtocol', () => {
     expect(store.intervention_protocols).toHaveLength(1);
   });
 
-  test('a second revision that read the same head loses cleanly: null, and nothing stranded', async () => {
+  test('a second revision that read the same head loses cleanly: told the record changed, and nothing stranded', async () => {
     seedProtocol();
     const headAsBothWritersReadIt = { ...store.intervention_protocols[0] };
 
@@ -487,15 +490,43 @@ describe('reviseProtocol', () => {
     // still believes proto-1 is the active head.
     staleRead = { pattern: /from pilot\.intervention_protocols p/, rows: [headAsBothWritersReadIt] };
 
-    const second = await reviseProtocol({ ...revision, title: 'A different second opinion' });
-
     // Unguarded, the second stamp matched anyway and the second raise hit the
     // one-active-head index: an opaque 23505 for the caller, and a successor
     // row left behind that nothing could raise or remove.
-    expect(second).toBeNull();
+    await expect(reviseProtocol({ ...revision, title: 'A different second opinion' }))
+      .rejects.toThrow(RECORD_CHANGED_MESSAGE);
     expect(liveProtocols()).toHaveLength(1);
     expect(liveProtocols()[0].title).toBe('Front-hand return under fatigue, v2');
     expect(store.intervention_protocols).toHaveLength(2);
+  });
+});
+
+describe('a protocol that is not there, and one that has changed since it was loaded', () => {
+  test('revising or retiring a protocol that does not exist is a quiet null', async () => {
+    seedProtocol();
+
+    expect(await reviseProtocol({ ...revision, protocolId: 'no-such-protocol' })).toBeNull();
+    expect(await retireProtocol(ORG, 'no-such-protocol')).toBeNull();
+    expect(store.intervention_protocols).toHaveLength(1);
+    expect(liveProtocols()[0].status).toBe('active');
+  });
+
+  test.each(['retired', 'superseded'])(
+    'revising or retiring one already %s says the record changed, and changes nothing',
+    async (status) => {
+      seedProtocol({ status });
+      const before = JSON.stringify(store.intervention_protocols);
+
+      await expect(reviseProtocol(revision)).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      await expect(retireProtocol(ORG, 'proto-1')).rejects.toThrow(RECORD_CHANGED_MESSAGE);
+      expect(JSON.stringify(store.intervention_protocols)).toBe(before);
+    },
+  );
+
+  test('retiring an active protocol retires it', async () => {
+    seedProtocol();
+
+    expect((await retireProtocol(ORG, 'proto-1'))?.status).toBe('retired');
   });
 });
 
