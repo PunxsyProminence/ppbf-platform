@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
+import FinishedSessions from '@/components/FinishedSessions';
 import { apiBase } from '@/lib/apiBase';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
@@ -97,6 +98,8 @@ function CoachSessionScripts() {
   // from an empty list -- a failed read must never render as "never delivered".
   const [deliveries, setDeliveries] = useState<SessionScriptRunRow[]>([]);
   const [deliveriesState, setDeliveriesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  // Bumped when a session ends here, so the finished list reads again and shows it.
+  const [finishedReads, setFinishedReads] = useState(0);
 
   // Live delivery. The FIRST question this page asks the server is "does this
   // coach already have a session in progress" -- a reload or a locked phone
@@ -474,6 +477,7 @@ function CoachSessionScripts() {
               initialRun={liveRun}
               onSettled={(settled) => {
                 setLiveRun(null);
+                setFinishedReads((count) => count + 1);
                 if (settled.script_id && openScriptId === settled.script_id) {
                   void loadDeliveries(settled.script_id);
                 }
@@ -822,6 +826,9 @@ function CoachSessionScripts() {
             )}
           </section>
         )}
+
+        {/* Every session the gym has ended, plain ones included (F-067). */}
+        <FinishedSessions key={finishedReads} />
         </>)}
 
       {/* The four words, at the foot of the page — the same foot the
