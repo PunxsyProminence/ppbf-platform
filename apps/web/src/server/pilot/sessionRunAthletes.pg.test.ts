@@ -396,6 +396,18 @@ describe('marking who is in a session', () => {
     }
     // This gym's coach and athlete, the other gym's run id.
     expect(await refusal(mark(gym.coach, otherRunId, gym.ada))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    // A coach who works at BOTH gyms, delivering a session at the other one. Signed in here, that
+    // run is still not this gym's: the run is looked up inside the organization, so it is not found
+    // (rather than found, and then refused by the database with an error nobody can read).
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+      [gym.otherCoach.accountId, other.organizationId],
+    );
+    const theirRunThere = (await startSessionScriptRun(other.organizationId, gym.otherCoach.accountId, {})).run_id;
+    expect(await refusal(mark(gym.otherCoach, theirRunThere, gym.ada))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    // Signed in THERE, the same coach marks that gym's athlete in it.
+    expect(await mark({ ...gym.otherCoach, organizationId: other.organizationId }, theirRunThere, other.ada)).toEqual({ outcome: 'marked' });
+    expect(await marks(other, theirRunThere)).toHaveLength(1);
     expect(await marks(gym, runId)).toEqual([]);
     expect(await marks(other, otherRunId)).toEqual([]);
     expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
