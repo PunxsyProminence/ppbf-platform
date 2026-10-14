@@ -784,7 +784,11 @@ export async function POST(request: NextRequest) {
 
       const cancelled = await cancelSchedulerClass(actor.organizationId, classId, new Date().toISOString());
       if (!cancelled) {
-        throw new ValidationError('This class is already cancelled.');
+        // Lost a race: to another cancel, or to the class's start (#1595).
+        const now = await getSchedulerClassById(actor.organizationId, classId);
+        throw new ValidationError(
+          now?.status === 'cancelled' ? CANCEL_REFUSAL_MESSAGES.cancelled : CANCEL_REFUSAL_MESSAGES.started,
+        );
       }
 
       await auditSchedulerEvent({

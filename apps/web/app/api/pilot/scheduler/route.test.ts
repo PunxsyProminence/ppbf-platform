@@ -2313,10 +2313,24 @@ describe('cancel_class', () => {
   test('a cancel that lost a race to another cancel says so, and writes no audit row', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockCancel.mockResolvedValueOnce(false);
+    mockGetClass.mockResolvedValueOnce(upcoming()).mockResolvedValueOnce({ ...upcoming(), status: 'cancelled' });
 
     const response = await cancel();
 
     expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class is already cancelled.');
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a cancel that lost a race to the start (the update refused it) says the class has started, and writes no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockCancel.mockResolvedValueOnce(false);
+    mockGetClass.mockResolvedValueOnce(upcoming()).mockResolvedValueOnce({ ...upcoming(), start_at: minutesAgo(0) });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class has already started, so it can no longer be cancelled.');
     expect(mockAuditCancel).not.toHaveBeenCalled();
   });
 

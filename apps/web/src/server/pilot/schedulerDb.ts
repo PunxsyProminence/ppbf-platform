@@ -179,8 +179,9 @@ export async function setSchedulerClassCover(organizationId: string, classId: st
 /**
  * Soft-cancels a class (#1536): the status reads 'cancelled' and nothing else
  * changes. Its registrations, attendance and history stay exactly as they
- * were. Returns false when the class was already cancelled (or is not this
- * gym's), so two cancels racing write one change.
+ * were. Returns false when the class was already cancelled, has started
+ * (#1595: never after start, checked in the same statement on the database's
+ * clock so a cancel racing the start cannot land), or is not this gym's.
  */
 export async function cancelSchedulerClass(organizationId: string, classId: string, updatedAt: string): Promise<boolean> {
   const rows = await query<{ class_id: string }>(
@@ -188,6 +189,7 @@ export async function cancelSchedulerClass(organizationId: string, classId: stri
      set status = 'cancelled',
          updated_at = $3
      where organization_id = $1 and class_id = $2 and status <> 'cancelled'
+       and start_at > now()
      returning class_id`,
     [organizationId, classId, updatedAt],
   );

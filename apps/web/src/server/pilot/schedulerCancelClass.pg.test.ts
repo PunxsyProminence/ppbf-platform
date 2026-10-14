@@ -278,6 +278,22 @@ describe('cancelling a class is a soft cancel', () => {
     }
   });
 
+  test('the update itself refuses a class whose start has passed (#1595: a cancel racing the start)', async () => {
+    const client = await freshDatabase('cc_started');
+    try {
+      await client.query(
+        `update pilot.scheduler_classes set start_at = now() - interval '1 minute' where organization_id = $1 and class_id = $2`,
+        [ORG_ID, CLASS_ID],
+      );
+      const before = await classRow(client);
+
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe(false);
+      expect(await classRow(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
   test("another gym's id cancels nothing", async () => {
     const client = await freshDatabase('cc_other_org');
     try {

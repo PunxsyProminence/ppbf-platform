@@ -146,6 +146,30 @@ describe('Cancel Class (#1536)', () => {
     expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
   });
 
+  test('Cancel Class goes when the class starts while the page is open (#1595)', async () => {
+    // Only the interval and the clock are faked; fetch and findBy keep real timers.
+    jest.useFakeTimers({
+      doNotFake: [
+        'setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+        'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+        'hrtime', 'performance',
+      ],
+    });
+    try {
+      installFetchMock('coach', [classRow('soon', 'Starts Soon', 10_000, { can_cancel: true })]);
+      await renderPage();
+      expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(15_000);
+      });
+
+      expect(within(rowFor('Starts Soon')).queryByRole('button', { name: 'Cancel Class' })).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('a class that has ended offers no Cover Class', async () => {
     installFetchMock('coach', [classRow('ended', 'Last Week', -7 * 24 * HOUR)]);
     await renderPage();
