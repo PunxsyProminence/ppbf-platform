@@ -8464,7 +8464,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Guardian files a home/transportation barrier note about their child as a coach observation; gate barrier-report/route.ts:36-37 and :52 (parent linked-child check).",
+    "notes": "Guardian files a home/transportation barrier note about their child as a coach observation; gate barrier-report/route.ts:36-37 and :52 (parent linked-child check). The audit row is written with shadow_mirror: false (#1558 item two): it is not mirrored into the SHADOW feed.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8656,7 +8656,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Guardian writes an observation (category, optional 1-10 rating, notes) about their linked child as a parent_observation coach observation, audited in one transaction; gate observations/route.ts POST requireRole(parent) + assertActorCanAccessAthlete.",
+    "notes": "Guardian writes an observation (category, optional 1-10 rating, notes) about their linked child as a parent_observation coach observation, audited in one transaction; gate observations/route.ts POST requireRole(parent) + assertActorCanAccessAthlete. The audit row is written with shadow_mirror: false (#1558 item two): it is not mirrored into the SHADOW feed.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11101,7 +11101,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "events/route.ts:14 requireRole; POST is a read-only event listing. listShadowEvents (shadowReadModels.ts:422) filters rows via resolveAthleteScope (:178): athlete/parent own/linked, coach athleteIdsForCoach, org admin unrestricted, staff/volunteer/platform_owner athlete-free rows only. entity_id is sent to a non-staff reader only for the entity types named in shadowReadModels.ts (athlete, intake_case, intake_document, shadow_intake); otherwise null (#1558).",
+    "notes": "events/route.ts:14 requireRole; POST is a read-only event listing. listShadowEvents (shadowReadModels.ts:422) filters rows via resolveAthleteScope (:178): athlete/parent own/linked, coach athleteIdsForCoach, org admin unrestricted, staff/volunteer/platform_owner athlete-free rows only. entity_id is sent to a non-staff reader only for the entity types named in shadowReadModels.ts (athlete, intake_case, intake_document, shadow_intake); otherwise null (#1558). Item two (#1558): an athlete or parent reads a mirrored audit row only for the entity types in FAMILY_ALLOWED_AUDIT_ENTITY_TYPES (auditReadAllowlist.ts) and is not sent the intake \"a record was saved\" lines (FAMILY_HIDDEN_EVENT_NAMES); a non-staff caller's entity_id / correlation_id filter matches only ids that reader is sent.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11643,7 +11643,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "knowledge-projection/route.ts:146 requireRole; read-only POST. getShadowKnowledgeProjection (shadowReadModels.ts:851) is built on listShadowEvents, so resolveAthleteScope (:178) limits athlete-tied rows by role (coach athleteIdsForCoach etc.). entity_id follows listShadowEvents: null for a non-staff reader unless the entity type is named there (#1558).",
+    "notes": "knowledge-projection/route.ts:146 requireRole; read-only POST. getShadowKnowledgeProjection (shadowReadModels.ts:851) is built on listShadowEvents, so resolveAthleteScope (:178) limits athlete-tied rows by role (coach athleteIdsForCoach etc.). entity_id follows listShadowEvents: null for a non-staff reader unless the entity type is named there (#1558). Item two (#1558): built on listShadowEvents, so the family audit list, the hidden intake lines and the id-filter rule apply.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12244,7 +12244,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "observation-projection/route.ts:13-14 gate; shadowReadModels.ts:178-218 resolveAthleteScope: athlete self, parent guardian children, coach athleteIdsForCoach, org admin all, everyone else (volunteer/staff/platform_owner) athlete-free rows only, applied in listShadowEvents (:422+). POST used as read; no write. entity_id follows listShadowEvents: null for a non-staff reader unless the entity type is named there (#1558).",
+    "notes": "observation-projection/route.ts:13-14 gate; shadowReadModels.ts:178-218 resolveAthleteScope: athlete self, parent guardian children, coach athleteIdsForCoach, org admin all, everyone else (volunteer/staff/platform_owner) athlete-free rows only, applied in listShadowEvents (:422+). POST used as read; no write. entity_id follows listShadowEvents: null for a non-staff reader unless the entity type is named there (#1558). Item two (#1558): built on listShadowEvents and listShadowTelemetry, so the family audit list, the hidden intake lines and metric, and the id-filter rule apply.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12866,7 +12866,7 @@
     "missingGate": false,
     "looksWrong": "POST used for a read-only list; telemetry rows can carry actor_account_id and athlete ids in dimensions, visible org-wide to any member role for athlete-free rows.",
     "confidence": "medium",
-    "notes": "Read-only (listShadowTelemetry, shadowReadModels.ts:499+) despite POST; only a readiness check otherwise. resolveAthleteScope (shadowReadModels.ts:178-221) limits athlete/parent to own/linked, coach to athleteIdsForCoach, org admin unrestricted, others (staff/volunteer/platform_owner) only athlete-free rows. shadowRoleSets.ts:34. The entity_id dimension follows the same rule as listShadowEvents: sent to a non-staff reader only for the entity types named in shadowReadModels.ts (#1558).",
+    "notes": "Read-only (listShadowTelemetry, shadowReadModels.ts:499+) despite POST; only a readiness check otherwise. resolveAthleteScope (shadowReadModels.ts:178-221) limits athlete/parent to own/linked, coach to athleteIdsForCoach, org admin unrestricted, others (staff/volunteer/platform_owner) only athlete-free rows. shadowRoleSets.ts:34. The entity_id dimension follows the same rule as listShadowEvents: sent to a non-staff reader only for the entity types named in shadowReadModels.ts (#1558). Item two (#1558): an athlete or parent is not sent the shadow.intake.domain_upsert metric, and a non-staff caller's correlation_id matches only an entity_id that reader is sent.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

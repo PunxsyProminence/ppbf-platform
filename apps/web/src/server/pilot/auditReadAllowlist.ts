@@ -60,10 +60,13 @@ export const COACH_ALLOWED_AUDIT_ENTITY_TYPES: ReadonlySet<string> = new Set([
 // holds, it never holds a type authored by or about a guardian, an account or
 // staff conduct (shadowReadModels.test.ts pins that).
 //
-// THE VALUE IS AN OWNER DECISION (Q-1 on #1558). Empty means an athlete or a
-// parent reads no SHADOW_AUDIT_* row at all, the answer every other non-staff
-// role already gets. The one alternative put to the owner is the child's own
-// training records: 'goal', 'session', 'athlete_milestone', 'recognition'.
+// THE VALUE IS THE OWNER'S (Jason, 2026-10-13, Q-1 on #1558, after the three
+// options were explained: "A"). EMPTY: an athlete or a parent reads no
+// SHADOW_AUDIT_* row at all, the answer every other non-staff role already
+// gets. Events that are not audit mirrors (a pain report, an intake case,
+// formula results) are unchanged. The alternative he did not choose was the
+// child's own training records: 'goal', 'session', 'athlete_milestone',
+// 'recognition'.
 export const FAMILY_ALLOWED_AUDIT_ENTITY_TYPES: ReadonlySet<string> = new Set<string>([]);
 
 // Allow-listed types whose every record is ABOUT an athlete, even when an

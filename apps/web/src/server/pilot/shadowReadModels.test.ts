@@ -383,10 +383,11 @@ describe('sanitizeEventPayload', () => {
  *
  * For some entity types the id is a person's: an account id (the login email
  * unless somebody chose otherwise) or a parent_id (`par-` plus that account
- * id). Rows about a guardian name the child, so they reach the athlete and
+ * id). Rows about a guardian name the child, so they reached the athlete and
  * both guardians; one guardian read the other's id here. The mocked query
- * returns the row whatever the role, so these exercise the projection alone;
- * shadowEventAthleteScope.pg.test.ts shows the rows really arrive.
+ * returns the row whatever the role, so these exercise the projection alone
+ * (item two has since stopped those particular rows reaching a family reader;
+ * shadowEventAthleteScope.pg.test.ts shows which rows still arrive).
  */
 describe('entity_id by reader', () => {
   const row = (entityType: string, entityId: string, payload: Record<string, unknown> = {}) => ({
@@ -1023,7 +1024,7 @@ describe('a caller\'s id filter matches only what that reader is sent', () => {
     await listShadowEvents(context({ actorRole }), { entityId: 'x' });
 
     const { params } = flat('shadow_events');
-    expect(params).toHaveLength(16);
+    expect(params).toHaveLength(17);
     expect(params[13]).toEqual(NAMED_TYPES);
   });
 
@@ -1045,7 +1046,7 @@ describe('a caller\'s id filter matches only what that reader is sent', () => {
       + "or (dimensions->>'entity_id' = $4 and ($9::text[] is null or dimensions->>'entity_type' = any($9::text[]))) "
       + "or ($9::text[] is null and dimensions->>'correlation_id' = $4) )",
     );
-    expect(params).toHaveLength(11);
+    expect(params).toHaveLength(12);
     expect(params[8]).toEqual(NAMED_TYPES);
   });
 
@@ -1089,13 +1090,16 @@ describe('which lines a family reader is sent', () => {
       "<> 'SHADOW_AUDIT_' or ($11::text = 'own' and e.entity_type = any($15::text[])) "
       + "or ($11::text = 'admin' and left(e.entity_type, length($13::text)) <> $13::text) "
       + "or ($11::text = 'coach' and e.entity_type = any($12::text[])) ) "
-      + "and ($11::text <> 'own' or e.event_name <> all($16::text[]))",
+      + "and ($11::text <> 'own' or e.event_name <> all($16::text[])) "
+      + "and ($11::text <> 'own' or (actor_role is distinct from 'parent' or actor_account_id = $17))",
     );
     // No bare "own reads every mirror" disjunct is left.
     expect(sql).not.toContain("or $11::text = 'own'");
     expect(params[10]).toBe('own');
     expect(params[14]).toEqual([...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES]);
     expect(params[15]).toEqual(['SHADOW_INTAKE_DOMAIN_UPSERTED']);
+    // A row a guardian wrote is compared with the READER's own account.
+    expect(params[16]).toBe('acct-1');
   });
 
   test.each([
@@ -1113,9 +1117,13 @@ describe('which lines a family reader is sent', () => {
     await listShadowTelemetry(context({ actorRole: 'parent' }));
 
     const { sql, params } = callFor('shadow_telemetry_events');
-    expect(sql).toContain('and ($10::boolean is not true or metric_name <> all($11::text[]))');
+    expect(sql).toContain(
+      'and ($10::boolean is not true or metric_name <> all($11::text[])) '
+      + "and ($10::boolean is not true or (actor_role is distinct from 'parent' or actor_account_id = $12))",
+    );
     expect(params[9]).toBe(true);
     expect(params[10]).toEqual(['shadow.intake.domain_upsert']);
+    expect(params[11]).toBe('acct-1');
   });
 
   test.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'volunteer', 'staff'] as const)(
@@ -1134,10 +1142,10 @@ describe('which lines a family reader is sent', () => {
     expect([...FAMILY_HIDDEN_METRIC_NAMES]).toEqual(['shadow.intake.domain_upsert']);
   });
 
-  // Q-1 on #1558 is the owner's. Empty = an athlete or parent reads no
-  // SHADOW_AUDIT_* row. If the ruling is the short list, this line changes
-  // with auditReadAllowlist.ts, and the test below still has to hold.
-  test('the family audit list is what the owner ruled', () => {
+  // Jason, 2026-10-13, Q-1 on #1558: "A". Empty = an athlete or parent reads
+  // no SHADOW_AUDIT_* row. A type added to auditReadAllowlist.ts has to change
+  // this line, and the test below still has to hold.
+  test('the family audit list is what the owner ruled: empty', () => {
     expect([...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES].sort()).toEqual([]);
   });
 

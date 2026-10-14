@@ -269,6 +269,23 @@ type AuditMirrorReach = 'admin' | 'coach' | 'own' | 'none';
 export const FAMILY_HIDDEN_EVENT_NAMES = ['SHADOW_INTAKE_DOMAIN_UPSERTED'] as const;
 export const FAMILY_HIDDEN_METRIC_NAMES = ['shadow.intake.domain_upsert'] as const;
 
+/*
+ * A ROW A GUARDIAN WROTE IS READ BY THAT GUARDIAN ONLY (OD-2026-10-12-024:
+ * with two guardians of one child, each sees only their own).
+ *
+ * The lists above name what a family reader may read; they cannot name a row
+ * nobody has written yet. A guardian's own action about their child is a row
+ * tied to the child, so the athlete scope hands it to the child and to the
+ * other guardian: a Library question a guardian asks about the child
+ * (SHADOW_LIBRARY_CLAIM_*, payload.subject_id) arrived in both feeds with
+ * actor_role 'parent' and the time. So for an athlete or a parent, a row
+ * whose actor is a parent is returned only to the account that wrote it. The
+ * rule is on the actor, not on a type, so the next guardian-authored event is
+ * covered the day it is written. Staff are unchanged.
+ */
+const GUARDIAN_AUTHORED_ROW_SQL = (actorParameter: number) =>
+  `(actor_role is distinct from 'parent' or actor_account_id = $${actorParameter})`;
+
 // The event_name prefix audit.ts (and contentImport/auditRow.ts) give a mirror.
 const AUDIT_MIRROR_EVENT_PREFIX = 'SHADOW_AUDIT_';
 
@@ -334,8 +351,10 @@ function roleCanViewSensitivePayload(role: PilotRole): boolean {
  * (`par-` plus that account id), an 'intake_guardian' row's is
  * `${parentId}:${athleteId}`. The mirrored audit rows for giving a guardian a
  * login, removing a guardian link and moving a guardian's login name the child
- * in their details, so they are tied to the child and reach the athlete and
- * BOTH guardians: one guardian read the other's email-shaped id here.
+ * in their details, so they are tied to the child and reached the athlete and
+ * BOTH guardians: one guardian read the other's email-shaped id here. (Item
+ * two has since stopped those rows reaching a family reader at all; this rule
+ * stays for every row that still does.)
  *
  * So the id goes to a non-staff reader only for the types NAMED here, whose
  * ids are the reader's own child or the intake paperwork the timeline is
@@ -633,8 +652,10 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
          or ($11::text = 'admin' and left(e.entity_type, length($13::text)) <> $13::text)
          or ($11::text = 'coach' and e.entity_type = any($12::text[]))
        )
-       -- The lines a family reader is not sent at all (FAMILY_HIDDEN_EVENT_NAMES).
+       -- The lines a family reader is not sent at all (FAMILY_HIDDEN_EVENT_NAMES),
+       -- and the rows another guardian wrote (GUARDIAN_AUTHORED_ROW_SQL).
        and ($11::text <> 'own' or e.event_name <> all($16::text[]))
+       and ($11::text <> 'own' or ${GUARDIAN_AUTHORED_ROW_SQL(17)})
      order by created_at desc
      limit $7
      offset $8`,
@@ -655,6 +676,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
       filterableEntityIdTypesFor(context.actorRole),
       [...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES],
       [...FAMILY_HIDDEN_EVENT_NAMES],
+      context.actorAccountId,
     ],
   );
 
@@ -707,8 +729,10 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
          or (dimensions->>'entity_id' = $4 and ($9::text[] is null or dimensions->>'entity_type' = any($9::text[])))
          or ($9::text[] is null and dimensions->>'correlation_id' = $4)
        )
-       -- The lines a family reader is not sent at all (FAMILY_HIDDEN_METRIC_NAMES).
+       -- The lines a family reader is not sent at all (FAMILY_HIDDEN_METRIC_NAMES),
+       -- and the rows another guardian wrote (GUARDIAN_AUTHORED_ROW_SQL).
        and ($10::boolean is not true or metric_name <> all($11::text[]))
+       and ($10::boolean is not true or ${GUARDIAN_AUTHORED_ROW_SQL(12)})
        -- Same two disjuncts as listShadowEvents. The athlete-free test is
        -- stricter than the athlete_id-is-null test it replaces: a dimensions blob
        -- naming an athlete through entity_type/entity_id or owner_entity_id is
@@ -744,6 +768,7 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
       filterableEntityIdTypesFor(context.actorRole),
       auditMirrorReach(context.actorRole) === 'own',
       [...FAMILY_HIDDEN_METRIC_NAMES],
+      context.actorAccountId,
     ],
   );
 

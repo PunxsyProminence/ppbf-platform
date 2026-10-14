@@ -18,8 +18,9 @@
 // EVERY REFUSAL HAS A CONTROL: the organization admin still reads every
 // non-calibration mirror, a coach still reads allow-listed gym-wide and
 // own-athlete rows, every role still reads the non-audit operational event,
-// and athletes and parents keep exactly what they had (Overwatch, 2026-10-09:
-// "Athlete/parent: leave unchanged").
+// and athletes and parents read a mirror only for the entity types on the
+// family list (#1558 item two; Jason 2026-10-13, Q-1: "A", the list is empty).
+// Until then they read every mirror tied to their athlete.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -390,9 +391,29 @@ describe("SHADOW event feed: mirrored audit events follow audit/get's role and e
       ...familyMirror(LOGIN_A, 'account'),
       ...familyMirror(GOAL_MOVED, 'goal'),
     ]);
-    expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(expected);
-    expect(await visibleTo(PARENT_A, 'parent')).toEqual(expected);
-    expect(expected).not.toContain(SAFETY_A);
-    expect(expected).not.toContain(LOGIN_A);
+    // THE CONTROL, so that "reads no mirror" is not also what a refused or
+    // unlinked reader would show: a row about athlete A that is not an audit
+    // mirror, written last so no test above counts it. Both read it.
+    const CONTROL = 'family-control-row';
+    await emitShadowEvent({
+      organizationId: ORG_ID,
+      eventName: 'SHADOW_TEST_FAMILY_CONTROL',
+      entityType: 'session',
+      entityId: CONTROL,
+      actorAccountId: COACH_A,
+      actorRole: 'coach',
+      payload: { athlete_id: ATHLETE_A },
+    });
+
+    const asAthlete = await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A);
+    const asParent = await visibleTo(PARENT_A, 'parent');
+    expect(asAthlete).toEqual(sorted([...expected, CONTROL]));
+    expect(asParent).toEqual(sorted([...expected, CONTROL]));
+    // Said of the ANSWER, not of the list it was computed from.
+    for (const answer of [asAthlete, asParent]) {
+      expect(answer).not.toContain(SAFETY_A);
+      expect(answer).not.toContain(LOGIN_A);
+      expect(answer).not.toContain(GOAL_A);
+    }
   });
 });

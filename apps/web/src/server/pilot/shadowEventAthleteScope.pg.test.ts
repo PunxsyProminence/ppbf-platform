@@ -111,6 +111,7 @@ const NAME_ONLY = 'name-only';               // names an athlete without any id
 const LOGOUT_B = `logout:${ATHLETE_B_ACCOUNT}`; // audit mirror naming only B's account (details {})
 const CAMEL_B = 'camel-b';                   // athleteId = B
 const OBJECTS_AB = 'objects-a-b';            // athlete_id = A plus athletes: [{ id: B }]
+const ACCOUNT_TIE_B = `tie:${ATHLETE_B_ACCOUNT}`; // NOT a mirror: names only B's account, the account row says whose
 const BODY_MASS_A = 'obs-a-corrected';      // audit row only: body-mass correction, never mirrored
 
 let PG_PORT: number;
@@ -325,6 +326,20 @@ async function seed(client: Client): Promise<void> {
     actorAccountId: ADMIN,
     actorRole: 'organization_admin',
     payload: { athlete_name: 'Scoped Athlete' },
+  });
+
+  // An event about B's ACCOUNT that is not an audit mirror and names no
+  // athlete: only the account row ties it to B. Athletes and parents read no
+  // audit mirror any more (#1558 item two), and the sign-out mirror above was
+  // the one proof of this arm of the tie.
+  await emitShadowEvent({
+    organizationId: ORG_ID,
+    eventName: 'SHADOW_TEST_ACCOUNT_TIE',
+    entityType: 'account',
+    entityId: ATHLETE_B_ACCOUNT,
+    actorAccountId: ADMIN,
+    actorRole: 'organization_admin',
+    payload: {},
   });
 
   // A body-mass correction on athlete A, the exact event athleteBodyMass.ts
@@ -548,6 +563,7 @@ async function visibleTo(actorAccountId: string, actorRole: PilotRole, athleteId
   // them apart.
   return rows.map((row) => {
     const entityId = storedId.get(String(row.shadow_event_id));
+    if (row.event_name === 'SHADOW_TEST_ACCOUNT_TIE') return `tie:${entityId}`;
     return row.event_name.includes('LOGOUT') ? `logout:${entityId}` : String(entityId);
   }).sort();
 }
@@ -565,7 +581,7 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
       `select entity_id from pilot.shadow_events where organization_id = $1`,
       [ORG_ID],
     );
-    expect(stored.rows).toHaveLength(12);
+    expect(stored.rows).toHaveLength(13);
   });
 
   test('a body-mass correction is audited and reaches no SHADOW feed at all', async () => {
@@ -600,7 +616,7 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
 
   test('control: the organization admin reads every row', async () => {
     expect(await visibleTo(ADMIN, 'organization_admin')).toEqual(
-      sorted([OPS, PAIN_A, LOGIN_A, LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, PAIR_AB, NESTED_B, NAME_ONLY, CAMEL_B, OBJECTS_AB]),
+      sorted([OPS, PAIN_A, LOGIN_A, LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, PAIR_AB, NESTED_B, NAME_ONLY, CAMEL_B, OBJECTS_AB, ACCOUNT_TIE_B]),
     );
   });
 
@@ -608,8 +624,9 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
   // FILM_B) even for their own athlete: 'account' and
   // 'shadow_film_study_proposal' are not on audit/get's coach allow-list, and
   // the feed now applies it to mirrors (shadowAuditMirrorScope.pg.test.ts).
-  // The athletes and parent below still prove those mirrors are tied to the
-  // right athlete.
+  // That those mirrors are tied to the right athlete is no longer shown by a
+  // family reader (they read no mirror, #1558 item two); the tie itself is
+  // shown by the rows that are not mirrors, ACCOUNT_TIE_B among them.
   // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Every
   // coach of the gym -- assigned, covering, or neither -- reads every
   // athlete-tied row of the gym, including rows naming two athletes. Still not
@@ -617,7 +634,7 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
   // FILM_B), and still not a row whose athletes cannot all be resolved -- one
   // named by name alone (NAME_ONLY) or inside objects (OBJECTS_AB): those fail
   // closed to the admin, whose scope is unrestricted.
-  const EVERY_COACH_READS = sorted([OPS, PAIN_A, CLAIM_B, NESTED_B, CAMEL_B, PAIR_AB]);
+  const EVERY_COACH_READS = sorted([OPS, PAIN_A, CLAIM_B, NESTED_B, CAMEL_B, PAIR_AB, ACCOUNT_TIE_B]);
 
   test("a coach reads every athlete's rows of the gym and the operational feed", async () => {
     expect(await visibleTo(COACH_A, 'coach')).toEqual(EVERY_COACH_READS);
@@ -639,10 +656,12 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
     expect(await visibleTo(STAFF, 'staff')).toEqual([OPS]);
   });
 
-  // The audit mirrors below (sign-in, sign-out, film study) are tied to the
-  // right athlete -- the admin and coach controls above read them -- and
-  // reach the athlete or the parent only for entity types on the family list
-  // (#1558 item two). The rows that are not mirrors are unchanged.
+  // The audit mirrors below (sign-in, sign-out, film study) reach the athlete
+  // or the parent only for entity types on the family list, which is empty
+  // (#1558 item two). The rows that are not mirrors are unchanged, and they
+  // are what shows each reader is held to the right athlete: A's pain report
+  // for A and A's parent; for B the claim, the nested and camel-cased ids,
+  // and ACCOUNT_TIE_B, which only B's account row ties to B.
   test('an athlete reads only their own rows', async () => {
     expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(
       sorted([PAIN_A, ...familyMirror(LOGIN_A, 'account')]),
@@ -658,6 +677,7 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
         CLAIM_B,
         NESTED_B,
         CAMEL_B,
+        ACCOUNT_TIE_B,
       ]),
     );
   });
@@ -810,35 +830,92 @@ describe('ITEM TWO: a guardian\'s own report does not reach the other guardian o
       entity_id: '20000000-0000-4000-8000-000000000002',
       details: { athlete_id: ATHLETE_H, category: 'sleep', rated: true },
     });
+    // NOT an audit mirror: a Library question Guardian One asked about the
+    // child, the shape shadowLibrary.ts emits (the child is subject_id). No
+    // list names it; what keeps it from the other guardian and the child is
+    // that a guardian wrote it.
+    await emitShadowEvent({
+      organizationId: ORG_H,
+      eventName: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      entityType: 'shadow_library_claim',
+      entityId: 'subject:claim-h',
+      actorAccountId: GUARDIAN_H1,
+      actorRole: 'parent',
+      payload: { scope: 'subject', subject_id: ATHLETE_H, status: 'gap', knowledge_gap: 'Is his sleep enough for two sessions a day?' },
+    });
+    await writeShadowTelemetryEvent({
+      organizationId: ORG_H,
+      metricName: 'shadow.test.guardian_authored',
+      actorAccountId: GUARDIAN_H1,
+      actorRole: 'parent',
+      dimensions: { athlete_id: ATHLETE_H },
+    });
+    // THE CONTROL: a row about the child that staff wrote and that is not an
+    // audit mirror. Every family reader of this child reads it, so an empty
+    // answer elsewhere is the rule and not a refused or unlinked reader.
+    await emitShadowEvent({
+      organizationId: ORG_H,
+      eventName: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+      entityType: 'athlete',
+      entityId: ATHLETE_H,
+      actorAccountId: ADMIN_H,
+      actorRole: 'organization_admin',
+      payload: { athlete_id: ATHLETE_H, severity_1_10: 2, location: 'left hand' },
+    });
+    await writeShadowTelemetryEvent({
+      organizationId: ORG_H,
+      metricName: 'shadow.test.staff_authored',
+      actorAccountId: ADMIN_H,
+      actorRole: 'organization_admin',
+      dimensions: { athlete_id: ATHLETE_H },
+    });
   });
 
   const reader = (actorAccountId: string, actorRole: PilotRole, athleteId: string | null = null) =>
     ({ organizationId: ORG_H, actorAccountId, actorRole, athleteId });
 
-  test('control: both rows are mirrored, and the organization admin reads them', async () => {
-    const rows = await listShadowEvents(reader(ADMIN_H, 'organization_admin'), { limit: 200 });
-    expect(rows.map((row) => row.event_name).sort()).toEqual([
+  const PAIN = 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW';
+  const CLAIM = 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED';
+  const names = async (who: ReturnType<typeof reader>) =>
+    (await listShadowEvents(who, { limit: 200 })).map((row) => row.event_name).sort();
+  const metrics = async (who: ReturnType<typeof reader>) =>
+    (await listShadowTelemetry(who, { limit: 200 })).map((row) => row.metric_name).sort();
+
+  test('control: all four rows are in the feed, and the organization admin reads them', async () => {
+    expect(await names(reader(ADMIN_H, 'organization_admin'))).toEqual([
+      PAIN,
       'SHADOW_AUDIT_CREATE_PARENT_BARRIER_REPORT',
       'SHADOW_AUDIT_CREATE_PARENT_OBSERVATION',
-    ]);
+      CLAIM,
+    ].sort());
+    expect(await metrics(reader(ADMIN_H, 'organization_admin'))).toEqual(
+      expect.arrayContaining(['shadow.test.guardian_authored', 'shadow.test.staff_authored']),
+    );
   });
 
   test.each([
     ['the other guardian', GUARDIAN_H2, 'parent', null],
     ['the child', ATHLETE_H_ACCOUNT, 'athlete', ATHLETE_H],
-  ] as Array<[string, string, PilotRole, string | null]>)('%s reads neither row in the feed', async (_label, accountId, role, athleteId) => {
-    const rows = await listShadowEvents(reader(accountId, role, athleteId), { limit: 200 });
-    expect(rows.map((row) => row.event_name)).toEqual([]);
-  });
+  ] as Array<[string, string, PilotRole, string | null]>)(
+    '%s reads the child\'s own row, and nothing Guardian One did: not the barrier report, the observation or the Library question',
+    async (_label, accountId, role, athleteId) => {
+      expect(await names(reader(accountId, role, athleteId))).toEqual([PAIN]);
+      expect(await metrics(reader(accountId, role, athleteId))).toEqual(['shadow.test.staff_authored']);
+    },
+  );
 
-  test('the child\'s "SHADOW notes" list (observation projection) does not name a barrier report', async () => {
+  test('the child\'s "SHADOW notes" list (observation projection) names the pain report and nothing a guardian did', async () => {
     const items = await getShadowObservationProjection(reader(ATHLETE_H_ACCOUNT, 'athlete', ATHLETE_H), { limit: 20 });
-    expect(items.map((item) => item.label)).toEqual([]);
+    const labels = items.map((item) => item.label);
+    expect(labels).toHaveLength(2);
+    expect(labels).toContain('shadow.test.staff_authored');
+    expect(labels.some((label) => label.startsWith('Pain report'))).toBe(true);
+    expect(JSON.stringify(items)).not.toMatch(/BARRIER|PARENT_OBSERVATION|LIBRARY_CLAIM|guardian_authored/);
   });
 
-  test('nor does the guardian who filed them read their own report back through the feed', async () => {
-    const rows = await listShadowEvents(reader(GUARDIAN_H1, 'parent'), { limit: 200 });
-    expect(rows.map((row) => row.event_name)).toEqual([]);
+  test('Guardian One reads what they wrote that is not an audit mirror, and no audit mirror, their own included', async () => {
+    expect(await names(reader(GUARDIAN_H1, 'parent'))).toEqual([PAIN, CLAIM].sort());
+    expect(await metrics(reader(GUARDIAN_H1, 'parent'))).toEqual(['shadow.test.guardian_authored', 'shadow.test.staff_authored']);
   });
 });
 
@@ -857,6 +934,9 @@ describe('ITEM TWO: a guessed id cannot be confirmed through the feed\'s filters
   // Every stored id of the rows a family reader is NOT sent the id of.
   const WITHHELD_IDS = [`${PAR_TWO}:${ATHLETE_G}`, PAR_TWO, PAR_PAPER, GUARDIAN_TWO, 'session-g-1'];
 
+  // These rows are added to ORG_G here, in this block's own beforeAll, AFTER
+  // the block above has asserted ORG_G's exact rows: the two blocks depend on
+  // running in file order.
   beforeAll(async () => {
     // A row whose payload carries a correlation_id, a key only staff are sent,
     // and a telemetry row carrying the guardian's id and the same keys.
@@ -881,6 +961,15 @@ describe('ITEM TWO: a guessed id cannot be confirmed through the feed\'s filters
         correlation_id: 'corr-g-secret',
         intake_case_id: 'case-g-1',
       },
+    });
+    // A metric about the child whose id a family reader IS sent, carrying one
+    // key they are not.
+    await writeShadowTelemetryEvent({
+      organizationId: ORG_G,
+      metricName: 'shadow.test.child_metric',
+      actorAccountId: ADMIN_G,
+      actorRole: 'organization_admin',
+      dimensions: { athlete_id: ATHLETE_G, entity_type: 'athlete', entity_id: ATHLETE_G, intake_document_id: 'doc-g-1' },
     });
     // intake/domain-upsert's own metric, in the shape that route writes it.
     await writeShadowTelemetryEvent({
@@ -927,23 +1016,41 @@ describe('ITEM TWO: a guessed id cannot be confirmed through the feed\'s filters
     });
 
     test('telemetry: reads the row unfiltered and cannot find it by any key it is not sent', async () => {
-      // One row: the test metric, without the id. intake/domain-upsert's own
-      // metric is a line a family reader is not sent at all (Q-2 B).
+      // Two rows: the guardian metric without its id, and the child's with
+      // it. intake/domain-upsert's own metric is a line a family reader is not
+      // sent at all (Q-2 B).
       const unfiltered = await listShadowTelemetry(reader, { limit: 200 });
-      expect(unfiltered.map((row) => [row.metric_name, row.dimensions])).toEqual([
+      expect(unfiltered.map((row) => [row.metric_name, row.dimensions]).sort()).toEqual([
+        ['shadow.test.child_metric', { entity_type: 'athlete', entity_id: ATHLETE_G }],
         ['shadow.test.guardian_metric', { entity_type: 'intake_guardian' }],
       ]);
-      for (const guess of [`${PAR_TWO}:${ATHLETE_G}`, 'corr-g-secret', 'case-g-1']) {
+      for (const guess of [`${PAR_TWO}:${ATHLETE_G}`, 'corr-g-secret', 'case-g-1', 'doc-g-1']) {
         expect(await listShadowTelemetry(reader, { correlationId: guess, limit: 200 })).toEqual([]);
       }
+      // ... and can still find the child's metric by the id it IS sent.
+      const found = await listShadowTelemetry(reader, { correlationId: ATHLETE_G, limit: 200 });
+      expect(found.map((row) => row.metric_name)).toEqual(['shadow.test.child_metric']);
     });
   });
 
   test('control: the organization admin still finds the correlated row and the telemetry row by every key', async () => {
     expect((await listShadowEvents(asAdmin, { correlationId: 'corr-g-secret', limit: 200 })).map((row) => row.entity_id)).toEqual(['session-g-1']);
-    for (const key of [`${PAR_TWO}:${ATHLETE_G}`, 'corr-g-secret', 'case-g-1']) {
+    for (const key of [`${PAR_TWO}:${ATHLETE_G}`, 'corr-g-secret', 'case-g-1', 'doc-g-1']) {
       expect(await listShadowTelemetry(asAdmin, { correlationId: key, limit: 200 })).toHaveLength(1);
     }
+  });
+
+  test('control: a coach of the gym still filters by any id and reads every metric, as before', async () => {
+    const asCoach = { organizationId: ORG_G, actorAccountId: COACH_G, actorRole: 'coach' as PilotRole, athleteId: null };
+    const byEntity = await listShadowEvents(asCoach, { entityId: `${PAR_TWO}:${ATHLETE_G}`, limit: 200 });
+    expect(byEntity.map((row) => `${row.entity_type}|${row.entity_id}`)).toEqual([`intake_guardian|${PAR_TWO}:${ATHLETE_G}`]);
+    expect((await listShadowEvents(asCoach, { correlationId: 'corr-g-secret', limit: 200 })).map((row) => row.entity_id)).toEqual(['session-g-1']);
+    for (const key of [`${PAR_TWO}:${ATHLETE_G}`, 'corr-g-secret', 'case-g-1', 'doc-g-1']) {
+      expect(await listShadowTelemetry(asCoach, { correlationId: key, limit: 200 })).toHaveLength(1);
+    }
+    expect((await listShadowTelemetry(asCoach, { limit: 200 })).map((row) => row.metric_name).sort()).toEqual(
+      expect.arrayContaining(['shadow.intake.domain_upsert', 'shadow.test.child_metric', 'shadow.test.guardian_metric']),
+    );
   });
 
   test('control: staff still read the intake "a record was saved" event and metric (Q-2 hides them from family only)', async () => {
