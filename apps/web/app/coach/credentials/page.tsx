@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 
 // Self-upload for staff credentials (SafeSport, USA Boxing coach cert,
 // background check, CPR/First Aid, ...). Uploading always lands as
@@ -184,7 +185,7 @@ export default function StaffCredentialsUploadPage() {
 
                     {item.expires_on && (item.band === 'current' || item.band === 'expiring_soon' || item.band === 'expired') && (
                       <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
-                        {item.band === 'expired' ? 'Expired' : 'Expires'} {item.expires_on}
+                        {item.band === 'expired' ? 'Expired' : 'Expires'} {formatCalendarDay(item.expires_on.slice(0, 10))}
                       </p>
                     )}
 

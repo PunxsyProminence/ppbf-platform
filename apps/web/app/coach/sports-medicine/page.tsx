@@ -209,8 +209,8 @@ function isActiveHold(value: unknown): value is ActiveHold {
  * conditioning_only holds still render everywhere holds are displayed.
  */
 const HOLD_SCOPES: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'all_training', label: 'All training — STOP: class registration is refused until this is lifted' },
-  { value: 'contact_only', label: 'No contact — training continues; contact events are refused, logged contact raises an alarm' },
+  { value: 'all_training', label: 'All training — the app will not register them for a class or add them to a match or competition until this is lifted' },
+  { value: 'contact_only', label: 'No contact — classes stay open; the app will not add them to a match or competition, and a contact reading logged for them is flagged for a person to look at' },
 ];
 
 const REASON_CATEGORIES: readonly string[] = ['medical', 'fatigue', 'behavioral', 'administrative', 'other'];
@@ -712,8 +712,8 @@ export default function SportsMedicinePage() {
             </h1>
             <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
               Clearance status and active training holds for your roster — exactly what the athlete themselves
-              can read, and nothing more. Clearance records are set by the office; an athlete with no record
-              cannot receive recommendations until one exists.
+              can read, and nothing more. Clearance records are set by the office. An athlete with no record
+              shows as having none; nothing is held back from them because of it.
             </p>
             <p className="mt-[var(--s3)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
               You can pause or narrow training here for an athlete you coach or cover. Placing a hold notifies

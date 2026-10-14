@@ -21,6 +21,23 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+// The report read (RP-03) runs its production SQL against the database the
+// current test opened. Declared before the import so jest's mock hoisting sees it.
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows[0] ?? null;
+  }),
+}));
+
+import { grantObligationsReport } from './grantObligations';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -293,6 +310,86 @@ describe('grant obligations runner readiness assertion', () => {
       // The `all` chain re-runs every migration on every dispatch (#489), so
       // the second pass has to survive its own first pass.
       await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+/*
+ * THE OBLIGATIONS REPORT READ (RP-03): this organization's obligations due in
+ * a range, for one state, ordered by grant, funder and due date. Every stored
+ * status is seeded, across two grants, with a second gym whose rows must not
+ * appear.
+ */
+describe('grantObligationsReport on real rows (RP-03)', () => {
+  const OTHER_ORG = 'org-grants-other';
+
+  async function seeded(name: string): Promise<Client> {
+    const client = await freshDatabase(name);
+    await client.query(migrationSql);
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [OTHER_ORG],
+    );
+    const rows: Array<[string, string, string, string]> = [
+      // [id, grant, status, due]
+      ['ob-b-open', 'Youth Grant', 'open', '2026-10-05'],
+      ['ob-b-prog', 'Youth Grant', 'in_progress', '2026-10-20'],
+      ['ob-b-sub', 'Youth Grant', 'submitted', '2026-09-30'],
+      ['ob-a-comp', 'Arts Grant', 'complete', '2026-10-10'],
+      ['ob-a-waiv', 'Arts Grant', 'waived', '2026-11-15'],
+    ];
+    for (const [id, grant, status, due] of rows) {
+      await insertObligation(client, id, { grant_name: grant, status, due_date: due });
+    }
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-other-admin', 'organization_admin', $1, 'microsoft')`,
+      [OTHER_ORG],
+    );
+    await client.query(
+      `insert into pilot.grant_obligations
+         (organization_id, obligation_id, grant_name, obligation_type, description, due_date, created_by_account_id, status)
+       values ($1, 'ob-other', 'Arts Grant', 'report', 'Elsewhere.', '2026-10-10', 'acct-other-admin', 'open')`,
+      [OTHER_ORG],
+    );
+    activeClient = client;
+    return client;
+  }
+
+  afterEach(() => {
+    activeClient = null;
+  });
+
+  test('all states: every stored status, grouped by grant then due date, and no other gym', async () => {
+    const client = await seeded('grants_report_all');
+    try {
+      const rows = await grantObligationsReport(ORG_ID, { state: 'all' });
+      expect(rows.map((row) => row.obligation_id)).toEqual(['ob-a-comp', 'ob-a-waiv', 'ob-b-sub', 'ob-b-open', 'ob-b-prog']);
+      expect(rows.map((row) => row.status).sort()).toEqual(['complete', 'in_progress', 'open', 'submitted', 'waived']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('open is open or in progress; settled is submitted, complete or waived', async () => {
+    const client = await seeded('grants_report_states');
+    try {
+      expect((await grantObligationsReport(ORG_ID, { state: 'open' })).map((row) => row.obligation_id))
+        .toEqual(['ob-b-open', 'ob-b-prog']);
+      expect((await grantObligationsReport(ORG_ID, { state: 'settled' })).map((row) => row.obligation_id))
+        .toEqual(['ob-a-comp', 'ob-a-waiv', 'ob-b-sub']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the due range is inclusive at both ends', async () => {
+    const client = await seeded('grants_report_range');
+    try {
+      const rows = await grantObligationsReport(ORG_ID, { state: 'all', dueFrom: '2026-10-05', dueTo: '2026-10-20' });
+      expect(rows.map((row) => row.obligation_id)).toEqual(['ob-a-comp', 'ob-b-open', 'ob-b-prog']);
     } finally {
       await client.end();
     }

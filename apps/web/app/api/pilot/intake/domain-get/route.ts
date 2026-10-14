@@ -4,15 +4,21 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  listFamilyGuardians,
+  listFamilyWaivers,
+  readsStaffGuardianRows,
+  resolveFamilyReader,
+} from '@/src/server/pilot/familyGuardianView';
+import {
   assessmentColumnsForReader,
   coachObservationColumnsForReader,
   coachObservationNoteTypesForReader,
   emergencyContactColumnsForReader,
   attendanceColumnsForReader,
-  guardianColumnsForReader,
+  GUARDIAN_STAFF_COLUMNS,
   medicalIntakeColumnsForReader,
   readinessColumnsForReader,
-  waiverColumnsForReader,
+  WAIVER_STAFF_READ_COLUMNS,
 } from '@/src/server/pilot/intake';
 
 export const runtime = 'nodejs';
@@ -47,9 +53,18 @@ export async function POST(request: NextRequest) {
     // WHICH notes is the filter above; what of each note is this. The author's
     // account id and role stay with staff (coachObservationColumnsForReader).
     const coachObservationColumns = coachObservationColumnsForReader(principal.role);
-    const guardianColumns = guardianColumnsForReader(principal.role);
+    // Guardians and waivers (#1558): staff keep their columns. The athlete and
+    // a linked guardian get familyGuardianView's named fields -- no parent_id
+    // (it is `par-` plus an email-shaped account id), a guardian's own row
+    // marked `you`, and of a co-guardian only that they exist.
+    const guardianColumns = GUARDIAN_STAFF_COLUMNS;
+    const waiverColumns = WAIVER_STAFF_READ_COLUMNS;
+    const familyReader = readsStaffGuardianRows(principal.role)
+      ? null
+      : await resolveFamilyReader(principal.organizationId, principal.role, principal.accountId);
+    const familyWaivers = familyReader && listFamilyWaivers(principal.organizationId, athleteId, familyReader);
+    const familyGuardians = familyReader && listFamilyGuardians(principal.organizationId, athleteId, familyReader);
     const emergencyContactColumns = emergencyContactColumnsForReader(principal.role);
-    const waiverColumns = waiverColumnsForReader(principal.role);
     const medicalIntakeColumns = medicalIntakeColumnsForReader(principal.role);
     const attendanceColumns = attendanceColumnsForReader(principal.role);
     const assessmentColumns = assessmentColumnsForReader(principal.role);
@@ -81,8 +96,8 @@ export async function POST(request: NextRequest) {
       // guardian's name. pilot.waivers carries signed_by_name and, since the
       // guardian-media-consent migration, parent_id -- so a note on the other
       // parent's waiver arrived already keyed to them. See
-      // waiverColumnsForReader for what each role keeps.
-      query(
+      // WAIVER_STAFF_COLUMNS for what staff alone keep.
+      familyWaivers ?? query(
         `select ${waiverColumns.join(', ')} from pilot.waivers
          where organization_id = $1 and athlete_id = $2 order by created_at desc`,
         [principal.organizationId, athleteId],
@@ -122,9 +137,8 @@ export async function POST(request: NextRequest) {
       // household read the other household's contact details, and the child
       // read both. Same crossing the note_type filter above closes, arriving
       // through the column list instead of the row filter. See
-      // guardianColumnsForReader for the per-role sets and why staff keep the
-      // contact columns.
-      query(
+      // GUARDIAN_STAFF_COLUMNS for why staff keep the contact columns.
+      familyGuardians ?? query(
         `select ${guardianColumns.join(', ')}, g.relationship_to_athlete
          from pilot.guardian_links g
          join pilot.parents p

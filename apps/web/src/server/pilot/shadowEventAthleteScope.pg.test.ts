@@ -69,7 +69,7 @@ import type { PilotRole } from './contracts';
 import { bodyMassCorrectionAuditEvent } from './athleteBodyMass';
 import { writePilotAuditEvent } from './audit';
 import { emitShadowEvent } from './shadowEvents';
-import { listShadowEvents } from './shadowReadModels';
+import { getShadowKnowledgeProjection, getShadowObservationProjection, listShadowEvents } from './shadowReadModels';
 
 jest.setTimeout(180_000);
 
@@ -338,6 +338,127 @@ async function seed(client: Client): Promise<void> {
   }));
 }
 
+/*
+ * #1558: A GUARDIAN'S ID AS entity_id. A second organization, so nothing above
+ * changes: one child, two guardians with logins, and the four rows whose
+ * entity_id is a guardian's account id or parent_id and which name the child
+ * -- written in the shapes their real writers use -- plus the child's own
+ * pain report as the control that an id the family may have still arrives.
+ */
+const ORG_G = 'org-sesc-guardians';
+const ADMIN_G = 'acct-admin-g-sesc';
+const COACH_G = 'acct-coach-g-sesc';
+const ATHLETE_G = 'ATH-SESC-G';
+const ATHLETE_G_ACCOUNT = 'acct-ath-g-sesc';
+const GUARDIAN_ONE = 'guardian.one.sesc@example.test';
+const GUARDIAN_TWO = 'guardian.two.sesc@example.test';
+const PAR_ONE = `par-${GUARDIAN_ONE}`;
+const PAR_TWO = `par-${GUARDIAN_TWO}`;
+const PAR_PAPER = 'par-paper-guardian-sesc';
+
+async function seedGuardianIdRows(client: Client): Promise<void> {
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+    [ORG_G],
+  );
+  for (const [accountId, role] of [[ADMIN_G, 'organization_admin'], [COACH_G, 'coach'], [GUARDIAN_ONE, 'parent'], [GUARDIAN_TWO, 'parent']] as const) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
+      [accountId, role, ORG_G],
+    );
+  }
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+       gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Guarded Athlete', '2012-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
+    [ORG_G, ATHLETE_G, ADMIN_G],
+  );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, athlete_id) values ($1, 'athlete', $2, $3)`,
+    [ATHLETE_G_ACCOUNT, ORG_G, ATHLETE_G],
+  );
+  await client.query(
+    `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+     values ($1, $2, $3, 'Guardian One'), ($1, $4, $5, 'Guardian Two')`,
+    [ORG_G, PAR_ONE, GUARDIAN_ONE, PAR_TWO, GUARDIAN_TWO],
+  );
+  await client.query(
+    `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+     values ($1, $2, $4, 'mother'), ($1, $3, $4, 'father')`,
+    [ORG_G, PAR_ONE, PAR_TWO, ATHLETE_G],
+  );
+
+  // admin/staff/route.ts, giving Guardian Two a login.
+  await writePilotAuditEvent({
+    event_type: 'create',
+    actor_account_id: ADMIN_G,
+    actor_role: 'organization_admin',
+    organization_id: ORG_G,
+    entity_type: 'account',
+    entity_id: GUARDIAN_TWO,
+    details: {
+      action: 'organization_admin_provision_staff',
+      role: 'parent',
+      login_email: GUARDIAN_TWO,
+      auth_provider: 'microsoft',
+      guardian_parent_id: PAR_TWO,
+      guardian_athlete_id: ATHLETE_G,
+    },
+  });
+  // admin/staff/route.ts, removing a paper-only guardian's link.
+  await writePilotAuditEvent({
+    event_type: 'update',
+    actor_account_id: ADMIN_G,
+    actor_role: 'organization_admin',
+    organization_id: ORG_G,
+    entity_type: 'guardian',
+    entity_id: PAR_PAPER,
+    details: {
+      action: 'organization_admin_remove_guardian_link',
+      guardian_parent_id: PAR_PAPER,
+      guardian_athlete_id: ATHLETE_G,
+      paper_only: true,
+    },
+  });
+  // guardianLoginMove.ts.
+  await writePilotAuditEvent({
+    event_type: 'update',
+    actor_account_id: ADMIN_G,
+    actor_role: 'organization_admin',
+    organization_id: ORG_G,
+    entity_type: 'guardian',
+    entity_id: PAR_TWO,
+    details: {
+      action: 'organization_admin_move_guardian_login',
+      from_account_id: 'guardian.two.old.sesc@example.test',
+      to_account_id: GUARDIAN_TWO,
+      to_login_created: false,
+      athlete_ids: [ATHLETE_G],
+      old_login_switched_off: true,
+    },
+  });
+  // intake/domain-upsert/route.ts, entity_type 'guardian'.
+  await emitShadowEvent({
+    organizationId: ORG_G,
+    eventName: 'SHADOW_INTAKE_DOMAIN_UPSERTED',
+    entityType: 'intake_guardian',
+    entityId: `${PAR_TWO}:${ATHLETE_G}`,
+    actorAccountId: ADMIN_G,
+    actorRole: 'organization_admin',
+    payload: { athlete_id: ATHLETE_G, automation_mode: 'manual' },
+  });
+  // The control: the child's own pain report.
+  await emitShadowEvent({
+    organizationId: ORG_G,
+    eventName: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+    entityType: 'athlete',
+    entityId: ATHLETE_G,
+    actorAccountId: ADMIN_G,
+    actorRole: 'organization_admin',
+    payload: { athlete_id: ATHLETE_G, severity_1_10: 3, location: 'right hand' },
+  });
+}
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
 
@@ -387,6 +508,7 @@ beforeAll(async () => {
   await applyFullSchema(client, { infraDir: INFRA_DIR });
   activeClient = client;
   await seed(client);
+  await seedGuardianIdRows(client);
 });
 
 afterAll(async () => {
@@ -412,9 +534,20 @@ afterAll(async () => {
 
 async function visibleTo(actorAccountId: string, actorRole: PilotRole, athleteId: string | null = null): Promise<string[]> {
   const rows = await listShadowEvents({ organizationId: ORG_ID, actorAccountId, actorRole, athleteId }, { limit: 200 });
+  // Labelled by the STORED entity_id, looked up by row id: a non-staff reader
+  // is no longer sent the id for most entity types (#1558), and which rows a
+  // role reads is a separate question from what each row carries.
+  const stored = await activeClient!.query<{ shadow_event_id: string; entity_id: string }>(
+    `select shadow_event_id, entity_id from pilot.shadow_events where organization_id = $1`,
+    [ORG_ID],
+  );
+  const storedId = new Map(stored.rows.map((row) => [String(row.shadow_event_id), row.entity_id]));
   // A sign-out and a sign-in share the account as entity_id; the label keeps
   // them apart.
-  return rows.map((row) => (row.event_name.includes('LOGOUT') ? `logout:${row.entity_id}` : row.entity_id)).sort();
+  return rows.map((row) => {
+    const entityId = storedId.get(String(row.shadow_event_id));
+    return row.event_name.includes('LOGOUT') ? `logout:${entityId}` : String(entityId);
+  }).sort();
 }
 
 const sorted = (ids: string[]) => [...ids].sort();
@@ -512,4 +645,77 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
   test("a parent reads only their child's rows", async () => {
     expect(await visibleTo(PARENT_A, 'parent')).toEqual(sorted([PAIN_A, LOGIN_A]));
   });
+});
+
+describe('SHADOW event feed: a guardian id never reaches a family reader as entity_id (#1558)', () => {
+  const feed = (actorAccountId: string, actorRole: PilotRole, athleteId: string | null = null) =>
+    listShadowEvents({ organizationId: ORG_G, actorAccountId, actorRole, athleteId }, { limit: 200 });
+
+  const GUARDIAN_IDS = [GUARDIAN_ONE, GUARDIAN_TWO, PAR_ONE, PAR_TWO, PAR_PAPER, 'guardian.two.old.sesc@example.test'];
+
+  test('control: the organization admin reads all five rows with their ids, as before', async () => {
+    const rows = await feed(ADMIN_G, 'organization_admin');
+
+    expect(rows.map((row) => `${row.entity_type}|${row.entity_id}`).sort()).toEqual([
+      `account|${GUARDIAN_TWO}`,
+      `athlete|${ATHLETE_G}`,
+      `guardian|${PAR_PAPER}`,
+      `guardian|${PAR_TWO}`,
+      `intake_guardian|${PAR_TWO}:${ATHLETE_G}`,
+    ].sort());
+  });
+
+  // A coach does not read the account and guardian audit mirrors at all (they
+  // are off audit/get's coach list); the two rows a coach does read arrive
+  // with their ids, the guardian's included. Staff are unchanged.
+  test('control: a coach of the gym reads their rows with the ids, as before', async () => {
+    const rows = await feed(COACH_G, 'coach');
+
+    expect(rows.map((row) => `${row.entity_type}|${row.entity_id}`).sort()).toEqual([
+      `athlete|${ATHLETE_G}`,
+      `intake_guardian|${PAR_TWO}:${ATHLETE_G}`,
+    ].sort());
+  });
+
+  // The two projections built on the same feed, as the other guardian.
+  test('the knowledge and observation projections carry no guardian id for Guardian One either', async () => {
+    const reader = { organizationId: ORG_G, actorAccountId: GUARDIAN_ONE, actorRole: 'parent' as PilotRole, athleteId: null };
+    const knowledge = await getShadowKnowledgeProjection(reader, { limit: 200 });
+    const observation = await getShadowObservationProjection(reader, { limit: 200 });
+
+    // Not vacuous: both projections have rows to show.
+    expect(knowledge.length).toBeGreaterThan(0);
+    expect(observation.length).toBeGreaterThan(0);
+    const body = JSON.stringify({ knowledge, observation });
+    for (const id of GUARDIAN_IDS) {
+      expect(body).not.toContain(id);
+    }
+    expect(body).not.toContain('par-');
+  });
+
+  // The other guardian, the guardian the rows are about, and the child.
+  test.each([
+    ['Guardian One', GUARDIAN_ONE, 'parent', null],
+    ['Guardian Two', GUARDIAN_TWO, 'parent', null],
+    ['the athlete', ATHLETE_G_ACCOUNT, 'athlete', ATHLETE_G],
+  ] as Array<[string, string, PilotRole, string | null]>)(
+    '%s still reads the five rows about the child, and no guardian account id or parent_id in any of them',
+    async (_label, accountId, role, athleteId) => {
+      const rows = await feed(accountId, role, athleteId);
+
+      // The rows DO reach the family: that is what made the id a disclosure.
+      expect(rows.map((row) => `${row.entity_type}|${row.entity_id}`).sort()).toEqual([
+        'account|null',
+        `athlete|${ATHLETE_G}`,
+        'guardian|null',
+        'guardian|null',
+        'intake_guardian|null',
+      ]);
+      const body = JSON.stringify(rows);
+      for (const id of GUARDIAN_IDS) {
+        expect(body).not.toContain(id);
+      }
+      expect(body).not.toContain('par-');
+    },
+  );
 });

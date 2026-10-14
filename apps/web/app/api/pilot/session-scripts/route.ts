@@ -4,6 +4,12 @@ import { requireRole } from '@/src/server/pilot/access';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  SessionScriptAuthoringError,
+  createSessionScriptFromTemplate,
+  editSessionScript,
+  type SessionScriptBlockEdit,
+} from '@/src/server/pilot/sessionScriptAuthoring';
+import {
   projectSessionScriptDetailForReader,
   projectSessionScriptsForReader,
 } from '@/src/server/pilot/sessionScriptProjection';
@@ -11,7 +17,8 @@ import { getSessionScriptWithDetail, listSessionScripts } from '@/src/server/pil
 
 export const runtime = 'nodejs';
 
-// Read-only browse over pilot.session_scripts. GET without script_id lists
+// Browse over pilot.session_scripts, and (POST, PATCH at the foot) a coach's
+// own writes to it. GET without script_id lists
 // (filterable by discipline/phase/day_of_week/authoring_state); GET with
 // script_id returns one script's detail, blocks assembled in running order
 // together with every authored rendering -- the coach picks a format at
@@ -67,5 +74,122 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ scripts: projectSessionScriptsForReader(principal.role, scripts) });
   } catch (error) {
     return jsonError(error);
+  }
+}
+
+// WRITING A SCRIPT is coach work: a coach or an organization admin of the gym
+// and nobody else -- the wider reader policy above admits roles that only
+// read, and platform_owner is refused here as it is for the drill and
+// template writes (DRILL_AUTHOR_ROLES, the same three names). The list is
+// declared here, as those are, and registered for this route in
+// coachingContentAccess.test.ts, whose sweeps allow a route no other role
+// list. The organization is always the principal's; no body field names one.
+// Both verbs answer with the stored script, which is what these roles read
+// anyway.
+const SESSION_SCRIPT_AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
+
+function badRequest(code: string) {
+  return NextResponse.json({ error: code }, { status: 400 });
+}
+
+async function bodyRecord(request: NextRequest, allowed: readonly string[]): Promise<Record<string, unknown> | NextResponse> {
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return badRequest('INVALID_BODY');
+  }
+  const extras = Object.keys(body).filter((key) => !allowed.includes(key));
+  if (extras.length > 0) {
+    return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+  }
+  return body as Record<string, unknown>;
+}
+
+function isBlockEdit(value: unknown): value is SessionScriptBlockEdit {
+  if (!value || typeof value !== 'object') return false;
+  const edit = value as Record<string, unknown>;
+  return typeof edit.block_id === 'string'
+    && typeof edit.block_label === 'string'
+    && typeof edit.start_offset_min === 'number'
+    && typeof edit.end_offset_min === 'number';
+}
+
+function authoringError(error: unknown): NextResponse {
+  if (error instanceof SessionScriptAuthoringError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
+  }
+  return jsonError(error);
+}
+
+// POST makes a script from one of the gym's workout templates: its steps, in
+// its order, as timed blocks. { template_id, name? }.
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
+
+    const record = await bodyRecord(request, ['template_id', 'name']);
+    if (record instanceof NextResponse) return record;
+    if (typeof record.template_id !== 'string' || record.template_id.trim() === '') {
+      return badRequest('template_id');
+    }
+    if (record.name !== undefined && typeof record.name !== 'string') {
+      return badRequest('name');
+    }
+
+    const created = await createSessionScriptFromTemplate({
+      organizationId: principal.organizationId,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      templateId: record.template_id.trim(),
+      name: record.name,
+    });
+    const script = await getSessionScriptWithDetail(principal.organizationId, created.script_id);
+    return NextResponse.json({ script }, { status: 201 });
+  } catch (error) {
+    return authoringError(error);
+  }
+}
+
+// PATCH changes a script's name and its blocks' titles and minutes.
+// { script_id, expected_updated_at, name?,
+//   blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }] }.
+// A script that has been delivered is not changed: the edit becomes its next
+// version, and `outcome` says which happened. expected_updated_at is the
+// script's updated_at as the editor read it, and is required: a script another
+// coach has saved since is refused (409 SESSION_SCRIPT_CHANGED) rather than
+// overwritten.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
+
+    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks']);
+    if (record instanceof NextResponse) return record;
+    if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
+      return badRequest('script_id');
+    }
+    if (typeof record.expected_updated_at !== 'string' || Number.isNaN(Date.parse(record.expected_updated_at))) {
+      return badRequest('expected_updated_at');
+    }
+    if (record.name !== undefined && typeof record.name !== 'string') {
+      return badRequest('name');
+    }
+    if (record.blocks !== undefined && !(Array.isArray(record.blocks) && record.blocks.every(isBlockEdit))) {
+      return badRequest('blocks');
+    }
+
+    const edited = await editSessionScript({
+      organizationId: principal.organizationId,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      scriptId: record.script_id.trim(),
+      name: record.name,
+      blocks: record.blocks as SessionScriptBlockEdit[] | undefined,
+      expectedUpdatedAt: record.expected_updated_at,
+    });
+    const script = await getSessionScriptWithDetail(principal.organizationId, edited.script_id);
+    return NextResponse.json({ outcome: edited.outcome, script });
+  } catch (error) {
+    return authoringError(error);
   }
 }

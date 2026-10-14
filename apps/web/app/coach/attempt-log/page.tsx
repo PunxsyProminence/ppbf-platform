@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
 // attempt -- made OR failed -- because the failed ones are the point. "One
@@ -79,6 +80,11 @@ const CONTEXTS: Array<{ value: string; label: string }> = [
 ];
 
 const unitFor = (kind: string) => METRICS.find((m) => m.kind === kind)?.unit ?? '';
+
+// A unit that is a word stands apart from its number ("8 reps"); a symbol sits
+// against it ("92s", "20kg"). The kind line below leaves out a kind the unit
+// already says, so "reps" is not printed twice.
+const spokenUnit = (unit: string) => (unit.length > 2 ? ` ${unit}` : unit);
 
 function verdictLabel(made: boolean | null): string {
   if (made === null) return 'measurement';
@@ -199,11 +205,11 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
           <span className="badge badge--locked"><i aria-hidden="true">✕</i>missed</span>
         )}
         <span className="t-body font-semibold text-[color:var(--bone-100)]">
-          {attempt.achieved_value}{unit}
-          {attempt.target_value ? ` / target ${attempt.target_value}${unit}` : ''}
+          {attempt.achieved_value}{spokenUnit(unit)}
+          {attempt.target_value ? ` / target ${attempt.target_value}${spokenUnit(unit)}` : ''}
         </span>
         <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-          {attempt.metric_kind.replaceAll('_', ' ')} · {attempt.context_type.replaceAll('_', ' ')} · {attempt.attempted_at.slice(0, 10)}
+          {attempt.metric_kind === unit ? '' : `${attempt.metric_kind.replaceAll('_', ' ')} · `}{attempt.context_type.replaceAll('_', ' ')} · {formatGymDateTimeShort(attempt.attempted_at) ?? attempt.attempted_at}
         </span>
         <span className="t-muted" style={{ fontSize: 'var(--t-xs)' }}>{recorderLabel(attempt.recorded_by_role)}</span>
       </div>
@@ -217,8 +223,8 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
       )}
       {attempt.review_state === 'corrected' && (
         <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }} role="status">
-          Coach correction: {attempt.corrected_achieved_value}{unit}
-          {attempt.corrected_target_value ? ` / target ${attempt.corrected_target_value}${unit}` : ''} — {verdictLabel(attempt.corrected_made)}
+          Coach correction: {attempt.corrected_achieved_value}{spokenUnit(unit)}
+          {attempt.corrected_target_value ? ` / target ${attempt.corrected_target_value}${spokenUnit(unit)}` : ''} — {verdictLabel(attempt.corrected_made)}
           {attempt.review_reason ? ` — ${attempt.review_reason}` : ''}
         </p>
       )}
@@ -293,9 +299,9 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
             <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
               {history.map((review) => (
                 <li key={review.review_id} className="t-muted" style={{ fontSize: 'var(--t-xs)' }}>
-                  {review.reviewed_at.slice(0, 10)} · {review.review_state}
+                  {formatGymDateTimeShort(review.reviewed_at) ?? review.reviewed_at} · {review.review_state}
                   {review.review_state === 'corrected'
-                    ? `: ${review.corrected_achieved_value}${unit}${review.corrected_target_value ? ` / ${review.corrected_target_value}${unit}` : ''} — ${verdictLabel(review.corrected_made)}`
+                    ? `: ${review.corrected_achieved_value}${spokenUnit(unit)}${review.corrected_target_value ? ` / ${review.corrected_target_value}${spokenUnit(unit)}` : ''} — ${verdictLabel(review.corrected_made)}`
                     : ''}
                   {review.reason ? ` — ${review.reason}` : ''}
                 </li>

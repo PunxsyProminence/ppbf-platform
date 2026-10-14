@@ -206,6 +206,121 @@ describe('/admin/athletes', () => {
     await screen.findByText(/attendance 86%/i);
   });
 
+  // F-058. The row printed "coach coach-1": the account id behind the coach.
+  test('the roster row names the coach, not the account id', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/coach-1/)).toBeNull();
+  });
+
+  test('a coach who is not on the staff list is said plainly, never printed as an id', async () => {
+    const fetchMock = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({ ok: true, members: [] })
+      : undefined));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach not on the staff list/);
+    expect(screen.queryByText(/coach-1/)).toBeNull();
+  });
+
+  test('a coach who left the active list is still named, and a staff list that could not be read is not read as "not on it"', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ account_id: 'coach-1', login_email: 'jason@example.org', role: 'coach', active_flag: false, membership_active: true }],
+      })
+      : undefined)) as unknown as typeof fetch;
+    const { unmount } = render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+    unmount();
+
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({ error: 'Forbidden' }, false, 403)
+      : undefined)) as unknown as typeof fetch;
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach name not available/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+  });
+
+  test('a coach who is listed without a login address is not said to be missing from the list', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ account_id: 'coach-1', login_email: null, role: 'coach', active_flag: true, membership_active: true }],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/coach name not available/);
+    expect(screen.queryByText(/not on the staff list/)).toBeNull();
+  });
+
+  // The row printed the stored date text and the picker listed coaches by email.
+  test('the row writes the date of birth as a date, and the coach picker names coaches', async () => {
+    global.fetch = consoleFetch() as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    expect(await screen.findByText(/born Apr 7, 2012/)).toBeTruthy();
+    expect(screen.queryByText(/2012-04-07/)).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
+    const options = [...picker.querySelectorAll('option')].map((option) => option.textContent);
+    expect(options).toEqual(['Coach Jason', 'Coach Rosa']);
+    expect(options.join(' ')).not.toMatch(/@/);
+  });
+
+  test('two coaches who would read the same are told apart by their address', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-1', login_email: 'sam@a.org', role: 'coach', active_flag: true, membership_active: true },
+          { account_id: 'coach-2', login_email: 'sam@b.org', role: 'coach', active_flag: true, membership_active: true },
+        ],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
+    expect([...picker.querySelectorAll('option')].map((option) => option.textContent))
+      .toEqual(['Coach Sam (sam@a.org)', 'Coach Sam (sam@b.org)']);
+  });
+
+  test('coaches with no login address on file are still told apart in the picker', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-1', login_email: null, role: 'coach', active_flag: true, membership_active: true },
+          { account_id: 'coach-2', login_email: null, role: 'coach', active_flag: true, membership_active: true },
+        ],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
+    const labels = [...picker.querySelectorAll('option')].map((option) => option.textContent);
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
+    expect(labels.join(' ')).not.toMatch(/coach-1|coach-2/);
+  });
+
   test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
     const fetchMock = consoleFetch((url) =>
       url.includes('/api/pilot/scheduler/attendance-summary')

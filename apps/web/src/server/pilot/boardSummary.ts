@@ -1,3 +1,5 @@
+import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+
 import { queryOne } from './db';
 
 export const BOARD_MINIMUM_COHORT_SIZE = 5;
@@ -174,15 +176,37 @@ export function buildBoardSummary(
   };
 }
 
-export async function getBoardSummary(
-  organizationId: string,
-): Promise<BoardSummary> {
-  if (!organizationId.trim()) {
-    throw new Error('Forbidden: Board summary requires an organization');
-  }
+/*
+ * THE DATED BOARD REPORT (#1542, RP-04). The same aggregate contract and the
+ * same suppression as the summary, for one completed calendar month (the route
+ * enforces it; RP-04 Q-F default A): training sessions by their date and coach
+ * reviews by the gym day they were written, both inclusive of the window's
+ * first and last day, for every athlete of the organization not deleted --
+ * not only those active today, so deactivating an athlete later does not
+ * change a past month (and cannot be read off by comparing two reads). Active
+ * athletes and goal status have no stored history, so they are as of when the
+ * report was made (RP-04 Q-E default A), and the report says so.
+ *
+ * Without a window, getBoardSummary is unchanged: the dashboard keeps its
+ * rolling 30 days and its single query parameter.
+ */
+export interface BoardReportWindow {
+  from: string;
+  to: string;
+}
 
-  const row = await queryOne<BoardSummaryRow>(
-    `with active_athletes as (
+export interface BoardReport extends BoardSummary {
+  window: BoardReportWindow;
+  timeZone: string;
+}
+
+const ROLLING_SESSIONS = `s.date >= current_date - interval '30 days'`;
+const ROLLING_REVIEWS = `cr.created_at >= now() - interval '30 days'`;
+const WINDOW_SESSIONS = `s.date between $2::date and $3::date`;
+const WINDOW_REVIEWS = `(cr.created_at at time zone $4::text)::date between $2::date and $3::date`;
+
+function boardSummarySql(sessionsInPeriod: string, reviewsInPeriod: string, periodAthletesActiveOnly: boolean): string {
+  return `with active_athletes as (
        select athlete_id
        from pilot.athletes
        where organization_id = $1
@@ -193,12 +217,18 @@ export async function getBoardSummary(
          -- deleted with them (scope B).
          and deleted_at is null
      ),
+     period_athletes as (
+       select athlete_id
+       from pilot.athletes
+       where organization_id = $1
+         and deleted_at is null${periodAthletesActiveOnly ? '\n         and active_flag = true' : ''}
+     ),
      recent_sessions as (
        select s.athlete_id, s.completed_flag
        from pilot.sessions s
-       join active_athletes a on a.athlete_id = s.athlete_id
+       join period_athletes a on a.athlete_id = s.athlete_id
        where s.organization_id = $1
-         and s.date >= current_date - interval '30 days'
+         and ${sessionsInPeriod}
      ),
      scoped_goals as (
        select g.athlete_id,
@@ -217,9 +247,9 @@ export async function getBoardSummary(
        join pilot.sessions s
          on s.organization_id = cr.organization_id
         and s.session_id = cr.session_id
-       join active_athletes a on a.athlete_id = s.athlete_id
+       join period_athletes a on a.athlete_id = s.athlete_id
        where cr.organization_id = $1
-         and cr.created_at >= now() - interval '30 days'
+         and ${reviewsInPeriod}
      )
      select
        (select count(*) from active_athletes)::int as active_athlete_count,
@@ -234,7 +264,22 @@ export async function getBoardSummary(
        (select count(distinct athlete_id) from scoped_goals where status_bucket = 'other')::int as other_goal_athlete_count,
        (select count(*) from recent_reviews)::int as review_count,
        (select count(distinct athlete_id) from recent_reviews)::int as review_athlete_count,
-       (select count(*) from recent_reviews where approved_flag)::int as approved_review_count`,
+       (select count(*) from recent_reviews where approved_flag)::int as approved_review_count`;
+}
+
+function requireOrganization(organizationId: string): void {
+  if (!organizationId.trim()) {
+    throw new Error('Forbidden: Board summary requires an organization');
+  }
+}
+
+export async function getBoardSummary(
+  organizationId: string,
+): Promise<BoardSummary> {
+  requireOrganization(organizationId);
+
+  const row = await queryOne<BoardSummaryRow>(
+    boardSummarySql(ROLLING_SESSIONS, ROLLING_REVIEWS, true),
     [organizationId],
   );
 
@@ -242,4 +287,21 @@ export async function getBoardSummary(
     throw new Error('BOARD_SUMMARY_UNAVAILABLE');
   }
   return buildBoardSummary(row);
+}
+
+export async function getBoardReport(
+  organizationId: string,
+  window: BoardReportWindow,
+): Promise<BoardReport> {
+  requireOrganization(organizationId);
+
+  const row = await queryOne<BoardSummaryRow>(
+    boardSummarySql(WINDOW_SESSIONS, WINDOW_REVIEWS, false),
+    [organizationId, window.from, window.to, GYM_TIME_ZONE],
+  );
+
+  if (!row) {
+    throw new Error('BOARD_SUMMARY_UNAVAILABLE');
+  }
+  return { ...buildBoardSummary(row), window: { from: window.from, to: window.to }, timeZone: GYM_TIME_ZONE };
 }

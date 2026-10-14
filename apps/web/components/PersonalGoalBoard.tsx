@@ -6,6 +6,7 @@ import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { SaveNote, withoutKey, type SaveState } from './AthleteAchievements';
 import { apiBase } from '@/lib/apiBase';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 /**
  * A GOAL SOMEBODY SET FOR THEMSELVES, IN THEIR OWN WORDS.
@@ -288,7 +289,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
                 {/* A date that has passed is not called late. There is no
                     overdue state here and no column that could hold one. */}
                 {goal.target_date && (
-                  <p className="tcard-sub mt-[var(--s2)]">Wrote down: {formatDay(goal.target_date)}</p>
+                  <p className="tcard-sub mt-[var(--s2)]">Aiming for: {formatDay(goal.target_date)}</p>
                 )}
                 {!readOnly && (
                   <button
@@ -330,9 +331,14 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
   );
 }
 
-/** Dates arrive as ISO or YYYY-MM-DD; render without inventing a timezone. */
+/**
+ * target_date arrives as a bare YYYY-MM-DD; reached_at as an instant. A bare
+ * day is written as it is. An instant is reduced to the gym's day first:
+ * slicing the ISO text names the UTC day, which is tomorrow for a goal ticked
+ * off after 8 PM gym time.
+ */
 function formatDay(raw: string): string {
-  const ymd = raw.slice(0, 10);
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return raw;
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

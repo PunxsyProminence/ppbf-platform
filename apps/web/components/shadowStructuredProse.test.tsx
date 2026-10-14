@@ -97,3 +97,67 @@ describe('ShadowStructuredProse', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('bold', () => {
+  test('a balanced **pair** is bold and its asterisks are not printed', () => {
+    const { container } = render(<ShadowStructuredProse text="Keep your **jab, shoulder up, hand home** every time." />);
+
+    const strong = container.querySelector('strong');
+    expect(strong?.textContent).toBe('jab, shoulder up, hand home');
+    expect(container.textContent).toBe('Keep your jab, shoulder up, hand home every time.');
+    expect(container.textContent).not.toContain('*');
+  });
+
+  test('bold works inside a list item', () => {
+    const { container } = render(<ShadowStructuredProse text={'- **Guard** up\n- Chin down'} />);
+
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelector('li strong')?.textContent).toBe('Guard');
+  });
+
+  test('an unmatched ** is left as typed rather than guessed at', () => {
+    const { container } = render(<ShadowStructuredProse text="Two stars ** and no partner" />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Two stars ** and no partner');
+  });
+
+  test('markup inside a bold pair stays text', () => {
+    const { container } = render(<ShadowStructuredProse text="**<img src=x onerror=alert(1)>**" />);
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('strong')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+});
+
+describe('bold needs words inside it', () => {
+  test('arithmetic with ** is left alone', () => {
+    const { container } = render(<ShadowStructuredProse text="Work out x ** 2 + y ** 2 for the drill." />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Work out x ** 2 + y ** 2 for the drill.');
+  });
+});
+
+describe('bold is not read out of arithmetic', () => {
+  test('unspaced exponents keep their operators', () => {
+    const { container } = render(<ShadowStructuredProse text="Work out x**2 + y**2 for the drill." />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('Work out x**2 + y**2 for the drill.');
+  });
+
+  test('a pair next to punctuation is still bold', () => {
+    const { container } = render(<ShadowStructuredProse text="Remember: (**guard up**), then **chin down**." />);
+
+    expect([...container.querySelectorAll('strong')].map((node) => node.textContent)).toEqual(['guard up', 'chin down']);
+    expect(container.textContent).toBe('Remember: (guard up), then chin down.');
+  });
+
+  test('a pair stuck to a letter is left as typed', () => {
+    const { container } = render(<ShadowStructuredProse text="un**believ**able" />);
+
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container.textContent).toBe('un**believ**able');
+  });
+});

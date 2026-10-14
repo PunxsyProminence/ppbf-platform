@@ -129,3 +129,32 @@ test('a failed groups read says so, never "No groups yet", and holds back the ad
   expect(screen.queryByText(/No groups yet/i)).toBeNull();
   expect(screen.queryByLabelText('Group name')).toBeNull();
 });
+
+// LC-06. The day picker listed a saved plan as "2026-08-16".
+test('the day picker names a saved plan by its date, not in computer form', async () => {
+  global.fetch = mockFetch({ groups: SMALL_GROUPS });
+
+  await act(async () => {
+    render(<FloorGroupsPage />);
+  });
+
+  expect(await screen.findByRole('option', { name: 'Aug 16, 2026 — Tuesday night' })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: /2026-08-16/ })).toBeNull();
+});
+
+// The new-plan day defaulted to the UTC day: after 8 PM at the gym it offered
+// tomorrow.
+test('a new plan defaults to the gym day, not the UTC day', async () => {
+  jest.useFakeTimers({ now: new Date('2026-10-13T01:00:00Z'), advanceTimers: true });
+  try {
+    global.fetch = mockFetch({ groups: SMALL_GROUPS });
+
+    await act(async () => {
+      render(<FloorGroupsPage />);
+    });
+
+    expect((screen.getByLabelText('Day') as HTMLInputElement).value).toBe('2026-10-12');
+  } finally {
+    jest.useRealTimers();
+  }
+});

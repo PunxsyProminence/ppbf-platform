@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateShort, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import type { OrgMetrics } from '@/app/api/pilot/shadow/metrics/route';
 import {
   interpretShadowFeedbackReviewResponse,
@@ -723,7 +724,7 @@ function LibraryReviewFlagsPanel() {
                   <i>▲</i>{flag.latest_outcome_signal ?? flag.outcome_signal ?? 'negative outcome'}
                 </span>
                 <span className="t-muted font-mono">
-                  ×{flag.flag_count} · last {flag.last_flagged_at.slice(0, 10)}
+                  ×{flag.flag_count} · last {formatGymDateShort(flag.last_flagged_at) ?? flag.last_flagged_at}
                 </span>
                 <span className="ml-auto flex gap-2">
                   <button
@@ -971,7 +972,7 @@ function renderFeedbackReviewPanel(props: {
           </span>
           {item.outcome_signal && <span>{item.outcome_signal}</span>}
           {item.rating != null && <span>Rating {item.rating}</span>}
-          <span className="text-[color:var(--bone-400)]">{item.created_at}</span>
+          <span className="text-[color:var(--bone-400)]">{formatGymDateTimeShort(item.created_at) ?? item.created_at}</span>
         </div>
 
         {item.comment ? (

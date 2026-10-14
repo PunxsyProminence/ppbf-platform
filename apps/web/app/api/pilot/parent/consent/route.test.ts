@@ -143,7 +143,9 @@ describe('GET /api/pilot/parent/consent', () => {
           guardian_count: 1,
           missing_guardian_count: 0,
           per_guardian: [
-            { parent_id: 'p1', you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
+            // No parent_id, even the caller's own (#1558): it is `par-` plus an
+            // email-shaped account id, and no family answer carries one.
+            { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
           ],
         },
       ],
@@ -178,8 +180,48 @@ describe('GET /api/pilot/parent/consent', () => {
 
     expect(body.items[0].per_guardian).toEqual([
       { you: false, status: 'not_on_file' },
-      expect.objectContaining({ parent_id: 'p3', you: true }),
+      { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
     ]);
+    // #1558: neither the co-guardian's record id nor the caller's own.
+    expect(JSON.stringify(body)).not.toMatch(/parent_id|"p[123]"/);
+  });
+
+  // #1558: TWO GUARDIANS OF ONE CHILD, each asking. Each gets their own row in
+  // full and the other's status, and neither gets any record id.
+  test.each([
+    ['the first guardian', 'par-first.guardian@example.test', [
+      { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
+      { you: false, status: 'withdrawn' },
+    ]],
+    ['the second guardian', 'par-second.guardian@example.test', [
+      { you: false, status: 'granted' },
+      { you: true, status: 'withdrawn', covers_video: true, public_use_allowed: false, signed_at: '2026-09-01T00:00:00Z' },
+    ]],
+  ])('%s of the same child receives their own row and the other\'s status, and no record id', async (_label, ownParentId, expected) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockCallerParentIdSet.mockResolvedValueOnce(new Set([ownParentId]));
+    mockList.mockResolvedValueOnce([
+      {
+        athleteId: 'ath-1',
+        consent: {
+          ok: false,
+          guardianIds: ['par-first.guardian@example.test', 'par-second.guardian@example.test'],
+          missingParentIds: [],
+          perGuardian: [
+            { parentId: 'par-first.guardian@example.test', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' },
+            { parentId: 'par-second.guardian@example.test', status: 'withdrawn', coversVideo: true, publicUseAllowed: false, signedAt: '2026-09-01T00:00:00Z' },
+          ],
+          retained: [],
+        },
+      },
+    ]);
+
+    const body = await (await GET(request('/api/pilot/parent/consent'))).json();
+
+    expect(body.items[0].per_guardian).toEqual(expected);
+    expect(JSON.stringify(body)).not.toContain('par-');
+    expect(JSON.stringify(body)).not.toContain('guardian@example.test');
+    expect(JSON.stringify(body)).not.toContain('parent_id');
   });
 
   // Owner ruling, Jason 2026-10-05 ("Go with all reco,endations"): a
@@ -220,7 +262,7 @@ describe('GET /api/pilot/parent/consent', () => {
     const body = await (await GET(request('/api/pilot/parent/consent'))).json();
 
     expect(body.items[0].per_guardian).toEqual([
-      { parent_id: 'p1', you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
+      { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
       { you: false, status: 'granted' },
       { you: false, status: 'withdrawn' },
       { you: false, status: 'not_on_file' },

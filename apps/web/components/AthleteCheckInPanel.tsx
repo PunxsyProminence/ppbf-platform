@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import {
   MINIMAL_CHECK_IN_KEYS,
   SLEEP_HOURS_TYPICAL_MAX,
@@ -278,7 +279,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
         <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s4)]`}>
           <h3 className="t-label">Already checked in today</h3>
           <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
-            You checked in on {today.checked_in_on}. Your workout and tasks are open.
+            You checked in on {formatCalendarDay(today.checked_in_on)}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
           {bodyMassNotice !== '' && (
@@ -295,7 +296,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
                 contract's engagement rules apply to anything built on this. */}
             {recent.slice(0, 14).map((record) => (
               <p key={record.check_in_id} className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
-                {record.checked_in_on}
+                {formatCalendarDay(record.checked_in_on)}
               </p>
             ))}
           </div>

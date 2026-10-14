@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
+import MakeSessionScript from './MakeSessionScript';
 import type {
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
@@ -17,9 +18,12 @@ import type {
 // floor -- so this page offers no create, no edit, and no delete, and that
 // absence is deliberate rather than unfinished.
 //
-// The one write is ISSUING an open template to an athlete (lane P7, #1401;
-// POST /api/pilot/workout-templates/issue). It writes assignments, never a
-// template, and only after the coach confirms. See IssueToAthlete below.
+// Two writes start from an open template, and neither writes a template.
+// ISSUING it to an athlete (lane P7, #1401; POST
+// /api/pilot/workout-templates/issue) writes assignments, and only after the
+// coach confirms. See IssueToAthlete below. MAKING A SESSION SCRIPT from it
+// (lane L1; POST /api/pilot/session-scripts) writes a script, which is then
+// edited and delivered under Session Scripts. See MakeSessionScript.tsx.
 //
 // Layout, gating and honesty rules mirror /coach/session-scripts: a failed
 // read is distinguished from an empty catalog, and durations render as
@@ -596,6 +600,8 @@ function CoachWorkoutTemplates() {
   // control, and an issue whose control is gone answers to nobody: the cards
   // would exist with nothing on screen to say so.
   const [issuing, setIssuing] = useState(false);
+  // The same, while a session script is being made from the open template.
+  const [making, setMaking] = useState(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
   const requestKeys = useRef<RequestKeys>(new Map());
@@ -679,8 +685,8 @@ function CoachWorkoutTemplates() {
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The reusable session shapes behind the plans: what a session of each type looks like,
-            block by block. Open one to issue it to an athlete. Delivering a session live happens
-            from Session Scripts.
+            block by block. Open one to issue it to an athlete, or to make a session script from
+            it. Delivering a session live happens from Session Scripts.
           </p>
           <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/coach/session-scripts" className="btn btn--ghost">
@@ -721,7 +727,7 @@ function CoachWorkoutTemplates() {
                 </div>
                 <p className="t-label mt-[var(--s2)]">
                   {template.session_type.replace(/_/g, ' ')}
-                  {` -- ${template.age_band}`}
+                  {` -- ${template.age_band.replace(/_/g, ' ').toLowerCase()}`}
                   {` -- ${template.duration_minutes} min`}
                 </p>
                 {template.intent.trim() !== '' && (
@@ -740,7 +746,7 @@ function CoachWorkoutTemplates() {
                   // for the template already showing with its issue control (a
                   // stray tap would wipe the result the coach is reading). A
                   // template with no steps has no control, and can be re-read.
-                  disabled={issuing || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                  disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                 >
                   {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                 </button>
@@ -836,6 +842,17 @@ function CoachWorkoutTemplates() {
                     untestedDrills={detail.untestedDrills}
                     onBusyChange={setIssuing}
                     requestKeys={requestKeys}
+                  />
+                )}
+
+                {/* Keyed by the template, and unmounted with the block above
+                    when another template is opened: a result never sits under
+                    a template it was not made from. */}
+                {detail.items.length > 0 && (
+                  <MakeSessionScript
+                    key={detail.template.template_id}
+                    templateId={detail.template.template_id}
+                    onBusyChange={setMaking}
                   />
                 )}
               </>

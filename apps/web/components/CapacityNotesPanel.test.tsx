@@ -96,6 +96,9 @@ test('shows the notes newest first as stored, with the author by name and the da
   expect(items).toHaveLength(2);
   expect(items[0].textContent).toContain('Held pace through all six rounds');
   expect(items[0].textContent).toContain('Coach Jason');
+  // LC-18: the same date-and-time style as a staff note, not "10/8/2026".
+  expect(items[0].textContent).toContain('Oct 8, 2026, 8:00 AM');
+  expect(items[0].textContent).not.toMatch(/\d+\/\d+\/\d{4}/);
   expect(items[1].textContent).toContain('Gassed after round three');
   expect(items[1].textContent).toContain('Coach Gym Admin');
   expect(screen.getAllByRole('button', { name: /^Withdraw your note/ })).toHaveLength(1);

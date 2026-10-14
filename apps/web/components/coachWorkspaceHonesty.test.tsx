@@ -19,6 +19,7 @@ jest.mock('./CoachFloorFocus', () => ({ __esModule: true, default: () => null })
 interface RouteResponses {
   floorPlans?: () => Promise<Response>;
   reviewProjection?: () => Promise<Response>;
+  observationProjection?: () => Promise<Response>;
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
   intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
@@ -116,7 +117,7 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
       return routes.reviewProjection ? routes.reviewProjection() : jsonResponse({ queue: [] });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
-      return jsonResponse({ items: [] });
+      return routes.observationProjection ? routes.observationProjection() : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/coach-reviews/list')) {
       const sessionId = new URL(url, 'http://localhost').searchParams.get('session_id') ?? '';
@@ -507,7 +508,7 @@ describe("the Development tab shows the coach's real credential record", () => {
     expect(screen.queryByText(/no backend feed for coach certifications/i)).toBeNull();
     expect(screen.queryByText('SafeSport Training')).not.toBeNull();
     expect(screen.queryByText('Current')).not.toBeNull();
-    expect(screen.queryByText(/Expires 2027-02-01/)).not.toBeNull();
+    expect(screen.queryByText(/Expires Feb 1, 2027/)).not.toBeNull();
     expect(screen.getByRole('link', { name: 'Manage your credentials' }).getAttribute('href'))
       .toBe('/coach/credentials');
   });
@@ -522,7 +523,7 @@ describe("the Development tab shows the coach's real credential record", () => {
     openTab('Development');
 
     expect(screen.queryByText('Expired')).not.toBeNull();
-    expect(screen.queryByText(/Expired 2025-01-01/)).not.toBeNull();
+    expect(screen.queryByText(/Expired Jan 1, 2025/)).not.toBeNull();
   });
 
   test('a submitted credential is not dated, because nobody has confirmed the dates yet', async () => {
@@ -535,7 +536,7 @@ describe("the Development tab shows the coach's real credential record", () => {
     openTab('Development');
 
     expect(screen.queryByText('Awaiting review')).not.toBeNull();
-    expect(screen.queryByText(/Expires 2027-02-01/)).toBeNull();
+    expect(screen.queryByText(/Expires Feb 1, 2027/)).toBeNull();
   });
 
   test('an unrecognised band falls to "Not on file", never to "Current"', async () => {
@@ -953,6 +954,10 @@ describe('coach review read-back', () => {
     expect(screen.queryByText('Clean angles all night.')).not.toBeNull();
     // The other coach's review is attributed to another coach, not to this one.
     expect(screen.queryByText(/another coach \(acct_coach_2\)/)).not.toBeNull();
+    // The saved decision reads in the picker's words, not as the stored code.
+    expect(screen.queryByText('Approved', { selector: 'span' })).not.toBeNull();
+    expect(screen.queryByText('Not decided yet', { selector: 'span' })).not.toBeNull();
+    expect(screen.queryByText('hold', { selector: 'span' })).toBeNull();
   });
 
   test('a session with no reviews says so, without the failure warning', async () => {
@@ -1080,8 +1085,8 @@ describe('coach review session picker', () => {
     // prompt -- nothing invented, nothing dropped.
     expect(options).toEqual([
       { value: '', label: 'Select a session' },
-      { value: 'session_b', label: '2026-08-12 - open - RPE 4' },
-      { value: 'session_a', label: '2026-08-10 - completed - RPE 6' },
+      { value: 'session_b', label: 'Aug 12, 2026 - open - RPE 4' },
+      { value: 'session_a', label: 'Aug 10, 2026 - completed - RPE 6' },
     ]);
   });
 
@@ -1772,7 +1777,7 @@ describe('the review picker does not invent an RPE for a session nobody rated', 
     expect(label).not.toMatch(/RPE/);
     expect(label).not.toMatch(/RPE 0/);
     // The rest of the label is real stored data and still has to be there.
-    expect(label).toContain('2026-08-10');
+    expect(label).toContain('Aug 10, 2026');
     expect(label).toContain('completed');
   });
 
@@ -2421,5 +2426,55 @@ describe('an athlete the register did not cover is not an athlete with no mark',
     expect(screen.queryAllByText('Register unavailable')).toHaveLength(3);
     expect(screen.queryByText('Not your athlete')).toBeNull();
     expect(screen.queryByText('No mark yet')).toBeNull();
+  });
+});
+
+// LC-02, LC-03, LC-04: tabs on the coach home that read as placeholders or as
+// the builder's vocabulary.
+describe('coach home tabs read in a coach\'s words', () => {
+  test('Assessments is not a "planned, coming soon" placeholder; it opens the real page', async () => {
+    await renderWorkspace();
+    openTab('Assessments');
+
+    expect(screen.queryByText(/Not Yet Implemented/i)).toBeNull();
+    expect(screen.queryByText(/Coming soon/i)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Assessments' }).getAttribute('href')).toBe('/coach/assessments');
+  });
+
+  test('Athlete Reviews says "Write a review" and offers the decision in words', async () => {
+    await renderWorkspace();
+    openTab('Athlete Reviews');
+
+    expect(screen.queryByText(/Persist Coach Review/i)).toBeNull();
+    expect(screen.getByText('Write a review')).toBeTruthy();
+    const options = [...screen.getByLabelText('Decision').querySelectorAll('option')].map((option) => option.textContent);
+    expect(options).toEqual(['Approved', 'Needs follow-up', 'Not decided yet']);
+    expect((screen.getByLabelText('Decision') as HTMLSelectElement).value).toBe('approved');
+  });
+
+  test('SHADOW Intel reads event names as words', async () => {
+    await renderWorkspace({
+      observationProjection: async () => jsonResponse({
+        items: [
+          { id: 'o1', source: 'telemetry', label: 'shadow.audit.login', review_state: 'unknown', created_at: '2026-10-12T12:00:00.000Z' },
+          { id: 'o2', source: 'event', label: 'SHADOW_AUDIT_CREATE_DRILL', review_state: 'pending_review', created_at: '2026-10-12T12:00:00.000Z' },
+          { id: 'o3', source: 'event', label: 'Pain report: Jordan P. Doe at left shoulder (strain), severity 7/10, pending review', review_state: 'pending_review', created_at: '2026-10-12T12:00:00.000Z' },
+        ],
+      }),
+    });
+    openTab('SHADOW Intel');
+
+    expect(await screen.findByText('Shadow audit login')).toBeTruthy();
+    // A sentence the feed built is left as it is: names and places keep their case.
+    expect(screen.getByText('Pain report: Jordan P. Doe at left shoulder (strain), severity 7/10, pending review')).toBeTruthy();
+    expect(screen.getByText('Shadow audit create drill')).toBeTruthy();
+    expect(screen.getByText('From: system activity')).toBeTruthy();
+    expect(screen.getByText('Review: not reviewed')).toBeTruthy();
+    expect(screen.getAllByText('Review: waiting for review').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/State: unknown/)).toBeNull();
+
+    expect(screen.queryByText(/Projection/)).toBeNull();
+    expect(screen.getByText('SHADOW review queue')).toBeTruthy();
+    expect(screen.getByText('What SHADOW has noticed')).toBeTruthy();
   });
 });

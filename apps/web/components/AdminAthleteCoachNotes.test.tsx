@@ -124,7 +124,17 @@ test('capacity notes: Withdraw only on the departed coach\'s note, by display na
   const withdraw = screen.getAllByRole('button', { name: /^Withdraw/ });
   expect(withdraw).toHaveLength(1);
   expect(withdraw[0].getAttribute('aria-label')).toMatch(/^Withdraw the note Coach Dana Reyes wrote on /);
+  // F-058: one tap asks, it does not remove. Cancel leaves the note and sends
+  // nothing; the second tap, on "Yes, Withdraw It", does the withdrawal.
   fireEvent.click(withdraw[0]);
+  expect(screen.getByText(/^Withdraw the note from .*\?$/)).toBeTruthy();
+  expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByText('Faded late in round five')).toBeTruthy();
+  expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+
+  fireEvent.click(screen.getAllByRole('button', { name: /^Withdraw/ })[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, Withdraw It' }));
   await waitFor(() => expect(screen.queryByText('Faded late in round five')).toBeNull());
   expect(screen.getByText('Held pace through all six rounds')).toBeTruthy();
 
@@ -144,9 +154,9 @@ test('session notes: sessions are read when opened, newest first, two on one day
   ]);
   expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
     'Select a session',
-    '2026-10-08, 5:15 PM - open',
-    '2026-10-08, 9:30 AM - completed',
-    '2026-10-01, 11:00 AM - completed',
+    'Oct 8, 2026, 5:15 PM - open',
+    'Oct 8, 2026, 9:30 AM - completed',
+    'Oct 1, 2026, 11:00 AM - completed',
   ]);
   expect(screen.queryByText(/could not be read and/)).toBeNull();
   expect(screen.queryByText(/Older sessions are kept/)).toBeNull();
@@ -267,4 +277,21 @@ test('closing session notes drops a read that lands afterwards', async () => {
   });
   expect(screen.queryByLabelText('Session')).toBeNull();
   expect(screen.getByRole('button', { name: 'Session notes' })).toBeTruthy();
+});
+
+test('closing and reopening the capacity notes does not leave a Withdraw question waiting', async () => {
+  serve();
+  renderBlock();
+  fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+  await screen.findByRole('list', { name: 'Capacity notes, newest first' });
+  fireEvent.click(screen.getAllByRole('button', { name: /^Withdraw/ })[0]);
+  expect(screen.getByRole('button', { name: 'Yes, Withdraw It' })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Hide capacity notes' }));
+  await waitFor(() => expect(screen.queryByRole('list', { name: 'Capacity notes, newest first' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+  await screen.findByRole('list', { name: 'Capacity notes, newest first' });
+
+  expect(screen.queryByRole('button', { name: 'Yes, Withdraw It' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: /^Withdraw/ })).toHaveLength(1);
 });

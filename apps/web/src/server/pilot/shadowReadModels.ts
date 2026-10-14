@@ -38,12 +38,18 @@ export interface ShadowEventRow {
   organization_id: string;
   event_name: string;
   entity_type: string;
-  entity_id: string;
+  /** Null for a non-staff reader unless the type is one whose id is not a
+   *  person's (entityIdForReader). */
+  entity_id: string | null;
   actor_account_id: string | null;
   actor_role: string | null;
   payload: Record<string, unknown>;
   created_at: string;
 }
+
+/** The row as the table holds it: the id is always there before the reader's
+ *  projection decides whether it is sent. */
+type StoredShadowEventRow = Omit<ShadowEventRow, 'entity_id'> & { entity_id: string; named_athlete_count: number };
 
 export interface ShadowTelemetryRow {
   shadow_telemetry_event_id: number;
@@ -86,7 +92,7 @@ export interface ShadowKnowledgeProjectionItem {
   title: string;
   source_event_name: string;
   entity_type: string;
-  entity_id: string;
+  entity_id: string | null;
   review_state: ShadowReviewState;
   created_at: string;
 }
@@ -264,7 +270,7 @@ const AUDIT_MIRROR_EVENT_PREFIX = 'SHADOW_AUDIT_';
  * Rows filtered here can leave a page short of its limit; nothing extra
  * becomes visible.
  */
-async function coachMayReadOwnedMirrors<Row extends ShadowEventRow & { named_athlete_count: number }>(
+async function coachMayReadOwnedMirrors<Row extends StoredShadowEventRow>(
   context: ShadowReadContext,
   rows: Row[],
 ): Promise<Row[]> {
@@ -302,6 +308,33 @@ function auditMirrorReach(role: PilotRole): AuditMirrorReach {
 
 function roleCanViewSensitivePayload(role: PilotRole): boolean {
   return role === 'platform_owner' || role === 'organization_admin' || role === 'admin' || role === 'coach';
+}
+
+/*
+ * WHOSE ENTITY ID A NON-STAFF READER MAY BE SENT (#1558).
+ *
+ * entity_id left this module unredacted for every role. For some entity types
+ * it is a person's identifier: an 'account' row's is the account id (the login
+ * email unless somebody chose otherwise), a 'guardian' row's is the parent_id
+ * (`par-` plus that account id), an 'intake_guardian' row's is
+ * `${parentId}:${athleteId}`. The mirrored audit rows for giving a guardian a
+ * login, removing a guardian link and moving a guardian's login name the child
+ * in their details, so they are tied to the child and reach the athlete and
+ * BOTH guardians: one guardian read the other's email-shaped id here.
+ *
+ * So the id goes to a non-staff reader only for the types NAMED here, whose
+ * ids are the reader's own child or the intake paperwork the timeline is
+ * keyed on. A type nobody has listed sends null: a new emitter must decide,
+ * rather than inherit an audience. Staff readers are unchanged.
+ */
+export const FAMILY_READABLE_ENTITY_ID_TYPES = ['athlete', 'intake_case', 'intake_document', 'shadow_intake'] as const;
+
+function familyMayReadEntityId(entityType: unknown): boolean {
+  return typeof entityType === 'string' && (FAMILY_READABLE_ENTITY_ID_TYPES as readonly string[]).includes(entityType);
+}
+
+function entityIdForReader(role: PilotRole, entityType: string, entityId: string | null): string | null {
+  return roleCanViewSensitivePayload(role) || familyMayReadEntityId(entityType) ? entityId : null;
 }
 
 function pickSafeRecord(input: Record<string, unknown>, keys: string[]): Record<string, unknown> {
@@ -343,7 +376,12 @@ const LIBRARY_CLAIM_OPERATIONAL_KEYS = [
   'research_requirement',
 ];
 
-function sanitizeEventPayload(payload: Record<string, unknown>, role: PilotRole, eventName: string): Record<string, unknown> {
+function sanitizeEventPayload(
+  payload: Record<string, unknown>,
+  role: PilotRole,
+  eventName: string,
+  rowEntityType: string,
+): Record<string, unknown> {
   if (roleCanViewSensitivePayload(role)) {
     if (eventName.toUpperCase().startsWith('SHADOW_LIBRARY_CLAIM_') && !roleCanReadLibraryQuestions(role)) {
       return pickSafeRecord(payload, LIBRARY_CLAIM_OPERATIONAL_KEYS);
@@ -360,7 +398,9 @@ function sanitizeEventPayload(payload: Record<string, unknown>, role: PilotRole,
     'automation_mode',
     'review_status',
     'entity_type',
-    'entity_id',
+    // The payload's own entity_id, under the same rule as the row's: by the
+    // type the payload states, or the row's when it states none.
+    ...(familyMayReadEntityId(payload.entity_type ?? rowEntityType) ? ['entity_id'] : []),
     'has_guardian',
   ]);
 }
@@ -376,7 +416,7 @@ function sanitizeDimensions(dimensions: Record<string, unknown>, role: PilotRole
     'routed_queue',
     'automation_mode',
     'entity_type',
-    'entity_id',
+    ...(familyMayReadEntityId(dimensions.entity_type) ? ['entity_id'] : []),
   ]);
 }
 
@@ -504,7 +544,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
   const offset = clampOffset(filters.offset);
   const scope = await resolveAthleteScope(context);
 
-  const rows = await query<ShadowEventRow & { named_athlete_count: number }>(
+  const rows = await query<StoredShadowEventRow>(
     `select
        shadow_event_id,
        organization_id,
@@ -587,7 +627,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
     organization_id: row.organization_id,
     event_name: row.event_name,
     entity_type: row.entity_type,
-    entity_id: row.entity_id,
+    entity_id: entityIdForReader(context.actorRole, row.entity_type, row.entity_id),
     actor_role: row.actor_role,
     created_at: row.created_at,
     // The row's own actor column is the identifier of whoever wrote the event,
@@ -595,7 +635,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
     // non-staff caller received staff account ids (intake lane review,
     // 2026-10-06). actor_role stays: it is a label, not an identity.
     actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
-    payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole, row.event_name),
+    payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole, row.event_name, row.entity_type),
   }));
 }
 
@@ -1086,7 +1126,7 @@ function painReportPayloadText(payload: Record<string, unknown>, key: string): s
 
 function describePainReportEvent(event: ShadowEventRow, athleteNames: ReadonlyMap<string, string>): string {
   const payload = event.payload ?? {};
-  const athleteId = painReportPayloadText(payload, 'athlete_id') ?? event.entity_id;
+  const athleteId = painReportPayloadText(payload, 'athlete_id') ?? event.entity_id ?? '';
   const athleteName = athleteNames.get(athleteId) ?? `Athlete ${athleteId}`;
   const location = painReportPayloadText(payload, 'location');
   const painType = painReportPayloadText(payload, 'pain_type');
@@ -1141,7 +1181,8 @@ export async function getShadowObservationProjection(
 
   const painReportAthleteIds = events
     .filter((event) => event.event_name === PAIN_REPORT_PENDING_REVIEW_EVENT_NAME)
-    .map((event) => painReportPayloadText(event.payload ?? {}, 'athlete_id') ?? event.entity_id);
+    .map((event) => painReportPayloadText(event.payload ?? {}, 'athlete_id') ?? event.entity_id)
+    .filter((athleteId): athleteId is string => athleteId !== null);
   const athleteNames = await resolveAthleteNames(context.organizationId, [...new Set(painReportAthleteIds)]);
 
   const observationEvents = events.map<ShadowObservationProjectionItem>((event) => ({

@@ -44,8 +44,9 @@ const READER_POLICY = 'COACHING_CONTENT_READER_ROLES';
  * THIS MAP IS THE SUBJECT LIST for every case below, so adding a route here is
  * how a surface joins the policy and is the only edit that makes the sweeps
  * cover it. session-scripts and workout-templates were added on 2026-08-28
- * when the owner ruled the policy governs the content class; neither writes,
- * so neither gets an author list.
+ * when the owner ruled the policy governs the content class. workout-templates
+ * does not write, so it gets no author list; session-scripts has had one since
+ * lane L1 (below).
  *
  * NOT here, deliberately: session-scripts/runs/**. It carries per-night
  * athlete data behind a narrower gate of its own, and listing it would assert
@@ -56,7 +57,11 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'drills/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
   'drill-library/route.ts': [READER_POLICY],
   'coach/cue-library/route.ts': [READER_POLICY],
-  'session-scripts/route.ts': [READER_POLICY],
+  // Lane L1: a coach or the gym's admin makes a session script from a workout
+  // template and edits it (POST, PATCH). The reads keep the reader policy; the
+  // two writes gate on the route's own author list, the same three names as
+  // DRILL_AUTHOR_ROLES.
+  'session-scripts/route.ts': [READER_POLICY, 'SESSION_SCRIPT_AUTHOR_ROLES'],
   'workout-templates/route.ts': [READER_POLICY],
   'drills/promote/route.ts': ['DRILL_AUTHOR_ROLES'],
   // OD-2026-10-06-026 ruling 3: a coach or the gym's admin marks a draft
