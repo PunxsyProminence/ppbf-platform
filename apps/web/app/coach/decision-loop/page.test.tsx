@@ -2884,3 +2884,29 @@ describe('a pain report near miss reads as its number only (#1528)', () => {
     expect(pain.textContent).not.toMatch(/\b(severity|high)\b/i);
   });
 });
+
+// A saved decision's time reads in gym time, not as the stored timestamp
+// (Overwatch, 17:28 on #1542; found by the gym-time lane L3).
+test("a saved decision's time is printed in gym time, not raw", async () => {
+  installFetch({
+    decisions: () => jsonResponse({
+      decisions: [{
+        decision_id: 'dec-1',
+        athlete_id: 'ath-1',
+        recommendation_id: null,
+        decision_text: 'Cleared for pad work.',
+        expected_outcome: 'Holds form for three rounds.',
+        decided_by_account_id: 'acct-1',
+        decided_by_role: 'coach',
+        status: 'active',
+        // 15:15 UTC on Oct 12 is 11:15 AM in the gym.
+        decided_at: '2026-10-12T15:15:31.004Z',
+      }],
+    }),
+  });
+  await selectAthlete();
+
+  const line = await screen.findByText(/^By coach at /);
+  expect(line.textContent).toMatch(/11:15\sAM/);
+  expect(line.textContent).not.toContain('2026-10-12T15:15:31.004Z');
+});

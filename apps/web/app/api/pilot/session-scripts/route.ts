@@ -7,6 +7,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  setSessionScriptRetired,
   type SessionScriptBlockEdit,
 } from '@/src/server/pilot/sessionScriptAuthoring';
 import {
@@ -158,12 +159,15 @@ export async function POST(request: NextRequest) {
 // script's updated_at as the editor read it, and is required: a script another
 // coach has saved since is refused (409 SESSION_SCRIPT_CHANGED) rather than
 // overwritten.
+// With `retired: true | false` instead of name and blocks it retires the
+// script (kept, left out of the browse list) or brings it back, in place;
+// `outcome` is then 'retired', 'brought_back' or 'unchanged'.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
 
-    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks']);
+    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks', 'retired']);
     if (record instanceof NextResponse) return record;
     if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
       return badRequest('script_id');
@@ -176,6 +180,25 @@ export async function PATCH(request: NextRequest) {
     }
     if (record.blocks !== undefined && !(Array.isArray(record.blocks) && record.blocks.every(isBlockEdit))) {
       return badRequest('blocks');
+    }
+
+    // Retiring a script, or bringing it back, is its own request: it changes
+    // no name and no block, and never makes a version, so it is not mixed
+    // with an edit that might.
+    if (record.retired !== undefined) {
+      if (typeof record.retired !== 'boolean' || record.name !== undefined || record.blocks !== undefined) {
+        return badRequest('retired');
+      }
+      const changed = await setSessionScriptRetired({
+        organizationId: principal.organizationId,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        scriptId: record.script_id.trim(),
+        retired: record.retired,
+        expectedUpdatedAt: record.expected_updated_at,
+      });
+      const script = await getSessionScriptWithDetail(principal.organizationId, changed.script_id);
+      return NextResponse.json({ outcome: changed.outcome, script });
     }
 
     const edited = await editSessionScript({

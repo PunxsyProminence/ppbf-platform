@@ -5431,6 +5431,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-message-replies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-message-replies",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists every guardian reply on one athlete's parent messages, oldest first, with the guardian's name from pilot.parents (familyMessageReplies.ts listRepliesForStaff; #1542 FC-03). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-notes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-notes",
@@ -5447,6 +5477,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Lists the parent_message notes posted to one athlete's family (text, posted_at, author's login-derived name) with their parent_task_state (due_date, completed_at), newest first (parentTasks.ts listFamilyNotesForStaff; #1542 FC-01). completed_by_account_id is never returned: which guardian ticked a note stays the family's. Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-observations",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists one athlete's parent_observation notes (what a guardian recorded at home: category, optional 1-10 rating, notes, when), newest first, parsed from note_text (familyObservations.ts listFamilyObservationsForStaff; F-073, #1542's track). No account id or author name is returned; the screen says 'a guardian'. No accounts join, so a purged guardian's observations stay listed (D-9). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8561,6 +8621,60 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/message-replies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads only their own replies (author_account_id = caller), on messages about children in guardianAthleteIds now; a co-guardian's replies are never returned (familyMessageReplies.ts listOwnReplies; #1542 FC-03).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-replies/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the note's athlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian replies to one parent_message note in this gym about a child linked to them on this request; a forged id, another gym's note, a non-parent-message note or an ended link is the same 404 (familyMessageReplies.ts createFamilyMessageReply; append-only table, FC-02).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/messages/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/messages",
@@ -10481,7 +10595,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name and blocks. A script another coach saved since the editor read it is refused (409), not overwritten. A script that has any run is not changed: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
+    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name and blocks. A script another coach saved since the editor read it is refused (409), not overwritten. With `retired` instead of name and blocks (item H) it retires the script or brings it back (setSessionScriptRetired): authoring_state changed in place, never a new version, the row and its blocks kept; refused together with name or blocks. A script that has any run is not changed by an edit: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
