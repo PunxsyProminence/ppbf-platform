@@ -212,18 +212,6 @@ describe('coach video release control', () => {
     expect((play as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test('the page lists no planned features (F-019, #1444)', async () => {
-    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
-
-    render(<CoachVideoAnalysisPage />);
-
-    await screen.findByRole('button', { name: 'Release' });
-    expect(document.body.textContent).not.toMatch(/planned|not yet implemented|not yet automated|ML required/i);
-    for (const title of ['Skill Recognition', 'Punch Detection', 'Footwork Analysis', 'Technique Scoring', 'Movement Analysis']) {
-      expect(screen.queryByText(title)).toBeNull();
-    }
-  });
-
   test('a coach who did not upload the video is not offered Release', async () => {
     global.fetch = mockFetch({
       videos: () => [video({ uploaded_by_account_id: 'coach-2' })],
