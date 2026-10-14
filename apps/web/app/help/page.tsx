@@ -53,6 +53,12 @@ export default async function HelpCenterPage() {
             <p className="t-eyebrow tracking-[0.35em]">Help Center</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>{plain.heading}</h1>
             <p className="text-base leading-7 text-[color:var(--hide-800)]">{plain.intro}</p>
+            {mayOpenAdminHub && (
+              <div className="flex flex-wrap gap-3">
+                <OperationsLink className="btn btn--ghost">Mission Control</OperationsLink>
+                <Link href="/admin" className="btn btn--ghost">Admin Hub</Link>
+              </div>
+            )}
           </header>
           <section className="mt-8 space-y-4" id={plain.anchor}>
             {plain.topics.map((topic) => (

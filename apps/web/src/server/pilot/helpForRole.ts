@@ -10,9 +10,9 @@ import { roleEquals } from './roleAlias';
  * page that reaches the browser.
  *
  * Two shapes:
- *  - administrators get the existing guide sections, narrowed to the ones that
- *    are theirs (the platform owner also keeps the builder-facing ones);
- *  - everyone else gets short plain-words help written for their own role.
+ *  - the platform owner keeps the existing master tutorial (builder material);
+ *  - everyone else gets short plain-words help for their own role, each
+ *    sentence tied to code.
  * A role this file does not know gets the smallest set ('basic').
  */
 export type HelpAudience = 'platform_owner' | 'gym_admin' | 'coach' | 'athlete' | 'parent' | 'board' | 'basic';
@@ -22,7 +22,9 @@ export function helpAudienceFor(role: PilotRole | string | null | undefined): He
   const r = role as PilotRole;
   if (roleEquals(r, 'platform_owner')) return 'platform_owner';
   if (roleEquals(r, 'organization_admin')) return 'gym_admin';
-  if (roleEquals(r, 'coach') || roleEquals(r, 'staff')) return 'coach';
+  // staff and volunteer seats get 'basic': nothing in the code ties the coach
+  // workspace to them (F-064 review).
+  if (roleEquals(r, 'coach')) return 'coach';
   if (roleEquals(r, 'athlete')) return 'athlete';
   if (roleEquals(r, 'parent')) return 'parent';
   if (roleEquals(r, 'board')) return 'board';
@@ -35,27 +37,11 @@ export interface BuilderHelpSelection {
   readonly planned: readonly string[];
 }
 
-const GYM_ADMIN_SECTIONS = [
-  'start-here',
-  'mission-control-overview',
-  'admin-guide',
-  'revenue-guide',
-  'coach-guide',
-  'shadow-guide',
-  'planned-capabilities-guide',
-] as const;
-
-/** Section ids per administrator audience. `null` means "every section". */
+/** Section ids per audience. `null` means "every section" (platform owner
+ *  only: the master tutorial is builder material). Every other audience gets
+ *  the plain help below, whose sentences are each tied to code. */
 export function builderHelpFor(audience: HelpAudience): BuilderHelpSelection | null {
   if (audience === 'platform_owner') return null;
-  if (audience === 'gym_admin') {
-    return {
-      // No master-tutorial cards: their status stamps are builder labels.
-      cards: [],
-      guides: GYM_ADMIN_SECTIONS.filter((id) => id !== 'planned-capabilities-guide'),
-      planned: ['planned-ai-video', 'planned-compliance', 'planned-progression', 'planned-publication'],
-    };
-  }
   return { cards: [], guides: [], planned: [] };
 }
 
@@ -72,17 +58,23 @@ export interface PlainHelp {
   readonly topics: readonly PlainHelpTopic[];
 }
 
-// PROPOSED copy (owner to confirm). Every sentence restates what the existing
-// guide sections already say about that role's screens; none adds a feature.
-const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner' | 'gym_admin'>, PlainHelp> = {
+// PROPOSED copy (owner to confirm). Each sentence is tied to code on main as of
+// the F-064 review; "when in doubt say less" -- planned/not-built claims were
+// dropped unless a screen itself says so.
+const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner'>, PlainHelp> = {
   athlete: {
     heading: 'Help for athletes',
     intro: 'Where things are in your PPBF workspace.',
     anchor: 'athlete-guide',
     topics: [
-      { title: 'Your workspace', text: 'Your dashboard shows your goals, tasks, readiness and progress.' },
-      { title: 'Progression and My Video', text: 'These show real records from your gym. Automatic video analysis is not built yet.' },
-      { title: 'SHADOW', text: 'SHADOW is a chat helper that explains and drafts. It does not replace your coach.' },
+      // app/athlete/dashboard/page.tsx mounts AthleteWorkspace: check-ins, session notes, goals.
+      { title: 'Your workspace', text: 'Your dashboard is your athlete workspace: check-ins, session notes and goals.' },
+      // app/athlete/video-analysis/page.tsx: h1 "Your Film", streams video with coach notes.
+      { title: 'Your Film', text: 'Your Film is where you watch film and read the notes your coach left on it.' },
+      // app/athlete/progression-intelligence/page.tsx: h1 "Your Progression", lists assigned gaps and a log.
+      { title: 'Your Progression', text: 'Your Progression shows the progression work assigned to you, and you log it there.' },
+      // app/api/pilot/shadow/chat/route.ts:563 admits the athlete role.
+      { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },
     ],
   },
   parent: {
@@ -90,21 +82,28 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner' | 'gym_admin'>, 
     intro: "Where to find what your athlete's coaches send you.",
     anchor: 'parent-guide',
     topics: [
-      { title: 'Messages', text: "Tasks from a coach that have a due date show on the Messages tab. This week's tasks, and anything still open from earlier, also show on the Parent Floor." },
-      { title: 'Assignments', text: 'Home assignments from the coaches show on the Assignments tab.' },
-      { title: 'Observations', text: 'What you write down is kept and read back to you on the Observations tab.' },
-      { title: 'Progress', text: 'The Progress tab shows milestones your athlete has earned and a count of recorded progression.' },
-      { title: 'Not built yet', text: 'Family goals, resources and replying to a coach have no feed behind them yet.' },
+      // components/ParentHub.tsx:1383-1395 (Parent Floor usage text).
+      { title: 'Parent Floor', text: "What the gym has asked of you this week, and anything still open from earlier weeks. Tick a task Done when it is done, and report a barrier at home or with getting here." },
+      // components/ParentHub.tsx:1473-1480 (Home Assignments description).
+      { title: 'Home Assignments', text: "What your child's coach has set them to work on: drills, and workouts in the coach's order." },
+      // components/ParentHub.tsx:1498-1503 (Parent Observations description).
+      { title: 'Observations', text: "Write down what you notice at home. It is saved to your child's record at the gym." },
+      // components/ParentHub.tsx:1571-1576 and the reply box at ~1660-1690; POST /api/pilot/parent/message-replies.
+      { title: 'Messages', text: "Messages from your child's coaches are on the Messages tab, and you can reply to them there." },
+      // components/ParentHub.tsx:1776-1795 renders AthleteAchievements audience="family".
+      { title: 'Progress', text: "The Progress tab shows your child's achievements, worded for families." },
     ],
   },
   coach: {
-    heading: 'Help for coaches and staff',
+    heading: 'Help for coaches',
     intro: 'Where things are in the coach workspace.',
     anchor: 'coach-guide',
     topics: [
-      { title: 'Coach workspace', text: 'Your athletes, film study on released video, and the coaching workflows are opened from the coach workspace.' },
-      { title: 'Not built yet', text: 'The review queue and automatic video scoring (skill, punch, footwork) are planned. Pages that say so have nothing behind them yet.' },
-      { title: 'SHADOW', text: 'SHADOW is a chat helper that explains and drafts. The decision stays with you.' },
+      // Directories under app/coach: drills, workout-templates, behavior-standards,
+      // decision-loop, video-analysis (h1 "Coach Video Console").
+      { title: 'Coach workspace', text: 'The coach workspace opens your drills, workout templates, behavior standards, the Decision Loop and the video console.' },
+      // app/api/pilot/shadow/chat/route.ts:563 admits the coach role.
+      { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },
     ],
   },
   board: {
@@ -112,9 +111,24 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner' | 'gym_admin'>, 
     intro: 'Where things are in the board workspace.',
     anchor: 'board-guide',
     topics: [
-      { title: 'Governance', text: 'The board workspace holds policy, strategy, resolutions, committees and oversight.' },
-      { title: 'Compliance', text: 'The compliance register shows real records. Automatic compliance monitoring is planned.' },
+      // app/board/boardWorkspaceConfig.ts BOARD_AGGREGATE_BOUNDARY_STATEMENT.
+      { title: 'What the board sees', text: 'Board access is organization-level and aggregate-only. Small groups are hidden, and missing data shows as unavailable.' },
+      { title: 'What stays outside the board role', text: 'Athlete records, messages, notes, intake records, video and safety review are outside this role.' },
+      // app/api/pilot/shadow/chat/route.ts:563 does not list the board role.
       { title: 'SHADOW', text: 'SHADOW chat is not available to the board role.' },
+    ],
+  },
+  gym_admin: {
+    heading: 'Help for gym administrators',
+    intro: 'Where things are for the gym administrator.',
+    anchor: 'admin-guide',
+    topics: [
+      // app/help/page.tsx: /admin admits the gym admin and the platform owner only (admin/page.tsx).
+      { title: 'Admin Hub', text: 'The Admin Hub is where the gym administrator manages the gym. Open it from the link at the top of this page.' },
+      // app/operations/page.tsx:228 allowedRoles OPERATIONS_ROLES (gym admin and platform owner).
+      { title: 'Mission Control', text: 'Mission Control is the launcher for the gym administrator and the platform owner.' },
+      // app/api/pilot/shadow/chat/route.ts:563 admits organization_admin.
+      { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },
     ],
   },
   basic: {
@@ -122,12 +136,12 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner' | 'gym_admin'>, 
     intro: 'You are signed in to PPBF.',
     anchor: 'start-here',
     topics: [
-      { title: 'Your workspace', text: "Your pages open from the screen you landed on." },
+      { title: 'Your workspace', text: 'Your pages open from the screen you landed on.' },
     ],
   },
 };
 
 export function plainHelpFor(audience: HelpAudience): PlainHelp | null {
-  if (audience === 'platform_owner' || audience === 'gym_admin') return null;
+  if (audience === 'platform_owner') return null;
   return PLAIN_HELP[audience];
 }

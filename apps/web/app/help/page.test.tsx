@@ -54,7 +54,7 @@ test('asks the server guard for a signed-in member, admitting every role', async
   expect(mockRequirePageRole).toHaveBeenCalledTimes(1);
   const [allowed] = mockRequirePageRole.mock.calls[0] as [PilotRole[]];
   expect([...allowed].sort()).toEqual([...EVERY_ROLE].sort());
-  expect(screen.getByText('Help for coaches and staff')).toBeTruthy();
+  expect(screen.getByText('Help for coaches')).toBeTruthy();
 });
 
 test('a visitor who is not signed in is redirected and gets none of the help content', async () => {
@@ -114,15 +114,29 @@ test('a role the page does not know gets the smallest set', async () => {
   expect(container.querySelectorAll('article').length).toBe(1);
 });
 
-test.each(['organization_admin', 'admin'] as const)('a gym administrator (%s) sees administrator sections but not the tester or dev-lab guides', async (role) => {
+test.each(['organization_admin', 'admin'] as const)('a gym administrator (%s) gets plain admin help, not the builder tutorial', async (role) => {
   mockRequirePageRole.mockResolvedValue({ role });
   const { container } = render(await HelpCenterPage());
-  expect(container.innerHTML).toContain('Admin Guide');
-  expect(container.innerHTML).not.toContain('Tester Guide');
-  expect(container.innerHTML).not.toContain('Development Lab Guide');
-  expect(container.innerHTML).not.toContain('Board Workspace Guide');
-  expect(container.innerHTML).not.toContain('FRONT-END SAFE');
-  expect(container.innerHTML).not.toContain('owner decision on 2026-08-26');
+  expect(screen.getByText('Help for gym administrators')).toBeTruthy();
+  for (const marker of ['Tester Guide', 'Development Lab Guide', 'Board Workspace Guide', 'FRONT-END SAFE',
+    'owner decision on 2026-08-26', 'PPBF MASTER TUTORIAL']) {
+    expect(container.innerHTML).not.toContain(marker);
+  }
+});
+
+test.each(['staff', 'volunteer'] as const)('a %s seat gets the smallest set, not the coach workspace', async (role) => {
+  mockRequirePageRole.mockResolvedValue({ role });
+  const { container } = render(await HelpCenterPage());
+  expect(screen.getByText('Help')).toBeTruthy();
+  expect(container.innerHTML).not.toContain('coach workspace');
+  expect(container.querySelectorAll('article').length).toBe(1);
+});
+
+test('the parent help says replies are possible and makes no "not built yet" claim', async () => {
+  mockRequirePageRole.mockResolvedValue({ role: 'parent' });
+  const { container } = render(await HelpCenterPage());
+  expect(container.textContent).toContain('you can reply to them there');
+  expect(container.textContent).not.toMatch(/not built yet|no feed behind|planned/i);
 });
 
 test('the platform owner keeps the whole tutorial', async () => {
