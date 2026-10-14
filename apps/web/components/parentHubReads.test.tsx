@@ -204,7 +204,7 @@ describe('parent-facing copy folded into FC-05', () => {
     installFetch();
     await renderHub();
     await openTab('Family Goals');
-    expect(screen.getByText(/Your child's own goals, as their coach set them, are on the Progress tab\./)).toBeInTheDocument();
+    expect(screen.getByText(/The goals your child has set are on the Progress tab\./)).toBeInTheDocument();
     expect(screen.queryByText(/NOT YET IMPLEMENTED -- there is no backend feed for family goals/)).toBeNull();
   });
 });

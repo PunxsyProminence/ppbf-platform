@@ -287,6 +287,7 @@ describe('a guardian opens a parent message (recordFamilyMessageRead)', () => {
 
   test.each([
     ['a guardian not linked to that child', GUARDIAN_UNLINKED, MESSAGE, ORG_ID],
+    ["a guardian of the first child, on the sibling's message", GUARDIAN_A, SIBLING_MESSAGE, ORG_ID],
     ['a made-up message id', GUARDIAN_A, '99999999-9999-4999-8999-999999999999', ORG_ID],
     ['an id that is not a message id', GUARDIAN_A, 'note-1; drop table', ORG_ID],
     ["another gym's message", GUARDIAN_A, OTHER_GYM_MESSAGE, ORG_ID],
@@ -299,11 +300,21 @@ describe('a guardian opens a parent message (recordFamilyMessageRead)', () => {
   });
 });
 
+test('two opens by the same guardian at once both answer with the one first time', async () => {
+  const [one, two] = await Promise.all([read(GUARDIAN_A, MESSAGE), read(GUARDIAN_A, MESSAGE)]);
+  expect(one.first_read_at).toBe(two.first_read_at);
+  expect(await storedReads()).toHaveLength(1);
+});
+
 describe('what staff see (listFamilyReadStateForStaff)', () => {
   test('two guardians opening it are one "opened", at the earliest time, with no reader named', async () => {
     const first = await read(GUARDIAN_A, MESSAGE);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    await read(GUARDIAN_B, MESSAGE);
+    const second = await read(GUARDIAN_B, MESSAGE);
+    // Each guardian is answered with their own first time, never the other's.
+    expect(second.first_read_at > first.first_read_at).toBe(true);
+    expect((await read(GUARDIAN_B, MESSAGE)).first_read_at).toBe(second.first_read_at);
+    expect((await read(GUARDIAN_A, MESSAGE)).first_read_at).toBe(first.first_read_at);
     expect(await storedReads()).toHaveLength(2);
 
     const state = await reads.listFamilyReadStateForStaff(ORG_ID, ATHLETE);

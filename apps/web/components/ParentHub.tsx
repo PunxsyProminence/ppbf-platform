@@ -289,9 +289,10 @@ export default function ParentHub() {
      at least half of it is on screen on the Messages tab (FC-05 Q-1 default
      A) -- not when the inbox is fetched, which the hub does on load for its
      summary tile too. Each message is recorded once per visit (POST
-     /api/pilot/parent/message-reads; the server keeps the first time). A
-     failed write is not the guardian's to deal with: it is not shown, and the
-     message is tried again the next time it comes on screen. */
+     /api/pilot/parent/message-reads; the server keeps the first time). Only
+     the message itself is watched, not the replies under it. A failed write
+     is not the guardian's to deal with: it is not shown, and the message is
+     tried again when the tab is next opened or the list reloads. */
   const readsSentRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (activeTab !== 'messages' || !messagesLoaded || messages.length === 0) return;
@@ -1576,8 +1577,8 @@ export default function ParentHub() {
               />
 
               <p className="t-body">
-                Your child&apos;s own goals, as their coach set them, are on the Progress tab. Family goals of your own
-                are not recorded yet, so this list is empty.
+                The goals your child has set are on the Progress tab. Family goals of your own are not recorded yet,
+                so this list is empty.
               </p>
 
               <div className="space-y-[var(--s4)]">
@@ -1653,12 +1654,17 @@ export default function ParentHub() {
               ) : (
                 <div className="space-y-[var(--s4)]">
                   {messages.map((message) => (
-                    <div key={message.note_id} data-read-note={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
-                      <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
-                        <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
-                        <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                    <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                      {/* What counts as opening it is the message itself, not
+                          the replies and reply box under it: a long thread must
+                          not keep the card from ever being half on screen. */}
+                      <div data-read-note={message.note_id}>
+                        <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
+                          <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
+                          <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                        </div>
+                        <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       </div>
-                      <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       <p className="t-muted">{formatGymDateTimeShort(message.created_at) ?? message.created_at}</p>
                       {/* A message with a due date is something to do. The box
                           is the guardian's one write here; "Done" / "Still to

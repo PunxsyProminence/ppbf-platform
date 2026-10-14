@@ -60,10 +60,22 @@ export async function recordFamilyMessageRead(input: {
         and not exists (select 1 from written)`,
     [input.organizationId, input.noteId, note.athlete_id, input.accountId],
   );
-  if (!row) {
+  if (row) {
+    return { note_id: input.noteId, first_read_at: row.first_read_at };
+  }
+  // Two opens by this guardian at the same moment: the other one's row was
+  // written after this statement's snapshot, so read it now. Only this
+  // guardian's own row, never another's.
+  const settled = await queryOne<{ first_read_at: string }>(
+    `select to_char(first_read_at at time zone 'UTC', ${ISO_UTC}) as first_read_at
+       from pilot.family_message_reads
+      where organization_id = $1 and note_id = $2::uuid and reader_account_id = $3`,
+    [input.organizationId, input.noteId, input.accountId],
+  );
+  if (!settled) {
     throw new Error('Unable to record the read.');
   }
-  return { note_id: input.noteId, first_read_at: row.first_read_at };
+  return { note_id: input.noteId, first_read_at: settled.first_read_at };
 }
 
 export interface FamilyReadStateForStaff {

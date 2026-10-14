@@ -70,7 +70,7 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   }
   // FC-05: the coaches read observations (F-073), and the child's goals show under Progress.
   expect(parent).toMatch(/Observations tab, and the coaches can read them/);
-  expect(parent).toMatch(/goals, as their coach set them, show on the Progress tab/);
+  expect(parent).toMatch(/The goals your child has set show on the Progress tab/);
   // Replies to coach messages are built (#1542, FC-03).
   expect(parent).toMatch(/has its own reply box/);
   expect(parent).not.toMatch(/feed yet: [^.]*reply to coach/);
