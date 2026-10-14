@@ -2736,7 +2736,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "POST is a read (mechanical writesLikely=true is wrong): returns the full athlete profile row to staff. requireRole then assertActorCanAccessAthlete before getAthleteById. admin admitted via alias. Parent not admitted. An athlete caller gets the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2).",
+    "notes": "POST is a read (mechanical writesLikely=true is wrong): returns the full athlete profile row to staff. requireRole then assertActorCanAccessAthlete before getAthleteById. admin admitted via alias. Parent not admitted. An athlete caller gets the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2). Item three (#1558): the athlete's own row keeps emergency_contact; the family projection now takes the reader's role.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2768,7 +2768,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items. Athlete and parent items are the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2); staff rows unchanged. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach branch returns the whole org roster (names, weight class, gym_status, coach_id) for athletes the coach is not assigned to; only dob and emergency_contact are redacted in SQL (entities.ts coachRosterQuery, line 406).\"",
+    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items. Athlete and parent items are the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2); staff rows unchanged. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Coach branch returns the whole org roster (names, weight class, gym_status, coach_id) for athletes the coach is not assigned to; only dob and emergency_contact are redacted in SQL (entities.ts coachRosterQuery, line 406).\" Item three (#1558): a parent's rows carry no emergency_contact (Jason Q-C, OD-2026-10-13-006); the athlete keeps it; staff unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8046,7 +8046,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists intake cases awaiting review (summary, primary athlete id). intake/review-queue/route.ts:12-13 role gate; scope in shadowReadModels.ts:178-221 (coach = athleteIdsForCoach, parent = guardianAthleteIds, admin all) plus intakeCaseReaderScopeSql. Read-only.",
+    "notes": "Lists intake cases awaiting review (summary, primary athlete id). intake/review-queue/route.ts:12-13 role gate; scope in shadowReadModels.ts:178-221 (coach = athleteIdsForCoach, parent = guardianAthleteIds, admin all) plus intakeCaseReaderScopeSql. Read-only. Item three (#1558): built on getShadowReviewProjection, so the family feed rules apply to a parent's latest-event line.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8828,7 +8828,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Guardian reads holds, gates and waiver status for own children; gate parent/safety/route.ts:~86-87, scope from guardianAthleteIds.",
+    "notes": "Guardian reads holds, gates and waiver status for own children; gate parent/safety/route.ts:~86-87, scope from guardianAthleteIds. Item three (#1558): the placer is named for a family reader by the family name reader (videoFamilyView.ts familyCoachName): digits dropped, \"Your coach\" when nothing is left or the account is gone; never the account id.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9455,7 +9455,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Fight card (name, ring name, corner, program, coach name, photo availability) for self or a named account/athlete in the session gym (route.ts:50-61). assertViewerMayReachSubject passes for self, else runs assertActorCanAccessAthlete when the subject is an athlete (coach reach, parent link; platform_owner and board refused); non-athlete subjects fall to relationship none -> 404. All refusals are hiddenNotFound.",
+    "notes": "Fight card (name, ring name, corner, program, coach name, photo availability) for self or a named account/athlete in the session gym (route.ts:50-61). assertViewerMayReachSubject passes for self, else runs assertActorCanAccessAthlete when the subject is an athlete (coach reach, parent link; platform_owner and board refused); non-athlete subjects fall to relationship none -> 404. All refusals are hiddenNotFound. Item three (#1558): an athlete or parent viewing their child's coach's card (subject_is_my_staff) is shown the family name reader's name (getCoachDisplayName), never the staff name that falls back to the account id; a parent's own card is unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10829,7 +10829,7 @@
     "missingGate": false,
     "looksWrong": "POST used as a read; a not-found session returns {found:false} before the athlete-access check, so session ids can be probed for existence within the gym.",
     "confidence": "high",
-    "notes": "requireRole (get/route.ts:12); getSessionById then assertActorCanAccessAthlete(principal, session.athlete_id). Read only (parser writesLikely wrong). Training session record for one athlete.",
+    "notes": "requireRole (get/route.ts:12); getSessionById then assertActorCanAccessAthlete(principal, session.athlete_id). Read only (parser writesLikely wrong). Training session record for one athlete. Item three (#1558): the athlete gets named fields (familyRecordView.ts toFamilySession), not the storage row; staff unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10860,7 +10860,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "athlete_id param required; assertActorCanAccessAthlete before getSessionsByAthlete. Athlete reads self, coach reach rule, org admin any.",
+    "notes": "athlete_id param required; assertActorCanAccessAthlete before getSessionsByAthlete. Athlete reads self, coach reach rule, org admin any. Item three (#1558): the athlete gets named fields (familyRecordView.ts toFamilySession), not the storage row; staff unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12749,7 +12749,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "review-projection/route.ts gate; platform_owner refused (OD-2026-10-10-004 ruling 3). getShadowReviewProjection (shadowReadModels.ts) scopes intake cases by resolveAthleteScope + intakeCaseReaderScopeSql (coach: athleteIdsForCoach; parent: guardian children). Returns intake case summary and primary_athlete_id. Read only.",
+    "notes": "review-projection/route.ts gate; platform_owner refused (OD-2026-10-10-004 ruling 3). getShadowReviewProjection (shadowReadModels.ts) scopes intake cases by resolveAthleteScope + intakeCaseReaderScopeSql (coach: athleteIdsForCoach; parent: guardian children). Returns intake case summary and primary_athlete_id. Read only. Item three (#1558): a parent's latest-event line follows the family feed rules (no audit mirror, no hidden intake line, a guardian's row only for its author).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13178,7 +13178,7 @@
     "missingGate": false,
     "looksWrong": "Every signed-in role (athletes, parents, board, volunteers) sees staff display names and background-check/clearance bands; documented as owner-requested (route.ts:27-47), not a defect unless the owner changes his mind.",
     "confidence": "high",
-    "notes": "Lists staff credential status per person under a hashed staff_key (route.ts:60-107); excludes account_id, document_ref and verification notes. Staff roster, not athlete data.",
+    "notes": "Lists staff credential status per person under a hashed staff_key (route.ts:60-107); excludes account_id, document_ref and verification notes. Staff roster, not athlete data. Item three (#1558): an athlete or parent is shown the digit-free staff name (deriveStaffDisplayName) or \"Staff member\" (PROPOSED wording), never the account id; every other reader unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13513,7 +13513,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads training holds (route.ts:100-155). Athlete gets own athlete-safe projection; parent only linked child; coach must pass assertCoachAssignedToAthlete and must name athlete_id; org admin may list org-wide. platform_owner/board/staff/volunteer get Forbidden (isStaff). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Reads training holds (route.ts:100-155). Athlete gets own athlete-safe projection; parent only linked child; coach must pass assertCoachAssignedToAthlete and must name athlete_id; org admin may list org-wide. platform_owner/board/staff/volunteer get Forbidden (isStaff). Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. Item three (#1558): the placer is named for a family reader by the family name reader (videoFamilyView.ts familyCoachName): digits dropped, \"Your coach\" when nothing is left or the account is gone; never the account id.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

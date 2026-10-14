@@ -8,7 +8,7 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import {
   getActiveTrainingHold,
   getTrainingHoldById,
@@ -31,8 +31,12 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/profileDb', () => ({
-  getSubjectIdentity: jest.fn(),
+// The family name reader (#1558 item three). Its own rules -- digits dropped,
+// a deleted or unknown account floored to "Your coach" -- are in
+// videoFamilyView and achievements; guardianContactProjection.pg.test.ts runs
+// the real thing through this route.
+jest.mock('@/src/server/pilot/videoFamilyView', () => ({
+  familyHoldPlacerName: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -59,7 +63,7 @@ const mockLift = liftTrainingHold as jest.Mock;
 const mockList = listTrainingHolds as jest.Mock;
 const mockPlace = placeTrainingHold as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
-const mockGetSubjectIdentity = getSubjectIdentity as jest.Mock;
+const mockFamilyHoldPlacerName = familyHoldPlacerName as jest.Mock;
 
 const FULL_HOLD = {
   hold_id: 'hold-1',
@@ -105,17 +109,9 @@ function postRequest(body: Record<string, unknown>): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default for the two athlete-facing GET paths, which now resolve the
-  // placer's name through getSubjectIdentity -- individual tests override
-  // when the resolution itself is what's under test.
-  mockGetSubjectIdentity.mockResolvedValue({
-    accountId: 'acct-coach-1',
-    fullName: 'Coach Neale',
-    athleteId: null,
-    dob: null,
-    coachAccountId: null,
-    memberSince: '2026-01-01T00:00:00Z',
-  });
+  // Default for the two athlete-facing GET paths, which resolve the placer's
+  // name through the family name reader.
+  mockFamilyHoldPlacerName.mockResolvedValue('Coach Neale');
 });
 
 describe('GET /api/pilot/training-holds', () => {
@@ -135,7 +131,7 @@ describe('GET /api/pilot/training-holds', () => {
       expires_at: null,
       placed_by_name: 'Coach Neale',
     });
-    expect(mockGetSubjectIdentity).toHaveBeenCalledWith('org-a', 'acct-coach-1');
+    expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'acct-coach-1', 'coach');
     // The staff-facing fields never reach the athlete.
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain('Concussion');
@@ -156,10 +152,21 @@ describe('GET /api/pilot/training-holds', () => {
     expect(mockGetActive).not.toHaveBeenCalled();
   });
 
-  test('the placer name falls back to the existing phrase, never the account id, when identity cannot be resolved (a deleted login included)', async () => {
+  test("the placer's role reaches the family name reader, so an organization admin is not called Coach", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockGetActive.mockResolvedValueOnce({ ...FULL_HOLD, placed_by_role: 'organization_admin' });
+    mockFamilyHoldPlacerName.mockResolvedValueOnce('The gym');
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(mockFamilyHoldPlacerName).toHaveBeenCalledWith('org-a', 'acct-coach-1', 'organization_admin');
+    expect(payload.hold.placed_by_name).toBe('The gym');
+  });
+
+  test('the placer name is whatever the family name reader gives, never the account id (its floor for a deleted login included)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
     mockGetActive.mockResolvedValueOnce(FULL_HOLD);
-    mockGetSubjectIdentity.mockResolvedValueOnce(null);
+    mockFamilyHoldPlacerName.mockResolvedValueOnce('Your coach');
 
     const response = await GET(getRequest());
     const payload = await response.json();

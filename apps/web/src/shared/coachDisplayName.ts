@@ -16,11 +16,18 @@
  * function to change.
  */
 export function deriveCoachDisplayName(loginEmail: string | null | undefined): string {
-  const local = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
-  if (!local) {
-    return 'Your coach';
-  }
+  const spoken = deriveStaffDisplayName(loginEmail);
+  return spoken ? `Coach ${spoken}` : 'Your coach';
+}
 
+/**
+ * The same name without the title, for a list of staff who are not all
+ * coaches (#1558 item three: staff-credentials). Digits are dropped, as above:
+ * a login like "mike1987" is most of an account id. Null when the address
+ * gives no name; the caller chooses the floor.
+ */
+export function deriveStaffDisplayName(loginEmail: string | null | undefined): string | null {
+  const local = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
   const spoken = local
     .replace(/[._-]+/g, ' ')
     .replace(/\d+/g, ' ')
@@ -29,6 +36,5 @@ export function deriveCoachDisplayName(loginEmail: string | null | undefined): s
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-
-  return spoken ? `Coach ${spoken}` : 'Your coach';
+  return spoken || null;
 }

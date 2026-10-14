@@ -9,6 +9,7 @@ import {
   toProfileSubject,
 } from '@/src/server/pilot/profileDb';
 import { coachNameForViewer, resolveCardSubjectAccountId } from '@/src/server/pilot/profileCardSubject';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { buildFightCard } from '@/src/server/pilot/profileIdentity';
 import { decidePortrait, decideRingName } from '@/src/server/pilot/profileVisibility';
 
@@ -74,10 +75,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // An athlete or parent looking at a STAFF card (their child's coach) is
+    // shown the family name reader's name (#1558 item three;
+    // OD-2026-10-06-025 ruling 2): the staff name falls back to the account
+    // id, or keeps the login's digits. Their own card, and every staff viewer,
+    // read the name as before.
+    const subjectName = relationship === 'subject_is_my_staff'
+      ? await getCoachDisplayName(principal.organizationId, identity.accountId)
+      : identity.fullName;
+
     const card = buildFightCard(
       {
         accountId: identity.accountId,
-        fullName: identity.fullName,
+        fullName: subjectName,
         ringName,
         corner: profile.corner,
         program: profile.program,

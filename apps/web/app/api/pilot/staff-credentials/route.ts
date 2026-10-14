@@ -4,7 +4,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { deriveCredentialBand, listStaffCredentialStatus } from '@/src/server/pilot/clearanceRegister';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { isFamilyRecordCaller } from '@/src/server/pilot/familyRecordView';
 import { staffDisplayName } from '@/src/server/pilot/profileDb';
+import type { PilotRole } from '@/src/server/pilot/contracts';
+import { deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +32,20 @@ export const dynamic = 'force-dynamic';
  */
 function staffKey(organizationId: string, accountId: string): string {
   return createHash('sha256').update(`${organizationId}:${accountId}`).digest('hex').slice(0, 12);
+}
+
+/* The name an athlete or parent is shown for a staff member (#1558 item
+   three; OD-2026-10-06-025 ruling 2). staffDisplayName falls back to the
+   account id when the login email gives no name, and keeps the login's digits,
+   and the account id is the login email unless somebody chose otherwise. A
+   family reader gets the digit-free name, or this phrase when there is none.
+   PROPOSED wording, accepted by Overwatch for this lane; not an owner ruling.
+   Every other reader of the list reads the name as before. */
+export const STAFF_NAME_FLOOR = 'Staff member';
+
+function nameFor(role: PilotRole, loginEmail: string | null, accountId: string): string {
+  if (isFamilyRecordCaller(role)) return deriveStaffDisplayName(loginEmail) ?? STAFF_NAME_FLOOR;
+  return staffDisplayName(loginEmail, accountId);
 }
 
 /**
@@ -81,7 +98,7 @@ export async function GET(request: NextRequest) {
       if (!entry) {
         entry = {
           staff_key: staffKey(principal.organizationId, row.account_id),
-          display_name: staffDisplayName(row.login_email, row.account_id),
+          display_name: nameFor(principal.role, row.login_email, row.account_id),
           role: row.role,
           credentials: [],
         };

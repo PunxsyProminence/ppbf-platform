@@ -206,3 +206,52 @@ describe('GET /api/pilot/sessions/list sweeps inactive sessions before it reads'
     expect(mockSweep).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * #1558 item three: the athlete reads named fields, never the storage row.
+ * Nothing on pilot.sessions is staff-only today; this is so a column added
+ * later reaches the athlete only when somebody decides it should. The row
+ * below carries organization_id and a column no list names; neither may come
+ * out. Staff keep the row.
+ */
+describe('what an athlete receives from the sessions read', () => {
+  const STORED = {
+    organization_id: 'org-1', session_id: 'sess-1', athlete_id: 'ATH-1', date: '2026-10-01', rpe: 6,
+    rpe_method: 'athlete_post_session_self_report', duration_minutes: 75, notes: 'Hands up.', completed_flag: true,
+    created_at: '2026-10-01T17:00:00.000Z', updated_at: '2026-10-01T19:00:00.000Z',
+    checked_out_at: '2026-10-01T19:00:00.000Z', close_method: 'athlete_check_out',
+    last_activity_at: '2026-10-01T18:55:00.000Z', inactivity_minutes: null,
+    a_column_added_later: 'must not reach the athlete',
+  };
+  const FAMILY = {
+    session_id: 'sess-1', athlete_id: 'ATH-1', date: '2026-10-01', rpe: 6,
+    rpe_method: 'athlete_post_session_self_report', duration_minutes: 75, notes: 'Hands up.', completed_flag: true,
+    created_at: '2026-10-01T17:00:00.000Z', updated_at: '2026-10-01T19:00:00.000Z',
+    checked_out_at: '2026-10-01T19:00:00.000Z', close_method: 'athlete_check_out',
+    last_activity_at: '2026-10-01T18:55:00.000Z', inactivity_minutes: null,
+  };
+
+  test('the athlete gets exactly the named fields', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', accountId: 'acct-ath-1', athleteId: 'ATH-1' }));
+    mockQueryOne.mockResolvedValue({ athlete_id: 'ATH-1' });
+    mockQuery.mockResolvedValue([STORED]);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/sessions/list?athlete_id=ATH-1'));
+    const raw = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(raw)).toEqual({ items: [FAMILY] });
+    expect(raw).not.toContain('org-1');
+    expect(raw).not.toContain('a_column_added_later');
+  });
+
+  test('a coach gets the row as the database returned it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockQueryOne.mockResolvedValue({ athlete_id: 'ATH-1' });
+    mockQuery.mockResolvedValue([STORED]);
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/sessions/list?athlete_id=ATH-1'))).json();
+
+    expect(body).toEqual({ items: [STORED] });
+  });
+});

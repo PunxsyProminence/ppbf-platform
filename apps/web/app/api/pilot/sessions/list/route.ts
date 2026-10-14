@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getSessionsByAthlete } from '@/src/server/pilot/entities';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { isFamilyRecordCaller, toFamilySession } from '@/src/server/pilot/familyRecordView';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { sweepInactiveSessionsOnRead } from '@/src/server/pilot/sessionAutoClose';
 
@@ -31,7 +32,10 @@ export async function GET(request: NextRequest) {
     // never throws; a failed sweep is logged and the list still answers.
     await sweepInactiveSessionsOnRead(principal.organizationId);
     const sessions = await getSessionsByAthlete(principal.organizationId, athleteId, { limit });
-    return NextResponse.json({ items: sessions });
+    // The athlete gets named fields (#1558 item three); staff keep the row.
+    return NextResponse.json({
+      items: isFamilyRecordCaller(principal.role) ? sessions.map(toFamilySession) : sessions,
+    });
   } catch (error) {
     return jsonError(error);
   }

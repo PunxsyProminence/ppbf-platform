@@ -18,6 +18,7 @@ import {
   setAthleteProgram,
 } from './achievements';
 import { query, queryOne } from './db';
+import { deriveStaffDisplayName } from '../../shared/coachDisplayName';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -319,5 +320,22 @@ describe('the programme somebody came for', () => {
     const sql = String(mockQueryOne.mock.calls[0][0]);
     expect(sql).toContain('pilot.athlete_programs');
     expect(sql).not.toContain('gym_status');
+  });
+});
+
+/* #1558 item three: the digit-free staff name without the "Coach" title, for
+   a list of staff who are not all coaches. deriveCoachDisplayName is built on
+   it and reads exactly as before. */
+describe('deriveStaffDisplayName', () => {
+  test.each([
+    [null, null],
+    ['', null],
+    ['@example.test', null],
+    ['4411-77@example.test', null],
+    ['mike1987@example.test', 'Mike'],
+    ['jane.okafor@example.test', 'Jane Okafor'],
+  ])('%s gives %s', (email, expected) => {
+    expect(deriveStaffDisplayName(email)).toBe(expected);
+    expect(deriveCoachDisplayName(email)).toBe(expected ? `Coach ${expected}` : 'Your coach');
   });
 });
