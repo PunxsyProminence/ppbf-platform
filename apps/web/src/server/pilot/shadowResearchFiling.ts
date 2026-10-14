@@ -79,6 +79,19 @@ export const SHADOW_UNANSWERED_ENTITY = 'shadow_question';
  *  same upsert key (F-054 review). */
 export const SHADOW_ASKER_ENTITY = 'shadow_asker_question';
 
+/** The longest question stored: the same 12,000 characters the conversation
+ *  store keeps (shadowConversations.ts). The column is unbounded text, so the
+ *  row holds what the chat holds and the key hashes all of it. */
+export const SHADOW_QUESTION_STORE_LIMIT = 12_000;
+
+/** Who SHADOW auto-files for: athletes and parents (Jason's F-054 ruling is
+ *  about them) and coaches and organization admins, who file as the "File as
+ *  research" button does. Staff seats, volunteers, the board and the platform
+ *  owner are not filed for and are never told anything was passed on. */
+const AUTO_FILING_ROLES: ReadonlySet<string> = new Set([
+  'athlete', 'parent', 'coach', 'admin', 'organization_admin',
+]);
+
 export function normalizeUnansweredQuestion(question: string): string {
   return question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
 }
@@ -100,7 +113,12 @@ export async function fileUnansweredShadowQuestion(input: {
   role: PilotRole;
   question: string;
   athleteId?: string | null;
+  /** The athlete the ASKER is, or the child a parent asks about. Kept in the
+   *  row's metadata (never as its subject) so a deletion of that athlete can
+   *  find and remove the row: the mark hides it and the purge deletes it. */
+  askerAthleteId?: string | null;
 }): Promise<boolean> {
+  if (!AUTO_FILING_ROLES.has(input.role)) return false;
   const staff = isResearchStaff(input.role);
   const subjectId = staff ? (input.athleteId?.trim() || null) : null;
   const base = unansweredQuestionKey(input.question, subjectId);
@@ -112,14 +130,14 @@ export async function fileUnansweredShadowQuestion(input: {
   // the same words still gets a row they can read.
   const key = staff
     ? base
-    : `acct:${input.accountId}:${createHash('sha256').update(input.question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 2000)).digest('hex')}`;
+    : `acct:${input.accountId}:${createHash('sha256').update(input.question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, SHADOW_QUESTION_STORE_LIMIT)).digest('hex')}`;
   try {
     const id = await createShadowResearchRequirement({
       organizationId: input.organizationId,
       sourceEventName: SHADOW_UNANSWERED_EVENT,
       sourceEntityType: staff ? SHADOW_UNANSWERED_ENTITY : SHADOW_ASKER_ENTITY,
       sourceEntityId: key,
-      researchRequirement: input.question.trim().slice(0, 2000),
+      researchRequirement: input.question.trim().slice(0, SHADOW_QUESTION_STORE_LIMIT),
       knowledgeGap: 'No verified Library evidence matched this question in SHADOW.',
       evidenceLabel: null,
       sourceStatus: 'weak',
@@ -128,7 +146,13 @@ export async function fileUnansweredShadowQuestion(input: {
       createdByAccountId: input.accountId,
       createdByRole: input.role,
       subjectId,
-      metadata: { asked_in: 'shadow', auto_filed: true },
+      metadata: {
+        asked_in: 'shadow',
+        auto_filed: true,
+        ...(!staff && (input.askerAthleteId?.trim() || input.athleteId?.trim())
+          ? { asker_athlete_id: (input.askerAthleteId?.trim() || input.athleteId?.trim()) as string }
+          : {}),
+      },
     });
     // The upsert returns an existing row unchanged, which may already be
     // closed. "Passed on" is true only while the row is open.

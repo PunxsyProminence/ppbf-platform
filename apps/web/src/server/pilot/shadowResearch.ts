@@ -1,4 +1,5 @@
 import { isOrganizationAdminRole } from './access';
+import { deletedAthleteIdsAmong } from './deletedAthletes';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ShadowConfidenceTier } from './shadowAuthority';
@@ -189,6 +190,46 @@ export function subjectAthleteIdOf(row: SubjectBearingRow): string | null {
  */
 export function isResearchStaff(role: PilotRole): boolean {
   return role === 'coach' || isOrganizationAdminRole(role);
+}
+
+/**
+ * AN ASKER'S UNANSWERED QUESTION OUTLIVES NOBODY'S DELETION (F-054).
+ *
+ * The row holds an athlete's or parent's words and names their account, and
+ * carries no subject, so the scope-B mark (the athlete row's deleted_at) does
+ * not reach it by itself. It is tied to its asker two ways, both kept: the
+ * account that filed it (created_by_account_id) and the athlete the asker is
+ * or asked about (metadata.asker_athlete_id). A row whose athlete is marked
+ * deleted, or whose filing account is, leaves every reader at the moment of the
+ * mark; the retention purge (scripts/pilot-cleanup-deleted-data.mjs) deletes it.
+ */
+export async function omitDeletedAskerRows<T extends Pick<
+  ShadowResearchRequirementRow,
+  'organization_id' | 'source_event_name' | 'source_entity_type' | 'created_by_account_id' | 'metadata'
+>>(organizationId: string, rows: T[]): Promise<T[]> {
+  const askerRows = rows.filter((row) => row.source_event_name === 'shadow_unanswered_question'
+    && row.source_entity_type === 'shadow_asker_question');
+  if (askerRows.length === 0) return rows;
+
+  const athleteIds = askerRows
+    .map((row) => (row.metadata ?? {}).asker_athlete_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const deletedAthletes = await deletedAthleteIdsAmong(organizationId, athleteIds);
+  const accountIds = Array.from(new Set(askerRows.map((row) => row.created_by_account_id)));
+  const deletedAccounts = new Set(
+    (await query<{ account_id: string }>(
+      `select account_id from pilot.accounts
+        where organization_id = $1 and account_id = any($2::text[]) and deleted_at is not null`,
+      [organizationId, accountIds],
+    )).map((row) => row.account_id),
+  );
+
+  return rows.filter((row) => {
+    if (!askerRows.includes(row)) return true;
+    const athleteId = (row.metadata ?? {}).asker_athlete_id;
+    return !(typeof athleteId === 'string' && deletedAthletes.has(athleteId))
+      && !deletedAccounts.has(row.created_by_account_id);
+  });
 }
 
 export function mayReadSubjectlessResearchRow(

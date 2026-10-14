@@ -852,6 +852,12 @@ function ShadowChatPageContent() {
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
           citations: mapped.type === 'shadow' ? mapped.citations : undefined,
+          // A live reply's facts, not stored with the message: a reopened
+          // conversation shows neither the "No verified Library evidence" notice
+          // nor "Passed to the gym administrator." (F-054). The research row it
+          // describes exists regardless; the line is dropped here, on purpose.
+          evidenceNotice: undefined,
+          researchFiled: undefined,
         };
       });
 

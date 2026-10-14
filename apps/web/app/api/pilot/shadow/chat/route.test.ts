@@ -2511,6 +2511,11 @@ describe('background session types via the job worker', () => {
     expect(payload.state).toBe('queued');
     expect(payload.async).toBe(true);
     expect(payload.jobId).toBe('job-123');
+    // A queued answer never auto-files a research row and never claims one (F-054):
+    // the branch returns before the filing, and the notice it hangs on is a
+    // synchronous-answer notice.
+    expect(payload.researchFiled).not.toBe(true);
+    expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
     // No model answered yet, so no model may be named.
     expect(payload.modelUsed).toBeUndefined();
 

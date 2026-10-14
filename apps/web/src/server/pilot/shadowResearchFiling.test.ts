@@ -120,3 +120,26 @@ describe('mayFileUnansweredQuestion: a flagged exchange is never copied to the r
     expect(mayFileUnansweredQuestion({ ...served, ...change })).toBe(false);
   });
 });
+
+test.each(['staff', 'volunteer', 'platform_owner', 'board'] as const)('a %s is not auto-filed for and is never told one was', async (role) => {
+  expect(await fileUnansweredShadowQuestion({ ...base, role: role as never })).toBe(false);
+  expect(create).not.toHaveBeenCalled();
+});
+
+test.each(['athlete', 'parent', 'coach', 'admin', 'organization_admin'] as const)('a %s is filed for', async (role) => {
+  expect(await fileUnansweredShadowQuestion({ ...base, role })).toBe(true);
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test('the whole question up to the chat store limit is stored and hashed', async () => {
+  const long = 'a'.repeat(11_000);
+  await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: `${long} one` });
+  await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: `${long} two` });
+  expect(create.mock.calls[0][0].researchRequirement.length).toBe(11_004);
+  expect(create.mock.calls[0][0].sourceEntityId).not.toBe(create.mock.calls[1][0].sourceEntityId);
+});
+
+test('a question over the chat store limit is cut at it, as the conversation store does', async () => {
+  await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: 'b'.repeat(13_000) });
+  expect(create.mock.calls[0][0].researchRequirement.length).toBe(12_000);
+});

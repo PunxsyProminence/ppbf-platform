@@ -1733,6 +1733,7 @@ async function handleShadowChat(
         role: userRole,
         question: message,
         athleteId: athleteId || null,
+        askerAthleteId: principal.athleteId ?? null,
       })
       : false;
 

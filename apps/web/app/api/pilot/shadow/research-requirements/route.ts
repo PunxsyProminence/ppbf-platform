@@ -28,6 +28,7 @@ import {
   subjectAthleteIdOf,
   SUBJECT_NAMING_METADATA_KEYS,
   type ShadowResearchRequirementRow,
+  omitDeletedAskerRows,
 } from '@/src/server/pilot/shadowResearch';
 
 // Requirement kinds only the server writes: the capability-coverage check's gap
@@ -171,8 +172,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 async function scopeToReachableSubjects(
   actor: ActorIdentity,
-  rows: ShadowResearchRequirementRow[],
+  allRows: ShadowResearchRequirementRow[],
 ): Promise<ShadowResearchRequirementRow[]> {
+  // An asker's question leaves every reader when its asker is marked deleted
+  // (F-054; shadowResearch.ts omitDeletedAskerRows), whoever is reading.
+  const rows = await omitDeletedAskerRows(actor.organizationId, allRows);
   if (isOrganizationAdminRole(actor.role)) {
     // The whole gym -- except a deleted athlete, whose requirements are
     // marked deleted with them (scope B). Every other role already loses
