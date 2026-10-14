@@ -165,6 +165,7 @@ jest.mock('@/src/server/pilot/shadowRateLimit', () => {
 // so these tests exercise the actual wiring -- trigger, render, evidence
 // authorization -- rather than asserting that a mock was called.
 jest.mock('@/src/server/pilot/shadowResearchFiling', () => ({
+  ...jest.requireActual('@/src/server/pilot/shadowResearchFiling'),
   fileUnansweredShadowQuestion: jest.fn(async () => true),
 }));
 jest.mock('@/src/server/pilot/boardSummary', () => ({ getBoardSummary: jest.fn() }));
@@ -2710,6 +2711,32 @@ describe('unsupported answers and an empty Library', () => {
 
     expect(payload.evidenceNotice).toBe('NO_VERIFIED_EVIDENCE');
     expect(payload.researchFiled).toBe(false);
+  });
+
+  // OD-2026-10-07-009 ruling 4: a flagged exchange is for the organization
+  // admin's one-exchange view, never for the coaches' research feed.
+  describe('research filing never copies a flagged exchange', () => {
+    const FLAGGED_CASES: Array<[string, string, string]> = [
+      ['a request refused as self-diagnosis', 'Do I have a concussion from that hit?', 'Keep the rounds short and check in with your coach on the plan.'],
+      ['a request refused as a medication question', 'Should I take medication before the bout?', 'Keep the rounds short and check in with your coach on the plan.'],
+      ['a personal dizziness report', 'I feel dizzy after sparring', 'Keep the rounds short and check in with your coach on the plan.'],
+      ['a valid but high-risk (concussion) question', 'What are the signs of concussion?', 'Keep the rounds short and check in with your coach on the plan.'],
+      ['an answer the response filter withholds', 'How should we structure the round?', 'You have a concussion and you are cleared to spar, take 400mg of ibuprofen.'],
+    ];
+
+    test.each(FLAGGED_CASES)('%s files nothing and says nothing was passed on', async (_label, message, answer) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: answer } }] }),
+      }) as unknown as typeof fetch;
+
+      const response = await POST(postRequest({ message }));
+      const payload = await response.json();
+
+      expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+      // Early refusals carry no researchFiled at all; the page reads === true.
+      expect(payload.researchFiled).not.toBe(true);
+    });
   });
 
   test('never returns the old blocker copy, which read as a crash and named one gym\'s coach', async () => {

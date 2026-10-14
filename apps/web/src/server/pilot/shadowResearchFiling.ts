@@ -20,6 +20,56 @@ import { createShadowResearchRequirement, getShadowResearchRequirementById, isRe
  *    not a question about a child, so staff and the creating account read it
  *    (mayReadSubjectlessResearchRow) and nobody else does.
  */
+/* WHICH EXCHANGES MAY NEVER BE COPIED INTO THE RESEARCH FEED.
+ *
+ * The row stores the asker's message verbatim and every coach and organization
+ * admin of the gym reads it. A flagged exchange is not for the whole coaching
+ * staff: on a human-review ticket the organization admin reads "the single
+ * flagged question and answer ... and nothing else from the chat"
+ * (OD-2026-10-07-009 ruling 4, Q8 "That one exchange (Recommended)"). So an
+ * exchange that was flagged, safety-routed, handed off, refused or altered by
+ * a filter, or is not a normally served answer, is never filed here.
+ *
+ * Every clause is a separate guard, each with its own test and mutant. The
+ * route passes the facts; this function only decides. A fact that is unknown
+ * must be passed as the refusing value. */
+export interface UnansweredFilingFacts {
+  /** The state the reader was shown ('ok' is the only normally served one). */
+  state: string;
+  /** persistedRequiresHumanReview: a ticket was or should have been written. */
+  requiresHumanReview: boolean;
+  /** persistedHandoff: a handoff banner was attached. */
+  hasHandoff: boolean;
+  /** The response validator filtered the generated answer. */
+  responseFiltered: boolean;
+  /** The response validator asked for a human to review the answer. */
+  responseRequiresHumanReview: boolean;
+  /** The response validator recorded any reason (rule fired). */
+  responseReasonCount: number;
+  /** The text shown differs from the model's text: a filter rewrote it. */
+  responseAltered: boolean;
+  /** The REQUEST was classified high-risk. */
+  requestHighRisk: boolean;
+  /** The request carried a high-risk classification or topic. */
+  requestFlagged: boolean;
+  /** A request-risk human-review row is owed for this exchange. */
+  requestRiskOwed: boolean;
+}
+
+export function mayFileUnansweredQuestion(facts: UnansweredFilingFacts): boolean {
+  if (facts.state !== 'ok') return false;
+  if (facts.requiresHumanReview) return false;
+  if (facts.hasHandoff) return false;
+  if (facts.responseFiltered) return false;
+  if (facts.responseRequiresHumanReview) return false;
+  if (facts.responseReasonCount > 0) return false;
+  if (facts.responseAltered) return false;
+  if (facts.requestHighRisk) return false;
+  if (facts.requestFlagged) return false;
+  if (facts.requestRiskOwed) return false;
+  return true;
+}
+
 export const SHADOW_UNANSWERED_EVENT = 'shadow_unanswered_question';
 export const SHADOW_UNANSWERED_ENTITY = 'shadow_question';
 

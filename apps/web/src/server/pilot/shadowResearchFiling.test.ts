@@ -1,5 +1,10 @@
 import { createShadowResearchRequirement, getShadowResearchRequirementById } from './shadowResearch';
-import { fileUnansweredShadowQuestion, unansweredQuestionKey } from './shadowResearchFiling';
+import {
+  fileUnansweredShadowQuestion,
+  mayFileUnansweredQuestion,
+  unansweredQuestionKey,
+  type UnansweredFilingFacts,
+} from './shadowResearchFiling';
 
 jest.mock('./shadowResearch', () => ({
   ...jest.requireActual('./shadowResearch'),
@@ -59,4 +64,39 @@ test('a question whose stored row is already closed is not reported as passed on
 test('a non-staff question cannot pre-claim a coach athlete-scoped key', async () => {
   await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: 'athlete:ath-9:what should i eat?' });
   expect(create.mock.calls[0][0].sourceEntityId.startsWith('acct:acct-1:')).toBe(true);
+});
+
+describe('mayFileUnansweredQuestion: a flagged exchange is never copied to the research feed', () => {
+  const served: UnansweredFilingFacts = {
+    state: 'ok',
+    requiresHumanReview: false,
+    hasHandoff: false,
+    responseFiltered: false,
+    responseRequiresHumanReview: false,
+    responseReasonCount: 0,
+    responseAltered: false,
+    requestHighRisk: false,
+    requestFlagged: false,
+    requestRiskOwed: false,
+  };
+
+  test('a normally served, unflagged answer may be filed', () => {
+    expect(mayFileUnansweredQuestion(served)).toBe(true);
+  });
+
+  test.each([
+    ['state is not ok', { state: 'filtered' }],
+    ['state is degraded', { state: 'degraded' }],
+    ['a human review is required', { requiresHumanReview: true }],
+    ['a handoff is attached', { hasHandoff: true }],
+    ['the response filter filtered it', { responseFiltered: true }],
+    ['the response asked for human review', { responseRequiresHumanReview: true }],
+    ['a response rule fired', { responseReasonCount: 1 }],
+    ['the shown text was rewritten', { responseAltered: true }],
+    ['the request was high risk', { requestHighRisk: true }],
+    ['the request carried a classification or topic', { requestFlagged: true }],
+    ['a request-risk review is owed', { requestRiskOwed: true }],
+  ] as Array<[string, Partial<UnansweredFilingFacts>]>)('is refused when %s', (_label, change) => {
+    expect(mayFileUnansweredQuestion({ ...served, ...change })).toBe(false);
+  });
 });
