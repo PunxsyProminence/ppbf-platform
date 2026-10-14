@@ -56,6 +56,34 @@ test('each observation reads with its category, rating if given, the words, a gu
   );
 });
 
+test('the newest ten show first; Show more reveals the older ones, saying how many are left', async () => {
+  const many = Array.from({ length: 23 }, (_, index) => ({
+    note_id: `o-${index}`,
+    category: 'energy',
+    rating: null,
+    notes: `Note ${index}`,
+    created_at: new Date(Date.UTC(2026, 9, 30 - index, 12)).toISOString(),
+  }));
+  global.fetch = jest.fn(async () => jsonResponse({ items: many })) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<FamilyObservations athleteId="ath-1" />);
+  });
+
+  const list = () => within(screen.getByRole('list', { name: 'Family observations' })).getAllByRole('listitem');
+  expect(list()).toHaveLength(10);
+  expect(list()[0]!.textContent).toContain('Note 0');
+  await act(async () => {
+    screen.getByRole('button', { name: 'Show 10 more (13 older)' }).click();
+  });
+  expect(list()).toHaveLength(20);
+  await act(async () => {
+    screen.getByRole('button', { name: 'Show 3 more (3 older)' }).click();
+  });
+  expect(list()).toHaveLength(23);
+  expect(screen.queryByRole('button', { name: /more/ })).toBeNull();
+});
+
 test('a failed read says so, and never that nothing was recorded', async () => {
   global.fetch = jest.fn(async () => jsonResponse({ error: 'boom' }, false)) as unknown as typeof fetch;
 

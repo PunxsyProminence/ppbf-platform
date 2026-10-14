@@ -15,8 +15,13 @@ import { OBSERVATION_CATEGORIES, type ParentObservationItem } from '@/src/shared
  * guardian": staff are not told which one, as with a guardian's barrier report.
  *
  * Read from GET /api/pilot/coach/family-observations (staff only). A failed
- * read says so; it is never shown as "nothing recorded".
+ * read says so; it is never shown as "nothing recorded". The newest ten show
+ * first and "Show 10 more" reveals older ones: a family that writes nightly
+ * would otherwise fill the tablet with a season of cards. Nothing is cut on
+ * the server; the count of what is not yet shown is stated.
  */
+
+const PAGE_SIZE = 10;
 type ReadState =
   | { state: 'loading' }
   | { state: 'failed'; athleteId: string }
@@ -24,6 +29,7 @@ type ReadState =
 
 export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: string }>) {
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
   // Only the newest read lands: switching athletes while a read is slow must
   // not leave one child's observations under another's name.
   const seq = useRef(0);
@@ -33,6 +39,7 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
     const mine = ++seq.current;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRead({ state: 'loading' });
+    setShownCount(PAGE_SIZE);
     void (async () => {
       try {
         const response = await fetch(
@@ -59,6 +66,7 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
   return (
     <div className="mt-[var(--s4)]">
       <h3 className="t-label">From the family</h3>
+      <p className="t-muted mt-[var(--s1)]">What the family recorded at home, separate from what the gym posted above.</p>
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what the family recorded…</p>
       ) : shown.state === 'failed' ? (
@@ -69,8 +77,9 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
       ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">No observations from the family yet.</p>
       ) : (
+        <>
         <ul aria-label="Family observations" className="mt-[var(--s2)] space-y-[var(--s3)]">
-          {shown.items.map((item) => (
+          {shown.items.slice(0, shownCount).map((item) => (
             <li key={item.note_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
               <p className="t-label">
                 {OBSERVATION_CATEGORIES[item.category] ?? item.category}
@@ -83,6 +92,16 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
             </li>
           ))}
         </ul>
+        {shown.items.length > shownCount ? (
+          <button
+            type="button"
+            className="btn btn--ghost mt-[var(--s2)]"
+            onClick={() => setShownCount((count) => count + PAGE_SIZE)}
+          >
+            Show {Math.min(PAGE_SIZE, shown.items.length - shownCount)} more ({shown.items.length - shownCount} older)
+          </button>
+        ) : null}
+        </>
       )}
     </div>
   );
