@@ -4,7 +4,7 @@ import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ForbiddenError } from './errors';
 import { SessionScriptRunError } from './sessionScriptRuns';
-import { lockLiveAthlete, staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
+import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
 
 // WHO WAS IN A SESSION (audit finding F-067).
 //
@@ -68,12 +68,18 @@ export async function setRunAthletePresent(input: {
   const { actor, runId, athleteId } = input;
   // One refusal for "not staff here", "another gym's athlete", "a deleted
   // athlete" and "no such athlete": the answer says nothing about the id.
-  const role = await staffRoleReachingAthlete(actor, athleteId);
-  if (!role) {
+  if (!(await staffRoleReachingAthlete(actor, athleteId))) {
     throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
   }
 
   return withTransaction(async (client) => {
+    // The marker must still be staff here now, not only when the check above ran: an admin
+    // ending the membership, or deactivating the account, in between gets no mark. Lock order,
+    // one way only: membership and account, run row, athlete row, mark row (lockStaffMembership).
+    const role = await lockStaffMembership(client, actor);
+    if (!role) {
+      throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
+    }
     // Read under a row lock, so a finish cannot land between this check and the write.
     const run = await client.query<RunOwnership>(
       `select delivered_by_account_id, run_state

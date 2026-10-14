@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { query, queryOne, withTransaction } from './db';
 import type { PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -148,6 +149,38 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
 }
 
 /**
+ * Inside a write's transaction: the actor's staff role HERE, if the actor
+ * STILL holds an active staff membership in this organization on an active,
+ * undeleted account; otherwise null. The membership and account rows are
+ * share-locked until the write commits.
+ *
+ * The same question staffNoteRoleInOrganization asks before the transaction,
+ * asked again inside it: an admin ending the membership, or deactivating or
+ * deleting the account, in between would otherwise not stop the write. FOR
+ * SHARE conflicts with the UPDATE that ends either, so a change already under
+ * way makes this wait and then read the committed rows, and one that starts
+ * now waits for this write.
+ *
+ * LOCK ORDER, one way only, so no two of these writes can deadlock: the
+ * actor's membership and account first, then (for a mark) the run row, then
+ * the athlete row, then the mark row.
+ */
+export async function lockStaffMembership(client: PoolClient, actor: ActorIdentity): Promise<StaffNoteRole | null> {
+  if (!(STAFF_NOTE_ROLES as readonly string[]).includes(actor.role)) return null;
+  const row = await client.query<{ role: StaffNoteRole }>(
+    `select om.role
+       from pilot.organization_memberships om
+       join pilot.accounts a on a.account_id = om.account_id
+      where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true
+        and om.role = any($3::text[])
+        and a.active_flag = true and not ${accountDeletedSql('a')}
+        for share`,
+    [actor.accountId, actor.organizationId, [...STAFF_NOTE_ROLES]],
+  );
+  return row.rows[0]?.role ?? null;
+}
+
+/**
  * Inside a write's transaction: whether this athlete is STILL a live athlete
  * of this organization, with the row share-locked until the write commits.
  *
@@ -266,12 +299,14 @@ export async function createRunStaffNote(input: {
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
 
-  const role = await assertStaffNoteAccess(input.actor, input.athleteId);
+  await assertStaffNoteAccess(input.actor, input.athleteId);
   const noteId = randomUUID();
 
   return withTransaction(async (client) => {
-    // The athlete must still be live now, not only when the reach check ran.
-    if (!(await lockLiveAthlete(client, input.actor.organizationId, input.athleteId))) {
+    // The writer must still be staff here, and the athlete still live, now: not only when the
+    // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
+    const lockedRole = await lockStaffMembership(client, input.actor);
+    if (!lockedRole || !(await lockLiveAthlete(client, input.actor.organizationId, input.athleteId))) {
       throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
     }
     // FOR UPDATE on the mark row: taking a mark back updates that row, so it
@@ -297,7 +332,7 @@ export async function createRunStaffNote(input: {
          (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note)
        values ($1, $2, $3, $4, $5, $6, $7)
        returning ${FIELDS}`,
-      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, role, text],
+      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, lockedRole, text],
     );
     const row = inserted.rows[0];
     if (!row) throw new Error('Session staff note insert returned no row');
@@ -305,7 +340,7 @@ export async function createRunStaffNote(input: {
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: input.actor.accountId,
-      actor_role: role,
+      actor_role: lockedRole,
       organization_id: input.actor.organizationId,
       entity_type: 'session_staff_note',
       entity_id: noteId,

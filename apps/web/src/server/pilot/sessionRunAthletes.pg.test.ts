@@ -253,14 +253,24 @@ const NOT_PERMITTED = { name: 'ForbiddenError', status: 403, code: 'SESSION_RUN_
  * reads the athlete as still live; only a check inside the transaction can see the delete.
  */
 async function writeWhileAthleteIsBeingDeleted<T>(organizationId: string, athleteId: string, write: () => Promise<T>) {
+  return writeWhileHeldOpen(
+    `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+    write,
+  );
+}
+
+/**
+ * Runs `statement` on a SECOND connection and holds it open (not committed), runs `write`, checks
+ * the write is WAITING on it rather than already answered, then commits and returns how the write
+ * ended. Used for every change that must stop a write already past its checks.
+ */
+async function writeWhileHeldOpen<T>(statement: string, params: unknown[], write: () => Promise<T>) {
   const deleting = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
   await deleting.connect();
   try {
     await deleting.query('BEGIN');
-    await deleting.query(
-      `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
-      [organizationId, athleteId],
-    );
+    await deleting.query(statement, params);
     const writing = write().then(
       (result) => ({ result, error: null as unknown }),
       (error: unknown) => ({ result: null as T | null, error }),
@@ -493,6 +503,22 @@ describe('marking who is in a session', () => {
     expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
   });
 
+  test.each([
+    ['the marker\'s membership being ended', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`],
+    ['the marker\'s account being deactivated', `update pilot.accounts set active_flag = false where account_id = $1 and $2::text is not null`],
+    ['the marker\'s account being deleted', `update pilot.accounts set deleted_at = now() where account_id = $1 and $2::text is not null`],
+  ])('a mark waits for %s at that moment, and is then refused (no mark, no audit)', async (_label, statement) => {
+    const gym = await newGym('mark-staff-race');
+    const runId = await liveRun(gym);
+
+    const outcome = await writeWhileHeldOpen(statement, [gym.coach.accountId, gym.organizationId], () => mark(gym.coach, runId, gym.ada));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject(NOT_PERMITTED);
+    expect(await marks(gym, runId)).toEqual([]);
+    expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
+  });
+
   test('a mark waits for the session being ended at that moment, and is then refused', async () => {
     const gym = await newGym('mark-race');
     const runId = await liveRun(gym);
@@ -665,6 +691,24 @@ describe('a staff note on an athlete in a session run', () => {
 
     const outcome = await writeWhileAthleteIsBeingDeleted(gym.organizationId, gym.ada, () =>
       createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Written as the athlete was removed.' }));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = $1`, [gym.organizationId]);
+    expect(rows[0].n).toBe(0);
+    expect(await auditOf(gym, 'session_staff_note')).toEqual([]);
+  });
+
+  test.each([
+    ['the writer\'s membership being ended', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`],
+    ['the writer\'s account being deactivated', `update pilot.accounts set active_flag = false where account_id = $1 and $2::text is not null`],
+  ])('a note waits for %s at that moment, and is then refused (no note, no audit)', async (_label, statement) => {
+    const gym = await newGym('note-staff-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+
+    const outcome = await writeWhileHeldOpen(statement, [gym.otherCoach.accountId, gym.organizationId], () =>
+      createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Written as access ended.' }));
 
     expect(outcome.result).toBeNull();
     expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
