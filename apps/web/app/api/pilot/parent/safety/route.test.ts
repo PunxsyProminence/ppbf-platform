@@ -4,7 +4,7 @@ import { GET } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyCoachName } from '@/src/server/pilot/videoFamilyView';
 import { callerParentIdSet, checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold } from '@/src/server/pilot/trainingHolds';
@@ -23,9 +23,10 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/profileDb', () => ({
-  getSubjectIdentity: jest.fn(),
-  familyDisplayName: jest.requireActual('@/src/server/pilot/profileDb').familyDisplayName,
+// The family name reader (#1558 item three); its own rules are tested where
+// it lives, and guardianContactProjection.pg.test.ts runs it for real.
+jest.mock('@/src/server/pilot/videoFamilyView', () => ({
+  familyCoachName: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
@@ -60,7 +61,7 @@ const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockGetAthleteById = jest.mocked(getAthleteById);
 const mockGetActiveTrainingHold = jest.mocked(getActiveTrainingHold);
 const mockGetGuardianGateSummary = jest.mocked(getGuardianGateSummary);
-const mockGetSubjectIdentity = jest.mocked(getSubjectIdentity);
+const mockFamilyCoachName = jest.mocked(familyCoachName);
 const mockGetAthleteWaiverStatus = jest.mocked(getAthleteWaiverStatus);
 const mockCheckGuardianMediaConsent = jest.mocked(checkGuardianMediaConsent);
 const mockCallerParentIdSet = jest.mocked(callerParentIdSet);
@@ -113,14 +114,7 @@ beforeEach(() => {
   mockGetAthleteWaiverStatus.mockResolvedValue('signed');
   mockCallerParentIdSet.mockResolvedValue(new Set(['par-1']));
   mockCheckGuardianMediaConsent.mockResolvedValue(consent([{ parentId: 'par-1', status: 'signed' }]));
-  mockGetSubjectIdentity.mockResolvedValue({
-    accountId: 'acct-coach',
-    fullName: 'Coach Neale',
-    athleteId: null,
-    dob: null,
-    coachAccountId: null,
-    memberSince: '2026-01-01T00:00:00Z',
-  });
+  mockFamilyCoachName.mockResolvedValue('Coach Neale');
 });
 
 test('returns hold and gate status for every linked athlete', async () => {
@@ -256,7 +250,7 @@ test("the placer name falls back to the existing phrase, never the account id, w
     lift_note: '',
     status: 'active',
   } as never);
-  mockGetSubjectIdentity.mockResolvedValueOnce(null);
+  mockFamilyCoachName.mockResolvedValueOnce('Your coach');
 
   const response = await get();
   const payload = await response.json();
@@ -265,16 +259,13 @@ test("the placer name falls back to the existing phrase, never the account id, w
   expect(JSON.stringify(payload)).not.toContain('jane.okafor');
 });
 
-// #1558 item three: the placer resolves, but their login email gives no name,
-// so the staff name IS the account id (getSubjectIdentity's honest gap on staff
-// screens). A guardian is given the floor phrase instead.
-test('a placer whose staff name is their account id is "Your coach", never the id', async () => {
+// #1558 item three: the placer is named by the family name reader, asked about
+// this placer in this gym -- never by the staff name, which falls back to the
+// account id or keeps the login's digits.
+test('the placer is named by the family name reader, asked about the placer in this gym', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
-  mockGetSubjectIdentity.mockResolvedValue({
-    accountId: 'nameless.4411@example.org', fullName: 'nameless.4411@example.org', athleteId: null,
-    dob: null, coachAccountId: null, memberSince: null,
-  });
+  mockFamilyCoachName.mockResolvedValueOnce('Coach Mike');
   mockGetActiveTrainingHold.mockResolvedValueOnce({
     organization_id: 'org-a',
     hold_id: 'hold-n',
@@ -284,7 +275,7 @@ test('a placer whose staff name is their account id is "Your coach", never the i
     reason_text: 'staff only',
     athlete_explanation: 'Rest this week.',
     lift_condition_text: '',
-    placed_by_account_id: 'nameless.4411@example.org',
+    placed_by_account_id: 'mike1987@example.org',
     placed_by_role: 'coach',
     placed_at: '2026-08-01T00:00:00.000Z',
     expires_at: null,
@@ -294,11 +285,11 @@ test('a placer whose staff name is their account id is "Your coach", never the i
     status: 'active',
   } as never);
 
-  const response = await get();
-  const payload = await response.json();
+  const payload = await (await get()).json();
 
-  expect(payload.items[0].hold.placed_by_name).toBe('Your coach');
-  expect(JSON.stringify(payload)).not.toContain('nameless.4411');
+  expect(mockFamilyCoachName).toHaveBeenCalledWith('org-a', 'mike1987@example.org');
+  expect(payload.items[0].hold.placed_by_name).toBe('Coach Mike');
+  expect(JSON.stringify(payload)).not.toMatch(/mike1987/i);
 });
 
 test('no active hold reads as hold: null, not omitted', async () => {

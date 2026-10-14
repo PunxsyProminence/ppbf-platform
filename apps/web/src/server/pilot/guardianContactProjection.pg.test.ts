@@ -1304,21 +1304,24 @@ describe('POST /api/pilot/intake/cases/get', () => {
 });
 
 /* #1558 ITEM THREE, T1: THE NAME OF THE STAFF MEMBER WHO PLACED A HOLD.
-   getSubjectIdentity names a staff account whose login email gives no name by
-   its account id -- an honest gap on staff screens -- and the account id is the
-   login email unless somebody chose otherwise. An athlete or a guardian reading
-   the hold gets the floor phrase, "Your coach" (OD-2026-10-06-025 ruling 2). The
-   placer here is a real account row, read by the real identity lookup. */
+   The staff name falls back to the account id when the login email gives no
+   name, and keeps the login's digits; the account id is the login email unless
+   somebody chose otherwise. An athlete or a guardian reading the hold is given
+   the family name reader's name instead (OD-2026-10-06-025 ruling 2): digits
+   dropped, "Your coach" when nothing is left. The placers here are real account
+   rows, read by the real reader. */
 describe('the staff name on a training hold, for a family reader', () => {
   const NAMELESS = 'nameless.4411@example.test';
   const LETTERLESS = 'letterless.9911@example.test';
   const NAMED = 'named.coach@example.test';
+  const HANDLE = 'mike1987';
 
   beforeAll(async () => {
     for (const [accountId, loginEmail] of [
       [NAMELESS, null],
       [LETTERLESS, '9911-07@example.test'],
       [NAMED, 'jane.okafor@example.test'],
+      [HANDLE, 'mike1987@example.test'],
     ] as const) {
       await db.query(
         `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email)
@@ -1364,12 +1367,22 @@ describe('the staff name on a training hold, for a family reader', () => {
     }
   });
 
+  it('a placer whose account id IS their login handle is named without its digits, never by the id', async () => {
+    await placedBy(HANDLE);
+
+    for (const actor of [AS.athlete(), AS.guardianA()]) {
+      const { raw } = await readHold(actor);
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('Coach Mike');
+      expect(raw).not.toMatch(/mike1987/i);
+    }
+  });
+
   it('control: a placer whose email gives a name is named by it, to the same readers', async () => {
     await placedBy(NAMED);
 
     for (const actor of [AS.athlete(), AS.guardianA()]) {
       const { raw } = await readHold(actor);
-      expect(JSON.parse(raw).hold.placed_by_name).toBe('Jane Okafor');
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('Coach Jane Okafor');
       expect(raw).not.toContain(NAMED);
     }
   });

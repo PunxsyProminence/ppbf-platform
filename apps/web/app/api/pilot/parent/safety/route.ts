@@ -1,11 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { deriveCoachDisplayName } from '@/src/server/pilot/achievements';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { callerParentIdSet, checkGuardianMediaConsent, MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
-import { familyDisplayName, getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyCoachName } from '@/src/server/pilot/videoFamilyView';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold, type TrainingHoldRow, type TrainingHoldScope } from '@/src/server/pilot/trainingHolds';
 import {
@@ -100,7 +99,6 @@ interface AthleteFacingHold {
 }
 
 async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Promise<AthleteFacingHold> {
-  const placer = await getSubjectIdentity(organizationId, hold.placed_by_account_id);
   return {
     scope: hold.scope,
     athlete_explanation: hold.athlete_explanation,
@@ -109,10 +107,11 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     expires_at: hold.expires_at,
     // As in training-holds: a placer who resolves to nobody gets the existing
     // phrase, never the account id (often the login email).
-    // Nor by the id when the placer's login email gives no name (#1558
-    // item three): the honest gap getSubjectIdentity keeps for staff
-    // screens is a login email here.
-    placed_by_name: placer ? familyDisplayName(placer, deriveCoachDisplayName(null)) : deriveCoachDisplayName(null),
+    // Named by the family name reader (#1558 item three; OD-2026-10-06-025
+    // ruling 2): the staff name getSubjectIdentity gives staff screens falls
+    // back to the account id, or keeps the login's digits ("Mike1987"), and
+    // either is most of a login email. A deleted placer is the floor phrase.
+    placed_by_name: await familyCoachName(organizationId, hold.placed_by_account_id),
   };
 }
 

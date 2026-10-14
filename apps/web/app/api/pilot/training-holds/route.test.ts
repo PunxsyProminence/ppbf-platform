@@ -8,7 +8,7 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyCoachName } from '@/src/server/pilot/videoFamilyView';
 import {
   getActiveTrainingHold,
   getTrainingHoldById,
@@ -31,9 +31,12 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/profileDb', () => ({
-  getSubjectIdentity: jest.fn(),
-  familyDisplayName: jest.requireActual('@/src/server/pilot/profileDb').familyDisplayName,
+// The family name reader (#1558 item three). Its own rules -- digits dropped,
+// a deleted or unknown account floored to "Your coach" -- are in
+// videoFamilyView and achievements; guardianContactProjection.pg.test.ts runs
+// the real thing through this route.
+jest.mock('@/src/server/pilot/videoFamilyView', () => ({
+  familyCoachName: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -60,7 +63,7 @@ const mockLift = liftTrainingHold as jest.Mock;
 const mockList = listTrainingHolds as jest.Mock;
 const mockPlace = placeTrainingHold as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
-const mockGetSubjectIdentity = getSubjectIdentity as jest.Mock;
+const mockFamilyCoachName = familyCoachName as jest.Mock;
 
 const FULL_HOLD = {
   hold_id: 'hold-1',
@@ -106,17 +109,9 @@ function postRequest(body: Record<string, unknown>): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default for the two athlete-facing GET paths, which now resolve the
-  // placer's name through getSubjectIdentity -- individual tests override
-  // when the resolution itself is what's under test.
-  mockGetSubjectIdentity.mockResolvedValue({
-    accountId: 'acct-coach-1',
-    fullName: 'Coach Neale',
-    athleteId: null,
-    dob: null,
-    coachAccountId: null,
-    memberSince: '2026-01-01T00:00:00Z',
-  });
+  // Default for the two athlete-facing GET paths, which resolve the placer's
+  // name through the family name reader.
+  mockFamilyCoachName.mockResolvedValue('Coach Neale');
 });
 
 describe('GET /api/pilot/training-holds', () => {
@@ -136,7 +131,7 @@ describe('GET /api/pilot/training-holds', () => {
       expires_at: null,
       placed_by_name: 'Coach Neale',
     });
-    expect(mockGetSubjectIdentity).toHaveBeenCalledWith('org-a', 'acct-coach-1');
+    expect(mockFamilyCoachName).toHaveBeenCalledWith('org-a', 'acct-coach-1');
     // The staff-facing fields never reach the athlete.
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain('Concussion');
@@ -157,10 +152,10 @@ describe('GET /api/pilot/training-holds', () => {
     expect(mockGetActive).not.toHaveBeenCalled();
   });
 
-  test('the placer name falls back to the existing phrase, never the account id, when identity cannot be resolved (a deleted login included)', async () => {
+  test('the placer name is whatever the family name reader gives, never the account id (its floor for a deleted login included)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
     mockGetActive.mockResolvedValueOnce(FULL_HOLD);
-    mockGetSubjectIdentity.mockResolvedValueOnce(null);
+    mockFamilyCoachName.mockResolvedValueOnce('Your coach');
 
     const response = await GET(getRequest());
     const payload = await response.json();

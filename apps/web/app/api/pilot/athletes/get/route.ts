@@ -28,10 +28,9 @@ export async function POST(request: NextRequest) {
     // fields, coach_name in place of coach_id (OD-2026-10-06-025 ruling 2).
     // Staff keep the row.
     if (isFamilyRecordCaller(principal.role)) {
-      return NextResponse.json({
-        found: true,
-        athlete: await toFamilyAthlete(principal.organizationId, athlete, principal.role === 'athlete' ? 'athlete' : 'parent'),
-      });
+      // requireRole above admits no parent: the family reader here is the
+      // athlete, who keeps their own emergency_contact.
+      return NextResponse.json({ found: true, athlete: await toFamilyAthlete(principal.organizationId, athlete, 'athlete') });
     }
 
     return NextResponse.json({ found: true, athlete });

@@ -17,7 +17,6 @@ jest.mock('@/src/server/pilot/profileDb', () => {
   const actual = jest.requireActual('@/src/server/pilot/profileDb');
   return {
     toProfileSubject: actual.toProfileSubject,
-    familyDisplayName: actual.familyDisplayName,
     getSubjectIdentity: jest.fn(),
     getAccountProfile: jest.fn(),
     assertViewerMayReachSubject: jest.fn(),
@@ -135,17 +134,19 @@ describe('GET /api/pilot/profile/card: a coach whose staff name IS the account i
 
 /*
  * #1558 item three: the card OF a staff member, opened by a family viewer
- * (their child's coach). The staff name falls back to the account id when the
- * login email gives none; a family viewer gets the floor phrase instead
- * (OD-2026-10-06-025 ruling 2). Staff viewers keep what they had.
+ * (their child's coach). The staff name falls back to the account id, or
+ * keeps the login's digits; a family viewer is given the family name reader's
+ * name instead (OD-2026-10-06-025 ruling 2). Staff viewers, and anyone looking
+ * at their OWN card, read the name as before.
  */
-describe('GET /api/pilot/profile/card: the card of a staff member whose name IS the account id', () => {
+describe('GET /api/pilot/profile/card: the card of a staff member, by viewer', () => {
   const withNamelessCoach = () =>
     mockIdentity.mockImplementation(async (_org, accountId) => (accountId === COACH
       ? { ...(IDENTITIES[COACH] as object), fullName: COACH }
       : IDENTITIES[accountId] ?? null) as never);
+  const staffCard = () => GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`));
 
-  test.each(['athlete', 'parent'] as const)('a %s viewer is shown "Your coach", and its initials', async (role) => {
+  test.each(['athlete', 'parent'] as const)('a %s viewer is shown the family name, never the id', async (role) => {
     const viewer = VIEWERS[role];
     mockPrincipal.mockResolvedValue(
       { accountId: viewer.accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never,
@@ -153,15 +154,15 @@ describe('GET /api/pilot/profile/card: the card of a staff member whose name IS 
     mockRelationship.mockResolvedValue('subject_is_my_staff' as never);
     withNamelessCoach();
 
-    const response = await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`));
+    const response = await staffCard();
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.card.displayName).toBe('Your coach');
-    expect(body.card.initials).not.toBe(COACH.slice(0, 2).toUpperCase());
+    expect(body.card.displayName).toBe('Coach Ray');
+    expect(body.card.initials).toBe('CR');
   });
 
-  test.each(['coach', 'organization_admin'] as const)('a %s viewer reads it as before', async (role) => {
+  test.each(['coach', 'organization_admin'] as const)('a %s viewer reads the staff name as before', async (role) => {
     const viewer = VIEWERS[role];
     mockPrincipal.mockResolvedValue(
       { accountId: viewer.accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never,
@@ -169,20 +170,21 @@ describe('GET /api/pilot/profile/card: the card of a staff member whose name IS 
     mockRelationship.mockResolvedValue('organization_staff' as never);
     withNamelessCoach();
 
-    const body = await (await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`))).json();
+    const body = await (await staffCard()).json();
 
     expect(body.card.displayName).toBe(COACH);
   });
 
-  test('a staff member with a real name is named the same to a family viewer', async () => {
-    const viewer = VIEWERS.parent;
-    mockPrincipal.mockResolvedValue(
-      { accountId: viewer.accountId, role: 'parent', organizationId: ORG, athleteId: null } as never,
-    );
-    mockRelationship.mockResolvedValue('subject_is_my_staff' as never);
+  test('a parent looking at their OWN card reads their own name, not the coach floor', async () => {
+    const PARENT = 'acct-parent';
+    mockPrincipal.mockResolvedValue({ accountId: PARENT, role: 'parent', organizationId: ORG, athleteId: null } as never);
+    mockRelationship.mockResolvedValue('self' as never);
+    mockIdentity.mockImplementation(async (_org, accountId) => (accountId === PARENT
+      ? { accountId: PARENT, fullName: 'Dana Vance', athleteId: null, dob: null, coachAccountId: null, memberSince: null }
+      : IDENTITIES[accountId] ?? null) as never);
 
-    const body = await (await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`))).json();
+    const body = await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card'))).json();
 
-    expect(body.card.displayName).toBe('Ray Nolan');
+    expect(body.card.displayName).toBe('Dana Vance');
   });
 });
