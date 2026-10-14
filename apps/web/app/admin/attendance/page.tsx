@@ -5,7 +5,7 @@ import Link from 'next/link';
 import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateShort, formatGymDayShort, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDateShort, formatGymDateTimeShort, formatGymDayShort, gymDayIso } from '@/src/lib/gymTime';
 
 interface AttendanceAthleteSummary {
   athlete_id: string;
@@ -24,6 +24,32 @@ interface WeeklyAttendanceTrendRow {
   absent_count: number;
   excused_count: number;
   total_marked: number;
+  attendance_rate: number | null;
+}
+
+// The class report's rows and totals (RP-02), as GET
+// /api/pilot/scheduler/attendance-summary?report=classes answers them.
+interface ClassReportRow {
+  class_id: string;
+  title: string;
+  start_at: string;
+  status: 'open' | 'full' | 'cancelled';
+  registered_count: number;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  unmarked_count: number;
+  attendance_rate: number | null;
+}
+
+interface ClassReportTotals {
+  classes: number;
+  cancelled: number;
+  registered_count: number;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  unmarked_count: number;
   attendance_rate: number | null;
 }
 
@@ -199,6 +225,190 @@ function AttendanceReportDownload() {
   );
 }
 
+function ratePercent(rate: number | null): string {
+  return rate === null ? '—' : `${Math.round(rate * 1000) / 10}%`;
+}
+
+/*
+ * THE REPORT BY CLASS (RP-02). One row per class occurrence in the period, by
+ * the day it was on in the gym: registered, present, absent, excused, and
+ * unmarked -- a registration nobody took attendance for is not an absence. A
+ * cancelled class keeps its row and is left out of every rate. Counts only;
+ * names stay in each class's roster. Show reads it on screen; Download CSV
+ * saves the same rows.
+ */
+function ClassAttendanceReport() {
+  const [period, setPeriod] = useState(defaultReportPeriod);
+  const [shown, setShown] = useState<{ period: { from: string; to: string }; classes: ClassReportRow[]; totals: ClassReportTotals } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  const busyRef = useRef(false);
+  // Each read is tied to the period it asked for: a period changed while one
+  // is loading drops its answer.
+  const requestSeq = useRef(0);
+
+  function choose(next: { from: string; to: string }) {
+    requestSeq.current += 1;
+    setFailure('');
+    setShown(null);
+    setPeriod(next);
+  }
+
+  async function run(format: 'json' | 'csv') {
+    if (busyRef.current) return;
+    // Cleared first, so the same message said twice is announced twice.
+    setFailure('');
+    if (!period.from || !period.to || period.from > period.to) {
+      setTimeout(() => setFailure('Choose a From date on or before the To date.'), 0);
+      return;
+    }
+    const mine = ++requestSeq.current;
+    const asked = period;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({ report: 'classes', from: asked.from, to: asked.to });
+      if (format === 'csv') params.set('format', 'csv');
+      const response = await fetch(`${apiBase()}/api/pilot/scheduler/attendance-summary?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'The report could not be made.');
+      }
+      if (mine !== requestSeq.current) return;
+      if (format === 'csv') {
+        const blob = await response.blob();
+        // Checked again after the body: a period changed while it was read drops it too.
+        if (mine !== requestSeq.current) return;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `attendance-by-class_${asked.from}_${asked.to}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        // Released after the click has handed the file over.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      const payload = (await response.json().catch(() => ({}))) as { classes?: unknown; totals?: ClassReportTotals };
+      if (mine !== requestSeq.current) return;
+      if (!Array.isArray(payload.classes) || !payload.totals) {
+        throw new Error('The report could not be made.');
+      }
+      setShown({ period: asked, classes: payload.classes as ClassReportRow[], totals: payload.totals });
+    } catch (error) {
+      if (mine !== requestSeq.current) return;
+      setFailure(error instanceof Error && error.message ? error.message : 'The report could not be made.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="Class attendance report" className="mt-[var(--s5)] border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+      <p className="t-eyebrow">Report by class</p>
+      <p className="t-body mt-[var(--s2)]">
+        Each class in the period, by the day it was on: registered athletes, and how many were marked present, absent,
+        excused, or not marked at all. Not marked is not counted as absent, and the rate leaves out excused marks; a
+        class still to come shows its
+        registrations as not marked. A cancelled class is listed but left out of the total and every rate.
+      </p>
+      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+        <label className="field">
+          <span className="t-label">From</span>
+          <input
+            type="date"
+            value={period.from}
+            onChange={(event) => choose({ ...period, from: event.target.value })}
+            className="input"
+          />
+        </label>
+        <label className="field">
+          <span className="t-label">To</span>
+          <input
+            type="date"
+            value={period.to}
+            onChange={(event) => choose({ ...period, to: event.target.value })}
+            className="input"
+          />
+        </label>
+        <button type="button" onClick={() => void run('json')} disabled={busy} className="btn">
+          {busy ? 'Working…' : 'Show'}
+        </button>
+        <button type="button" onClick={() => void run('csv')} disabled={busy} className="btn btn--ghost">
+          Download CSV
+        </button>
+      </div>
+      {failure ? (
+        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <span className="alert-msg">{failure}</span>
+        </p>
+      ) : null}
+      {shown ? (
+        shown.classes.length === 0 ? (
+          <p className="t-muted mt-[var(--s3)]">No classes from {shown.period.from} to {shown.period.to}.</p>
+        ) : (
+          <div className="mt-[var(--s3)] overflow-x-auto">
+            <table className="w-full text-left">
+              <caption className="t-label text-left">
+                Classes from {shown.period.from} to {shown.period.to} (gym days)
+              </caption>
+              <thead>
+                <tr className="t-eyebrow">
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Class</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">When</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Registered</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Present</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Absent</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Excused</th>
+                  <th scope="col" className="py-[var(--s2)] pr-[var(--s3)]">Not marked</th>
+                  <th scope="col" className="py-[var(--s2)]">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.classes.map((row) => (
+                  <tr key={row.class_id} className="t-body">
+                    <th scope="row" className="py-[var(--s2)] pr-[var(--s3)] font-normal">
+                      {row.title}
+                      {row.status === 'cancelled' ? <span className="t-muted"> (cancelled)</span> : null}
+                    </th>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{formatGymDateTimeShort(row.start_at) ?? row.start_at}</td>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{row.registered_count}</td>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{row.present_count}</td>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{row.absent_count}</td>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{row.excused_count}</td>
+                    <td className="py-[var(--s2)] pr-[var(--s3)]">{row.unmarked_count}</td>
+                    <td className="py-[var(--s2)]">{ratePercent(row.attendance_rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="t-body font-semibold">
+                  <th scope="row" className="py-[var(--s2)] pr-[var(--s3)]">
+                    Total, {shown.totals.classes} not cancelled
+                    {shown.totals.cancelled ? ` (${shown.totals.cancelled} cancelled, not included)` : ''}
+                  </th>
+                  <td className="py-[var(--s2)] pr-[var(--s3)]" />
+                  <td className="py-[var(--s2)] pr-[var(--s3)]">{shown.totals.registered_count}</td>
+                  <td className="py-[var(--s2)] pr-[var(--s3)]">{shown.totals.present_count}</td>
+                  <td className="py-[var(--s2)] pr-[var(--s3)]">{shown.totals.absent_count}</td>
+                  <td className="py-[var(--s2)] pr-[var(--s3)]">{shown.totals.excused_count}</td>
+                  <td className="py-[var(--s2)] pr-[var(--s3)]">{shown.totals.unmarked_count}</td>
+                  <td className="py-[var(--s2)]">{ratePercent(shown.totals.attendance_rate)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )
+      ) : null}
+    </section>
+  );
+}
+
 export default function AttendanceDashboardPage() {
   const [items, setItems] = useState<AttendanceAthleteSummary[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -293,6 +503,7 @@ export default function AttendanceDashboardPage() {
           </header>
 
           <AttendanceReportDownload />
+          <ClassAttendanceReport />
 
           <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
