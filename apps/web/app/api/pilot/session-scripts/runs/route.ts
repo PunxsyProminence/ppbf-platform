@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
+import { listPresentAthletes, staffPermittedAthleteIds } from '@/src/server/pilot/sessionRunAthletes';
 import {
   SessionScriptRunError,
   getLiveRunForCoach,
+  listSettledRunsForOrganization,
   listSettledRunsForScript,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
@@ -28,6 +31,14 @@ export const runtime = 'nodejs';
 // as the live lookup: both response shapes are delivery records and carry who was on the floor.
 // Mirrors the sibling browse route's convention of one GET switching on script_id.
 //
+// With ?finished=true it answers "what sessions has this gym finished": the settled runs, plain
+// and scripted, newest first, each with the coach's end notes, who delivered it by display name,
+// and who was marked present (audit finding F-067: a plain session has no plan, so the by-plan
+// history above could never show it). Present athletes are only those the caller may reach,
+// the live athletes of the caller's own gym, filtered in SQL (sessionRunAthletes.ts). Same role
+// gate: end notes and presence are staff records with no athlete or parent view
+// (OD-2026-10-10-003 items 3 and 4).
+//
 // platform_owner is refused on every verb here and on runs/[runId]: running a session is gym
 // work, done from the gym's own accounts (OD-2026-10-08-003 R2 and PLAN-3).
 const RUN_ROLES = ['coach', 'admin', 'organization_admin'] as const;
@@ -41,6 +52,25 @@ export async function GET(request: NextRequest) {
     if (scriptId) {
       const runs = await listSettledRunsForScript(principal.organizationId, scriptId);
       return NextResponse.json({ runs });
+    }
+
+    if (request.nextUrl.searchParams.get('finished') === 'true') {
+      const settled = await listSettledRunsForOrganization(principal.organizationId);
+      const permitted = await staffPermittedAthleteIds(principal);
+      const present = await listPresentAthletes(principal.organizationId, settled.map((run) => run.run_id), permitted);
+      const names = new Map<string, string>();
+      for (const accountId of new Set(settled.map((run) => run.delivered_by_account_id))) {
+        names.set(accountId, await getCoachDisplayName(principal.organizationId, accountId));
+      }
+      const runs = settled.map((run) => ({
+        ...run,
+        delivered_by_name: names.get(run.delivered_by_account_id) ?? 'A coach',
+        delivered_by_me: run.delivered_by_account_id === principal.accountId,
+        present: present
+          .filter((athlete) => athlete.run_id === run.run_id)
+          .map(({ athlete_id, full_name }) => ({ athlete_id, full_name })),
+      }));
+      return NextResponse.json({ runs }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     const run = await getLiveRunForCoach(principal.organizationId, principal.accountId);

@@ -6343,7 +6343,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads the live staff notes on one athlete's session, oldest first (newest 100), author by display name (never account id); staff only, no athlete or parent view (OD-2026-10-10-003 ruling 3); reach enforced in sessionStaffNotes.ts assertStaffNoteAccess via membership role + assertActorCanAccessAthlete.",
+    "notes": "Reads the live staff notes on one athlete's session, oldest first (newest 100), author by display name (never account id); staff only, no athlete or parent view (OD-2026-10-10-003 ruling 3); reach enforced in sessionStaffNotes.ts assertStaffNoteAccess via membership role + assertActorCanAccessAthlete. With run_id instead of session_id (F-067) it lists the notes on that athlete in a session run (listRunStaffNotes): same staff-and-reach check, organization and athlete in the WHERE.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6372,7 +6372,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Adds one staff note of the caller's own to an athlete's session (OD-2026-10-06-025 ruling 4); the session must be that athlete's; audit row in the same transaction; createSessionStaffNote runs assertStaffNoteAccess.",
+    "notes": "Adds one staff note of the caller's own to an athlete's session (OD-2026-10-06-025 ruling 4); the session must be that athlete's; audit row in the same transaction; createSessionStaffNote runs assertStaffNoteAccess. With run_id instead of session_id (F-067) the note is on that athlete in a session run (createRunStaffNote): the athlete's mark in that run must stand, read with the mark row locked; exactly one of session_id and run_id may be named.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10608,6 +10608,64 @@
     }
   },
   {
+    "id": "app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/session-scripts/runs/[runId]/athletes",
+    "gate": "requirePrincipal + requireRole; athletes filtered to the caller's roster in sessionRunAthletes.ts listPresentAthletes",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "F-067. The athletes marked present in one session run, by name. Staff only (OD-2026-10-10-003 items 3 and 4); platform_owner refused like every route under runs/. Names only athletes the caller may reach: the ids are the live athletes of the caller's own organization (staffPermittedAthleteIds, for a coach and an organization admin alike: a coach's reach is the whole gym, OD-2026-10-11-007), never from the request, and listPresentAthletes filters on them in SQL with the organization on both tables. Another gym's run id returns nobody. Session detail, not attendance (CT-13).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/session-scripts/runs/[runId]/athletes",
+    "gate": "requirePrincipal + requireRole; staff membership + assertActorCanAccessAthlete + own live run in sessionRunAthletes.ts setRunAthletePresent",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "F-067. The delivering coach marks one athlete present in their own LIVE run, or takes the mark back (setRunAthletePresent). The module requires an active staff membership here and assertActorCanAccessAthlete (staffRoleReachingAthlete; one refusal for every reason), then, with the run row locked, that the run is the caller's and in progress: another coach's run answers 404 like a missing one, a settled run 409. A mark taken back keeps its row; each change is an audit event with no shadow mirror. Writes pilot.session_run_athletes only: nothing to pilot.sessions, pilot.athlete_check_ins or any attendance table (CT-13).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/session-scripts/runs/[runId]/route.ts#PATCH",
     "method": "PATCH",
     "path": "/api/pilot/session-scripts/runs/[runId]",
@@ -10704,13 +10762,13 @@
       "organization_admin",
       "admin"
     ],
-    "athleteData": false,
+    "athleteData": true,
     "writes": false,
-    "coachReachRule": "n/a",
+    "coachReachRule": "applied",
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

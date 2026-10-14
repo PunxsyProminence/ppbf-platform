@@ -482,11 +482,29 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'session_run_athletes.athlete_id': {
+    tier: 'organization',
+    enforcedBy: [
+      'sessionRunAthletes.ts#setRunAthletePresent',
+      'sessionRunAthletes.ts#listPresentAthletes',
+      'sessionRunAthletes.ts#staffPermittedAthleteIds',
+    ],
+    note:
+      'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
+      + 'the delivering coach writes, while the run is live, with an active staff membership here AND '
+      + 'assertActorCanAccessAthlete for that athlete; coach and organization admin of the gym read, '
+      + 'and the read returns only live athletes of the caller\'s own organization, filtered in SQL '
+      + '(OD-2026-10-11-007; OD-2026-10-10-003 items 3 and 4). Athletes, guardians, the board and '
+      + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
+      + 'attendance view or report (CT-13). A mark taken back keeps its row.',
+  },
   'session_staff_notes.note': {
     tier: 'organization',
     enforcedBy: ['sessionStaffNotes.ts#assertStaffNoteAccess'],
     note:
-      'A coach\'s or organization admin\'s own note on one athlete\'s session, in the author\'s name '
+      'A coach\'s or organization admin\'s own note on one athlete, in the author\'s name: on the '
+      + 'athlete\'s own session, or (F-067) on the athlete in a session run they were marked present in. '
+      + 'One rule holds for both '
       + '(OD-2026-10-06-025 ruling 4; overwatch ruling B 2026-10-07). This is where staff write instead '
       + 'of rewriting the athlete\'s sessions.notes, and unlike that column it HAS an author '
       + '(author_account_id, author_role): the author alone may change or remove it, enforced in the '
@@ -593,6 +611,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_minor_limits',
   // A coach's own note on a child's session, in the coach's name.
   'pilot.session_staff_notes',
+  // Which children a coach marked present in one session run (F-067). Staff only.
+  'pilot.session_run_athletes',
   // A coach's plain-text capacity notes for one athlete (module 013 slice).
   'pilot.athlete_capacity_notes',
   // A workout issued to one child: the coach's note and the contact level

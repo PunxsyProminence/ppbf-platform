@@ -4,7 +4,7 @@ import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
-import { ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
  * Session staff notes: a note a coach or organization admin adds, IN THEIR OWN
@@ -40,6 +40,24 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * to the named athlete is checked here, inside the write transaction, before
  * the insert (overwatch 2026-10-08: pilot.sessions itself is not altered).
  *
+ * A NOTE ON A RUN (audit finding F-067). The athlete's own session row does
+ * not exist until the athlete logs the day, so a coach running a session had
+ * nothing to hang today's note on. A note may instead be on an athlete IN A
+ * SESSION RUN (run_id; exactly one of session_id and run_id is set, a check the
+ * session-run-athletes migration holds). Everything above is unchanged for it:
+ * the author's own name, author-only edit and removal, staff only. Two things
+ * are particular to it:
+ *   - THE ATHLETE MUST BE MARKED PRESENT IN THAT RUN. The table's foreign key
+ *     proves a mark row exists; that the mark still STANDS (was not taken back)
+ *     is checked here, with the mark row locked, so a mark cannot be taken back
+ *     in the same instant the note is written.
+ *   - A NOTE STAYS IF THE MARK IS LATER TAKEN BACK. Only its writer changes or
+ *     removes a note (OD-2026-10-06-025 ruling 4), and nothing is deleted.
+ * Any coach or organization admin who reaches the athlete may write one, while
+ * the run is live or after it has finished, as with a session note ("a coach
+ * may add a note before a session and another after it"). Nothing is written
+ * to the athlete's own session or check-in.
+ *
  * Each write records an audit event on entity 'session_staff_note' in the
  * SAME transaction. The note text stays out of the audit row; the table
  * holds it. shadow_mirror: false, because the mirrored shadow_events row
@@ -56,7 +74,10 @@ const LIST_LIMIT = 100;
 
 export interface SessionStaffNoteRow {
   note_id: string;
-  session_id: string;
+  /** Set on a note on the athlete's own session; null on a note on a run. */
+  session_id: string | null;
+  /** Set on a note on the athlete in a session run; null on a session note. */
+  run_id: string | null;
   athlete_id: string;
   author_account_id: string;
   author_role: StaffNoteRole;
@@ -76,7 +97,7 @@ export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_i
   author_name: string;
 };
 
-const FIELDS = 'note_id, session_id, athlete_id, author_account_id, author_role, note, created_at, updated_at';
+const FIELDS = 'note_id, session_id, run_id, athlete_id, author_account_id, author_role, note, created_at, updated_at';
 
 /** The text to store, or the reason it is refused. Pure. */
 export function staffNoteShapeError(note: unknown): string | null {
@@ -105,21 +126,34 @@ async function staffNoteRoleInOrganization(actor: ActorIdentity): Promise<StaffN
 }
 
 /**
+ * The actor's staff role HERE if this actor is staff in this organization AND
+ * reaches this athlete; otherwise null. Only access.ts's own refusals
+ * ("Forbidden: ...") become null; an outage is rethrown.
+ *
+ * Exported for sessionRunAthletes.ts, which asks the same question of a coach
+ * marking an athlete present in a run: one copy of the staff-and-reach rule,
+ * so the two cannot drift.
+ */
+export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: string): Promise<StaffNoteRole | null> {
+  const role = await staffNoteRoleInOrganization(actor);
+  if (!role) return null;
+  try {
+    await assertActorCanAccessAthlete({ ...actor, role }, athleteId);
+    return role;
+  } catch (error) {
+    if (!(error instanceof Error && error.message.startsWith('Forbidden'))) throw error;
+    return null;
+  }
+}
+
+/**
  * Throws ForbiddenError unless this actor is staff here AND reaches this
  * athlete. One message for every refusal, so the response cannot be used to
- * learn whether an athlete id exists or whose it is. Only access.ts's own
- * refusals ("Forbidden: ...") become this refusal; an outage is rethrown.
+ * learn whether an athlete id exists or whose it is.
  */
 async function assertStaffNoteAccess(actor: ActorIdentity, athleteId: string): Promise<StaffNoteRole> {
-  const role = await staffNoteRoleInOrganization(actor);
-  if (role) {
-    try {
-      await assertActorCanAccessAthlete({ ...actor, role }, athleteId);
-      return role;
-    } catch (error) {
-      if (!(error instanceof Error && error.message.startsWith('Forbidden'))) throw error;
-    }
-  }
+  const role = await staffRoleReachingAthlete(actor, athleteId);
+  if (role) return role;
   throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
 }
 
@@ -155,15 +189,105 @@ export async function listSessionStaffNotes(
       limit ${LIST_LIMIT}`,
     [actor.organizationId, sessionId, athleteId],
   );
+  return asListed(actor, newest);
+}
+
+/** Rows newest first, as a reader sees them: oldest first, the author by display name, no account id. */
+async function asListed(actor: ActorIdentity, newest: SessionStaffNoteRow[]): Promise<ListedSessionStaffNote[]> {
   const names = new Map<string, string>();
   for (const id of new Set(newest.map((row) => row.author_account_id))) {
     names.set(id, await getCoachDisplayName(actor.organizationId, id));
   }
-  return newest.reverse().map(({ author_account_id, ...shown }) => ({
+  return [...newest].reverse().map(({ author_account_id, ...shown }) => ({
     ...shown,
     author_name: names.get(author_account_id) ?? 'Your coach',
     written_by_me: author_account_id === actor.accountId,
   }));
+}
+
+/**
+ * The live staff notes on one athlete in one session RUN -- the newest
+ * LIST_LIMIT, shown oldest first -- for a staff member who reaches that
+ * athlete. A run of another organization, or one the athlete was never marked
+ * in, simply has no notes: the organization and the athlete are both in the
+ * WHERE, and the caller was already checked against the athlete.
+ */
+export async function listRunStaffNotes(
+  actor: ActorIdentity,
+  runId: string,
+  athleteId: string,
+): Promise<ListedSessionStaffNote[]> {
+  await assertStaffNoteAccess(actor, athleteId);
+  const newest = await query<SessionStaffNoteRow>(
+    `select ${FIELDS} from pilot.session_staff_notes
+      where organization_id = $1 and run_id = $2 and athlete_id = $3 and deleted_at is null
+      order by created_at desc, note_id desc
+      limit ${LIST_LIMIT}`,
+    [actor.organizationId, runId, athleteId],
+  );
+  return asListed(actor, newest);
+}
+
+/**
+ * Adds a note of the actor's own on one athlete in one session run. The
+ * athlete's mark in that run is read inside the transaction, LOCKED, and must
+ * still stand; otherwise nothing is written.
+ */
+export async function createRunStaffNote(input: {
+  actor: ActorIdentity;
+  runId: string;
+  athleteId: string;
+  note: string;
+}): Promise<SessionStaffNoteRow> {
+  const shapeError = staffNoteShapeError(input.note);
+  if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
+  const text = input.note.trim();
+
+  const role = await assertStaffNoteAccess(input.actor, input.athleteId);
+  const noteId = randomUUID();
+
+  return withTransaction(async (client) => {
+    // FOR UPDATE on the mark row: taking a mark back updates that row, so it
+    // queues behind this lock and this note is written against a mark that
+    // stands. The table's own foreign key would not stop it (it proves the row
+    // exists, and its lock does not conflict with that update).
+    const mark = await client.query<{ removed_at: string | null }>(
+      `select removed_at from pilot.session_run_athletes
+        where organization_id = $1 and run_id = $2 and athlete_id = $3
+          for update`,
+      [input.actor.organizationId, input.runId, input.athleteId],
+    );
+    // One wording for "no such run here", "never marked in it" and "mark taken back".
+    if (!mark.rows[0] || mark.rows[0].removed_at !== null) {
+      throw new ConflictError(
+        'This athlete is not marked present in this session, so a note cannot be added for them here.',
+        'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT',
+      );
+    }
+
+    const inserted = await client.query<SessionStaffNoteRow>(
+      `insert into pilot.session_staff_notes
+         (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       returning ${FIELDS}`,
+      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, role, text],
+    );
+    const row = inserted.rows[0];
+    if (!row) throw new Error('Session staff note insert returned no row');
+
+    await writePilotAuditEvent({
+      event_type: 'create',
+      actor_account_id: input.actor.accountId,
+      actor_role: role,
+      organization_id: input.actor.organizationId,
+      entity_type: 'session_staff_note',
+      entity_id: noteId,
+      details: { run_id: input.runId, athlete_id: input.athleteId },
+      shadow_mirror: false,
+    }, client);
+
+    return row;
+  });
 }
 
 /**
@@ -247,6 +371,11 @@ function authorRefusal(actor: ActorIdentity, before: SessionStaffNoteRow): Error
   return new NotFoundError('No such staff note.', 'SESSION_STAFF_NOTE_NOT_FOUND');
 }
 
+/** What a note is on, for its audit row: its session or its run, whichever it has. */
+function subjectOf(note: SessionStaffNoteRow): { session_id: string } | { run_id: string } {
+  return note.run_id !== null ? { run_id: note.run_id } : { session_id: note.session_id ?? '' };
+}
+
 /** Changes the text of the actor's OWN note. The UPDATE itself requires the author to match. */
 export async function updateOwnSessionStaffNote(input: {
   actor: ActorIdentity;
@@ -276,7 +405,7 @@ export async function updateOwnSessionStaffNote(input: {
       organization_id: input.actor.organizationId,
       entity_type: 'session_staff_note',
       entity_id: input.noteId,
-      details: { session_id: before.session_id, athlete_id: before.athlete_id },
+      details: { ...subjectOf(before), athlete_id: before.athlete_id },
       shadow_mirror: false,
     }, client);
 
@@ -307,7 +436,7 @@ export async function removeOwnSessionStaffNote(input: {
       organization_id: input.actor.organizationId,
       entity_type: 'session_staff_note',
       entity_id: input.noteId,
-      details: { session_id: before.session_id, athlete_id: before.athlete_id, removed: true },
+      details: { ...subjectOf(before), athlete_id: before.athlete_id, removed: true },
       shadow_mirror: false,
     }, client);
   });
