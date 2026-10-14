@@ -97,13 +97,17 @@ function isStaff(role: string): boolean {
  */
 async function auditHoldEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
   try {
-    // shadow_mirror: false -- the mirrored shadow_events row would carry the
-    // hold's reason_category ('medical' among them) and the lift to every
-    // reader of /api/pilot/shadow/events tied to this athlete, the athlete and
-    // their guardians included. A hold is a safety record about a child's
-    // health and conduct; the hold itself is what the family is shown, by the
-    // routes built for that, and the audit table keeps the record of who
-    // placed or lifted it. Set here so no caller can forget it.
+    // shadow_mirror: false -- no mirrored shadow_events row is written. It
+    // would carry the hold's reason_category ('medical' among them) and the
+    // lift to the readers of /api/pilot/shadow/events tied to this athlete.
+    // Today the family allow-list (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES,
+    // auditReadAllowlist.ts) is empty, so the athlete and their guardians read
+    // no SHADOW_AUDIT_* row there anyway (Jason 2026-10-13, Q-1 on #1558); this
+    // keeps the row off the feed for every reader, and if that list is ever
+    // filled. A hold is a safety record about a child's health and conduct;
+    // the hold itself is what the family is shown, by the routes built for
+    // that, and the audit table keeps the record of who placed or lifted it.
+    // Set here so no caller can forget it.
     await writePilotAuditEvent({ ...event, shadow_mirror: false });
   } catch (error) {
     const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;

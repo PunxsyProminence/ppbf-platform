@@ -30,9 +30,12 @@ import { roleEquals } from './roleAlias';
  * may, and nobody changes a note's text. Each write (add, withdraw) records
  * an audit event on
  * entity 'athlete_capacity_note' in the SAME transaction, shadow_mirror:
- * false, so the record never reaches the family-readable SHADOW feed
- * (/api/pilot/shadow/events admits athletes and guardians). The note text
- * stays out of the audit row; the table holds it.
+ * false, so no mirrored row reaches the SHADOW feed
+ * (/api/pilot/shadow/events). Today the family allow-list
+ * (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES, auditReadAllowlist.ts) is empty, so
+ * athletes and guardians read no SHADOW_AUDIT_* row there anyway; this keeps
+ * the record off the feed if that list is ever filled. The note text stays
+ * out of the audit row; the table holds it.
  *
  * WHO. Staff only, both ways: coach, organization_admin, admin -- with an
  * ACTIVE membership in this organization in one of those roles -- and only
