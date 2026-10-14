@@ -42,10 +42,13 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  *
  * Each write records an audit event on entity 'session_staff_note' in the
  * SAME transaction. The note text stays out of the audit row; the table
- * holds it. shadow_mirror: false, because the mirrored shadow_events row
- * would be readable by the athlete and their guardians through
- * /api/pilot/shadow/events (tied by details.athlete_id), and staff notes are
- * staff only (OD-2026-10-10-003 ruling 3).
+ * holds it. shadow_mirror: false, so no mirrored shadow_events row is
+ * written: the row is tied to the athlete by details.athlete_id, and staff
+ * notes are staff only (OD-2026-10-10-003 ruling 3). Today the family
+ * allow-list (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES, auditReadAllowlist.ts) is
+ * empty, so the athlete and their guardians read no SHADOW_AUDIT_* row from
+ * /api/pilot/shadow/events anyway; this keeps the row off the feed if that
+ * list is ever filled.
  */
 
 export const STAFF_NOTE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
