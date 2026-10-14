@@ -4,6 +4,7 @@ import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
+import type { PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
@@ -147,6 +148,28 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
 }
 
 /**
+ * Inside a write's transaction: whether this athlete is STILL a live athlete
+ * of this organization, with the row share-locked until the write commits.
+ *
+ * The reach check (staffRoleReachingAthlete) runs before the transaction, so
+ * an athlete soft-deleted in between would otherwise still get a presence mark
+ * or a run note, and the foreign key would not stop it (the deleted row is
+ * kept). FOR SHARE conflicts with the UPDATE that sets deleted_at: a delete
+ * already under way makes this wait and then read the committed row, and a
+ * delete that starts now waits for this write. "Live" is the test
+ * assertActorCanAccessAthlete applies (this organization, deleted_at is null).
+ */
+export async function lockLiveAthlete(client: PoolClient, organizationId: string, athleteId: string): Promise<boolean> {
+  const row = await client.query<{ deleted_at: string | null }>(
+    `select deleted_at from pilot.athletes
+      where organization_id = $1 and athlete_id = $2
+        for share`,
+    [organizationId, athleteId],
+  );
+  return !!row.rows[0] && row.rows[0].deleted_at === null;
+}
+
+/**
  * Throws ForbiddenError unless this actor is staff here AND reaches this
  * athlete. One message for every refusal, so the response cannot be used to
  * learn whether an athlete id exists or whose it is.
@@ -247,6 +270,10 @@ export async function createRunStaffNote(input: {
   const noteId = randomUUID();
 
   return withTransaction(async (client) => {
+    // The athlete must still be live now, not only when the reach check ran.
+    if (!(await lockLiveAthlete(client, input.actor.organizationId, input.athleteId))) {
+      throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
+    }
     // FOR UPDATE on the mark row: taking a mark back updates that row, so it
     // queues behind this lock and this note is written against a mark that
     // stands. The table's own foreign key would not stop it (it proves the row

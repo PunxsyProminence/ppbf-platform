@@ -4,7 +4,7 @@ import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ForbiddenError } from './errors';
 import { SessionScriptRunError } from './sessionScriptRuns';
-import { staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
+import { lockLiveAthlete, staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
 
 // WHO WAS IN A SESSION (audit finding F-067).
 //
@@ -89,6 +89,11 @@ export async function setRunAthletePresent(input: {
     }
     if (owned.run_state !== 'in_progress') {
       throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
+    }
+    // The athlete must still be live now, not only when the reach check above ran: one
+    // soft-deleted in between gets no mark (the same single refusal).
+    if (!(await lockLiveAthlete(client, actor.organizationId, athleteId))) {
+      throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
     }
 
     let outcome: RunAthleteOutcome;
