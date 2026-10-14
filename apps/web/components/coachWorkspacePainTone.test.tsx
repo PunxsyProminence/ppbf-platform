@@ -37,6 +37,8 @@ function painReport(nearMissId: string, severity: string): Record<string, unknow
   };
 }
 
+let escalationSourceType = 'pain_report';
+
 function escalation(
   escalationId: string,
   severity: string,
@@ -46,7 +48,7 @@ function escalation(
     metadata,
     escalation_id: escalationId,
     athlete_id: 'ath_1',
-    source_type: 'pain_report',
+    source_type: escalationSourceType,
     severity,
     reason: 'Pain reported after sparring round.',
     status: 'open',
@@ -106,6 +108,7 @@ function toneOf(badge: Element): string {
 }
 
 afterEach(() => {
+  escalationSourceType = 'pain_report';
   jest.restoreAllMocks();
 });
 
@@ -142,4 +145,14 @@ test('a repeated-pattern escalation over pain reports reads "Pain report" (#1528
   const badges = await renderBadges('high', { trigger_key: 'athlete_pain_report', occurrence_count: 3 });
   expect(badges.filter((badge) => badgeText(badge).startsWith('Pain report')).length).toBeGreaterThanOrEqual(2);
   expect(badges.filter((badge) => /^high\b/.test(badgeText(badge)))).toEqual([]);
+});
+
+test.each(['moderate', 'high'])('a %s training-hold escalation reads "Training hold", not a severity word (F-069)', async (severity) => {
+  escalationSourceType = 'training_hold';
+  const badges = await renderBadges(severity, { hold_id: 'hold_1', scope: 'no_contact' });
+  const holdBadges = badges.filter((badge) => badgeText(badge).startsWith('Training hold'));
+  // Escalation card and the floor's current item.
+  expect(holdBadges.length).toBeGreaterThanOrEqual(2);
+  expect(badges.filter((badge) => new RegExp(`^${severity}\\b`).test(badgeText(badge))
+    && !badgeText(badge).startsWith('5/10'))).toEqual([]);
 });
