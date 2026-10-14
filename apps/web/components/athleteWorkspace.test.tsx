@@ -1370,9 +1370,6 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     }
   });
 
-  /* The other half of the boundary, at the same frozen instant: the previous
-     gym evening is still not today. Read together the pair says one thing --
-     the 25th is today at the gym, the 24th is not. */
   /* F-075: a workspace left open past gym midnight read the check-in once and
      showed it as today's all night. The clock is 23:50 at the gym on the 25th
      (03:50 UTC on the 26th). Nothing refetches before midnight; once the gym
@@ -1384,8 +1381,12 @@ describe('an uncompleted session from a previous gym day is not today\'s session
       const checkInReads = () => fetchCalls.filter((call) => (
         call.url.includes('/api/pilot/athlete/check-in') && call.method === 'GET'
       )).length;
+      const sessionReads = () => fetchCalls.filter((call) => (
+        call.url.includes('/api/pilot/sessions/list') && call.method === 'GET'
+      )).length;
       await renderWorkspace();
       const before = checkInReads();
+      const sessionsBefore = sessionReads();
       expect(before).toBeGreaterThanOrEqual(1);
 
       // Still the 25th at the gym: nothing is read again.
@@ -1393,6 +1394,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
         await jest.advanceTimersByTimeAsync(5 * 60_000);
       });
       expect(checkInReads()).toBe(before);
+      expect(sessionReads()).toBe(sessionsBefore);
 
       // Gym midnight passes; the server now has no check-in for the new day.
       storedCheckIn = null;
@@ -1400,11 +1402,15 @@ describe('an uncompleted session from a previous gym day is not today\'s session
         await jest.advanceTimersByTimeAsync(6 * 60_000);
       });
       await waitFor(() => expect(checkInReads()).toBeGreaterThan(before));
+      await waitFor(() => expect(sessionReads()).toBeGreaterThan(sessionsBefore));
     } finally {
       jest.useRealTimers();
     }
   });
 
+  /* The other half of the boundary, at the same frozen instant: the previous
+     gym evening is still not today. Read together the pair says one thing --
+     the 25th is today at the gym, the 24th is not. */
   test('the previous gym evening is still not today, at the same instant', async () => {
     jest.useFakeTimers({ now: new Date('2026-09-26T00:30:00Z'), advanceTimers: true });
     try {
