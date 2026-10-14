@@ -5461,6 +5461,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-message-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-message-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "For one athlete's parent messages, which the family has opened and the first time any guardian did (familyMessageReads.ts listFamilyReadStateForStaff; #1542 FC-05). Never which guardian, an account id, or how many (FC-04 Q-C). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-notes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-notes",
@@ -8662,6 +8692,33 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "A guardian replies to one parent_message note in this gym about a child linked to them on this request; a forged id, another gym's note, a non-parent-message note or an ended link is the same 404 (familyMessageReplies.ts createFamilyMessageReply; append-only table, FC-02).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/message-reads",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the note's athlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian records the first open of one parent_message note in this gym about a child linked to them on this request (on screen on the Messages tab, FC-05 Q-1); a forged id, another gym's note, a non-parent-message note or an ended link is the same 404. Written on conflict do nothing, so the first time stays (FC-04).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

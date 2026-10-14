@@ -49,8 +49,9 @@ test('public interest submissions are described as saved, not front-end only', (
 });
 
 test('the parent guide names the live task feed and still lists every Parent Hub section stamped PLANNED', () => {
-  // ParentHub.tsx stamps family goals and resources PLANNED | NOT YET
-  // IMPLEMENTED (A-Q15: roadmap).
+  // ParentHub.tsx stamps resources PLANNED | NOT YET IMPLEMENTED (A-Q15:
+  // roadmap); the Family Goals tab points to the child's goals under Progress
+  // and says the family's own goals are not recorded yet (#1542, FC-05).
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
   // The weekly list on the Parent Floor is built (WO-PH-02); it is not planned.
@@ -67,6 +68,9 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   for (const section of ['family goals', 'resources']) {
     expect(parent).toContain(section);
   }
+  // FC-05: the coaches read observations (F-073), and the child's goals show under Progress.
+  expect(parent).toMatch(/Observations tab, and the coaches can read them/);
+  expect(parent).toMatch(/goals, as their coach set them, show on the Progress tab/);
   // Replies to coach messages are built (#1542, FC-03).
   expect(parent).toMatch(/has its own reply box/);
   expect(parent).not.toMatch(/feed yet: [^.]*reply to coach/);

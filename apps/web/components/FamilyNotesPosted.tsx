@@ -22,6 +22,11 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * first, with the guardian's name and the time (gym time). Read from GET
  * /api/pilot/coach/family-message-replies alongside the notes; a failed replies
  * read says so and leaves the notes showing.
+ *
+ * OPENED BY THE FAMILY (FC-05): under each note, "Opened by the family" and
+ * when it was first opened (gym time), or "Not opened by the family yet".
+ * Never which guardian. Read from GET /api/pilot/coach/family-message-reads on
+ * its own, like the replies: a failed read says so once and the notes stay.
  */
 export interface FamilyNoteRow {
   note_id: string;
@@ -42,8 +47,28 @@ export interface FamilyReplyRow {
 type ReadState =
   | { state: 'loading' }
   | { state: 'failed'; athleteId: string }
-  // replies: 'loading' until their own read settles; null when it failed.
-  | { state: 'loaded'; athleteId: string; items: FamilyNoteRow[]; replies: FamilyReplyRow[] | null | 'loading' };
+  // replies and opened: 'loading' until their own read settles; null when it failed.
+  | {
+    state: 'loaded';
+    athleteId: string;
+    items: FamilyNoteRow[];
+    replies: FamilyReplyRow[] | null | 'loading';
+    opened: Map<string, string> | null | 'loading';
+  };
+
+async function readOpened(athleteId: string): Promise<Map<string, string> | null> {
+  try {
+    const response = await fetch(
+      `${apiBase()}/api/pilot/coach/family-message-reads?athlete_id=${encodeURIComponent(athleteId)}`,
+      { credentials: 'include' },
+    );
+    const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+    if (!response.ok || !Array.isArray(payload.items)) return null;
+    return new Map((payload.items as Array<{ note_id: string; first_read_at: string }>).map((item) => [item.note_id, item.first_read_at]));
+  } catch {
+    return null;
+  }
+}
 
 async function readReplies(athleteId: string): Promise<FamilyReplyRow[] | null> {
   try {
@@ -75,6 +100,7 @@ export default function FamilyNotesPosted({
     void (async () => {
       try {
         const repliesRead = readReplies(athleteId);
+        const openedRead = readOpened(athleteId);
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/family-notes?athlete_id=${encodeURIComponent(athleteId)}`,
           { credentials: 'include' },
@@ -88,7 +114,12 @@ export default function FamilyNotesPosted({
         // The notes show as soon as they answer; the replies fill in when
         // their own read settles, so a slow or failed replies read never
         // holds the notes back.
-        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies: 'loading' });
+        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies: 'loading', opened: 'loading' });
+        // Each fills in when its own read settles, in whichever order they answer.
+        void openedRead.then((opened) => {
+          if (mine !== seq.current) return;
+          setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? { ...held, opened } : held));
+        });
         const replies = await repliesRead;
         if (mine !== seq.current) return;
         setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? { ...held, replies } : held));
@@ -123,6 +154,11 @@ export default function FamilyNotesPosted({
         ) : shown.replies === 'loading' ? (
           <p className="t-muted mt-[var(--s2)]">Loading the family&apos;s replies…</p>
         ) : null}
+        {shown.opened === null ? (
+          <p role="alert" className="t-body mt-[var(--s2)]">
+            Whether the family opened these could not be loaded. This is not a statement that they did not. Reload to retry.
+          </p>
+        ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {
             const replies = Array.isArray(shown.replies)
@@ -138,6 +174,13 @@ export default function FamilyNotesPosted({
                   {note.posted_by_name} · {formatGymDateTimeShort(note.posted_at) ?? note.posted_at}
                   {due ? ` · Due ${due}` : ''}
                 </p>
+                {shown.opened instanceof Map ? (
+                  <p className="t-muted mt-[var(--s1)]">
+                    {shown.opened.has(note.note_id)
+                      ? `Opened by the family · ${formatGymDateTimeShort(shown.opened.get(note.note_id)!) ?? shown.opened.get(note.note_id)}`
+                      : 'Not opened by the family yet'}
+                  </p>
+                ) : null}
                 {note.task ? (
                   <span className={`badge mt-[var(--s2)] ${done ? 'badge--cleared' : 'badge--monitor'}`}>
                     {done ? `Done ${formatGymDateTimeShort(done) ?? done}` : 'Still to do'}

@@ -285,6 +285,42 @@ export default function ParentHub() {
     })();
   }, []);
 
+  /* OPENING A MESSAGE (#1542, FC-05). A coach's message counts as opened when
+     at least half of it is on screen on the Messages tab (FC-05 Q-1 default
+     A) -- not when the inbox is fetched, which the hub does on load for its
+     summary tile too. Each message is recorded once per visit (POST
+     /api/pilot/parent/message-reads; the server keeps the first time). A
+     failed write is not the guardian's to deal with: it is not shown, and the
+     message is tried again the next time it comes on screen. */
+  const readsSentRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (activeTab !== 'messages' || !messagesLoaded || messages.length === 0) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.5) continue;
+        const noteId = (entry.target as HTMLElement).dataset.readNote;
+        if (!noteId || readsSentRef.current.has(noteId)) continue;
+        readsSentRef.current.add(noteId);
+        observer.unobserve(entry.target);
+        void fetch(`${apiBase()}/api/pilot/parent/message-reads`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note_id: noteId }),
+        })
+          .then((response) => {
+            if (!response.ok) readsSentRef.current.delete(noteId);
+          })
+          .catch(() => {
+            readsSentRef.current.delete(noteId);
+          });
+      }
+    }, { threshold: 0.5 });
+    document.querySelectorAll<HTMLElement>('[data-read-note]').forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [activeTab, messagesLoaded, messages]);
+
   /* REPLYING TO A MESSAGE (#1542, FC-03). Each message has its own reply
      box; a reply is stored under that message and the gym's staff read it
      under the note they posted. This guardian's earlier replies are read once,
@@ -1499,7 +1535,7 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
-                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym."
+                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym, where the coaches can read it."
                 usage={[
                   'Pick what it is about and say what you noticed',
                   'Add a rating from 1 to 10 if it helps; it is optional',
@@ -1539,9 +1575,9 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
-                is always empty.
+              <p className="t-body">
+                Your child&apos;s own goals, as their coach set them, are on the Progress tab. Family goals of your own
+                are not recorded yet, so this list is empty.
               </p>
 
               <div className="space-y-[var(--s4)]">
@@ -1617,7 +1653,7 @@ export default function ParentHub() {
               ) : (
                 <div className="space-y-[var(--s4)]">
                   {messages.map((message) => (
-                    <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                    <div key={message.note_id} data-read-note={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                       <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
                         <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
                         <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
