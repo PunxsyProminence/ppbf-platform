@@ -135,6 +135,17 @@ describe('Cancel Class (#1536)', () => {
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
   });
 
+  test('a class that has started is not offered Cancel Class, even with a stale can_cancel (#1595)', async () => {
+    installFetchMock('coach', [
+      classRow('running', 'Running Now', -10 * 60 * 1000, { can_cancel: true }),
+      classRow('soon', 'Starts Soon', 10 * 60 * 1000, { can_cancel: true }),
+    ]);
+    await renderPage();
+
+    expect(within(rowFor('Running Now')).queryByRole('button', { name: 'Cancel Class' })).not.toBeInTheDocument();
+    expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+  });
+
   test('a class that has ended offers no Cover Class', async () => {
     installFetchMock('coach', [classRow('ended', 'Last Week', -7 * 24 * HOUR)]);
     await renderPage();

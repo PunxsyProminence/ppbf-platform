@@ -507,6 +507,14 @@ export default function SchedulerPage() {
     const endsMs = Date.parse(item.end_at);
     return item.status !== 'cancelled' && !(Number.isFinite(endsMs) && endsMs < nowMs);
   };
+  /* Nobody cancels a class once it has started (#1595). The server's
+     can_cancel already says so; this keeps the button off a started class
+     whatever the flag says, on the page's own clock. A press after the start
+     is refused by the server. */
+  const notYetStarted = (item: SchedulerClass) => {
+    const startsMs = Date.parse(item.start_at);
+    return Number.isFinite(startsMs) && startsMs > nowMs;
+  };
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -567,7 +575,7 @@ export default function SchedulerPage() {
             Cover Class
           </button>
         ) : null}
-        {item.can_cancel ? (
+        {item.can_cancel && notYetStarted(item) ? (
           <button
             type="button"
             onClick={() => {

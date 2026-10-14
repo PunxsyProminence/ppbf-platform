@@ -194,6 +194,37 @@ export async function cancelSchedulerClass(organizationId: string, classId: stri
   return rows.length > 0;
 }
 
+/**
+ * The newest cover_class audit row for each class (#1595): who it named as
+ * cover and when. schedulerCancelRule reads it to tell how long the current
+ * cover has been held. Audit rows are written best-effort, so a class may
+ * have none; the rule then falls back to the class's updated_at.
+ */
+export async function listLatestClassCoverAudits(
+  organizationId: string,
+  classIds: readonly string[],
+): Promise<Map<string, { covering_coach_account_id: string | null; created_at: string }>> {
+  const latest = new Map<string, { covering_coach_account_id: string | null; created_at: string }>();
+  if (classIds.length === 0) return latest;
+  const rows = await query<{ class_id: string; covering_coach_account_id: string | null; created_at: string }>(
+    `select distinct on (entity_id)
+            entity_id as class_id,
+            details->>'covering_coach_account_id' as covering_coach_account_id,
+            created_at::text as created_at
+     from pilot.audit_events
+     where organization_id = $1
+       and entity_type = 'scheduler_class'
+       and entity_id = any($2::text[])
+       and details->>'action' = 'cover_class'
+     order by entity_id, created_at desc, audit_id desc`,
+    [organizationId, [...classIds]],
+  );
+  for (const row of rows) {
+    latest.set(row.class_id, { covering_coach_account_id: row.covering_coach_account_id, created_at: row.created_at });
+  }
+  return latest;
+}
+
 export async function getSchedulerRegistrationById(
   organizationId: string,
   registrationId: string,

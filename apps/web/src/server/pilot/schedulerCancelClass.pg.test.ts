@@ -46,7 +46,16 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { cancelSchedulerClass, registerForClassTransactionally, upsertSchedulerAttendance } from './schedulerDb';
+import { writePilotAuditEvent } from './audit';
+import { classCancelRefusal, coverTakenAtMs } from './schedulerCancelRule';
+import {
+  cancelSchedulerClass,
+  getSchedulerClassById,
+  listLatestClassCoverAudits,
+  registerForClassTransactionally,
+  setSchedulerClassCover,
+  upsertSchedulerAttendance,
+} from './schedulerDb';
 
 jest.setTimeout(180_000);
 
@@ -306,6 +315,94 @@ describe('a cancelled class takes no registration', () => {
       expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe(true);
       expect(await registration(OTHER_ATHLETE_ID)).toEqual({ outcome: 'class_cancelled' });
       expect((await classRow(client)).status).toBe('cancelled');
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// #1595: how long a cover has been held is read from the cover_class audit
+// row (falling back to the class's updated_at). The query reads jsonb and
+// timestamps as text, so only a real database can say it picks the newest
+// cover row per class, in this gym only, and that the rule can read what it
+// returns.
+describe('how long a cover has been held (#1595)', () => {
+  const OTHER_ORG = 'org-cancel-class-other';
+  const COVER_A = 'acct-cover-a';
+  const COVER_B = 'acct-cover-b';
+
+  async function audit(organizationId: string, classId: string, action: string, cover: string | null) {
+    await writePilotAuditEvent({
+      event_type: 'update',
+      actor_account_id: cover,
+      actor_role: 'coach',
+      organization_id: organizationId,
+      entity_type: 'scheduler_class',
+      entity_id: classId,
+      details: { action, class_id: classId, covering_coach_account_id: cover },
+      shadow_mirror: false,
+    });
+  }
+
+  test('the newest cover_class row per class, in this gym only', async () => {
+    const client = await freshDatabase('cc_cover_audit');
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+        [OTHER_ORG],
+      );
+      await audit(ORG_ID, CLASS_ID, 'cover_class', COVER_A);
+      await audit(ORG_ID, CLASS_ID, 'cover_class', COVER_B);
+      await audit(ORG_ID, CLASS_ID, 'cancel_class', null);
+      await audit(ORG_ID, 'class-2', 'cover_class', COVER_A);
+      await audit(OTHER_ORG, CLASS_ID, 'cover_class', 'acct-elsewhere');
+
+      const latest = await listLatestClassCoverAudits(ORG_ID, [CLASS_ID, 'class-2', 'class-none']);
+
+      expect([...latest.keys()].sort()).toEqual([CLASS_ID, 'class-2']);
+      expect(latest.get(CLASS_ID)?.covering_coach_account_id).toBe(COVER_B);
+      expect(latest.get('class-2')?.covering_coach_account_id).toBe(COVER_A);
+      expect(Number.isFinite(Date.parse(latest.get(CLASS_ID)!.created_at))).toBe(true);
+      expect(await listLatestClassCoverAudits(ORG_ID, [])).toEqual(new Map());
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a cover just taken cannot cancel; the same cover an hour and more later can', async () => {
+    const client = await freshDatabase('cc_cover_age');
+    try {
+      await setSchedulerClassCover(ORG_ID, CLASS_ID, COVER_A, new Date().toISOString());
+      await audit(ORG_ID, CLASS_ID, 'cover_class', COVER_A);
+      const actor = { accountId: COVER_A, isOffice: false, isCoach: true };
+
+      const decide = async () => {
+        const classItem = (await getSchedulerClassById(ORG_ID, CLASS_ID))!;
+        const audits = await listLatestClassCoverAudits(ORG_ID, [CLASS_ID]);
+        return classCancelRefusal(actor, classItem, coverTakenAtMs(classItem, audits.get(CLASS_ID) ?? null), Date.now());
+      };
+
+      expect(await decide()).toBe('cover_too_recent');
+
+      await client.query(
+        `update pilot.audit_events set created_at = now() - interval '61 minutes'
+         where organization_id = $1 and entity_id = $2`,
+        [ORG_ID, CLASS_ID],
+      );
+      await client.query(
+        `update pilot.scheduler_classes set updated_at = now() - interval '61 minutes'
+         where organization_id = $1 and class_id = $2`,
+        [ORG_ID, CLASS_ID],
+      );
+      expect(await decide()).toBeNull();
+
+      // Lose the audit row: the class's updated_at (older than an hour) stands in.
+      await client.query(`delete from pilot.audit_events where organization_id = $1`, [ORG_ID]);
+      expect(await decide()).toBeNull();
+
+      // Re-covered just now with the audit write lost: updated_at is fresh, so refused.
+      await setSchedulerClassCover(ORG_ID, CLASS_ID, COVER_A, new Date().toISOString());
+      expect(await decide()).toBe('cover_too_recent');
     } finally {
       await client.end();
     }
