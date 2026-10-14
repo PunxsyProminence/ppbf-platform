@@ -54,6 +54,16 @@ interface ParentMessageTask {
   completed_at: string | null;
 }
 
+/* A guardian's own reply to a parent message (#1542, FC-03). Only this
+   guardian's: GET /api/pilot/parent/message-replies never returns a
+   co-guardian's. */
+interface FamilyReply {
+  reply_id: string;
+  note_id: string;
+  reply_text: string;
+  created_at: string;
+}
+
 interface ParentMessage {
   note_id: string;
   athlete_id: string;
@@ -275,6 +285,80 @@ export default function ParentHub() {
     })();
   }, []);
 
+  /* REPLYING TO A MESSAGE (#1542, FC-03). Each message has its own reply
+     box; a reply is stored under that message and the gym's staff read it
+     under the note they posted. This guardian's earlier replies are read once,
+     on their own: a failed read says so above the list and the boxes still
+     work. One send per press per message (a ref, as with the barrier report:
+     two presses in one tick both read the same state). A failed send keeps the
+     text and says why. Nothing here is emailed or pushed. */
+  const [ownReplies, setOwnReplies] = useState<FamilyReply[]>([]);
+  const [repliesFailed, setRepliesFailed] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyBusy, setReplyBusy] = useState<Set<string>>(() => new Set());
+  const replySendingRef = useRef<Set<string>>(new Set());
+  // One notice per message: a send on one message leaves another's failure
+  // showing while its unsent text is still in the box.
+  const [replyNotices, setReplyNotices] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/message-replies`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => null)) as { items?: unknown } | null;
+        if (!response.ok || !Array.isArray(payload?.items)) {
+          setRepliesFailed(true);
+          return;
+        }
+        setOwnReplies(payload.items as FamilyReply[]);
+      } catch {
+        setRepliesFailed(true);
+      }
+    })();
+  }, []);
+
+  async function handleSendReply(noteId: string) {
+    const text = (replyDrafts[noteId] ?? '').trim();
+    if (!text || replySendingRef.current.has(noteId)) return;
+    replySendingRef.current.add(noteId);
+    setReplyNotices((held) => ({ ...held, [noteId]: '' }));
+    setReplyBusy((held) => new Set(held).add(noteId));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent/message-replies`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: noteId, reply_text: text }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        { ok?: boolean; error?: string; item?: FamilyReply } | null;
+      if (!response.ok || payload?.ok !== true || !payload.item || typeof payload.item !== 'object') {
+        throw new Error(typeof payload?.error === 'string' && payload.error ? payload.error : 'The reply did not save.');
+      }
+      const item = payload.item;
+      setOwnReplies((held) => [...held, item]);
+      // Cleared only if the box still holds what was sent: anything typed
+      // while the send was in flight stays.
+      setReplyDrafts((held) => ((held[noteId] ?? '').trim() === text ? { ...held, [noteId]: '' } : held));
+    } catch (error) {
+      const reason = (error instanceof Error && error.message ? error.message : 'the gym could not be reached').replace(/\.$/, '');
+      setReplyNotices((held) => ({
+        ...held,
+        [noteId]: `That reply did not send -- ${reason}. Your text is still in the box; try again.`,
+      }));
+    } finally {
+      replySendingRef.current.delete(noteId);
+      setReplyBusy((held) => {
+        const next = new Set(held);
+        next.delete(noteId);
+        return next;
+      });
+    }
+  }
+
   /* TICKING A TASK OFF. POST /api/pilot/parent/messages {note_id, completed}
      is the one write a guardian makes on this tab; the route scopes the note
      to this guardian's own children on every call. Both directions are
@@ -425,8 +509,6 @@ export default function ParentHub() {
   }, []);
 
   const [parentResources] = useState<ParentResource[]>([]);
-
-  const [newMessage, setNewMessage] = useState('');
 
   // Capabilities #93/#167: this hub links to /parent/safety and
   // /parent/consent (both already built, #84/T-008) but never surfaced
@@ -1524,12 +1606,16 @@ export default function ParentHub() {
                 <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
               )}
 
+              {repliesFailed && messagesLoaded && messages.length > 0 && (
+                <p className="t-muted">Your earlier replies have not loaded. This is not a statement that you have not replied.</p>
+              )}
+
               {!messagesLoaded ? (
                 <p className="t-muted">Unavailable - your messages have not loaded. This is not an empty inbox.</p>
               ) : messages.length === 0 ? (
                 <p className="t-muted">No messages yet.</p>
               ) : (
-                <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
+                <div className="space-y-[var(--s4)]">
                   {messages.map((message) => (
                     <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                       <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
@@ -1564,36 +1650,52 @@ export default function ParentHub() {
                           {message.task.completed_at === null && <span className="t-muted">Still to do</span>}
                         </div>
                       )}
+                      {/* Replies: this guardian's own, oldest first, then a box
+                          for another. Staff read them under the note. */}
+                      <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:rgba(0,0,0,.14)] pt-[var(--s3)]">
+                        {ownReplies
+                          .filter((reply) => reply.note_id === message.note_id)
+                          .map((reply) => (
+                            <div key={reply.reply_id} className="rounded-[var(--r-sm)] bg-[color:rgba(0,0,0,.05)] p-[var(--s2)]">
+                              <p className="t-label">You replied · {formatGymDateTimeShort(reply.created_at) ?? reply.created_at}</p>
+                              <p className="t-body whitespace-pre-wrap">{reply.reply_text}</p>
+                            </div>
+                          ))}
+                        {/* Each box and button says which message it answers, for a
+                            screen reader reading several in a row. */}
+                        <label className="t-label block" htmlFor={`reply-${message.note_id}`}>
+                          Your reply
+                          <span className="sr-only">
+                            {` to the message about ${message.athlete_name ?? 'your child'}, ${formatGymDateTimeShort(message.created_at) ?? message.created_at}`}
+                          </span>
+                        </label>
+                        <textarea
+                          id={`reply-${message.note_id}`}
+                          value={replyDrafts[message.note_id] ?? ''}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setReplyDrafts((held) => ({ ...held, [message.note_id]: value }));
+                          }}
+                          className="textarea h-20 resize-y"
+                        />
+                        {replyNotices[message.note_id] ? (
+                          <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{replyNotices[message.note_id]}</p>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={replyBusy.has(message.note_id) || !(replyDrafts[message.note_id] ?? '').trim()}
+                          onClick={() => void handleSendReply(message.note_id)}
+                        >
+                          {replyBusy.has(message.note_id) ? 'Sending…' : 'Send reply'}
+                          <span className="sr-only">{` about ${message.athlete_name ?? 'your child'}`}</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
-                <h4 className="t-label">Reply to Coach</h4>
-                <p className="t-label">
-                  PLANNED | NOT YET IMPLEMENTED
-                </p>
-                <p className="t-muted">
-                  Messages from your child&apos;s coach appear above, but replying isn&apos;t available yet. This
-                  field is disabled so a message can&apos;t be typed and silently discarded -- for anything that
-                  needs a conversation, contact your child&apos;s coach directly.
-                </p>
-                <textarea
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Messaging is not yet available."
-                  disabled
-                  className="textarea h-20 resize-none cursor-not-allowed opacity-60"
-                />
-                <button
-                  type="button"
-                  disabled
-                  className="btn cursor-not-allowed opacity-50 grayscale"
-                >
-                  Send Message (unavailable)
-                </button>
-              </div>
             </div>
           )}
 

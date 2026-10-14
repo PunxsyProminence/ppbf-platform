@@ -49,9 +49,8 @@ test('public interest submissions are described as saved, not front-end only', (
 });
 
 test('the parent guide names the live task feed and still lists every Parent Hub section stamped PLANNED', () => {
-  // ParentHub.tsx stamps assignments, observations, family goals, progress
-  // milestones, resources and Reply to Coach PLANNED | NOT YET IMPLEMENTED
-  // (A-Q15: roadmap).
+  // ParentHub.tsx stamps family goals and resources PLANNED | NOT YET
+  // IMPLEMENTED (A-Q15: roadmap).
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
   // The weekly list on the Parent Floor is built (WO-PH-02); it is not planned.
@@ -65,9 +64,12 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   // Parent observations are built (WO-PH-04).
   expect(parent).toMatch(/Parent observations are written down and read back on the Observations tab/);
   expect(parent).not.toMatch(/feed yet: [^.]*parent observations/);
-  for (const section of ['family goals', 'resources', 'reply to coach']) {
+  for (const section of ['family goals', 'resources']) {
     expect(parent).toContain(section);
   }
+  // Replies to coach messages are built (#1542, FC-03).
+  expect(parent).toMatch(/has its own reply box/);
+  expect(parent).not.toMatch(/feed yet: [^.]*reply to coach/);
 });
 
 test('the athlete guide does not call live pages placeholders', () => {

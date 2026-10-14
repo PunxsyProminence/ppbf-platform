@@ -42,8 +42,15 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+// The panel reads the notes and, alongside them, the family's replies (FC-03).
+// Each answers its own URL.
+function byUrl(notes: () => Response, replies: () => Response = () => jsonResponse({ items: [] })): jest.Mock {
+  return jest.fn(async (input: RequestInfo | URL) =>
+    (String(input).includes('/family-message-replies') ? replies() : notes()));
+}
+
 test('each note reads with its author, gym time, due date and the family state, in the order the server gives', async () => {
-  const fetchMock = jest.fn(async () => jsonResponse({ items: [DONE, OPEN, UNDATED] }));
+  const fetchMock = byUrl(() => jsonResponse({ items: [DONE, OPEN, UNDATED] }));
   global.fetch = fetchMock as unknown as typeof fetch;
 
   await act(async () => {
@@ -90,9 +97,8 @@ test('an empty read says nothing has been posted yet', async () => {
 });
 
 test('a new refreshKey re-reads, so a note just posted appears', async () => {
-  const fetchMock = jest.fn()
-    .mockResolvedValueOnce(jsonResponse({ items: [] }))
-    .mockResolvedValueOnce(jsonResponse({ items: [OPEN] }));
+  let notesReads = 0;
+  const fetchMock = byUrl(() => jsonResponse({ items: (notesReads += 1) === 1 ? [] : [OPEN] }));
   global.fetch = fetchMock as unknown as typeof fetch;
 
   // render() wraps itself in act; the second act lets the first read settle.
@@ -102,7 +108,7 @@ test('a new refreshKey re-reads, so a note just posted appears', async () => {
     view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
   });
 
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(notesReads).toBe(2);
   expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
 });
 
@@ -150,4 +156,100 @@ test("a slow read for the athlete just left never shows under the next athlete's
 
   expect(screen.queryByText('Bring gloves Thursday.')).toBeNull();
   expect(screen.getByText('Nothing has been posted to this family yet.')).toBeInTheDocument();
+});
+
+/*
+ * FAMILY REPLIES (FC-03): under each note, what the family wrote back, oldest
+ * first, with the guardian's name and the time in gym time. Replies sit under
+ * the note they answer, not another. A failed replies read says so and the
+ * notes still show.
+ */
+describe('family replies under each note (FC-03)', () => {
+  const REPLIES = [
+    { reply_id: 'r1', note_id: 'n1', reply_text: 'Will do, thanks.', created_at: '2026-10-12T23:30:00.000Z', author_name: 'Alex Parent' },
+    { reply_id: 'r2', note_id: 'n1', reply_text: 'Gloves are packed.', created_at: '2026-10-13T00:15:00.000Z', author_name: 'Jordan Parent' },
+    { reply_id: 'r3', note_id: 'n2', reply_text: 'Form dropped off.', created_at: '2026-10-13T23:30:00.000Z', author_name: 'A guardian' },
+  ];
+
+  test('each note lists its own replies, in order, with who and when', async () => {
+    const fetchMock = byUrl(() => jsonResponse({ items: [DONE, OPEN] }), () => jsonResponse({ items: REPLIES }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    const lists = screen.getAllByRole('list', { name: 'Family replies' });
+    expect(lists).toHaveLength(2);
+    // DONE (n2) is first on the page; OPEN (n1) second.
+    expect(lists[0]!.textContent).toContain('A guardian replied');
+    expect(lists[0]!.textContent).toContain('Form dropped off.');
+    expect(lists[0]!.textContent).not.toContain('Gloves are packed.');
+    const second = Array.from(lists[1]!.querySelectorAll('li')).map((item) => item.textContent ?? '');
+    expect(second[0]).toMatch(/^Alex Parent replied · .*7:30.*Will do, thanks\.$/);
+    expect(second[1]).toMatch(/^Jordan Parent replied · .*8:15.*Gloves are packed\.$/);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/pilot/coach/family-message-replies?athlete_id=ath-1'),
+      expect.anything(),
+    );
+  });
+
+  test('the notes show while the replies are still loading, and the replies fill in when they answer', async () => {
+    let finishReplies: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) =>
+      (String(input).includes('/family-message-replies')
+        ? new Promise<Response>((resolve) => { finishReplies = resolve; })
+        : Promise.resolve(jsonResponse({ items: [OPEN] })))) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
+    expect(screen.getByText("Loading the family's replies…")).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+
+    await act(async () => {
+      finishReplies?.(jsonResponse({ items: [REPLIES[0]] }));
+    });
+
+    expect(screen.queryByText(/Loading the family/)).toBeNull();
+    expect(screen.getByRole('list', { name: 'Family replies' }).textContent).toContain('Will do, thanks.');
+  });
+
+  test("a replies answer for the athlete just left never lands under the next athlete's notes", async () => {
+    let finishFirstReplies: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/family-message-replies') && url.includes('athlete_id=ath-1')) {
+        return new Promise<Response>((resolve) => { finishFirstReplies = resolve; });
+      }
+      if (url.includes('/family-message-replies')) return Promise.resolve(jsonResponse({ items: [] }));
+      return Promise.resolve(jsonResponse({ items: [OPEN] }));
+    }) as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+    });
+    await act(async () => {
+      finishFirstReplies?.(jsonResponse({ items: [REPLIES[0]] }));
+    });
+
+    expect(screen.queryByText('Will do, thanks.')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+  });
+
+  test('a failed replies read says so, and the notes still show', async () => {
+    global.fetch = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ error: 'boom' }, false)) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('replies could not be loaded');
+    expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+  });
 });
