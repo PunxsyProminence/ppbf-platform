@@ -151,6 +151,9 @@ function ReferenceActions({
   onPromote,
   onChangeLifecycle,
   onMarkFloorTested,
+  restoreCueNeeded,
+  restoreCues,
+  onRestoreCuesChange,
 }: {
   referenceDrillId: string;
   /** The drill's name, so a control's accessible name says which drill it acts on. */
@@ -174,7 +177,33 @@ function ReferenceActions({
   onPromote: (referenceDrillId: string) => void;
   onChangeLifecycle: (referenceDrillId: string, operationalDrillId: string, restoring: boolean) => void;
   onMarkFloorTested: (referenceDrillId: string) => void;
+  /** The server refused this drill's restore for want of a cue: ask for one here. */
+  restoreCueNeeded: boolean;
+  restoreCues: string;
+  onRestoreCuesChange: (value: string) => void;
 }) {
+  // F-068: a retired drill with no cue has nowhere else to get one, so the
+  // cue goes in with the restore. The server rule that a restored drill
+  // needs a cue is unchanged; this only lets the coach satisfy it.
+  const restoreCueField = restoreCueNeeded
+    ? (
+      <div className="field basis-full">
+        <label htmlFor={`restore-cues-${referenceDrillId}`} className="t-label">
+          Coaching cues to restore with, one per line
+        </label>
+        <textarea
+          id={`restore-cues-${referenceDrillId}`}
+          value={restoreCues}
+          onChange={(event) => onRestoreCuesChange(event.target.value)}
+          rows={3}
+          className="input"
+        />
+        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+          This drill has no coaching cue, and a technique drill needs at least one before it can be used. Add one, then press Restore.
+        </p>
+      </div>
+    )
+    : null;
   if (!state) {
     return <p className="t-label text-[color:var(--bone-300)]">This drill&apos;s status in this gym could not be read.</p>;
   }
@@ -243,6 +272,7 @@ function ReferenceActions({
         >
           {changingLifecycle ? 'Saving...' : 'Restore'}
         </button>
+        {restoreCueField}
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
       </>
     );
@@ -308,6 +338,7 @@ function ReferenceActions({
         >
           {changingLifecycle ? 'Saving...' : restoring ? 'Restore' : 'Retire'}
         </button>
+        {restoring && restoreCueField}
         {/* What the action does, before it is taken -- no confirmation step,
             which would be ceremony: both actions are undone by the other. */}
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
@@ -335,6 +366,10 @@ function CoachDrillLibrary() {
   const [category, setCategory] = useState('');
   const [focus, setFocus] = useState('');
   const [cues, setCues] = useState('');
+  // F-068: the reference drill whose restore was refused for want of a cue,
+  // and the cue text the coach is typing for it.
+  const [restoreCueNeededFor, setRestoreCueNeededFor] = useState('');
+  const [restoreCues, setRestoreCues] = useState('');
   const [difficulty, setDifficulty] = useState<string>('beginner');
 
   const [saving, setSaving] = useState(false);
@@ -761,6 +796,11 @@ function CoachDrillLibrary() {
   // caller. Nothing is created: promoting again after a retirement is refused.
   async function changeLifecycle(referenceDrillId: string, operationalDrillId: string, active: boolean) {
     if (changingLifecycleRef.current || promotingRef.current || markingFloorTestedRef.current) return;
+    // Cues typed after a restore was refused for want of one go in with the
+    // retry (F-068); sent only with a restore, and only when there are some.
+    const restoreCueList = active && restoreCueNeededFor === referenceDrillId
+      ? restoreCues.split('\n').map((cue) => cue.trim()).filter(Boolean)
+      : [];
     changingLifecycleRef.current = true;
     const openRequest = openRequestRef.current;
     setChangingLifecycle(true);
@@ -776,13 +816,20 @@ function CoachDrillLibrary() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ drill_id: operationalDrillId, active }),
+        body: JSON.stringify(restoreCueList.length > 0
+          ? { drill_id: operationalDrillId, active, cues: restoreCueList }
+          : { drill_id: operationalDrillId, active }),
       });
       status = response.status;
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
+        if (active && typeof payload.error === 'string' && payload.error.includes('Add a cue first')) {
+          setRestoreCueNeededFor(referenceDrillId);
+        }
         throw new Error(payload.error || (active ? 'The drill could not be restored.' : 'The drill could not be retired.'));
       }
+      setRestoreCueNeededFor('');
+      setRestoreCues('');
       await Promise.all([load(), loadReferenceLibrary()]);
       setPromoteNotice(active
         ? 'Restored. It is operational again: coaches can assign it, and athletes in this gym can read it in Learn.'
@@ -1028,6 +1075,9 @@ function CoachDrillLibrary() {
                       onPromote={(id) => void promoteReference(id)}
                       onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
                       onMarkFloorTested={(id) => void markFloorTested(id)}
+                      restoreCueNeeded={restoreCueNeededFor === openReference.id}
+                      restoreCues={restoreCues}
+                      onRestoreCuesChange={setRestoreCues}
                     />
                   )}
                 />
