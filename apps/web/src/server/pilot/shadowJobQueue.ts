@@ -123,11 +123,14 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 25;
 // and its review sentence for a pain report names the escalation rule
 // instead of HIGH or CRITICAL. A v22 job still queued at deploy is refused
 // as STALE.
-// 24: an unanswered SHADOW question files its own research row (F-054):
-// the chat route now calls shadowResearchFiling.ts and returns researchFiled.
-// No job context changed; the route is a watched file, so the version moves.
-// 25: the same filing is refused for any flagged, handed-off, filtered or
-// human-review exchange (OD-2026-10-07-009 ruling 4); chat route again.
+// 24: comment-only sweep (L8, #1591): no job context changed; bumped because a
+// listed file's comments moved. A v23 job still queued at deploy is refused as
+// STALE.
+// 25: an unanswered SHADOW question files its own research row (F-054): the chat
+// route calls shadowResearchFiling.ts, returns researchFiled, and refuses any
+// flagged, handed-off, filtered or human-review exchange (OD-2026-10-07-009
+// ruling 4). No job context changed; the route is a watched file, so the version
+// moves. A v24 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -206,8 +209,8 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 21, sha256: '6302cd7217394f98d6019444a0301beb14b191586e945448650b5a9dbe8e3eca' },
   { version: 22, sha256: '8ec827159f06678d1a977b203bc4c35c74f18c3824b5edf2dfdb1018bf185216' },
   { version: 23, sha256: '7fee0cfd153d03ed993bbfba5b617bbc6e00e2f6de9431940c3fa01ffbdd7c3d' },
-  { version: 24, sha256: 'aeb6f7e39ce986109f9f9a6ce29fe25f5f5d75ed98bccb2e21a52dc509a3998b' },
-  { version: 25, sha256: 'd44a27c6ece99875bb39b8a70cd65e0457624876ed60154eabb3da83057d1b52' },
+  { version: 24, sha256: '178e3e36699359a5b619f8951c6fa79702983fd0b9f23a489f2b86cd400d6350' },
+  { version: 25, sha256: '99fd704bd84d45b4b4bc05961fec301a8688d21b4c295543fd66e4dfde1b2003' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

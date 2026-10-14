@@ -333,11 +333,13 @@ export async function setMinorLimit(input: MinorLimitInput & {
 
     // The value stays out of the audit row (the table holds it); the audit
     // says who changed which limit type for which athlete, and when.
-    // shadow_mirror: false -- the mirrored shadow_events row would be readable
-    // by the athlete and their guardians through /api/pilot/shadow/events
-    // (SHADOW_PROJECTION_READ_ROLES admits both; the athlete tie reads
-    // details.athlete_id), and whether the family sees a child's limits is
-    // not decided. The audit table keeps the record; nothing feeds the model.
+    // shadow_mirror: false -- no mirrored shadow_events row is written. Today
+    // the family allow-list (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES,
+    // auditReadAllowlist.ts) is empty, so an athlete or guardian reads no
+    // SHADOW_AUDIT_* row from /api/pilot/shadow/events anyway (Jason
+    // 2026-10-13, Q-1 on #1558); this keeps the row off that feed even if the
+    // list is ever filled, because whether the family sees a child's limits
+    // is not decided. The audit table keeps the record; nothing feeds the model.
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: input.actor.accountId,
