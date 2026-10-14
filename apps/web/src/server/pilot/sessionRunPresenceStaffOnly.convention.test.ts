@@ -5,13 +5,18 @@
 //
 // The role gates themselves are exercised in the three routes' own suites, and
 // the reads' filters on real rows in sessionRunAthletes.pg.test.ts. What this
-// file adds is the sweep those cannot make: it reads every route under app/api
-// and every module under src/server/pilot from disk, so a NEW route or module
+// file adds is the sweep those cannot make: it reads every source file under
+// app/, components/, lib/ and src/ from disk, so a NEW route, page or module
 // that starts reading these records fails here until someone decides, on
 // purpose, that it may.
 //
-// It is a source check and says so: it proves which files name these records,
-// not what any of them returns.
+// WHAT IT IS AND IS NOT. It is a source check: it proves which files name these
+// records, not what any of them returns. It catches a new file that imports the
+// presence module, calls one of the reads or writers by name, or names either
+// table in its own SQL. It does NOT catch a new export added to a file already
+// on the lists below and then called from somewhere else under a different
+// name, nor a table name assembled from pieces at run time. Review reads the
+// diff of the listed files; this gate watches everything outside them.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,6 +26,7 @@ const API_DIR = path.join(WEB_DIR, 'app', 'api');
 const PILOT_DIR = __dirname;
 
 function filesUnder(dir: string, keep: (file: string) => boolean): string[] {
+  if (!fs.existsSync(dir)) return [];
   const found: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -32,9 +38,17 @@ function filesUnder(dir: string, keep: (file: string) => boolean): string[] {
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 const source = (file: string) => fs.readFileSync(file, 'utf8');
+const isSource = (file: string) => /\.(ts|tsx|mts|mjs|js)$/.test(file) && !/\.test\.[a-z]+$/.test(file);
 
-/** What reaches the records: the presence module, the run-note functions, the finished-sessions read. */
-const REACHES = /sessionRunAthletes'|\b(listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization)\b/;
+// Every shipped source file: routes, pages, components, server modules.
+const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnder(path.join(WEB_DIR, dir), isSource));
+
+/** What reaches the records: the presence module (either quote style), and each read or writer by name. */
+const REACHES =
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization)\b/;
+
+/** Either table, named in a file's own text (inline SQL included). */
+const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
 
 // The only routes that may. Each is gated to coach, organization_admin and admin.
 const STAFF_ROUTES = [
@@ -43,21 +57,42 @@ const STAFF_ROUTES = [
   'app/api/pilot/session-scripts/runs/route.ts',
 ];
 
-// The only modules that may name the table. privacyTiers.ts names it to forbid it on public surfaces.
-const TABLE_MODULES = ['privacyTiers.ts', 'sessionRunAthletes.ts', 'sessionStaffNotes.ts'];
+// The modules that define the reads and writers. privacyTiers.ts names them to forbid them on public surfaces.
+const DEFINING_MODULES = [
+  'src/server/pilot/privacyTiers.ts',
+  'src/server/pilot/sessionRunAthletes.ts',
+  'src/server/pilot/sessionScriptRuns.ts',
+  'src/server/pilot/sessionStaffNotes.ts',
+];
+
+// The only files whose own text names either table.
+const TABLE_FILES = [
+  'src/server/pilot/privacyTiers.ts',
+  'src/server/pilot/sessionRunAthletes.ts',
+  'src/server/pilot/sessionStaffNotes.ts',
+];
+
+const HANDLER = /^export\s+(?:async\s+function|function|const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/gm;
 
 describe('who was in a session, and notes on a run, are reached only from staff routes', () => {
   const routes = filesUnder(API_DIR, (file) => /route\.tsx?$/.test(file));
 
-  it('the sweep reads the routes it claims to (it has not gone blind)', () => {
+  it('the sweep reads the files it claims to (it has not gone blind)', () => {
     expect(routes.length).toBeGreaterThan(100);
-    for (const route of STAFF_ROUTES) {
-      expect(routes.map(relative)).toContain(route);
+    expect(ALL_SOURCE.length).toBeGreaterThan(routes.length + 200);
+    const all = ALL_SOURCE.map(relative);
+    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES]) {
+      expect(all).toContain(file);
     }
   });
 
-  it('exactly the three staff routes import the presence module or the run-note and finished-session reads', () => {
-    expect(routes.filter((file) => REACHES.test(source(file))).map(relative).sort()).toEqual(STAFF_ROUTES);
+  it('exactly the three staff routes and the defining modules reach them, anywhere in the app', () => {
+    expect(ALL_SOURCE.filter((file) => REACHES.test(source(file))).map(relative).sort())
+      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES].sort());
+  });
+
+  it('no route, page, component or other module names either table in its own text', () => {
+    expect(ALL_SOURCE.filter((file) => NAMES_A_TABLE.test(source(file))).map(relative).sort()).toEqual(TABLE_FILES);
   });
 
   it('no route under an athlete, parent, guardian, family, board, public or platform path reaches them', () => {
@@ -65,15 +100,19 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const reaching = routes.map(relative).filter((file) => audience.test(`/${file.replace(/^app/, '')}`.replace('//', '/')));
     expect(reaching.length).toBeGreaterThan(0);
     for (const file of reaching) {
-      expect({ file, reaches: REACHES.test(source(path.join(WEB_DIR, file))) }).toEqual({ file, reaches: false });
+      const text = source(path.join(WEB_DIR, file));
+      expect({ file, reaches: REACHES.test(text) || NAMES_A_TABLE.test(text) }).toEqual({ file, reaches: false });
     }
   });
 
   it.each(STAFF_ROUTES)('%s admits only coach, organization admin and the legacy admin name', (route) => {
     const text = source(path.join(WEB_DIR, route));
     const gates = Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.([A-Z_]+)\]\s*\)/g), (match) => match[1]);
-    // Every handler in the file is gated, and by one of the two staff lists.
-    const handlers = Array.from(text.matchAll(/export async function (GET|POST|PATCH|DELETE)\b/g)).length;
+    // Every handler in the file is gated, and by one of the two staff lists. Every way of
+    // exporting a handler is counted, and a re-export (which this cannot read) is refused.
+    const handlers = Array.from(text.matchAll(HANDLER)).length;
+    expect(handlers).toBeGreaterThan(0);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
     expect(gates).toHaveLength(handlers);
     for (const gate of gates) {
       expect(['RUN_ROLES', 'STAFF_NOTE_ROLES']).toContain(gate);
@@ -88,21 +127,11 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       .toMatch(/export const STAFF_NOTE_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
   });
 
-  it('only the presence module, the notes module and the privacy map name the table', () => {
-    const modules = filesUnder(PILOT_DIR, (file) => /\.ts$/.test(file) && !/\.test\.ts$/.test(file));
-    const naming = modules.filter((file) => /session_run_athletes/.test(source(file))).map((file) => path.basename(file)).sort();
-    expect(naming).toEqual(TABLE_MODULES);
-  });
-
-  it('no component or page under app/ or components/ names the table or imports a server module that reads it', () => {
-    const client = [
-      ...filesUnder(path.join(WEB_DIR, 'app'), (file) => /\.tsx$/.test(file) && !/\.test\.tsx$/.test(file)),
-      ...filesUnder(path.join(WEB_DIR, 'components'), (file) => /\.tsx$/.test(file) && !/\.test\.tsx$/.test(file)),
-    ];
+  it('no component or page imports a value from a server module that reads them', () => {
+    const client = ALL_SOURCE.filter((file) => /\.tsx$/.test(file) && !/^src\//.test(relative(file)));
     expect(client.length).toBeGreaterThan(50);
     // A type-only import is erased at build time and carries no data; a value import would not be.
-    const valueImport = /^import (?!type\b)[^;]*from '@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes)';/m;
-    const offending = client.filter((file) => /session_run_athletes/.test(source(file)) || valueImport.test(source(file))).map(relative);
-    expect(offending).toEqual([]);
+    const valueImport = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns)['"];/m;
+    expect(client.filter((file) => valueImport.test(source(file))).map(relative)).toEqual([]);
   });
 });

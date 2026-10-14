@@ -107,6 +107,10 @@ describe('a note on a run', () => {
     expect((await post({ session_id: 'sess-1', run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
     expect((await post({ athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
     expect((await post({ run_id: '   ', athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
+    // Something that is not text still names it: a number beside a real id is "both", and alone is refused.
+    expect((await post({ session_id: 5, run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
+    expect((await post({ session_id: 'sess-1', run_id: ['ssrun_1'], athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
+    expect((await post({ run_id: 7, athlete_id: 'ath-1', note: 'x' })).status).toBe(400);
     for (const mock of [mockListRun, mockListSession, mockCreateRun, mockCreateSession]) {
       expect(mock).not.toHaveBeenCalled();
     }

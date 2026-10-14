@@ -29,9 +29,9 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  *
  * WHO. Staff only, both ways: coach, organization_admin, admin -- with an
  * ACTIVE membership in this organization in one of those roles -- and only
- * for an athlete assertActorCanAccessAthlete lets them reach (a coach's own
- * athletes plus live coverage; an org admin's whole gym; never a deleted
- * athlete), run with the MEMBERSHIP role. Athletes, guardians, volunteers,
+ * for an athlete assertActorCanAccessAthlete lets them reach (any athlete of
+ * their own gym, for a coach and an org admin alike, OD-2026-10-11-007; never
+ * a deleted athlete), run with the MEMBERSHIP role. Athletes, guardians, volunteers,
  * board and platform_owner get nothing from this module: staff notes are
  * STAFF ONLY, with no athlete or parent view (OD-2026-10-10-003 ruling 3).
  *
@@ -113,7 +113,7 @@ export function staffNoteShapeError(note: unknown): string | null {
  * organization -- not pilot.accounts.role, which is the account's HOME role
  * and can differ. Null when the account may not touch staff notes here.
  */
-async function staffNoteRoleInOrganization(actor: ActorIdentity): Promise<StaffNoteRole | null> {
+export async function staffNoteRoleInOrganization(actor: ActorIdentity): Promise<StaffNoteRole | null> {
   if (!(STAFF_NOTE_ROLES as readonly string[]).includes(actor.role)) return null;
   const membership = await queryOne<{ role: StaffNoteRole }>(
     `select om.role

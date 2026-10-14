@@ -62,8 +62,22 @@ export async function GET(request: NextRequest) {
       for (const accountId of new Set(settled.map((run) => run.delivered_by_account_id))) {
         names.set(accountId, await getCoachDisplayName(principal.organizationId, accountId));
       }
+      // Named fields, not the row: who delivered a session is answered by display name and
+      // "was it me", so the account id (which can be an email address) is not sent.
       const runs = settled.map((run) => ({
-        ...run,
+        run_id: run.run_id,
+        script_id: run.script_id,
+        script_version: run.script_version,
+        script_name: run.script_name,
+        run_state: run.run_state,
+        delivered_on: run.delivered_on,
+        started_at: run.started_at,
+        ended_at: run.ended_at,
+        athletes_present: run.athletes_present,
+        blocks_completed: run.blocks_completed,
+        deviation_note: run.deviation_note,
+        what_worked: run.what_worked,
+        what_did_not: run.what_did_not,
         delivered_by_name: names.get(run.delivered_by_account_id) ?? 'A coach',
         delivered_by_me: run.delivered_by_account_id === principal.accountId,
         present: present

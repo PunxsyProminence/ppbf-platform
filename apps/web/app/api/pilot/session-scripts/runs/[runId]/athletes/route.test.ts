@@ -128,6 +128,20 @@ describe('who may see or record who was in a session', () => {
   });
 });
 
+describe('the run id in the path', () => {
+  it('a blank one, or one carrying a NUL byte, is a 400 on both verbs and reaches no read or write', async () => {
+    for (const runId of ['   ', 'ssrun\u0000_1']) {
+      const read = await get(URL_FOR, runId);
+      expect(read.status).toBe(400);
+      await expect(read.json()).resolves.toEqual({ error: 'RUN_ID_INVALID' });
+      expect((await post({ athlete_id: 'ath-1', present: true }, runId)).status).toBe(400);
+    }
+    expect(mockPermitted).not.toHaveBeenCalled();
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET', () => {
   it("names the present athletes of the session's own gym, filtered to ids the SERVER computed, and is not cached", async () => {
     const admin = principal({ role: 'organization_admin', accountId: 'acct-admin', organizationId: 'org-9' });

@@ -52,6 +52,7 @@ const run = (overrides: Record<string, unknown>) => ({
   started_at: '2026-10-13T22:00:00.000Z',
   ended_at: '2026-10-13T23:00:00.000Z',
   athletes_present: 2,
+  blocks_completed: null,
   deviation_note: 'Finished early.',
   what_worked: 'The jab round.',
   what_did_not: '',
@@ -108,6 +109,13 @@ describe('GET ?finished=true', () => {
       ['ssrun_1', null, 'Coach Dee', true, [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }, { athlete_id: 'ath-2', full_name: 'Ben Ortiz' }]],
     ]);
     expect(runs[1]).toMatchObject({ deviation_note: 'Finished early.', what_worked: 'The jab round.', athletes_present: 2 });
+    // Exactly these fields: no account id (it can be an email address) and no organization id.
+    expect(Object.keys(runs[1]).sort()).toEqual([
+      'athletes_present', 'blocks_completed', 'delivered_by_me', 'delivered_by_name', 'delivered_on', 'deviation_note',
+      'ended_at', 'present', 'run_id', 'run_state', 'script_id', 'script_name', 'script_version', 'started_at',
+      'what_did_not', 'what_worked',
+    ]);
+    expect(JSON.stringify(runs)).not.toMatch(/acct-|org-1/);
     // It is not the live-run lookup.
     expect(mockLive).not.toHaveBeenCalled();
   });

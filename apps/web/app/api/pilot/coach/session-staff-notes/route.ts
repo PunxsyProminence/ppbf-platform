@@ -86,17 +86,19 @@ function textFrom(value: unknown, field: string): string {
   return text;
 }
 
-// The column is a uuid; a hand-crafted id would otherwise be a database error
-// (22P02) answered as a 500.
 /** What the note is on: its session or its run. Exactly one must be named. */
 function subjectFrom(sessionId: unknown, runId: unknown): { sessionId: string } | { runId: string } {
-  const named = (value: unknown) => typeof value === 'string' && value.trim() !== '';
+  // Anything sent counts as naming it, text or not: a number beside a real id is "both", and a
+  // number alone is refused by textFrom. Only absent, null and blank text are "not named".
+  const named = (value: unknown) => value !== undefined && value !== null && !(typeof value === 'string' && value.trim() === '');
   if (named(sessionId) === named(runId)) {
     throw new ValidationError('Name the session or the run the note is on: exactly one of session_id and run_id');
   }
   return named(runId) ? { runId: textFrom(runId, 'run_id') } : { sessionId: textFrom(sessionId, 'session_id') };
 }
 
+// The column is a uuid; a hand-crafted id would otherwise be a database error
+// (22P02) answered as a 500.
 function noteIdFrom(value: unknown): string {
   const noteId = typeof value === 'string' ? value.trim() : '';
   if (!UUID_SHAPE.test(noteId)) throw new ValidationError('note_id must be a note id');

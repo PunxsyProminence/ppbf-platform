@@ -439,6 +439,44 @@ describe('marking who is in a session', () => {
     expect(await mark(gym.coach, run.run_id, gym.ada)).toEqual({ outcome: 'marked' });
     expect((await listPresentAthletes(gym.organizationId, [run.run_id], [gym.ada])).map((row) => row.full_name)).toEqual(['Ada Reyes']);
   });
+
+  test('a mark waits for the session being ended at that moment, and is then refused', async () => {
+    const gym = await newGym('mark-race');
+    const runId = await liveRun(gym);
+
+    // The session being ended, held open at the point where the run is settled but not committed.
+    const finishing = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await finishing.connect();
+    try {
+      await finishing.query('BEGIN');
+      await finishing.query(
+        `update pilot.session_script_runs
+            set run_state = 'completed', ended_at = clock_timestamp(), current_block_id = null, paused_at = null
+          where organization_id = $1 and run_id = $2`,
+        [gym.organizationId, runId],
+      );
+
+      const marking = mark(gym.coach, runId, gym.ada).then(
+        (result) => ({ result, error: null as unknown }),
+        (error: unknown) => ({ result: null, error }),
+      );
+      // It has to be waiting on the finish, not already answered: a read without the row lock
+      // would still see the run live and write the mark onto a session that is over.
+      const early = await Promise.race([marking, new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+      expect(early).toBe('waiting');
+
+      await finishing.query('COMMIT');
+      const outcome = await marking;
+
+      expect(outcome.result).toBeNull();
+      expect(outcome.error).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    } finally {
+      await finishing.query('ROLLBACK').catch(() => {});
+      await finishing.end();
+    }
+    expect(await marks(gym, runId)).toEqual([]);
+    expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
+  });
 });
 
 describe('reading who was in a session', () => {
@@ -485,6 +523,14 @@ describe('reading who was in a session', () => {
     for (const role of ['athlete', 'parent', 'platform_owner', 'board', 'volunteer', 'staff'] as PilotRole[]) {
       expect(await staffPermittedAthleteIds({ ...gym.coach, role })).toEqual([]);
     }
+    // Staff HERE is an active membership, as it is for a mark: a coach whose membership was ended
+    // reads nobody, whatever role their session still carries.
+    await client.query(
+      `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`,
+      [gym.otherCoach.accountId, gym.organizationId],
+    );
+    expect(await staffPermittedAthleteIds(gym.otherCoach)).toEqual([]);
+    expect((await staffPermittedAthleteIds(gym.coach)).sort()).toEqual([gym.ada, gym.ben]);
   });
 });
 
@@ -528,6 +574,9 @@ describe('a staff note on an athlete in a session run', () => {
     await mark(gym.coach, runId, gym.ben);
     await mark(gym.coach, runId, gym.ben, false);
     await mark(other.coach, otherRunId, other.ada);
+    // An athlete who exists ONLY in the other gym, marked present in its run.
+    await client.query(`update pilot.athletes set athlete_id = 'athlete-only-there' where organization_id = $1 and athlete_id = $2`, [other.organizationId, other.cy]);
+    await mark(other.coach, otherRunId, 'athlete-only-there');
     const write = (runIdOf: string, athleteId: string) =>
       createRunStaffNote({ actor: gym.coach, runId: runIdOf, athleteId, note: 'x' });
 
@@ -536,9 +585,17 @@ describe('a staff note on an athlete in a session run', () => {
     // The other gym's run, where an athlete of the same id IS marked.
     expect(await refusal(write(otherRunId, gym.ada))).toMatchObject(NOT_PRESENT);
     expect(await refusal(write('ssrun-no-such-run', gym.ada))).toMatchObject(NOT_PRESENT);
-    // Another gym's athlete, and a role that is not staff: the notes module's one refusal.
+    // A coach of the other gym naming THIS gym's run. Athlete ids repeat across gyms, so they reach
+    // their own athlete of that id, who is in no run of theirs by this id: not present.
     expect(await refusal(createRunStaffNote({ actor: other.coach, runId, athleteId: gym.ada, note: 'x' })))
-      .toMatchObject({ code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' });
+      .toMatchObject(NOT_PRESENT);
+    // An athlete who is only in the other gym, in the other gym's run where they ARE marked: this
+    // gym's coach does not reach them at all, to write or to read. The notes module's one refusal.
+    expect(await refusal(write(otherRunId, 'athlete-only-there')))
+      .toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    expect(await refusal(listRunStaffNotes(gym.coach, otherRunId, 'athlete-only-there')))
+      .toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    // And a role that is not staff.
     expect(await refusal(createRunStaffNote({ actor: { ...gym.coach, role: 'parent' }, runId, athleteId: gym.ada, note: 'x' })))
       .toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
     expect(await refusal(listRunStaffNotes({ ...gym.coach, role: 'athlete' }, runId, gym.ada)))
@@ -647,6 +704,28 @@ describe("the gym's finished sessions", () => {
       whatDidNot: 'Too long on the bags.',
       deviationNote: 'Finished early.',
     });
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+       values ($1, 'scr-f067-fin', 'scr-f067-fin', 1, 'Tuesday juniors', $2)`,
+      [gym.organizationId, gym.coach.accountId],
+    );
+    await client.query(
+      `insert into pilot.session_script_blocks (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, block_kind)
+       values ($1, 'blk-f067-fin', 'scr-f067-fin', 1, 0, 10, 'Arrival', 'arrival')`,
+      [gym.organizationId],
+    );
+    const scripted = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, { scriptId: 'scr-f067-fin' })).run_id;
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, scripted, { runState: 'completed' });
+    // A row from before live delivery (no run_state; always from a plan, pilot_ssrun_plain_has_state):
+    // reached through its plan, not listed here.
+    const legacy = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, { scriptId: 'scr-f067-fin' })).run_id;
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, legacy, { runState: 'completed' });
+    await client.query(`update pilot.session_script_runs set run_state = null where run_id = $1`, [legacy]);
     const abandoned = await liveRun(gym, gym.otherCoach);
     await finishSessionScriptRun(gym.organizationId, gym.otherCoach.accountId, abandoned, { runState: 'abandoned' });
     await liveRun(gym);
@@ -657,13 +736,20 @@ describe("the gym's finished sessions", () => {
       `update pilot.session_script_runs set started_at = started_at - interval '1 hour', ended_at = ended_at - interval '1 hour' where run_id = $1`,
       [plain],
     );
+    await client.query(
+      `update pilot.session_script_runs set started_at = started_at - interval '2 hours', ended_at = ended_at - interval '2 hours' where run_id = $1`,
+      [scripted],
+    );
 
     const finished = await listSettledRunsForOrganization(gym.organizationId);
 
     expect(finished.map((run) => [run.run_id, run.run_state, run.script_id, run.script_name, run.delivered_by_account_id])).toEqual([
       [abandoned, 'abandoned', null, null, gym.otherCoach.accountId],
       [plain, 'completed', null, null, gym.coach.accountId],
+      [scripted, 'completed', 'scr-f067-fin', 'Tuesday juniors', gym.coach.accountId],
     ]);
+    // The limit is the newest N.
+    expect((await listSettledRunsForOrganization(gym.organizationId, 2)).map((run) => run.run_id)).toEqual([abandoned, plain]);
     expect(finished[1]).toMatchObject({
       athletes_present: 2,
       what_worked: 'The jab round.',

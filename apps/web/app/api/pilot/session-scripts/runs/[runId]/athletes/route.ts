@@ -50,6 +50,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...RUN_ROLES]);
     const { runId } = await context.params;
+    if (!runId.trim() || runId.includes(NUL)) return badRequest('RUN_ID_INVALID');
 
     const permitted = await staffPermittedAthleteIds(principal);
     const present = await listPresentAthletes(principal.organizationId, [runId], permitted);
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...RUN_ROLES]);
     const { runId } = await context.params;
+    if (!runId.trim() || runId.includes(NUL)) return badRequest('RUN_ID_INVALID');
 
     const body: unknown = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) {

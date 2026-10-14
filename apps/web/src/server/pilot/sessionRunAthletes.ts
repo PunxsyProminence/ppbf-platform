@@ -1,10 +1,10 @@
-import { type ActorIdentity, isOrganizationAdminRole } from './access';
+import type { ActorIdentity } from './access';
 import { writePilotAuditEvent } from './audit';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ForbiddenError } from './errors';
 import { SessionScriptRunError } from './sessionScriptRuns';
-import { staffRoleReachingAthlete } from './sessionStaffNotes';
+import { staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
 
 // WHO WAS IN A SESSION (audit finding F-067).
 //
@@ -153,7 +153,7 @@ export interface PresentAthlete {
  * athletes the caller may reach.
  *
  * `permittedAthleteIds` is required and is the filter: the caller passes the
- * athlete ids it has established this reader may see (a coach's roster, an
+ * athlete ids it has established this reader may see (the gym's live athletes, for a coach and an
  * organization admin's gym), and an athlete outside that list is not returned
  * whatever the run says. An empty list returns nothing. The organization is in
  * the WHERE on both tables, so another gym's run of the same id adds no row.
@@ -184,6 +184,11 @@ export async function listPresentAthletes(
  * alike. Every other role gets none, so a route that forgot its role gate
  * would still return nothing. The ids are never taken from a request.
  *
+ * STAFF HERE means what it means for a mark and for a note: an ACTIVE
+ * membership in this organization in a staff role (staffNoteRoleInOrganization),
+ * not the role the session carries. A coach whose membership was ended reads
+ * nobody, exactly as they can mark nobody.
+ *
  * A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007): assertCoachReachesAthlete
  * admits any athlete of the coach's organization who is not deleted, and that is
  * the gate a mark is written through. So the read uses the same set, which is
@@ -193,7 +198,7 @@ export async function listPresentAthletes(
  * marked present.
  */
 export async function staffPermittedAthleteIds(actor: ActorIdentity): Promise<string[]> {
-  if (actor.role !== 'coach' && !isOrganizationAdminRole(actor.role)) {
+  if (!(await staffNoteRoleInOrganization(actor))) {
     return [];
   }
   return (await organizationActionableRoster(actor.organizationId)).map((athlete) => athlete.athlete_id);
