@@ -28,6 +28,7 @@
 // WHO SEES WHICH ROW is not decided here. The routes scope first
 // (scopeToReachableSubjects, mayReadRequirement); this shapes what is left.
 
+import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { isResearchStaff, type ShadowResearchRequirementRow } from './shadowResearch';
 import type { ResearchSubmissionRow } from './shadowResearchSubmissions';
@@ -120,11 +121,66 @@ export function toFamilyResearchSubmission(row: ResearchSubmissionRow): FamilyRe
   };
 }
 
+/* AN ATHLETE'S OR PARENT'S UNANSWERED QUESTION (F-054, Jason 2026-10-13
+ * "A: Office + asker (Recommended)", on OD-2026-10-07-009 ruling 4's principle:
+ * a child's words are not for the whole coaching staff).
+ *
+ * SHADOW files an unanswered question as a research row the asker's own
+ * words fill. For THAT row the organization admin reads the words, the asker
+ * reads their own (the family view above), and a COACH sees only that a
+ * question went unanswered. The row is told apart by the event it was filed
+ * under and by who filed it: a row a coach or admin filed themselves is theirs
+ * and stays whole. Not by caller-supplied metadata, which a writer chooses.
+ *
+ * A coach is sent a row with the words, the asker's account id and the key
+ * removed. The key is `acct:<account id>:<the question, normalized>`, so
+ * replacing only the two text fields would still hand the words and the
+ * asker over in source_entity_id. */
+export const ASKER_QUESTION_EVENT = 'shadow_unanswered_question';
+// PROPOSED copy.
+export const ASKER_QUESTION_COACH_SENTENCE =
+  'A question from an athlete or parent that SHADOW could not answer. The gym administrator can read it.';
+
+export function isAskerFiledQuestion(
+  row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
+): boolean {
+  return row.source_event_name === ASKER_QUESTION_EVENT
+    && !isResearchStaff(row.created_by_role as PilotRole);
+}
+
+/** The stored row as a COACH receives it when it is an asker's question. */
+export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowResearchRequirementRow {
+  return {
+    ...row,
+    source_entity_id: String(row.research_requirement_id),
+    research_requirement: ASKER_QUESTION_COACH_SENTENCE,
+    knowledge_gap: ASKER_QUESTION_COACH_SENTENCE,
+    evidence_label: null,
+    created_by_account_id: '',
+    metadata: { closing_note: (row.metadata ?? {}).closing_note ?? null },
+  };
+}
+
+/** A stored row for a research-staff reader: whole, except a coach's view of
+ *  an asker's question. */
+export function wholeResearchRowFor(
+  role: PilotRole | null | undefined,
+  row: ShadowResearchRequirementRow,
+): ShadowResearchRequirementRow {
+  if (role && isOrganizationAdminRole(role)) return row;
+  return isAskerFiledQuestion(row) ? toCoachAskerQuestion(row) : row;
+}
+
 export function researchRequirementsForReader(
   reader: ResearchReader,
   rows: ShadowResearchRequirementRow[],
 ): Array<ShadowResearchRequirementRow | FamilyResearchRequirement> {
-  return readsWholeResearchRows(reader.role) ? rows : rows.map((row) => toFamilyResearchRequirement(reader, row));
+  if (!readsWholeResearchRows(reader.role)) {
+    return rows.map((row) => toFamilyResearchRequirement(reader, row));
+  }
+  // Staff get the stored rows themselves; only a coach's view of an asker's
+  // question is rebuilt, so a list with none comes back as it was read.
+  return rows.some(isAskerFiledQuestion) ? rows.map((row) => wholeResearchRowFor(reader.role, row)) : rows;
 }
 
 export function researchSubmissionsForReader(
