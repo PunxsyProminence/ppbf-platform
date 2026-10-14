@@ -416,6 +416,78 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
     expect(await idsFrom(response)).toEqual([11]);
   });
 
+  // #1475 Part F: which rows is the scope above; what a row carries depends
+  // on the reader. Proved against real rows in researchFamilyProjection.pg.test.ts.
+  describe('what a row carries', () => {
+    const FILED_BY_STAFF = requirement({
+      research_requirement_id: 11,
+      source_event_name: 'SHADOW_INTAKE_CASE_APPROVED',
+      source_entity_type: 'intake_case',
+      source_entity_id: 'case-mine',
+      subject_id: 'ath-mine',
+      status: 'resolved',
+      resolved_at: '2026-08-26T00:00:00Z',
+      created_by_account_id: 'coach.one@gym.example.test',
+      created_by_role: 'coach',
+      metadata: {
+        action: 'approve',
+        notes: 'Reviewer note about the family.',
+        athlete_id: 'ath-mine',
+        closing_note: 'Closed after the coach meeting.',
+        resolved_by_account_id: 'admin.one@gym.example.test',
+        resolved_by_role: 'organization_admin',
+      },
+    });
+
+    beforeEach(() => {
+      mockList.mockResolvedValue([FILED_BY_STAFF]);
+      mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+      mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    });
+
+    test.each(['athlete', 'parent'] as const)('a %s receives the named family fields and no staff id or staff note', async (role) => {
+      mockRequirePrincipal.mockResolvedValue({ ...principal(role), athleteId: role === 'athlete' ? 'ath-mine' : null });
+
+      const text = await (await GET(getRequest())).text();
+
+      expect(JSON.parse(text).items).toEqual([{
+        research_requirement_id: 11,
+        source_event_name: 'SHADOW_INTAKE_CASE_APPROVED',
+        research_requirement: 'Strengthen coverage.',
+        knowledge_gap: 'No verified source.',
+        source_status: 'missing',
+        source_confidence_tier: 'INSUFFICIENT',
+        source_verification_state: 'unknown',
+        status: 'resolved',
+        created_at: '2026-08-25T00:00:00Z',
+        resolved_at: '2026-08-26T00:00:00Z',
+        is_mine: false,
+        metadata: { closing_note: 'Closed after the coach meeting.' },
+      }]);
+      expect(text).not.toContain('@');
+      expect(text).not.toContain('Reviewer note about the family.');
+    });
+
+    test('the member who filed a question about nobody is told it is theirs, without their id', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('volunteer'));
+      mockAccessibleAthleteIds.mockResolvedValue(new Set());
+      mockList.mockResolvedValue([requirement({ research_requirement_id: 14, created_by_account_id: 'acct-1', created_by_role: 'volunteer' })]);
+
+      const text = await (await GET(getRequest())).text();
+
+      expect(JSON.parse(text).items).toEqual([expect.objectContaining({ research_requirement_id: 14, is_mine: true })]);
+      expect(text).not.toContain('acct-1');
+    });
+
+    test.each(['coach', 'organization_admin', 'admin'] as const)('a %s receives the stored row whole', async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal(role));
+
+      const body = (await (await GET(getRequest())).json()) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items).toEqual([FILED_BY_STAFF]);
+    });
+  });
+
   test('a parent with no linked athletes reads nothing and never queries', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue([]);

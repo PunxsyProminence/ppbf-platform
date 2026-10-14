@@ -10,6 +10,7 @@ import {
 import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { researchRequirementsForReader } from '@/src/server/pilot/researchFamilyView';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   createShadowResearchRequirement,
@@ -234,7 +235,14 @@ async function handleList(request: NextRequest) {
     // filter then applies to every role uniformly, parents included.
     const scoped = await scopeToReachableSubjects(principal, items);
 
-    return NextResponse.json({ ok: true, organization_id: principal.organizationId, items: scoped });
+    // Which rows is settled above; this is what each row carries. Coaches
+    // and organization admins get the stored row, every other reader the
+    // named family fields (#1475 Part F, researchFamilyView.ts).
+    return NextResponse.json({
+      ok: true,
+      organization_id: principal.organizationId,
+      items: researchRequirementsForReader(principal, scoped),
+    });
   } catch (error) {
     return jsonError(error);
   }
