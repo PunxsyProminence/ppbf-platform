@@ -74,6 +74,11 @@ export async function POST(request: NextRequest) {
       entity_type: 'parent_barrier_report',
       entity_id: noteId,
       details: { athlete_id: body.athleteId, barrier_type: body.barrierType },
+      // Audited, not mirrored into the SHADOW feed (#1558 item two): the
+      // mirror is tied to the child, and it told the child and the other
+      // guardian that a parent had filed a barrier report, and when. The
+      // feed's own rule is the control; this is the backstop, as parent/consent.
+      shadow_mirror: false,
     });
 
     return NextResponse.json({ ok: true, note_id: noteId });

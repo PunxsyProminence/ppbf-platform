@@ -1076,3 +1076,83 @@ describe('a save from a screen that was loaded before someone else changed the r
       .toEqual({ status: 404, body: { error: 'Not found' } });
   });
 });
+
+/* --------------------------------- a start from a list that is out of date -- */
+
+describe('starting work against a protocol that was revised or retired since the list was loaded', () => {
+  const OTHER_ATHLETE_ID = 'ath-races-2';
+  const content = {
+    title: 'Jab recovery', target_problem: 'jab hand returns low', hypothesis: 'it is a habit',
+    intervention_description: 'cue on every jab', expected_outcome: 'hand returns to the cheek',
+    intended_task_context: '', contradicting_evidence: '', alternative_explanations: '', evaluation_plan: '',
+    intended_exposure: { rounds: 4 },
+  };
+  const start = (protocolId: unknown, athleteId = ATHLETE_ID) => answer(executionsRoute.POST(send('POST', EXECUTIONS, {
+    athlete_id: athleteId, protocol_id: protocolId,
+  })));
+  const patchProtocol = (body: Extra) => answer(protocolsRoute.PATCH(send('PATCH', PROTOCOLS, body)));
+  const file = async (athleteId: string) => {
+    const filed = await answer(protocolsRoute.POST(send('POST', PROTOCOLS, { ...content, athlete_id: athleteId })));
+    expect(filed.status).toBe(200);
+    return String(filed.body.item?.protocol_id);
+  };
+  const executionsStartedOn = async (protocolIds: string[]) => (await db.query<{ n: number }>(
+    `select count(*)::int as n from pilot.intervention_executions
+     where organization_id = $1 and protocol_id = any($2::text[])`,
+    [ORG_ID, protocolIds],
+  )).rows[0].n;
+
+  beforeAll(async () => {
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Races Teammate', '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+      [ORG_ID, OTHER_ATHLETE_ID, COACH_ID],
+    );
+  });
+
+  test('the coach is told to reload, and nothing is started; the current version starts as usual', async () => {
+    const firstId = await file(ATHLETE_ID);
+    const revised = await patchProtocol({ action: 'revise', protocol_id: firstId, ...content, hypothesis: 'it is fatigue' });
+    expect(revised.status).toBe(200);
+    const secondId = String(revised.body.item?.protocol_id);
+
+    // From a list that still offers version 1.
+    expectToldToReload(await start(firstId));
+
+    // The version the reloaded list offers starts.
+    const started = await start(secondId);
+    expect(started.status).toBe(200);
+    expect(started.body.item).toMatchObject({ protocol_id: secondId, protocol_version: 2 });
+
+    expect((await patchProtocol({ action: 'retire', protocol_id: secondId })).status).toBe(200);
+    // From a list that still offers the protocol, now retired.
+    expectToldToReload(await start(secondId));
+
+    // One execution, the one answered 200; one audit row for it and none for the refusals.
+    expect(await executionsStartedOn([firstId, secondId])).toBe(1);
+    expect(await auditCount('intervention_execution', [String(started.body.item?.execution_id)])).toBe(1);
+    const startAudits = await db.query<{ n: number }>(
+      `select count(*)::int as n from pilot.audit_events
+       where organization_id = $1 and entity_type = 'intervention_execution'
+         and details->>'protocol_id' = any($2::text[])`,
+      [ORG_ID, [firstId, secondId]],
+    );
+    expect(startAudits.rows[0].n).toBe(1);
+  });
+
+  test('a protocol that is not there, or belongs to another athlete, is still Not found, retired or not', async () => {
+    const theirs = await file(OTHER_ATHLETE_ID);
+
+    expect(await start('no-such-protocol')).toEqual({ status: 404, body: { error: 'Not found' } });
+    // Active, but scoped to the other athlete.
+    expect(await start(theirs)).toEqual({ status: 404, body: { error: 'Not found' } });
+    // Retired, and still scoped to the other athlete: the reason is not given.
+    expect((await patchProtocol({ action: 'retire', protocol_id: theirs })).status).toBe(200);
+    expect(await start(theirs)).toEqual({ status: 404, body: { error: 'Not found' } });
+    // For the athlete it IS scoped to, the same retired protocol is told.
+    expectToldToReload(await start(theirs, OTHER_ATHLETE_ID));
+
+    expect(await executionsStartedOn([theirs])).toBe(0);
+  });
+});

@@ -171,7 +171,7 @@ describe('coach session scripts page', () => {
 
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText(/No session scripts yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No session scripts in the list/i)).toBeInTheDocument();
   });
 
   it('distinguishes a failed load from an empty set of scripts', async () => {
@@ -541,7 +541,7 @@ describe('a plain session', () => {
     });
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText('No session scripts yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
     const start = await screen.findByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
@@ -644,7 +644,7 @@ describe('a coach-made plan', () => {
     routedFetch({ scripts: () => jsonResponse({ scripts: [] }) });
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText('No session scripts yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Workout templates' })).toHaveAttribute('href', '/coach/workout-templates');
   });
 
@@ -823,5 +823,276 @@ describe('a coach-made plan', () => {
     expect(await screen.findByText('Arrival and wraps')).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: 'Edit plan' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RETIRING A PLAN, AND BRINGING ONE BACK (lane L1, item H). A retired plan is
+// kept and left out of the list; nothing is deleted.
+// ---------------------------------------------------------------------------
+describe('retiring a plan', () => {
+  const READ_AT = '2026-10-13T15:00:00.000Z';
+  const stored = (overrides: Record<string, unknown> = {}) => detail({ version: 1, updated_at: READ_AT, ...overrides });
+
+  /** The page's reads plus the PATCH; `opened` is what the detail read returns. */
+  function retireFetch(patch: (body: Record<string, unknown>) => Response | Promise<Response>, opened = stored()) {
+    const patches: Array<Record<string, unknown>> = [];
+    const fetchMock = mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        return patch(body) as Response;
+      }
+      return url.includes('script_id=') ? jsonResponse({ script: opened }) : jsonResponse({ scripts: [FRIDAY] });
+    });
+    const listUrls = () => fetchMock.mock.calls
+      .filter((call) => (call[1]?.method ?? 'GET') === 'GET')
+      .map((call) => String(call[0]))
+      .filter((url) => url === '/api/pilot/session-scripts' || url.startsWith('/api/pilot/session-scripts?include_retired'));
+    return { patches, listUrls };
+  }
+
+  async function openPlan() {
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+    await screen.findByText('Arrival and wraps');
+  }
+
+  const refusal = (status: number, body: unknown) => ({ ok: false, status, json: async () => body }) as Response;
+
+  it('Retire this plan sends the plan and the state it was read in, closes it, and says it is kept', async () => {
+    const { patches, listUrls } = retireFetch(() => jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
+    await openPlan();
+    expect(listUrls()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+
+    // Announced, and true whether or not retired plans are being shown.
+    expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is retired. It is kept, and is left out of the list unless retired plans are shown.');
+    expect(patches).toEqual([{ script_id: 'scr-friday', expected_updated_at: READ_AT, retired: true }]);
+    // The plan on screen was the one from before, so it is closed; the list is read again.
+    expect(screen.queryByText('Arrival and wraps')).toBeNull();
+    await waitFor(() => expect(listUrls()).toHaveLength(2));
+  });
+
+  it('Show retired plans reads the list again with retired ones, and Hide reads it without', async () => {
+    const { listUrls } = retireFetch(() => jsonResponse({}));
+    render(<CoachSessionScriptsPage />);
+    await screen.findByText('Friday sparring');
+    // The label says what pressing it does; there is no pressed state on top of a label that flips.
+    const toggle = screen.getByRole('button', { name: 'Show retired plans' });
+    expect(toggle).not.toHaveAttribute('aria-pressed');
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(listUrls()).toEqual([
+      '/api/pilot/session-scripts',
+      '/api/pilot/session-scripts?include_retired=true',
+    ]));
+    const hide = screen.getByRole('button', { name: 'Hide retired plans' });
+
+    fireEvent.click(hide);
+
+    await waitFor(() => expect(listUrls()).toHaveLength(3));
+    expect(listUrls()[2]).toBe('/api/pilot/session-scripts');
+  });
+
+  it('a retired plan can be read and offers one thing, bringing it back; Start and Edit return with it', async () => {
+    const { patches } = retireFetch(
+      () => jsonResponse({ outcome: 'brought_back', script: stored({ authoring_state: 'coach_reviewed', updated_at: '2026-10-13T16:00:00.000Z' }) }),
+      stored({ authoring_state: 'retired' }),
+    );
+    await openPlan();
+
+    expect(screen.getByText('This plan is retired. It is kept, and is left out of the list unless retired plans are shown.')).toBeInTheDocument();
+    // No control whose answer could only be "not while retired".
+    expect(screen.queryByRole('button', { name: 'Start live delivery' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit minutes and titles' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retire this plan' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bring this plan back' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('This plan is back in the list.');
+    expect(patches).toEqual([{ script_id: 'scr-friday', expected_updated_at: READ_AT, retired: false }]);
+    expect(screen.getByRole('button', { name: 'Start live delivery' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Bring this plan back' })).toBeNull();
+    // The plan stays open on what the server answered.
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+  });
+
+  it.each([
+    [409, { error: 'SESSION_SCRIPT_CHANGED' }, /This plan was saved after you opened it, so it was not changed/],
+    [409, { error: 'SESSION_SCRIPT_SUPERSEDED' }, /replaced by a newer version, so it was not changed/],
+    [403, { error: 'Forbidden: role not allowed' }, /Your account may not retire session scripts, so the plan was not changed/],
+    [400, { error: 'retired' }, /The server refused, so the plan was not changed/],
+  ])('a refusal (%i %j) says the plan was not changed, in a plain sentence, and leaves it open', async (status, body, sentence) => {
+    retireFetch(() => refusal(status, body));
+    await openPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(sentence);
+    // An ordinary message: --locked is the medical stop and nothing else.
+    expect(alert.className).not.toMatch(/locked/);
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retire this plan' })).not.toBeDisabled());
+  });
+
+  it('no answer, a server fault or a rate limit is "not known": never "was not changed"', async () => {
+    const handlers = [
+      () => { throw new Error('offline'); },
+      () => refusal(500, { error: 'boom' }),
+      () => refusal(429, { error: 'Too many requests' }),
+    ];
+    for (const handler of handlers) {
+      retireFetch(handler);
+      const view = render(<CoachSessionScriptsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+      await screen.findByText('Arrival and wraps');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/it is not known whether the plan was changed/);
+      expect(alert).not.toHaveTextContent(/was not changed/);
+      view.unmount();
+    }
+  });
+
+  it('a double tap retires once, and no other plan can be opened or session started until it answers', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const { patches } = retireFetch(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    await openPlan();
+    const plain = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(plain).not.toBeDisabled());
+    const retire = screen.getByRole('button', { name: 'Retire this plan' });
+
+    await act(async () => {
+      fireEvent.click(retire);
+      fireEvent.click(retire);
+    });
+
+    expect(patches).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Showing plan' })).toBeDisabled();
+    expect(plain).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Show retired plans' })).toBeDisabled();
+    // Nor on this plan: a session must not go live on a plan while it is being retired,
+    // and an editor opened now would be taken away with whatever was typed.
+    expect(screen.getByRole('button', { name: 'Start live delivery' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeDisabled();
+
+    await act(async () => {
+      finish?.(jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
+    });
+    expect(await screen.findByText(/Friday sparring is retired\. It is kept,/)).toBeInTheDocument();
+    await waitFor(() => expect(plain).not.toBeDisabled());
+  });
+
+  it('an empty list says "none yet" only when retired plans are being shown too', async () => {
+    const urls: string[] = [];
+    mockFetch((url) => {
+      urls.push(url);
+      if (url.includes('/api/pilot/session-scripts/runs')) return jsonResponse({ run: null });
+      return jsonResponse({ scripts: [] });
+    });
+    render(<CoachSessionScriptsPage />);
+
+    // Every plan may be retired: the list is empty, which is not the same as there being none.
+    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+    expect(screen.getByText('Retired plans are kept and are not shown here. Show retired plans lists them.')).toBeInTheDocument();
+    expect(screen.queryByText('No session scripts yet.')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show retired plans' }));
+
+    expect(await screen.findByText('No session scripts yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/Retired plans are kept and are not shown here/)).toBeNull();
+    expect(urls).toContain('/api/pilot/session-scripts?include_retired=true');
+  });
+
+  it('retired, then shown, opened and brought back: the "is retired" notice does not outlive the plan coming back', async () => {
+    let state = 'coach_reviewed';
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') {
+        state = (JSON.parse(String(init.body)) as { retired: boolean }).retired ? 'retired' : 'coach_reviewed';
+        return jsonResponse({ outcome: state === 'retired' ? 'retired' : 'brought_back', script: stored({ authoring_state: state }) });
+      }
+      if (url.includes('script_id=')) return jsonResponse({ script: stored({ authoring_state: state }) });
+      // Retired plans are listed only when asked for.
+      const shown = state !== 'retired' || url.includes('include_retired=true');
+      return jsonResponse({ scripts: shown ? [{ ...FRIDAY, authoring_state: state }] : [] });
+    });
+    await openPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is retired. It is kept, and is left out of the list unless retired plans are shown.');
+    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show retired plans' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+    await screen.findByRole('button', { name: 'Bring this plan back' });
+    // Opening the plan takes the notice about it down: the plan now says its own state.
+    expect(screen.queryByRole('status')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bring this plan back' }));
+
+    const notices = await screen.findAllByRole('status');
+    expect(notices.map((notice) => notice.textContent)).toEqual(['This plan is back in the list.']);
+    expect(screen.queryByText(/is retired/)).toBeNull();
+  });
+
+  it('opening a plan drops the refusal of the last one', async () => {
+    retireFetch(() => refusal(409, { error: 'SESSION_SCRIPT_CHANGED' }));
+    await openPlan();
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Showing plan' })).not.toBeDisabled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Showing plan' }));
+
+    await screen.findByText('Arrival and wraps');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+// The medical-stop colour (--locked) means a medical stop and nothing else
+// (AGENT_KERNEL.md, OD-2026-09-29-001). Nothing on this page is one.
+describe('ordinary errors on this page', () => {
+  it('a failed load, a failed live-run check and a failed start are plain boxed alerts, not the medical-stop colour', async () => {
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        if (init?.method === 'POST') return jsonResponse({ error: 'boom' }, false);
+        return jsonResponse({ run: null });
+      }
+      return jsonResponse({ error: 'boom' }, false);
+    });
+    render(<CoachSessionScriptsPage />);
+
+    const loadError = await screen.findByText('The session scripts could not be loaded.');
+    expect(loadError.className).not.toMatch(/locked/);
+    expect(loadError.parentElement?.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
+
+    const start = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    const startError = await screen.findByRole('alert');
+    expect(startError.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
+    expect(startError.className).not.toMatch(/locked/);
+  });
+
+  it('no part of the page or its editor names the medical-stop token', () => {
+    // A source check on purpose: it covers the alerts no case here renders.
+    const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+    const path = jest.requireActual('node:path') as typeof import('node:path');
+    for (const file of ['page.tsx', 'SessionScriptEditor.tsx']) {
+      expect(fs.readFileSync(path.join(__dirname, file), 'utf8')).not.toMatch(/var\(--locked/);
+    }
   });
 });

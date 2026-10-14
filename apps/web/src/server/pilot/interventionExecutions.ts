@@ -125,7 +125,9 @@ export interface ExecutionFactsInput {
 /** Starts an execution against an ACTIVE protocol head, snapshotting the
  * protocol's intended exposure and task context as the plan. The decision
  * link, when given, must belong to the same org AND athlete -- anything
- * else is a hidden not-found, indistinguishable from nonexistence. */
+ * else is a hidden not-found, indistinguishable from nonexistence. A
+ * protocol the athlete could use that is no longer the active version is the
+ * one refusal that says why (see below). */
 export async function startExecution(input: {
   organizationId: string;
   athleteId: string;
@@ -144,9 +146,15 @@ export async function startExecution(input: {
   if (!athlete) return null;
 
   const protocol = await getProtocol(input.organizationId, input.protocolId);
-  if (!protocol || protocol.status !== 'active') return null;
+  if (!protocol) return null;
   // A protocol designed for one athlete never silently applies to another.
   if (protocol.athlete_id && protocol.athlete_id !== input.athleteId) return null;
+  // Revised or retired since the coach's list was loaded: told so, with the
+  // sentence every other out-of-date save gets, instead of "Not found". Asked
+  // only AFTER the two checks above, so it is said only of a protocol this
+  // athlete's coach could already read -- one that is not there, or is
+  // another athlete's, stays indistinguishable from nothing.
+  if (protocol.status !== 'active') throw recordChanged();
 
   if (input.decisionId) {
     const decision = await queryOne<{ decision_id: string }>(

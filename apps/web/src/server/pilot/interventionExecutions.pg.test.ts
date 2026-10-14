@@ -519,12 +519,13 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         [ORG_ID, OTHER_LOCAL_ATHLETE, ADMIN_ID],
       );
 
+      // Retired since the coach's list was loaded: refused with the reason.
       await expect(startExecution({
         organizationId: ORG_ID,
         athleteId: ATHLETE_ID,
         protocolId: 'proto-retired',
         recordedByAccountId: ADMIN_ID,
-      })).resolves.toBeNull();
+      })).rejects.toThrow(RECORD_CHANGED_MESSAGE);
 
       await expect(startExecution({
         organizationId: ORG_ID,
@@ -532,6 +533,50 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         protocolId: 'proto-scoped',
         recordedByAccountId: ADMIN_ID,
       })).resolves.toBeNull();
+
+      // Another athlete's protocol stays a quiet null even once it is retired:
+      // the reason is given only for a protocol this athlete could use.
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, athlete_id, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, status, created_by_account_id)
+         values ($1, 'proto-scoped-retired', 'proto-scoped-retired', 1, $2, 'Scoped, retired', 'x', 'x', 'x', 'x', 'retired', $3)`,
+        [ORG_ID, OTHER_LOCAL_ATHLETE, ADMIN_ID],
+      );
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-scoped-retired',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+      // So does a protocol that is not there at all.
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'no-such-protocol',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+      // And one that is retired in ANOTHER gym: the lookup never leaves this
+      // gym, so it is nothing here, not "changed".
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, status, created_by_account_id)
+         values ($1, 'proto-elsewhere-retired', 'proto-elsewhere-retired', 1, 'Elsewhere block', 'x', 'x', 'x', 'x', 'retired', $2)`,
+        [OTHER_ORG_ID, OTHER_ADMIN_ID],
+      );
+      await expect(startExecution({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        protocolId: 'proto-elsewhere-retired',
+        recordedByAccountId: ADMIN_ID,
+      })).resolves.toBeNull();
+      // None of the refusals above started anything.
+      const started = await client.query(
+        `select count(*)::int as n from pilot.intervention_executions where organization_id = $1`,
+        [ORG_ID],
+      );
+      expect(started.rows[0].n).toBe(0);
 
       // The athlete it IS scoped to may still use it.
       await expect(startExecution({

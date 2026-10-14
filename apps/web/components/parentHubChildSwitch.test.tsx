@@ -597,11 +597,15 @@ describe('Messages tab (#90)', () => {
     expect(screen.getByText(/your messages have not loaded/i)).toBeDefined();
   });
 
-  test('replying stays disabled -- one-directional only', async () => {
+  // Replies are built (#1542, FC-03): the old disabled "Send Message
+  // (unavailable)" block is gone, and an empty inbox offers no reply box.
+  test('the disabled placeholder reply block is gone', async () => {
     installFetch();
     await openMessages();
 
-    expect(screen.getByRole('button', { name: 'Send Message (unavailable)' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Send Message (unavailable)' })).toBeNull();
+    expect(screen.queryByText('Reply to Coach')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send reply' })).toBeNull();
   });
 });
 

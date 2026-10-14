@@ -1,5 +1,6 @@
 'use client';
 
+import { formatGymDateShort } from '@/src/lib/gymTime';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
@@ -13,12 +14,16 @@ import { RECOGNITION_KINDS } from '@/src/shared/achievementPaths';
 //   MET a standard  -> a recognition, in the athlete's own record, in the
 //                      gym's own words.
 //   A CONCERN       -> the safeguarding queue, where an org admin sees it
-//                      and it is acknowledged and resolved. It is never
-//                      written into a behavior log, because no such log
-//                      exists.
+//                      and it is acknowledged and resolved. It is not
+//                      written into the notes list below.
 //
-// The page says that out loud rather than leaving a coach to guess where a
-// concern goes.
+//   A NOTE          -> a coach's Behavior & Habit Note from the Decision
+//                      Loop. Listed at the bottom of the page for coaches and
+//                      the organization admin of this gym only (F-070,
+//                      OD-2026-10-10-003 items 3 and 4): no athlete or
+//                      parent sees it.
+//
+// The page says where each goes rather than leaving a coach to guess.
 
 interface StandardRow {
   standard_id: string;
@@ -31,6 +36,14 @@ interface StandardRow {
 interface AthleteOption {
   athlete_id: string;
   full_name: string;
+}
+
+interface BehaviourNote {
+  note_id: string;
+  athlete_id: string;
+  athlete_name: string | null;
+  note_text: string;
+  created_at: string;
 }
 
 const SEVERITIES = ['low', 'moderate', 'high', 'critical'] as const;
@@ -48,6 +61,11 @@ export default function BehaviorStandardsPage() {
      form validation: an empty list after a failed read must not claim that
      no standards are posted. */
   const [standardsUnreadable, setStandardsUnreadable] = useState(false);
+  /* The notes list reads on its own: a failed read says so rather than
+     claiming there are no notes. null = still loading. */
+  const [notes, setNotes] = useState<BehaviourNote[] | null>(null);
+  const [notesUnreadable, setNotesUnreadable] = useState(false);
+  const [notesTruncated, setNotesTruncated] = useState(false);
 
   const [recognizeForm, setRecognizeForm] = useState({ standard_id: '', athlete_id: '', note: '' });
   const [concernForm, setConcernForm] = useState({ athlete_id: '', reason: '', severity: 'moderate' });
@@ -97,6 +115,28 @@ export default function BehaviorStandardsPage() {
     })();
     return () => controller.abort();
   }, [reload]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/behavior-notes`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Unable to load notes.');
+        const payload = (await response.json()) as { items?: BehaviourNote[]; truncated?: boolean };
+        if (!controller.signal.aborted) {
+          setNotes(payload.items ?? []);
+          setNotesTruncated(payload.truncated === true);
+          setNotesUnreadable(false);
+        }
+      } catch {
+        if (!controller.signal.aborted) setNotesUnreadable(true);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
 
   const send = async (body: Record<string, unknown>, failure: string) => {
     if (inFlight.current) return null;
@@ -186,8 +226,9 @@ export default function BehaviorStandardsPage() {
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               What this gym expects, and the two things you can do about it. Meeting a standard
               becomes a recognition in the athlete&rsquo;s own record. A concern goes to the
-              safeguarding queue to be handled — there is no behaviour log here, and nothing about
-              a young person gets written down that nobody is going to act on.
+              safeguarding queue to be handled. A Behavior &amp; Habit Note you log from the
+              Decision Loop is listed at the bottom of this page, for coaches and the
+              organization admin only. Athletes and parents do not see it.
             </p>
           </header>
 
@@ -363,6 +404,41 @@ export default function BehaviorStandardsPage() {
               </section>
             </OrgAdminOnly>
           )}
+
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]" data-testid="behaviour-notes">
+            <h2 className="t-label mb-[var(--s3)]">Behavior &amp; Habit Notes</h2>
+            {notesUnreadable ? (
+              <p className="t-body" data-testid="behaviour-notes-unreadable">
+                The notes could not be read, so this page cannot say whether any are saved. Reload to try again.
+              </p>
+            ) : notes === null ? (
+              <p className="t-body">Loading notes...</p>
+            ) : notes.length === 0 ? (
+              <p className="t-body">No notes saved yet. Log one from the Decision Loop.</p>
+            ) : (
+              <>
+              {notesTruncated && (
+                <p className="t-body mb-[var(--s3)]" data-testid="behaviour-notes-truncated">
+                  Showing the newest {notes.length} notes. Older notes are kept and are not listed here.
+                </p>
+              )}
+              <ul className="space-y-[var(--s3)]">
+                {notes.map((note) => (
+                  <li key={note.note_id}>
+                    <p className="t-body">
+                      <span className="font-semibold text-[color:var(--bone-100)]">
+                        {note.athlete_name ?? note.athlete_id}
+                      </span>
+                      {' '}
+                      <span className="t-muted">{formatGymDateShort(note.created_at) ?? note.created_at}</span>
+                    </p>
+                    <p className="t-body whitespace-pre-wrap">{note.note_text}</p>
+                  </li>
+                ))}
+              </ul>
+              </>
+            )}
+          </section>
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>

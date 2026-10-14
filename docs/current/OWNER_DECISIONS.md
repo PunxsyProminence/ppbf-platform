@@ -164,6 +164,266 @@ and should not try to.
 
 ---
 
+## OD-2026-10-13-016 -- Overwatch's applications of existing rulings, NOT new rulings of Jason's: F-067 B, Q-4 and Q-5 closed without asking him
+
+**Provenance: DERIVED, not his words.** Overwatch applied rulings already recorded here; he did not answer these three questions. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; its report to him at line 501, 2026-10-14T00:42:07.629Z) and the running log `OVERWATCH-HANDOVER-2026-10-13.md` (REPORTED). Read by script (records pass, 2026-10-14). The id carries 2026-10-13 because the UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-013 (the rule that a ruling covers every case its words reach).
+
+**Overwatch, as written** (line 501): "Three of my questions were already answered by your earlier rulings, so they are withdrawn with nothing changed: Q-4 and Q-5 (your "real events unchanged") and F-067 B (your attendance precedence ruling). Nothing is open with you now except the approval click on run 38491163580."
+
+**What was closed, and under what:**
+
+- **F-067 B** (the question whether a coach's present-mark counts as attendance in reports; REPORTED, handover 00:16 UTC) is closed under CT-13, `docs/current/ATTENDANCE_PRECEDENCE.md` (OBSERVED, file exists on main), which already names what counts; a run-presence mark does not (REPORTED, handover 00:50 UTC).
+- **Q-4 and Q-5** (REPORTED, handover 00:50 UTC: staff real events, and a child's own Library claim line, in a family's feed) are closed under his Q-1 answer, "A", recorded as OD-2026-10-13-009: athletes and parents read no mirrored audit rows and real events stay unchanged.
+
+**Not ruled here:** nothing new. If he disagrees with any of the three readings, his words on OD-2026-10-13-009 and the attendance precedence file govern.
+
+**Status:** REPORTED. Lanes L1 and L4 were told (handover 00:50 UTC). Nothing in the code changed because of this entry.
+
+---
+
+## OD-2026-10-13-015 -- "You need to ope the stuff the old over watch had in it in app browser"
+
+**Provenance: PRIMARY.** One typed message from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his message at line 935, 2026-10-14T01:08:01.053Z). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept. The id carries 2026-10-13 because the UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**Typed** (line 935): *"You need to ope the stuff the old over watch had in it in app browser"*
+
+**Ruling (overwatch's reading; his words name no list):** the new Overwatch opens, in the app's built-in browser pane, the pages the old Overwatch had open.
+
+**Not ruled here:** which pages.
+
+**Acted on (REPORTED, handover 02:12 UTC entry):** the new Overwatch opened in the pane the platform's `/admin` page (lands on the sign-in screen; the organization admin sign-in did not carry over), the GitHub page of production run 38491163580 (signed in; "Review deployments" present, not clicked), and the cloud-lanes page (signed in). It did not open the ChatGPT page (relay work, archived).
+
+**Status:** done as reported; the production run was still waiting for his approval click at the last `gh` read (OBSERVED, 2026-10-14T01:40Z).
+
+---
+
+## OD-2026-10-13-014 -- Start the lanes and audit chips that are needed: "Start any chips you need"; "start the chips"
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-14). Both quoted exactly. The first arrived mid-turn and was absorbed into the running turn (queue operations at lines 639 and 644). The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-004 and -005.
+
+**Typed** (line 639, 2026-10-14T00:51:56.227Z; absorbed at line 644, 00:51:57.923Z): *"Start any chips you need"*
+
+**Typed** (line 789, 2026-10-14T01:01:19.484Z), delivered in the same message that told the session he had started its proposal card for the organization-admin live audit: *"start the chips"*
+
+**Ruling (overwatch's reading; his words name no list):** Overwatch proposes every lane and audit chip it judges needed, and he taps each. Overwatch's report at the time lists L5 (coach-floor fixes), L6 (research reads for families, high tier), L7 (research item, role-only Help, behaviour notes staff-only) and an organization-admin live audit.
+
+**Acted on:** the session list shows lane L5 (`local_de63fd50-6f9d-4639-9076-0c28eef923a4`), L6 (`local_36bd4120-7b60-45a3-9fb5-1a550136586c`), L7 (`local_5e66bcad-cc7e-4e5e-b211-e29d5a5490e2`) and the org-admin audit (`local_e5d71422-9759-4bc7-a981-e6f3a8fa3fcd`) running, started by the new Overwatch (OBSERVED, linked-session note). The handover (REPORTED, 01:35 UTC entry) records that the app refuses a session start from Overwatch even on his own message, so every chip needs his tap; two more cards (this records lane and a lane L8, audit leftovers) were tapped after that.
+
+**Status:** done as reported.
+
+---
+
+## OD-2026-10-13-013 -- Asked once, ruled once: "Why does it feel like I keep getting the same questions asked over and over again"; "No ive have answered  the same questions multiple times usually when I go against your recommendation "; "Add it"
+
+**Provenance: PRIMARY.** Three typed messages from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-14). Typed messages are quoted exactly, spelling and spacing kept (the second ends in a space and has a double space after "answered"); overwatch's words are quoted as it wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**Typed** (line 371, 2026-10-14T00:36:01.439Z): *"Why does it feel like I keep getting the same questions asked over and over again"*
+
+**Typed** (line 460, 2026-10-14T00:40:39.152Z): *"No ive have answered  the same questions multiple times usually when I go against your recommendation "*
+
+**Overwatch, as written** (line 501, 2026-10-14T00:42:07.629Z), after reading the old Overwatch transcript (60 question cards, 2026-10-01 to 2026-10-13): "You are right, and the record shows it." It listed three cases (the SHADOW filters ruling of 2026-10-11 "B: Relax for everyone", followed by three more cards on the same subject; workout templates and drills; coach reach) and proposed: "1. A ruling covers every case its words or plain principle reach. I apply it and tell you in one line; I do not ask. 2. If you pick against my recommendation, I state the cost once, in that same exchange, then build what you chose. 3. A question is asked once." It ended: "say "add it" if you want it in `ppbf-workspace.md`."
+
+**Typed** (line 527, 2026-10-14T00:48:28.839Z; absorbed mid-turn, queue operation at line 532, 00:48:39.299Z): *"Add it"*
+
+**Ruling:** "Add it" puts the working rule above, in the form overwatch proposed, into `ppbf-workspace.md`. Overwatch and lanes apply a standing ruling to every case its words or plain principle reach, tell him in one line, and do not ask again; when he picks against the recommendation the cost is stated once in that exchange and what he chose is built; an open question is asked once and not re-listed.
+
+**Acted on:** the rule is in `~/.claude/rules/ppbf-workspace.md` as "ASKED ONCE, RULED ONCE (Jason 2026-10-14 UTC: ..." (OBSERVED, line 45 of that file); the handover (REPORTED, 00:58 UTC entry) says both rule-file copies (`.claude` and `.claude-admin`) are identical by sha256. The lanes were told (REPORTED). Questions withdrawn under it with nothing changed are in OD-2026-10-13-016.
+
+**Status:** done; a user-level rules file, not a repository file.
+
+---
+
+## OD-2026-10-13-012 -- Danielle's HIIT and "hiit fit": "A A" (answers to H-1 and H-2)
+
+**Provenance: PRIMARY.** One typed message from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; overwatch's two questions at line 289, 2026-10-14T00:20:24.165Z; his message at line 293, 2026-10-14T00:21:25.620Z). Read by script (records pass, 2026-10-14). His message is quoted exactly; overwatch's questions are quoted as it wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-011.
+
+**Overwatch, as written** (line 289): "**Official, H-1:** "Danielle's HIIT Fit" exists today as its own organization on the platform desk. What does "a program in the gym" mean for that record? - **A (recommended): Make it a program under Punxsy Prominence** (`punxsy_prominence`), and close the separate "Danielle's HIIT Fit" organization once nothing is left in it. - **B: Leave the organization as it is** and treat "program" as a label only. ... **Official, H-2:** The other record, "hiit fit": close, hold, or keep? - **A (recommended): Close it**, if it is an empty duplicate (I check its contents read-only first and tell you what is in it before anything is closed). - **B: Keep it** as is." Jason typed (line 293): *"A A"*
+
+**Ruling (overwatch's reading, told to him in its reply; his words give no per-question labels):** H-1 A and H-2 A. Danielle's HIIT becomes a program under Punxsy Prominence (`punxsy_prominence`) and the separate organization is closed once nothing is left in it; "hiit fit" is closed if it is an empty duplicate, its contents read and shown to him first.
+
+**Not ruled here:** closing anything that holds data. Both closings wait on the read-only look and his sight of the contents.
+
+**Acted on (REPORTED, handover 00:21 and 01:50 UTC entries):** nothing has been changed. The platform-owner and athlete test windows were signed out, so the two records were not read; the next step is a read-only look on the platform desk, then a lane for the program move.
+
+**Status:** OPEN, not acted on.
+
+---
+
+## OD-2026-10-13-011 -- Danielle's HIIT stays as a program in the gym: "Keep Danielle's HIIt as a programs in the gym  should I archive you now"
+
+**Provenance: PRIMARY.** One typed message from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; his message at line 40878, 2026-10-14T00:19:59.789Z; the old Overwatch's reply at line 40893, 2026-10-14T00:20:14.053Z). Read by script (records pass, 2026-10-14). His message is quoted exactly, spacing kept (two spaces before "should"); the reply is quoted as written. The id carries 2026-10-13 because this UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**The open question, as written** by the old Overwatch (line 38812, 2026-10-13T17:02:56.933Z): ""hiit fit" and "Danielle's HIIT Fit" on the platform desk: test gyms to close, or real?" (An earlier answer, "No keep this open", is OD-2026-10-12-015.) Jason typed (line 40878): *"Keep Danielle's HIIt as a programs in the gym  should I archive you now"*
+
+**Reply, as written** (line 40893): "Yes, archive me now ... Your words don't settle two points, so I told it to ask you before touching either record: - What happens to the other record, "hiit fit". - Whether "a program in the gym" means moving Danielle's HIIT under the main gym, rather than keeping it as its own gym."
+
+**Ruling (overwatch's reading):** Danielle's HIIT is a real program of the gym and is not closed as a test gym. The second half of his message, "should I archive you now", asked the old Overwatch about its own session and is not a ruling on the platform.
+
+**Not ruled here:** what happens to "hiit fit" and what "a program in the gym" means for the record. OD-2026-10-13-012 settles both.
+
+**Acted on:** the old Overwatch passed his exact words to the new Overwatch by session message (line 40893); the new Overwatch logged them as REPORTED, "not seen by this session" (handover 00:20 UTC entry). No record was touched.
+
+**Status:** settled by OD-2026-10-13-012.
+
+---
+
+## OD-2026-10-13-010 -- Check the lanes and archive the ones whose scope is met: "Check lames"; "And before we do the overwatch card check lanes"; "If scope is met archive them"
+
+**Provenance: PRIMARY.** Three typed messages from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept. The third arrived mid-turn and was absorbed into the running turn (queue operations at lines 40594 and 40598). The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+**Typed** (line 40540, 2026-10-14T00:03:44.729Z): *"Check lames"*
+
+**Typed** (line 40581, 2026-10-14T00:05:45.558Z): *"And before we do the overwatch card check lanes"*
+
+**Typed** (line 40594, 2026-10-14T00:06:03.429Z; absorbed at line 40598, 00:06:05.774Z): *"If scope is met archive them"*
+
+**Ruling:** before the new Overwatch starts, every lane is checked against its scope, and a lane whose scope is met is archived. Overwatch read "Check lames" as "check lanes" (line 40556).
+
+**Acted on (REPORTED, handover 00:10 UTC entry; the session list is OBSERVED):** the parent live-audit session and the relay session were archived as scope met; lanes L1, L2, L3 and L4 and the coach audit stayed open; lane L3 was archived at about 00:39 UTC on these words after its five PRs merged and its worktrees were removed (new Overwatch, handover 00:39 UTC entry). The parent audit was unarchived later for the privacy re-test (handover 01:06 UTC entry).
+
+**Status:** done as reported.
+
+---
+
+## OD-2026-10-13-009 -- Families read no system log lines about the child in their feed: "Explaim", then "Explain in lay,mandarin terms", then "A" (SHADOW feed; lane L4 item two, PR #1573)
+
+**Provenance: PRIMARY.** One question on a three-question card, then two typed messages, in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 40381, 2026-10-13T20:40:59.828Z; answered at line 40383, 2026-10-13T23:49:42.914Z; his messages at lines 40524, 2026-10-14T00:03:31.947Z, and 40560, 2026-10-14T00:05:26.852Z). Read by script (records pass, 2026-10-14). The answers and typed messages are quoted exactly, spelling kept; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**The card, question "Family feed".** Overwatch, as written: "SHADOW feed, system log lines: which mirrored audit rows may an athlete or parent read? Today their feed includes raw log lines about the child, and that is how one parent filing a barrier report or an observation shows up (event name and time, no text) for the child and for the other parent. (Plain: should families see system log lines about the child at all?)" Options as written: "A: None (Recommended)": "Athletes and parents get no system log lines. Real events about the child (pain report, results) stay. Nothing a parent files can show up for the other parent or the child."; "B: A short safe list": "Keep a few of the child's own training records in the feed (goal, session, milestone, recognition) and hide everything else."; "C: Hide only named ones": "Keep most log lines and hide the guardian and account ones we know about. Anything new leaks until someone notices." Jason: *"Explaim"* (a request to explain, not an option).
+
+**Typed** (line 40524): *"Explain in lay,mandarin terms"*
+
+**Overwatch, as written** (line 40537, 2026-10-14T00:03:44.313Z): "I read that as "layman's terms". If you actually meant Mandarin Chinese, say so and I'll redo it." It then explained the log lines as the app's own diary and repeated options A, B and C, ending "Tell me A, B or C."
+
+**Typed** (line 40560): *"A"*
+
+**Ruling:** option A. Athletes and parents read no mirrored audit rows; real events about the child stay; staff are unchanged. The first two messages were requests for an explanation and are not rulings. Overwatch's reading of "Explain in lay,mandarin terms" as plain-English terms was not corrected by him.
+
+**Acted on:** sent to lane L4 as its item two Q-1 (REPORTED, handover 00:05 UTC entry). PR #1573, "L4 (#1558) item two: what a guardian did does not reach the other guardian's SHADOW feed or the child's", is open (OBSERVED, `gh`, 2026-10-14T01:40Z). The new Overwatch read its diff and found `FAMILY_ALLOWED_AUDIT_ENTITY_TYPES` empty (REPORTED, handover 02:20 UTC entry). The PR also carries one more rule, that a row authored by a parent goes only to its author, which is OD-2026-10-12-024's principle.
+
+**Status:** built, not merged, not live.
+
+---
+
+## OD-2026-10-13-008 -- Intake saves in a family's feed: "B: Hide all of them (Recommended)"
+
+**Provenance: PRIMARY.** One question on a three-question card in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 40381, 2026-10-13T20:40:59.828Z; answered at line 40383, 2026-10-13T23:49:42.914Z). Read by script (records pass, 2026-10-14). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**The card, question "Intake lines".** Overwatch, as written: "Intake saves in a family's feed: when staff save part of a child's intake record, the family's feed gets a line saying which kind of record was saved and when. What should a family see? (Plain: do families need to see that the office edited the intake record?)" Options as written: "B: Hide all of them (Recommended)": "No intake-save lines in an athlete's or parent's feed. Staff still see them."; "A: Hide guardian saves only": "Hide only "a guardian record was saved"; the rest still show to the family.". Jason: *"B: Hide all of them (Recommended)"*
+
+**Ruling:** no intake-save lines appear in an athlete's or parent's feed. Staff still see them. Option A (hide guardian saves only) was not chosen.
+
+**Acted on:** passed to lane L4 as Q-2 (REPORTED, handover 23:55 UTC and 00:05 UTC entries). PR #1573 hides the `SHADOW_INTAKE_DOMAIN_UPSERTED` event and its metric from athletes and parents (REPORTED, handover 02:20 UTC entry; the PR is open, OBSERVED, `gh`, 2026-10-14T01:40Z).
+
+**Status:** built, not merged, not live.
+
+---
+
+## OD-2026-10-13-007 -- Release 23, the two family-message migrations and the deploy: "A: Wait for the screen fix, then go (Recommended)"
+
+**Provenance: PRIMARY.** One question on a three-question card in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 40381, 2026-10-13T20:40:59.828Z; answered at line 40383, 2026-10-13T23:49:42.914Z). Read by script (records pass, 2026-10-14). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-002, whose Release 22 failed.
+
+**The card, question "Release".** Overwatch, as written: "The staged release (main c2695693): apply family-message-replies and family-message-reads to production, then deploy? (Plain: two small new tables, then the release; three approval clicks, one at a time.)" Options as written: "A: Wait for the screen fix, then go (Recommended)": "I merge #1569 when its CI is green (it fixes the two Codex problems in the session-script screens), re-stage, then apply the migrations and deploy. About 45 minutes later than B."; "B: Go now as staged": "Apply the two migrations and deploy what is staged now. The session-script screens ship with a possible duplicate-on-retry and the wrong error colour; the fix follows in the next release."; "C: Hold": "Nothing goes to production until you say.". Jason: *"A: Wait for the screen fix, then go (Recommended)"*
+
+**Ruling:** merge the screen fix (#1569), re-stage, apply both migrations (family-message-replies, family-message-reads) to production, then deploy. His approval click stays for each production run. Options B and C were not chosen.
+
+**Acted on:** #1569 merged `806059ddbbb1c00ccc30491cb62881e09d41b407` (OBSERVED, `gh`). Production migration runs 38486803729 (family-message-replies) and 38486819743 (family-message-reads) both completed success on that commit, at 2026-10-14T00:01:25Z and 00:06:18Z (OBSERVED, `gh`). The deploy-production run 38491163580 for the same commit was waiting for his approval click at 2026-10-14T01:40Z (OBSERVED, `gh`).
+
+**Status:** migrations applied; deploy waiting for his click at the time of writing.
+
+---
+
+## OD-2026-10-13-006 -- Emergency contacts on a child's intake record, what a parent receives: "A: Relationship only (Recommended)" (lane L4, PR #1567)
+
+**Provenance: PRIMARY.** One question on a one-question card in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 39541, 2026-10-13T17:59:35.819Z; answered at line 39544, 2026-10-13T18:37:42.744Z). Read by script (records pass, 2026-10-14). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because these UTC times are the afternoon of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**The card, question "Emergency".** Overwatch, as written: "Emergency contacts on a child's intake record: today every guardian of the child is sent each emergency contact's full name. The other parent is usually one of those contacts, so a guardian learns the co-guardian's name that way. What should a parent receive? (Plain: in a split household, should one parent be able to read the name of the other parent listed as the emergency contact?)" Options as written: "A: Relationship only (Recommended)": "A parent sees that there is, say, a "Mother, primary contact" on file, but not the name. Staff still see everything. The athlete keeps seeing the names. Matches your ruling that each guardian sees only their own."; "B: Keep names visible": "Every guardian keeps seeing every emergency contact's full name, so a parent can check the list is right. Recorded as a known exception to the co-guardian rule."; "C: Own entries only": "A parent sees the full name only on contacts they entered themselves, and relationship only on the rest. Needs the record to know who entered each contact; the builder would first check whether it does.". Jason: *"A: Relationship only (Recommended)"*
+
+**Ruling:** a parent receives each emergency contact's relationship and primary flag only, no name. Staff see everything; the athlete keeps seeing the names. Options B and C were not chosen.
+
+**Acted on:** PR #1567 "L4 (#1558) part 2: family readers stop receiving guardian ids and co-guardian names" merged `c4c51a64cfe86246bb7459c923f46b15978c0362` (OBSERVED, `gh`). The handover (REPORTED, 20:10 UTC entry) records the diff read by Overwatch: for a parent, emergency contacts are relationship and `is_primary` only; staff columns unchanged. The handover times this ruling at 18:22 UTC; the transcript row above is 18:37:42Z, and the row governs.
+
+**Status:** merged to main. Reaches production with Release 23 (OD-2026-10-13-007), whose deploy run was waiting at the time of writing.
+
+---
+
+## OD-2026-10-13-005 -- Every test user is signed in: "We have the other users signed in too, let's get all the chips rh Ning then start a new overwatch to shorten your context"
+
+**Provenance: PRIMARY.** One typed message from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; his message at line 39379, 2026-10-13T17:43:52.448Z). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept ("rh Ning"). The id carries 2026-10-13 because this UTC time is the afternoon of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-004.
+
+**Typed** (line 39379): *"We have the other users signed in too, let's get all the chips rh Ning then start a new overwatch to shorten your context"*
+
+**Ruling (overwatch's reading; "rh Ning" is read as "running"):** start the live-audit chips for the athlete and the platform owner as well, and start a new Overwatch session so the working context is shorter.
+
+**Acted on:** the athlete and platform-owner live-audit sessions started (`local_d3215fa2-4abd-4879-8c1c-b795c0813b43`, `local_c0d0449c-6f39-43b5-a547-ea5a4754350a`; OBSERVED in the linked-session note); the handover (REPORTED, 18:55 and 19:00 UTC entries) says both were then blocked at the sign-in screen (athlete PIN, platform owner Microsoft). The new Overwatch session `local_f2290179-ee92-4dbc-b4c8-55d1ca822c55` took over at 00:09 UTC on 2026-10-14 (REPORTED, handover).
+
+**Status:** done as reported; the two sign-ins are still owed by him (REPORTED, handover 01:50 UTC entry).
+
+---
+
+## OD-2026-10-13-004 -- One live-audit chip per signed-in user: "coach and prarent ae singed in, start a chip per user to keep gesting and audigting the live app"
+
+**Provenance: PRIMARY.** One typed message from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; his message at line 39127, 2026-10-13T17:24:54.740Z). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept. The id carries 2026-10-13 because this UTC time is the afternoon of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-003.
+
+**Typed** (line 39127): *"coach and prarent ae singed in, start a chip per user to keep gesting and audigting the live app"*
+
+**Ruling (overwatch's reading; "gesting and audigting" is read as "testing and auditing"):** one chip (session) per signed-in test user keeps testing and auditing the live app.
+
+**Acted on:** the coach and parent live-audit sessions (`local_437ef483-eaed-4fca-8b64-e31d58378df4`, `local_adbc57fa-f638-40d3-af86-0a44a1730dad`) exist and wrote `LIVE-COACH-2026-10-13.md` and `LIVE-PARENT-2026-10-13.md` in the audit folder (OBSERVED, directory listing at new transcript line 515; session list). The parent audit's four parts were folded into the findings register as F-063 to F-066 (REPORTED, handover 17:59 UTC entry).
+
+**Status:** done as reported; widened by OD-2026-10-13-005.
+
+---
+
+## OD-2026-10-13-003 -- Build faster now the weekly usage has reset: "Ok weekly usage is reset let's get the chips going to build faster"
+
+**Provenance: PRIMARY.** One typed message from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; his message at line 39056, 2026-10-13T17:21:24.787Z). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept. The id carries 2026-10-13 because this UTC time is the afternoon of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-12-014.
+
+**Typed** (line 39056): *"Ok weekly usage is reset let's get the chips going to build faster"*
+
+**Ruling (overwatch's reading):** with the weekly usage reset, Overwatch starts build lanes in parallel instead of working one item at a time.
+
+**Acted on:** overwatch put up three lane cards, L1 (a coach writes a session script from an issued workout), L2 (two lost-write races on intervention records) and L3 (audit fixes, batch 2), and said it could not start them directly; they started after his taps (line 39123, 2026-10-13T17:24:11Z, REPORTED). The session list shows lanes L1 (`local_ea3344f2-734a-42f0-857c-9087ee9b1b50`), L2 (`local_282799ad-8b46-406b-8f36-be8829755c22`) and L3 as sessions of the old Overwatch (OBSERVED, linked-session note). PRs from those lanes merged include #1560, #1562, #1565, #1569, #1559, #1561, #1563 (REPORTED, handover).
+
+**Status:** done as reported.
+
+---
+
+## OD-2026-10-13-002 -- Release 22: "Says it waiting on you go"; "Yes" (it failed at the schema check; superseded by Release 23)
+
+**Provenance: PRIMARY.** Two typed messages from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-14). Quoted exactly, spelling kept. The second arrived mid-turn and was absorbed into the running turn (queue operations at lines 39033 and 39046). The id carries 2026-10-13 because these UTC times are the afternoon of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-001.
+
+**Overwatch, as written** (line 39010, 2026-10-13T17:13:45.894Z): "1. **Release 22 is staged and ready** (cancel a class, chalkboard and TV reading the quotes library, test clock fix; no migration needed for this one). It needs your yes, then one approval click." Jason typed (line 39014, 2026-10-13T17:16:25.819Z): *"Says it waiting on you go"* and (queued line 39033, 2026-10-13T17:16:47.731Z; absorbed at line 39046, 17:17:27.960Z): *"Yes"*
+
+**Overwatch's reading** (line 39052, 2026-10-13T17:17:53.001Z): "Got your yes for Release 22 ... I merged two report PRs after staging 22 and before dispatching it ... It has to be staged again on the new head."
+
+**Ruling (overwatch's reading; he named no run):** dispatch Release 22 to production, after re-staging from main's newest commit. His approval click stays for the production run.
+
+**Acted on:** Release 22 was re-staged (deploy-staging run 38444960283 success, REPORTED, handover 18:20 UTC entry) and deploy-production run 38445860846 was dispatched for main `65dffdf27c33258c3ff44851ebb861ac6b248d10`. That run completed with conclusion failure at 2026-10-13T19:49:35Z (OBSERVED, `gh`). The handover (REPORTED, 20:20 UTC entry) says it failed at "Verify Production Schema Matches This Commit": the commit held a migration file (`family_message_replies`) not yet applied to production. Production was untouched and stayed on Release 21 (REPORTED).
+
+**Status:** superseded. The release carrying the same work is Release 23 (OD-2026-10-13-007).
+
+---
+
+## OD-2026-10-13-001 -- Release 21: "Yes and deloy"; "Done"; "Yes"; "Clicked what's left"
+
+**Provenance: PRIMARY.** Four typed messages from Jason in the old overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-14). Typed messages are quoted exactly, spelling kept; overwatch's words are quoted as it wrote them. The id carries 2026-10-13 because the first of these UTC times is just after midnight Eastern on 2026-10-13. New; edits no earlier entry. It follows on from OD-2026-10-12-014.
+
+**Overwatch, as written** (line 38665, 2026-10-13T04:25:48.794Z): "**Question.** *Official:* A: apply the `org-quotes-d19` migration to production along with `round-timers`, then dispatch Release 21 (recommended) / B: round timers only, hold the quotes change / C: hold everything on staging. *Plain:* two small database changes go in first (the round-timer table, and the quotes list swapping "Steel Town" for "AMPLECTERE MISERIAM"), then the release. That's three approval clicks from you: two migrations, one deploy." Jason typed (line 38669, 2026-10-13T04:34:34.758Z): *"Yes and deloy"*
+
+**Typed** (line 38693, 2026-10-13T04:39:36.447Z), about five minutes after the previous message: *"Done"* Overwatch's next report (line 38707) lists, as separate bullets: "Round timers: applied to production (run 38347113234, success)." and "Quotes: still waiting for approval".
+
+**Typed** (line 38778, 2026-10-13T13:13:06.368Z), after overwatch's message (line 38774) that Release 21 had waited about four hours on his two clicks: *"Yes"*
+
+**Typed** (line 38797, 2026-10-13T17:02:20.398Z): *"Clicked what's left"*
+
+**Ruling (overwatch's reading; his words name no option letter):** "Yes and deloy" is a yes to option A: apply both migrations to production and release. The approval click stays his for each production run. "Done" and "Clicked what's left" report clicks he made; "Yes" at 13:13 was a yes to the clicks overwatch had asked for, and overwatch answered (line 38793) that a "Yes" in chat cannot approve a GitHub run, which has to be clicked.
+
+**Acted on:** apply-migrations production run 38347113234 (`round-timers`) completed success at 2026-10-13T04:38:57Z; run 38347126710 (`org-quotes-d19`) completed success at 13:14:57Z; deploy-production run 38358779599 for `d0a5f34b9b8e289cddcebac94efc6727897b8b70` completed success at 17:04:11Z (OBSERVED, `gh`). Overwatch's report at line 38812 (REPORTED) says Release 21 was deploying after his last click and the live checks passed (line 38897).
+
+**Status:** done; Release 21 is live.
+
+---
+
 ## OD-2026-10-12-024 -- A child's two guardians each see only their own replies to the coach: "A: No, each sees only their own (Recommended)" (work orders FC-02, FC-03 on #1542)
 
 **Provenance: PRIMARY.** One question on a four-question card in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 38203, 2026-10-12T23:58:31.123Z; answered at line 38204, 2026-10-13T00:29:28.564Z). Read by script (records pass, 2026-10-13). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-12 because these UTC times are the evening of 2026-10-12 Eastern. New; edits no earlier entry.

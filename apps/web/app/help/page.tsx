@@ -6,6 +6,7 @@ import OperationsLink from '@/components/OperationsLink';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 import { roleEquals } from '@/src/server/pilot/roleAlias';
+import { builderHelpFor, helpAudienceFor, plainHelpFor } from '@/src/server/pilot/helpForRole';
 
 // Internal tester material: signed-in members only, and kept out of search
 // results. Every role may read it; signing in is the only gate (audit
@@ -35,6 +36,43 @@ export default async function HelpCenterPage() {
   const mayOpenAdminHub = roleEquals(principal.role, 'organization_admin')
     || roleEquals(principal.role, 'platform_owner');
 
+  // Choose what this reader may see BEFORE rendering (F-064): another role's
+  // sections must never be in the page sent to the browser.
+  const audience = helpAudienceFor(principal.role);
+  const plain = plainHelpFor(audience);
+  const selection = builderHelpFor(audience);
+  const cards = selection ? masterTutorialCards.filter((c) => selection.cards.includes(c.id)) : masterTutorialCards;
+  const guides = selection ? guideSections.filter((g) => selection.guides.includes(g.id)) : guideSections;
+  const planned = selection ? plannedCapabilityGuides.filter((p) => selection.planned.includes(p.id)) : plannedCapabilityGuides;
+
+  if (plain) {
+    return (
+      <main className="on-canvas min-h-screen">
+        <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 py-10">
+          <header className="space-y-3 border-b-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] pb-6">
+            <p className="t-eyebrow tracking-[0.35em]">Help Center</p>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>{plain.heading}</h1>
+            <p className="text-base leading-7 text-[color:var(--hide-800)]">{plain.intro}</p>
+            {mayOpenAdminHub && (
+              <div className="flex flex-wrap gap-3">
+                <OperationsLink className="btn btn--ghost">Mission Control</OperationsLink>
+                <Link href="/admin" className="btn btn--ghost">Admin Hub</Link>
+              </div>
+            )}
+          </header>
+          <section className="mt-8 space-y-4" id={plain.anchor}>
+            {plain.topics.map((topic) => (
+              <article key={topic.title} className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
+                <h2 className="text-lg font-black text-[color:var(--hide-950)]">{topic.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--hide-800)]">{topic.text}</p>
+              </article>
+            ))}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="on-canvas min-h-screen">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
@@ -59,19 +97,21 @@ export default async function HelpCenterPage() {
           </div>
         </header>
 
+        {cards.length > 0 && (
         <section className="mt-8 space-y-4" id="master-tutorial">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Master Tutorial Cards</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {masterTutorialCards.map((card) => (
+            {cards.map((card) => (
               <TutorialCard key={card.id} card={card} />
             ))}
           </div>
         </section>
+        )}
 
         <section className="mt-10 space-y-4" id="role-guides">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Role and Workspace Guides</h2>
           <div className="space-y-4">
-            {guideSections.map((guide) => (
+            {guides.map((guide) => (
               <article key={guide.id} id={guide.id} className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
                 <h3 className="text-xl font-black text-[color:var(--hide-950)]">{guide.title}</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -91,7 +131,7 @@ export default async function HelpCenterPage() {
         <section className="mt-10 space-y-4" id="planned-capabilities-guide">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Planned Capability Guide</h2>
           <div className="grid gap-4 md:grid-cols-2">
-            {plannedCapabilityGuides.map((capability) => (
+            {planned.map((capability) => (
               <article key={capability.id} className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_.28)] p-[var(--s5)]">
                 <h3 className="text-lg font-black text-[color:var(--hide-950)]">{capability.title}</h3>
                 <div className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--hide-800)]">

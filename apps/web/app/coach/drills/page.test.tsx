@@ -152,7 +152,7 @@ interface RouteOptions {
   markAnswerAfterCommit?: () => Response;
   promote?: () => Response;
   onPromote?: () => void;
-  patch?: (body: { drill_id: string; active: boolean }) => Response;
+  patch?: (body: { drill_id: string; active: boolean; cues?: string[] }) => Response;
   /**
    * The write LANDS -- the lifecycle changes as it would -- and then this is
    * the answer the page gets: the fault or dropped connection that hides a
@@ -1080,6 +1080,37 @@ describe('reference lifecycle', () => {
     expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReads + 1);
     expect(within(detail).getByText('Operational in this gym')).toBeInTheDocument();
     expect(within(detail).getByRole('button', { name: 'Retire' })).toBeEnabled();
+  });
+
+  it('lets the coach add a cue while restoring a retired drill the server refused for want of one (F-068)', async () => {
+    const refusal = 'This drill has no coaching cue. A technique drill needs at least one coaching cue before it can be used; only a conditioning drill may go without. Add a cue first.';
+    let attempts = 0;
+    const fetchMock = routes({
+      lifecycle: { [reference.drill_id]: { state: 'retired', operational_drill_id: OPERATIONAL_HEAD } },
+      patch: (body) => {
+        attempts += 1;
+        return body.cues ? jsonResponse({ ok: true }) : jsonResponse({ error: refusal }, false, 409);
+      },
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    // No cue box until the server says one is missing.
+    expect(within(detail).queryByLabelText(/Coaching cues to restore with/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(detail).getByRole('button', { name: 'Restore' }));
+    const box = await within(detail).findByLabelText(/Coaching cues to restore with/);
+    expect(attempts).toBe(1);
+
+    fireEvent.change(box, { target: { value: 'Keep the chin down\n\n Rotate the hip ' } });
+    fireEvent.click(within(detail).getByRole('button', { name: 'Restore' }));
+
+    await screen.findByText(/^Restored\./);
+    expect(writes(fetchMock)).toEqual([
+      { method: 'PATCH', url: '/api/pilot/drills', body: { drill_id: OPERATIONAL_HEAD, active: true } },
+      { method: 'PATCH', url: '/api/pilot/drills', body: { drill_id: OPERATIONAL_HEAD, active: true, cues: ['Keep the chin down', 'Rotate the hip'] } },
+    ]);
   });
 
   it.each([

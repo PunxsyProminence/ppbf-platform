@@ -6,6 +6,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  setSessionScriptRetired,
 } from '@/src/server/pilot/sessionScriptAuthoring';
 import { getSessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -26,7 +27,12 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/sessionScriptAuthoring', () => {
   const actual = jest.requireActual('@/src/server/pilot/sessionScriptAuthoring');
-  return { ...actual, createSessionScriptFromTemplate: jest.fn(), editSessionScript: jest.fn() };
+  return {
+    ...actual,
+    createSessionScriptFromTemplate: jest.fn(),
+    editSessionScript: jest.fn(),
+    setSessionScriptRetired: jest.fn(),
+  };
 });
 
 jest.mock('@/src/server/pilot/sessionScripts', () => {
@@ -37,6 +43,7 @@ jest.mock('@/src/server/pilot/sessionScripts', () => {
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCreate = createSessionScriptFromTemplate as jest.Mock;
 const mockEdit = editSessionScript as jest.Mock;
+const mockRetire = setSessionScriptRetired as jest.Mock;
 const mockDetail = getSessionScriptWithDetail as jest.Mock;
 
 // Every PilotRole (contracts.ts), as a record so a role added to the union
@@ -245,5 +252,89 @@ describe('PATCH /api/pilot/session-scripts', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_SUPERSEDED' });
+  });
+});
+
+describe('PATCH /api/pilot/session-scripts with `retired`', () => {
+  beforeEach(() => {
+    mockRetire.mockResolvedValue({ outcome: 'retired', script_id: 'scr-1', version: 1 });
+  });
+
+  it.each(ROLES)('%s: retiring and bringing back are admitted only for a coach or an organization admin', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    const retired = await patch({ ...EDIT, retired: true });
+    const back = await patch({ ...EDIT, retired: false });
+
+    if (MAY_AUTHOR[role]) {
+      expect(retired.status).toBe(200);
+      expect(back.status).toBe(200);
+      expect(mockRetire).toHaveBeenCalledTimes(2);
+    } else {
+      expect(retired.status).toBe(403);
+      expect(back.status).toBe(403);
+      expect(mockRetire).not.toHaveBeenCalled();
+      expect(mockDetail).not.toHaveBeenCalled();
+    }
+  });
+
+  it("retires in the principal's gym, as the principal, in the state the screen read, and never calls the edit", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1', organizationId: 'org-9' }));
+
+    const response = await patch({ ...EDIT, retired: true });
+
+    expect(mockRetire).toHaveBeenCalledWith({
+      organizationId: 'org-9',
+      actorAccountId: 'admin-1',
+      actorRole: 'organization_admin',
+      scriptId: 'scr-1',
+      retired: true,
+      expectedUpdatedAt: READ_AT,
+    });
+    expect(mockEdit).not.toHaveBeenCalled();
+    expect(mockDetail).toHaveBeenCalledWith('org-9', 'scr-1');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ outcome: 'retired', script: STORED });
+  });
+
+  it('passes `retired: false` through as bringing the plan back', async () => {
+    mockRetire.mockResolvedValue({ outcome: 'brought_back', script_id: 'scr-1', version: 1 });
+
+    const response = await patch({ ...EDIT, retired: false });
+
+    expect(mockRetire.mock.calls[0][0].retired).toBe(false);
+    await expect(response.json()).resolves.toEqual({ outcome: 'brought_back', script: STORED });
+  });
+
+  it('is its own request: refused together with a name or blocks, and when it is not a boolean', async () => {
+    for (const body of [
+      { ...EDIT, retired: true, name: 'Renamed' },
+      { ...EDIT, retired: false, blocks: [BLOCK] },
+      { ...EDIT, retired: 'yes' },
+      { ...EDIT, retired: null },
+    ]) {
+      const response = await patch(body);
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'retired' });
+    }
+    expect(mockRetire).not.toHaveBeenCalled();
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it('requires the state the screen read, as an edit does', async () => {
+    const response = await patch({ script_id: 'scr-1', retired: true });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'expected_updated_at' });
+    expect(mockRetire).not.toHaveBeenCalled();
+  });
+
+  it('answers a plan another coach saved in the meantime with 409 and its code', async () => {
+    mockRetire.mockRejectedValue(new SessionScriptAuthoringError('SESSION_SCRIPT_CHANGED', 409));
+
+    const response = await patch({ ...EDIT, retired: true });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_CHANGED' });
   });
 });
