@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { RosterAthlete } from './CoachRecognitionPad';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 
 /**
  * PAIRING A MENTOR WITH A MENTEE.
@@ -223,7 +224,7 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
                   <span>
                     {row.mentor_name || row.mentor_athlete_id} looks after {row.mentee_name || row.mentee_athlete_id}
                     <span className="tcard-sub ml-[var(--s3)]">
-                      {row.ended_on ? `until ${row.ended_on.slice(0, 10)}` : `since ${row.started_on.slice(0, 10)}`}
+                      {row.ended_on ? `until ${formatCalendarDay(row.ended_on.slice(0, 10))}` : `since ${formatCalendarDay(row.started_on.slice(0, 10))}`}
                     </span>
                   </span>
                   {!row.ended_on && (

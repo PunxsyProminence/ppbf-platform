@@ -5,6 +5,8 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RefusalStamp from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
 
 // PASSBOOK GAPS -- the first page over `/api/pilot/passbook/gaps`.
@@ -86,9 +88,11 @@ function humanize(value: string): string {
   return value.replace(/_/g, ' ');
 }
 
-/** Dates arrive as `date` or `timestamptz`; the day is the part a coach reads. */
+/** Dates arrive as `date` or `timestamptz`. A day is written as a day; an
+ *  instant is written as the gym's day, not the UTC day the text starts with. */
 function day(value: string): string {
-  return value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatCalendarDay(value);
+  return formatGymDateShort(value) ?? value.slice(0, 10);
 }
 
 export default function CoachPassbookGapsPage() {

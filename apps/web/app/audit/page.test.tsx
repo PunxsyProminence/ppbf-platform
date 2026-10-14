@@ -71,6 +71,9 @@ test('reads the real audit endpoint and renders what it returned', async () => {
   expect(auditCalls(fetchMock)).toHaveLength(1);
   expect(screen.getByText('ann-1')).toBeTruthy();
   expect(screen.getByText('coach-1')).toBeTruthy();
+  // The time is the gym's, not the raw ISO text.
+  expect(screen.getByText('Jul 30, 2026, 8:00 AM')).toBeTruthy();
+  expect(screen.queryByText(/2026-07-30T/)).toBeNull();
 
   // None of the fabricated timeline survives.
   expect(screen.queryByText(/Coach Ramos/)).toBeNull();

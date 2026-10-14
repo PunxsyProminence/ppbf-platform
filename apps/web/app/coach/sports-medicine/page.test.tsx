@@ -2354,3 +2354,37 @@ describe('a place response that is not this athlete’s active hold is never pai
     expect(screen.queryByText(UNREAD)).toBeNull();
   });
 });
+
+// LC-08. The intro said an athlete with no record "cannot receive
+// recommendations until one exists", which has not been true since #1505.
+test('the board no longer says no record means no recommendations', async () => {
+  global.fetch = mockFetch();
+
+  render(<SportsMedicinePage />);
+
+  await screen.findByText('Jordan Doe');
+  expect(screen.queryByText(/cannot receive recommendations/)).toBeNull();
+  expect(screen.getByText(/nothing is held back from them because of it/)).toBeTruthy();
+});
+
+// The two scope sentences said what the app does not do: "contact events are
+// refused" (a logged sparring segment saves) and "logged contact raises an
+// alarm" (only a contact reading does). By code the only refusals are class
+// registration under all training (schedulerDb) and match or competition
+// entry under either scope (competitionSafetyGates).
+test('the hold scopes say only what the app does', async () => {
+  global.fetch = mockFetch();
+
+  render(<SportsMedicinePage />);
+
+  await screen.findByText('Jordan Doe');
+  fireEvent.click(screen.getByRole('button', { name: 'Place a training hold' }));
+  const allTraining = await screen.findByRole('option', { name: /^All training/ });
+  const noContact = screen.getByRole('option', { name: /^No contact/ });
+
+  expect(allTraining.textContent).toContain('will not register them for a class or add them to a match or competition');
+  expect(noContact.textContent).toContain('classes stay open');
+  expect(noContact.textContent).toContain('will not add them to a match or competition');
+  expect(noContact.textContent).not.toMatch(/contact events are refused|raises an alarm/);
+  expect(allTraining.textContent).not.toMatch(/STOP/);
+});

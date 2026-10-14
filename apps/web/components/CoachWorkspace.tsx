@@ -26,6 +26,7 @@ import {
 import { NICKNAME_LOCK_HOURS } from '@/src/server/pilot/profileIdentity';
 import {
   formatGymDateNumeric,
+  formatGymDateShort,
   formatGymDateTimeShort,
   formatGymDay,
   formatGymStamp,
@@ -355,6 +356,37 @@ interface ShadowReviewQueueItem {
   updated_at: string;
 }
 
+/* What the observation feed carries is system bookkeeping: event names such as
+   "shadow.audit.login" or "SHADOW_AUDIT_CREATE_DRILL", a source of "event" or
+   "telemetry", a state of "unknown". A coach reads it as words (LC-04); the
+   values themselves are not changed. */
+const SHADOW_OBSERVATION_SOURCE_LABEL: Record<string, string> = {
+  event: 'a recorded event',
+  telemetry: 'system activity',
+};
+
+function shadowObservationLabel(raw: string): string {
+  // Only a bare event name is reworded. A sentence the feed built (a pain
+  // report naming an athlete and a body location) is left exactly as it is.
+  if (!/^[A-Za-z0-9._]+$/.test(raw)) return raw;
+  const spoken = raw.replace(/[._]+/g, ' ').trim().toLowerCase();
+  return spoken ? spoken.charAt(0).toUpperCase() + spoken.slice(1) : raw;
+}
+
+/* What a saved review's decision says, in the words the picker offers. The
+   stored value is the code; a coach who picked "Needs follow-up" reads that. */
+const REVIEW_DECISION_LABEL: Record<string, string> = {
+  approved: 'Approved',
+  follow_up: 'Needs follow-up',
+  hold: 'Not decided yet',
+};
+
+function shadowObservationStateLabel(state: string): string {
+  if (state === 'unknown') return 'not reviewed';
+  if (state === 'pending_review') return 'waiting for review';
+  return state.replace(/_/g, ' ');
+}
+
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -518,7 +550,7 @@ function normalizeReviewableSession(row: unknown): ReviewableSession | null {
 function reviewSessionLabel(session: ReviewableSession): string {
   const status = session.completed ? 'completed' : 'open';
   const rpe = session.rpe === null ? '' : ` - RPE ${session.rpe}`;
-  return `${session.date} - ${status}${rpe}`;
+  return `${formatCalendarDay(session.date.slice(0, 10))} - ${status}${rpe}`;
 }
 
 /**
@@ -1383,7 +1415,7 @@ export default function CoachWorkspace() {
       .map((item) => ({
         id: item.intake_case_id,
         title: `Review intake case: ${item.summary}`,
-        when: `In review queue since ${item.updated_at.slice(0, 10)}`,
+        when: `In review queue since ${formatGymDateShort(item.updated_at) ?? item.updated_at}`,
         priority: 'High' as const,
         status: 'Open' as const,
       })),
@@ -4235,7 +4267,7 @@ export default function CoachWorkspace() {
                                 nobody has confirmed yet. */}
                             {item.expires_on && (item.band === 'current' || item.band === 'expiring_soon' || item.band === 'expired') ? (
                               <p className="t-muted">
-                                {item.band === 'expired' ? 'Expired' : 'Expires'} {item.expires_on}
+                                {item.band === 'expired' ? 'Expired' : 'Expires'} {formatCalendarDay(item.expires_on.slice(0, 10))}
                               </p>
                             ) : null}
                           </li>
@@ -4520,7 +4552,7 @@ export default function CoachWorkspace() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                  <h3 className="t-eyebrow">SHADOW Review Projection</h3>
+                  <h3 className="t-eyebrow">SHADOW review queue</h3>
                   {shadowQueueUnavailable ? (
                     <p className="t-muted mt-[var(--s3)]">The review queue could not be read.</p>
                   ) : shadowQueue.length === 0 ? (
@@ -4577,7 +4609,7 @@ export default function CoachWorkspace() {
                 </div>
 
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                  <h3 className="t-eyebrow">SHADOW Observation Projection</h3>
+                  <h3 className="t-eyebrow">What SHADOW has noticed</h3>
                   {shadowObservationsUnavailable ? (
                     <p className="t-muted mt-[var(--s3)]">Observations could not be read.</p>
                   ) : shadowObservations.length === 0 ? (
@@ -4595,9 +4627,9 @@ export default function CoachWorkspace() {
                       )}
                       {shadowObservations.slice(0, 6).map((item) => (
                         <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
-                          <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
-                          <p>Source: {item.source}</p>
-                          <p>State: {item.review_state}</p>
+                          <p className="font-semibold text-[color:var(--bone-200)]">{shadowObservationLabel(item.label)}</p>
+                          <p>From: {SHADOW_OBSERVATION_SOURCE_LABEL[item.source] ?? item.source}</p>
+                          <p>Review: {shadowObservationStateLabel(item.review_state)}</p>
                         </div>
                       ))}
                     </div>
@@ -4625,10 +4657,20 @@ export default function CoachWorkspace() {
           {/* ASSESSMENTS */}
           {activeTab === 'assessments' && (
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
-              <h3 className="t-eyebrow">Coach Assessments</h3>
-              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-              <p className="t-body text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
-              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
+              {/* This tab used to be a "Planned - Not Yet Implemented /
+                  Coming soon" placeholder for coaching-effectiveness surveys
+                  that nobody has built, on a screen where the real
+                  assessments page (/coach/assessments, athlete tests such as
+                  the jump test) already exists (LC-02). It points there. */}
+              <h3 className="t-eyebrow">Assessments</h3>
+              <p className="t-body text-[color:var(--bone-400)]">
+                Record and read your athletes&apos; test results, such as the jump test.
+              </p>
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link href="/coach/assessments" className="btn">
+                  Open Assessments
+                </Link>
+              </div>
             </div>
           )}
 
@@ -4682,7 +4724,7 @@ export default function CoachWorkspace() {
               <h3 className="t-eyebrow">Athlete Performance Reviews</h3>
               <p className="t-body text-[color:var(--bone-400)]">Comprehensive athlete progress tracking and performance feedback.</p>
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
-                <p className="t-label">Persist Coach Review</p>
+                <p className="t-label">Write a review</p>
                 <label className="field">
                   <span className="t-label">Athlete</span>
                   <select
@@ -4784,7 +4826,7 @@ export default function CoachWorkspace() {
                     {sessionReviews.map((review) => (
                       <div key={review.reviewId} className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.12)] pt-[var(--s2)] first:border-t-0 first:pt-0">
                         <p className="t-data text-[color:var(--bone-300)]">
-                          <span className="font-bold">{review.decision}</span>
+                          <span className="font-bold">{REVIEW_DECISION_LABEL[review.decision] ?? review.decision}</span>
                           {' -- '}
                           {review.coachId === coachAccountId
                             ? 'your review'
@@ -4805,9 +4847,9 @@ export default function CoachWorkspace() {
                     onChange={(event) => setReviewDecision(event.target.value)}
                     className="select"
                   >
-                    <option value="approved">approved</option>
-                    <option value="follow_up">follow_up</option>
-                    <option value="hold">hold</option>
+                    {Object.entries(REVIEW_DECISION_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
                   </select>
                 </label>
                 <label className="field">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 
 import SleepTrend, { type SleepTrendItem } from './SleepTrend';
 
@@ -131,7 +132,7 @@ export function CoachBoutHistory({ athleteId, athleteName }: { athleteId: string
               className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s1)]"
             >
               <p className="t-data">
-                {item.competition_date} · {item.competition_name}
+                {formatCalendarDay(item.competition_date.slice(0, 10))} · {item.competition_name}
                 {item.location ? ` · ${item.location}` : ''}
                 {item.sanctioning_body ? ` · ${item.sanctioning_body}` : ''}
               </p>

@@ -6,6 +6,7 @@ import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 interface AuditEvent {
   audit_id: string | number;
@@ -186,7 +187,7 @@ function AuditTrace() {
                 <tbody>
                   {events.map((event) => (
                     <tr key={String(event.audit_id)}>
-                      <td className="whitespace-nowrap">{event.created_at}</td>
+                      <td className="whitespace-nowrap">{formatGymDateTimeShort(event.created_at) ?? event.created_at}</td>
                       <td>{event.actor_account_id ?? 'Not recorded'}</td>
                       <td>{event.actor_role ?? 'Not recorded'}</td>
                       <td>

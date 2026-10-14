@@ -81,7 +81,7 @@ test('renders the queue in the order the server sent it, with the retention read
   expect(within(rows[0]).getByText('Rosa D.')).toBeTruthy();
   expect(within(rows[1]).getByText('Jordan P.')).toBeTruthy();
 
-  expect(within(rows[0]).getByText('2026-07-28')).toBeTruthy();
+  expect(within(rows[0]).getByText('Jul 28, 2026')).toBeTruthy();
   expect(within(rows[0]).getByText('6')).toBeTruthy();
   expect(within(rows[0]).getByText(/Fades in round 3/)).toBeTruthy();
   // Stored enum values are spaced for a human, never renamed.

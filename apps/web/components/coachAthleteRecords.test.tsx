@@ -99,7 +99,7 @@ describe('CoachBoutHistory', () => {
 
     expect(await screen.findByText('Lesson: dropped the right hand')).toBeTruthy();
     expect(screen.getByText('Bout History: Marisol')).toBeTruthy();
-    expect(screen.getByText('2026-09-01 · Golden Gloves Regional · Altoona · USA Boxing')).toBeTruthy();
+    expect(screen.getByText('Sep 1, 2026 · Golden Gloves Regional · Altoona · USA Boxing')).toBeTruthy();
     expect(screen.getByText('Lost')).toBeTruthy();
     expect(screen.getByText('Entered, not yet fought')).toBeTruthy();
     expect(fetchMock.mock.calls[0][0]).toContain('/api/pilot/coach/athlete-competition-history?athlete_id=ath-1');

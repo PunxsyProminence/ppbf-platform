@@ -1727,3 +1727,15 @@ describe('make a session script from an open template', () => {
     expect(await screen.findByText(/or to make a session script from\s+it/i)).toBeInTheDocument();
   });
 });
+
+// LC-09. "FOOTWORK -- YOUTH_AND_ADULT -- 45 MIN".
+describe('the age group on a template row', () => {
+  it('reads in words, not in code form', async () => {
+    mockFetch(() => jsonResponse({ templates: [{ ...BOXING_FUNDAMENTALS, age_band: 'YOUTH_AND_ADULT' }] }));
+
+    render(<CoachWorkoutTemplatesPage />);
+
+    expect(await screen.findByText(/youth and adult/)).toBeTruthy();
+    expect(screen.queryByText(/YOUTH_AND_ADULT/)).toBeNull();
+  });
+});

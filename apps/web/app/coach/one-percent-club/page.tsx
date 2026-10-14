@@ -231,15 +231,14 @@ export default function OnePercentClubPage() {
                       onChange={(e) => setNominateForm((f) => ({ ...f, note: e.target.value }))} />
                   </div>
                   <div className="field">
-                    <label className="t-label" htmlFor="nom-milestone">Milestone key, if this cites one (optional)</label>
+                    <label className="t-label" htmlFor="nom-milestone">Milestone this is about, if any (optional)</label>
                     <input id="nom-milestone" className="input" value={nominateForm.milestone_key}
                       onChange={(e) => setNominateForm((f) => ({ ...f, milestone_key: e.target.value }))} />
                   </div>
                 </div>
                 <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
-                  A milestone key is only kept if the athlete actually holds that award -- an
-                  unearned key is dropped and the nomination is filed as an ordinary nomination
-                  instead.
+                  A milestone is only kept if the athlete actually holds that award -- an unearned
+                  one is dropped and the nomination is filed as an ordinary nomination instead.
                 </p>
                 <div className="mt-[var(--s3)]">
                   <button type="button" className="btn" disabled={busy} onClick={() => void handleNominate()}>
