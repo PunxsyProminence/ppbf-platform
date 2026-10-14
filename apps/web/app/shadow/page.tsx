@@ -31,6 +31,7 @@ import {
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
 import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { researchQuestionKey } from '@/src/shared/researchQuestionKey';
 import {
   SHADOW_MESSAGE_TOO_LONG_RESPONSE,
   isShadowMessageTooLong,
@@ -162,9 +163,10 @@ const RESEARCH_FILING_ROLES = new Set(['coach', 'admin', 'organization_admin']);
    and their parents read it (OD-2026-10-06-010) and coaches reach it by the
    athlete, and the same question about another child is its own row. */
 function researchKeyForQuestion(question: string, athleteId?: string | null): string {
-  const normalized = question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
-  if (!normalized) return '';
-  return athleteId ? `athlete:${athleteId}:${normalized}` : normalized;
+  // The server's own function (src/shared/researchQuestionKey.ts), so the
+  // button and the auto-filing of one question reach one row, and two long
+  // questions that begin alike reach two.
+  return researchQuestionKey(question, athleteId);
 }
 
 interface ResearchFiling {

@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 
+import {
+  normalizeResearchQuestion,
+  RESEARCH_QUESTION_MAX,
+  researchQuestionKey,
+} from '@/src/shared/researchQuestionKey';
+
 import type { PilotRole } from './contracts';
 import { createShadowResearchRequirement, getShadowResearchRequirementById, isResearchStaff } from './shadowResearch';
 
@@ -82,7 +88,7 @@ export const SHADOW_ASKER_ENTITY = 'shadow_asker_question';
 /** The longest question stored: the same 12,000 characters the conversation
  *  store keeps (shadowConversations.ts). The column is unbounded text, so the
  *  row holds what the chat holds and the key hashes all of it. */
-export const SHADOW_QUESTION_STORE_LIMIT = 12_000;
+export const SHADOW_QUESTION_STORE_LIMIT = RESEARCH_QUESTION_MAX;
 
 /** Who SHADOW auto-files for: athletes and parents (Jason's F-054 ruling is
  *  about them) and coaches and organization admins, who file as the "File as
@@ -92,14 +98,12 @@ const AUTO_FILING_ROLES: ReadonlySet<string> = new Set([
   'athlete', 'parent', 'coach', 'admin', 'organization_admin',
 ]);
 
-export function normalizeUnansweredQuestion(question: string): string {
-  return question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
-}
-
+/** The staff key: the same function the SHADOW page's "File as research"
+ *  button uses (src/shared/researchQuestionKey.ts), so a coach's button and an
+ *  auto-filing of the same question reach the same row and two different
+ *  questions never share one. */
 export function unansweredQuestionKey(question: string, athleteId: string | null): string {
-  const normalized = normalizeUnansweredQuestion(question);
-  if (!normalized) return '';
-  return athleteId ? `athlete:${athleteId}:${normalized}` : normalized;
+  return researchQuestionKey(question, athleteId);
 }
 
 /**
@@ -130,7 +134,7 @@ export async function fileUnansweredShadowQuestion(input: {
   // the same words still gets a row they can read.
   const key = staff
     ? base
-    : `acct:${input.accountId}:${createHash('sha256').update(input.question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, SHADOW_QUESTION_STORE_LIMIT)).digest('hex')}`;
+    : `acct:${input.accountId}:${createHash('sha256').update(normalizeResearchQuestion(input.question)).digest('hex')}`;
   try {
     const id = await createShadowResearchRequirement({
       organizationId: input.organizationId,

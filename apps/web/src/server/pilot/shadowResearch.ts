@@ -243,7 +243,7 @@ export async function getShadowResearchRequirementById(
   organizationId: string,
   researchRequirementId: number,
 ): Promise<ShadowResearchRequirementRow | null> {
-  return queryOne<ShadowResearchRequirementRow>(
+  const row = await queryOne<ShadowResearchRequirementRow>(
     `select
        ${REQUIREMENT_COLUMNS}
      from pilot.shadow_research_requirements
@@ -251,6 +251,14 @@ export async function getShadowResearchRequirementById(
        and research_requirement_id = $2`,
     [organizationId, researchRequirementId],
   );
+  if (!row) return null;
+  // EVERY by-id read: resolve's lookup, the submissions route's requirement
+  // check and the filing's own status check all come through here, so an
+  // asker's question whose asker is marked deleted is unreachable by id as it
+  // is in the list (F-054, omitDeletedAskerRows). Same answer as a row that
+  // does not exist.
+  const [kept] = await omitDeletedAskerRows(organizationId, [row]);
+  return kept ?? null;
 }
 
 export async function listShadowResearchRequirements(

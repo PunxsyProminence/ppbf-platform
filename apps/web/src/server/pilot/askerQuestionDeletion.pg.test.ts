@@ -59,6 +59,8 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let listGet: (request: NextRequest) => Promise<Response>;
+let requirementsPost: (request: NextRequest) => Promise<Response>;
+let submissionsGet: (request: NextRequest) => Promise<Response>;
 let fileQuestion: typeof import('./shadowResearchFiling').fileUnansweredShadowQuestion;
 let deleteAthleteRecord: typeof import('./dataDeletion').deleteAthleteRecord;
 let deleteGuardianAccount: typeof import('./dataDeletion').deleteGuardianAccount;
@@ -231,6 +233,8 @@ beforeAll(async () => {
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
 
   listGet = (await import('@/app/api/pilot/shadow/research-requirements/route')).GET;
+  requirementsPost = (await import('@/app/api/pilot/shadow/research-requirements/route')).POST;
+  submissionsGet = (await import('@/app/api/pilot/shadow/research-submissions/route')).GET;
   fileQuestion = (await import('./shadowResearchFiling')).fileUnansweredShadowQuestion;
   const deletion = await import('./dataDeletion');
   deleteAthleteRecord = deletion.deleteAthleteRecord;
@@ -291,6 +295,41 @@ describe('an asker question and its asker deletion', () => {
     expect(admin).toContain('QUOKKA-PARENT-4419');
     // The mark hides; it does not erase before retention.
     expect(await rowCount(`research_requirement like '%ZEBRA-ATHLETE-7731%'`)).toBe(1);
+  });
+
+  test('a marked-deleted asker row is unreachable by id too: resolve and the submissions read answer as for a missing row', async () => {
+    const found = await db.query(
+      `select research_requirement_id from pilot.shadow_research_requirements
+        where organization_id = $1 and research_requirement like '%ZEBRA-ATHLETE-7731%'`,
+      [ORG],
+    );
+    const id = Number(found.rows[0].research_requirement_id);
+
+    for (const actor of [AS.admin(), AS.coach()]) {
+      mockRequirePrincipal.mockResolvedValue(actor);
+      const resolved = await requirementsPost(new NextRequest('http://localhost/api/pilot/shadow/research-requirements', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'resolve', research_requirement_id: id, closing_note: 'Done.' }),
+      }));
+      expect(resolved.status).toBe(404);
+    }
+    mockRequirePrincipal.mockResolvedValue(AS.admin());
+    const submissions = await submissionsGet(new NextRequest(
+      `http://localhost/api/pilot/shadow/research-submissions?research_requirement_id=${id}`,
+    ));
+    expect(submissions.status).toBe(404);
+    const batch = await submissionsGet(new NextRequest(
+      `http://localhost/api/pilot/shadow/research-submissions?research_requirement_ids=${id}`,
+    ));
+    expect(await batch.text()).not.toContain(`"${id}"`);
+
+    // Still open in the table: the mark hides it, the purge is what deletes.
+    const still = await db.query(
+      `select status from pilot.shadow_research_requirements where research_requirement_id = $1`,
+      [id],
+    );
+    expect(still.rows[0].status).toBe('open');
   });
 
   test('the retention purge deletes the athlete asker row, and only that', async () => {

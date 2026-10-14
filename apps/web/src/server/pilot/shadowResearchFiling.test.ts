@@ -143,3 +143,17 @@ test('a question over the chat store limit is cut at it, as the conversation sto
   await fileUnansweredShadowQuestion({ ...base, role: 'athlete', question: 'b'.repeat(13_000) });
   expect(create.mock.calls[0][0].researchRequirement.length).toBe(12_000);
 });
+
+test('two staff questions sharing their first 500 characters make two rows, not one', async () => {
+  const prefix = 'c'.repeat(600);
+  await fileUnansweredShadowQuestion({ ...base, role: 'coach', question: `${prefix} one` });
+  await fileUnansweredShadowQuestion({ ...base, role: 'coach', question: `${prefix} two` });
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(create.mock.calls[0][0].sourceEntityId).not.toBe(create.mock.calls[1][0].sourceEntityId);
+});
+
+test('the staff key is the one the page button computes (one shared function)', async () => {
+  const { researchQuestionKey } = jest.requireActual('@/src/shared/researchQuestionKey');
+  await fileUnansweredShadowQuestion({ ...base, role: 'coach', question: 'How long should a round be?', athleteId: 'ath-9' });
+  expect(create.mock.calls[0][0].sourceEntityId).toBe(researchQuestionKey('How long should a round be?', 'ath-9'));
+});

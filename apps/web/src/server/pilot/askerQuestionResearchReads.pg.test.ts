@@ -480,3 +480,19 @@ describe('after a coach closes one, and the other ways in', () => {
     expect(row.rows[0].status).toBe('open');
   });
 });
+
+describe('staff keys (Codex, #1575)', () => {
+  test('two coach questions sharing their first 500 characters are two rows', async () => {
+    const prefix = 'd'.repeat(600);
+    const one = await fileQuestion({ organizationId: ORG, accountId: 'acct-aq-coach', role: 'coach', question: `${prefix} first ending` });
+    const two = await fileQuestion({ organizationId: ORG, accountId: 'acct-aq-coach', role: 'coach', question: `${prefix} second ending` });
+    expect(one).toBe(true);
+    expect(two).toBe(true);
+    const rows = await db.query(
+      `select count(*)::int as n from pilot.shadow_research_requirements
+        where organization_id = $1 and research_requirement like $2`,
+      [ORG, `${prefix}%`],
+    );
+    expect(rows.rows[0].n).toBe(2);
+  });
+});
