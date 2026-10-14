@@ -45,6 +45,7 @@ const SCRIPTED = {
   script_name: 'Tuesday juniors',
   run_state: 'abandoned',
   athletes_present: null,
+  blocks_completed: 4,
   deviation_note: '',
   what_worked: '',
   what_did_not: 'Room too loud.',
@@ -86,7 +87,8 @@ test('reads the finished sessions once, by GET, and shows each with gym time, pl
   expect(scripted.textContent).toContain('Tuesday juniors (version 2) · Run by Coach Ray');
   expect(scripted.textContent).toContain('Abandoned');
   expect(scripted.textContent).toContain('Did not work: Room too loud.');
-  // A count not stated is not shown, and empty notes are not shown as labels.
+  // A count not stated is not shown (never as zero), and empty notes are not shown as labels.
+  expect(scripted.textContent).toContain('4 blocks completed.');
   expect(scripted.textContent).not.toContain('athletes present');
   expect(scripted.textContent).not.toContain('Deviation:');
   expect(scripted.textContent).toContain('Nobody was marked here in this session.');
