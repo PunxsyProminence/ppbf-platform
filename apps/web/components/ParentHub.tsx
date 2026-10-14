@@ -1581,9 +1581,9 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="t-body">
-                The goals your child has set are on the Progress tab. Family goals of your own are not recorded yet,
-                so this list is empty.
+              <p className="t-label">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
+                is always empty.
               </p>
 
               <div className="space-y-[var(--s4)]">

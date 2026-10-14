@@ -4,10 +4,9 @@
 
 /* #1542, FC-05: a coach's message counts as opened when at least half of it is
    on screen on the Messages tab -- not when the hub fetches the inbox. Each is
-   recorded once per visit; a failed write is retried the next time it comes
-   on screen, and is never shown to the guardian. Also the two parent-facing
-   copy changes folded in: observations "where the coaches can read it", and
-   the Family Goals tab pointing to the child's goals under Progress. */
+   recorded once per visit; a failed write is retried when the tab is next
+   opened, and is never shown to the guardian. Also the parent-facing copy
+   change folded in: observations "where the coaches can read it". */
 
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -234,13 +233,5 @@ describe('parent-facing copy folded into FC-05', () => {
     // The sentence is the help panel's description, shown when the help is opened.
     fireEvent.click(screen.getByRole('button', { name: /HELP: Parent Observations/ }));
     expect(screen.getByText(/saved to your child's record at the gym, where the coaches can read it\./)).toBeInTheDocument();
-  });
-
-  test("the Family Goals tab points to the child's goals under Progress and is no longer stamped not implemented", async () => {
-    installFetch();
-    await renderHub();
-    await openTab('Family Goals');
-    expect(screen.getByText(/The goals your child has set are on the Progress tab\./)).toBeInTheDocument();
-    expect(screen.queryByText(/NOT YET IMPLEMENTED -- there is no backend feed for family goals/)).toBeNull();
   });
 });
