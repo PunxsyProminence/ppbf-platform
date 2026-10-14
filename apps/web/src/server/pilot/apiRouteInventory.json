@@ -5461,6 +5461,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-observations",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists one athlete's parent_observation notes (what a guardian recorded at home: category, optional 1-10 rating, notes, when), newest first, parsed from note_text (familyObservations.ts listFamilyObservationsForStaff; F-073, #1542's track). No account id or author name is returned; the screen says 'a guardian'. No accounts join, so a purged guardian's observations stay listed (D-9). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",

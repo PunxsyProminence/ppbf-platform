@@ -6,7 +6,8 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
-import { formatGymDate } from '@/src/lib/gymTime';
+import FamilyObservations from '@/components/FamilyObservations';
+import { formatGymDate, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
@@ -1358,7 +1359,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="font-semibold text-[color:var(--bone-100)]">{decision.decision_text}</p>
                       <p className="t-muted mt-[var(--s2)]">Expected: {decision.expected_outcome}</p>
                       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                        By {decision.decided_by_role} at {decision.decided_at}
+                        By {decision.decided_by_role} at {formatGymDateTimeShort(decision.decided_at) ?? decision.decided_at}
                       </p>
                       {typeof decision.medical_status_on_file === 'string' && (
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
@@ -1620,6 +1621,7 @@ export default function DecisionLoopReviewPage() {
                 </form>
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
+                <FamilyObservations athleteId={athleteId} />
               </section>
 
               {/* Decision Outcomes */}

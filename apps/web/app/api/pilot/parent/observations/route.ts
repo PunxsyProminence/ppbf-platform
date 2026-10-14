@@ -29,11 +29,11 @@ export const runtime = 'nodejs';
  * THIS child and nothing else -- not the other guardian's, the same line the
  * barrier report draws for split households (LQ-PH04-1). The athlete never
  * does: their reader set is 'coach_observation' only. Staff MAY read every
- * note type (coachObservationNoteTypesForReader), but NO COACH SCREEN DRAWS
- * THIS TYPE TODAY: the coach barrier inbox and the passbook both use closed
- * lists of note types, and neither names it. So the screen that writes these
- * says they are saved to the child's record, and never that a coach has them.
- * A coach reader is its own order (LQ-PH04-4 on #1483).
+ * note type (coachObservationNoteTypesForReader). The coach's reader is
+ * "From the family" on /coach/decision-loop (F-073, #1542's track:
+ * GET /api/pilot/coach/family-observations), which names the writer only as
+ * "a guardian". What this screen tells the guardian about that is the
+ * parent-facing copy's own decision (F-073 Q-B), unchanged here.
  *
  * THE FORMAT IS WORDS. The table has no rating or category column, and adding
  * one is a migration this order does not make. So the server composes the
