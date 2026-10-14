@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       // The family shape: named fields, coach_name in place of coach_id
       // (OD-2026-10-06-025 ruling 2). Same for the parent branch below.
       return NextResponse.json({
-        items: await toFamilyAthletes(principal.organizationId, athlete ? [athlete] : []),
+        items: await toFamilyAthletes(principal.organizationId, athlete ? [athlete] : [], 'athlete'),
       });
     }
 
@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
       // join inline. The adult child simply leaves the picker.
       const minors = linkedAthletes.filter((athlete) => !guardianLinkEnded(athlete.dob));
 
-      return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, minors) });
+      // No emergency_contact for a parent (#1558 item three; Q-C, OD-2026-10-13-006).
+      return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, minors, 'parent') });
     }
 
     // Coaches and organization admins both read the whole roster, and they do

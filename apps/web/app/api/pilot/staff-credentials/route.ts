@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { deriveCredentialBand, listStaffCredentialStatus } from '@/src/server/pilot/clearanceRegister';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { staffDisplayName } from '@/src/server/pilot/profileDb';
+import { isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { staffDisplayName, staffDisplayNameOrNull } from '@/src/server/pilot/profileDb';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,19 @@ function staffKey(organizationId: string, accountId: string): string {
  * display value; keeping the raw id out of the next field along is the same
  * decision, applied where it was missed.
  */
+/* The name shown for a staff member whose login email gives none (#1558 item
+   three). Staff screens keep the account id there, as they always have; every
+   other reader of this list -- it admits any signed-in member, athletes and
+   parents included -- gets this phrase, because the account id is the login
+   email unless somebody chose otherwise. PROPOSED wording, accepted by
+   Overwatch for this lane; not an owner ruling. */
+export const STAFF_NAME_FLOOR = 'Staff member';
+
+function nameFor(role: string, loginEmail: string | null, accountId: string): string {
+  if (isOrganizationAdminRole(role as never) || role === 'coach') return staffDisplayName(loginEmail, accountId);
+  return staffDisplayNameOrNull(loginEmail) ?? STAFF_NAME_FLOOR;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -81,7 +95,7 @@ export async function GET(request: NextRequest) {
       if (!entry) {
         entry = {
           staff_key: staffKey(principal.organizationId, row.account_id),
-          display_name: staffDisplayName(row.login_email, row.account_id),
+          display_name: nameFor(principal.role, row.login_email, row.account_id),
           role: row.role,
           credentials: [],
         };

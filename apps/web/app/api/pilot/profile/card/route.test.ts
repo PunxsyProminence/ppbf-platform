@@ -17,6 +17,7 @@ jest.mock('@/src/server/pilot/profileDb', () => {
   const actual = jest.requireActual('@/src/server/pilot/profileDb');
   return {
     toProfileSubject: actual.toProfileSubject,
+    familyDisplayName: actual.familyDisplayName,
     getSubjectIdentity: jest.fn(),
     getAccountProfile: jest.fn(),
     assertViewerMayReachSubject: jest.fn(),
@@ -129,5 +130,59 @@ describe('GET /api/pilot/profile/card: a coach whose staff name IS the account i
     expect(response.status).toBe(200);
     expect(JSON.parse(raw).card.coachName).toBe('Coach Ray');
     expect(raw).not.toContain(COACH);
+  });
+});
+
+/*
+ * #1558 item three: the card OF a staff member, opened by a family viewer
+ * (their child's coach). The staff name falls back to the account id when the
+ * login email gives none; a family viewer gets the floor phrase instead
+ * (OD-2026-10-06-025 ruling 2). Staff viewers keep what they had.
+ */
+describe('GET /api/pilot/profile/card: the card of a staff member whose name IS the account id', () => {
+  const withNamelessCoach = () =>
+    mockIdentity.mockImplementation(async (_org, accountId) => (accountId === COACH
+      ? { ...(IDENTITIES[COACH] as object), fullName: COACH }
+      : IDENTITIES[accountId] ?? null) as never);
+
+  test.each(['athlete', 'parent'] as const)('a %s viewer is shown "Your coach", and its initials', async (role) => {
+    const viewer = VIEWERS[role];
+    mockPrincipal.mockResolvedValue(
+      { accountId: viewer.accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never,
+    );
+    mockRelationship.mockResolvedValue('subject_is_my_staff' as never);
+    withNamelessCoach();
+
+    const response = await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.card.displayName).toBe('Your coach');
+    expect(body.card.initials).not.toBe(COACH.slice(0, 2).toUpperCase());
+  });
+
+  test.each(['coach', 'organization_admin'] as const)('a %s viewer reads it as before', async (role) => {
+    const viewer = VIEWERS[role];
+    mockPrincipal.mockResolvedValue(
+      { accountId: viewer.accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never,
+    );
+    mockRelationship.mockResolvedValue('organization_staff' as never);
+    withNamelessCoach();
+
+    const body = await (await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`))).json();
+
+    expect(body.card.displayName).toBe(COACH);
+  });
+
+  test('a staff member with a real name is named the same to a family viewer', async () => {
+    const viewer = VIEWERS.parent;
+    mockPrincipal.mockResolvedValue(
+      { accountId: viewer.accountId, role: 'parent', organizationId: ORG, athleteId: null } as never,
+    );
+    mockRelationship.mockResolvedValue('subject_is_my_staff' as never);
+
+    const body = await (await GET(new NextRequest(`https://ppbf.example/api/pilot/profile/card?account_id=${COACH}`))).json();
+
+    expect(body.card.displayName).toBe('Ray Nolan');
   });
 });

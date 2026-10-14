@@ -12,7 +12,15 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne } from './db';
-import { getAccountProfile, getSubjectIdentity, releasePhoto, resolveRelationship } from './profileDb';
+import {
+  familyDisplayName,
+  getAccountProfile,
+  getSubjectIdentity,
+  releasePhoto,
+  resolveRelationship,
+  staffDisplayName,
+  staffDisplayNameOrNull,
+} from './profileDb';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -133,5 +141,40 @@ describe("resolveRelationship's parent arm goes dormant at 18 (OD-2026-10-07-008
     await expect(resolveRelationship(viewer, subject(MINOR_DOB), 'org-1')).resolves.toBe('guardian_of_subject');
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     await expect(resolveRelationship(viewer, subject(null), 'org-1')).resolves.toBe('guardian_of_subject');
+  });
+});
+
+/*
+ * #1558 item three. A staff account whose login email gives no name is named
+ * by its account id on staff screens -- an honest gap -- and the account id is
+ * the login email unless somebody chose otherwise. A family reader is given
+ * the caller's floor phrase instead (OD-2026-10-06-025 ruling 2).
+ */
+describe('the staff name a family reader is shown', () => {
+  const STAFF_ID = 'nameless.4411@example.test';
+  const staff = (fullName: string) => ({
+    accountId: STAFF_ID, fullName, athleteId: null, dob: null, coachAccountId: null, memberSince: null,
+  });
+
+  test.each([
+    ['no email', null],
+    ['an empty stem', '@example.test'],
+    ['a stem with no letters', '4411-77@example.test'],
+  ])('with %s the staff screens keep the id, and a family reader gets the floor', (_label, email) => {
+    expect(staffDisplayNameOrNull(email)).toBeNull();
+    expect(staffDisplayName(email, STAFF_ID)).toBe(STAFF_ID);
+    const identity = staff(staffDisplayName(email, STAFF_ID));
+    expect(familyDisplayName(identity, 'Your coach')).toBe('Your coach');
+  });
+
+  test('a name the email does give is passed through, to staff and family alike', () => {
+    expect(staffDisplayNameOrNull('jane.okafor@example.test')).toBe('Jane Okafor');
+    expect(staffDisplayName('jane.okafor@example.test', STAFF_ID)).toBe('Jane Okafor');
+    expect(familyDisplayName(staff('Jane Okafor'), 'Your coach')).toBe('Jane Okafor');
+  });
+
+  test('an athlete is always named by their record, even one whose name equals their account id', () => {
+    const athlete = { accountId: 'Marisol', fullName: 'Marisol', athleteId: 'ath-1', dob: null, coachAccountId: null, memberSince: null };
+    expect(familyDisplayName(athlete, 'Your coach')).toBe('Marisol');
   });
 });

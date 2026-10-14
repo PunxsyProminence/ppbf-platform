@@ -38,6 +38,7 @@ import type { Readable } from 'node:stream';
 import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
+import { FAMILY_SESSION_FIELDS, SESSION_WITHHELD_FROM_FAMILY_FIELDS } from './familyRecordView';
 import {
   GUARDIAN_FAMILY_COLUMNS,
   GUARDIAN_WITHHELD_FROM_FAMILY_COLUMNS,
@@ -104,6 +105,7 @@ let db: Client;
 let domainGet: typeof import('@/app/api/pilot/intake/domain-get/route').POST;
 let getIntakeCaseAggregate: typeof import('./intake').getIntakeCaseAggregate;
 let casesGet: typeof import('@/app/api/pilot/intake/cases/get/route').POST;
+let holdsGet: typeof import('@/app/api/pilot/training-holds/route').GET;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 function connectionStringFor(database: string): string {
@@ -434,6 +436,7 @@ beforeAll(async () => {
   domainGet = (await import('@/app/api/pilot/intake/domain-get/route')).POST;
   getIntakeCaseAggregate = (await import('./intake')).getIntakeCaseAggregate;
   casesGet = (await import('@/app/api/pilot/intake/cases/get/route')).POST;
+  holdsGet = (await import('@/app/api/pilot/training-holds/route')).GET;
 });
 
 afterAll(async () => {
@@ -1297,5 +1300,103 @@ describe('POST /api/pilot/intake/cases/get', () => {
         email: 'guardian.b@example.test', relationship_to_athlete: 'father', athlete_id: ATHLETE,
       },
     ]);
+  });
+});
+
+/* #1558 ITEM THREE, T1: THE NAME OF THE STAFF MEMBER WHO PLACED A HOLD.
+   getSubjectIdentity names a staff account whose login email gives no name by
+   its account id -- an honest gap on staff screens -- and the account id is the
+   login email unless somebody chose otherwise. An athlete or a guardian reading
+   the hold gets the floor phrase, "Your coach" (OD-2026-10-06-025 ruling 2). The
+   placer here is a real account row, read by the real identity lookup. */
+describe('the staff name on a training hold, for a family reader', () => {
+  const NAMELESS = 'nameless.4411@example.test';
+  const LETTERLESS = 'letterless.9911@example.test';
+  const NAMED = 'named.coach@example.test';
+
+  beforeAll(async () => {
+    for (const [accountId, loginEmail] of [
+      [NAMELESS, null],
+      [LETTERLESS, '9911-07@example.test'],
+      [NAMED, 'jane.okafor@example.test'],
+    ] as const) {
+      await db.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email)
+         values ($1, 'coach', $2, 'microsoft', $3)`,
+        [accountId, ORG, loginEmail],
+      );
+    }
+    await db.query(
+      `insert into pilot.training_holds
+         (organization_id, hold_id, athlete_id, scope, reason_category, reason_text, athlete_explanation,
+          lift_condition_text, placed_by_account_id, placed_by_role)
+       values ($1, 'hold-names-1', $2, 'contact_only', 'medical', 'Staff detail.', 'Rest the hand this week.',
+               'Clearance from the doctor.', $3, 'coach')`,
+      [ORG, ATHLETE, NAMELESS],
+    );
+  });
+
+  async function readHold(actor: PilotPrincipal): Promise<{ status: number; raw: string }> {
+    mockRequirePrincipal.mockResolvedValue(actor);
+    const response = await holdsGet(new NextRequest(`http://localhost/api/pilot/training-holds?athlete_id=${ATHLETE}`));
+    return { status: response.status, raw: await response.text() };
+  }
+
+  async function placedBy(accountId: string) {
+    await db.query(
+      `update pilot.training_holds set placed_by_account_id = $3 where organization_id = $1 and hold_id = $2`,
+      [ORG, 'hold-names-1', accountId],
+    );
+  }
+
+  it.each([
+    ['no login email', NAMELESS],
+    ['a login email with no letters in it', LETTERLESS],
+  ])('a placer with %s is "Your coach" to the athlete and to each guardian, never the id', async (_label, placer) => {
+    await placedBy(placer);
+
+    for (const actor of [AS.athlete(), AS.guardianA(), AS.guardianB()]) {
+      const { status, raw } = await readHold(actor);
+      expect(status).toBe(200);
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('Your coach');
+      expect(raw).not.toContain(placer);
+      expect(raw).not.toMatch(/4411|9911/);
+    }
+  });
+
+  it('control: a placer whose email gives a name is named by it, to the same readers', async () => {
+    await placedBy(NAMED);
+
+    for (const actor of [AS.athlete(), AS.guardianA()]) {
+      const { raw } = await readHold(actor);
+      expect(JSON.parse(raw).hold.placed_by_name).toBe('Jane Okafor');
+      expect(raw).not.toContain(NAMED);
+    }
+  });
+
+  it('control: the coach reads the hold as before, the placer\'s account id included', async () => {
+    await placedBy(NAMELESS);
+
+    const { status, raw } = await readHold(AS.coach());
+    expect(status).toBe(200);
+    expect(raw).toContain(NAMELESS);
+  });
+});
+
+/* #1558 ITEM THREE, T5: THE SESSION AN ATHLETE IS SENT. A named list
+   (familyRecordView.ts FAMILY_SESSION_FIELDS); every column of pilot.sessions is
+   on it or on the withheld list, so a migration that adds one fails HERE until
+   somebody places it. */
+describe('the family session list covers pilot.sessions', () => {
+  it('places every column of pilot.sessions on exactly one list', async () => {
+    const live = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'pilot' and table_name = 'sessions'`,
+    );
+    const declared = [...FAMILY_SESSION_FIELDS, ...SESSION_WITHHELD_FROM_FAMILY_FIELDS].sort();
+
+    expect(new Set(declared).size).toBe(declared.length);
+    expect(declared).toEqual(live.rows.map((row) => row.column_name).sort());
+    expect(FAMILY_SESSION_FIELDS as readonly string[]).not.toContain('organization_id');
   });
 });

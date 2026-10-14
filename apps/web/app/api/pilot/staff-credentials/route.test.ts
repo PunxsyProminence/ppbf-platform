@@ -140,3 +140,55 @@ describe('GET /api/pilot/staff-credentials', () => {
     }
   });
 });
+
+/*
+ * #1558 item three. A staff member whose login email gives no name is named by
+ * the account id on the staff screens; this list admits every signed-in member,
+ * and an athlete or a parent gets the floor phrase instead -- the account id is
+ * the login email unless somebody chose otherwise. "Staff member" is PROPOSED
+ * wording (accepted by Overwatch for this lane), not an owner ruling.
+ */
+describe('a staff member whose login email gives no name', () => {
+  const NAMELESS_ID = 'nameless.4411@example.test';
+  const namelessRows = (loginEmail: string | null) => [
+    {
+      account_id: NAMELESS_ID, role: 'coach', login_email: loginEmail,
+      clearance_type_id: 'ct-cpr', clearance_name: 'CPR/First Aid',
+      issuing_authority: 'American Red Cross', status: 'current', expires_on: '2027-01-01',
+    },
+  ];
+
+  test.each([
+    ['parent', null], ['athlete', null], ['volunteer', null],
+    ['parent', '4411-77@example.test'], ['athlete', '@example.test'],
+  ] as const)('a %s reader is shown "Staff member", never the id (email %s)', async (role, email) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    mockList.mockResolvedValue(namelessRows(email));
+
+    const response = await GET(getReq());
+    const raw = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(raw).staff.map((entry: { display_name: string }) => entry.display_name)).toEqual(['Staff member']);
+    expect(raw).not.toContain(NAMELESS_ID);
+    expect(raw).not.toContain('4411');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)('a %s reads it as before: the account id is the name', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    mockList.mockResolvedValue(namelessRows(null));
+
+    const body = await (await GET(getReq())).json();
+
+    expect(body.staff.map((entry: { display_name: string }) => entry.display_name)).toEqual([NAMELESS_ID]);
+  });
+
+  test('a name the email does give is the same for every reader', async () => {
+    for (const role of ['parent', 'coach'] as const) {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+      mockList.mockResolvedValue(namelessRows('ray.nolan@example.test'));
+      const body = await (await GET(getReq())).json();
+      expect(body.staff.map((entry: { display_name: string }) => entry.display_name)).toEqual(['Ray Nolan']);
+    }
+  });
+});

@@ -237,6 +237,45 @@ describe('listShadowTelemetry athlete scoping', () => {
   });
 });
 
+/*
+ * #1558 item three: the review projection's "latest event of the case" reads
+ * the same rows a family reader is allowed through listShadowEvents.
+ * shadowEventAthleteScope.pg.test.ts shows it on real rows.
+ */
+describe('getShadowReviewProjection under the family rules', () => {
+  const lateral = () => String(mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.intake_cases c'))?.[0])
+    .replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ');
+  const itemsParams = () => (mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.intake_cases c'))?.[1] ?? []) as unknown[];
+
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  test('the latest-event lateral carries the three family rules', async () => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(String(sql).includes('count(*)') ? [{ count: '0' }] : []));
+    await getShadowReviewProjection(context({ actorRole: 'parent', actorAccountId: 'parent-1' }));
+
+    expect(lateral()).toContain(
+      "and ($9::text <> 'own' or left(e.event_name, length('SHADOW_AUDIT_')) <> 'SHADOW_AUDIT_' or e.entity_type = any($10::text[])) "
+      + "and ($9::text <> 'own' or e.event_name <> all($11::text[])) "
+      + "and ($9::text <> 'own' or e.actor_role is distinct from 'parent' or e.actor_account_id = $8) "
+      + 'order by e.created_at desc limit 1',
+    );
+    const params = itemsParams();
+    expect(params[7]).toBe('parent-1');
+    expect(params[8]).toBe('own');
+    expect(params[9]).toEqual([]);
+    expect(params[10]).toEqual(['SHADOW_INTAKE_DOMAIN_UPSERTED']);
+  });
+
+  test.each([['coach', 'coach'], ['organization_admin', 'admin']] as const)('a %s reads with reach %s, so none of the rules apply', async (actorRole, reach) => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(String(sql).includes('count(*)') ? [{ count: '0' }] : []));
+    await getShadowReviewProjection(context({ actorRole }));
+
+    expect(itemsParams()[8]).toBe(reach);
+  });
+});
+
 describe('getShadowReviewProjection athlete scoping', () => {
   test('parent only sees review items for their linked athletes', async () => {
     mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-linked-1' }]); // guardian links

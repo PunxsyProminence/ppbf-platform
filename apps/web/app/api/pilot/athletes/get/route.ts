@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
     // fields, coach_name in place of coach_id (OD-2026-10-06-025 ruling 2).
     // Staff keep the row.
     if (isFamilyRecordCaller(principal.role)) {
-      return NextResponse.json({ found: true, athlete: await toFamilyAthlete(principal.organizationId, athlete) });
+      return NextResponse.json({
+        found: true,
+        athlete: await toFamilyAthlete(principal.organizationId, athlete, principal.role === 'athlete' ? 'athlete' : 'parent'),
+      });
     }
 
     return NextResponse.json({ found: true, athlete });

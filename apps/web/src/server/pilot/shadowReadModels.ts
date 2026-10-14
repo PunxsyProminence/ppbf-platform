@@ -1002,6 +1002,16 @@ export async function getShadowReviewProjection(
            (e.entity_type = 'intake_case' and e.entity_id = c.intake_case_id::text)
            or e.payload->>'intake_case_id' = c.intake_case_id::text
          )
+         -- An athlete or parent reads the same feed rows here as through
+         -- listShadowEvents (#1558 item three): no audit mirror unless its
+         -- type is on the family list, none of the hidden lines, and a row a
+         -- guardian wrote only for that guardian. A row this reader may not
+         -- read cannot be "the latest event" of their case either.
+         and ($9::text <> 'own'
+           or left(e.event_name, length('${AUDIT_MIRROR_EVENT_PREFIX}')) <> '${AUDIT_MIRROR_EVENT_PREFIX}'
+           or e.entity_type = any($10::text[]))
+         and ($9::text <> 'own' or e.event_name <> all($11::text[]))
+         and ($9::text <> 'own' or e.actor_role is distinct from 'parent' or e.actor_account_id = $8)
        order by e.created_at desc
        limit 1
      ) se on true
@@ -1034,6 +1044,9 @@ export async function getShadowReviewProjection(
       scope.restrictToAthleteIds,
       scope.includeUnscopedRows,
       context.actorAccountId,
+      auditMirrorReach(context.actorRole),
+      [...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES],
+      [...FAMILY_HIDDEN_EVENT_NAMES],
     ],
   );
 

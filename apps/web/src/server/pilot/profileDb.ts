@@ -229,16 +229,37 @@ export async function getSubjectIdentity(
  * than mangled into something that looks like a name and is not.
  */
 export function staffDisplayName(loginEmail: string | null, accountId: string): string {
+  return staffDisplayNameOrNull(loginEmail) ?? accountId;
+}
+
+/** The derived name alone, or null when the address does not give one. */
+export function staffDisplayNameOrNull(loginEmail: string | null): string | null {
   const stem = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
-  if (!stem) return accountId;
+  if (!stem) return null;
   const words = stem
     .split(/[._-]+/)
     .map((word) => word.trim())
     .filter((word) => /\p{L}/u.test(word));
-  if (words.length === 0) return accountId;
+  if (words.length === 0) return null;
   return words
     .map((word) => word[0].toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+/**
+ * THE NAME A FAMILY READER IS SHOWN FOR A SUBJECT (#1558 item three;
+ * OD-2026-10-06-025 ruling 2: families see a coach's display name, never the
+ * internal account id).
+ *
+ * getSubjectIdentity keeps its honest gap for staff screens: a staff account
+ * whose login email gives no name is named by its account id. An account id is
+ * the login email unless somebody chose otherwise, so that gap must not reach
+ * an athlete or a parent. A staff subject whose name is exactly its account id
+ * is the gap, and gets the caller's floor phrase instead. An athlete always has
+ * a real name and is passed through.
+ */
+export function familyDisplayName(identity: SubjectIdentity, floor: string): string {
+  return identity.athleteId === null && identity.fullName === identity.accountId ? floor : identity.fullName;
 }
 
 /* --------------------------------------------------------- RELATIONSHIP --- */

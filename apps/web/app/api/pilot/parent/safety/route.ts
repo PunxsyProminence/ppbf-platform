@@ -5,7 +5,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { callerParentIdSet, checkGuardianMediaConsent, MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyDisplayName, getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold, type TrainingHoldRow, type TrainingHoldScope } from '@/src/server/pilot/trainingHolds';
 import {
@@ -109,7 +109,10 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     expires_at: hold.expires_at,
     // As in training-holds: a placer who resolves to nobody gets the existing
     // phrase, never the account id (often the login email).
-    placed_by_name: placer?.fullName ?? deriveCoachDisplayName(null),
+    // Nor by the id when the placer's login email gives no name (#1558
+    // item three): the honest gap getSubjectIdentity keeps for staff
+    // screens is a login email here.
+    placed_by_name: placer ? familyDisplayName(placer, deriveCoachDisplayName(null)) : deriveCoachDisplayName(null),
   };
 }
 

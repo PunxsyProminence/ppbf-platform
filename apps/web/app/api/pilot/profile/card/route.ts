@@ -3,13 +3,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertViewerMayReachSubject,
+  familyDisplayName,
   getAccountProfile,
   getSubjectIdentity,
   resolveRelationship,
   toProfileSubject,
 } from '@/src/server/pilot/profileDb';
 import { coachNameForViewer, resolveCardSubjectAccountId } from '@/src/server/pilot/profileCardSubject';
-import { buildFightCard } from '@/src/server/pilot/profileIdentity';
+import { buildFightCard, isFamilyViewer } from '@/src/server/pilot/profileIdentity';
+import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import { decidePortrait, decideRingName } from '@/src/server/pilot/profileVisibility';
 
 export const runtime = 'nodejs';
@@ -77,7 +79,12 @@ export async function GET(request: NextRequest) {
     const card = buildFightCard(
       {
         accountId: identity.accountId,
-        fullName: identity.fullName,
+        // An athlete or parent looking at a staff card (their child's coach)
+        // is never shown the account id the staff name falls back to (#1558
+        // item three; OD-2026-10-06-025 ruling 2).
+        fullName: isFamilyViewer(principal.role)
+          ? familyDisplayName(identity, deriveCoachDisplayName(null))
+          : identity.fullName,
         ringName,
         corner: profile.corner,
         program: profile.program,

@@ -11,7 +11,7 @@ import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { familyDisplayName, getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import {
   OPERATIONAL_TRAINING_HOLD_SCOPES,
   TRAINING_HOLD_REASON_CATEGORIES,
@@ -46,9 +46,9 @@ const TEXT_FIELD_MAX = 2000;
  * athlete or guardian reading a hold has a real point of contact to ask
  * about it, not just an unattributed note. Resolved through the same
  * getSubjectIdentity() every other staff-facing-name lookup in the app
- * uses, so a coach whose account has no email shows as their account id
- * rather than a fabricated name -- the same honest-gap behavior
- * getSubjectIdentity documents for itself.
+ * uses. getSubjectIdentity names a coach whose account has no usable email by
+ * their account id, an honest gap on staff screens; an athlete or guardian is
+ * given the floor phrase instead (familyDisplayName, #1558 item three).
  */
 
 interface AthleteFacingHold {
@@ -71,7 +71,10 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     // A placer who resolves to nobody (a login deleted since, or unknown) is
     // named by the existing phrase, never by the account id: a staff id is
     // often the login email (OD-2026-10-06 Q6: a display name, never the id).
-    placed_by_name: placer?.fullName ?? deriveCoachDisplayName(null),
+    // Nor by the id when the placer's login email gives no name (#1558
+    // item three): the honest gap getSubjectIdentity keeps for staff
+    // screens is a login email here.
+    placed_by_name: placer ? familyDisplayName(placer, deriveCoachDisplayName(null)) : deriveCoachDisplayName(null),
   };
 }
 

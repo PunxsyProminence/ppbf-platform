@@ -25,6 +25,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 
 jest.mock('@/src/server/pilot/profileDb', () => ({
   getSubjectIdentity: jest.fn(),
+  familyDisplayName: jest.requireActual('@/src/server/pilot/profileDb').familyDisplayName,
 }));
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
@@ -262,6 +263,42 @@ test("the placer name falls back to the existing phrase, never the account id, w
 
   expect(payload.items[0].hold.placed_by_name).toBe('Your coach');
   expect(JSON.stringify(payload)).not.toContain('jane.okafor');
+});
+
+// #1558 item three: the placer resolves, but their login email gives no name,
+// so the staff name IS the account id (getSubjectIdentity's honest gap on staff
+// screens). A guardian is given the floor phrase instead.
+test('a placer whose staff name is their account id is "Your coach", never the id', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockGetSubjectIdentity.mockResolvedValue({
+    accountId: 'nameless.4411@example.org', fullName: 'nameless.4411@example.org', athleteId: null,
+    dob: null, coachAccountId: null, memberSince: null,
+  });
+  mockGetActiveTrainingHold.mockResolvedValueOnce({
+    organization_id: 'org-a',
+    hold_id: 'hold-n',
+    athlete_id: 'ath-1',
+    scope: 'all_training',
+    reason_category: 'medical',
+    reason_text: 'staff only',
+    athlete_explanation: 'Rest this week.',
+    lift_condition_text: '',
+    placed_by_account_id: 'nameless.4411@example.org',
+    placed_by_role: 'coach',
+    placed_at: '2026-08-01T00:00:00.000Z',
+    expires_at: null,
+    lifted_by_account_id: null,
+    lifted_at: null,
+    lift_note: '',
+    status: 'active',
+  } as never);
+
+  const response = await get();
+  const payload = await response.json();
+
+  expect(payload.items[0].hold.placed_by_name).toBe('Your coach');
+  expect(JSON.stringify(payload)).not.toContain('nameless.4411');
 });
 
 test('no active hold reads as hold: null, not omitted', async () => {

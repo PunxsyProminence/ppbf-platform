@@ -33,6 +33,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 
 jest.mock('@/src/server/pilot/profileDb', () => ({
   getSubjectIdentity: jest.fn(),
+  familyDisplayName: jest.requireActual('@/src/server/pilot/profileDb').familyDisplayName,
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
