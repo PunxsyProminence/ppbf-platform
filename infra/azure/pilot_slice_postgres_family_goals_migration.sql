@@ -20,17 +20,17 @@
 -- application stops showing it (PH-05 Q-B default A). A direct DELETE is
 -- refused; one that arrives as a cascade (its athlete or gym going) runs from
 -- inside another trigger, so pg_trigger_depth() is above 1 and it goes through.
--- Retiring is final: once retired_at is set it does not change.
+-- Retiring is final: once retired_at is set the goal does not change at all.
 --
 -- WHO WROTE IT IS KEPT, and who reads what is the application's (PH-06): by
 -- OD-2026-10-12-024's principle a guardian reads the goals they created and
 -- those staff created for the child, never another guardian's; staff read all
 -- of a child's goals. created_by_account_id and created_by_role are what make
--- that enforceable, so they never change by hand. Every later change by hand
--- names who made it (updated_by_account_id and updated_by_role). When the
--- writer's account is
--- removed the goal stays, about the child, with no writer (set null), as a
--- family reply does (D-9).
+-- that enforceable, so they never change by hand. A change by hand must carry
+-- an editor (updated_by_account_id and updated_by_role are not null after it);
+-- the application sets them to whoever is making that change on every write.
+-- When the writer's account is removed the goal stays, about the child, with
+-- no writer (set null), as a family reply does (D-9).
 --
 -- THE GOAL'S CHILD AND GYM NEVER MOVE. The athlete reference is (gym, athlete)
 -- over pilot.athletes' own key, so a goal cannot name another gym's child, and
@@ -126,7 +126,7 @@ begin
       using errcode = '23514', constraint = 'pilot_family_goals_fixed_writer';
   end if;
 
-  if old.retired_at is not null and new.retired_at is distinct from old.retired_at then
+  if old.retired_at is not null then
     raise exception 'FAMILY_GOAL_RETIREMENT_IS_FINAL'
       using errcode = '23514', constraint = 'pilot_family_goals_retired_kept';
   end if;

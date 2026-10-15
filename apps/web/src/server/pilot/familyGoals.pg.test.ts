@@ -315,7 +315,7 @@ describe('family goals migration (PH-05)', () => {
     }
   });
 
-  test('a change names its editor; retiring is final; a done time is not rewritten, and unticking records a new one', async () => {
+  test('a change names its editor; a retired goal does not change; a done time is not rewritten, and unticking records a new one', async () => {
     const client = await freshDatabase('fgoal_history');
     try {
       const { rows: [{ goal_id: goalId }] } = await goal(client);
@@ -340,7 +340,7 @@ describe('family goals migration (PH-05)', () => {
       expect(done.rows[0].completed_at.toISOString()).toBe('2026-10-22T15:00:00.000Z');
 
       await edit(`retired_at = '2026-10-23T15:00:00Z'`);
-      for (const set of ['retired_at = null', `retired_at = '2026-10-24T15:00:00Z'`]) {
+      for (const set of ['retired_at = null', `retired_at = '2026-10-24T15:00:00Z'`, `title = 'Back again'`, `state = 'active', completed_at = null`]) {
         await expect(edit(set)).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_retired_kept' });
       }
     } finally {
