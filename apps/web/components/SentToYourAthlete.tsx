@@ -58,7 +58,7 @@ export default function SentToYourAthlete({ childNames }: Readonly<{ childNames:
   return (
     <section aria-label="Sent to your athlete" className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
       <h4 className="t-label">Sent to your athlete</h4>
-      <p className="t-muted">A copy of what the coaches wrote to your child. Your child reads it on their own page.</p>
+      <p className="t-muted">A copy of what the gym&apos;s staff wrote to your child. Your child reads it on their own page.</p>
       {read.state === 'loading' ? (
         <p className="t-muted">Loading…</p>
       ) : read.state === 'failed' ? (

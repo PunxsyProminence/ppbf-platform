@@ -79,7 +79,7 @@ test('sends the words to that athlete as an athlete message, clears the box, and
   expect(screen.getByLabelText('Message to the athlete')).toHaveValue('');
   expect(screen.getByRole('status').textContent).toContain("on the athlete's Dashboard");
   // FC-06 Q-2, ruled B: the family of an athlete under 18 reads a copy.
-  expect(screen.getByText(/For an athlete under 18, their family can read it too\./)).toBeInTheDocument();
+  expect(screen.getByText(/For an athlete under 18, or with no date of birth on file, their family can read it too\./)).toBeInTheDocument();
   expect(sentListReads(fetchMock)).toHaveLength(2);
   expect(within(screen.getByRole('list', { name: 'Sent to this athlete' })).getByText('Great work on the jab.')).toBeInTheDocument();
 });

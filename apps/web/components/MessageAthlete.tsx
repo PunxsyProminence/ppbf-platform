@@ -113,7 +113,7 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
     <form onSubmit={(event) => void send(event)} className="space-y-[var(--s3)]">
       <h2 className="t-command text-[length:var(--t-lg)]">Message the Athlete</h2>
       <p className="t-muted">
-        The athlete reads it on their Dashboard. For an athlete under 18, their family can read it too.
+        The athlete reads it on their Dashboard. For an athlete under 18, or with no date of birth on file, their family can read it too.
       </p>
       <label className="field">
         <span className="t-label">Message to the athlete</span>
