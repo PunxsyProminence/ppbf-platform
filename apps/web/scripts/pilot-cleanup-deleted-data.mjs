@@ -388,6 +388,60 @@ async function clearShadowProfileMentions(client, tables, subjects) {
  * so each turn matches once. Every SET reads the row as it was before the
  * statement.
  */
+/* A PERSON'S OWN FEEDBACK NOTES ARE DE-IDENTIFIED, THE SIGNAL KEPT (gap B,
+   #1600). Jason 2026-10-06: "delete any thing that personally Identifys the
+   person but we keep data that [makes] the Ai and ML better"; Overwatch
+   2026-10-15: de-identify rather than delete. A thumbs-down on a SHADOW answer
+   is stored three times, each naming the login that gave it and holding the
+   note they typed (app/api/pilot/shadow/feedback/route.ts, then
+   processLearningSignal in shadowLearningLoop.ts):
+   - pilot.shadow_feedback: account_id (no foreign key) and comment. The login
+     becomes the person's token, the note goes; helpful, rating, outcome and
+     the review fields stay.
+   - pilot.shadow_library_review_flags: one row per gym and topic, naming the
+     LATEST flagger and their note. When that is this person, both are
+     cleared; the topic, counts and review state stay. (A guardian's account
+     delete would null account_id by its foreign key, but not the note.)
+   - pilot.shadow_research_requirements filed by the learning loop
+     (shadow_learning_negative_outcome): created_by_account_id becomes the
+     token; knowledge_gap, which holds the note when one was typed, becomes the
+     loop's own sentence for no note; metadata.note goes. The topic is the
+     server's label, not typed text, and stays.
+   The token is the one the chat audit gives this person in this run, so their
+   de-identified rows still read as one person's and as nobody's. */
+async function deidentifyFeedbackNotes(client, tables, accountIds, token) {
+  const counts = { shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 };
+  if (accountIds.length === 0) return counts;
+  if (tables.shadowFeedback) {
+    const feedback = await client.query(
+      'update pilot.shadow_feedback set account_id = $2, comment = null where account_id = any($1::text[])',
+      [accountIds, token],
+    );
+    counts.shadowFeedback = feedback.rowCount ?? 0;
+  }
+  if (tables.reviewFlags) {
+    const flags = await client.query(
+      'update pilot.shadow_library_review_flags set account_id = null, user_note = null where account_id = any($1::text[])',
+      [accountIds],
+    );
+    counts.shadowReviewFlagNotes = flags.rowCount ?? 0;
+  }
+  if (tables.researchRequirements) {
+    const learning = await client.query(
+      `update pilot.shadow_research_requirements
+          set created_by_account_id = $2,
+              knowledge_gap = 'Recent response on ''' || coalesce(nullif(metadata->>'topic', ''), 'general')
+                || ''' was judged insufficient and requires evidence reinforcement.',
+              metadata = metadata - 'note'
+        where source_event_name = 'shadow_learning_negative_outcome'
+          and created_by_account_id = any($1::text[])`,
+      [accountIds, token],
+    );
+    counts.shadowLearningRows = learning.rowCount ?? 0;
+  }
+  return counts;
+}
+
 async function deidentifyShadowChatAudit(client, tables, people) {
   const counts = { shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   if (!tables.shadowChatAudit || people.length === 0) return counts;
@@ -634,7 +688,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let subjectRequirementsDeleted = 0;
   let subjectSubmissionsDeleted = 0;
   const library = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 };
-  const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
+  const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0, shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
   };
@@ -730,7 +784,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let unlinkedHere = 0;
       let retiredHere = 0;
       let correctionsHere = 0;
-      const shadowHere = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
+      const shadowHere = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0, shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 };
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           await client.query(
@@ -779,6 +833,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           organizationId: athlete.organization_id,
           token, accountIds: athleteLogins, subjects: [{ ...subject, token }], names: knownNames,
         }]));
+        Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, athleteLogins, token));
       }
       /* THE QUESTIONS THIS ATHLETE ASKED SHADOW GO TOO (F-054). An athlete's or
          parent's unanswered SHADOW question is filed as a research row holding
@@ -1145,13 +1200,16 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // The guardian's SHADOW rows (SHADOW_OPERATIONAL_TABLES): their own turns
       // only; a turn about their child is tokened by the child's purge.
       const shadowHere = await deleteShadowOperationalRows(client, tables, [accountId]);
+      const guardianToken = anonymousToken();
       Object.assign(shadowHere, await deidentifyShadowChatAudit(client, tables, [{
         organizationId: guardianGym,
-        token: anonymousToken(),
+        token: guardianToken,
         accountIds: [accountId],
         subjects: guardianChildren.map((child) => ({ ...child, token: null })),
         names: guardianNames,
       }]));
+      // Their feedback notes, before the account row (and its set-null key) goes.
+      Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, [accountId], guardianToken));
       // The guardian's own unanswered SHADOW questions (F-054), by the account
       // that filed them: a parent's words about their child are the parent's
       // record and go with the account.
@@ -1205,6 +1263,9 @@ function shadowCountsFor(shadow, prefix, suffix) {
     [`${prefix.replace('delete_', 'deidentify_')}shadow_chat_audit${suffix.replace('_deleted', '_deidentified')}`]: shadow.shadowChatAudit,
     [`${prefix}shadow_chat_audit${suffix}`]: shadow.shadowChatAuditDeleted,
     [`${prefix.replace('delete_', 'scrub_')}shadow_chat_audit_names${suffix.replace('_deleted', '_scrubbed')}`]: shadow.shadowChatAuditScrubbed,
+    [`${prefix.replace('delete_', 'deidentify_')}shadow_feedback${suffix.replace('_deleted', '_deidentified')}`]: shadow.shadowFeedback,
+    [`${prefix.replace('delete_', 'clear_')}shadow_review_flag_notes${suffix.replace('_deleted', '_cleared')}`]: shadow.shadowReviewFlagNotes,
+    [`${prefix.replace('delete_', 'deidentify_')}shadow_learning_research_rows${suffix.replace('_deleted', '_deidentified')}`]: shadow.shadowLearningRows,
   };
 }
 
@@ -1285,6 +1346,8 @@ async function main() {
               to_regclass('pilot.shadow_rate_limit_buckets') is not null as "shadowBuckets",
               to_regclass('pilot.shadow_feature_unlock_snapshots') is not null as "shadowSnapshots",
               to_regclass('pilot.shadow_chat_audit') is not null as "shadowChatAudit",
+              to_regclass('pilot.shadow_feedback') is not null as "shadowFeedback",
+              to_regclass('pilot.shadow_library_review_flags') is not null as "reviewFlags",
               to_regclass('pilot.shadow_research_requirements') is not null as "researchRequirements",
               to_regclass('pilot.shadow_research_submissions') is not null as "researchSubmissions",
               to_regclass('pilot.shadow_library_documents') is not null as "libraryDocuments",
@@ -1363,7 +1426,7 @@ async function main() {
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
         subjectRequirementsDeleted: 0, subjectSubmissionsDeleted: 0,
         library: { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 },
-        shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
+        shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0, shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
       : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });
