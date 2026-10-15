@@ -349,6 +349,12 @@ describe('authored announcements on the parent hub', () => {
     expect(screen.getAllByText('Bring a mouthguard Thursday.')).toHaveLength(1);
     expect(screen.getAllByText('Gym closed Monday for the holiday.')).toHaveLength(1);
     expect(notices.contains(screen.getByText('Bring a mouthguard Thursday.'))).toBe(false);
+    // The help, opened, says what a guardian can actually do here.
+    await act(async () => {
+      fireEvent.click(screen.getByText('HELP: Messages from the coaches'));
+    });
+    expect(screen.getByText('Reply under a message to answer the coach')).toBeTruthy();
+    expect(screen.getByText('Tick a to-do as Done when it is done')).toBeTruthy();
     expect(screen.queryByText('Ask questions about training')).toBeNull();
   });
 
