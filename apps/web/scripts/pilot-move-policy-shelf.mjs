@@ -32,7 +32,11 @@
  * Rows that point AT the moving rows from somewhere else are not moved, and
  * any of them refuses the apply:
  *   - shadow_evidence_items cite (id, library_organization_id) by composite
- *     foreign key with no ON UPDATE action;
+ *     foreign key with no ON UPDATE action, and a CHECK lets an item cite only
+ *     its asking organization or __platform__, so they cannot be re-pointed
+ *     into the target. The plan reports them per asking organization, with
+ *     whether every asking account is an active member of the target, so the
+ *     choice of what to do with them is made on counts;
  *   - shadow_research_submissions hang off a research requirement that stays
  *     in the old organization;
  *   - rabbit_holes.library_document_id has no foreign key and resolves only in
@@ -261,12 +265,48 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
   )).rows;
   const retractionChecks = retractionChecksAnyOrg.filter((row) => row.organization_id === from);
 
-  const evidenceItems = Number((await client.query(
-    `select count(*)::int as n
-       from pilot.shadow_evidence_items
-      where source_id = any($1::text[]) or document_id = any($2::text[]) or chunk_id = any($3::text[])`,
-    [sourceIds, documentIds, chunkIds],
-  )).rows[0]?.n ?? 0);
+  // Citing items cannot simply be re-pointed: the CHECK
+  // pilot_shadow_evidence_items_library_scope_check lets an item cite only its
+  // own (asking) organization or __platform__. What happens to them is decided
+  // on these counts (OD-2026-10-08-009 D22), so the plan groups them by asking
+  // organization and says whether every asking account is an active member of
+  // the target. Counts only: no account id leaves the database.
+  const evidenceByAskingOrganization = (await client.query(
+    `with citing as (
+       select e.organization_id, e.bundle_id, e.account_id,
+              (select count(*)::int from pilot.shadow_message_citations mc
+                where mc.evidence_id = e.evidence_id) as message_citations,
+              exists (
+                select 1 from pilot.organization_memberships m
+                 where m.account_id = e.account_id and m.organization_id = $4 and m.active_flag = true
+              ) as account_in_target
+         from pilot.shadow_evidence_items e
+        where e.source_id = any($1::text[]) or e.document_id = any($2::text[]) or e.chunk_id = any($3::text[])
+     )
+     select organization_id as asking_organization_id,
+            count(*)::int as items,
+            count(distinct bundle_id)::int as bundles,
+            coalesce(sum(message_citations), 0)::int as message_citations,
+            count(distinct account_id)::int as asking_accounts,
+            count(distinct account_id) filter (where account_in_target)::int as asking_accounts_active_in_target
+       from citing
+      group by organization_id
+      order by organization_id`,
+    [sourceIds, documentIds, chunkIds, to],
+  )).rows.map((row) => {
+    const askingAccounts = Number(row.asking_accounts ?? 0);
+    const inTarget = Number(row.asking_accounts_active_in_target ?? 0);
+    return {
+      asking_organization_id: row.asking_organization_id,
+      items: Number(row.items ?? 0),
+      bundles: Number(row.bundles ?? 0),
+      message_citations: Number(row.message_citations ?? 0),
+      asking_accounts: askingAccounts,
+      asking_accounts_active_in_target: inTarget,
+      all_asking_accounts_active_in_target: askingAccounts > 0 && inTarget === askingAccounts,
+    };
+  });
+  const evidenceItems = evidenceByAskingOrganization.reduce((sum, group) => sum + group.items, 0);
 
   const submissions = (await client.query(
     `select organization_id, submission_id, source_id, document_id
@@ -362,7 +402,11 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
     .map((row) => ({ chunk_id: row.chunk_id, source_id: row.source_id, document_id: row.document_id }));
   if (openChunks.length > 0) blockers.push({ code: 'CLOSURE_BROKEN', chunks: openChunks });
 
-  if (evidenceItems > 0) blockers.push({ code: 'EVIDENCE_ITEMS_CITE_ROWS', count: evidenceItems });
+  if (evidenceItems > 0) {
+    blockers.push({
+      code: 'EVIDENCE_ITEMS_CITE_ROWS', count: evidenceItems, by_asking_organization: evidenceByAskingOrganization,
+    });
+  }
   if (submissions.length > 0) blockers.push({ code: 'RESEARCH_SUBMISSIONS_REFERENCE_ROWS', submissions });
 
   const strandedRabbitHoles = rabbitHoles.filter((row) => row.organization_id !== to);
@@ -427,8 +471,10 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
     total,
     blockers,
     stateTally,
+    citingEvidence: { items: evidenceItems, by_asking_organization: evidenceByAskingOrganization },
     report: {
       state_tally: stateTally,
+      citing_evidence: { items: evidenceItems, by_asking_organization: evidenceByAskingOrganization },
       state_note: 'The move changes which organization owns these rows, not their review state. '
         + 'ready = passes the review and index filters retrieval applies (embeddings not checked); '
         + 'not_ready rows stay out of retrieval after the move until they are reviewed.',
@@ -537,6 +583,7 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
         plan_fingerprint: plan.fingerprint,
         moving: plan.counts,
         state_tally: plan.stateTally,
+        citing_evidence: plan.citingEvidence,
         before,
         plan,
       };
@@ -545,6 +592,7 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
         blockers: result.blockers,
         moving: plan.counts,
         state_tally: plan.stateTally,
+        citing_evidence: plan.citingEvidence,
         plan_fingerprint: plan.fingerprint,
         note: result.would_apply
           ? `apply needs mode=apply, the phrase ${CONFIRM_PHRASE}, and expected_fingerprint set to this plan_fingerprint`

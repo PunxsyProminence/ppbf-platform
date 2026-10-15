@@ -51,6 +51,8 @@ type Spec = {
   citationChecks?: Row[];
   retractionChecks?: Row[];
   evidenceItems?: number;
+  // Raw rows of the grouped citing-evidence query; overrides evidenceItems.
+  evidenceGroups?: Row[];
   submissions?: Row[];
   rabbitHoles?: Row[];
   collisions?: { sourceUrls?: Row[]; documentShas?: Row[]; citationIds?: Row[]; retractionIds?: Row[] };
@@ -230,7 +232,14 @@ function runTool(spec: Spec): Outcome {
         if (/^select chunk_id, document_id, source_id, organization_id, subject_id/i.test(t)) return ok(spec.chunks ?? []);
         if (/^select organization_id, check_id, source_id/i.test(t)) return ok(spec.citationChecks ?? []);
         if (/^select organization_id, retraction_check_id, source_id/i.test(t)) return ok(spec.retractionChecks ?? []);
-        if (/^select count\\(\\*\\)::int as n\\s+from pilot\\.shadow_evidence_items/i.test(t)) return ok([{ n: spec.evidenceItems ?? 0 }]);
+        if (/^with citing as/i.test(t)) {
+          if (spec.evidenceGroups) return ok(spec.evidenceGroups);
+          const n = spec.evidenceItems ?? 0;
+          return ok(n > 0 ? [{
+            asking_organization_id: ${JSON.stringify(FROM)}, items: n, bundles: n, message_citations: 0,
+            asking_accounts: 1, asking_accounts_active_in_target: 0,
+          }] : []);
+        }
         if (/^select organization_id, submission_id/i.test(t)) return ok(spec.submissions ?? []);
         if (/^select organization_id, rabbit_hole_id/i.test(t)) return ok(spec.rabbitHoles ?? []);
         if (/^select source_id, url from pilot\\.shadow_library_sources/i.test(t)) return ok(spec.collisions?.sourceUrls ?? []);
@@ -412,6 +421,63 @@ describe('dry run', () => {
       'EVIDENCE_ITEMS_CITE_ROWS', 'TARGET_ORG_COLLISION', 'RESEARCH_SUBMISSIONS_REFERENCE_ROWS',
     ]));
     expectRolledBackWithoutWrites(out);
+  });
+
+  test('reports citing evidence items per asking organization, with target membership, and writes nothing', () => {
+    const out = runTool({
+      ...cleanShelf(),
+      evidenceGroups: [
+        { asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4, asking_accounts: 2, asking_accounts_active_in_target: 2 },
+        { asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0, asking_accounts: 1, asking_accounts_active_in_target: 0 },
+      ],
+      options: dryRunOptions(),
+    });
+    const expected = {
+      items: 6,
+      by_asking_organization: [
+        {
+          asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4,
+          asking_accounts: 2, asking_accounts_active_in_target: 2, all_asking_accounts_active_in_target: true,
+        },
+        {
+          asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0,
+          asking_accounts: 1, asking_accounts_active_in_target: 0, all_asking_accounts_active_in_target: false,
+        },
+      ],
+    };
+
+    expect(out.result!.citing_evidence).toEqual(expected);
+    expect((planEvent(out) as unknown as Record<string, unknown>).citing_evidence).toEqual(expected);
+    expect(out.events.find((e) => e.event === 'dry-run')!.payload.citing_evidence).toEqual(expected);
+    expect(out.result!.blockers).toContain('EVIDENCE_ITEMS_CITE_ROWS');
+    // Membership is asked of the target organization.
+    const query = out.calls.find((c) => /^with citing as/i.test(c.text))!;
+    expect(query.values![3]).toBe(TO);
+    expect(query.text).toMatch(/active_flag = true/);
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('a clean shelf reports no citing evidence', () => {
+    const out = runTool({ ...cleanShelf(), options: dryRunOptions() });
+    expect(out.result!.citing_evidence).toEqual({ items: 0, by_asking_organization: [] });
+  });
+
+  test('citing items do not move, so they do not change the plan fingerprint', () => {
+    const clean = runTool({ ...cleanShelf(), options: dryRunOptions() });
+    const cited = runTool({ ...cleanShelf(), evidenceItems: 3, options: dryRunOptions() });
+    expect(cited.result!.plan_fingerprint).toBe(clean.result!.plan_fingerprint);
+  });
+
+  test('a refused apply carries the per-organization counts on its blocker', () => {
+    const out = runTool({ ...cleanShelf(), evidenceItems: 2, options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
+    const blocker = (out.result!.blockers as Array<Record<string, unknown>>)
+      .find((b) => b.code === 'EVIDENCE_ITEMS_CITE_ROWS')!;
+    expect(blocker).toMatchObject({
+      count: 2,
+      by_asking_organization: [expect.objectContaining({ asking_organization_id: FROM, items: 2 })],
+    });
+    expect(writes(out)).toEqual([]);
   });
 
   test('capability rules that ask for the type are listed and never moved', () => {
