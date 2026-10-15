@@ -798,10 +798,17 @@ async function run() {
   // Link the source to the requirement this very intake run promoted, and
   // confirm the computed ladder moves to sources_submitted -- and no further:
   // a submission must never resolve a requirement.
-  const requirementsList = await admin.call('/api/pilot/shadow/research-requirements');
-  const promotedRequirement = (requirementsList.items || []).find(
-    (item) => item.source_event_name === 'SHADOW_INTAKE_CASE_PROMOTED' && item.source_entity_id === intakeCaseId,
-  );
+  // The list is paged (F-025): follow next_cursor until the row turns up.
+  let promotedRequirement = null;
+  let requirementsCursor = null;
+  do {
+    const cursorQuery = requirementsCursor ? `&cursor=${encodeURIComponent(requirementsCursor)}` : '';
+    const requirementsList = await admin.call(`/api/pilot/shadow/research-requirements?limit=200${cursorQuery}`);
+    promotedRequirement = (requirementsList.items || []).find(
+      (item) => item.source_event_name === 'SHADOW_INTAKE_CASE_PROMOTED' && item.source_entity_id === intakeCaseId,
+    ) || null;
+    requirementsCursor = requirementsList.next_cursor || null;
+  } while (!promotedRequirement && requirementsCursor);
   if (!promotedRequirement) {
     throw new Error('Promoted research requirement for this intake case not found');
   }
