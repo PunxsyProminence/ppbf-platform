@@ -804,8 +804,13 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          requirement names the child it is about in subject_id, or, from the
          writers that predate that column, metadata.subject_id or
          metadata.athlete_id: the three fields every reader resolves a row's
-         subject from (shadowResearch.ts namedAthleteIdsOf), trimmed as they
-         trim. ANY of the three, not only the first: a row filed against the
+         subject from (shadowResearch.ts namedAthleteIdsOf), space-trimmed as
+         the SQL readers trim them (namesNoAthleteSql). Every writer stores the
+         id trimmed; the trim is for rows that predate that. And an intake
+         review's row (approve or reject) is written while the case names no
+         athlete yet, and never rewritten, so its only tie to the child is its
+         intake case: source_entity_id is the case id, and the case's
+         primary_athlete_id (no foreign key, so still set here) is the child. ANY of the three, not only the first: a row filed against the
          child under any of them is about the child. No foreign key reaches
          these (a requirement may outlive the athlete it was about), so the
          mark only hides them; left behind, the question, the knowledge gap
@@ -815,7 +820,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          organization only: another gym's athlete with the same id is another
          child. The submissions attached to a row go first, by their own
          statement, so their count is earned (the foreign key would cascade
-         them uncounted). */
+         them uncounted); matched by requirement id alone, as the cascade
+         matches them, so none is removed uncounted. */
       let subjectRequirementsHere = 0;
       let subjectSubmissionsHere = 0;
       if (removed.rows.length > 0 && tables.researchRequirements) {
@@ -824,7 +830,11 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
             where organization_id = $1
               and (btrim(subject_id) = $2
                 or btrim(metadata->>'subject_id') = $2
-                or btrim(metadata->>'athlete_id') = $2)
+                or btrim(metadata->>'athlete_id') = $2
+                or (source_entity_type = 'intake_case'
+                  and source_entity_id in (
+                    select intake_case_id::text from pilot.intake_cases
+                     where organization_id = $1 and primary_athlete_id = $2)))
               for update`,
           key,
         );
@@ -832,9 +842,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         if (requirementIds.length > 0) {
           if (tables.researchSubmissions) {
             const submissions = await client.query(
-              `delete from pilot.shadow_research_submissions
-                where organization_id = $1 and research_requirement_id = any($2::bigint[])`,
-              [athlete.organization_id, requirementIds],
+              'delete from pilot.shadow_research_submissions where research_requirement_id = any($1::bigint[])',
+              [requirementIds],
             );
             subjectSubmissionsHere = submissions.rowCount ?? 0;
           }
