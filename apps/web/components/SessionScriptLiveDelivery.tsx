@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { explainLine } from '@/src/lib/sessionScriptWords';
 import RoundTimerControls from '@/components/RoundTimerControls';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
@@ -93,7 +94,7 @@ interface LoggedIntervention {
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
     { label: 'Say', value: block.what_to_say ?? '' },
-    { label: 'Explain', value: block.what_to_explain ?? '' },
+    explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
   ].filter((line) => line.value.trim() !== '');
