@@ -115,6 +115,34 @@ describe('resources on the parent hub', () => {
     const reads = fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/parent/resources'));
     expect(reads.map((url) => new URL(url, 'http://localhost').searchParams.get('athlete_id'))).toEqual(['ath_1', 'ath_2']);
   });
+
+  test("a sibling's resources are never shown under the other child while their read is still out", async () => {
+    let releaseSecond: (() => void) | null = null;
+    const fetchMock = installFetch();
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      if (String(input).includes('/parent/resources') && String(input).includes('athlete_id=ath_2')) {
+        await new Promise<void>((resolve) => { releaseSecond = resolve; });
+      }
+      return answer(input, init);
+    });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Resources' }));
+    });
+    expect(screen.getByText('Resource for ath_1')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    expect(screen.queryByText('Resource for ath_1')).toBeNull();
+    await act(async () => {
+      releaseSecond?.();
+    });
+    expect(screen.getByText('Resource for ath_2')).toBeInTheDocument();
+  });
 });
 
 describe('parent hub child selector', () => {
