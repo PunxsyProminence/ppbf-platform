@@ -499,15 +499,18 @@ export interface RetiredSessionScript {
 /** The states a plan can be brought back to: whatever it was before it was retired. */
 const RESTORABLE_STATES = ['draft', 'coach_reviewed', 'in_use'] as const;
 
-async function stateBeforeRetiring(client: PoolClient, organizationId: string, scriptId: string): Promise<string> {
+// Across every version of the plan: an edit or an import of a retired plan makes a new version that is
+// retired too, while the retire's own audit row stays under the version that was retired.
+async function stateBeforeRetiring(client: PoolClient, organizationId: string, lineageId: string): Promise<string> {
   const row = await client.query<{ state_before: string | null }>(
     `select details->>'state_before' as state_before
        from pilot.audit_events
-      where organization_id = $1 and entity_type = 'session_script' and entity_id = $2
+      where organization_id = $1 and entity_type = 'session_script'
+        and entity_id in (select script_id from pilot.session_scripts where organization_id = $1 and lineage_id = $2)
         and details->>'outcome' = 'retired'
       order by created_at desc, audit_id desc
       limit 1`,
-    [organizationId, scriptId],
+    [organizationId, lineageId],
   );
   const before = row.rows[0]?.state_before ?? null;
   return before !== null && (RESTORABLE_STATES as readonly string[]).includes(before) ? before : 'draft';
@@ -543,7 +546,7 @@ export async function setSessionScriptRetired(
     }
     // Brought back, a plan is what it was before it was retired (the retire's own audit row holds
     // state_before), not a review nobody did (F-078). No such row: a draft.
-    const stateAfter = params.retired ? 'retired' : await stateBeforeRetiring(client, params.organizationId, script.script_id);
+    const stateAfter = params.retired ? 'retired' : await stateBeforeRetiring(client, params.organizationId, script.lineage_id);
     await client.query(
       `update pilot.session_scripts
           set authoring_state = $3,

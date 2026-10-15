@@ -1045,4 +1045,23 @@ describe('retiring and the other writes', () => {
     expect((await listSessionScripts(gym.organizationId, { includeRetired: true })).map((script) => script.script_id))
       .toEqual([v2.script_id]);
   });
+
+  test('brought back after an edit made a new version while retired, a plan takes the state it was retired from (F-078)', async () => {
+    const gym = await newGym('retire-new-version');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await client.query(
+      `update pilot.session_scripts set authoring_state = 'in_use' where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, created.script_id],
+    );
+    await retireAs(gym, created.script_id, true);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    const v2 = await edit(gym, created.script_id, { name: 'Version two, still retired' });
+    expect(v2.outcome).toBe('new_version');
+
+    // The retire's audit row is under version 1; version 2 is brought back.
+    await retireAs(gym, v2.script_id, false);
+    expect((await getSessionScriptWithDetail(gym.organizationId, v2.script_id))!.authoring_state).toBe('in_use');
+  });
 });

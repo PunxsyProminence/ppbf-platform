@@ -38,6 +38,7 @@ describe('explainLine', () => {
   it('shows a bare section code stored before F-078 in words, with or without its reps', () => {
     expect(explainLine('warmup')).toEqual({ label: 'Explain', value: 'Warm-up' });
     expect(explainLine('skill_work - 8 reps')).toEqual({ label: 'Explain', value: 'Skill work, 8 reps' });
+    expect(explainLine('warm-up - 3 reps')).toEqual({ label: 'Explain', value: 'Warm-up, 3 reps' });
   });
 
   it("leaves a coach's own explanation exactly as written", () => {

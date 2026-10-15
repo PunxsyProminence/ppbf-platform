@@ -38,8 +38,9 @@ export const FROM_TEMPLATE = 'From the template: ';
 const FROM_TEMPLATE_BEFORE = 'From workout template: ';
 
 // A section code as the template-to-script step stored it before F-078, with or without its reps:
-// "warmup", "skill_work - 3 reps". Nothing a coach would write as an explanation in that shape.
-const STORED_SECTION = /^([a-z]+(?:_[a-z]+)*)(?: - (\d+) reps)?$/;
+// "warmup", "warm-up", "skill_work - 3 reps". A coach rarely writes an explanation in that shape;
+// if one does, the label stays "Explain" and only the first letter and the underscores change.
+const STORED_SECTION = /^([a-z]+(?:[_-][a-z]+)*)(?: - (\d+) reps)?$/;
 
 /**
  * The block's what_to_explain line as the screens show it. A line the template step wrote is
