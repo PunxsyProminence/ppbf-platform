@@ -105,6 +105,10 @@ interface LibrarySourceOption {
 
 // The sources route returns at most this many rows per request.
 const SOURCES_PAGE_SIZE = 200;
+// Research requirements per page (F-025).
+const REQUIREMENTS_PAGE_SIZE = 50;
+// The submissions route's batch read takes at most this many ids.
+const ANSWER_STATES_BATCH = 200;
 
 // RINT-05b. Approved by Jason in the RINT-05b lane, 2026-10-03.
 const PLATFORM_SHELF_LABEL = 'Platform shelf (every gym reads this)';
@@ -127,6 +131,9 @@ export default function ResearchIntakePage() {
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
+  // F-025: the list arrives a page at a time; null once the server has no more.
+  const [requirementsCursor, setRequirementsCursor] = useState<string | null>(null);
+  const [requirementsLoadingMore, setRequirementsLoadingMore] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [requirementDraft, setRequirementDraft] = useState({
     sourceEventName: 'MANUAL_RESEARCH_NOTE',
@@ -179,21 +186,53 @@ export default function ResearchIntakePage() {
   // registrations only, which are curator-entered and few.
   const [generalSources, setGeneralSources] = useState<LibrarySourceOption[]>([]);
 
+  // The batch read takes at most 200 ids, so a longer loaded list is asked
+  // for in parts; each answer is merged into what is already shown.
   const refreshAnswerStates = async (requirementIds: number[]) => {
-    if (requirementIds.length === 0) {
-      setAnswerStates({});
-      return;
+    for (let start = 0; start < requirementIds.length; start += ANSWER_STATES_BATCH) {
+      const ids = requirementIds.slice(start, start + ANSWER_STATES_BATCH);
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_ids=${ids.join(',')}`,
+          { credentials: 'include' },
+        );
+        if (!response.ok) continue;
+        const payload = (await response.json()) as { answer_states?: Record<string, AnswerState> };
+        setAnswerStates((current) => ({ ...current, ...(payload.answer_states ?? {}) }));
+      } catch {
+        // The ladder is enrichment; the inbox stays useful without it.
+      }
     }
+  };
+
+  const loadRequirementsPage = async (cursor: string | null) => {
+    const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+    const response = await fetch(
+      `${apiBase()}/api/pilot/shadow/research-requirements?limit=${REQUIREMENTS_PAGE_SIZE}${query}`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new Error('Unable to load SHADOW research requirements.');
+    }
+    const payload = (await response.json()) as { items?: ShadowResearchRequirement[]; next_cursor?: string | null };
+    return { items: payload.items ?? [], nextCursor: payload.next_cursor ?? null };
+  };
+
+  const handleLoadMoreRequirements = async () => {
+    if (requirementsCursor === null || requirementsLoadingMore) return;
+    setRequirementsLoadingMore(true);
     try {
-      const response = await fetch(
-        `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_ids=${requirementIds.join(',')}`,
-        { credentials: 'include' },
-      );
-      if (!response.ok) return;
-      const payload = (await response.json()) as { answer_states?: Record<string, AnswerState> };
-      setAnswerStates(payload.answer_states ?? {});
+      const next = await loadRequirementsPage(requirementsCursor);
+      setRequirements((current) => {
+        const shown = new Set(current.map((item) => item.research_requirement_id));
+        return [...current, ...next.items.filter((item) => !shown.has(item.research_requirement_id))];
+      });
+      setRequirementsCursor(next.nextCursor);
+      await refreshAnswerStates(next.items.map((item) => item.research_requirement_id));
     } catch {
-      // The ladder is enrichment; the inbox stays useful without it.
+      // The rows already shown stay; the button stays for another try.
+    } finally {
+      setRequirementsLoadingMore(false);
     }
   };
 
@@ -226,18 +265,13 @@ export default function ResearchIntakePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
-
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW research requirements.');
-        }
-
-        const payload = (await response.json()) as { items?: ShadowResearchRequirement[] };
-        const loaded = payload.items ?? [];
-        setRequirements(loaded);
-        await refreshAnswerStates(loaded.map((item) => item.research_requirement_id));
+        const first = await loadRequirementsPage(null);
+        setRequirements(first.items);
+        setRequirementsCursor(first.nextCursor);
+        await refreshAnswerStates(first.items.map((item) => item.research_requirement_id));
       } catch {
         setRequirements([]);
+        setRequirementsCursor(null);
       }
     })();
   }, []);
@@ -938,6 +972,16 @@ export default function ResearchIntakePage() {
               </article>
             ))}
           </div>
+          {requirementsCursor !== null ? (
+            <button
+              type="button"
+              onClick={() => void handleLoadMoreRequirements()}
+              disabled={requirementsLoadingMore}
+              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {requirementsLoadingMore ? 'Loading…' : 'Load more requirements'}
+            </button>
+          ) : null}
         </section>
 
         {curatorSources !== null && mayCurateLibrary(session.role) ? (

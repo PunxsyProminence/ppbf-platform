@@ -56,7 +56,7 @@ const REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
 
 const REFUSALS: Readonly<Record<string, string>> = {
   SESSION_SCRIPT_CHANGED:
-    'Another coach saved this plan after you opened it, so nothing of yours was saved and their save is as they left it. Open the plan again to see it, then make your changes.',
+    'This plan was saved after you opened it, on another screen or by another coach, so nothing of yours was saved and that save is as it was left. Open the plan again to see it, then make your changes.',
   SESSION_SCRIPT_SUPERSEDED:
     'This plan has been replaced by a newer version, so nothing was saved. Reload the list and edit the current version.',
   SESSION_SCRIPT_NOT_FOUND: 'This plan could not be found, so nothing was saved.',

@@ -184,6 +184,23 @@ afterEach(() => {
 });
 
 describe('live surface renders the real script and run', () => {
+  it("labels the current block's template facts as the template's, in words (F-078)", async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({
+        script: scriptDetail({
+          blocks: [
+            block('blk-1', 1, 'Arrival and wraps'),
+            block('blk-2', 2, 'Jab drill', { what_to_say: null, what_to_explain: 'From the template: Warm-up, 3 reps', what_to_watch: null, what_to_fix: null }),
+          ],
+        }),
+      }),
+    });
+
+    expect((await screen.findAllByText('Warm-up, 3 reps')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/From the template/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Explain/)).not.toBeInTheDocument();
+  });
+
   it('shows the script name, server elapsed time, running state, and the current block distinctly', async () => {
     await renderLive(liveRun());
 

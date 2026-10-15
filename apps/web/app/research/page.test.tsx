@@ -905,3 +905,69 @@ describe('a coach attaches an existing source', () => {
     expect(screen.queryByRole('button', { name: 'Answer this gap' })).toBeNull();
   });
 });
+
+describe('the requirements list comes a page at a time (F-025)', () => {
+  function pagedFetch(urls: string[]) {
+    const pageOne = Array.from({ length: 50 }, (_, index) => ({
+      ...REQUIREMENT,
+      research_requirement_id: 1000 - index,
+      research_requirement: `Paged requirement ${1000 - index}`,
+    }));
+    const pageTwo = [{ ...REQUIREMENT, research_requirement_id: 900, research_requirement: 'The last requirement' }];
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'coach', auth_provider: 'microsoft' }) } as Response;
+      }
+      if (url.includes('research_requirement_ids=')) {
+        return { ok: true, json: async () => ({ answer_states: {} }) } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        return { ok: false, status: 403, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/research-requirements')) {
+        return url.includes('cursor=')
+          ? ({ ok: true, json: async () => ({ items: pageTwo, next_cursor: null }) } as Response)
+          : ({ ok: true, json: async () => ({ items: pageOne, next_cursor: 'cursor-after-951' }) } as Response);
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  test('the first page is asked for with a limit, and Load more appends the next page by its cursor', async () => {
+    const urls: string[] = [];
+    global.fetch = pagedFetch(urls);
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Paged requirement 1000');
+    expect(urls.some((url) => url.includes('/research-requirements?limit=50') && !url.includes('cursor='))).toBe(true);
+    expect(screen.queryByText('The last requirement')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Load more requirements' }));
+    });
+
+    await screen.findByText('The last requirement');
+    expect(screen.getByText('Paged requirement 951')).toBeTruthy();
+    expect(urls.some((url) => url.includes('/research-requirements?limit=50&cursor=cursor-after-951'))).toBe(true);
+    // The answer states of the new page are asked for too.
+    expect(urls.some((url) => url.includes('research_requirement_ids=900'))).toBe(true);
+    // Nothing left: the control goes away.
+    expect(screen.queryByRole('button', { name: 'Load more requirements' })).toBeNull();
+  });
+
+  test('a list with nothing after it shows no Load more control', async () => {
+    global.fetch = mockFetch({ curator: false });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('button', { name: 'Load more requirements' })).toBeNull();
+  });
+});
