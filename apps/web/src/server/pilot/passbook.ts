@@ -757,32 +757,35 @@ export async function getCoachPassbookGapQueue(
        a.athlete_id,
        a.full_name as athlete_name,
        a.coach_id,
-       last_visit.attendance_date as last_attended_on,
+       last_visit.attendance_date::text as last_attended_on,
        coalesce(absences.recorded_absences, 0)::int as recorded_absences_since_last_visit
      from pilot.progression_gaps g
      join pilot.athletes a
        on a.organization_id = g.organization_id
       and a.athlete_id = g.athlete_id
      left join lateral (
+       -- CT-13 / docs/current/ATTENDANCE_PRECEDENCE.md: attendance is read
+       -- through the reconciled view, one row per athlete-day with the highest
+       -- source winning. This read used the legacy table, which a coach's
+       -- class mark on /schedule never reaches, so the queue said "No recorded
+       -- visit" for an athlete the schedule and performance analytics both
+       -- showed present (LC-07). The view already folds a legacy 'late' into
+       -- 'present'.
        select attendance_date
-       from pilot.attendance
+       from pilot.attendance_reconciled
        where organization_id = g.organization_id
          and athlete_id = g.athlete_id
-         and lower(trim(status)) in ('present', 'late')
-       order by attendance_date desc, created_at desc
+         and status = 'present'
+       order by attendance_date desc
        limit 1
      ) last_visit on true
      left join lateral (
-       -- count(distinct attendance_date), not count(*): pilot.attendance has no
-       -- unique constraint on (organization_id, athlete_id, attendance_date), so
-       -- the same athlete-day can appear more than once and count(*) inflates
-       -- this number. A coach reading "3 absences since their last visit" needs
-       -- three days, not three rows.
-       select count(distinct attendance_date)::int as recorded_absences
-       from pilot.attendance
+       -- One row per athlete-day by construction, so count(*) is days.
+       select count(*)::int as recorded_absences
+       from pilot.attendance_reconciled
        where organization_id = g.organization_id
          and athlete_id = g.athlete_id
-         and lower(trim(status)) = 'absent'
+         and status = 'absent'
          and (last_visit.attendance_date is null or attendance_date > last_visit.attendance_date)
      ) absences on true
      where g.organization_id = $1

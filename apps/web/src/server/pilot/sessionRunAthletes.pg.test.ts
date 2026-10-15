@@ -250,6 +250,45 @@ async function refusal(action: Promise<unknown>): Promise<{ name: string; messag
 }
 
 const NOT_PERMITTED = { name: 'ForbiddenError', status: 403, code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' };
+
+/**
+ * Soft-deletes an athlete on a SECOND connection and holds it open (not committed), runs `write`,
+ * checks that the write is WAITING on that delete rather than already answered, then commits the
+ * delete and returns how the write ended. The reach check runs before the write's transaction and
+ * reads the athlete as still live; only a check inside the transaction can see the delete.
+ */
+async function writeWhileAthleteIsBeingDeleted<T>(organizationId: string, athleteId: string, write: () => Promise<T>) {
+  return writeWhileHeldOpen(
+    `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+    write,
+  );
+}
+
+/**
+ * Runs `statement` on a SECOND connection and holds it open (not committed), runs `write`, checks
+ * the write is WAITING on it rather than already answered, then commits and returns how the write
+ * ended. Used for every change that must stop a write already past its checks.
+ */
+async function writeWhileHeldOpen<T>(statement: string, params: unknown[], write: () => Promise<T>) {
+  const deleting = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+  await deleting.connect();
+  try {
+    await deleting.query('BEGIN');
+    await deleting.query(statement, params);
+    const writing = write().then(
+      (result) => ({ result, error: null as unknown }),
+      (error: unknown) => ({ result: null as T | null, error }),
+    );
+    const early = await Promise.race([writing, new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+    expect(early).toBe('waiting');
+    await deleting.query('COMMIT');
+    return await writing;
+  } finally {
+    await deleting.query('ROLLBACK').catch(() => {});
+    await deleting.end();
+  }
+}
 const NOT_PRESENT = { name: 'ConflictError', status: 409, code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' };
 
 beforeAll(async () => {
@@ -457,6 +496,34 @@ describe('marking who is in a session', () => {
     expect((await listPresentAthletes(gym.organizationId, [run.run_id], [gym.ada])).map((row) => row.full_name)).toEqual(['Ada Reyes']);
   });
 
+  test('a mark waits for the athlete being deleted at that moment, and is then refused (no mark, no audit)', async () => {
+    const gym = await newGym('mark-delete-race');
+    const runId = await liveRun(gym);
+
+    const outcome = await writeWhileAthleteIsBeingDeleted(gym.organizationId, gym.ada, () => mark(gym.coach, runId, gym.ada));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject(NOT_PERMITTED);
+    expect(await marks(gym, runId)).toEqual([]);
+    expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
+  });
+
+  test.each([
+    ['the marker\'s membership being ended', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`],
+    ['the marker\'s account being deactivated', `update pilot.accounts set active_flag = false where account_id = $1 and $2::text is not null`],
+    ['the marker\'s account being deleted', `update pilot.accounts set deleted_at = now() where account_id = $1 and $2::text is not null`],
+  ])('a mark waits for %s at that moment, and is then refused (no mark, no audit)', async (_label, statement) => {
+    const gym = await newGym('mark-staff-race');
+    const runId = await liveRun(gym);
+
+    const outcome = await writeWhileHeldOpen(statement, [gym.coach.accountId, gym.organizationId], () => mark(gym.coach, runId, gym.ada));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject(NOT_PERMITTED);
+    expect(await marks(gym, runId)).toEqual([]);
+    expect(await auditOf(gym, 'session_run_athlete')).toEqual([]);
+  });
+
   test('a mark waits for the session being ended at that moment, and is then refused', async () => {
     const gym = await newGym('mark-race');
     const runId = await liveRun(gym);
@@ -521,6 +588,18 @@ describe('reading who was in a session', () => {
     // The other gym's run id, read from this gym: nobody, though the athlete ids are the same.
     expect(await listPresentAthletes(gym.organizationId, [otherRunId], everyone)).toEqual([]);
     expect((await listPresentAthletes(other.organizationId, [otherRunId], everyone)).map((row) => row.athlete_id)).toEqual([other.ada]);
+  });
+
+  test('an athlete deleted after the permitted ids were computed is not named, even with a standing mark', async () => {
+    const gym = await newGym('read-deleted');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    await mark(gym.coach, runId, gym.ben);
+    // The ids as a reader computed them a moment ago, then Ben is deleted before the presence read.
+    const permitted = await staffPermittedAthleteIds(gym.coach);
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.ben]);
+
+    expect((await listPresentAthletes(gym.organizationId, [runId], permitted)).map((row) => row.athlete_id)).toEqual([gym.ada]);
   });
 
   test("a coach's permitted athletes are the gym's live athletes; an admin's the same; every other role none", async () => {
@@ -658,6 +737,75 @@ describe('a staff note on an athlete in a session run', () => {
 
     const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = any($1::text[])`, [[gym.organizationId, other.organizationId]]);
     expect(rows[0].n).toBe(0);
+  });
+
+  test('a note waits for the athlete being deleted at that moment, and is then refused (no note, no audit)', async () => {
+    const gym = await newGym('note-delete-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+
+    const outcome = await writeWhileAthleteIsBeingDeleted(gym.organizationId, gym.ada, () =>
+      createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Written as the athlete was removed.' }));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = $1`, [gym.organizationId]);
+    expect(rows[0].n).toBe(0);
+    expect(await auditOf(gym, 'session_staff_note')).toEqual([]);
+  });
+
+  test.each([
+    ['the writer\'s membership being ended', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`],
+    ['the writer\'s account being deactivated', `update pilot.accounts set active_flag = false where account_id = $1 and $2::text is not null`],
+  ])('a note waits for %s at that moment, and is then refused (no note, no audit)', async (_label, statement) => {
+    const gym = await newGym('note-staff-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+
+    const outcome = await writeWhileHeldOpen(statement, [gym.otherCoach.accountId, gym.organizationId], () =>
+      createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Written as access ended.' }));
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = $1`, [gym.organizationId]);
+    expect(rows[0].n).toBe(0);
+    expect(await auditOf(gym, 'session_staff_note')).toEqual([]);
+  });
+
+  test('changing a run note waits for the writer\'s membership being ended at that moment, and is refused (text kept, no audit)', async () => {
+    const gym = await newGym('note-edit-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    const written = await createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'As written.' });
+    const auditBefore = (await auditOf(gym, 'session_staff_note')).length;
+
+    const outcome = await writeWhileHeldOpen(
+      `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`,
+      [gym.otherCoach.accountId, gym.organizationId],
+      () => updateOwnSessionStaffNote({ actor: gym.otherCoach, noteId: written.note_id, note: 'Rewritten as access ended.' }),
+    );
+
+    expect(outcome.result).toBeNull();
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select note, deleted_at is not null as removed from pilot.session_staff_notes where note_id = $1`, [written.note_id]);
+    expect(rows).toEqual([{ note: 'As written.', removed: false }]);
+    expect(await auditOf(gym, 'session_staff_note')).toHaveLength(auditBefore);
+  });
+
+  test('removing a run note waits for the athlete being deleted at that moment, and is refused (note kept, no audit)', async () => {
+    const gym = await newGym('note-remove-race');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    const written = await createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Kept.' });
+    const auditBefore = (await auditOf(gym, 'session_staff_note')).length;
+
+    const outcome = await writeWhileAthleteIsBeingDeleted(gym.organizationId, gym.ada, () =>
+      removeOwnSessionStaffNote({ actor: gym.otherCoach, noteId: written.note_id }));
+
+    expect(outcome.error).toMatchObject({ name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED' });
+    const { rows } = await client.query(`select deleted_at is not null as removed from pilot.session_staff_notes where note_id = $1`, [written.note_id]);
+    expect(rows).toEqual([{ removed: false }]);
+    expect(await auditOf(gym, 'session_staff_note')).toHaveLength(auditBefore);
   });
 
   test('a note waits for a mark being taken back at that moment, and is then refused', async () => {

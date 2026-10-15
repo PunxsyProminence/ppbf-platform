@@ -10,6 +10,7 @@ import {
 import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { researchRequirementsForReader } from '@/src/server/pilot/researchFamilyView';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   createShadowResearchRequirement,
@@ -39,11 +40,13 @@ import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/s
 
 export const runtime = 'nodejs';
 
-// Shared by GET (list) and POST resolve -- a parent may only see or resolve
-// requirements tied to their own linked athletes, never any family in the
-// org. Returns [] (not undefined) when the parent has no linked athletes at
-// all, so callers can short-circuit instead of querying with an unbounded
-// filter.
+// POST resolve only. No parent closes a requirement (staff close, below);
+// this scope decides which refusal a parent gets and is carried into the
+// write as a second bound. Returns [] (not undefined) when the parent has no
+// linked athletes at all, so the caller can short-circuit instead of querying
+// with an unbounded filter. The list read does not use this:
+// scopeToReachableSubjects decides for a parent as it does for every other
+// role.
 async function resolveParentAthleteScope(organizationId: string, accountId: string): Promise<string[]> {
   return guardianAthleteIds(organizationId, accountId);
 }
@@ -205,18 +208,7 @@ async function handleList(request: NextRequest) {
     requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_requirements'] });
 
-    let athleteScope: string[] | undefined;
-
-    if (principal.role === 'parent') {
-      athleteScope = await resolveParentAthleteScope(principal.organizationId, principal.accountId);
-      if (athleteScope.length === 0) {
-        return NextResponse.json({ ok: true, organization_id: principal.organizationId, items: [] });
-      }
-    }
-
-    const items = await listShadowResearchRequirements(principal.organizationId, {
-      athleteIds: athleteScope,
-    });
+    const items = await listShadowResearchRequirements(principal.organizationId);
 
     // The organization predicate above is NOT the access boundary for most of
     // the roles this route admits. SHADOW_PROJECTION_READ_ROLES is every seat
@@ -228,13 +220,24 @@ async function handleList(request: NextRequest) {
     // which shadowRoleSets.ts documents must never reach an organization's
     // athlete depth) read them across every gym it can sign into.
     //
-    // The parent branch's SQL scope above is deliberately left in place: it
-    // returns ONLY subject-bearing rows for that guardian's own children, and
-    // widening a parent to the org-wide rows is not this fix's business. This
-    // filter then applies to every role uniformly, parents included.
+    // A parent used to be narrowed in SQL first, to rows whose subject_id
+    // column named one of their children, and answered [] outright with no
+    // linked child. That hid the parent's OWN question about nobody, which
+    // CL-A3 gives them ("members and athletes see only their own") and which
+    // the research-submissions route already let them read. So the one filter
+    // below now decides for a parent as for everyone else: a row about a
+    // child only for that child's guardians (accessibleAthleteIds), a row
+    // about nobody only for whoever filed it.
     const scoped = await scopeToReachableSubjects(principal, items);
 
-    return NextResponse.json({ ok: true, organization_id: principal.organizationId, items: scoped });
+    // Which rows is settled above; this is what each row carries. Coaches
+    // and organization admins get the stored row, every other reader the
+    // named family fields (#1475 Part F, researchFamilyView.ts).
+    return NextResponse.json({
+      ok: true,
+      organization_id: principal.organizationId,
+      items: researchRequirementsForReader(principal, scoped),
+    });
   } catch (error) {
     return jsonError(error);
   }
@@ -332,8 +335,8 @@ export async function POST(request: NextRequest) {
         // isResearchStaff). Anyone else who cannot see it gets the same 404
         // as a missing id; one who can see it because they filed it is told
         // plainly that closing it is not theirs. Parents keep the 404 they
-        // always got: their list is scoped by subject_id, so they never see a
-        // subject-less row, even their own.
+        // always got here, though the list now shows a parent their own
+        // subject-less row.
         if (!isResearchStaff(principal.role)) {
           if (principal.role === 'parent' || !mayReadSubjectlessResearchRow(principal, stored)) {
             return requirementNotFound();

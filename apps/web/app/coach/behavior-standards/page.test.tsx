@@ -29,9 +29,18 @@ const STANDARDS = [
     recognition_kind: 'looked_after_someone_new', active: true },
 ];
 
-function mockFetch(capture?: { posts: unknown[] }) {
+const NOTES = [
+  { note_id: 'n1', athlete_id: 'a1', athlete_name: 'Jordan P.', note_text: 'Stayed after to help re-rack the bags.',
+    created_at: '2026-10-08T22:30:00.000Z' },
+];
+
+function mockFetch(capture?: { posts: unknown[] }, notesResponse?: { ok: boolean; items?: unknown[]; truncated?: boolean }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.includes('/behavior-notes')) {
+      const r = notesResponse ?? { ok: true, items: NOTES };
+      return { ok: r.ok, json: async () => ({ items: r.items ?? [], truncated: r.truncated }) } as Response;
+    }
     if (init?.method === 'POST') {
       capture?.posts.push(JSON.parse(String(init.body)));
       return { ok: true, json: async () => ({ item: { escalation_id: 'esc-1' } }) } as Response;
@@ -51,7 +60,7 @@ afterEach(() => {
   mockRole = null;
 });
 
-test('the page says out loud where a concern goes, and that no behaviour log exists', async () => {
+test('the page says out loud where a concern goes, and that saved notes are staff only', async () => {
   global.fetch = mockFetch();
 
   await act(async () => {
@@ -59,7 +68,35 @@ test('the page says out loud where a concern goes, and that no behaviour log exi
   });
 
   expect(await screen.findByText(/safeguarding queue, not into a file on the athlete/i)).toBeTruthy();
-  expect(screen.getByText(/there is no behaviour log here/i)).toBeTruthy();
+  expect(screen.queryByText(/there is no behaviour log here/i)).toBeNull();
+  expect(screen.getByText(/Athletes and parents do not see it/i)).toBeTruthy();
+});
+
+test('saved behaviour notes are listed with the athlete and gym date (F-070)', async () => {
+  global.fetch = mockFetch();
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+
+  expect(await screen.findByText('Stayed after to help re-rack the bags.')).toBeTruthy();
+  const section = screen.getByTestId('behaviour-notes');
+  expect(section.textContent).toContain('Jordan P.');
+  expect(section.textContent).toContain('Oct 8, 2026');
+});
+
+test('no notes yet says so, and an unreadable list never claims there are none', async () => {
+  global.fetch = mockFetch(undefined, { ok: true, items: [] });
+  const { unmount } = render(<BehaviorStandardsPage />);
+  expect(await screen.findByText(/No notes saved yet/)).toBeTruthy();
+  unmount();
+
+  global.fetch = mockFetch(undefined, { ok: false });
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  expect(await screen.findByTestId('behaviour-notes-unreadable')).toBeTruthy();
+  expect(screen.queryByText(/No notes saved yet/)).toBeNull();
 });
 
 test('posted standards show the recognition that evidences them', async () => {
@@ -289,4 +326,22 @@ test('the organization admin retires a standard through retire_standard', async 
   expect((screen.getByLabelText('Standard', { selector: '#rec-standard' }) as HTMLSelectElement).value).toBe('');
   expect(capture.posts).toEqual([{ action: 'retire_standard', standard_id: 's1' }]);
   expect(await screen.findByText(/Standard retired/)).toBeTruthy();
+});
+
+test('a partial notes list says it is partial (F-070 review)', async () => {
+  global.fetch = mockFetch(undefined, { ok: true, items: NOTES, truncated: true });
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  expect(await screen.findByTestId('behaviour-notes-truncated')).toBeTruthy();
+  expect(screen.getByText(/Showing the newest 1 notes\. Older notes are kept and are not listed here\./)).toBeTruthy();
+});
+
+test('a complete notes list shows no partial-list sentence', async () => {
+  global.fetch = mockFetch();
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  await screen.findByText('Stayed after to help re-rack the bags.');
+  expect(screen.queryByTestId('behaviour-notes-truncated')).toBeNull();
 });

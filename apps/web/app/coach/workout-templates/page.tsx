@@ -227,7 +227,11 @@ function refusedBeforeWriting(payload: Record<string, unknown> | null): string {
   return `${/[.!?]$/.test(said) ? said : `${said}.`} ${NOTHING_ISSUED}`;
 }
 
-const ALERT_TEXT = 'text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]';
+// An ordinary refusal or failure, boxed so it never reads as the success beside
+// it. Brass and bone, NOT the medical-stop colour: --locked means a medical
+// stop and nothing else (AGENT_KERNEL.md, OD-2026-09-29-001). The words carry
+// the meaning.
+const ALERT_TEXT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
 function IssueToAthlete({
   template,
@@ -704,8 +708,8 @@ function CoachWorkoutTemplates() {
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty catalog of templates.
               </p>
@@ -766,7 +770,7 @@ function CoachWorkoutTemplates() {
             )}
 
             {!detailLoading && detailError && (
-              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
                 {detailError}
               </p>
             )}

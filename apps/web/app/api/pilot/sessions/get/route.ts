@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { getSessionById } from '@/src/server/pilot/entities';
+import { isFamilyRecordCaller, toFamilySession } from '@/src/server/pilot/familyRecordView';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -23,7 +24,11 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, sessionRecord.athlete_id);
-    return NextResponse.json({ found: true, session: sessionRecord });
+    // The athlete gets named fields (#1558 item three); staff keep the row.
+    return NextResponse.json({
+      found: true,
+      session: isFamilyRecordCaller(principal.role) ? toFamilySession(sessionRecord) : sessionRecord,
+    });
   } catch (error) {
     return jsonError(error);
   }

@@ -452,8 +452,8 @@ function CoachSessionScripts() {
         )}
 
         {liveRunCheck === 'unavailable' && (
-          <div className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-            <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+          <div className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
               Whether you have a session in progress could not be checked. A live session may exist
               that is not shown here -- reload to try again. Starting is disabled until this check
               succeeds, so a second session cannot be opened over a running one blindly.
@@ -504,7 +504,7 @@ function CoachSessionScripts() {
             {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
           </button>
           {startError && startErrorFor === PLAIN_START && (
-            <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+            <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
               {startError}
             </p>
           )}
@@ -526,8 +526,8 @@ function CoachSessionScripts() {
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty set of scripts.
               </p>
@@ -595,7 +595,7 @@ function CoachSessionScripts() {
             )}
 
             {!detailLoading && detailError && (
-              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {detailError}
               </p>
             )}
@@ -681,7 +681,7 @@ function CoachSessionScripts() {
                   <p role="alert" className={`mt-[var(--s3)] ${PLAIN_ALERT}`}>{retireError}</p>
                 )}
                 {!editing && startError && startErrorFor === detail.script_id && (
-                  <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+                  <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                     {startError}
                   </p>
                 )}
@@ -764,7 +764,7 @@ function CoachSessionScripts() {
             )}
 
             {deliveriesState === 'unavailable' && (
-              <p className="t-body mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p className="t-body mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 The delivery history could not be loaded. Deliveries may exist that are not shown --
                 this is a failed read, not an empty history.
               </p>

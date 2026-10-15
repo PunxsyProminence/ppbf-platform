@@ -400,30 +400,119 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
     expect(mockDeletedAmong).toHaveBeenCalledWith('org-real', ['ath-mine', 'ath-other', 'ath-other']);
   });
 
-  // THE LEGITIMATE PATH, PART 2. The parent branch's existing SQL scope is
-  // untouched: it still resolves the guardian's own linked athletes and still
-  // short-circuits to [] when there are none. This filter narrows; it never
-  // widens a parent to the org-wide rows they could not see before.
-  test('a parent still reads their own linked athlete requirements', async () => {
+  // THE LEGITIMATE PATH, PART 2. A parent is no longer narrowed in SQL: the
+  // same filter decides for them as for every other role (#1475 Part F), so
+  // they read rows about their own children and no other family's, in either
+  // writer shape (the legacy shape about their own child is proved on real
+  // rows in researchFamilyProjection.pg.test.ts).
+  test('a parent reads their own linked athlete requirements and no other child rows', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
-    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
-    mockList.mockResolvedValue([MINE]);
 
     const response = await GET(getRequest());
 
-    expect(mockList).toHaveBeenCalledWith('org-real', { athleteIds: ['ath-mine'] });
+    expect(mockList).toHaveBeenCalledWith('org-real');
+    expect(mockGuardianAthleteIds).not.toHaveBeenCalled();
+    expect(mockAccessibleAthleteIds).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'parent', accountId: 'acct-1' }),
+      ['ath-mine', 'ath-other', 'ath-other'],
+    );
     expect(await idsFrom(response)).toEqual([11]);
   });
 
-  test('a parent with no linked athletes reads nothing and never queries', async () => {
+  // CL-A3 (Jason 2026-10-06): "members and athletes see only their own".
+  test('a parent with no linked athletes reads only the question they filed about nobody', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
-    mockGuardianAthleteIds.mockResolvedValue([]);
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
+    mockList.mockResolvedValue([
+      ...ALL_ROWS,
+      requirement({ research_requirement_id: 20, created_by_account_id: 'acct-1', created_by_role: 'parent' }),
+      requirement({ research_requirement_id: 21, created_by_account_id: 'acct-other-parent', created_by_role: 'parent' }),
+    ]);
+
+    const response = await GET(getRequest());
+
+    expect(await idsFrom(response)).toEqual([20]);
+  });
+
+  // #1475 Part F: which rows is the scope above; what a row carries depends
+  // on the reader. Proved against real rows in researchFamilyProjection.pg.test.ts.
+  describe('what a row carries', () => {
+    const FILED_BY_STAFF = requirement({
+      research_requirement_id: 11,
+      source_event_name: 'SHADOW_INTAKE_CASE_APPROVED',
+      source_entity_type: 'intake_case',
+      source_entity_id: 'case-mine',
+      subject_id: 'ath-mine',
+      status: 'resolved',
+      resolved_at: '2026-08-26T00:00:00Z',
+      created_by_account_id: 'coach.one@gym.example.test',
+      created_by_role: 'coach',
+      metadata: {
+        action: 'approve',
+        notes: 'Reviewer note about the family.',
+        athlete_id: 'ath-mine',
+        closing_note: 'Closed after the coach meeting.',
+        resolved_by_account_id: 'admin.one@gym.example.test',
+        resolved_by_role: 'organization_admin',
+      },
+    });
+
+    beforeEach(() => {
+      mockList.mockResolvedValue([FILED_BY_STAFF]);
+      mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    });
+
+    test.each(['athlete', 'parent'] as const)('a %s receives the named family fields and no staff id or staff note', async (role) => {
+      mockRequirePrincipal.mockResolvedValue({ ...principal(role), athleteId: role === 'athlete' ? 'ath-mine' : null });
+
+      const text = await (await GET(getRequest())).text();
+
+      expect(JSON.parse(text).items).toEqual([{
+        research_requirement_id: 11,
+        source_event_name: 'SHADOW_INTAKE_CASE_APPROVED',
+        research_requirement: 'Strengthen coverage.',
+        knowledge_gap: 'No verified source.',
+        source_status: 'missing',
+        source_confidence_tier: 'INSUFFICIENT',
+        source_verification_state: 'unknown',
+        status: 'resolved',
+        created_at: '2026-08-25T00:00:00Z',
+        resolved_at: '2026-08-26T00:00:00Z',
+        is_mine: false,
+        metadata: { closing_note: 'Closed after the coach meeting.' },
+      }]);
+      expect(text).not.toContain('@');
+      expect(text).not.toContain('Reviewer note about the family.');
+    });
+
+    test('the member who filed a question about nobody is told it is theirs, without their id', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('volunteer'));
+      mockAccessibleAthleteIds.mockResolvedValue(new Set());
+      mockList.mockResolvedValue([requirement({ research_requirement_id: 14, created_by_account_id: 'acct-1', created_by_role: 'volunteer' })]);
+
+      const text = await (await GET(getRequest())).text();
+
+      expect(JSON.parse(text).items).toEqual([expect.objectContaining({ research_requirement_id: 14, is_mine: true })]);
+      expect(text).not.toContain('acct-1');
+    });
+
+    test.each(['coach', 'organization_admin', 'admin'] as const)('a %s receives the stored row whole', async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal(role));
+
+      const body = (await (await GET(getRequest())).json()) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items).toEqual([FILED_BY_STAFF]);
+    });
+  });
+
+  test('a parent with no linked athletes who filed nothing reads nothing', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
 
     const response = await GET(getRequest());
 
     expect(await idsFrom(response)).toEqual([]);
-    expect(mockList).not.toHaveBeenCalled();
   });
 });
 
@@ -936,14 +1025,25 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     });
   });
 
-  // Preserved exactly as it was: a guardian's athleteIds scope has only ever
-  // matched on subject_id, which never matches a subject-less row, and the
-  // list they read is scoped the same way. Widening a guardian to the gym's
-  // doctrine backlog is not this fix's business.
+  // Preserved exactly as it was: a parent is refused the close of a
+  // subject-less row with the plain 404. The list now shows a parent the
+  // subject-less row they filed themselves (#1475 Part F); closing it is
+  // still not theirs, and the refusal is the same 404.
   test('a parent is still refused an organization-wide requirement', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockGetById.mockResolvedValue(storedOrgWide());
+
+    const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('a parent is refused the close of the question they filed themselves, with the same 404', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockGetById.mockResolvedValue({ ...storedOrgWide(), created_by_account_id: 'acct-1', created_by_role: 'parent' });
 
     const response = await POST(postRequest({ action: 'resolve', closing_note: 'Answered in the Library.', research_requirement_id: 10 }));
 

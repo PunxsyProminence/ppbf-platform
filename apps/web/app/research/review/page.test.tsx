@@ -112,6 +112,31 @@ test('a submission against an open requirement renders with its source title and
   expect(screen.getByText('Unreviewed')).toBeInTheDocument();
 });
 
+// #1475 Part F: the platform owner off its own shelf is sent the family
+// fields of a submission. The page read provenance and source_id unguarded.
+test('a submission sent in the family fields renders as an unnamed source', async () => {
+  installFetch({
+    submissionsByRequirement: {
+      7: [{
+        submission_id: 'sub-1',
+        research_requirement_id: 7,
+        applicability_state: 'unreviewed',
+        created_at: '2026-08-10T12:00:00.000Z',
+        reviewed_at: null,
+      }],
+    },
+  });
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.getByText('Unnamed source')).toBeInTheDocument();
+  expect(screen.getByText('Unreviewed')).toBeInTheDocument();
+  expect(screen.queryByText(/undefined/)).toBeNull();
+});
+
 test('a resolved requirement is never listed even if it somehow carries submissions', async () => {
   installFetch({
     requirements: [OPEN_REQUIREMENT, RESOLVED_REQUIREMENT],

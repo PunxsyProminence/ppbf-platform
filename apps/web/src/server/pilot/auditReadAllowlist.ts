@@ -48,6 +48,27 @@ export const COACH_ALLOWED_AUDIT_ENTITY_TYPES: ReadonlySet<string> = new Set([
   'wrestling_league_roster_entry',
 ]);
 
+// WHICH MIRRORED AUDIT ROWS AN ATHLETE OR A PARENT MAY READ IN THE SHADOW FEED
+// (#1558 item two). Until this list existed they read every mirror tied to
+// their athlete, whatever its type, and audit/get itself refuses both roles.
+// That is how a parent's barrier report and a parent's observation reached the
+// child's feed and the other guardian's as SHADOW_AUDIT_CREATE_PARENT_BARRIER_REPORT,
+// and the rows for a guardian's login and links reached the other household.
+//
+// An ALLOW-list for the reason the coach's is one: a new entity type is
+// invisible to families until someone adds it here, under review. Whatever it
+// holds, it never holds a type authored by or about a guardian, an account or
+// staff conduct (shadowReadModels.test.ts pins that).
+//
+// THE VALUE IS THE OWNER'S (Jason, 2026-10-13, Q-1 on #1558, after the three
+// options were explained: "A"). EMPTY: an athlete or a parent reads no
+// SHADOW_AUDIT_* row at all, the answer every other non-staff role already
+// gets. Events that are not audit mirrors (a pain report, an intake case,
+// formula results) are unchanged. The alternative he did not choose was the
+// child's own training records: 'goal', 'session', 'athlete_milestone',
+// 'recognition'.
+export const FAMILY_ALLOWED_AUDIT_ENTITY_TYPES: ReadonlySet<string> = new Set<string>([]);
+
 // Allow-listed types whose every record is ABOUT an athlete, even when an
 // audit row for it names none; the key set of auditEntityOwners.ts's
 // resolver table. A coach's row of one of these types that cannot be tied to

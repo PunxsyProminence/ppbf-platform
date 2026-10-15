@@ -72,7 +72,7 @@ describe('who is a family caller', () => {
 
 describe('the family athlete', () => {
   test('carries the record with coach_name in place of coach_id, and nothing the row grew later', async () => {
-    const [item] = await toFamilyAthletes('org-1', [athleteRow()]);
+    const [item] = await toFamilyAthletes('org-1', [athleteRow()], 'athlete');
 
     expect(item).toEqual({
       athlete_id: 'ATH-1',
@@ -92,12 +92,24 @@ describe('the family athlete', () => {
     expect(JSON.stringify(item)).not.toContain('org-1');
   });
 
+  // #1558 item three; Jason 2026-10-13, Q-C (OD-2026-10-13-006): a parent is
+  // not sent a contact's name, and this field has no relationship to show.
+  test('a parent receives the same record without emergency_contact, under any key', async () => {
+    const [item] = await toFamilyAthletes('org-1', [athleteRow()], 'parent');
+
+    expect(Object.keys(item).sort()).toEqual([
+      'active_flag', 'athlete_id', 'coach_name', 'created_at', 'dob', 'full_name', 'gym_status', 'updated_at', 'weight_class',
+    ]);
+    expect(JSON.stringify(item)).not.toContain('Rosa Vance');
+    expect(JSON.stringify(item)).not.toContain('814-555-0110');
+  });
+
   test('names the coach through the tenancy-scoped reader, once per distinct coach', async () => {
     const items = await toFamilyAthletes('org-7', [
       athleteRow({ athlete_id: 'ATH-1' }),
       athleteRow({ athlete_id: 'ATH-2', coach_id: OTHER_COACH_ID }),
       athleteRow({ athlete_id: 'ATH-3' }),
-    ]);
+    ], 'parent');
 
     expect(items.map((item) => item.coach_name)).toEqual(['Coach Alvarez', 'Coach Pike', 'Coach Alvarez']);
     expect(mockCoachName).toHaveBeenCalledTimes(2);
@@ -108,14 +120,14 @@ describe('the family athlete', () => {
   test('a coach the reader cannot name (deleted, lapsed, or a stranger) shows the floor phrase, never the id', async () => {
     mockCoachName.mockResolvedValue('Your coach');
 
-    const item = await toFamilyAthlete('org-1', athleteRow());
+    const item = await toFamilyAthlete('org-1', athleteRow(), 'athlete');
 
     expect(item.coach_name).toBe('Your coach');
     expect(JSON.stringify(item)).not.toContain(COACH_ID);
   });
 
   test('an empty list makes no name lookup', async () => {
-    await expect(toFamilyAthletes('org-1', [])).resolves.toEqual([]);
+    await expect(toFamilyAthletes('org-1', [], 'parent')).resolves.toEqual([]);
     expect(mockCoachName).not.toHaveBeenCalled();
   });
 });
