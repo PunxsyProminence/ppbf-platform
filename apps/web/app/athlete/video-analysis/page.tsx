@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { observationsForAthlete, reviewStateLine } from '@/components/shadowObservationsForAthlete';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
@@ -55,30 +56,6 @@ interface ActiveVideo {
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * The review state, in words a kid can act on.
- *
- * This used to render `Review State: {item.review_state}` -- a stored enum,
- * underscores and all, shown to a child on their own screen. The enum is not
- * renamed on the way here and no state is hidden; each one is simply said out
- * loud. 'unknown' is a real member of the union and gets the honest reading
- * rather than a guess.
- */
-function reviewStateLine(state: ShadowObservationItem['review_state']): string {
-  switch (state) {
-    case 'pending_review':
-      return 'Waiting on a coach to look at it.';
-    case 'approved':
-      return 'A coach looked at it and agreed.';
-    case 'rejected':
-      return 'A coach looked at it and set it aside.';
-    case 'promoted':
-      return 'A coach took this one further.';
-    default:
-      return 'Nobody has said either way yet.';
-  }
 }
 
 /**
@@ -151,6 +128,8 @@ export default function AthleteVideoAnalysisPage() {
       setLoadingVideoId(null);
     }
   };
+
+  const athleteObservations = observationsForAthlete(observations);
 
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/video-analysis" allowedRoles={['athlete']} showShellHeader={false} room="floor">
@@ -250,13 +229,13 @@ export default function AthleteVideoAnalysisPage() {
                 </div>
               </div>
             ) : null}
-            {observations.slice(0, 5).map((item) => (
+            {athleteObservations.slice(0, 5).map((item) => (
               <article key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.label}</p>
                 <p className="t-muted mt-[var(--s2)]">{reviewStateLine(item.review_state)}</p>
               </article>
             ))}
-            {!observationError && observations.length === 0 ? (
+            {!observationError && athleteObservations.length === 0 ? (
               <p className="t-muted">Nothing noticed yet.</p>
             ) : null}
           </div>
