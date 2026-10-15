@@ -540,10 +540,14 @@ export default function SchedulerPage() {
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
-  // staff list when there is one, otherwise from the stored account id, which
-  // is the coach's login on this platform.
+  // staff list when there is one, otherwise from the stored account id when it
+  // is an email-shaped login. Any other id is not turned into a name: the row
+  // says the name is not available, as the athletes page does (F-058).
   const coachLogins = new Map(coachOptions.map((option) => [option.account_id, option.login]));
-  const staffName = (accountId: string) => deriveCoachDisplayName(coachLogins.get(accountId) ?? accountId);
+  const staffName = (accountId: string) => {
+    const login = coachLogins.get(accountId) || (accountId.includes('@') ? accountId : '');
+    return login ? deriveCoachDisplayName(login) : 'coach name not available';
+  };
 
   /* One class row, in the upcoming list or under Past and cancelled (#1536).
      A cancelled class offers nothing; Cancel Class shows where the server

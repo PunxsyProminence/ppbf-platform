@@ -146,11 +146,16 @@ describe('the coaching-request coach picker (#1536)', () => {
     expect(screen.queryByText(/Coach: .*@gym\.example/)).toBeNull();
   });
 
-  test('a coach reads a name derived from the stored id and never asks for the staff list (#1596)', async () => {
+  test('a coach is never shown a name made up from an id that is not a login (#1596)', async () => {
     const fetchMock = installFetchMock('coach');
     await renderPage();
 
-    expect(await screen.findByText(/Coach: Coach Acct Jane \| Cover: Coach Acct Sam/)).toBeInTheDocument();
+    // 'acct-jane' is not an email-shaped login, so no "Coach Acct Jane":
+    // the row says the name is not available (F-058, as the athletes page).
+    expect(
+      await screen.findByText(/Coach: coach name not available \| Cover: coach name not available/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Acct/)).toBeNull();
     expect(screen.queryByText(/Coach: acct-jane/)).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/pilot/admin/staff'))).toBe(false);
   });
