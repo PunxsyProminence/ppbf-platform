@@ -256,6 +256,16 @@ describe('family goals for a guardian (#1593, PH-06)', () => {
       change: { kind: 'edit', title: 'Gym three times a week', supportAction: 'Carpool with the Smiths.', targetDate: null },
     });
     expect(edited).toMatchObject({ title: 'Gym three times a week', support_action: 'Carpool with the Smiths.', target_date: null });
+    // An edit that leaves the date out keeps it; one that names it sets it.
+    await goals.updateFamilyGoal({
+      organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id,
+      change: { kind: 'edit', title: 'Gym three times a week', supportAction: 'Carpool with the Smiths.', targetDate: '2026-12-15' },
+    });
+    const kept = await goals.updateFamilyGoal({
+      organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id,
+      change: { kind: 'edit', title: 'Gym four times a week', supportAction: 'Carpool with the Smiths.' },
+    });
+    expect(kept).toMatchObject({ title: 'Gym four times a week', target_date: '2026-12-15' });
 
     const done = await goals.updateFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id, change: { kind: 'done', done: true } });
     expect(done?.state).toBe('completed');
@@ -267,6 +277,9 @@ describe('family goals for a guardian (#1593, PH-06)', () => {
     expect(undone).toMatchObject({ state: 'active', completed_at: null });
 
     await goals.updateFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id, change: { kind: 'retire' } });
+    // Retired: a later change is the same 404.
+    await expect(goals.updateFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id, change: { kind: 'done', done: true } }))
+      .rejects.toThrow(/^Not found/);
     expect((await goals.listFamilyGoalsForGuardian(ORG_ID, GUARDIAN_A, ATHLETE)).map((goal) => goal.title))
       .toEqual(['Shadowbox at home', 'Bring the signed waiver']);
     const stored = await activeClient!.query('select retired_at is not null as retired, updated_by_account_id from pilot.family_goals where goal_id = $1::uuid', [created.goal_id]);
@@ -327,8 +340,10 @@ describe('family goals for a guardian (#1593, PH-06)', () => {
       .rejects.toThrow('Write the goal before saving.');
     await expect(goals.createFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, athleteId: ATHLETE, title: 'x', supportAction: '' }))
       .rejects.toThrow('Write the family support action before saving.');
-    await expect(goals.createFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, athleteId: ATHLETE, title: 'x', supportAction: 'y', targetDate: '30/11/2026' }))
-      .rejects.toThrow('The target date must be a date (YYYY-MM-DD).');
+    for (const targetDate of ['30/11/2026', '2026-02-31', '2026-04-31', '2026-13-01']) {
+      await expect(goals.createFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, athleteId: ATHLETE, title: 'x', supportAction: 'y', targetDate }))
+        .rejects.toThrow('The target date must be a date (YYYY-MM-DD).');
+    }
     await expect(goals.updateFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: 'not-a-uuid', change: { kind: 'retire' } }))
       .rejects.toThrow(/^Not found/);
   });
