@@ -248,9 +248,10 @@ describe('family goals migration (PH-05)', () => {
     }
   });
 
-  test('a blank or overlong title or support action, and an unknown writer role, are refused', async () => {
+  test('a blank or overlong title or support action, an unknown writer role, and no author at all, are refused', async () => {
     const client = await freshDatabase('fgoal_checks');
     try {
+      await expect(goal(client, { creator: null })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_author_named' });
       await expect(goal(client, { title: '   ' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_title_check' });
       await expect(goal(client, { title: 'x'.repeat(201) })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_title_check' });
       await expect(goal(client, { support: '' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_support_action_check' });
@@ -282,7 +283,7 @@ describe('family goals migration (PH-05)', () => {
       await expect(goal(client, { athleteId: OTHER_ONLY })).rejects.toMatchObject({
         code: '23503', constraint: 'pilot_family_goals_athlete_fk',
       });
-      await goal(client, { org: OTHER_ORG, athleteId: OTHER_ONLY, creator: null });
+      await goal(client, { org: OTHER_ORG, athleteId: OTHER_ONLY, creator: COACH, role: 'coach' });
     } finally {
       await client.end();
     }
@@ -434,6 +435,17 @@ describe('family goals migration (PH-05)', () => {
       await client.query('create index idx_family_goals_athlete on pilot.family_goals(athlete_id, organization_id)');
 
       await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_GOALS_NOT_READY: athlete_index_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a same-named check that does not say what the real one says', async () => {
+    const client = await freshDatabase('fgoal_weak_check');
+    try {
+      await client.query('alter table pilot.family_goals drop constraint pilot_family_goals_title_check');
+      await client.query('alter table pilot.family_goals add constraint pilot_family_goals_title_check check (true)');
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_GOALS_NOT_READY: checks_ready');
     } finally {
       await client.end();
     }
