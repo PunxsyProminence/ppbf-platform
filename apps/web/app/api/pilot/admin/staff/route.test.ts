@@ -4,6 +4,7 @@ import { DELETE, GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   createOrUpdateMicrosoftStaffAccount,
+  getOrganizationName,
   listOrganizationGuardianLinks,
   listOrganizationMembers,
   removeGuardianLink,
@@ -20,6 +21,7 @@ import {
 jest.mock('@/src/server/pilot/staffProvisioning', () => ({
   ...jest.requireActual('@/src/server/pilot/staffProvisioning'),
   createOrUpdateMicrosoftStaffAccount: jest.fn(),
+  getOrganizationName: jest.fn(),
   listOrganizationMembers: jest.fn(),
   listOrganizationGuardianLinks: jest.fn(),
   removeGuardianLink: jest.fn(),
@@ -54,6 +56,7 @@ const mockRequireMicrosoft = jest.mocked(requireMicrosoftAuthenticatedPrincipal)
 const mockRequireAttested = jest.mocked(requireMicrosoftOrAttestedLocalPinPrincipal);
 const mockProvision = jest.mocked(createOrUpdateMicrosoftStaffAccount);
 const mockListMembers = jest.mocked(listOrganizationMembers);
+const mockOrganizationName = jest.mocked(getOrganizationName);
 const mockListGuardianLinks = jest.mocked(listOrganizationGuardianLinks);
 const mockRemoveLink = jest.mocked(removeGuardianLink);
 const mockAudit = jest.mocked(writePilotAuditEvent);
@@ -92,6 +95,7 @@ beforeEach(() => {
   mockRequireAttested.mockResolvedValue(principal());
   mockListMembers.mockResolvedValue([]);
   mockListGuardianLinks.mockResolvedValue([]);
+  mockOrganizationName.mockResolvedValue('Punxsy Prominence Boxing & Fitness');
 });
 
 describe('GET', () => {
@@ -109,6 +113,24 @@ describe('GET', () => {
     expect(mockListMembers).toHaveBeenCalledWith('org-1');
     expect(mockRequireAttested).toHaveBeenCalledTimes(1);
     expect(mockRequireMicrosoft).not.toHaveBeenCalled();
+  });
+
+  test("answers the gym's registered name for the header, read for the session's own organization (F-008)", async () => {
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/admin/staff'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.organization_name).toBe('Punxsy Prominence Boxing & Fitness');
+    expect(mockOrganizationName).toHaveBeenCalledWith('org-1');
+  });
+
+  test('a gym with no registered name answers null, not the id', async () => {
+    mockOrganizationName.mockResolvedValue(null);
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/admin/staff'));
+    const payload = await response.json();
+
+    expect(payload.organization_name).toBeNull();
   });
 
   test('an attested local coach passes the credential gate and is refused by the role gate', async () => {

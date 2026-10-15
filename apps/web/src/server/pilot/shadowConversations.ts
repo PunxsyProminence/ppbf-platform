@@ -4,6 +4,12 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentit
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
+import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
+import { PASSAGE_DISPLAY_RIGHTS, replayCitedPassage } from './shadowEvidence';
+
+// This query's `s` is the chat session, so the source predicate is written
+// against `ls`, the cited source, here.
+const SERVABLE_CITED_SOURCE_SQL = SERVABLE_LIBRARY_SOURCE_SQL.replace(/\bs\./g, 'ls.');
 import { isMinor } from './wallDisplay';
 
 export type ShadowConversationSessionType =
@@ -50,6 +56,8 @@ export interface ShadowConversationMessage {
     token: string;
     sourceTitle: string;
     documentName: string;
+    /** The cited passage, only within the rights rule (PASSAGE_DISPLAY_RIGHTS). */
+    excerpt?: string;
   }>;
 }
 
@@ -556,6 +564,8 @@ export async function loadConversationMessages(input: {
       token: string;
       sourceTitle: string;
       documentName: string;
+      passageSource?: string;
+      passageSha?: string;
     }>;
   }>(
     `select
@@ -568,12 +578,25 @@ export async function loadConversationMessages(input: {
        m.created_at,
        coalesce(
          jsonb_agg(
-           jsonb_build_object(
+           jsonb_strip_nulls(jsonb_build_object(
              'evidenceId', mc.evidence_id,
              'token', '[E:' || mc.evidence_id::text || ']',
              'sourceTitle', ls.title,
-             'documentName', d.document_name
-           )
+             'documentName', d.document_name,
+             -- The passage, read again with everything checked again
+             -- (A-Q11): both its cited source and its document's source
+             -- PPBF-owned or open-licence (PASSAGE_DISPLAY_RIGHTS), gym-wide,
+             -- and still servable. The text and the stored hash go to
+             -- replayCitedPassage below and are never sent; null otherwise.
+             'passageSource', case
+               when ls.rights_status = any($5::text[]) and ds.rights_status = any($5::text[])
+                and c.subject_id is null
+                and ${SERVABLE_CITED_SOURCE_SQL}
+                and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
+               then c.text_content
+             end,
+             'passageSha', ei.excerpt_sha256
+           ))
            order by mc.ordinal
          ) filter (where mc.evidence_id is not null),
          '[]'::jsonb
@@ -603,6 +626,12 @@ export async function loadConversationMessages(input: {
      left join pilot.shadow_library_documents d
        on d.document_id = ei.document_id
       and d.organization_id = ei.library_organization_id
+     left join pilot.shadow_library_sources ds
+       on ds.source_id = d.source_id
+      and ds.organization_id = d.organization_id
+     left join pilot.shadow_library_chunks c
+       on c.chunk_id = ei.chunk_id
+      and c.organization_id = ei.library_organization_id
      where m.organization_id = $1
        and m.account_id = $2
        and m.conversation_id = $3
@@ -612,7 +641,7 @@ export async function loadConversationMessages(input: {
               case m.role when 'assistant' then 1 else 0 end desc,
               m.message_id desc
      limit $4`,
-    [input.actor.organizationId, input.actor.accountId, input.conversationId, limit],
+    [input.actor.organizationId, input.actor.accountId, input.conversationId, limit, PASSAGE_DISPLAY_RIGHTS],
   );
   return rows.reverse().map((row) => ({
     messageId: row.message_id,
@@ -622,7 +651,12 @@ export async function loadConversationMessages(input: {
     evidenceTier: row.evidence_tier,
     handoff: row.handoff,
     createdAt: row.created_at.toISOString(),
-    citations: Array.isArray(row.citations) ? row.citations : [],
+    citations: (Array.isArray(row.citations) ? row.citations : []).map(({ passageSource, passageSha, ...citation }) => {
+      const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
+        ? replayCitedPassage(passageSource, passageSha)
+        : undefined;
+      return excerpt ? { ...citation, excerpt } : citation;
+    }),
   }));
 }
 

@@ -283,6 +283,90 @@ export async function listShadowResearchRequirements(
 }
 
 /**
+ * Every athlete id any research row of this organization names (subject_id,
+ * metadata.subject_id, metadata.athlete_id), as namedAthleteId reads them. The
+ * route asks the central gate (accessibleAthleteIds) which of these a reader
+ * reaches, once per request, and pages with that set (visibleTo below).
+ */
+export async function listNamedAthleteIdsInResearch(organizationId: string): Promise<string[]> {
+  const rows = await query<{ value: string }>(
+    `select distinct named.value
+       from pilot.shadow_research_requirements r
+       cross join lateral (values (r.subject_id), (r.metadata->>'subject_id'), (r.metadata->>'athlete_id')) as named(value)
+      where r.organization_id = $1
+        and named.value is not null`,
+    [organizationId],
+  );
+  return Array.from(new Set(
+    rows.map((row) => namedAthleteId(row.value)).filter((athleteId): athleteId is string => athleteId !== null),
+  ));
+}
+
+/**
+ * Where a page of the research list stops: the stored created_at as UTC text
+ * with microseconds (fixed format, whatever the session's DateStyle), and the
+ * row's id. The text keeps the microseconds a JS Date drops, so the next read
+ * starts exactly after this row; the id breaks ties between rows created in
+ * the same instant.
+ */
+export interface ResearchRequirementPageKey {
+  createdAt: string;
+  id: number;
+}
+
+/**
+ * One batch of the organization's research list, newest first, starting
+ * after `after`. The order (created_at, then id, both descending) is total,
+ * so batches neither repeat nor skip a row. Unscoped like the full list:
+ * the route decides which rows a reader keeps.
+ */
+export async function listShadowResearchRequirementsBatch(
+  organizationId: string,
+  options: {
+    after: ResearchRequirementPageKey | null;
+    limit: number;
+    /**
+     * For a reader outside research staff: read only rows they filed or rows
+     * naming one of these athletes. A SUPERSET of what they may see -- any
+     * named athlete, trimmed as namedAthleteId trims -- so it never hides a
+     * row the route's own scope would keep; that scope still decides. It
+     * keeps such a reader from walking the whole gym to fill one page.
+     */
+    visibleTo?: { accountId: string; athleteIds: string[] };
+  },
+): Promise<Array<{ row: ShadowResearchRequirementRow; key: ResearchRequirementPageKey }>> {
+  const rows = await query<ShadowResearchRequirementRow & { page_created_at: string }>(
+    `select
+       ${REQUIREMENT_COLUMNS},
+       to_char(created_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') || '+00' as page_created_at
+     from pilot.shadow_research_requirements
+     where organization_id = $1
+       and ($2::timestamptz is null or (created_at, research_requirement_id) < ($2::timestamptz, $3::bigint))
+       and (
+         $5::text is null
+         or created_by_account_id = $5
+         or regexp_replace(subject_id, '^[[:space:]]+|[[:space:]]+$', '', 'g') = any($6::text[])
+         or regexp_replace(metadata->>'subject_id', '^[[:space:]]+|[[:space:]]+$', '', 'g') = any($6::text[])
+         or regexp_replace(metadata->>'athlete_id', '^[[:space:]]+|[[:space:]]+$', '', 'g') = any($6::text[])
+       )
+     order by created_at desc, research_requirement_id desc
+     limit $4`,
+    [
+      organizationId,
+      options.after?.createdAt ?? null,
+      options.after?.id ?? null,
+      options.limit,
+      options.visibleTo?.accountId ?? null,
+      options.visibleTo?.athleteIds ?? [],
+    ],
+  );
+  return rows.map(({ page_created_at: createdAt, ...row }) => ({
+    row,
+    key: { createdAt, id: Number(row.research_requirement_id) },
+  }));
+}
+
+/**
  * THE CAPABILITY-COVERAGE GAP TICKET.
  *
  * recomputeShadowCapabilityCoverage opens one of these for a rule that grades

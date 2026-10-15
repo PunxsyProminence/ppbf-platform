@@ -105,6 +105,11 @@ jobs:
           assert.equal(classifyPaths(['apps/web/scripts/run-migration-suites.mjs']).migrations, true);
           assert.equal(classifyPaths(['apps/web/scripts/test-embedded-pg-server.mjs']).migrations, true);
           assert.equal(classifyPaths(['apps/web/scripts/import-shadow-research.pg.test.ts']).migrations, true);
+          // ...and so does a shared file the pg suites import (F-039): gymTime
+          // is under 210 of them. ciClassifierScopeContract.test.ts walks the
+          // suites' imports and holds the whole list.
+          assert.equal(classifyPaths(['apps/web/src/lib/gymTime.ts']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/lib/calendarDay.ts']).migrations, true);
           // ...and a page or a component alone does not.
           assert.equal(classifyPaths(['apps/web/app/admin/people/page.tsx']).migrations, false);
           assert.equal(classifyPaths(['apps/web/components/FightCard.tsx']).migrations, false);

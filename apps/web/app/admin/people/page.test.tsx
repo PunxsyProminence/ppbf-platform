@@ -9,7 +9,7 @@
 // the invite form to refusing a parent it cannot link.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import PeopleConsolePage from './page';
 
@@ -33,6 +33,8 @@ jest.mock('next/link', () => ({
 const originalFetch = global.fetch;
 
 interface MockOptions {
+  /** organization_name in the staff read; omitted when undefined (F-008). */
+  organizationName?: string | null;
   members?: unknown[];
   guardianLinks?: unknown[] | null;
   roster?: unknown[];
@@ -112,6 +114,7 @@ function fetchMock(options: MockOptions = {}) {
         json: async () => ({
           ok: true,
           organization_id: 'org-1',
+          ...(options.organizationName === undefined ? {} : { organization_name: options.organizationName }),
           members: options.members ?? [],
           ...(options.guardianLinks === null ? {} : { guardian_links: options.guardianLinks ?? [] }),
         }),
@@ -143,6 +146,32 @@ const ROSTER = [
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+describe("the console's header names the gym, never its id (F-008)", () => {
+  test("prints the gym's registered name", async () => {
+    global.fetch = fetchMock({ organizationName: 'Punxsy Prominence Boxing & Fitness', roster: ROSTER }) as never;
+
+    render(<PeopleConsolePage />);
+
+    expect(await screen.findByText('Punxsy Prominence Boxing & Fitness')).toBeTruthy();
+    expect(screen.queryByText('org-1')).toBeNull();
+  });
+
+  test('prints no gym line at all when the name is missing', async () => {
+    global.fetch = fetchMock({ organizationName: null, roster: ROSTER }) as never;
+
+    render(<PeopleConsolePage />);
+
+    await waitFor(() => {
+      expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).includes('/api/pilot/admin/staff'))).toBe(true);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.queryByText('org-1')).toBeNull();
+    expect(screen.queryByText(/Gym:/)).toBeNull();
+  });
 });
 
 describe('a guardian who resolves no children', () => {

@@ -17,6 +17,7 @@ import CoachWorkspace from './CoachWorkspace';
 jest.mock('./CoachFloorFocus', () => ({ __esModule: true, default: () => null }));
 
 interface RouteResponses {
+  liveRunMarks?: () => Response;
   floorPlans?: () => Promise<Response>;
   reviewProjection?: () => Promise<Response>;
   observationProjection?: () => Promise<Response>;
@@ -76,6 +77,10 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     // running" -- not a 404 -- so the default here is a HEALTHY read of an
     // idle coach, which is what makes an 'unavailable' rendering in these
     // tests a real signal rather than a mock artefact.
+    // Who the coach marked here in the live run (F-067): its own read, by run id.
+    if (url.includes('/api/pilot/session-scripts/runs/') && url.endsWith('/athletes')) {
+      return routes.liveRunMarks ? routes.liveRunMarks() : jsonResponse({ present: [], gym: [] });
+    }
     if (url.includes('/api/pilot/session-scripts/runs')) {
       return routes.liveRun ? routes.liveRun() : jsonResponse({ run: null });
     }
@@ -378,13 +383,44 @@ describe('the hub does not deny a capability the platform has', () => {
     // that slept through half the class would get wrong.
     expect(screen.queryByText('25m 30s')).not.toBeNull();
     // The head count the coach entered when they started this delivery --
-    // shown as the number, never as the roster-derived guess the old panel used.
+    // shown as the number they stated, never as the roster-derived guess the old panel used.
     expect(screen.queryByText('11')).not.toBeNull();
     expect(screen.queryByText('Not recorded for this run')).toBeNull();
+    // Nobody marked here yet: said so, not shown as a number.
+    expect(screen.getByTestId('live-run-marks').textContent).toBe('Nobody marked here yet');
     // The way back to the run is the floor board's Run the Room button
     // (coachFloorFocus.test.tsx pins its href); Today's Session no longer
     // repeats it.
     expect(screen.queryByRole('link', { name: 'Return to live delivery' })).toBeNull();
+  });
+
+  test('the Athletes Present row is the marks the coach made in this run, read by its id; a failed read says so', async () => {
+    const fetchMock = await renderWorkspace({
+      liveRun: () => jsonResponse({ run: liveRunRow() }),
+      liveRunMarks: () => jsonResponse({
+        present: [
+          { athlete_id: 'ath_1', full_name: 'Ada Reyes', marked_at: '2026-08-28T22:05:00.000Z' },
+          { athlete_id: 'ath_2', full_name: 'Ben Ortiz', marked_at: '2026-08-28T22:06:00.000Z' },
+          { athlete_id: 'ath_3', full_name: 'Cy Marsh', marked_at: '2026-08-28T22:07:00.000Z' },
+        ],
+        gym: [],
+      }),
+    });
+
+    expect(screen.getByTestId('live-run-marks').textContent).toBe('3 marked here');
+    const markReads = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/athletes'));
+    expect(markReads.length).toBe(1);
+    expect(String(markReads[0][0])).toContain(`/api/pilot/session-scripts/runs/${encodeURIComponent(String(liveRunRow().run_id))}/athletes`);
+    expect((markReads[0][1] as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
+  });
+
+  test('a mark read that fails is "could not be read", never "nobody marked"', async () => {
+    await renderWorkspace({
+      liveRun: () => jsonResponse({ run: liveRunRow() }),
+      liveRunMarks: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
+    });
+
+    expect(screen.getByTestId('live-run-marks').textContent).toBe('Could not be read just now');
   });
 
   test('a paused run says paused rather than showing a clock that looks like it is running', async () => {

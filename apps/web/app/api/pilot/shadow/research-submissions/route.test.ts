@@ -105,16 +105,79 @@ const patchRequest = (body: Record<string, unknown>) =>
   });
 
 describe('roles', () => {
-  test('a coach may read but not submit or review — curation is the library-write authority', async () => {
+  // OD-2026-10-08-005 A-Q13, ruling 6: "a coach may attach a source".
+  // Attaching is never approval: review stays with the curators.
+  test('a coach may read and attach a source, but not review — review is the library-approval authority', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
     mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
     mockList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({ submission_id: 's-1', applicability_state: 'unreviewed' });
 
     expect((await GET(getRequest('research_requirement_id=7'))).status).toBe(200);
-    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }))).status).toBeGreaterThanOrEqual(400);
-    expect((await PATCH(patchRequest({ submission_id: 's-1', applicability_state: 'responsive' }))).status).toBeGreaterThanOrEqual(400);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }))).status).toBe(200);
+    expect((await PATCH(patchRequest({ submission_id: 's-1', applicability_state: 'responsive' }))).status).toBe(403);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1', researchRequirementId: 7, sourceId: 'src-1', documentId: null, submittedByAccountId: 'acct-1',
+    }));
     expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test.each(['parent', 'athlete', 'volunteer', 'staff'] as const)('a %s may not attach a source', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }))).status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('a coach attaching to a requirement about a child they cannot reach gets the same not-found as a missing one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockGetRequirement.mockResolvedValue({
+      research_requirement_id: 7, organization_id: 'org-1', subject_id: 'ath-other', metadata: { athlete_id: 'ath-other' },
+    });
+    mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }))).status).toBe(404);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('a coach attaches to a requirement about a child they coach', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockGetRequirement.mockResolvedValue({
+      research_requirement_id: 7, organization_id: 'org-1', subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' },
+    });
+    mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    mockCreate.mockResolvedValue({ submission_id: 's-2' });
+
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }))).status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  test('a coach attaches a source, not a document; a curator still may link a document', async () => {
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockDocumentExists.mockResolvedValue(true);
+    mockCreate.mockResolvedValue({ submission_id: 's-3' });
+
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', document_id: 'doc-1' }))).status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', document_id: 'doc-1' }))).status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  test('a coach cannot attach on the platform shelf', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', shelf: 'platform' }))).status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
 
