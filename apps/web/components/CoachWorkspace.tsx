@@ -1072,6 +1072,13 @@ export default function CoachWorkspace() {
   const [liveRunState, setLiveRunState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [showOnWallBusy, setShowOnWallBusy] = useState(false);
   const [showOnWallError, setShowOnWallError] = useState('');
+  /* How many athletes the coach has marked here in that live session (F-067):
+     the marks themselves, from /runs/[runId]/athletes. athletes_present is a
+     number the coach STATED (at start, or at End Session), shown beside it as
+     what it is, never as the marks. */
+  const [liveRunMarksRead, setLiveRunMarksRead] = useState<
+    { runId: string; state: 'unavailable' } | { runId: string; state: 'loaded'; count: number } | null
+  >(null);
 
   /* Today's classes, from /api/pilot/scheduler. The route filters to the
      classes this coach teaches, scheduled, or covers; nothing is re-scoped
@@ -1357,9 +1364,9 @@ export default function CoachWorkspace() {
   // rendered with an explicit "not tracked" state instead of a bare number.
   // A bare 0 here would read as "confirmed zero injuries," which is false.
   /* trackedAttendanceCount stood here and fed the old "Today's Session"
-     panel's Athletes Present row. That row now reads athletes_present off the
-     live run, which is a number a coach actually entered when they started
-     the delivery, so the roster-derived count has no reader left.
+     panel's Athletes Present row. That row now reads the athletes the coach
+     marked here in the live session (F-067, liveRunMarks), so the
+     roster-derived count has no reader left.
 
      A count over the attendance column stood here after it too, and is gone
      with this change rather than repointed at the real feed. It had no
@@ -1549,6 +1556,31 @@ export default function CoachWorkspace() {
       setLiveRunState('unavailable');
     }
   }, []);
+
+  const liveRunId = liveRun?.run_id ?? null;
+  useEffect(() => {
+    if (!liveRunId) return;
+    let current = true;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(liveRunId)}/athletes`,
+          { method: 'GET', credentials: 'include' },
+        );
+        const payload = (await response.json().catch(() => null)) as { present?: unknown } | null;
+        if (!response.ok || !payload || !Array.isArray(payload.present)) throw new Error('marks');
+        if (current) setLiveRunMarksRead({ runId: liveRunId, state: 'loaded', count: payload.present.length });
+      } catch {
+        // Unknown is shown as unknown, never as "nobody here".
+        if (current) setLiveRunMarksRead({ runId: liveRunId, state: 'unavailable' });
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [liveRunId]);
+  // A read of another run (or none yet) is still loading for this one.
+  const liveRunMarks = liveRunMarksRead && liveRunMarksRead.runId === liveRunId ? liveRunMarksRead : { state: 'loading' as const };
 
   /* The dashboard's copy of the live screen's Show on TV switch (Jason, Q3:
      "it should be a capability in the coaches dashboard"). Same contract as
@@ -3370,11 +3402,21 @@ export default function CoachWorkspace() {
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
-                        <p className="t-data text-[length:var(--t-sm)]">
-                          {typeof liveRun.athletes_present === 'number' ? liveRun.athletes_present : (
-                            <span className="text-[color:var(--bone-400)]">Not recorded for this run</span>
+                        <p className="t-data text-[length:var(--t-sm)]" data-testid="live-run-marks">
+                          {liveRunMarks.state === 'loaded' && liveRunMarks.count > 0 && `${liveRunMarks.count} marked here`}
+                          {liveRunMarks.state === 'loaded' && liveRunMarks.count === 0 && (
+                            <span className="text-[color:var(--bone-400)]">Nobody marked here yet</span>
+                          )}
+                          {liveRunMarks.state === 'loading' && <span className="text-[color:var(--bone-400)]">Reading…</span>}
+                          {liveRunMarks.state === 'unavailable' && (
+                            <span className="text-[color:var(--bone-400)]">Could not be read just now</span>
                           )}
                         </p>
+                        {typeof liveRun.athletes_present === 'number' && (
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
+                            Count stated at start: <span className="t-data">{liveRun.athletes_present}</span>
+                          </p>
+                        )}
                       </div>
                       {/* The Show on TV switch, the same one the live screen
                           carries. Off by default on every run. The honest line

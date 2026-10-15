@@ -101,6 +101,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  // The bundle insert reads rights_status to decide which passages may be shown.
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 const actor = {
@@ -156,10 +158,12 @@ async function freshDatabase(name: string): Promise<Client> {
   );
   await client.query(
     `insert into pilot.shadow_library_sources
-       (source_id, organization_id, title, source_type, authority_tier, status,
+       (source_id, organization_id, title, source_type, authority_tier, status, rights_status,
         approval_state, verification_state,
         approved_by_account_id, approved_at, verified_by_account_id, verified_at)
-     values ($1, $2, $1, 'article', 1, 'active', 'approved', 'verified', $3, now(), $3, now())`,
+     -- PPBF-owned: the chunk below holds full text, which the rights guard
+     -- allows only for an owned or open-licence source.
+     values ($1, $2, $1, 'article', 1, 'active', 'ppbf_owned', 'approved', 'verified', $3, now(), $3, now())`,
     [SOURCE_ID, ORG_ID, ADMIN_ID],
   );
   await client.query(
