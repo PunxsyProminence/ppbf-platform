@@ -72,7 +72,7 @@ export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT'
   return (
     <Link href={href} className={buttonClasses(className)}>
       <span>{label}</span>
-      <span className="border border-[color:currentColor] px-1 text-[10px] tracking-[0.08em]">{roleLabel}</span>
+      <span className="border border-[color:currentColor] px-1 text-[length:var(--t-xs)] tracking-[0.08em]">{roleLabel}</span>
     </Link>
   );
 }

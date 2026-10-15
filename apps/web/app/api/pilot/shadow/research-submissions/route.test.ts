@@ -440,15 +440,25 @@ describe('the subject gate on a requirement that names a child', () => {
     expect(getRequirementStatusesInOrg as jest.Mock).toHaveBeenCalledWith('org-1', [7]);
   });
 
-  test('an organization admin is not narrowed, and costs no extra read', async () => {
+  test('an organization admin is not narrowed by subject, and the row is read once so a deleted asker stays unreachable', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockGetRequirement.mockResolvedValueOnce({ ...requirementAbout('ath-9'), research_requirement_id: 7 });
     mockRequirementStatus.mockResolvedValueOnce('open');
     mockList.mockResolvedValueOnce([]);
 
     const response = await GET(getRequest('research_requirement_id=7'));
 
     expect(response.status).toBe(200);
-    expect(mockGetRequirement).not.toHaveBeenCalled();
+    expect(mockGetRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  test('an organization admin is refused a requirement the by-id read answers null for (a marked-deleted asker)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockGetRequirement.mockResolvedValueOnce(null);
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(404);
   });
 
   /* THE ENUMERATION ORACLE. The batch parameter takes 200 ids per request, so

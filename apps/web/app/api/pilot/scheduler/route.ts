@@ -15,7 +15,7 @@ import {
 import { gymDayIso, parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
-import { ValidationError } from '@/src/server/pilot/errors';
+import { ForbiddenError, ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -27,6 +27,7 @@ import {
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
   getSchedulerRegistrationById,
+  listLatestClassCoverAudits,
   listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
@@ -42,6 +43,12 @@ import {
   upsertFamilySchedulerAttendance,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
+import {
+  CANCEL_REFUSAL_MESSAGES,
+  classCancelRefusal,
+  coverTakenAtMs,
+  type CancelActor,
+} from '@/src/server/pilot/schedulerCancelRule';
 import {
   readStaffHoldWarning,
   readStaffHoldWarnings,
@@ -397,15 +404,30 @@ type FamilyClass = Omit<
   'scheduled_by_account_id' | 'coach_account_id' | 'covering_coach_account_id'
 > & { registered_count: number };
 
-/* Whether this staff member may cancel this class now (#1536): the same rule
-   cancel_class enforces, sent so the screen offers the button only where the
-   server would accept it. Never sent to a family (familyClass names its
-   fields). */
-function canCancelClass(actor: SchedulerActor, item: SchedulerClass): boolean {
-  if (item.status === 'cancelled') return false;
-  const endsMs = Date.parse(item.end_at);
-  if (Number.isFinite(endsMs) && endsMs < Date.now()) return false;
-  return canManageAll(actor) || (actor.role === 'coach' && actorRunsClass(actor, item));
+function cancelActor(actor: SchedulerActor): CancelActor {
+  return { accountId: actor.accountId, isOffice: canManageAll(actor), isCoach: actor.role === 'coach' };
+}
+
+/* Whether this staff member may cancel each class now (#1536, #1595): the
+   same rule cancel_class enforces (schedulerCancelRule), sent so the screen
+   offers the button only where the server would accept it. Never sent to a
+   family (familyClass names its fields). The cover audit is read only for
+   classes this coach covers and does not otherwise run. */
+async function cancellableClassIds(actor: SchedulerActor, classes: SchedulerClass[]): Promise<Set<string>> {
+  const who = cancelActor(actor);
+  const coverOnly = who.isOffice
+    ? []
+    : classes.filter((item) => item.covering_coach_account_id === actor.accountId
+      && item.coach_account_id !== actor.accountId
+      && item.scheduled_by_account_id !== actor.accountId);
+  const audits = await listLatestClassCoverAudits(actor.organizationId, coverOnly.map((item) => item.class_id));
+  const nowMs = Date.now();
+  const allowed = new Set<string>();
+  for (const item of classes) {
+    const coverMs = coverTakenAtMs(item, audits.get(item.class_id) ?? null);
+    if (classCancelRefusal(who, item, coverMs, nowMs) === null) allowed.add(item.class_id);
+  }
+  return allowed;
 }
 
 /* Built by naming what stays rather than by deleting what goes -- an
@@ -600,12 +622,13 @@ export async function GET(request: NextRequest) {
     // covering_coach_account_id to work out which classes it owns. Narrowing
     // earlier would have taken the coach's own ownership test away from it.
     const family = isFamilyReader(actor);
+    const cancellable = family ? new Set<string>() : await cancellableClassIds(actor, classes);
 
     return NextResponse.json({
       ok: true,
       role: actor.role,
       athlete_id: actor.athleteId,
-      classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: canCancelClass(actor, item) })),
+      classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: cancellable.has(item.class_id) })),
       registrations: family ? filtered.registrations.map(familyRegistration) : filtered.registrations,
       coaching_requests: family
         ? filtered.coaching_requests.map(familyCoachingRequest)
@@ -707,13 +730,13 @@ export async function POST(request: NextRequest) {
       if (existingClass.status === 'cancelled') {
         throw new ValidationError('This class was cancelled.');
       }
-      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
-
       // Route-survey B6: any coach can name themselves covering coach with
       // one POST, and covering a class is what hands them its whole register
       // (resolveRegisterMark). No approval step by ruling; the audit row is
       // what makes a self-grant visible, so it records who held cover before.
-      await auditSchedulerEvent({
+      // It is written in the cover's own transaction, not best-effort: the
+      // cancel rule reads it for how long the cover has been held (#1595).
+      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString(), {
         event_type: 'update',
         actor_account_id: actor.accountId,
         actor_role: actor.role,
@@ -733,32 +756,51 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'cancel_class') {
-      // #1536: the coach who runs the class (teaches, scheduled or covers it:
-      // Overwatch Q1 A, cover hands them the register) or an organization
-      // admin. A soft cancel: registrations, attendance and history are kept,
-      // and families read the class as cancelled.
+      // #1536, #1595 (Jason's rulings on #1550): the class's own coach, its
+      // cover coach once the cover is an hour old, or the office; never after
+      // the class has started. A soft cancel: registrations, attendance and
+      // history are kept, and families read the class as cancelled.
       if (!(actor.role === 'coach' || canManageAll(actor))) {
-        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+        throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
       }
       const classId = requiredString(body.class_id, 'class_id');
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
       }
-      if (actor.role === 'coach' && !actorRunsClass(actor, classItem)) {
-        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+      const audits = await listLatestClassCoverAudits(actor.organizationId, [classId]);
+      const refusal = classCancelRefusal(
+        cancelActor(actor),
+        classItem,
+        coverTakenAtMs(classItem, audits.get(classId) ?? null),
+        Date.now(),
+      );
+      if (refusal === 'not_class_coach' || refusal === 'cover_too_recent') {
+        throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES[refusal]);
       }
-      if (classItem.status === 'cancelled') {
-        throw new ValidationError('This class is already cancelled.');
-      }
-      const endsMs = Date.parse(classItem.end_at);
-      if (Number.isFinite(endsMs) && endsMs < Date.now()) {
-        throw new ValidationError('A class that has already ended cannot be cancelled.');
+      if (refusal) {
+        throw new ValidationError(CANCEL_REFUSAL_MESSAGES[refusal]);
       }
 
-      const cancelled = await cancelSchedulerClass(actor.organizationId, classId, new Date().toISOString());
+      // Allowed only as the cover coach: the update re-checks the cover.
+      const coverOnly = !canManageAll(actor)
+        && classItem.coach_account_id !== actor.accountId
+        && classItem.scheduled_by_account_id !== actor.accountId;
+      const cancelled = await cancelSchedulerClass(
+        actor.organizationId,
+        classId,
+        new Date().toISOString(),
+        coverOnly ? actor.accountId : undefined,
+      );
       if (!cancelled) {
-        throw new ValidationError('This class is already cancelled.');
+        // Lost a race (#1595): to another cancel, to the class's start, or
+        // to another coach taking the cover.
+        const now = await getSchedulerClassById(actor.organizationId, classId);
+        if (now?.status === 'cancelled') throw new ValidationError(CANCEL_REFUSAL_MESSAGES.cancelled);
+        if (coverOnly && now?.covering_coach_account_id !== actor.accountId) {
+          throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
+        }
+        throw new ValidationError(CANCEL_REFUSAL_MESSAGES.started);
       }
 
       await auditSchedulerEvent({

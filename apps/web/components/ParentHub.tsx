@@ -285,6 +285,51 @@ export default function ParentHub() {
     })();
   }, []);
 
+  /* OPENING A MESSAGE (#1542, FC-05). A coach's message counts as opened when
+     at least half of it is on screen on the Messages tab (FC-05 Q-1 default
+     A) -- not when the inbox is fetched, which the hub does on load for its
+     summary tile too. Each message is recorded once per visit (POST
+     /api/pilot/parent/message-reads; the server keeps the first time). Only
+     the message itself is watched, not the replies under it. A failed write
+     is not the guardian's to deal with: it is not shown, and the message is
+     tried again when the tab is next opened or the list reloads. */
+  const readsSentRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (activeTab !== 'messages' || !messagesLoaded || messages.length === 0) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        // Half of the message on screen -- or, for a message taller than the
+        // screen, half of the screen filled with it, since such a message can
+        // never be half on screen at once.
+        const fillsHalfTheScreen = entry.rootBounds !== null
+          && entry.intersectionRect.height >= 0.5 * entry.rootBounds.height;
+        if (!entry.isIntersecting || (entry.intersectionRatio < 0.5 && !fillsHalfTheScreen)) continue;
+        const noteId = (entry.target as HTMLElement).dataset.readNote;
+        if (!noteId || readsSentRef.current.has(noteId)) continue;
+        readsSentRef.current.add(noteId);
+        observer.unobserve(entry.target);
+        void fetch(`${apiBase()}/api/pilot/parent/message-reads`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note_id: noteId }),
+        })
+          .then((response) => {
+            if (!response.ok) readsSentRef.current.delete(noteId);
+          })
+          .catch(() => {
+            readsSentRef.current.delete(noteId);
+          });
+      }
+    // Every 1%: a message many screens tall changes its visible share only a
+    // little as it scrolls, so coarse steps could never fire again after the
+    // first sliver, and it would never be seen filling half the screen.
+    }, { threshold: Array.from({ length: 101 }, (_, step) => step / 100) });
+    document.querySelectorAll<HTMLElement>('[data-read-note]').forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [activeTab, messagesLoaded, messages]);
+
   /* REPLYING TO A MESSAGE (#1542, FC-03). Each message has its own reply
      box; a reply is stored under that message and the gym's staff read it
      under the note they posted. This guardian's earlier replies are read once,
@@ -1024,11 +1069,16 @@ export default function ParentHub() {
         {/* This hub asks for its own surface. 'parent_hub' draws what an
             author addressed to guardians, and the read includes 'everywhere'
             by definition, so gym-wide items still arrive; items placed on the
-            athlete or coach workspace still do not. */}
+            athlete or coach workspace still do not.
+            Labelled as posted for every family, so a guardian never takes it
+            for a message written to them; those are on the Messages tab
+            (#1542, FC-07; Q-1 A: announcements stay out of the message
+            history). */}
         <AnnouncementBanner
           placement="parent_hub"
           kind="notice"
-          heading="Gym Notices"
+          heading="Gym announcements"
+          note="Posted for every family at the gym, not a message to you."
           className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
 
@@ -1199,7 +1249,7 @@ export default function ParentHub() {
                     onClick={() => setActiveTab('messages')}
                     className="btn btn--ghost w-full"
                   >
-                    View Coach Messages
+                    View Messages from the Coaches
                   </button>
                   <button
                     type="button"
@@ -1499,7 +1549,7 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
-                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym."
+                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym, where the coaches can read it."
                 usage={[
                   'Pick what it is about and say what you noticed',
                   'Add a rating from 1 to 10 if it helps; it is optional',
@@ -1571,20 +1621,25 @@ export default function ParentHub() {
           {activeTab === 'messages' && (
             <div className="space-y-6 panel-settle">
               <HelpPanel
-                title="Coach Messages"
-                description="Receive updates and messages from coaches about your child's progress."
+                title="Messages from the coaches"
+                description="Each message here was written by a coach or the gym's staff to your family, about your child. Gym-wide announcements are not messages; they sit at the top of the hub."
                 usage={[
-                  'Check regularly for coach updates',
-                  'Respond to coach requests promptly',
-                  'Ask questions about training',
-                  'Share relevant home observations'
+                  'Read each message the coaches wrote to your family',
+                  'Reply under a message to answer the gym',
+                  'Tick a to-do as Done when it is done',
+                  'Share what you see at home on the Observations tab'
                 ]}
                 mistakes={[
-                  'Ignoring coach messages',
-                  'Delayed responses to urgent matters',
-                  'Not sharing important information'
+                  'Looking here for gym-wide announcements (they are at the top of the hub)',
+                  'Leaving a to-do unticked after it is done'
                 ]}
               />
+
+              {/* What this tab holds, always on screen (FC-07): only what was
+                  written to this family; gym announcements are not here. */}
+              <p className="t-body">
+                What the coaches and gym staff wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub.
+              </p>
 
               {/* A read that did not answer is not an empty inbox.
                   `messagesLoaded` stays false when /api/pilot/parent/messages
@@ -1618,11 +1673,16 @@ export default function ParentHub() {
                 <div className="space-y-[var(--s4)]">
                   {messages.map((message) => (
                     <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
-                      <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
-                        <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
-                        <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                      {/* What counts as opening it is the message itself, not
+                          the replies and reply box under it: a long thread must
+                          not keep the card from ever being half on screen. */}
+                      <div data-read-note={message.note_id}>
+                        <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
+                          <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
+                          <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                        </div>
+                        <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       </div>
-                      <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       <p className="t-muted">{formatGymDateTimeShort(message.created_at) ?? message.created_at}</p>
                       {/* A message with a due date is something to do. The box
                           is the guardian's one write here; "Done" / "Still to

@@ -418,6 +418,20 @@ link handed out before the deletion keeps working until it expires (60 minutes).
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.
 
+**SHADOW research rows.** A research requirement (`pilot.shadow_research_requirements`) has no
+foreign key to the athlete it is about, so the mark only hides it. When the cleanup job purges an
+athlete it deletes, in that athlete's savepoint and in that gym only: the questions the athlete
+or a parent asked SHADOW about them (`asker_research_questions_deleted`; a purged guardian's own
+go with the account), and every requirement that names the athlete in `subject_id`,
+`metadata.subject_id` or `metadata.athlete_id` (trimmed; any of the three), or whose intake case
+names them (an intake review's approve or reject row is filed before the case names an athlete;
+its tie is `source_entity_id` = the case, whose `primary_athlete_id` is the child), whoever filed
+it, a coach's or admin's filing included, with the submissions attached to those requirements
+(`subject_research_requirements_deleted`, `subject_research_submissions_deleted`; dry run
+`would_delete_subject_research_requirements` / `_submissions`). A requirement that names no
+athlete is the gym's research and stays, whatever its text says: a name typed into free text is
+not found. Pinned by `askerQuestionDeletion.pg.test.ts` and `subjectResearchPurge.pg.test.ts`.
+
 **Sign-in refuses a deleted login** (owner decision 2026-09-29, OD-2026-09-29-003 Q9, "all
 recommended": one central rule). Every sign-in refuses an account whose `deleted_at` is set,
 whatever its `active_flag` says: PIN sign-in, Microsoft sign-in, asking for and redeeming a

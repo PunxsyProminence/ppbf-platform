@@ -21,6 +21,7 @@ import {
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
   getSchedulerRegistrationById,
+  listLatestClassCoverAudits,
   listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
@@ -81,6 +82,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   upsertSchedulerAttendance: jest.fn(),
   upsertFamilySchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
+  listLatestClassCoverAudits: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
   listSchedulerStore: jest.fn(),
 }));
@@ -128,6 +130,7 @@ beforeEach(() => {
   mockFamilyUpsert.mockResolvedValue(true);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
   mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
+  (listLatestClassCoverAudits as jest.Mock).mockResolvedValue(new Map());
   // The athletes a coach reaches outside any class register (assignment or
   // coverage). Tests about reach beyond the register override this.
   (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ATH-1', 'ATH-2']);
@@ -930,15 +933,18 @@ describe('the class register: whole class plus walk-ins', () => {
     expect(mockAssertCanAct).not.toHaveBeenCalled();
   });
 
-  test('cover_class writes an audit row naming the class, the previous cover and the new one (route-survey B6)', async () => {
+  test('cover_class writes an audit row naming the class, the previous cover and the new one (route-survey B6), in the cover\'s own transaction (#1595)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
     mockGetClass.mockResolvedValueOnce({ ...classRecord, covering_coach_account_id: 'acct-before' });
 
     const response = await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockAudit).toHaveBeenCalledTimes(1);
-    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+    // Handed to setSchedulerClassCover, which writes it with the cover; never a separate best-effort write.
+    expect(mockAudit).not.toHaveBeenCalled();
+    const coverCall = (setSchedulerClassCover as jest.Mock).mock.calls[0];
+    expect(coverCall.slice(0, 3)).toEqual(['org-1', 'class-1', 'acct-coach-2']);
+    expect(coverCall[4]).toMatchObject({
       event_type: 'update',
       actor_account_id: 'acct-coach-2',
       actor_role: 'coach',
@@ -959,7 +965,7 @@ describe('the class register: whole class plus walk-ins', () => {
 
     await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
 
-    expect(mockAudit.mock.calls[0][0].details).toMatchObject({ previous_covering_coach_account_id: null });
+    expect((setSchedulerClassCover as jest.Mock).mock.calls[0][4].details).toMatchObject({ previous_covering_coach_account_id: null });
   });
 });
 
@@ -2142,29 +2148,51 @@ describe('family check-in: Present, on the day of the class, never over a staff 
 describe('cancel_class', () => {
   const mockCancel = cancelSchedulerClass as jest.Mock;
   const mockAuditCancel = writePilotAuditEvent as jest.Mock;
+  const mockCoverAudits = listLatestClassCoverAudits as jest.Mock;
   const future = () => new Date(Date.now() + 3_600_000).toISOString();
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  // Upcoming: starts in an hour, ends in two. Last touched yesterday.
+  const upcoming = () => ({
+    ...classRecord,
+    start_at: future(),
+    end_at: new Date(Date.now() + 7_200_000).toISOString(),
+    updated_at: minutesAgo(24 * 60),
+  });
+  const coverAudit = (coach: string, at: string) => new Map([['class-1', { covering_coach_account_id: coach, created_at: at }]]);
+  const coveredBy = (coach: string, fields: Record<string, unknown> = {}) => ({
+    ...upcoming(),
+    coach_account_id: 'acct-x',
+    scheduled_by_account_id: 'acct-x',
+    covering_coach_account_id: coach,
+    ...fields,
+  });
 
   beforeEach(() => {
     mockCancel.mockResolvedValue(true);
-    mockGetClass.mockResolvedValue({ ...classRecord, end_at: future() });
+    mockGetClass.mockResolvedValue(upcoming());
   });
 
   const cancel = () => POST(jsonRequest({ action: 'cancel_class', class_id: 'class-1' }));
 
   test.each([
-    ['the coach who teaches it', principal('coach', { accountId: 'acct-coach-1' }), {}],
-    ['the coach covering it', principal('coach', { accountId: 'acct-cover' }), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', covering_coach_account_id: 'acct-cover' }],
-    ['the coach who scheduled it', principal('coach', { accountId: 'acct-sched' }), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-sched' }],
-    ['an organization admin', principal('organization_admin'), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' }],
-  ])('%s may cancel: the status changes and an audit row is written', async (_who, caller, classFields) => {
+    ['the coach who teaches it', principal('coach', { accountId: 'acct-coach-1' }), {}, null],
+    ['the coach who scheduled it', principal('coach', { accountId: 'acct-sched' }), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-sched' }, null],
+    ['the cover coach, cover taken two hours ago', principal('coach', { accountId: 'acct-cover' }), coveredBy('acct-cover', { updated_at: minutesAgo(120) }), coverAudit('acct-cover', minutesAgo(120))],
+    ['the cover coach, no cover audit row and the class untouched for two hours', principal('coach', { accountId: 'acct-cover' }), coveredBy('acct-cover', { updated_at: minutesAgo(120) }), null],
+    ['an organization admin', principal('organization_admin'), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' }, null],
+    ['an admin', principal('admin'), { coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' }, null],
+  ])('%s may cancel before the start: the status changes and an audit row is written', async (_who, caller, classFields, audits) => {
     mockRequirePrincipal.mockResolvedValueOnce(caller);
-    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: future(), ...classFields });
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), ...classFields });
+    if (audits) mockCoverAudits.mockResolvedValueOnce(audits);
 
     const response = await cancel();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', status: 'cancelled' });
-    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String));
+    // Only a cover-only caller has the update re-check that they still cover the class.
+    const coverOnly = caller.role === 'coach' && caller.accountId === 'acct-cover';
+    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String), coverOnly ? 'acct-cover' : undefined);
     expect(mockAuditCancel.mock.calls[0][0]).toMatchObject({
       entity_type: 'scheduler_class',
       entity_id: 'class-1',
@@ -2176,19 +2204,98 @@ describe('cancel_class', () => {
     ['a coach who does not run it', principal('coach', { accountId: 'acct-someone-else' })],
     ['an athlete', athletePrincipal()],
     ['a parent', principal('parent')],
-  ])('%s is refused with 403 and nothing changes', async (_who, caller) => {
+  ])('%s is refused with 403 and a sentence, and nothing changes', async (_who, caller) => {
     mockRequirePrincipal.mockResolvedValueOnce(caller);
 
     const response = await cancel();
 
     expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("Only this class's coach, its cover coach or the office can cancel it.");
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['taken ten minutes ago (its audit row)', coveredBy('acct-cover', { updated_at: minutesAgo(10) }), coverAudit('acct-cover', minutesAgo(10))],
+    ['taken 59 minutes ago (its audit row)', coveredBy('acct-cover', { updated_at: minutesAgo(59) }), coverAudit('acct-cover', minutesAgo(59))],
+    ['with no audit row, the class updated ten minutes ago', coveredBy('acct-cover', { updated_at: minutesAgo(10) }), new Map()],
+    ['whose newest audit row names another coach, the class updated ten minutes ago', coveredBy('acct-cover', { updated_at: minutesAgo(10) }), coverAudit('acct-other', minutesAgo(120))],
+  ])('a cover %s cannot cancel: 403 with a sentence, nothing changes', async (_when, classItem, audits) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-cover' }));
+    mockGetClass.mockResolvedValueOnce(classItem);
+    mockCoverAudits.mockResolvedValueOnce(audits);
+
+    const response = await cancel();
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('A cover taken in the last hour cannot cancel this class. Its coach or the office can.');
+    expect(mockCoverAudits).toHaveBeenCalledWith('org-1', ['class-1']);
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('cover, then cancel, by a coach who does not run the class: the cover lands, the cancel is refused', async () => {
+    const coachB = principal('coach', { accountId: 'acct-b' });
+    mockRequirePrincipal.mockResolvedValueOnce(coachB);
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' });
+    expect((await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }))).status).toBe(200);
+
+    mockRequirePrincipal.mockResolvedValueOnce(coachB);
+    mockGetClass.mockResolvedValueOnce(coveredBy('acct-b', { updated_at: new Date().toISOString() }));
+    mockCoverAudits.mockResolvedValueOnce(coverAudit('acct-b', new Date().toISOString()));
+
+    const response = await cancel();
+
+    expect(response.status).toBe(403);
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['an organization admin', principal('organization_admin')],
+    ['the coach who teaches it', principal('coach', { accountId: 'acct-coach-1' })],
+  ])('nobody cancels once the class has started: %s gets a 400 with a sentence', async (_who, caller) => {
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), start_at: minutesAgo(1) });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class has already started, so it can no longer be cancelled.');
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a start stored with no zone is read on the gym clock, not the server clock', async () => {
+    // Started ten minutes ago at the gym, written as the gym's wall clock.
+    const tenAgo = new Date(Date.now() - 10 * 60_000);
+    const wall = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(tenAgo).reduce<Record<string, string>>((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), start_at: `${wall.year}-${wall.month}-${wall.day}T${wall.hour}:${wall.minute}:${wall.second}` });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  test("another gym's class is not found, and nothing is written", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { organizationId: 'org-2' }));
+    mockGetClass.mockResolvedValueOnce(null);
+
+    const response = await cancel();
+
+    expect(response.status).not.toBe(200);
+    expect(mockGetClass).toHaveBeenCalledWith('org-2', 'class-1');
     expect(mockCancel).not.toHaveBeenCalled();
     expect(mockAuditCancel).not.toHaveBeenCalled();
   });
 
   test('a class already cancelled is a 400 with a sentence, and nothing is written', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: future(), status: 'cancelled' });
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), status: 'cancelled' });
 
     const response = await cancel();
 
@@ -2199,22 +2306,52 @@ describe('cancel_class', () => {
 
   test('a class that has ended is a 400 with a sentence, and nothing is written', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    mockGetClass.mockResolvedValueOnce({ ...classRecord, end_at: new Date(Date.now() - 60_000).toISOString() });
+    mockGetClass.mockResolvedValueOnce({ ...upcoming(), start_at: minutesAgo(120), end_at: minutesAgo(60) });
 
     const response = await cancel();
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toBe('A class that has already ended cannot be cancelled.');
+    expect((await response.json()).error).toBe('This class has already started, so it can no longer be cancelled.');
     expect(mockCancel).not.toHaveBeenCalled();
   });
 
   test('a cancel that lost a race to another cancel says so, and writes no audit row', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockCancel.mockResolvedValueOnce(false);
+    mockGetClass.mockResolvedValueOnce(upcoming()).mockResolvedValueOnce({ ...upcoming(), status: 'cancelled' });
 
     const response = await cancel();
 
     expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class is already cancelled.');
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a cover coach whose cover passed to someone else before the update is refused with 403, and no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-cover' }));
+    mockGetClass
+      .mockResolvedValueOnce(coveredBy('acct-cover', { updated_at: minutesAgo(120) }))
+      .mockResolvedValueOnce(coveredBy('acct-new', { updated_at: new Date().toISOString() }));
+    mockCoverAudits.mockResolvedValueOnce(coverAudit('acct-cover', minutesAgo(120)));
+    mockCancel.mockResolvedValueOnce(false);
+
+    const response = await cancel();
+
+    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String), 'acct-cover');
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("Only this class's coach, its cover coach or the office can cancel it.");
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a cancel that lost a race to the start (the update refused it) says the class has started, and writes no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockCancel.mockResolvedValueOnce(false);
+    mockGetClass.mockResolvedValueOnce(upcoming()).mockResolvedValueOnce({ ...upcoming(), start_at: minutesAgo(0) });
+
+    const response = await cancel();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class has already started, so it can no longer be cancelled.');
     expect(mockAuditCancel).not.toHaveBeenCalled();
   });
 
@@ -2273,10 +2410,13 @@ describe('cancel_class', () => {
   describe('GET says where Cancel Class would be accepted, to staff only', () => {
     const mockListStoreCancel = listSchedulerStore as jest.Mock;
     const classes = () => [
-      { ...classRecord, class_id: 'mine', end_at: future() },
-      { ...classRecord, class_id: 'theirs', coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', end_at: future() },
-      { ...classRecord, class_id: 'ended', end_at: new Date(Date.now() - 60_000).toISOString() },
-      { ...classRecord, class_id: 'gone', end_at: future(), status: 'cancelled' },
+      { ...upcoming(), class_id: 'mine' },
+      { ...upcoming(), class_id: 'theirs', coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x' },
+      { ...upcoming(), class_id: 'started', start_at: minutesAgo(5) },
+      { ...upcoming(), class_id: 'ended', start_at: minutesAgo(120), end_at: minutesAgo(60) },
+      { ...upcoming(), class_id: 'gone', status: 'cancelled' },
+      { ...upcoming(), class_id: 'covered-long', coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', covering_coach_account_id: 'acct-coach-1' },
+      { ...upcoming(), class_id: 'covered-now', coach_account_id: 'acct-x', scheduled_by_account_id: 'acct-x', covering_coach_account_id: 'acct-coach-1' },
     ];
     const store = () => ({ classes: classes(), registrations: [], attendance: [], coaching_requests: [] });
     const flags = async () => {
@@ -2284,18 +2424,28 @@ describe('cancel_class', () => {
       return Object.fromEntries(body.classes.map((item: { class_id: string; can_cancel?: boolean }) => [item.class_id, item.can_cancel]));
     };
 
-    test('a coach: only an upcoming class they run', async () => {
+    test('a coach: a class not yet started that is theirs, or that they have covered for an hour', async () => {
       mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach-1' }));
       mockListStoreCancel.mockResolvedValue(store());
+      mockCoverAudits.mockResolvedValue(new Map([
+        ['covered-long', { covering_coach_account_id: 'acct-coach-1', created_at: minutesAgo(90) }],
+        ['covered-now', { covering_coach_account_id: 'acct-coach-1', created_at: minutesAgo(5) }],
+      ]));
 
-      expect(await flags()).toEqual({ mine: true, theirs: false, ended: false, gone: false });
+      expect(await flags()).toEqual({
+        mine: true, theirs: false, started: false, ended: false, gone: false, 'covered-long': true, 'covered-now': false,
+      });
+      // The cover audit is read only for the classes this coach only covers.
+      expect(mockCoverAudits).toHaveBeenCalledWith('org-1', ['covered-long', 'covered-now']);
     });
 
-    test('an organization admin: every upcoming class', async () => {
+    test('an organization admin: every class not yet started', async () => {
       mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
       mockListStoreCancel.mockResolvedValue(store());
 
-      expect(await flags()).toEqual({ mine: true, theirs: true, ended: false, gone: false });
+      expect(await flags()).toEqual({
+        mine: true, theirs: true, started: false, ended: false, gone: false, 'covered-long': true, 'covered-now': true,
+      });
     });
 
     test('a family is never sent the flag, and still reads a cancelled class as cancelled', async () => {

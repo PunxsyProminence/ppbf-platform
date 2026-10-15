@@ -1,3 +1,4 @@
+import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
@@ -166,32 +167,91 @@ export async function createSchedulerClass(organizationId: string, item: Schedul
   );
 }
 
-export async function setSchedulerClassCover(organizationId: string, classId: string, coachAccountId: string, updatedAt: string): Promise<void> {
-  await query(
-    `update pilot.scheduler_classes
-     set covering_coach_account_id = $3,
-         updated_at = $4
-     where organization_id = $1 and class_id = $2`,
-    [organizationId, classId, coachAccountId, updatedAt],
-  );
+/**
+ * Names the class's cover coach, and writes its cover_class audit row in the
+ * same transaction (#1595). The cancel rule reads that row for how long the
+ * cover has been held, so a cover must not land without it: if the audit
+ * insert fails, the cover is rolled back.
+ */
+export async function setSchedulerClassCover(
+  organizationId: string,
+  classId: string,
+  coachAccountId: string,
+  updatedAt: string,
+  audit: PilotAuditEvent,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    await client.query(
+      `update pilot.scheduler_classes
+       set covering_coach_account_id = $3,
+           updated_at = $4
+       where organization_id = $1 and class_id = $2`,
+      [organizationId, classId, coachAccountId, updatedAt],
+    );
+    await writePilotAuditEvent(audit, client);
+  });
 }
 
 /**
  * Soft-cancels a class (#1536): the status reads 'cancelled' and nothing else
  * changes. Its registrations, attendance and history stay exactly as they
- * were. Returns false when the class was already cancelled (or is not this
- * gym's), so two cancels racing write one change.
+ * were. Returns false when the class was already cancelled, has started
+ * (#1595: never after start, checked in the same statement on the database's
+ * clock so a cancel racing the start cannot land), or is not this gym's.
+ *
+ * `onlyIfCoveredBy`: for a caller allowed only as the class's cover coach,
+ * the update also requires that they still cover it, so a cover handed to
+ * someone else between the check and the write cannot cancel (#1595).
  */
-export async function cancelSchedulerClass(organizationId: string, classId: string, updatedAt: string): Promise<boolean> {
+export async function cancelSchedulerClass(
+  organizationId: string,
+  classId: string,
+  updatedAt: string,
+  onlyIfCoveredBy?: string,
+): Promise<boolean> {
   const rows = await query<{ class_id: string }>(
     `update pilot.scheduler_classes
      set status = 'cancelled',
          updated_at = $3
      where organization_id = $1 and class_id = $2 and status <> 'cancelled'
+       and start_at > now()
+       and ($4::text is null or covering_coach_account_id = $4::text)
      returning class_id`,
-    [organizationId, classId, updatedAt],
+    [organizationId, classId, updatedAt, onlyIfCoveredBy ?? null],
   );
   return rows.length > 0;
+}
+
+/**
+ * The newest cover_class audit row for each class (#1595): who it named as
+ * cover and when. schedulerCancelRule reads it to tell how long the current
+ * cover has been held. setSchedulerClassCover writes the row with the cover;
+ * a cover from before that (audit then best-effort) may have none, and the
+ * rule then falls back to the class's updated_at.
+ */
+export async function listLatestClassCoverAudits(
+  organizationId: string,
+  classIds: readonly string[],
+): Promise<Map<string, { covering_coach_account_id: string | null; created_at: string }>> {
+  const latest = new Map<string, { covering_coach_account_id: string | null; created_at: string }>();
+  if (classIds.length === 0) return latest;
+  const rows = await query<{ class_id: string; covering_coach_account_id: string | null; created_at: string }>(
+    `select distinct on (entity_id)
+            entity_id as class_id,
+            details->>'covering_coach_account_id' as covering_coach_account_id,
+            created_at::text as created_at
+     from pilot.audit_events
+     where organization_id = $1
+       and entity_type = 'scheduler_class'
+       and entity_id = any($2::text[])
+       and details->>'action' = 'cover_class'
+     order by entity_id, created_at desc, audit_id desc`,
+    [organizationId, [...classIds]],
+  );
+  for (const row of rows) {
+    latest.set(row.class_id, { covering_coach_account_id: row.covering_coach_account_id, created_at: row.created_at });
+  }
+  return latest;
 }
 
 export async function getSchedulerRegistrationById(

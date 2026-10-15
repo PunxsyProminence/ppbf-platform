@@ -31,6 +31,7 @@ import {
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
 import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { researchQuestionKey } from '@/src/shared/researchQuestionKey';
 import {
   SHADOW_MESSAGE_TOO_LONG_RESPONSE,
   isShadowMessageTooLong,
@@ -65,6 +66,7 @@ interface ShadowMessage {
   state?: ShadowResponseState;
   evidenceTier?: ShadowEvidenceTier;
   evidenceNotice?: string;
+  researchFiled?: boolean;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
 }
@@ -84,6 +86,7 @@ interface ShadowAIResult {
   error?: string;
   evidenceTier?: ShadowEvidenceTier;
   evidenceNotice?: string;
+  researchFiled?: boolean;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
   unlockHints?: ShadowUnlockHint[];
@@ -160,9 +163,10 @@ const RESEARCH_FILING_ROLES = new Set(['coach', 'admin', 'organization_admin']);
    and their parents read it (OD-2026-10-06-010) and coaches reach it by the
    athlete, and the same question about another child is its own row. */
 function researchKeyForQuestion(question: string, athleteId?: string | null): string {
-  const normalized = question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
-  if (!normalized) return '';
-  return athleteId ? `athlete:${athleteId}:${normalized}` : normalized;
+  // The server's own function (src/shared/researchQuestionKey.ts), so the
+  // button and the auto-filing of one question reach one row, and two long
+  // questions that begin alike reach two.
+  return researchQuestionKey(question, athleteId);
 }
 
 interface ResearchFiling {
@@ -783,7 +787,7 @@ function ShadowChatPageContent() {
     return '';
   }
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'handoff' | 'citations'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'researchFiled' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -850,6 +854,12 @@ function ShadowChatPageContent() {
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
           citations: mapped.type === 'shadow' ? mapped.citations : undefined,
+          // A live reply's facts, not stored with the message: a reopened
+          // conversation shows neither the "No verified Library evidence" notice
+          // nor "Passed to the gym administrator." (F-054). The research row it
+          // describes exists regardless; the line is dropped here, on purpose.
+          evidenceNotice: undefined,
+          researchFiled: undefined,
         };
       });
 
@@ -1191,6 +1201,7 @@ function ShadowChatPageContent() {
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
       evidenceNotice: data.evidenceNotice,
+      researchFiled: data.researchFiled === true,
       handoff: data.handoff,
       // The server has always computed and returned these; the client dropped
       // them on the floor, so evidence-backed answers showed no receipts.
@@ -1838,6 +1849,12 @@ function ShadowChatPageContent() {
                       unsourced -- confirm it with a coach before acting on it.
                     </p>
                   ) : null}
+                  {/* PROPOSED copy. The server files the question before it answers
+                      (F-054), and says so only when the row exists. Staff see the
+                      stored status below instead. */}
+                  {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && !mayFileResearch && msg.researchFiled ? (
+                    <p className="t-body mt-[var(--s2)]" data-testid="research-passed">Passed to the gym administrator.</p>
+                  ) : null}
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
                     ? (() => {
                         const question = questionBefore(messageIndex);
@@ -1956,6 +1973,14 @@ function ShadowChatPageContent() {
                         {msg.citations.map((citation) => (
                           <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
                             [{citation.token}] {citation.sourceTitle} — {citation.documentName}
+                            {/* The passage itself, sent only within the rights
+                                rule (A-Q11); a licensed or unknown source stays
+                                a title. */}
+                            {citation.excerpt ? (
+                              <blockquote className="t-body mt-[var(--s1)] border-l-2 border-[color:var(--brass-900)] pl-[var(--s3)] text-[color:var(--bone-300)]">
+                                {citation.excerpt}
+                              </blockquote>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

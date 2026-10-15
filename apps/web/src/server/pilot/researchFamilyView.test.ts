@@ -1,11 +1,14 @@
 import type { PilotRole } from './contracts';
 import {
+  ASKER_QUESTION_COACH_SENTENCE,
+  isAskerFiledQuestion,
   readsWholeResearchRows,
   readsWholeResearchSubmissions,
   researchRequirementsForReader,
   researchSubmissionsForReader,
   toFamilyResearchRequirement,
   toFamilyResearchSubmission,
+  wholeResearchRowFor,
 } from './researchFamilyView';
 import type { ShadowResearchRequirementRow } from './shadowResearch';
 import type { ResearchSubmissionRow } from './shadowResearchSubmissions';
@@ -195,5 +198,74 @@ describe('by reader', () => {
     expect(researchSubmissionsForReader({ role: 'parent' }, submissions, true)).toEqual([
       toFamilyResearchSubmission(submissions[0]),
     ]);
+  });
+});
+
+// F-054, Jason 2026-10-13 "A: Office + asker (Recommended)": an athlete's or
+// parent's unanswered question is read by the organization admin and the
+// asker; a coach sees only that a question went unanswered.
+describe('an asker-filed unanswered question', () => {
+  const WORDS = 'my coach hits me and i am scared to go';
+  const ASKER = 'athlete.one@gym.example.test';
+  const asked = (overrides: Partial<ShadowResearchRequirementRow> = {}) => requirement({
+    source_event_name: 'shadow_unanswered_question',
+    source_entity_type: 'shadow_question',
+    source_entity_id: `acct:${ASKER}:0123abcd`,
+    research_requirement: 'My coach hits me and I am scared to go to the gym',
+    knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
+    evidence_label: null,
+    status: 'open',
+    created_by_account_id: ASKER,
+    created_by_role: 'athlete',
+    metadata: { asked_in: 'shadow', auto_filed: true },
+    ...overrides,
+  });
+
+  test('is recognized by its event and a non-staff filer, not by metadata', () => {
+    expect(isAskerFiledQuestion(asked())).toBe(true);
+    expect(isAskerFiledQuestion(asked({ created_by_role: 'parent' }))).toBe(true);
+    expect(isAskerFiledQuestion(asked({ created_by_role: 'coach' }))).toBe(false);
+    expect(isAskerFiledQuestion(asked({ created_by_role: 'organization_admin' }))).toBe(false);
+    expect(isAskerFiledQuestion(asked({ source_event_name: 'SHADOW_INTAKE_CASE_APPROVED' }))).toBe(false);
+    expect(isAskerFiledQuestion(asked({ metadata: {} }))).toBe(true);
+  });
+
+  test('a coach receives the row without the words, the key or the asker', () => {
+    const [row] = researchRequirementsForReader({ accountId: COACH_ID, role: 'coach' }, [asked()]);
+    const text = JSON.stringify(row);
+    expect(text).not.toContain('scared');
+    expect(text).not.toContain(ASKER);
+    expect(text).not.toContain('acct:');
+    expect(row).toMatchObject({
+      research_requirement_id: 7,
+      status: 'open',
+      research_requirement: ASKER_QUESTION_COACH_SENTENCE,
+      knowledge_gap: ASKER_QUESTION_COACH_SENTENCE,
+    });
+  });
+
+  test('the organization admin and admin receive it whole', () => {
+    for (const role of ['organization_admin', 'admin'] as const) {
+      const [row] = researchRequirementsForReader({ accountId: ADMIN_ID, role }, [asked()]);
+      expect(row).toMatchObject({ research_requirement: 'My coach hits me and I am scared to go to the gym', created_by_account_id: ASKER });
+    }
+  });
+
+  test('the asker reads their own words through the family view, with no account id', () => {
+    const [row] = researchRequirementsForReader({ accountId: ASKER, role: 'athlete' }, [asked()]);
+    expect(row).toMatchObject({ research_requirement: 'My coach hits me and I am scared to go to the gym', is_mine: true });
+    expect(JSON.stringify(row)).not.toContain(ASKER);
+  });
+
+  test('a coach own filing stays whole for another coach', () => {
+    const own = asked({ created_by_role: 'coach', created_by_account_id: COACH_ID });
+    expect(wholeResearchRowFor('coach', own)).toBe(own);
+  });
+
+  test('a closed asker row keeps its closing note for the coach', () => {
+    const closed = asked({ status: 'resolved', metadata: { closing_note: 'Answered in the Library.', auto_filed: true } });
+    const row = wholeResearchRowFor('coach', closed);
+    expect(row.metadata).toEqual({ closing_note: 'Answered in the Library.' });
+    expect(Object.keys(row).sort()).not.toContain('created_by_role_kind');
   });
 });
