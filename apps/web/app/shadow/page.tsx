@@ -1973,6 +1973,14 @@ function ShadowChatPageContent() {
                         {msg.citations.map((citation) => (
                           <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
                             [{citation.token}] {citation.sourceTitle} — {citation.documentName}
+                            {/* The passage itself, sent only within the rights
+                                rule (A-Q11); a licensed or unknown source stays
+                                a title. */}
+                            {citation.excerpt ? (
+                              <blockquote className="t-body mt-[var(--s1)] border-l-2 border-[color:var(--brass-900)] pl-[var(--s3)] text-[color:var(--bone-300)]">
+                                {citation.excerpt}
+                              </blockquote>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
