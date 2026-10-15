@@ -445,11 +445,18 @@ deleted, with its chunks, and counted as `subject_library_documents_held` (a cit
 `subject_library_chunks_held`): a citation the app makes of a child's chunk sits in an answer
 about that child, which goes with the child, except one a safeguarding-held chat cites (Jason
 2026-10-07, "2 years after deletion (Recommended)") or one of imported rows. A held document
-does not stop the child's purge. **Not yet built:** nothing revisits a held document once the
-child's row is gone, so it keeps the child's `subject_id` with no end date, and the curator queue
-and subject-scoped search no longer hide it (they hide by the deletion mark, which went with the
-row); a roster that reissues the id would put it in front of the new child. Nothing sets the
-hold today (`subject_deleted_at` is written by nothing), so the count is expected to be 0.
+does not stop the child's purge. The purge **marks** what it holds (`metadata.subject_purged_at`
+on the document and its chunks, or on the held stray chunk; F-086), and every reader that could
+serve it leaves marked rows out: subject-scoped search on both paths, the curator queue, a new
+citation, document approval and attaching a document to a research submission. So a roster that
+reissues the id never puts the purged child's text in front of the new child (the deletion mark
+those readers otherwise rely on goes with the athlete row). Pinned by
+`heldLibraryDocuments.pg.test.ts`. **Limits:** re-running the research importer
+(`import-shadow-research.mjs`) on the same document or chunk ids overwrites `metadata` and drops
+the mark (not guarded). **Not yet built:** nothing revisits a held document once the child's row
+is gone, so it keeps the child's `subject_id` with no end date; a later sweep deleting marked rows
+no answer cites any more is proposed, not built. Nothing sets the hold today
+(`subject_deleted_at` is written by nothing), so the count is expected to be 0.
 Rows only: a document's `blob_path` is a label its registrant supplied and no code stores
 or reads a file through it; how many deleted documents carried one is counted
 (`subject_library_documents_with_file_path`), never the path. Pinned by

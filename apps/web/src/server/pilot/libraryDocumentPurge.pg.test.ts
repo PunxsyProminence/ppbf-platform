@@ -382,6 +382,23 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(citations.rows[0].n).toBe(3);
   });
 
+  test('what is held is marked subject_purged_at (F-086), and nothing else is', async () => {
+    const documents = await db.query(
+      `select document_id from pilot.shadow_library_documents
+        where metadata ? 'subject_purged_at' order by document_id`,
+    );
+    expect(documents.rows.map((row) => row.document_id)).toEqual(
+      [HELD_BY_CHUNK_MOVED_OUT, HELD, HELD_BY_MOVED_CHUNK].sort(),
+    );
+    const chunks = await db.query(
+      `select chunk_id from pilot.shadow_library_chunks
+        where metadata ? 'subject_purged_at' order by chunk_id`,
+    );
+    expect(chunks.rows.map((row) => row.chunk_id)).toEqual(
+      [`${HELD_BY_CHUNK_MOVED_OUT}-c0`, `${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`, 'stray-a-cited'].sort(),
+    );
+  });
+
   test("a stray chunk about the athlete under the gym's own document goes, the document stays; a cited one is held", async () => {
     const chunks = await db.query(
       'select chunk_id from pilot.shadow_library_chunks where document_id = any($1::text[]) order by chunk_id',

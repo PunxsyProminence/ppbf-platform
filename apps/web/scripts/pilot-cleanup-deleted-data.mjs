@@ -876,6 +876,12 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          would not have made. A held document stays with its chunks, counted
          as held, and the child's purge goes on. NOTHING REVISITS IT: once the
          athlete row is gone no later run selects it (see DATA_RETENTION.md).
+         So it is MARKED (metadata.subject_purged_at, on the document and every
+         chunk of it, or on the held stray chunk) and every reader that could
+         serve it filters the mark out (F-086): the readers hide a document
+         about a deleted child by the deletion mark on the athlete row, which
+         goes here, and a roster that reissues the id would otherwise put the
+         purged child's text in front of the new one.
 
          The row only: a document's blob_path is a label its registrant
          supplied, and no code stores or reads a file through it. How many
@@ -927,6 +933,25 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         libraryHere.documentsHeld = held.size;
         libraryHere.chunksHeld = chunkRows
           .filter((row) => !aboutChild.has(row.document_id) && citedChunks.has(row.chunk_id)).length;
+        const heldChunkIds = chunkRows
+          .filter((row) => (aboutChild.has(row.document_id) ? held.has(row.document_id) : citedChunks.has(row.chunk_id)))
+          .map((row) => row.chunk_id);
+        if (held.size > 0) {
+          await client.query(
+            `update pilot.shadow_library_documents
+                set metadata = metadata || jsonb_build_object('subject_purged_at', now()), updated_at = now()
+              where document_id = any($1::text[])`,
+            [[...held]],
+          );
+        }
+        if (heldChunkIds.length > 0) {
+          await client.query(
+            `update pilot.shadow_library_chunks
+                set metadata = metadata || jsonb_build_object('subject_purged_at', now()), updated_at = now()
+              where chunk_id = any($1::text[])`,
+            [heldChunkIds],
+          );
+        }
         if (chunkIds.length > 0) {
           const chunks = await client.query(
             'delete from pilot.shadow_library_chunks where chunk_id = any($1::text[])',
