@@ -633,6 +633,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let askerQuestionsDeleted = 0;
   let subjectRequirementsDeleted = 0;
   let subjectSubmissionsDeleted = 0;
+  const library = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 };
   const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
@@ -855,6 +856,63 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           subjectRequirementsHere = requirements.rowCount ?? 0;
         }
       }
+      /* THE LIBRARY DOCUMENTS FILED AGAINST THIS ATHLETE GO TOO (F-079,
+         #1600). A document's subject_id names the child it is evidence about
+         and carries no foreign key, so the mark only hides it (the curator
+         queue); left behind, its text (the chunks) stays, under an athlete_id
+         the roster may give to a new child. The chunks copied the subject
+         when written (shadowLibrary.ts), and go first, counted (the foreign
+         key would cascade them uncounted).
+
+         A DOCUMENT STILL CITED IS HELD. A citation (shadow_evidence_items)
+         has no delete action onto the document, so deleting a cited one is
+         refused and would roll this whole athlete back. Every citation of a
+         document about this child is in a bundle about this child, and those
+         went with the athlete row above (the bundle's athlete key, or after
+         shadow-deidentify-keys its trigger) -- except a bundle a held chat
+         cites (subject_deleted_at, the safeguarding hold: Jason 2026-10-07,
+         "2 years after deletion (Recommended)"). A held chat keeps what it
+         cites, so that document stays, counted as held, and the child's
+         purge goes on.
+
+         The row only: a document's blob_path is a label its registrant
+         supplied, and no code stores or reads a file through it. How many
+         of the deleted documents carried one is counted, never the path. */
+      const libraryHere = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 };
+      if (removed.rows.length > 0 && tables.libraryDocuments) {
+        const documents = await client.query(
+          `select document_id from pilot.shadow_library_documents
+            where organization_id = $1 and btrim(subject_id) = $2
+              for update`,
+          key,
+        );
+        const documentIds = documents.rows.map((row) => row.document_id);
+        const cited = new Set(documentIds.length > 0 && tables.evidenceItems
+          ? (await client.query(
+            'select distinct document_id from pilot.shadow_evidence_items where document_id = any($1::text[])',
+            [documentIds],
+          )).rows.map((row) => row.document_id)
+          : []);
+        const deletable = documentIds.filter((documentId) => !cited.has(documentId));
+        libraryHere.documentsHeld = documentIds.length - deletable.length;
+        if (deletable.length > 0) {
+          if (tables.libraryChunks) {
+            const chunks = await client.query(
+              'delete from pilot.shadow_library_chunks where document_id = any($1::text[])',
+              [deletable],
+            );
+            libraryHere.chunksDeleted = chunks.rowCount ?? 0;
+          }
+          const deleted = await client.query(
+            `delete from pilot.shadow_library_documents
+              where organization_id = $1 and document_id = any($2::text[])
+              returning blob_path is not null and btrim(blob_path) <> '' as has_file_path`,
+            [athlete.organization_id, deletable],
+          );
+          libraryHere.documentsDeleted = deleted.rowCount ?? 0;
+          libraryHere.documentsWithFilePath = deleted.rows.filter((row) => row.has_file_path).length;
+        }
+      }
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
          cleared the way a reviewer's removal clears it (profileDb.ts). */
       const portraitPaths = [];
@@ -909,6 +967,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       askerQuestionsDeleted += askerQuestionsHere;
       subjectRequirementsDeleted += subjectRequirementsHere;
       subjectSubmissionsDeleted += subjectSubmissionsHere;
+      for (const [name, n] of Object.entries(libraryHere)) library[name] += n;
       addShadow(shadowHere);
       videosDeleted += videoPaths.length;
       filesDeleted += filesHere;
@@ -1061,8 +1120,18 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
 
   return {
     athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
-    correctionsDeleted, askerQuestionsDeleted, subjectRequirementsDeleted, subjectSubmissionsDeleted,
+    correctionsDeleted, askerQuestionsDeleted, subjectRequirementsDeleted, subjectSubmissionsDeleted, library,
     shadow, blocked, guardianLinkLock,
+  };
+}
+
+/** The Library-document counts as the audit row and the completion log name them. */
+function libraryCounts(library) {
+  return {
+    subject_library_documents_deleted: library.documentsDeleted,
+    subject_library_chunks_deleted: library.chunksDeleted,
+    subject_library_documents_held: library.documentsHeld,
+    subject_library_documents_with_file_path: library.documentsWithFilePath,
   };
 }
 
@@ -1159,6 +1228,9 @@ async function main() {
               to_regclass('pilot.shadow_chat_audit') is not null as "shadowChatAudit",
               to_regclass('pilot.shadow_research_requirements') is not null as "researchRequirements",
               to_regclass('pilot.shadow_research_submissions') is not null as "researchSubmissions",
+              to_regclass('pilot.shadow_library_documents') is not null as "libraryDocuments",
+              to_regclass('pilot.shadow_library_chunks') is not null as "libraryChunks",
+              to_regclass('pilot.shadow_evidence_items') is not null as "evidenceItems",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
@@ -1231,6 +1303,7 @@ async function main() {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
         subjectRequirementsDeleted: 0, subjectSubmissionsDeleted: 0,
+        library: { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 },
         shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
@@ -1293,6 +1366,10 @@ async function main() {
         would_delete_asker_research_questions: outcome.askerQuestionsDeleted,
         would_delete_subject_research_requirements: outcome.subjectRequirementsDeleted,
         would_delete_subject_research_submissions: outcome.subjectSubmissionsDeleted,
+        would_delete_subject_library_documents: outcome.library.documentsDeleted,
+        would_delete_subject_library_chunks: outcome.library.chunksDeleted,
+        subject_library_documents_held: outcome.library.documentsHeld,
+        subject_library_documents_with_file_path: outcome.library.documentsWithFilePath,
         ...shadowCountsFor(outcome.shadow, 'would_delete_', ''),
         blocked: blockedCount,
         blocked_by: outcome.blocked,
@@ -1346,6 +1423,7 @@ async function main() {
           asker_research_questions_deleted: outcome.askerQuestionsDeleted,
           subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
           subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
+          ...libraryCounts(outcome.library),
           ...shadowCountsFor(outcome.shadow, '', '_deleted'),
           guardians_held_for_safeguarding_chats: heldGuardians,
           total_rows_deleted:
@@ -1375,6 +1453,7 @@ async function main() {
       asker_research_questions_deleted: outcome.askerQuestionsDeleted,
       subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
       subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
+      ...libraryCounts(outcome.library),
       ...shadowCountsFor(outcome.shadow, '', '_deleted'),
       guardians_held_for_safeguarding_chats: heldGuardians,
       total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,
