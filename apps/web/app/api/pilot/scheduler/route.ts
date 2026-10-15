@@ -730,13 +730,13 @@ export async function POST(request: NextRequest) {
       if (existingClass.status === 'cancelled') {
         throw new ValidationError('This class was cancelled.');
       }
-      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
-
       // Route-survey B6: any coach can name themselves covering coach with
       // one POST, and covering a class is what hands them its whole register
       // (resolveRegisterMark). No approval step by ruling; the audit row is
       // what makes a self-grant visible, so it records who held cover before.
-      await auditSchedulerEvent({
+      // It is written in the cover's own transaction, not best-effort: the
+      // cancel rule reads it for how long the cover has been held (#1595).
+      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString(), {
         event_type: 'update',
         actor_account_id: actor.accountId,
         actor_role: actor.role,
@@ -782,13 +782,25 @@ export async function POST(request: NextRequest) {
         throw new ValidationError(CANCEL_REFUSAL_MESSAGES[refusal]);
       }
 
-      const cancelled = await cancelSchedulerClass(actor.organizationId, classId, new Date().toISOString());
+      // Allowed only as the cover coach: the update re-checks the cover.
+      const coverOnly = !canManageAll(actor)
+        && classItem.coach_account_id !== actor.accountId
+        && classItem.scheduled_by_account_id !== actor.accountId;
+      const cancelled = await cancelSchedulerClass(
+        actor.organizationId,
+        classId,
+        new Date().toISOString(),
+        coverOnly ? actor.accountId : undefined,
+      );
       if (!cancelled) {
-        // Lost a race: to another cancel, or to the class's start (#1595).
+        // Lost a race (#1595): to another cancel, to the class's start, or
+        // to another coach taking the cover.
         const now = await getSchedulerClassById(actor.organizationId, classId);
-        throw new ValidationError(
-          now?.status === 'cancelled' ? CANCEL_REFUSAL_MESSAGES.cancelled : CANCEL_REFUSAL_MESSAGES.started,
-        );
+        if (now?.status === 'cancelled') throw new ValidationError(CANCEL_REFUSAL_MESSAGES.cancelled);
+        if (coverOnly && now?.covering_coach_account_id !== actor.accountId) {
+          throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
+        }
+        throw new ValidationError(CANCEL_REFUSAL_MESSAGES.started);
       }
 
       await auditSchedulerEvent({

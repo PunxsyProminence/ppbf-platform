@@ -41,10 +41,11 @@ export const CANCEL_REFUSAL_MESSAGES: Record<CancelRefusal, string> = {
 /**
  * When the current cover was taken, as late as the evidence allows (so the
  * hour is never cut short). The cover_class audit row names the moment; it is
- * trusted only when the newest such row names the coach who covers now. Audit
- * writes are best-effort, so without that row the class's updated_at stands
- * in: covering sets it, and nothing moves it backwards, so it is never
- * earlier than the cover.
+ * trusted only when the newest such row names the coach who covers now.
+ * setSchedulerClassCover writes that row in the cover's own transaction, so
+ * every cover since #1595 has one. A cover from before then, when the row was
+ * best-effort, may not: the class's updated_at stands in. Covering sets it,
+ * and nothing moves it backwards, so it is never earlier than the cover.
  */
 export function coverTakenAtMs(
   classItem: Pick<SchedulerClass, 'covering_coach_account_id' | 'updated_at'>,

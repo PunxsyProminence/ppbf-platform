@@ -933,15 +933,18 @@ describe('the class register: whole class plus walk-ins', () => {
     expect(mockAssertCanAct).not.toHaveBeenCalled();
   });
 
-  test('cover_class writes an audit row naming the class, the previous cover and the new one (route-survey B6)', async () => {
+  test('cover_class writes an audit row naming the class, the previous cover and the new one (route-survey B6), in the cover\'s own transaction (#1595)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
     mockGetClass.mockResolvedValueOnce({ ...classRecord, covering_coach_account_id: 'acct-before' });
 
     const response = await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockAudit).toHaveBeenCalledTimes(1);
-    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+    // Handed to setSchedulerClassCover, which writes it with the cover; never a separate best-effort write.
+    expect(mockAudit).not.toHaveBeenCalled();
+    const coverCall = (setSchedulerClassCover as jest.Mock).mock.calls[0];
+    expect(coverCall.slice(0, 3)).toEqual(['org-1', 'class-1', 'acct-coach-2']);
+    expect(coverCall[4]).toMatchObject({
       event_type: 'update',
       actor_account_id: 'acct-coach-2',
       actor_role: 'coach',
@@ -962,7 +965,7 @@ describe('the class register: whole class plus walk-ins', () => {
 
     await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
 
-    expect(mockAudit.mock.calls[0][0].details).toMatchObject({ previous_covering_coach_account_id: null });
+    expect((setSchedulerClassCover as jest.Mock).mock.calls[0][4].details).toMatchObject({ previous_covering_coach_account_id: null });
   });
 });
 
@@ -2187,7 +2190,9 @@ describe('cancel_class', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', status: 'cancelled' });
-    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String));
+    // Only a cover-only caller has the update re-check that they still cover the class.
+    const coverOnly = caller.role === 'coach' && caller.accountId === 'acct-cover';
+    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String), coverOnly ? 'acct-cover' : undefined);
     expect(mockAuditCancel.mock.calls[0][0]).toMatchObject({
       entity_type: 'scheduler_class',
       entity_id: 'class-1',
@@ -2319,6 +2324,22 @@ describe('cancel_class', () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe('This class is already cancelled.');
+    expect(mockAuditCancel).not.toHaveBeenCalled();
+  });
+
+  test('a cover coach whose cover passed to someone else before the update is refused with 403, and no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-cover' }));
+    mockGetClass
+      .mockResolvedValueOnce(coveredBy('acct-cover', { updated_at: minutesAgo(120) }))
+      .mockResolvedValueOnce(coveredBy('acct-new', { updated_at: new Date().toISOString() }));
+    mockCoverAudits.mockResolvedValueOnce(coverAudit('acct-cover', minutesAgo(120)));
+    mockCancel.mockResolvedValueOnce(false);
+
+    const response = await cancel();
+
+    expect(mockCancel).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String), 'acct-cover');
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("Only this class's coach, its cover coach or the office can cancel it.");
     expect(mockAuditCancel).not.toHaveBeenCalled();
   });
 

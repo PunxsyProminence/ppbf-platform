@@ -347,18 +347,26 @@ describe('how long a cover has been held (#1595)', () => {
   const COVER_A = 'acct-cover-a';
   const COVER_B = 'acct-cover-b';
 
+  const event = (organizationId: string, classId: string, action: string, cover: string | null) => ({
+    event_type: 'update' as const,
+    actor_account_id: cover,
+    actor_role: 'coach' as const,
+    organization_id: organizationId,
+    entity_type: 'scheduler_class',
+    entity_id: classId,
+    details: { action, class_id: classId, covering_coach_account_id: cover },
+    shadow_mirror: false,
+  });
   async function audit(organizationId: string, classId: string, action: string, cover: string | null) {
-    await writePilotAuditEvent({
-      event_type: 'update',
-      actor_account_id: cover,
-      actor_role: 'coach',
-      organization_id: organizationId,
-      entity_type: 'scheduler_class',
-      entity_id: classId,
-      details: { action, class_id: classId, covering_coach_account_id: cover },
-      shadow_mirror: false,
-    });
+    await writePilotAuditEvent(event(organizationId, classId, action, cover));
   }
+  const cover = (coach: string) =>
+    setSchedulerClassCover(ORG_ID, CLASS_ID, coach, new Date().toISOString(), event(ORG_ID, CLASS_ID, 'cover_class', coach));
+  const coverAuditCount = async (client: Client) =>
+    Number((await client.query(
+      `select count(*) from pilot.audit_events where organization_id = $1 and entity_id = $2 and details->>'action' = 'cover_class'`,
+      [ORG_ID, CLASS_ID],
+    )).rows[0].count);
 
   test('the newest cover_class row per class, in this gym only', async () => {
     const client = await freshDatabase('cc_cover_audit');
@@ -388,8 +396,8 @@ describe('how long a cover has been held (#1595)', () => {
   test('a cover just taken cannot cancel; the same cover an hour and more later can', async () => {
     const client = await freshDatabase('cc_cover_age');
     try {
-      await setSchedulerClassCover(ORG_ID, CLASS_ID, COVER_A, new Date().toISOString());
-      await audit(ORG_ID, CLASS_ID, 'cover_class', COVER_A);
+      await cover(COVER_A);
+      expect(await coverAuditCount(client)).toBe(1);
       const actor = { accountId: COVER_A, isOffice: false, isCoach: true };
 
       const decide = async () => {
@@ -412,13 +420,51 @@ describe('how long a cover has been held (#1595)', () => {
       );
       expect(await decide()).toBeNull();
 
-      // Lose the audit row: the class's updated_at (older than an hour) stands in.
-      await client.query(`delete from pilot.audit_events where organization_id = $1`, [ORG_ID]);
-      expect(await decide()).toBeNull();
-
-      // Re-covered just now with the audit write lost: updated_at is fresh, so refused.
-      await setSchedulerClassCover(ORG_ID, CLASS_ID, COVER_A, new Date().toISOString());
+      // Re-covered just now by the same coach, with the old matching row still there
+      // (Codex P2): the re-cover writes its own row, so the hour starts again.
+      await cover(COVER_A);
+      expect(await coverAuditCount(client)).toBe(2);
       expect(await decide()).toBe('cover_too_recent');
+
+      // A cover from before #1595 with no audit row: an old updated_at stands in.
+      await client.query(`delete from pilot.audit_events where organization_id = $1`, [ORG_ID]);
+      await client.query(
+        `update pilot.scheduler_classes set updated_at = now() - interval '61 minutes'
+         where organization_id = $1 and class_id = $2`,
+        [ORG_ID, CLASS_ID],
+      );
+      expect(await decide()).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a cover lands only with its audit row: a failed audit insert rolls the cover back', async () => {
+    const client = await freshDatabase('cc_cover_tx');
+    try {
+      const before = await classRow(client);
+      // An audit row naming a gym that does not exist fails its foreign key.
+      await expect(setSchedulerClassCover(
+        ORG_ID, CLASS_ID, COVER_A, new Date().toISOString(), event('org-does-not-exist', CLASS_ID, 'cover_class', COVER_A),
+      )).rejects.toThrow();
+      expect(await classRow(client)).toEqual(before);
+      expect(await coverAuditCount(client)).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a cancel allowed only by the cover does not land once the cover has passed to someone else', async () => {
+    const client = await freshDatabase('cc_cover_moved');
+    try {
+      await cover(COVER_B);
+      const before = await classRow(client);
+
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString(), COVER_A)).toBe(false);
+      expect(await classRow(client)).toEqual(before);
+
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString(), COVER_B)).toBe(true);
+      expect((await classRow(client)).status).toBe('cancelled');
     } finally {
       await client.end();
     }
