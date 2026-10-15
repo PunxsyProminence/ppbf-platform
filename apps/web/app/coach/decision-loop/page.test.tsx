@@ -11,7 +11,7 @@ import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decision
 
 /* A PROBE ON EVERY COMMIT. WorkAxis sits at the foot of the page and renders
    whenever the page does. This stand-in records, after each commit and before
-   anything else can run, which athlete the ID box says is selected and all
+   anything else can run, which athlete the picker says is selected and all
    the text on screen -- so a test can ask whether there was EVER a commit
    with athlete B selected and athlete A's records up, not just whether the
    last one is clean. An effect that clears the old records after the new
@@ -24,8 +24,10 @@ jest.mock('@/components/WorkAxis', () => {
     __esModule: true,
     default: function WorkAxisProbe() {
       useLayoutEffect(() => {
-        const box = document.querySelector('input[placeholder="athlete-id"]') as HTMLInputElement | null;
-        committed.push({ selected: box?.value ?? '', text: document.body.textContent ?? '' });
+        const picker = Array.from(document.querySelectorAll('label'))
+          .find((label) => label.querySelector('.t-label')?.textContent === 'Athlete')
+          ?.querySelector('select');
+        committed.push({ selected: picker?.value ?? '', text: document.body.textContent ?? '' });
       });
       return null;
     },
@@ -105,6 +107,35 @@ function acknowledge(url: string, init?: RequestInit): Response {
   throw new Error(`No acknowledgement known for ${url}`);
 }
 
+/* The roster every fixture answers unless it says otherwise. The picker is the
+   page's only way to choose an athlete (the free-text ID box is gone), so every
+   id a test picks is on it -- including ids that are awkward as object keys,
+   which the server can still send. */
+const TEST_ROSTER = [
+  { athlete_id: 'ath-1', full_name: 'Jordan T.' },
+  { athlete_id: 'ath-2', full_name: 'Second Athlete' },
+  { athlete_id: 'ath-a', full_name: 'Athlete A' },
+  { athlete_id: 'ath-b', full_name: 'Athlete B' },
+  { athlete_id: 'ath-c', full_name: 'Athlete C' },
+  { athlete_id: 'ath-z ', full_name: 'Athlete Z' },
+  { athlete_id: 'constructor', full_name: 'Odd Id One' },
+  { athlete_id: 'toString', full_name: 'Odd Id Two' },
+  { athlete_id: '__proto__', full_name: 'Odd Id Three' },
+  { athlete_id: 'hasOwnProperty', full_name: 'Odd Id Four' },
+];
+
+/** The athlete picker. */
+function athletePicker(): HTMLSelectElement {
+  return screen.getByLabelText('Athlete') as HTMLSelectElement;
+}
+
+/** The athlete picker, once the roster has filled it. */
+async function rosterLoaded(): Promise<HTMLSelectElement> {
+  const picker = await screen.findByLabelText('Athlete') as HTMLSelectElement;
+  await waitFor(() => expect(picker.options.length).toBeGreaterThan(1));
+  return picker;
+}
+
 async function answer(url: string, init: RequestInit | undefined, given: Response | Promise<Response>): Promise<Response> {
   const response = await given;
   return response === ACK ? acknowledge(url, init) : response;
@@ -114,7 +145,7 @@ function installFetch(overrides: Record<string, unknown> = {}) {
   const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     const key = String(url);
     if (key.includes('/api/pilot/athletes/list')) {
-      return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }] });
+      return jsonResponse({ items: TEST_ROSTER });
     }
     if (key.includes('/api/pilot/shadow/medical-status')) {
       // Overridable in the same shape as domainUpsert/incidents below. All
@@ -158,7 +189,7 @@ function installFetch(overrides: Record<string, unknown> = {}) {
 
 async function selectAthlete() {
   render(<DecisionLoopReviewPage />);
-  const input = await screen.findByPlaceholderText('athlete-id');
+  const input = await rosterLoaded();
   fireEvent.change(input, { target: { value: 'ath-1' } });
   await screen.findByText('Behavior & Habit Note');
 }
@@ -498,7 +529,7 @@ test('switching athletes clears a stale incident-filed confirmation', async () =
   fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
   await screen.findByText('Incident filed -- it is now in the escalation queue.');
 
-  fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-2' } });
+  fireEvent.change(athletePicker(), { target: { value: 'ath-2' } });
 
   await waitFor(() => expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull());
 });
@@ -631,6 +662,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
           items: [
             { athlete_id: 'ath-a', full_name: 'Athlete A' },
             { athlete_id: 'ath-b', full_name: 'Athlete B' },
+            { athlete_id: 'ath-c', full_name: 'Athlete C' },
+            { athlete_id: 'ath-ab', full_name: 'Athlete AB' },
           ],
         });
       }
@@ -660,14 +693,14 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
   async function openAthleteA() {
     render(<DecisionLoopReviewPage />);
-    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(within(medicalSection()).getByText('cleared')).toBeTruthy();
     expect(screen.getAllByText(A_RECOMMENDATION.recommendation_text).length).toBeGreaterThan(0);
   }
 
   function switchToB() {
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-b' } });
   }
 
   function expectNothingOfAthleteA() {
@@ -730,7 +763,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ readA: () => heldA });
 
     render(<DecisionLoopReviewPage />);
-    const input = await screen.findByPlaceholderText('athlete-id');
+    const input = await rosterLoaded();
     fireEvent.change(input, { target: { value: 'ath-a' } });
     fireEvent.change(input, { target: { value: 'ath-b' } });
 
@@ -832,7 +865,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     switchToB();
     await screen.findByText(/medical administrative status could not be read/i);
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
 
     await screen.findByText(/ref-for-athlete-a/);
     expect(within(medicalSection()).getByText('cleared')).toBeTruthy();
@@ -955,7 +988,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ readA: () => heldA });
 
     render(<DecisionLoopReviewPage />);
-    const input = await screen.findByPlaceholderText('athlete-id');
+    const input = await rosterLoaded();
     fireEvent.change(input, { target: { value: 'ath-a' } });
     fireEvent.change(input, { target: { value: 'ath-b' } });
     await screen.findByText('No medical administrative status recorded yet.');
@@ -1071,7 +1104,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const fetchMock = jest.fn(async (url: string) => {
       const key = String(url);
       if (key.includes('/decision-outcomes')) return held.promise;
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (key.includes('athleteId=ath-b')) {
         if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
         if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
@@ -1103,7 +1136,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
     await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+    fireEvent.change(athletePicker(), { target: { value: '' } });
 
     await waitFor(() => expect(screen.queryByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeNull());
   });
@@ -1300,7 +1333,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(screen.queryByText(/Posted to the family/)).toBeNull();
       expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
       // A's drafts are cleared for A, not left to be posted again.
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
       await screen.findByText(/ref-for-athlete-a/);
       expect(field<HTMLTextAreaElement>('Message').value).toBe('');
       expect(field<HTMLInputElement>('Due by (optional)').value).toBe('');
@@ -1403,7 +1436,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       await screen.findByText('No medical administrative status recorded yet.');
       // One slot with an owner would lose A's draft right here.
       type('Note', 'typed for B');
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
       await screen.findByText(/ref-for-athlete-a/);
 
       expect(values()).toEqual(keptForItsAthlete === false ? defaults : written);
@@ -1427,12 +1460,11 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ]);
   });
 
-  test('typing an id that passes through another valid id: each id keeps its own draft and sends only its own', async () => {
-    // "ath-a" is a real athlete and so is "ath-ab": the box selects "ath-a" on
-    // the way to "ath-ab", and back again on a backspace.
+  test('two athletes whose ids share a prefix: each keeps its own draft and sends only its own', async () => {
+    // "ath-a" and "ath-ab" are both on the roster; the coach moves between them.
     const fetchMock = installSwitchFetch();
     render(<DecisionLoopReviewPage />);
-    const idBox = await screen.findByPlaceholderText('athlete-id');
+    const idBox = await rosterLoaded();
 
     fireEvent.change(idBox, { target: { value: 'ath-a' } });
     await screen.findByText("Post to the Family's Page");
@@ -1509,7 +1541,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.getByRole('button', { name: button })).not.toBeDisabled();
 
     // Back on A, the one that is out is still out: no second submission.
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     const forA = await screen.findByRole('button', { name: busyLabel });
     expect(forA).toBeDisabled();
     fireEvent.click(forA);
@@ -1538,7 +1570,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   }
 
   test.each([
-    ['the ID box', () => fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } })],
     ['the dropdown', () => fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-b' } })],
   ])('switching by %s: no commit ever has the new athlete selected with the previous athlete’s records on screen', async (_how, doSwitch) => {
     installSwitchFetch();
@@ -1579,7 +1610,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
 
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(athletePicker(), { target: { value: 'ath-b' } });
       held.release(ACK);
       await Promise.resolve();
     });
@@ -1600,7 +1631,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   function installReadsForB(overrides: Record<string, () => Response>) {
     const fetchMock = jest.fn(async (url: string) => {
       const key = String(url);
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       for (const [fragment, responder] of Object.entries(overrides)) {
         if (key.includes(fragment)) return responder();
       }
@@ -1667,7 +1698,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test.each(MALFORMED_READS)('%s: all four panels are unreadable, and none says "none on record"', async (_name, fragment, responder) => {
     installReadsForB({ [fragment]: responder });
     render(<DecisionLoopReviewPage />);
-    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
 
     expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
     expect(screen.getByText(/Recommendations could not be read/i)).toBeTruthy();
@@ -1685,7 +1716,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('a complete status row for the athlete asked about is shown, null reference and all', async () => {
     installReadsForB({ '/medical-status': () => jsonResponse({ ok: true, status: B_STATUS, effectiveStatus: 'cleared' }) });
     render(<DecisionLoopReviewPage />);
-    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
 
     expect(await screen.findByText(/Set by organization_admin \(acct-1\)/)).toBeTruthy();
     expect(screen.queryByText(/could not be read/i)).toBeNull();
@@ -1705,7 +1736,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     async function openB(body: Record<string, unknown>) {
       installReadsForB({ '/medical-status': () => jsonResponse(body) });
       render(<DecisionLoopReviewPage />);
-      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
       await screen.findByText(/Set by organization_admin \(acct-1\)/);
       return within(medicalSection());
     }
@@ -1778,7 +1809,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       answer = () => jsonResponse(first);
       installReadsForB({ '/medical-status': () => answer() });
       const view = render(<DecisionLoopReviewPage />);
-      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
       await screen.findByText(/Set by organization_admin \(acct-1\)/);
       return view;
     }
@@ -1853,7 +1884,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         '/recommendations': () => jsonResponse({ recommendations: [A_RECOMMENDATION] }),
       });
       render(<DecisionLoopReviewPage />);
-      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
       await screen.findAllByText(A_RECOMMENDATION.recommendation_text, { exact: false });
 
       answer = failing;
@@ -1908,12 +1939,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         '/medical-status?athleteId=ath-c': () => answerC(),
       });
       render(<DecisionLoopReviewPage />);
-      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
       await screen.findByText(/Set by organization_admin \(acct-1\)/);
     }
 
     async function switchToC() {
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-c' } });
+      fireEvent.change(athletePicker(), { target: { value: 'ath-c' } });
       await screen.findByText(/Set by coach \(acct-1\)/);
     }
 
@@ -1998,7 +2029,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         '/recommendations': () => jsonResponse({ recommendations: [A_RECOMMENDATION] }),
       });
       render(<DecisionLoopReviewPage />);
-      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
       await screen.findAllByText(A_RECOMMENDATION.recommendation_text, { exact: false });
 
       answer = () => jsonResponse(NOW_LAPSED);
@@ -2084,7 +2115,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const fetchMock = jest.fn(async (url: string) => {
       const key = String(url);
       if (key.includes('/decision-outcomes')) return unparseable();
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
@@ -2121,10 +2152,10 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     switchToB();
     await screen.findByText('Loading…');
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+    fireEvent.change(athletePicker(), { target: { value: '' } });
 
     await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
-    expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
+    expect(screen.getByText('Select an athlete to review their decision loop.')).toBeTruthy();
   });
 
   test('a late answer for the previous athlete does not switch off the new athlete’s "Loading…"', async () => {
@@ -2134,7 +2165,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
     installSwitchFetch({ readA: () => heldA, readB: () => new Promise<Response>(() => {}) });
     render(<DecisionLoopReviewPage />);
-    const input = await screen.findByPlaceholderText('athlete-id');
+    const input = await rosterLoaded();
     fireEvent.change(input, { target: { value: 'ath-a' } });
     fireEvent.change(input, { target: { value: 'ath-b' } });
     await screen.findByText('Loading…');
@@ -2159,7 +2190,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     held.release(jsonResponse({ error: 'Service unavailable' }, false));
     await screen.findByText(/Something you submitted for the athlete you were on before did not go through/);
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(field<HTMLTextAreaElement>('What happened').value).toBe('Athlete A was struck after the bell.');
     // And B's note is B's.
@@ -2178,7 +2209,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     held.release(ACK);
     await settle();
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(field<HTMLTextAreaElement>('Message').value).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
@@ -2208,7 +2239,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
     failA = true;
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/medical administrative status could not be read/i);
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
@@ -2234,7 +2265,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('rec-a');
@@ -2271,7 +2302,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
         const key = String(url);
         if (init?.method === 'POST') return acknowledge(key, init);
-        if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+        if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
         if (key.includes('athleteId=ath-a')) {
           if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
           if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
@@ -2290,7 +2321,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       type('Source reference (optional)', A_TEXT);
       type('What happened', A_TEXT);
 
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: oddId } });
+      fireEvent.change(athletePicker(), { target: { value: oddId } });
       await screen.findByText('No medical administrative status recorded yet.');
 
       expect(field<HTMLTextAreaElement>('Message').value).toBe('');
@@ -2309,7 +2340,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       });
 
       // And A's draft is still A's.
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
       await screen.findByText(/ref-for-athlete-a/);
       expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
       expect(errors).not.toHaveBeenCalled();
@@ -2325,7 +2356,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         if (key.includes('/medical-status')) rejected = true;
         return acknowledge(key, init);
       }
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) {
         return jsonResponse({ recommendations: [{ ...A_RECOMMENDATION, status: rejected ? 'rejected' : 'provisional' }] });
@@ -2368,7 +2399,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     failReads = true;
     switchToB();
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/medical administrative status could not be read/i);
     fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
     fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
@@ -2377,7 +2408,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     failReads = false;
     switchToB();
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
@@ -2495,7 +2526,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         written = true;
         return unreadable200();
       }
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (key.includes('/medical-status')) return jsonResponse({ status: { ...A_STATUS, status: written ? 'restricted' : 'cleared' }, effectiveStatus: written ? 'restricted' : 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
@@ -2503,7 +2534,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<DecisionLoopReviewPage />);
-    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-a' } });
     await within(medicalSection()).findByText('cleared');
 
     type('New status', 'restricted');
@@ -2526,7 +2557,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         written = true;
         return unreadable200();
       }
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (written) return failedRead();
       if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
@@ -2609,7 +2640,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.queryByText("Posted to the family's page.")).toBeNull();
     expect(field<HTMLTextAreaElement>('Message').value).toBe('');
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
   });
@@ -2640,7 +2671,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.getByText(PREVIOUS_FAILED)).toBeTruthy();
 
     // It goes when the coach changes the selection.
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
   });
@@ -2696,7 +2727,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       if (init?.method === 'POST') {
         return jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'obs-1', athlete_id: 'ath-z' });
       }
-      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
       if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
@@ -2704,7 +2735,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<DecisionLoopReviewPage />);
-    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-z ' } });
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-z ' } });
     await screen.findByText('No medical administrative status recorded yet.');
 
     type(label, 'some text');
@@ -2917,7 +2948,7 @@ test("a saved decision's time is printed in gym time, not raw", async () => {
 // memory, never the address (Overwatch, #1474 Q2 = C), and is selected only if
 // the roster -- the server's answer to whom this coach may reach -- lists them.
 describe('arriving from "Record what you did"', () => {
-  const EMPTY_STATE = 'Select or enter an athlete to review their decision loop.';
+  const EMPTY_STATE = 'Select an athlete to review their decision loop.';
   const shadowReads = (fetchMock: jest.Mock) =>
     fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/pilot/shadow/'));
   const rosterRead = (fetchMock: jest.Mock) =>
@@ -2933,7 +2964,7 @@ describe('arriving from "Record what you did"', () => {
     render(<DecisionLoopReviewPage />);
 
     await screen.findByText('Behavior & Habit Note');
-    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('ath-1');
+    expect(athletePicker().value).toBe('ath-1');
     expect(screen.queryByText(EMPTY_STATE)).toBeNull();
     await waitFor(() => {
       expect(shadowReads(fetchMock).some((url) => url.includes('medical-status?athleteId=ath-1'))).toBe(true);
@@ -2947,7 +2978,7 @@ describe('arriving from "Record what you did"', () => {
 
     await waitFor(() => expect(rosterRead(fetchMock)).toBe(true));
     await screen.findByRole('option', { name: 'Jordan T.' });
-    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(athletePicker().value).toBe('');
     expect(screen.getByText(EMPTY_STATE)).toBeInTheDocument();
     expect(shadowReads(fetchMock)).toEqual([]);
   });
@@ -2965,7 +2996,7 @@ describe('arriving from "Record what you did"', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(athletePicker().value).toBe('');
     expect(screen.getByText(EMPTY_STATE)).toBeInTheDocument();
     expect(shadowReads(fetchMock)).toEqual([]);
   });
@@ -2980,32 +3011,24 @@ describe('arriving from "Record what you did"', () => {
     const fetchMock = installFetch();
     render(<DecisionLoopReviewPage />);
     await screen.findByRole('option', { name: 'Jordan T.' });
-    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(athletePicker().value).toBe('');
     expect(shadowReads(fetchMock)).toEqual([]);
   });
 
-  test('a pick the coach makes while the roster is still loading wins', async () => {
+  test('an athlete with no name on file is "Unnamed athlete" in the picker, never their id', async () => {
     const base = installFetch();
-    let releaseRoster: () => void = () => undefined;
-    const rosterHeld = new Promise<void>((resolve) => {
-      releaseRoster = resolve;
-    });
-    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes('/api/pilot/athletes/list')) {
-        await rosterHeld;
-        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }, { athlete_id: 'ath-2', full_name: 'Casey R.' }] });
-      }
-      return base(url, init);
-    }) as unknown as typeof fetch;
-    handOffArrivalAthlete('ath-1');
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => (
+      String(url).includes('/api/pilot/athletes/list')
+        ? jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }, { athlete_id: 'ath-nameless', full_name: '  ' }, { athlete_id: 'ath-none' }] })
+        : base(url, init)
+    )) as unknown as typeof fetch;
     render(<DecisionLoopReviewPage />);
 
-    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-2' } });
-    await act(async () => {
-      releaseRoster();
-      await rosterHeld;
-    });
-    await screen.findByRole('option', { name: 'Casey R.' });
-    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('ath-2');
+    const picker = await rosterLoaded();
+    const labels = Array.from(picker.options).map((option) => option.textContent);
+    expect(labels).toEqual(['Select an athlete…', 'Jordan T.', 'Unnamed athlete', 'Unnamed athlete']);
+    expect(document.body.textContent).not.toContain('ath-nameless');
+    expect(document.body.textContent).not.toContain('ath-none');
+    expect(screen.queryByText('Or enter an athlete ID directly')).toBeNull();
   });
 });

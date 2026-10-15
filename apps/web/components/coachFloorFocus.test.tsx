@@ -564,6 +564,7 @@ describe('"Record what you did" hands its athlete to the Decision Loop', () => {
     ['ctrl', { ctrlKey: true }],
     ['cmd', { metaKey: true }],
     ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
     ['middle button', { button: 1 }],
   ])('a %s click, which opens another tab, hands nothing over', (_name, init) => {
     fireEvent.click(openLink(PAIN_FOR_ATH_2), init);

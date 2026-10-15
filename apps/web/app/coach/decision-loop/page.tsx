@@ -590,15 +590,15 @@ export default function DecisionLoopReviewPage() {
           setAthletes(roster);
         }
       } catch {
-        // Manual athleteId entry remains available if the roster fetch fails.
+        // No roster: the picker stays empty and the page opens on nobody.
       }
       /* The arriving athlete is selected only if the roster lists them: the
          roster is the server's answer to whom this coach may reach. Not
          listed, or no roster, and the page opens as it always has, with
-         nobody chosen. A pick the coach made while the roster loaded wins. */
+         nobody chosen. */
       const arriving = arrivalAthleteRef.current;
       arrivalAthleteRef.current = null;
-      if (arriving && roster && !selectedAthleteRef.current && roster.some((athlete) => athlete.athlete_id === arriving)) {
+      if (arriving && roster && roster.some((athlete) => athlete.athlete_id === arriving)) {
         selectAthlete(arriving);
       }
     })();
@@ -1228,19 +1228,11 @@ export default function DecisionLoopReviewPage() {
                 <option value="">Select an athlete…</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                    {athlete.full_name || athlete.athlete_id}
+                    {/* Never the raw id: an athlete with no name on file is named as such. */}
+                    {athlete.full_name?.trim() || 'Unnamed athlete'}
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="field mt-[var(--s3)] block">
-              <span className="t-label">Or enter an athlete ID directly</span>
-              <input
-                value={athleteId}
-                onChange={(event) => selectAthlete(event.target.value)}
-                placeholder="athlete-id"
-                className="input max-w-md"
-              />
             </label>
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
@@ -1252,7 +1244,7 @@ export default function DecisionLoopReviewPage() {
           </section>
 
           {!athleteId ? (
-            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select or enter an athlete to review their decision loop.</p>
+            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select an athlete to review their decision loop.</p>
           ) : (
             <div className="mt-[var(--s5)] grid gap-[var(--s5)] xl:grid-cols-2">
               {/* Medical Administrative Status */}
