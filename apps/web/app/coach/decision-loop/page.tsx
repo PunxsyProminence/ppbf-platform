@@ -578,32 +578,40 @@ export default function DecisionLoopReviewPage() {
      came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
      on the first effect; undefined means not yet taken. */
   const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  /* The picker is the only way to choose an athlete, so a roster that would
+     not load says so and offers another try -- an empty picker would read as
+     "no athletes". */
+  const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const loadRoster = useCallback(async () => {
+    let roster: AthleteListItem[] | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+      if (response.ok) {
+        const payload = (await response.json()) as { items?: AthleteListItem[] };
+        roster = payload.items ?? [];
+        setAthletes(roster);
+      }
+    } catch {
+      // Said on the page below the picker.
+    }
+    setRosterState(roster ? 'loaded' : 'failed');
+    /* The arriving athlete is selected only if the roster lists them: the
+       roster is the server's answer to whom this coach may reach. Not listed,
+       and the page opens as it always has, with nobody chosen. With no roster
+       yet, the arrival waits for a "Check again" that loads one. */
+    if (!roster) return;
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && roster.some((athlete) => athlete.athlete_id === arriving)) {
+      selectAthlete(arriving);
+    }
+    // selectAthlete moves refs and state setters only.
+  }, []);
   useEffect(() => {
     if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
-    void (async () => {
-      let roster: AthleteListItem[] | null = null;
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
-        if (response.ok) {
-          const payload = (await response.json()) as { items?: AthleteListItem[] };
-          roster = payload.items ?? [];
-          setAthletes(roster);
-        }
-      } catch {
-        // No roster: the picker stays empty and the page opens on nobody.
-      }
-      /* The arriving athlete is selected only if the roster lists them: the
-         roster is the server's answer to whom this coach may reach. Not
-         listed, or no roster, and the page opens as it always has, with
-         nobody chosen. */
-      const arriving = arrivalAthleteRef.current;
-      arrivalAthleteRef.current = null;
-      if (arriving && roster && roster.some((athlete) => athlete.athlete_id === arriving)) {
-        selectAthlete(arriving);
-      }
-    })();
-    // Once, on arrival. selectAthlete moves refs and state setters only.
-  }, []);
+    // The roster's answer sets state when it arrives, never in this effect's body.
+    void Promise.resolve().then(loadRoster);
+  }, [loadRoster]);
 
   const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
     // A write for athlete A that finishes after the coach moved to B asks to
@@ -1234,6 +1242,21 @@ export default function DecisionLoopReviewPage() {
                 ))}
               </select>
             </label>
+            {rosterState === 'failed' && (
+              <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+                <p className="t-body">Couldn&apos;t load your athletes.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRosterState('loading');
+                    void loadRoster();
+                  }}
+                  className="btn btn--ghost"
+                >
+                  Check again
+                </button>
+              </div>
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine

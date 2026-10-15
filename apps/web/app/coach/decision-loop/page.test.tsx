@@ -3015,6 +3015,51 @@ describe('arriving from "Record what you did"', () => {
     expect(shadowReads(fetchMock)).toEqual([]);
   });
 
+  test('a roster that would not load says so and offers another try; the try that answers fills the picker', async () => {
+    const base = installFetch();
+    let rosterUp = false;
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => (
+      String(url).includes('/api/pilot/athletes/list') && !rosterUp ? jsonResponse({ error: 'boom' }, false) : base(url, init)
+    ));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<DecisionLoopReviewPage />);
+
+    expect(await screen.findByText("Couldn't load your athletes.")).toBeInTheDocument();
+    expect(athletePicker().options).toHaveLength(1);
+
+    rosterUp = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect(screen.queryByText("Couldn't load your athletes.")).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  });
+
+  test('a roster that answered says nothing about loading', async () => {
+    installFetch();
+    render(<DecisionLoopReviewPage />);
+    await rosterLoaded();
+    expect(screen.queryByText("Couldn't load your athletes.")).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  });
+
+  test('arriving while the roster would not load: "Check again" that loads it opens on the athlete', async () => {
+    const base = installFetch();
+    let rosterUp = false;
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => (
+      String(url).includes('/api/pilot/athletes/list') && !rosterUp ? jsonResponse({ error: 'boom' }, false) : base(url, init)
+    )) as unknown as typeof fetch;
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText("Couldn't load your athletes.");
+    expect(athletePicker().value).toBe('');
+
+    rosterUp = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    await screen.findByText('Behavior & Habit Note');
+    expect(athletePicker().value).toBe('ath-1');
+  });
+
   test('an athlete with no name on file is "Unnamed athlete" in the picker, never their id', async () => {
     const base = installFetch();
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => (
