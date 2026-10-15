@@ -63,6 +63,8 @@ describe('athlete capacity notes schema ownership', () => {
   test('the notes panels and the admin block are mounted only on the coach screen and the admin athlete-records page', () => {
     // Staff only (OD-2026-10-10-003 ruling 3): no athlete or parent page may
     // mount them. A new importer is added here deliberately, under review.
+    // SessionRunPresence (F-067): the "Who is here" list on the coach's live
+    // session screen, a note per athlete marked present in that run.
     const webRoot = path.join(repositoryRoot, 'apps/web');
     const sources: string[] = [];
     const walk = (dir: string) => {
@@ -82,7 +84,11 @@ describe('athlete capacity notes schema ownership', () => {
       .sort();
     expect(importersOf('AdminAthleteCoachNotes')).toEqual(['app/admin/athletes/page.tsx']);
     expect(importersOf('CapacityNotesPanel')).toEqual(['components/AdminAthleteCoachNotes.tsx', 'components/CoachWorkspace.tsx']);
-    expect(importersOf('SessionStaffNotesPanel')).toEqual(['components/AdminAthleteCoachNotes.tsx', 'components/CoachWorkspace.tsx']);
+    expect(importersOf('SessionStaffNotesPanel')).toEqual([
+      'components/AdminAthleteCoachNotes.tsx',
+      'components/CoachWorkspace.tsx',
+      'components/SessionRunPresence.tsx',
+    ]);
   });
 
   test('neither the module, the route nor the panel parses, scores or recommends from a note (module 013 boundaries; OD-2026-09-21-001)', () => {
