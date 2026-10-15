@@ -432,6 +432,29 @@ it, a coach's or admin's filing included, with the submissions attached to those
 athlete is the gym's research and stays, whatever its text says: a name typed into free text is
 not found. Pinned by `askerQuestionDeletion.pg.test.ts` and `subjectResearchPurge.pg.test.ts`.
 
+**SHADOW Library documents.** A Library document filed against an athlete
+(`pilot.shadow_library_documents.subject_id`, no foreign key) is deleted when the cleanup job
+purges that athlete, in that athlete's savepoint and gym, with its chunks (the extracted text);
+a research submission that attached it keeps its row with `document_id` cleared. Counted as
+`subject_library_documents_deleted` and `subject_library_chunks_deleted` (dry run
+`would_delete_subject_library_documents` / `_chunks`). A chunk that itself names the athlete
+under a document that does not (the research importer writes a chunk's subject on its own) is
+deleted too and its document stays. A document a SHADOW answer still cites
+(`pilot.shadow_evidence_items`, by the document or by one of its chunks) is **held**, not
+deleted, with its chunks, and counted as `subject_library_documents_held` (a cited stray chunk:
+`subject_library_chunks_held`): a citation the app makes of a child's chunk sits in an answer
+about that child, which goes with the child, except one a safeguarding-held chat cites (Jason
+2026-10-07, "2 years after deletion (Recommended)") or one of imported rows. A held document
+does not stop the child's purge. **Not yet built:** nothing revisits a held document once the
+child's row is gone, so it keeps the child's `subject_id` with no end date, and the curator queue
+and subject-scoped search no longer hide it (they hide by the deletion mark, which went with the
+row); a roster that reissues the id would put it in front of the new child. Nothing sets the
+hold today (`subject_deleted_at` is written by nothing), so the count is expected to be 0.
+Rows only: a document's `blob_path` is a label its registrant supplied and no code stores
+or reads a file through it; how many deleted documents carried one is counted
+(`subject_library_documents_with_file_path`), never the path. Pinned by
+`libraryDocumentPurge.pg.test.ts`.
+
 **Sign-in refuses a deleted login** (owner decision 2026-09-29, OD-2026-09-29-003 Q9, "all
 recommended": one central rule). Every sign-in refuses an account whose `deleted_at` is set,
 whatever its `active_flag` says: PIN sign-in, Microsoft sign-in, asking for and redeeming a
