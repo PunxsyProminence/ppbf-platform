@@ -65,6 +65,8 @@ describe('athlete capacity notes schema ownership', () => {
     // mount them. A new importer is added here deliberately, under review.
     // SessionRunPresence (F-067): the "Who is here" list on the coach's live
     // session screen, a note per athlete marked present in that run.
+    // FinishedSessions (F-067): the gym's finished sessions on the coach's
+    // Session Scripts page, a note per athlete marked present in each.
     const webRoot = path.join(repositoryRoot, 'apps/web');
     const sources: string[] = [];
     const walk = (dir: string) => {
@@ -87,6 +89,7 @@ describe('athlete capacity notes schema ownership', () => {
     expect(importersOf('SessionStaffNotesPanel')).toEqual([
       'components/AdminAthleteCoachNotes.tsx',
       'components/CoachWorkspace.tsx',
+      'components/FinishedSessions.tsx',
       'components/SessionRunPresence.tsx',
     ]);
   });
