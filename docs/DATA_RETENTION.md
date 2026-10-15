@@ -448,10 +448,12 @@ about that child, which goes with the child, except one a safeguarding-held chat
 does not stop the child's purge. The purge **marks** what it holds (`metadata.subject_purged_at`
 on the document and its chunks, or on the held stray chunk; F-086), and every reader that could
 serve it leaves marked rows out: subject-scoped search on both paths, the curator queue, a new
-citation, document approval and attaching a document to a research submission. So a roster that
+citation, any review change to the document, a new chunk on it, and attaching it to a research
+submission. A row already marked keeps its first date. So a roster that
 reissues the id never puts the purged child's text in front of the new child (the deletion mark
 those readers otherwise rely on goes with the athlete row). Pinned by
-`heldLibraryDocuments.pg.test.ts`. **Limits:** re-running the research importer
+`heldLibraryDocuments.pg.test.ts` (the new-citation filter by its own test once #1614 lands) and
+the marking by `libraryDocumentPurge.pg.test.ts`. **Limits:** re-running the research importer
 (`import-shadow-research.mjs`) on the same document or chunk ids overwrites `metadata` and drops
 the mark (not guarded). **Not yet built:** nothing revisits a held document once the child's row
 is gone, so it keeps the child's `subject_id` with no end date; a later sweep deleting marked rows

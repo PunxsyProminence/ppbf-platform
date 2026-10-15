@@ -352,6 +352,11 @@ describe('the retention purge and the Library documents filed against a purged a
       expect(await documentCount(documentId)).toBe(1);
     }
     expect(await chunkCount('doc-gym-stray')).toBe(2);
+    const marked = await db.query(
+      `select (select count(*) from pilot.shadow_library_documents where metadata ? 'subject_purged_at')
+            + (select count(*) from pilot.shadow_library_chunks where metadata ? 'subject_purged_at') as n`,
+    );
+    expect(Number(marked.rows[0].n)).toBe(0);
   });
 
   test('the purge deletes the documents about the athlete with their chunks, and is not blocked by the held one', async () => {
@@ -442,6 +447,10 @@ describe('the retention purge and the Library documents filed against a purged a
 
   test('an athlete whose purge is refused keeps their documents, and the run counts none', async () => {
     await insertDocument(ORG, 'doc-d', SOURCE, ATHLETE_D);
+    // And one D's purge would hold (cited by an answer about no one): its mark
+    // must roll back with the rest.
+    await insertDocument(ORG, 'doc-d-held', SOURCE, ATHLETE_D);
+    await cite('doc-d-held', '99999999-9999-4999-8999-999999999999', null);
     // A video and no storage: the athlete's savepoint is rolled back
     // (STORAGE_CREDENTIAL_MISSING), the document delete with it.
     await db.query(
@@ -463,5 +472,12 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(event.subject_library_chunks_deleted).toBe(0);
     expect(await documentCount('doc-d')).toBe(1);
     expect(await chunkCount('doc-d')).toBe(1);
+    const marks = await db.query(
+      `select (select count(*) from pilot.shadow_library_documents
+                where document_id = 'doc-d-held' and metadata ? 'subject_purged_at')
+            + (select count(*) from pilot.shadow_library_chunks
+                where document_id = 'doc-d-held' and metadata ? 'subject_purged_at') as n`,
+    );
+    expect(Number(marks.rows[0].n)).toBe(0);
   });
 });

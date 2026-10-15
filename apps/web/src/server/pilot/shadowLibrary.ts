@@ -1161,6 +1161,8 @@ export async function createShadowLibraryChunk(input: {
           and s.source_id = (
             select d.source_id from pilot.shadow_library_documents d
              where d.document_id = $1 and d.organization_id = $2
+               -- A document the retention purge held takes no new chunk (F-086).
+               and not (d.metadata ? 'subject_purged_at')
           )
         for no key update of s`,
       [input.documentId, input.organizationId],

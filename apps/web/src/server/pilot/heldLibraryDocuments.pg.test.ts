@@ -38,7 +38,7 @@ jest.mock('./db', () => ({
     const result = await requireClient().query(text, params);
     return result.rows[0] ?? null;
   }),
-  withTransaction: jest.fn(),
+  withTransaction: jest.fn(async (fn: (client: Client) => Promise<unknown>) => fn(requireClient())),
 }));
 jest.mock('./shadowTelemetry', () => ({ writeShadowTelemetryEvent: jest.fn() }));
 jest.mock('./shadowEmbeddings', () => ({
@@ -50,6 +50,7 @@ jest.mock('./shadowEmbeddings', () => ({
 
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import {
+  createShadowLibraryChunk,
   listShadowLibraryReviewQueue,
   reviewShadowLibraryDocument,
   searchShadowLibrary,
@@ -286,6 +287,22 @@ describe('a Library document or chunk the retention purge held (F-086)', () => {
     });
     await expect(review(HELD)).rejects.toThrow('SHADOW document is missing or has not completed indexing');
     await expect(review(LIVE)).resolves.toMatchObject({ document_id: LIVE });
+  });
+
+  test('a held document takes no new chunk', async () => {
+    await expect(createShadowLibraryChunk({
+      organizationId: ORG,
+      actorAccountId: ADMIN,
+      actorRole: 'organization_admin',
+      documentId: HELD,
+      ordinal: 1,
+      textContent: 'A new note',
+    })).rejects.toThrow('Document does not exist in this organization.');
+    const chunks = await requireClient().query(
+      'select count(*)::int as n from pilot.shadow_library_chunks where document_id = $1',
+      [HELD],
+    );
+    expect(chunks.rows[0].n).toBe(1);
   });
 
   test('a held document cannot be attached to a research submission; a live one can', async () => {

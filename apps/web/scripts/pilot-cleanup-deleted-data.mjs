@@ -881,7 +881,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          serve it filters the mark out (F-086): the readers hide a document
          about a deleted child by the deletion mark on the athlete row, which
          goes here, and a roster that reissues the id would otherwise put the
-         purged child's text in front of the new one.
+         purged child's text in front of the new one. A row already marked
+         keeps its first date (the existing key wins the merge).
 
          The row only: a document's blob_path is a label its registrant
          supplied, and no code stores or reads a file through it. How many
@@ -939,7 +940,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         if (held.size > 0) {
           await client.query(
             `update pilot.shadow_library_documents
-                set metadata = metadata || jsonb_build_object('subject_purged_at', now()), updated_at = now()
+                set metadata = jsonb_build_object('subject_purged_at', now()) || metadata, updated_at = now()
               where document_id = any($1::text[])`,
             [[...held]],
           );
@@ -947,7 +948,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         if (heldChunkIds.length > 0) {
           await client.query(
             `update pilot.shadow_library_chunks
-                set metadata = metadata || jsonb_build_object('subject_purged_at', now()), updated_at = now()
+                set metadata = jsonb_build_object('subject_purged_at', now()) || metadata, updated_at = now()
               where chunk_id = any($1::text[])`,
             [heldChunkIds],
           );
