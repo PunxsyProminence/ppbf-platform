@@ -94,6 +94,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/lib/drillFloorValidation.ts',
   'apps/web/src/lib/drillPresentation.ts',
   'apps/web/src/lib/gymTime.ts',
+  'apps/web/src/lib/sessionScriptWords.ts',
   'apps/web/src/shared/achievementPaths.ts',
   'apps/web/src/shared/adultPathwayStages.ts',
   'apps/web/src/shared/coachDevelopment.ts',
