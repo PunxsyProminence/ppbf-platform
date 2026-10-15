@@ -7,7 +7,9 @@ import {
   STAFF_NOTE_MAX,
   STAFF_NOTE_ROLES,
   type ListedSessionStaffNote,
+  createRunStaffNote,
   createSessionStaffNote,
+  listRunStaffNotes,
   listSessionStaffNotes,
   removeOwnSessionStaffNote,
   updateOwnSessionStaffNote,
@@ -23,9 +25,16 @@ export const dynamic = 'force-dynamic';
  *
  *   GET    ?session_id=&athlete_id=          the live staff notes on that session about
  *                                            that athlete, oldest first (the newest 100)
+ *   GET    ?run_id=&athlete_id=              the same, for a note on that athlete in a
+ *                                            session RUN (F-067)
  *   POST   { session_id, athlete_id, note }  adds one note of the caller's own
+ *   POST   { run_id, athlete_id, note }      adds one on that athlete in a session run; the
+ *                                            athlete must be marked present in that run
  *   PATCH  { note_id, note }                 changes the text of one of the caller's OWN notes
  *   DELETE ?note_id=                         removes one of the caller's OWN notes
+ *
+ * A note is on a session OR on a run: a request naming both, or neither, is
+ * refused. PATCH and DELETE find a note by its own id, so they serve both kinds.
  *
  * STAFF ONLY (OD-2026-10-10-003 ruling 3: "no athlete or parent view"). There
  * is no athlete, parent or guardian route over this table and none may be
@@ -55,6 +64,7 @@ function present(row: ListedSessionStaffNote) {
   return {
     note_id: row.note_id,
     session_id: row.session_id,
+    run_id: row.run_id,
     athlete_id: row.athlete_id,
     note: row.note,
     author_name: row.author_name,
@@ -74,6 +84,17 @@ function textFrom(value: unknown, field: string): string {
   if (!text) throw new ValidationError(`Missing ${field}`);
   if (text.includes(NUL)) throw new ValidationError(`${field} is not valid`);
   return text;
+}
+
+/** What the note is on: its session or its run. Exactly one must be named. */
+function subjectFrom(sessionId: unknown, runId: unknown): { sessionId: string } | { runId: string } {
+  // Anything sent counts as naming it, text or not: a number beside a real id is "both", and a
+  // number alone is refused by textFrom. Only absent, null and blank text are "not named".
+  const named = (value: unknown) => value !== undefined && value !== null && !(typeof value === 'string' && value.trim() === '');
+  if (named(sessionId) === named(runId)) {
+    throw new ValidationError('Name the session or the run the note is on: exactly one of session_id and run_id');
+  }
+  return named(runId) ? { runId: textFrom(runId, 'run_id') } : { sessionId: textFrom(sessionId, 'session_id') };
 }
 
 // The column is a uuid; a hand-crafted id would otherwise be a database error
@@ -98,9 +119,11 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...STAFF_NOTE_ROLES]);
-    const sessionId = textFrom(request.nextUrl.searchParams.get('session_id'), 'session_id');
+    const subject = subjectFrom(request.nextUrl.searchParams.get('session_id'), request.nextUrl.searchParams.get('run_id'));
     const athleteId = textFrom(request.nextUrl.searchParams.get('athlete_id'), 'athlete_id');
-    const notes = await listSessionStaffNotes(actorOf(principal), sessionId, athleteId);
+    const notes = 'runId' in subject
+      ? await listRunStaffNotes(actorOf(principal), subject.runId, athleteId)
+      : await listSessionStaffNotes(actorOf(principal), subject.sessionId, athleteId);
     return NextResponse.json(
       { ok: true, note_max: STAFF_NOTE_MAX, notes: notes.map(present) },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -115,9 +138,11 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...STAFF_NOTE_ROLES]);
     const body = await bodyOf(request);
-    const sessionId = textFrom(body.session_id, 'session_id');
+    const subject = subjectFrom(body.session_id, body.run_id);
     const athleteId = textFrom(body.athlete_id, 'athlete_id');
-    const row = await createSessionStaffNote({ actor: actorOf(principal), sessionId, athleteId, note: body.note as string });
+    const row = 'runId' in subject
+      ? await createRunStaffNote({ actor: actorOf(principal), runId: subject.runId, athleteId, note: body.note as string })
+      : await createSessionStaffNote({ actor: actorOf(principal), sessionId: subject.sessionId, athleteId, note: body.note as string });
     return NextResponse.json({ ok: true, note_id: row.note_id });
   } catch (error) {
     return jsonError(error);

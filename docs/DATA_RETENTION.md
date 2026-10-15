@@ -55,7 +55,8 @@ enforces the other windows below, and nothing sets `deleted_at` at age 18.
 | Sparring exposure and contact stage (`pilot.sparring_exposure`) | Period not yet ruled | -- | Not yet ruled |
 | Coach-set contact caps (`pilot.athlete_contact_caps`) | Period not yet ruled | -- | Not yet ruled |
 | Coach-set minor limits: heat minutes, max % body-weight cut, supervision (`pilot.athlete_minor_limits`) | Period not yet ruled | -- | Not yet ruled |
-| Staff notes on a session, in the author's name (`pilot.session_staff_notes`; removed notes keep their row with `deleted_at`) | Period not yet ruled | -- | Not yet ruled |
+| Staff notes on a session or on an athlete in a session run, in the author's name (`pilot.session_staff_notes`; removed notes keep their row with `deleted_at`) | Period not yet ruled | -- | Not yet ruled |
+| Who a coach marked present in a session run (`pilot.session_run_athletes`; a mark taken back keeps its row with `removed_at`; session detail, not attendance) | Period not yet ruled | -- | Not yet ruled |
 | Coach-written physical capacity notes, plain text (`pilot.athlete_capacity_notes`; a withdrawn note keeps its row with `deleted_at`) | Period not yet ruled | -- | Not yet ruled |
 | Mental skills log: self-talk cues, imagery (`pilot.athlete_mental_skill_entries`) | Period not yet ruled | -- | Not yet ruled |
 | Video clip tags (`pilot.video_clip_tags`) | Period not yet ruled | -- | Not yet ruled |

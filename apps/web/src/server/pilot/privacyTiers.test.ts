@@ -165,6 +165,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.intake_cases',
       'pilot.medical_intake',
       'pilot.readiness',
+      // Which children a coach marked present in one session run (F-067). Staff only.
+      'pilot.session_run_athletes',
       // A coach's own note on a child's session, in the coach's name (OD-2026-10-06-025 ruling 4).
       'pilot.session_staff_notes',
       'pilot.shadow_medical',
