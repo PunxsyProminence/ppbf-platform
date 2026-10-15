@@ -90,7 +90,10 @@ function cleanText(value: unknown, label: string, max: number): string {
 
 function cleanDay(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null;
-  if (typeof value !== 'string' || !DAY.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  // A real calendar day: Date rolls 2026-02-31 over to March, so the day it
+  // lands on must be the day that was written.
+  const parsed = typeof value === 'string' && DAY.test(value) ? new Date(`${value}T00:00:00Z`) : null;
+  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
     throw new ValidationError('The target date must be a date (YYYY-MM-DD).');
   }
   return value;
@@ -178,12 +181,16 @@ export async function updateFamilyGoal(input: {
   let set: string;
   let values: unknown[];
   if (change.kind === 'edit') {
-    set = 'title = $4, support_action = $5, target_date = $6::date';
+    set = 'title = $4, support_action = $5';
     values = [
       cleanText(change.title, 'goal', FAMILY_GOAL_TITLE_MAX),
       cleanText(change.supportAction, 'family support action', FAMILY_GOAL_SUPPORT_MAX),
-      cleanDay(change.targetDate),
     ];
+    // Left out, the saved target date stays; null (or '') clears it.
+    if (change.targetDate !== undefined) {
+      set += ', target_date = $6::date';
+      values.push(cleanDay(change.targetDate));
+    }
   } else if (change.kind === 'done') {
     // Ticking an already-done goal keeps its time; the database refuses a rewrite.
     set = change.done
@@ -195,11 +202,16 @@ export async function updateFamilyGoal(input: {
     values = [];
   }
 
-  await query(
+  // The ownership check repeated in the write: a goal retired, or handed to
+  // nobody, between the check and here is the same 404, not a refused write.
+  const written = await queryOne<{ goal_id: string }>(
     `update pilot.family_goals
         set ${set}, updated_by_account_id = $3, updated_by_role = 'parent'
-      where organization_id = $1 and goal_id = $2::uuid`,
+      where organization_id = $1 and goal_id = $2::uuid and retired_at is null
+        and created_by_role = 'parent' and created_by_account_id = $3
+      returning goal_id::text as goal_id`,
     [input.organizationId, input.goalId, input.accountId, ...values],
   );
+  if (!written) throw new NotFoundError(NOT_YOURS);
   return change.kind === 'retire' ? null : readOwn(input.organizationId, input.accountId, input.goalId);
 }
