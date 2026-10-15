@@ -97,6 +97,10 @@ export async function GET(request: NextRequest) {
       publicationType: publicationType || undefined,
       limit,
       athleteIds,
+      // A coach's own submissions stay on their list whatever the athlete
+      // (issue #1480 PR B): they may draft for any athlete of the gym, and
+      // "my athletes" alone would hide those drafts from their author.
+      orSubmittedBy: principal.role === 'coach' ? principal.accountId : undefined,
     });
 
     return NextResponse.json({ items: publications });
