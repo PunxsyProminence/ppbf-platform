@@ -22,6 +22,8 @@
 // 7. RETIRING. A retired script leaves the list and comes back when asked for;
 //    every column but its state and updated_at is as it was; a delivered plan
 //    gets no new version; and the server's start does not read the state.
+// 8. MARKING REVIEWED (F-092). A coach moves a draft to coach_reviewed in
+//    place, and the audit row names that coach.
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
@@ -85,6 +87,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  markSessionScriptReviewed,
   setSessionScriptRetired,
 } from './sessionScriptAuthoring';
 import {
@@ -1063,5 +1066,121 @@ describe('retiring and the other writes', () => {
     // The retire's audit row is under version 1; version 2 is brought back.
     await retireAs(gym, v2.script_id, false);
     expect((await getSessionScriptWithDetail(gym.organizationId, v2.script_id))!.authoring_state).toBe('in_use');
+  });
+});
+
+describe('marking a session script reviewed (F-092)', () => {
+  /** Marked by the gym's OTHER coach: whole-gym reach (OD-2026-10-11-007), not only the author. */
+  function markReviewed(gym: Gym, scriptId: string, expectedUpdatedAt?: string) {
+    return markSessionScriptReviewed({
+      organizationId: gym.organizationId,
+      actorAccountId: gym.otherCoachId,
+      actorRole: 'coach',
+      scriptId,
+      expectedUpdatedAt,
+    });
+  }
+
+  const stateOf = async (gym: Gym, scriptId: string) =>
+    (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.authoring_state;
+
+  const reviewRows = (gym: Gym) => query<{ event_type: string; actor_account_id: string; actor_role: string; entity_id: string; details: Record<string, unknown> }>(
+    `select event_type, actor_account_id, actor_role, entity_id, details from pilot.audit_events
+      where organization_id = $1 and entity_type = 'session_script' and details->>'outcome' = 'reviewed'`,
+    [gym.organizationId],
+  );
+
+  test('a coach marks a draft reviewed: in place, the list reads it, and the audit row names the coach', async () => {
+    const gym = await newGym('review');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    expect(await stateOf(gym, created.script_id)).toBe('draft');
+    const readAt = (await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.updated_at;
+    const before = await counts(gym);
+
+    const result = await markReviewed(gym, created.script_id, new Date(readAt).toISOString());
+
+    expect(result).toEqual({ outcome: 'reviewed', script_id: created.script_id, version: 1 });
+    expect(await stateOf(gym, created.script_id)).toBe('coach_reviewed');
+    expect((await listSessionScripts(gym.organizationId)).map((script) => [script.script_id, script.authoring_state]))
+      .toEqual([[created.script_id, 'coach_reviewed']]);
+    // No new version, no new block: one audit row more.
+    expect(await counts(gym)).toEqual({ ...before, audit: before.audit + 1 });
+    expect(await reviewRows(gym)).toEqual([{
+      event_type: 'update',
+      actor_account_id: gym.otherCoachId,
+      actor_role: 'coach',
+      entity_id: created.script_id,
+      details: { name: created.name, version: 1, outcome: 'reviewed', state_before: 'draft', state_after: 'coach_reviewed' },
+    }]);
+
+    // Pressed again: nothing is written.
+    expect((await markReviewed(gym, created.script_id)).outcome).toBe('unchanged');
+    expect((await counts(gym)).audit).toBe(before.audit + 1);
+  });
+
+  test('a plan in use is left as it is', async () => {
+    const gym = await newGym('review-in-use');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await client.query(
+      `update pilot.session_scripts set authoring_state = 'in_use' where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, created.script_id],
+    );
+    expect((await markReviewed(gym, created.script_id)).outcome).toBe('unchanged');
+    expect(await stateOf(gym, created.script_id)).toBe('in_use');
+    expect(await reviewRows(gym)).toEqual([]);
+  });
+
+  test('refused, nothing written: a retired plan, a plan saved since it was read, another gym', async () => {
+    const owner = await newGym('review-owner');
+    const other = await newGym('review-other');
+    await insertTemplate(owner);
+    const created = await create(owner);
+    const readAt = new Date((await getSessionScriptWithDetail(owner.organizationId, created.script_id))!.updated_at).toISOString();
+
+    await expectRefused(
+      markSessionScriptReviewed({
+        organizationId: other.organizationId,
+        actorAccountId: other.coachId,
+        actorRole: 'coach',
+        scriptId: created.script_id,
+      }),
+      'SESSION_SCRIPT_NOT_FOUND',
+      404,
+    );
+
+    await edit(owner, created.script_id, { name: 'Renamed meanwhile' });
+    await expectRefused(markReviewed(owner, created.script_id, readAt), 'SESSION_SCRIPT_CHANGED', 409);
+
+    await setSessionScriptRetired({
+      organizationId: owner.organizationId,
+      actorAccountId: owner.coachId,
+      actorRole: 'coach',
+      scriptId: created.script_id,
+      retired: true,
+    });
+    await expectRefused(markReviewed(owner, created.script_id), 'SESSION_SCRIPT_RETIRED', 409);
+
+    expect(await stateOf(owner, created.script_id)).toBe('retired');
+    expect(await reviewRows(owner)).toEqual([]);
+    expect(await reviewRows(other)).toEqual([]);
+  });
+
+  test('reviewed, retired and brought back, a plan is coach reviewed again', async () => {
+    const gym = await newGym('review-retire');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await markReviewed(gym, created.script_id);
+    const retireAs = (retired: boolean) => setSessionScriptRetired({
+      organizationId: gym.organizationId,
+      actorAccountId: gym.coachId,
+      actorRole: 'coach',
+      scriptId: created.script_id,
+      retired,
+    });
+    await retireAs(true);
+    await retireAs(false);
+    expect(await stateOf(gym, created.script_id)).toBe('coach_reviewed');
   });
 });
