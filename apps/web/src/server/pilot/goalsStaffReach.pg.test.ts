@@ -83,6 +83,7 @@ import { NextRequest } from 'next/server';
 
 import { GET as personalGET, PATCH as personalPATCH, POST as personalPOST } from '@/app/api/pilot/goals/personal/route';
 import { GET as listGET } from '@/app/api/pilot/goals/list/route';
+import { POST as getGoalPOST } from '@/app/api/pilot/goals/get/route';
 import { POST as goalPOST } from '@/app/api/pilot/goals/route';
 import { POST as goalUpdatePOST } from '@/app/api/pilot/goals/update/route';
 import type { PilotPrincipal } from './auth';
@@ -114,11 +115,21 @@ const OWN_WORDS = 'Go three rounds without dropping my hands';
 const WHY = 'My brother quit and I want to show him it can be done';
 const SMART_ID = 'goal-smart-reach-1';
 const SMART_TITLE = 'Skip rope five rounds';
+/** A second own-words goal, never marked reached: the target of the staff
+    "I did it" write, so a refused write that slipped through would show. */
+const STILL_OPEN_WORDS = 'Keep my guard up when I am tired';
+/** ONE athlete_id, TWO children: a live athlete in each gym, each with their
+    own goal. pilot.athletes' key is (organization_id, athlete_id), so only the
+    gym half of every goal query keeps each gym's staff on its own child. */
+const SHARED_ID_ATHLETE = 'ATH-GOALS-SHARED-ID';
+const GYM_CHILD_GOAL = 'Gym one child: hold my stance';
+const OTHER_GYM_CHILD_GOAL = 'Gym two child: finish every round';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 let ownWordsGoalId = '';
+let stillOpenGoalId = '';
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 
@@ -145,10 +156,10 @@ function send(pathname: string, method: string, body: Record<string, unknown>): 
   });
 }
 
-async function readAs(who: PilotPrincipal) {
+async function readAs(who: PilotPrincipal, athleteId = ATHLETE) {
   mockRequirePrincipal.mockResolvedValue(who);
-  const personal = await personalGET(get(`/api/pilot/goals/personal?athlete_id=${ATHLETE}`));
-  const list = await listGET(get(`/api/pilot/goals/list?athlete_id=${ATHLETE}`));
+  const personal = await personalGET(get(`/api/pilot/goals/personal?athlete_id=${athleteId}`));
+  const list = await listGET(get(`/api/pilot/goals/list?athlete_id=${athleteId}`));
   return {
     personalStatus: personal.status,
     personalText: await personal.text(),
@@ -170,6 +181,18 @@ function smartPayload(progress: number) {
     created_at: '2026-10-01T15:00:00.000Z',
     updated_at: '2026-10-01T15:00:00.000Z',
   };
+}
+
+async function writeOwnWords(who: PilotPrincipal, athleteId: string, ownWords: string, why: string): Promise<string> {
+  mockRequirePrincipal.mockResolvedValue(who);
+  const response = await personalPOST(send('/api/pilot/goals/personal', 'POST', {
+    athlete_id: athleteId,
+    own_words: ownWords,
+    why_it_matters: why,
+    target_date: '',
+  }));
+  if (response.status !== 201) throw new Error(`fixture: own-words goal not written (${response.status}): ${await response.text()}`);
+  return ((await response.json()) as { goal: { goal_id: string } }).goal.goal_id;
 }
 
 async function storedGoals() {
@@ -242,6 +265,14 @@ async function freshDatabase(name: string): Promise<Client> {
      values ($1, $2, 'Goal Setter', '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
     [GYM, ATHLETE, RECORD_COACH],
   );
+  for (const organizationId of [GYM, OTHER_GYM]) {
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+         gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Shared Id', '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [organizationId, SHARED_ID_ATHLETE, organizationId === GYM ? RECORD_COACH : OTHER_COACH],
+    );
+  }
   await client.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, email)
      values ($1, $2, $3, 'Guardian Name', 'guardian@example.test')`,
@@ -294,15 +325,11 @@ beforeAll(async () => {
   activeClient = await freshDatabase('goals_staff_reach');
 
   // Every goal is written the way the athlete writes it, through their routes.
+  ownWordsGoalId = await writeOwnWords(asAthlete(), ATHLETE, OWN_WORDS, WHY);
+  stillOpenGoalId = await writeOwnWords(asAthlete(), ATHLETE, STILL_OPEN_WORDS, 'So I do not get caught');
+  await writeOwnWords(principal('acct-goals-shared-1', 'athlete', GYM, SHARED_ID_ATHLETE), SHARED_ID_ATHLETE, GYM_CHILD_GOAL, 'one');
+  await writeOwnWords(principal('acct-goals-shared-2', 'athlete', OTHER_GYM, SHARED_ID_ATHLETE), SHARED_ID_ATHLETE, OTHER_GYM_CHILD_GOAL, 'two');
   mockRequirePrincipal.mockResolvedValue(asAthlete());
-  const own = await personalPOST(send('/api/pilot/goals/personal', 'POST', {
-    athlete_id: ATHLETE,
-    own_words: OWN_WORDS,
-    why_it_matters: WHY,
-    target_date: '',
-  }));
-  if (own.status !== 201) throw new Error(`fixture: own-words goal not written (${own.status}): ${await own.text()}`);
-  ownWordsGoalId = ((await own.json()) as { goal: { goal_id: string } }).goal.goal_id;
   const smart = await goalPOST(send('/api/pilot/goals', 'POST', smartPayload(40)));
   if (smart.status !== 200) throw new Error(`fixture: SMART goal not written (${smart.status}): ${await smart.text()}`);
 });
@@ -340,8 +367,8 @@ describe('the gym\'s staff read an athlete\'s goals, progress and the "why it ma
     expect(read.listStatus).toBe(200);
 
     const personal = JSON.parse(read.personalText) as { items: Array<Record<string, unknown>> };
-    expect(personal.items).toHaveLength(1);
-    expect(personal.items[0]).toMatchObject({ goal_id: ownWordsGoalId, title: OWN_WORDS, why_it_matters: WHY });
+    expect(personal.items.map((goal) => goal.goal_id).sort()).toEqual([ownWordsGoalId, stillOpenGoalId].sort());
+    expect(personal.items.find((goal) => goal.goal_id === ownWordsGoalId)).toMatchObject({ title: OWN_WORDS, why_it_matters: WHY });
 
     const list = JSON.parse(read.listText) as { items: Array<Record<string, unknown>> };
     const smart = list.items.find((row) => row.goal_id === SMART_ID);
@@ -356,8 +383,32 @@ describe('the gym\'s staff read an athlete\'s goals, progress and the "why it ma
     for (const as of [asGymCoach, asGymAdmin]) {
       const read = await readAs(as());
       const personal = JSON.parse(read.personalText) as { items: Array<Record<string, unknown>> };
-      expect(typeof personal.items[0].reached_at).toBe('string');
+      expect(typeof personal.items.find((goal) => goal.goal_id === ownWordsGoalId)?.reached_at).toBe('string');
     }
+  });
+
+  test('POST /goals/get sends the gym coach the goal with its why line (the control for its refusals below)', async () => {
+    mockRequirePrincipal.mockResolvedValue(asGymCoach());
+    const response = await getGoalPOST(send('/api/pilot/goals/get', 'POST', { goal_id: ownWordsGoalId }));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(WHY);
+  });
+});
+
+describe("one athlete id in two gyms: each gym's staff read only their own child", () => {
+  test.each([
+    ['gym 1 coach', asGymCoach, GYM_CHILD_GOAL, OTHER_GYM_CHILD_GOAL],
+    ['gym 1 org admin', asGymAdmin, GYM_CHILD_GOAL, OTHER_GYM_CHILD_GOAL],
+    ['gym 2 coach', asOtherCoach, OTHER_GYM_CHILD_GOAL, GYM_CHILD_GOAL],
+    ['gym 2 org admin', asOtherAdmin, OTHER_GYM_CHILD_GOAL, GYM_CHILD_GOAL],
+  ])('%s', async (_who, as, own, other) => {
+    const read = await readAs(as(), SHARED_ID_ATHLETE);
+    expect(read.personalStatus).toBe(200);
+    expect(read.listStatus).toBe(200);
+    expect(read.personalText).toContain(own);
+    expect(read.personalText).not.toContain(other);
+    expect(read.listText).toContain(own);
+    expect(read.listText).not.toContain(other);
   });
 });
 
@@ -375,6 +426,17 @@ describe('another gym reads nothing', () => {
       expect(text).not.toContain(SMART_TITLE);
     }
   });
+
+  test.each([
+    ['a coach of another gym', asOtherCoach],
+    ['the organization admin of another gym', asOtherAdmin],
+  ])('%s asking POST /goals/get for the goal by its id is sent none of it', async (_who, as) => {
+    mockRequirePrincipal.mockResolvedValue(as());
+    const response = await getGoalPOST(send('/api/pilot/goals/get', 'POST', { goal_id: ownWordsGoalId }));
+    const text = await response.text();
+    expect(text).not.toContain(OWN_WORDS);
+    expect(text).not.toContain(WHY);
+  });
 });
 
 describe('the guardian reads the goals without the why line', () => {
@@ -389,6 +451,16 @@ describe('the guardian reads the goals without the why line', () => {
     expect(read.listText).not.toContain(WHY);
     expect(read.personalText).not.toContain('why_it_matters');
     expect(read.listText).not.toContain('why_it_matters');
+    // "I did it" reaches the family too.
+    const personal = JSON.parse(read.personalText) as { items: Array<Record<string, unknown>> };
+    expect(typeof personal.items.find((goal) => goal.goal_id === ownWordsGoalId)?.reached_at).toBe('string');
+  });
+
+  test('POST /goals/get refuses the guardian and sends no why line', async () => {
+    mockRequirePrincipal.mockResolvedValue(asGuardian());
+    const response = await getGoalPOST(send('/api/pilot/goals/get', 'POST', { goal_id: ownWordsGoalId }));
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain(WHY);
   });
 });
 
@@ -403,7 +475,7 @@ describe('nobody but the athlete writes', () => {
 
     const responses = [
       await personalPOST(send('/api/pilot/goals/personal', 'POST', { athlete_id: ATHLETE, own_words: 'Written by staff', why_it_matters: 'x' })),
-      await personalPATCH(send('/api/pilot/goals/personal', 'PATCH', { athlete_id: ATHLETE, goal_id: ownWordsGoalId })),
+      await personalPATCH(send('/api/pilot/goals/personal', 'PATCH', { athlete_id: ATHLETE, goal_id: stillOpenGoalId })),
       await goalPOST(send('/api/pilot/goals', 'POST', { ...smartPayload(90), goal_id: 'goal-staff-written' })),
       await goalUpdatePOST(send('/api/pilot/goals/update', 'POST', smartPayload(90))),
     ];

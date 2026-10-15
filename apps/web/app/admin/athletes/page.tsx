@@ -891,6 +891,7 @@ function AthleteRecordsConsoleContent() {
               key={`goals-${selected.athlete_id}`}
               athleteId={selected.athlete_id}
               audience="coach"
+              athleteName={selected.full_name}
             />
 
             <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">

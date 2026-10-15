@@ -108,6 +108,7 @@ describe('coach athlete view: the athlete\'s goals, read-only', () => {
     await pick('ath_1');
 
     const block = await screen.findByTestId('athlete-goals');
+    expect(within(block).getByRole('heading', { name: 'Goals they have set — First Athlete' })).toBeTruthy();
     expect(await within(block).findByText('Own words of ath_1')).toBeTruthy();
     expect(within(block).getByText('Why it matters to them: The reason of ath_1')).toBeTruthy();
     expect(await within(block).findByText('Reported progress: 40%')).toBeTruthy();

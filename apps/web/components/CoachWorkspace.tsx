@@ -4096,7 +4096,14 @@ export default function CoachWorkspace() {
                     read and never the family's. Keyed by athlete; the routes
                     decide access. */}
                 {athleteChosenByCoach && selectedAthleteId && (
-                  <AthleteGoalsReadOnly key={`goals-${selectedAthleteId}`} athleteId={selectedAthleteId} audience="coach" />
+                  <div className="md:col-span-2">
+                    <AthleteGoalsReadOnly
+                      key={`goals-${selectedAthleteId}`}
+                      athleteId={selectedAthleteId}
+                      audience="coach"
+                      athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}
+                    />
+                  </div>
                 )}
 
                 {/* Open Tasks */}

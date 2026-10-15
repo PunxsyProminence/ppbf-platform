@@ -675,6 +675,7 @@ describe('the goals block', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /correct record/i }));
     const block = await screen.findByTestId('athlete-goals');
+    expect(within(block).getByRole('heading', { name: 'Goals they have set — Dawn Kellerman' })).toBeDefined();
     expect(await within(block).findByText('Own words of ath-001')).toBeDefined();
     expect(within(block).getByText('Why it matters to them: The reason of ath-001')).toBeDefined();
     expect(within(block).getByText(/Did it/)).toBeDefined();
