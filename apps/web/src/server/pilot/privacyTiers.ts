@@ -154,7 +154,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'athletes.dob': {
     tier: 'athlete_record',
-    enforcedBy: ['entities.ts#getAthletesForCoach'],
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'entities.ts#getAthletesForCoach'],
     note:
       'The roster list (athletes/list, getAthletesForCoach) returns dob to every coach of the athlete\'s gym '
       + 'since issue #1480 PR C (OD-2026-10-11-007), matching athletes/get + athletes/update + intake/domain-get, '
@@ -162,29 +162,27 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'had no assignment or live coverage on. profile/roster selects dob to feed the portrait age gate and never '
       + 'returns it. coach/development-block-templates reads it through developmentBlockTemplates.ts after '
       + 'assertActorCanAccessAthlete and returns only an adult/not-adult boolean. Organization admins still read it org-wide, which is exactly what keeps this '
-      + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
-      + 'wherever age gates anything (wallDisplay.ts#isMinor).',
+      + 'athlete_record rather than minor_circle. getAthletesForCoach now bounds only the gym and deletion. '
+      + 'A null (unrecorded) dob is treated as a minor wherever age gates anything (wallDisplay.ts#isMinor).',
   },
   'athletes.weight_class': {
     tier: 'organization',
     enforcedBy: ['organizationScope.convention.test.ts'],
     note:
       'A record about a person\'s body; the public floor is separately held by the wall denylist '
-      + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list, and left that way on '
-      + 'purpose when dob and emergency_contact were narrowed: a coach matching people for sparring or '
-      + 'picking up cover needs it across the gym, and it identifies a body far less than a birth date '
-      + 'or a guardian\'s phone number does.',
+      + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list: a coach matching people '
+      + 'for sparring or picking up cover needs it across the gym.',
   },
   'athletes.gym_status': {
     tier: 'organization',
     enforcedBy: ['organizationScope.convention.test.ts'],
     note:
-      'Public floor held by the wall denylist; org-wide for staff through athletes/list, kept that way '
-      + 'deliberately in the same field split -- who is active is what a coach plans a floor from.',
+      'Public floor held by the wall denylist; org-wide for staff through athletes/list -- who is '
+      + 'active is what a coach plans a floor from.',
   },
   'athletes.emergency_contact': {
     tier: 'athlete_record',
-    enforcedBy: ['entities.ts#getAthletesForCoach'],
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'entities.ts#getAthletesForCoach'],
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
       + 'public read (wall denylist). Readable by every coach of the athlete\'s gym, on the roster list and per '

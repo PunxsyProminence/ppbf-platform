@@ -23,8 +23,7 @@ export interface PilotAthlete {
 }
 
 /**
- * One athlete as a COACH reads them off the roster list, which is not the same
- * row an organization admin reads.
+ * One athlete as a COACH reads them off the roster list.
  *
  * Since issue #1480 PR C (OD-2026-10-11-007, "lets make it coaches to whole
  * gym") a coach reads every live athlete of their own gym with dob and
@@ -32,10 +31,8 @@ export interface PilotAthlete {
  * two fields were null for athletes the coach had no assignment or live
  * coverage on. Both stay nullable: a row may have no recorded dob.
  *
- * `null` rather than an absent key, deliberately. The key stays present so a
- * client cannot tell "redacted" apart from "this build predates the field" by
- * shape, and null is already the value this codebase treats as fail-safe --
- * wallDisplay.ts#isMinor reads a null dob as a minor, never as an adult.
+ * A null dob means none is recorded; wallDisplay.ts#isMinor reads it as a
+ * minor, never as an adult.
  */
 export type CoachRosterAthlete = Omit<PilotAthlete, 'dob' | 'emergency_contact'> & {
   dob: string | null;

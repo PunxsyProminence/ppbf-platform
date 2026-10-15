@@ -105,9 +105,8 @@ async function findFreePort(): Promise<number> {
  * other org gets an athlete carrying the SAME athlete_id as a covered one, so
  * a cross-tenant leak has something to leak.
  *
- * `dropCoverageTable` reproduces the database an operator has not applied the
- * coach_coverage migration to yet, which is the state the 42P01 fallback
- * exists for.
+ * `dropCoverageTable` reproduces a database without the coach_coverage
+ * migration, which the roster no longer reads at all (issue #1480 PR C).
  */
 async function freshDatabase(name: string, { dropCoverageTable = false }: { dropCoverageTable?: boolean } = {}): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
@@ -244,7 +243,7 @@ describe('the list stays whole', () => {
 
       expect(items.map((item) => item.athlete_id).sort()).toEqual([ATH_COVERED, ATH_MINE, ATH_THEIRS]);
       // Name and gym status are what a coach plans a floor and picks up cover
-      // from, so they are present for every row, related or not.
+      // from, so they are present for every row.
       for (const item of items) {
         expect(item.full_name).toBe(`Name ${item.athlete_id}`);
         expect(item.gym_status).toBe('active');
