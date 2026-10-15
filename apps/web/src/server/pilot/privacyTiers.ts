@@ -248,9 +248,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'add a note of their own instead of rewriting the athlete\'s.'
       + '\n\n'
       + 'THE ENFORCED TIER IS athlete_record. The dedicated staff route (A-FIN-08) is gated by '
-      + 'assertActorCanAccessAthlete -- coach of record, a covering coach with a live grant, or '
-      + 'an organization admin -- since OD-2026-10-05-024 ruling 2 (Jason 2026-10-05), which '
-      + 'superseded the 2026-09-25 "any coach or admin in the organization" read. '
+      + 'assertActorCanAccessAthlete -- since issue #1480 (OD-2026-10-11-007) every coach of the '
+      + 'athlete\'s gym, or an organization admin. That replaced OD-2026-10-05-024 ruling 2 '
+      + '(coach of record or a covering coach with a live grant). '
       + '/api/pilot/sessions/list returns the whole session record behind the same gate.'
       + '\n\n'
       + 'LINKED GUARDIANS ARE EXCLUDED. The passbook omits the key entirely for a parent '
@@ -422,7 +422,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '"lets make it coaches to whole gym", replacing OD-2026-10-05-024 ruling 2) admits every coach of '
       + 'the athlete\'s gym and the organization admin, for an adult and a youth alike. bodyMassVisibleTo '
       + 'narrows a YOUTH (and an athlete with no recorded date of birth) behind that gate only by role; '
-      + 'whether a youth\'s weight should stay with the coach of record is an open owner question on #1480. Parents read it for a youth only.',
+      + 'a youth\'s weight follows the same whole-gym rule (OD-2026-10-12-016, Jason: "Any coach all coaches '
+      + 'coach all athletes"). Parents read it for a youth only.',
   },
   'training_holds.reason_category': {
     tier: 'organization',
@@ -581,7 +582,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note:
       'A self-talk phrase the athlete typed in their own words, minors included (owner answers '
       + '2026-10-04). Every read goes through readMentalSkills, which calls assertActorCanAccessAthlete '
-      + 'before selecting: self, linked guardian, coach of record or covering coach, org admin. '
+      + 'before selecting: self, linked guardian, any coach of the athlete\'s gym (issue #1480), org admin. '
       + 'Writes are self-only. The text is kept out of audit details.',
   },
 };

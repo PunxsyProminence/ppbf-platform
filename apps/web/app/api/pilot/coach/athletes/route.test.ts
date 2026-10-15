@@ -18,8 +18,10 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * projection with field redaction, not an access boundary). Built on that, a
  * picker offers a coach athletes the server will refuse.
  *
- * So the assertions below are about which of the two reads decides membership,
- * not merely about the shape of the response.
+ * Since issue #1480 the gate admits a coach to every live athlete of their own
+ * gym, so the membership read is the organization's actionable roster for a
+ * coach and an organization admin alike. The assertions below are about which
+ * read decides membership, not merely about the shape of the response.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -70,69 +72,46 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
 
 const getRequest = () => new NextRequest('http://localhost/api/pilot/coach/athletes');
 
-test('a coach gets exactly the athletes the access contract grants, not the gym', async () => {
+/* A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007, issue #1480). The
+   gate admits a coach to every live athlete of their own organization, so the
+   picker offers that set -- the organization's actionable roster, the same
+   read an organization admin gets. Before #1480's PR B this was "my athletes"
+   (coach of record UNION active coverage), which hid from a coach the athletes
+   every write route now lets them act on. */
+test('a coach with no assigned athletes is offered every live athlete of their own gym', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
-  // The display projection knows all three; the access contract grants one.
-  mockForCoach.mockResolvedValue([
+  mockByOrg.mockResolvedValue([
     { athlete_id: 'ath-1', full_name: 'Rosa Delgado' },
     { athlete_id: 'ath-2', full_name: 'Marcus Webb' },
     { athlete_id: 'ath-3', full_name: 'Dani Ortiz' },
   ]);
-  mockCoachIds.mockResolvedValue(['ath-1']);
+  // Nobody is assigned to this coach and nobody is covered.
+  mockCoachIds.mockResolvedValue([]);
 
   const response = await GET(getRequest());
   const payload = await response.json();
 
   expect(response.status).toBe(200);
-  expect(mockCoachIds).toHaveBeenCalledWith('org-1', 'acct-coach-a');
-  expect(payload.items).toEqual([{ athlete_id: 'ath-1', full_name: 'Rosa Delgado' }]);
-  // The two athletes this coach cannot write for are not offered as options.
-  expect(JSON.stringify(payload)).not.toContain('ath-2');
-  expect(JSON.stringify(payload)).not.toContain('Marcus Webb');
-});
-
-test('active coverage puts a covered athlete on the list', async () => {
-  // athleteIdsForCoach is coach-of-record UNION active, unexpired coverage.
-  // This route does not re-implement that union and must not: it asks.
-  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach-b' }));
-  mockForCoach.mockResolvedValue([
+  expect(mockByOrg).toHaveBeenCalledWith('org-1');
+  expect(payload.items).toEqual([
     { athlete_id: 'ath-1', full_name: 'Rosa Delgado' },
     { athlete_id: 'ath-2', full_name: 'Marcus Webb' },
+    { athlete_id: 'ath-3', full_name: 'Dani Ortiz' },
   ]);
-  mockCoachIds.mockResolvedValue(['ath-2', 'ath-1']);
+});
+
+test("the coach's picker does not consult the my-athletes contract", async () => {
+  // Assignment and coverage no longer decide who is offered: the list is the
+  // gym's, whatever athleteIdsForCoach would say.
+  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach-b' }));
+  mockByOrg.mockResolvedValue([{ athlete_id: 'ath-2', full_name: 'Marcus Webb' }]);
+  mockCoachIds.mockResolvedValue(['ath-1']);
 
   const payload = await (await GET(getRequest())).json();
 
-  expect(payload.items.map((item: { athlete_id: string }) => item.athlete_id).sort())
-    .toEqual(['ath-1', 'ath-2']);
-});
-
-test('expired or revoked coverage takes the athlete off the list', async () => {
-  // The same coach as above, after the coverage grant lapsed: the contract
-  // stops returning the id, so the option disappears with it.
-  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach-b' }));
-  mockForCoach.mockResolvedValue([
-    { athlete_id: 'ath-1', full_name: 'Rosa Delgado' },
-    { athlete_id: 'ath-2', full_name: 'Marcus Webb' },
-  ]);
-  mockCoachIds.mockResolvedValue(['ath-2']);
-
-  const payload = await (await GET(getRequest())).json();
-
+  expect(mockCoachIds).not.toHaveBeenCalled();
+  expect(mockForCoach).not.toHaveBeenCalled();
   expect(payload.items).toEqual([{ athlete_id: 'ath-2', full_name: 'Marcus Webb' }]);
-});
-
-test('a coach with no assigned athletes gets an empty list, not the roster', async () => {
-  mockRequirePrincipal.mockResolvedValue(principal({}));
-  mockForCoach.mockResolvedValue([
-    { athlete_id: 'ath-1', full_name: 'Rosa Delgado' },
-    { athlete_id: 'ath-2', full_name: 'Marcus Webb' },
-  ]);
-  mockCoachIds.mockResolvedValue([]);
-
-  const payload = await (await GET(getRequest())).json();
-
-  expect(payload.items).toEqual([]);
 });
 
 test('an organization admin reads the organization, through the ACTIONABLE organization read', async () => {
@@ -162,17 +141,18 @@ test('the organization read is scoped to the principal\'s organization, never a 
   expect(mockByOrg).not.toHaveBeenCalledWith('org-theirs');
 });
 
-test('the coach read is scoped to the principal\'s organization and account, never supplied ones', async () => {
+test('the coach read is scoped to the principal\'s organization, never a supplied one', async () => {
+  // Another gym's athletes are never offered: the organization is the
+  // principal's own, whatever the query string says.
   mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-mine', accountId: 'acct-mine' }));
-  mockForCoach.mockResolvedValue([]);
-  mockCoachIds.mockResolvedValue([]);
+  mockByOrg.mockResolvedValue([]);
 
   await GET(new NextRequest(
     'http://localhost/api/pilot/coach/athletes?organization_id=org-theirs&coach_account_id=acct-theirs',
   ));
 
-  expect(mockCoachIds).toHaveBeenCalledWith('org-mine', 'acct-mine');
-  expect(mockForCoach).toHaveBeenCalledWith('org-mine', 'acct-mine');
+  expect(mockByOrg).toHaveBeenCalledWith('org-mine');
+  expect(mockByOrg).not.toHaveBeenCalledWith('org-theirs');
 });
 
 test.each(['athlete', 'parent', 'board', 'platform_owner', 'staff'] as const)(
@@ -192,7 +172,7 @@ test('nothing but an id and a name leaves this route', async () => {
   // A picker needs two fields. Passing the roster row through would make this
   // a second athlete-record read on a surface that asked for a dropdown.
   mockRequirePrincipal.mockResolvedValue(principal({}));
-  mockForCoach.mockResolvedValue([{
+  mockByOrg.mockResolvedValue([{
     athlete_id: 'ath-1',
     full_name: 'Rosa Delgado',
     dob: '2011-04-02',
@@ -200,7 +180,6 @@ test('nothing but an id and a name leaves this route', async () => {
     gym_status: 'Foundations',
     coach_id: 'acct-coach-a',
   }]);
-  mockCoachIds.mockResolvedValue(['ath-1']);
 
   const body = JSON.stringify(await (await GET(getRequest())).json());
 

@@ -2,10 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { attendanceOnDay } from '@/src/server/pilot/attendancePrecedence';
-import {
-  coachAuthorizedRoster,
-  organizationActionableRoster,
-} from '@/src/server/pilot/coachAthleteRoster';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { gymDayIso } from '@/src/lib/gymTime';
 
@@ -40,22 +37,20 @@ export const dynamic = 'force-dynamic';
  * training" are different claims and only one of them has evidence. The
  * surface names that state itself.
  *
- * The roster is the same one the picker uses, through the same contract: a
- * coach gets athleteIdsForCoach (coach of record UNION active, unexpired
- * coverage), an organization admin gets the organization's actionable roster.
- * No role is broadened here, and the athlete ids are never taken from the
- * request -- a caller who could name them could name someone else's child.
+ * The roster is the same one the picker uses, through the same contract. A
+ * coach's reach is the whole gym (OD-2026-10-11-007, issue #1480), so a coach
+ * and an organization admin both get the organization's actionable roster --
+ * every live athlete of their own gym. The athlete ids are never taken from
+ * the request -- a caller who could name them could name another gym's child.
  */
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
-    const roster = principal.role === 'coach'
-      ? await coachAuthorizedRoster(principal.organizationId, principal.accountId)
-      : isOrganizationAdminRole(principal.role)
-        ? await organizationActionableRoster(principal.organizationId)
-        : [];
+    const roster = principal.role === 'coach' || isOrganizationAdminRole(principal.role)
+      ? await organizationActionableRoster(principal.organizationId)
+      : [];
 
     const day = gymDayIso();
     if (!day) {
@@ -75,8 +70,8 @@ export async function GET(request: NextRequest) {
        The workspace roster comes from /api/pilot/athletes/list, which returns
        EVERY athlete in the organization to a coach and merely redacts dob and
        emergency_contact for the ones they are unrelated to -- it is a display
-       projection and says so. This route asks the access contract instead, so
-       it is deliberately NARROWER.
+       projection and says so. This route asks the access contract instead,
+       which excludes deleted athletes and can be narrower than that list.
 
        Without saying which athletes it covered, a caller cannot tell "this
        athlete has no mark today" from "nobody asked about this athlete", and

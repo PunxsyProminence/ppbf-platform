@@ -364,7 +364,8 @@ export default function SportsMedicinePage() {
         const roster = rosterPayload.items as RosterAthlete[];
 
         // One clearance read and one hold read per athlete, through the same
-        // routes that enforce coach-of-record/coverage access server-side. A
+        // routes that enforce the access gate server-side (a coach: the whole
+        // gym, issue #1480). A
         // failed read renders as 'unavailable', never as cleared.
         const built = await Promise.all(
           roster.map(async (athlete): Promise<ClearanceRow> => {
@@ -716,7 +717,7 @@ export default function SportsMedicinePage() {
               shows as having none; nothing is held back from them because of it.
             </p>
             <p className="mt-[var(--s3)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-              You can pause or narrow training here for an athlete you coach or cover. Placing a hold notifies
+              You can pause or narrow training here for any athlete in your gym. Placing a hold notifies
               an organization admin in the same breath, and the sentence you write is the one that athlete and
               their guardian read.
             </p>
@@ -766,7 +767,7 @@ export default function SportsMedicinePage() {
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">No athletes on your roster</div>
-                <p className="empty-msg mx-auto">Athletes you coach (or cover) will appear here with their clearance state.</p>
+                <p className="empty-msg mx-auto">Every athlete in your gym will appear here with their clearance state.</p>
               </div>
             </div>
           ) : (

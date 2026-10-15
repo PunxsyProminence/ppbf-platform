@@ -160,8 +160,9 @@ export default function SparringTelemetryPage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [actor, setActor] = useState<LogActor>('unknown');
   /* The picker's options, from the CENTRAL access contract by way of
-     /api/pilot/coach/athletes -- coach of record UNION active coverage, the
-     same union the observations route's assertActorCanAccessAthlete applies.
+     /api/pilot/coach/athletes -- for a coach, every live athlete of their own
+     gym (issue #1480), the set the observations route's
+     assertActorCanAccessAthlete admits.
      Deliberately NOT /api/pilot/athletes/list: for a coach that route returns
      every athlete in the gym (a display projection with field redaction), so a
      picker built on it would offer children this coach cannot log for and the
@@ -422,7 +423,7 @@ export default function SparringTelemetryPage() {
                   <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                     <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                       Your athletes could not be loaded, so there is nobody to choose. This is not a
-                      statement that you have none assigned -- reload and try again. Write the session down
+                      statement that your gym has none -- reload and try again. Write the session down
                       on paper in the meantime; do not guess an athlete here.
                     </p>
                   </div>
@@ -430,8 +431,8 @@ export default function SparringTelemetryPage() {
 
                 {rosterState === 'loaded' && authorizedAthletes.length === 0 && (
                   <p className="m-0 text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-                    You are not the coach of record for any athlete and hold no active coverage, so there is
-                    nobody you can log a session for. An administrator assigns athletes and grants coverage.
+                    There are no active athletes in your gym yet, so there is nobody you can log a session
+                    for. An administrator adds athletes to the gym.
                   </p>
                 )}
               </div>
