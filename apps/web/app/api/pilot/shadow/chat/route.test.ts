@@ -42,6 +42,7 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { fileUnansweredShadowQuestion } from '@/src/server/pilot/shadowResearchFiling';
 import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
+import { fileShadowDisclosureEscalation } from '@/src/server/pilot/shadowDisclosure';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -167,6 +168,13 @@ jest.mock('@/src/server/pilot/shadowRateLimit', () => {
 jest.mock('@/src/server/pilot/shadowResearchFiling', () => ({
   ...jest.requireActual('@/src/server/pilot/shadowResearchFiling'),
   fileUnansweredShadowQuestion: jest.fn(async () => true),
+}));
+// Only the filing is mocked: detection and the high-risk mark run for real, so
+// what these tests see is what the route decides. The real-Postgres half is
+// shadowDisclosureRoute.pg.test.ts.
+jest.mock('@/src/server/pilot/shadowDisclosure', () => ({
+  ...jest.requireActual('@/src/server/pilot/shadowDisclosure'),
+  fileShadowDisclosureEscalation: jest.fn(async () => null),
 }));
 jest.mock('@/src/server/pilot/boardSummary', () => ({ getBoardSummary: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
@@ -3552,5 +3560,105 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
     expect(body.response).toBe(TAUGHT_ANSWER);
     expect(body.highRiskTopic).toBeUndefined();
     expect(reviews).toHaveLength(0);
+  });
+});
+
+// F-076: an athlete's disclosure in SHADOW chat files the in-app safety
+// escalation (OD-2026-10-01-008 s3), is marked high-risk so the admin review
+// row is owed and the words stay out of research, and is ANSWERED exactly as
+// before (OD-2026-10-10-007): no banner, no withheld reply.
+describe('an athlete disclosure in SHADOW chat (F-076)', () => {
+  const ANSWER = 'You did the right thing saying it. Tell an adult you trust today.';
+  const SENTENCES: ReadonlyArray<{ message: string; staff: boolean }> = [
+    { message: 'My coach hits me and I am scared to go to the gym', staff: true },
+    { message: 'My coach touched me and told me not to tell anyone', staff: true },
+    { message: 'my coach makes me stay behind after everyone leaves', staff: true },
+    { message: 'My dad hits me', staff: false },
+    { message: 'I want to kill myself', staff: false },
+  ];
+  const mockFileDisclosure = jest.mocked(fileShadowDisclosureEscalation);
+
+  async function askAsAthlete(message: string, role: PilotPrincipal['role'] = 'athlete') {
+    mockRequirePrincipal.mockResolvedValue(principal({ role, athleteId: role === 'athlete' ? 'ATH-SELF' : null }));
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: ANSWER } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    const response = await POST(postRequest({ message }));
+    return { response, body: await response.json(), providerCalled: fetchSpy.mock.calls.length > 0 };
+  }
+
+  test.each(SENTENCES)('"$message": answered unchanged, one escalation filed, no research row', async ({ message, staff }) => {
+    const { response, body, providerCalled } = await askAsAthlete(message);
+
+    // SHADOW still answers, with nothing added.
+    expect(response.status).toBe(200);
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(body.filtered).toBe(false);
+    expect(body.requiresHumanReview).toBe(false);
+    expect(body.highRiskTopic).toBeUndefined();
+    expect(body.handoff ?? null).toBeNull();
+
+    // The escalation: once, the sender's own record, the stored conversation.
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-session',
+      athleteId: 'ATH-SELF',
+      conversationId: 'conversation-1',
+      disclosure: expect.objectContaining({ namesGymStaff: staff }),
+    }));
+
+    // The admin SHADOW review row, under its own category.
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'safeguarding_disclosure',
+      severity: 'high',
+      conversationId: 'conversation-1',
+    }));
+
+    // The words are not filed as a research "Library gap".
+    expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    expect(body.researchFiled).toBe(false);
+  });
+
+  test('CONTROL: a plain training question files nothing and is filed as research as before', async () => {
+    const { body } = await askAsAthlete('How do I throw a better jab?');
+
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  test('the same sentence from a coach files no disclosure escalation', async () => {
+    await askAsAthlete('My dad hits me', 'coach');
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+  });
+
+  test('a failed filing changes nothing the athlete sees', async () => {
+    const baseline = await askAsAthlete('My dad hits me');
+    jest.clearAllMocks();
+    mockFileDisclosure.mockRejectedValueOnce(new Error('insert failed'));
+    const failed = await askAsAthlete('My dad hits me');
+
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    expect(failed.response.status).toBe(baseline.response.status);
+    // Ids and timestamps differ per request by construction; everything else must not.
+    const strip = (body: Record<string, unknown>) => Object.fromEntries(
+      Object.entries(body).filter(([key]) => !['messageId', 'createdAt', 'conversationId'].includes(key)),
+    );
+    expect(strip(failed.body)).toEqual(strip(baseline.body));
+  });
+
+  test('a throttled request files nothing (the chat limits bound the filings)', async () => {
+    mockEnforceRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(60, 'chat'));
+    const { response } = await askAsAthlete('My dad hits me');
+
+    expect(response.status).toBe(429);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
   });
 });
