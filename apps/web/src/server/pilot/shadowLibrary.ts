@@ -1137,6 +1137,10 @@ export async function createShadowLibraryChunk(input: {
   excerptLocator?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryChunkRow> {
+  // The retention purge's mark is its own to write (F-086), on chunks as on documents.
+  if (input.metadata && Object.hasOwn(input.metadata, 'subject_purged_at')) {
+    throw new ValidationError(reservedProvenanceMessage('subject_purged_at'));
+  }
   const excerptLocator = input.excerptLocator?.trim() || null;
   const chunkId = `chunk_${randomUUID()}`;
 

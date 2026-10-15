@@ -51,6 +51,7 @@ jest.mock('./shadowEmbeddings', () => ({
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import {
   createShadowLibraryChunk,
+  createShadowLibraryDocument,
   listShadowLibraryReviewQueue,
   reviewShadowLibraryDocument,
   searchShadowLibrary,
@@ -303,6 +304,31 @@ describe('a Library document or chunk the retention purge held (F-086)', () => {
       [HELD],
     );
     expect(chunks.rows[0].n).toBe(1);
+  });
+
+  test('nobody but the purge can write the mark: a document or chunk carrying it is refused', async () => {
+    await expect(createShadowLibraryDocument({
+      organizationId: ORG,
+      actorAccountId: ADMIN,
+      actorRole: 'organization_admin',
+      sourceId: SOURCE,
+      documentName: 'Self-marked',
+      metadata: { subject_purged_at: '2026-10-15T00:00:00Z' },
+    })).rejects.toThrow('metadata.subject_purged_at is set only by the retention purge');
+    await expect(createShadowLibraryChunk({
+      organizationId: ORG,
+      actorAccountId: ADMIN,
+      actorRole: 'organization_admin',
+      documentId: LIVE,
+      ordinal: 9,
+      textContent: 'Self-marked chunk',
+      metadata: { subject_purged_at: '2026-10-15T00:00:00Z' },
+    })).rejects.toThrow('metadata.subject_purged_at is set only by the retention purge');
+    const rows = await requireClient().query(
+      `select (select count(*) from pilot.shadow_library_documents where document_name = 'Self-marked')
+            + (select count(*) from pilot.shadow_library_chunks where text_content = 'Self-marked chunk') as n`,
+    );
+    expect(Number(rows.rows[0].n)).toBe(0);
   });
 
   test('a held document cannot be attached to a research submission; a live one can', async () => {

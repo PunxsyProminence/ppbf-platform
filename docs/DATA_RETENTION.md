@@ -452,8 +452,9 @@ citation, any review change to the document, a new chunk on it, and attaching it
 submission. A row already marked keeps its first date. So a roster that
 reissues the id never puts the purged child's text in front of the new child (the deletion mark
 those readers otherwise rely on goes with the athlete row). Pinned by
-`heldLibraryDocuments.pg.test.ts` (the new-citation filter by its own test once #1614 lands) and
-the marking by `libraryDocumentPurge.pg.test.ts`. **Limits:** re-running the research importer
+`heldLibraryDocuments.pg.test.ts` and `shadowEvidenceSuppression.pg.test.ts` (a new citation),
+and the marking by `libraryDocumentPurge.pg.test.ts`. The mark is the purge's alone: a document
+or chunk registered with `subject_purged_at` in its metadata is refused. **Limits:** re-running the research importer
 (`import-shadow-research.mjs`) on the same document or chunk ids overwrites `metadata` and drops
 the mark (not guarded). **Not yet built:** nothing revisits a held document once the child's row
 is gone, so it keeps the child's `subject_id` with no end date; a later sweep deleting marked rows
