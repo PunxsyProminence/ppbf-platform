@@ -17,7 +17,7 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt: the table, its primary key over (gym, goal),
 // its athlete foreign key over (gym, athlete) with the cascade, both writer foreign keys with
-// set null, every named check, and the guard trigger. Each is looked up by name ON its own
+// set null, every named check, the per-child index, and the guard trigger. Each is looked up by name ON its own
 // table, so a same-named object elsewhere does not pass.
 const READINESS_QUERY = `
   select
@@ -68,6 +68,18 @@ const READINESS_QUERY = `
            'pilot_family_goals_updated_by_role_check'
          )
     ) = 6 as checks_ready,
+    exists (
+      -- One child's goals newest first: exactly (gym, athlete, created_at desc), not partial.
+      select 1 from pg_index i
+       where i.indexrelid = to_regclass('pilot.idx_family_goals_athlete')
+         and i.indrelid = to_regclass('pilot.family_goals')
+         and i.indpred is null and i.indexprs is null
+         and (
+           select array_agg(a.attname::text order by k.ord)
+             from unnest(i.indkey::int2[]) with ordinality as k(attnum, ord)
+             join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.attnum
+         ) = array['organization_id', 'athlete_id', 'created_at']
+    ) as athlete_index_ready,
     exists (
       -- BEFORE (bit 2), ROW (bit 1), on DELETE (bit 8) and UPDATE (bit 16), firing in ordinary
       -- sessions (O or A; R fires only under replication, D never), and calling this

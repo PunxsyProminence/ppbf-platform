@@ -260,7 +260,10 @@ describe('family goals migration (PH-05)', () => {
       }
       const { rows: [{ goal_id: goalId }] } = await goal(client);
       await expect(
-        client.query(`update pilot.family_goals set updated_by_role = 'athlete' where goal_id = $1::uuid`, [goalId]),
+        client.query(
+          `update pilot.family_goals set updated_by_account_id = $2, updated_by_role = 'athlete' where goal_id = $1::uuid`,
+          [goalId, GUARDIAN],
+        ),
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_updated_by_role_check' });
       const left = await client.query('select count(*)::int as n from pilot.family_goals');
       expect(left.rows[0].n).toBe(1);
@@ -299,10 +302,47 @@ describe('family goals migration (PH-05)', () => {
           code: '23514', constraint: 'pilot_family_goals_fixed_writer',
         });
       }
-      // What the family may change does change.
-      await client.query(`update pilot.family_goals set title = 'Get to the gym three times a week', target_date = null, retired_at = now()`);
+      // What the family may change does change, naming who changed it.
+      await client.query(
+        `update pilot.family_goals set title = 'Get to the gym three times a week', target_date = null, retired_at = now(),
+                updated_by_account_id = $1, updated_by_role = 'parent'`,
+        [GUARDIAN],
+      );
       const row = await client.query('select title, target_date, retired_at is not null as retired from pilot.family_goals');
       expect(row.rows).toEqual([{ title: 'Get to the gym three times a week', target_date: null, retired: true }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a change names its editor; retiring is final; a done time is not rewritten, and unticking records a new one', async () => {
+    const client = await freshDatabase('fgoal_history');
+    try {
+      const { rows: [{ goal_id: goalId }] } = await goal(client);
+      const edit = (set: string) => client.query(
+        `update pilot.family_goals set ${set}, updated_by_account_id = $2, updated_by_role = 'parent' where goal_id = $1::uuid`,
+        [goalId, GUARDIAN],
+      );
+
+      // No editor named: refused, by hand, whatever the change.
+      await expect(client.query(`update pilot.family_goals set title = 'New title'`)).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_goals_editor_named',
+      });
+
+      await edit(`state = 'completed', completed_at = '2026-10-20T15:00:00Z'`);
+      await expect(edit(`completed_at = '2026-09-01T15:00:00Z'`)).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_goals_completed_kept',
+      });
+      // Unticked, then ticked again: the new time is the one recorded.
+      await edit(`state = 'active', completed_at = null`);
+      await edit(`state = 'completed', completed_at = '2026-10-22T15:00:00Z'`);
+      const done = await client.query('select completed_at from pilot.family_goals');
+      expect(done.rows[0].completed_at.toISOString()).toBe('2026-10-22T15:00:00.000Z');
+
+      await edit(`retired_at = '2026-10-23T15:00:00Z'`);
+      for (const set of ['retired_at = null', `retired_at = '2026-10-24T15:00:00Z'`]) {
+        await expect(edit(set)).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_retired_kept' });
+      }
     } finally {
       await client.end();
     }

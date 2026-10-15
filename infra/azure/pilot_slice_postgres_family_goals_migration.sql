@@ -11,18 +11,24 @@
 -- PROGRESS IS A RECORDED EVENT, NOT A PERCENTAGE. A goal is 'active' or
 -- 'completed', and completed_at is when it was marked done. The database holds
 -- the two together: completed exactly when completed_at is set (PH-05 Q-A
--- default A). Nothing here stores a number a person did not record.
+-- default A). Nothing here stores a number a person did not record. The time
+-- is not rewritten while the goal stays done; unticking it (back to active,
+-- completed_at cleared) is allowed, as the task Done box is (PH-05 Q-C
+-- default A), and ticking it again records the new time.
 --
 -- NOTHING IS HARD-DELETED. A goal taken down is retired (retired_at) and the
 -- application stops showing it (PH-05 Q-B default A). A direct DELETE is
 -- refused; one that arrives as a cascade (its athlete or gym going) runs from
 -- inside another trigger, so pg_trigger_depth() is above 1 and it goes through.
+-- Retiring is final: once retired_at is set it does not change.
 --
 -- WHO WROTE IT IS KEPT, and who reads what is the application's (PH-06): by
 -- OD-2026-10-12-024's principle a guardian reads the goals they created and
 -- those staff created for the child, never another guardian's; staff read all
 -- of a child's goals. created_by_account_id and created_by_role are what make
--- that enforceable, so they never change by hand. When the writer's account is
+-- that enforceable, so they never change by hand. Every later change by hand
+-- names who made it (updated_by_account_id and updated_by_role). When the
+-- writer's account is
 -- removed the goal stays, about the child, with no writer (set null), as a
 -- family reply does (D-9).
 --
@@ -118,6 +124,22 @@ begin
      or new.created_at is distinct from old.created_at then
     raise exception 'FAMILY_GOAL_WRITER_IS_KEPT'
       using errcode = '23514', constraint = 'pilot_family_goals_fixed_writer';
+  end if;
+
+  if old.retired_at is not null and new.retired_at is distinct from old.retired_at then
+    raise exception 'FAMILY_GOAL_RETIREMENT_IS_FINAL'
+      using errcode = '23514', constraint = 'pilot_family_goals_retired_kept';
+  end if;
+
+  if old.state = 'completed' and new.state = 'completed'
+     and new.completed_at is distinct from old.completed_at then
+    raise exception 'FAMILY_GOAL_COMPLETION_TIME_IS_KEPT'
+      using errcode = '23514', constraint = 'pilot_family_goals_completed_kept';
+  end if;
+
+  if new.updated_by_account_id is null or new.updated_by_role is null then
+    raise exception 'FAMILY_GOAL_CHANGE_NAMES_ITS_EDITOR'
+      using errcode = '23514', constraint = 'pilot_family_goals_editor_named';
   end if;
 
   new.updated_at := now();
