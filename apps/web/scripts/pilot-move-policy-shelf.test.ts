@@ -427,8 +427,8 @@ describe('dry run', () => {
     const out = runTool({
       ...cleanShelf(),
       evidenceGroups: [
-        { asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4, asking_accounts: 2, asking_accounts_active_in_target: 2 },
-        { asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0, asking_accounts: 1, asking_accounts_active_in_target: 0 },
+        { asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4, asking_accounts: 2, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 2 },
+        { asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0, asking_accounts: 1, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0 },
       ],
       options: dryRunOptions(),
     });
@@ -437,11 +437,13 @@ describe('dry run', () => {
       by_asking_organization: [
         {
           asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4,
-          asking_accounts: 2, asking_accounts_active_in_target: 2, all_asking_accounts_active_in_target: true,
+          asking_accounts: 2, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 2,
+          all_asking_accounts_active_in_target: true,
         },
         {
           asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0,
-          asking_accounts: 1, asking_accounts_active_in_target: 0, all_asking_accounts_active_in_target: false,
+          asking_accounts: 1, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0,
+          all_asking_accounts_active_in_target: false,
         },
       ],
     };
@@ -453,7 +455,8 @@ describe('dry run', () => {
     // Membership is asked of the target organization.
     const query = out.calls.find((c) => /^with citing as/i.test(c.text))!;
     expect(query.values![3]).toBe(TO);
-    expect(query.text).toMatch(/active_flag = true/);
+    expect(query.text).toMatch(/m\.active_flag = true/);
+    expect(query.text).toMatch(/a\.active_flag = true and a\.deleted_at is null/);
     expectRolledBackWithoutWrites(out);
   });
 

@@ -271,14 +271,25 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
   // on these counts (OD-2026-10-08-009 D22), so the plan groups them by asking
   // organization and says whether every asking account is an active member of
   // the target. Counts only: no account id leaves the database.
+  // "Active in target" is what sign-in would honour: an active membership of
+  // the target AND an account that is active and not deleted (auth.ts,
+  // deletedAccountSignIn.ts). A de-identified asker (anon_<uuid>, set by the
+  // retention purge) has no account and is counted on its own. Because of the
+  // CHECK, every citing item's asking organization is the from-organization,
+  // so in practice there is one group. message_citations counts citation
+  // rows: one answer citing three items counts three.
   const evidenceByAskingOrganization = (await client.query(
     `with citing as (
        select e.organization_id, e.bundle_id, e.account_id,
               (select count(*)::int from pilot.shadow_message_citations mc
                 where mc.evidence_id = e.evidence_id) as message_citations,
+              e.account_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' as deidentified,
               exists (
-                select 1 from pilot.organization_memberships m
+                select 1
+                  from pilot.organization_memberships m
+                  join pilot.accounts a on a.account_id = m.account_id
                  where m.account_id = e.account_id and m.organization_id = $4 and m.active_flag = true
+                   and a.active_flag = true and a.deleted_at is null
               ) as account_in_target
          from pilot.shadow_evidence_items e
         where e.source_id = any($1::text[]) or e.document_id = any($2::text[]) or e.chunk_id = any($3::text[])
@@ -288,6 +299,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
             count(distinct bundle_id)::int as bundles,
             coalesce(sum(message_citations), 0)::int as message_citations,
             count(distinct account_id)::int as asking_accounts,
+            count(distinct account_id) filter (where deidentified)::int as asking_accounts_deidentified,
             count(distinct account_id) filter (where account_in_target)::int as asking_accounts_active_in_target
        from citing
       group by organization_id
@@ -302,6 +314,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
       bundles: Number(row.bundles ?? 0),
       message_citations: Number(row.message_citations ?? 0),
       asking_accounts: askingAccounts,
+      asking_accounts_deidentified: Number(row.asking_accounts_deidentified ?? 0),
       asking_accounts_active_in_target: inTarget,
       all_asking_accounts_active_in_target: askingAccounts > 0 && inTarget === askingAccounts,
     };

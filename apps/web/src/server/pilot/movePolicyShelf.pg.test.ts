@@ -410,10 +410,13 @@ describe('citing evidence report (real database)', () => {
        values ($1, 'coach', $2, 'microsoft')`,
       [COACH, FROM],
     );
+    // Both askers are active members of the old organization, so a membership
+    // check that stopped asking about the target would read them as members.
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $3, 'coach', true), ($2, $3, 'coach', false)`,
-      [COACH, ADMIN, TO],
+       values ($1, $3, 'coach', true), ($2, $3, 'coach', false),
+              ($1, $4, 'coach', true), ($2, $4, 'organization_admin', true)`,
+      [COACH, ADMIN, TO, FROM],
     );
     await seedEvidence(client, '00000000-0000-4000-8000-0000000000b1', ADMIN, [
       ['00000000-0000-4000-8000-0000000000e1', 'pol-authority', 'doc-authority', 'auth-chunk-1'],
@@ -473,6 +476,7 @@ describe('citing evidence report (real database)', () => {
           bundles: 2,
           message_citations: 1,
           asking_accounts: 2,
+          asking_accounts_deidentified: 0,
           // The coach is an active member of the target; ADMIN's membership is inactive.
           asking_accounts_active_in_target: 1,
           all_asking_accounts_active_in_target: false,
@@ -506,6 +510,42 @@ describe('citing evidence report (real database)', () => {
       expect(result.citing_evidence).toMatchObject({
         items: 3,
         by_asking_organization: [{ asking_accounts: 2, asking_accounts_active_in_target: 2, all_asking_accounts_active_in_target: true }],
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an asker sign-in would refuse, or a de-identified asker, is not active in the target', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      await client.query(
+        `update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`,
+        [ADMIN, TO],
+      );
+      const activeInTarget = async () => {
+        const result = await movePolicyShelf(client, options(), { log: silent });
+        return (result.citing_evidence as { by_asking_organization: Array<Record<string, unknown>> })
+          .by_asking_organization[0];
+      };
+
+      // An inactive account with an active target membership.
+      await client.query(`update pilot.accounts set active_flag = false where account_id = $1`, [COACH]);
+      expect(await activeInTarget()).toMatchObject({ asking_accounts: 2, asking_accounts_active_in_target: 1 });
+
+      // A deleted account, even while still active.
+      await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [ADMIN]);
+      expect(await activeInTarget()).toMatchObject({ asking_accounts: 2, asking_accounts_active_in_target: 0 });
+
+      // A de-identified asker: the purge's anon_<uuid> token, with no account row.
+      const anon = 'anon_00000000-0000-4000-8000-0000000000aa';
+      await seedEvidence(client, '00000000-0000-4000-8000-0000000000b4', anon, [
+        ['00000000-0000-4000-8000-0000000000e5', 'pol-b', 'doc-copy-2', 'pol-b-chunk'],
+      ]);
+      expect(await activeInTarget()).toMatchObject({
+        items: 4, asking_accounts: 3, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0,
+        all_asking_accounts_active_in_target: false,
       });
     } finally {
       await client.end();
