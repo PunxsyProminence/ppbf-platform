@@ -401,30 +401,48 @@ async function clearShadowProfileMentions(client, tables, subjects) {
    - pilot.shadow_library_review_flags: one row per gym and topic, naming the
      LATEST flagger and their note. When that is this person, both are
      cleared; the topic, counts and review state stay. (A guardian's account
-     delete would null account_id by its foreign key, but not the note.)
+     delete would null account_id by its foreign key, but not the note.) The
+     library-change proposal re-points a flag at a later account without
+     clearing the note (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview),
+     so a flag whose note is one of this person's own feedback comments loses
+     the note too, whoever it now names. First, while the comments still exist.
    - pilot.shadow_research_requirements filed by the learning loop
      (shadow_learning_negative_outcome): created_by_account_id becomes the
      token; knowledge_gap, which holds the note when one was typed, becomes the
      loop's own sentence for no note; metadata.note goes. The topic is the
      server's label, not typed text, and stays.
-   The token is the one the chat audit gives this person in this run, so their
-   de-identified rows still read as one person's and as nobody's. */
+   ITS OWN TOKEN, NEVER THE CHAT AUDIT'S (Overwatch 2026-10-15, option A): one
+   per person per run, so their feedback rows still read as one person's. A
+   retired athlete login keeps rows this purge does not reach yet
+   (shadow_learning_events and shadow_recommendation_effectiveness by
+   feedback_id, chat messages with no athlete_id by correlation_id; F-088),
+   which join a feedback row back to the login; sharing the chat audit's
+   token would carry that join to every de-identified chat turn of theirs. */
 async function deidentifyFeedbackNotes(client, tables, accountIds, token) {
   const counts = { shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 };
   if (accountIds.length === 0) return counts;
+  if (tables.reviewFlags) {
+    const flags = await client.query(
+      `update pilot.shadow_library_review_flags f
+          set account_id = case when f.account_id = any($1::text[]) then null else f.account_id end,
+              user_note = null
+        where f.account_id = any($1::text[])
+           or (f.user_note is not null and ${tables.shadowFeedback
+    ? `exists (select 1 from pilot.shadow_feedback fb
+                       where fb.organization_id = f.organization_id
+                         and fb.account_id = any($1::text[])
+                         and fb.comment = f.user_note)`
+    : 'false'})`,
+      [accountIds],
+    );
+    counts.shadowReviewFlagNotes = flags.rowCount ?? 0;
+  }
   if (tables.shadowFeedback) {
     const feedback = await client.query(
       'update pilot.shadow_feedback set account_id = $2, comment = null where account_id = any($1::text[])',
       [accountIds, token],
     );
     counts.shadowFeedback = feedback.rowCount ?? 0;
-  }
-  if (tables.reviewFlags) {
-    const flags = await client.query(
-      'update pilot.shadow_library_review_flags set account_id = null, user_note = null where account_id = any($1::text[])',
-      [accountIds],
-    );
-    counts.shadowReviewFlagNotes = flags.rowCount ?? 0;
   }
   if (tables.researchRequirements) {
     const learning = await client.query(
@@ -833,7 +851,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           organizationId: athlete.organization_id,
           token, accountIds: athleteLogins, subjects: [{ ...subject, token }], names: knownNames,
         }]));
-        Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, athleteLogins, token));
+        Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, athleteLogins, anonymousToken()));
       }
       /* THE QUESTIONS THIS ATHLETE ASKED SHADOW GO TOO (F-054). An athlete's or
          parent's unanswered SHADOW question is filed as a research row holding
@@ -1200,16 +1218,15 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // The guardian's SHADOW rows (SHADOW_OPERATIONAL_TABLES): their own turns
       // only; a turn about their child is tokened by the child's purge.
       const shadowHere = await deleteShadowOperationalRows(client, tables, [accountId]);
-      const guardianToken = anonymousToken();
       Object.assign(shadowHere, await deidentifyShadowChatAudit(client, tables, [{
         organizationId: guardianGym,
-        token: guardianToken,
+        token: anonymousToken(),
         accountIds: [accountId],
         subjects: guardianChildren.map((child) => ({ ...child, token: null })),
         names: guardianNames,
       }]));
       // Their feedback notes, before the account row (and its set-null key) goes.
-      Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, [accountId], guardianToken));
+      Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, [accountId], anonymousToken()));
       // The guardian's own unanswered SHADOW questions (F-054), by the account
       // that filed them: a parent's words about their child are the parent's
       // record and go with the account.

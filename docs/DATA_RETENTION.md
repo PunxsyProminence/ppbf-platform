@@ -414,13 +414,20 @@ person with no usable name on record cannot be scrubbed, so the turns of or abou
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
 `shadowDeidentifyPurge.pg.test.ts`; the name pattern by `shadowNamePattern.test.ts`, which
 reads the script's own copy. Their own feedback notes follow the same ruling (Overwatch
-2026-10-15: de-identify, not delete): in `pilot.shadow_feedback` their login becomes the same
-token and their comment goes; on a Library review flag that names them as its latest flagger the
-login and note are cleared; and on a research row the learning loop filed from their feedback
+2026-10-15: de-identify, not delete): in `pilot.shadow_feedback` their login becomes a token of
+their own (one per person, never the chat log's) and their comment goes; on a Library review flag
+that names them as its latest flagger, or still holds one of their comments under a later
+flagger's login, the note is cleared (and their login, where it is theirs); a library-change
+proposal no longer carries an earlier flagger's note onto the next account; and on a research row
+the learning loop filed from their feedback
 (`shadow_learning_negative_outcome`) the login becomes the token, the note leaves `metadata`, and
 `knowledge_gap` becomes the loop's own sentence for no note. Rating, outcome, topic and counts
 stay (`shadow_feedback_deidentified`, `shadow_review_flag_notes_cleared`,
-`shadow_learning_research_rows_deidentified`). Pinned by `feedbackNotesPurge.pg.test.ts`. The
+`shadow_learning_research_rows_deidentified`). Pinned by `feedbackNotesPurge.pg.test.ts`.
+**Not yet built (F-088):** a purged athlete's login is retired, not deleted, so their
+`shadow_learning_events` and `shadow_recommendation_effectiveness` rows (by `feedback_id`) and chat
+messages in a session with no athlete (by `correlation_id`) still carry it and join a
+de-identified feedback row back to the login; that is why its token is not the chat log's. The
 script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is

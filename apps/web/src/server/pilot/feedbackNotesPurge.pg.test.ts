@@ -2,8 +2,8 @@
 // deleted-data.mjs, run as its own process) de-identifies a purged person's
 // own SHADOW feedback notes (#1600 gap B): in pilot.shadow_feedback,
 // pilot.shadow_library_review_flags and the learning loop's research rows,
-// their login becomes the token the chat audit gives them and their typed
-// words go; the rating, outcome and topic stay (Jason 2026-10-06, "delete any
+// their login becomes a per-person token of their own (never the chat
+// audit's) and their typed words go; the rating, outcome and topic stay (Jason 2026-10-06, "delete any
 // thing that personally Identifys the person but we keep data that [makes]
 // the Ai and ML better"). Another person's and another gym's rows stay; an
 // athlete whose purge is rolled back keeps theirs, uncounted.
@@ -250,12 +250,38 @@ beforeAll(async () => {
   await learningRow(ORG, GUARDIAN, 'parent', 'weight-cut', NOTE_G);
   await learningRow(ORG, LOGIN_B, 'athlete', 'hook', NOTE_B);
   await learningRow(OTHER_ORG, OTHER_GYM_LOGIN, 'athlete', 'jab', NOTE_X);
-  // A turn of A's in the chat log, so the token the chat audit gives A can be
-  // compared with the one on A's feedback.
+  // A flag the library-change proposal re-pointed at B, still holding A's
+  // note (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview, before
+  // its fix): A's words go with A, the flag keeps naming B.
+  await reviewFlag(ORG, LOGIN_B, 'body-shot', NOTE_A);
+  // A research row A's login filed that is not the learning loop's: untouched.
+  await db.query(
+    `insert into pilot.shadow_research_requirements
+       (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement,
+        knowledge_gap, source_status, source_confidence_tier, source_verification_state,
+        created_by_account_id, created_by_role)
+     values ($1, 'manual', 'manual', 'manual-a', 'MANUAL-ROW', 'NOTE-MANUAL-6060', 'weak', 'LIMITED', 'unverified', $2, 'athlete')`,
+    [ORG, LOGIN_A],
+  );
+  // A learning row from before metadata carried a topic: the loop's sentence
+  // for no note falls back to 'general', as the loop's own does.
+  await db.query(
+    `insert into pilot.shadow_research_requirements
+       (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement,
+        knowledge_gap, source_status, source_confidence_tier, source_verification_state,
+        created_by_account_id, created_by_role, metadata)
+     values ($1, 'shadow_learning_negative_outcome', 'shadow_learning_event', 'legacy-a', 'LEGACY-ROW',
+             'NOTE-LEGACY-7070', 'weak', 'LIMITED', 'unverified', $2, 'athlete',
+             jsonb_build_object('note', 'NOTE-LEGACY-7070'))`,
+    [ORG, LOGIN_A],
+  );
+  // A turn of A's and of the guardian's in the chat log, so the tokens the chat
+  // audit gives them can be compared with the ones on their feedback.
   await db.query(
     `insert into pilot.shadow_chat_audit (organization_id, user_id, user_role, athlete_id, user_message, shadow_response)
-     values ($1, $2, 'athlete', $3, 'how do I slip a jab', 'Move your head off the line.')`,
-    [ORG, LOGIN_A, ATHLETE_A],
+     values ($1, $2, 'athlete', $3, 'how do I slip a jab', 'Move your head off the line.'),
+            ($1, $4, 'parent', null, 'when is practice', 'Tuesdays at six.')`,
+    [ORG, LOGIN_A, ATHLETE_A, GUARDIAN],
   );
 });
 
@@ -283,10 +309,11 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     expect(dry.event).toBe('retention.cleanup.dry-run');
     expect(dry.blocked_by ?? {}).toEqual({});
     expect(dry.would_deidentify_shadow_feedback).toBe(2);
-    expect(dry.would_clear_shadow_review_flag_notes).toBe(2);
-    expect(dry.would_deidentify_shadow_learning_research_rows).toBe(2);
-    for (const note of [NOTE_A, NOTE_G, NOTE_B, NOTE_X]) expect(await textAnywhere(note)).toBe(3);
-    expect(await loginAnywhere(LOGIN_A)).toBe(3);
+    expect(dry.would_clear_shadow_review_flag_notes).toBe(3);
+    expect(dry.would_deidentify_shadow_learning_research_rows).toBe(3);
+    expect(await textAnywhere(NOTE_A)).toBe(4);
+    for (const note of [NOTE_G, NOTE_B, NOTE_X]) expect(await textAnywhere(note)).toBe(3);
+    expect(await loginAnywhere(LOGIN_A)).toBe(5);
   });
 
   test("the purge empties the athlete's and the guardian's notes and drops their logins", async () => {
@@ -296,19 +323,44 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     expect(event.athletes).toBe(1);
     expect(event.accounts).toBe(1);
     expect(event.shadow_feedback_deidentified).toBe(2);
-    expect(event.shadow_review_flag_notes_cleared).toBe(2);
-    expect(event.shadow_learning_research_rows_deidentified).toBe(2);
-    for (const note of [NOTE_A, NOTE_G]) expect(await textAnywhere(note)).toBe(0);
-    for (const login of [LOGIN_A, GUARDIAN]) expect(await loginAnywhere(login)).toBe(0);
+    expect(event.shadow_review_flag_notes_cleared).toBe(3);
+    expect(event.shadow_learning_research_rows_deidentified).toBe(3);
+    for (const note of [NOTE_A, NOTE_G, 'NOTE-LEGACY-7070']) expect(await textAnywhere(note)).toBe(0);
+    expect(await loginAnywhere(GUARDIAN)).toBe(0);
+    // Only A's row that is not the learning loop's keeps A's login and words.
+    expect(await loginAnywhere(LOGIN_A)).toBe(1);
+    const manual = await db.query(
+      `select created_by_account_id, knowledge_gap from pilot.shadow_research_requirements where source_entity_id = 'manual-a'`,
+    );
+    expect(manual.rows).toEqual([{ created_by_account_id: LOGIN_A, knowledge_gap: 'NOTE-MANUAL-6060' }]);
   });
 
-  test('the signal stays: rating, outcome, topic and counts, under the token the chat audit gave the person', async () => {
-    const audit = await db.query(
-      `select user_id from pilot.shadow_chat_audit where organization_id = $1 and athlete_id is distinct from $2`,
-      [ORG, 'nobody'],
+  test("a flag re-pointed at another account loses the purged person's note and keeps naming that account", async () => {
+    const flag = await db.query(
+      `select account_id, user_note from pilot.shadow_library_review_flags where organization_id = $1 and topic = 'body-shot'`,
+      [ORG],
     );
-    const tokenA = audit.rows[0].user_id as string;
-    expect(tokenA).toMatch(/^anon_/);
+    expect(flag.rows).toEqual([{ account_id: LOGIN_B, user_note: null }]);
+  });
+
+  test("a legacy learning row with no topic gets the loop's 'general' sentence", async () => {
+    const legacy = await db.query(
+      `select knowledge_gap, metadata from pilot.shadow_research_requirements where source_entity_id = 'legacy-a'`,
+    );
+    expect(legacy.rows).toEqual([{
+      knowledge_gap: "Recent response on 'general' was judged insufficient and requires evidence reinforcement.",
+      metadata: {},
+    }]);
+  });
+
+  test("the signal stays: rating, outcome, topic and counts, under each person's own token, never the chat audit's", async () => {
+    const audit = await db.query(
+      `select user_role, user_id from pilot.shadow_chat_audit where organization_id = $1 order by user_role`,
+      [ORG],
+    );
+    const chatTokens = audit.rows.map((row) => row.user_id as string);
+    expect(chatTokens).toHaveLength(2);
+    for (const token of chatTokens) expect(token).toMatch(/^anon_/);
 
     const rows = await db.query(
       `select account_id, helpful, rating, outcome_signal, comment from pilot.shadow_feedback
@@ -319,9 +371,16 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     for (const row of rows.rows) {
       expect(row).toMatchObject({ helpful: false, rating: 2, outcome_signal: 'negative', comment: null });
     }
-    expect(rows.rows.map((row) => row.account_id)).toContain(tokenA);
-    // One token per person: A's and the guardian's differ.
-    expect(new Set(rows.rows.map((row) => row.account_id)).size).toBe(2);
+    const feedbackTokens = rows.rows.map((row) => row.account_id as string);
+    for (const token of feedbackTokens) expect(token).toMatch(/^anon_/);
+    // One token per person, and never the one the chat audit gave them (F-088:
+    // a retired login's untouched rows join feedback back to the login).
+    expect(new Set(feedbackTokens).size).toBe(2);
+    for (const token of feedbackTokens) expect(chatTokens).not.toContain(token);
+    const tokenA = (await db.query(
+      `select account_id from pilot.shadow_feedback where organization_id = $1 and role = 'athlete' and account_id like 'anon_%'`,
+      [ORG],
+    )).rows[0].account_id as string;
 
     const learning = await db.query(
       `select created_by_account_id, knowledge_gap, metadata from pilot.shadow_research_requirements
@@ -347,7 +406,8 @@ describe("the retention purge and a purged person's own feedback notes", () => {
 
   test("another person's and another gym's notes are untouched", async () => {
     for (const note of [NOTE_B, NOTE_X]) expect(await textAnywhere(note)).toBe(3);
-    for (const login of [LOGIN_B, OTHER_GYM_LOGIN]) expect(await loginAnywhere(login)).toBe(3);
+    expect(await loginAnywhere(LOGIN_B)).toBe(4);
+    expect(await loginAnywhere(OTHER_GYM_LOGIN)).toBe(3);
   });
 
   test('the data_purged audit row carries the counts and no login or note', async () => {
@@ -356,8 +416,8 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     );
     expect(audit.rows[0].details).toMatchObject({
       shadow_feedback_deidentified: 2,
-      shadow_review_flag_notes_cleared: 2,
-      shadow_learning_research_rows_deidentified: 2,
+      shadow_review_flag_notes_cleared: 3,
+      shadow_learning_research_rows_deidentified: 3,
     });
     const text = JSON.stringify(audit.rows[0].details);
     for (const secret of [LOGIN_A, GUARDIAN, 'NOTE-']) expect(text).not.toContain(secret);
