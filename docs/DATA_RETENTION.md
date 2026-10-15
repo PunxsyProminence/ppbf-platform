@@ -423,8 +423,10 @@ foreign key to the athlete it is about, so the mark only hides it. When the clea
 athlete it deletes, in that athlete's savepoint and in that gym only: the questions the athlete
 or a parent asked SHADOW about them (`asker_research_questions_deleted`; a purged guardian's own
 go with the account), and every requirement that names the athlete in `subject_id`,
-`metadata.subject_id` or `metadata.athlete_id` (trimmed; any of the three), whoever filed it, a
-coach's or admin's filing included, with the submissions attached to those requirements
+`metadata.subject_id` or `metadata.athlete_id` (trimmed; any of the three), or whose intake case
+names them (an intake review's approve or reject row is filed before the case names an athlete;
+its tie is `source_entity_id` = the case, whose `primary_athlete_id` is the child), whoever filed
+it, a coach's or admin's filing included, with the submissions attached to those requirements
 (`subject_research_requirements_deleted`, `subject_research_submissions_deleted`; dry run
 `would_delete_subject_research_requirements` / `_submissions`). A requirement that names no
 athlete is the gym's research and stays, whatever its text says: a name typed into free text is
