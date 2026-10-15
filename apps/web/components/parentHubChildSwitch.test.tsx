@@ -73,6 +73,13 @@ function installFetch(
     if (url.includes('/api/pilot/scheduler')) {
       return scheduler();
     }
+    if (url.includes('/api/pilot/parent/family-goals')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id');
+      return jsonResponse({
+        ok: true,
+        items: [{ goal_id: `g-${athleteId}`, title: `Goal for ${athleteId}`, support_action: 'Drive.', target_date: null, state: 'active', completed_at: null, set_by: 'You', mine: true }],
+      });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -83,6 +90,31 @@ function installFetch(
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+// #1593 PH-06: the Family Goals tab is built, so its "not built yet" stamp is
+// gone (F-019), and it reads the selected child's goals, per child.
+describe('family goals on the parent hub', () => {
+  test("the tab reads the selected child's goals and drops them on a switch", async () => {
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Family Goals' }));
+    });
+
+    expect(screen.queryByText(/no backend feed for family goals/)).toBeNull();
+    expect(screen.getByText('Goal for ath_1')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    expect(screen.queryByText('Goal for ath_1')).toBeNull();
+    expect(screen.getByText('Goal for ath_2')).toBeInTheDocument();
+    const goalReads = fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/family-goals'));
+    expect(goalReads.map((url) => new URL(url, 'http://localhost').searchParams.get('athlete_id'))).toEqual(['ath_1', 'ath_2']);
+  });
 });
 
 describe('parent hub child selector', () => {
