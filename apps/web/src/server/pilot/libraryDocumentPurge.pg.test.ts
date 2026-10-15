@@ -280,6 +280,14 @@ beforeAll(async () => {
   await cite('doc-a-cited-by-a', '44444444-4444-4444-8444-444444444444', ATHLETE_A);
   await insertDocument(ORG, HELD, SOURCE, ATHLETE_A, { blobPath: 'library/org-lb-1/held.pdf' });
   await cite(HELD, '55555555-5555-4555-8555-555555555555', null);
+  // Already marked by an earlier purge (a reissued id purged again): the mark
+  // keeps its first date.
+  await db.query(
+    `update pilot.shadow_library_documents
+        set metadata = metadata || '{"subject_purged_at": "2020-01-01T00:00:00Z"}'::jsonb
+      where document_id = $1`,
+    [HELD],
+  );
 
   await insertDocument(ORG, HELD_BY_MOVED_CHUNK, SOURCE, ATHLETE_A);
   await insertDocument(ORG, HELD_BY_CHUNK_MOVED_OUT, SOURCE, ATHLETE_A);
@@ -352,11 +360,12 @@ describe('the retention purge and the Library documents filed against a purged a
       expect(await documentCount(documentId)).toBe(1);
     }
     expect(await chunkCount('doc-gym-stray')).toBe(2);
+    // The dry run leaves no mark of its own: the only one is HELD's earlier one.
     const marked = await db.query(
       `select (select count(*) from pilot.shadow_library_documents where metadata ? 'subject_purged_at')
             + (select count(*) from pilot.shadow_library_chunks where metadata ? 'subject_purged_at') as n`,
     );
-    expect(Number(marked.rows[0].n)).toBe(0);
+    expect(Number(marked.rows[0].n)).toBe(1);
   });
 
   test('the purge deletes the documents about the athlete with their chunks, and is not blocked by the held one', async () => {
@@ -402,6 +411,14 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(chunks.rows.map((row) => row.chunk_id)).toEqual(
       [`${HELD_BY_CHUNK_MOVED_OUT}-c0`, `${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`, 'stray-a-cited'].sort(),
     );
+  });
+
+  test('a row already marked keeps its first mark date', async () => {
+    const held = await db.query(
+      `select metadata->>'subject_purged_at' as at from pilot.shadow_library_documents where document_id = $1`,
+      [HELD],
+    );
+    expect(held.rows[0].at).toBe('2020-01-01T00:00:00Z');
   });
 
   test("a stray chunk about the athlete under the gym's own document goes, the document stays; a cited one is held", async () => {
