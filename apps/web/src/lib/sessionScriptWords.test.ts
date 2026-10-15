@@ -41,7 +41,7 @@ describe('explainLine', () => {
   });
 
   it("leaves a coach's own explanation exactly as written", () => {
-    for (const text of ['Keep the chin down and turn the hip.', 'Footwork first', 'Slip, then counter - 3 reps max']) {
+    for (const text of ['Keep the chin down and turn the hip.', 'Footwork first', 'Slip, then counter - 3 reps max', 'keep your chin down', 'jab - 3 reps then slip']) {
       expect(explainLine(text)).toEqual({ label: 'Explain', value: text });
     }
   });
