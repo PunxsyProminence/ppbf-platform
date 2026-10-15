@@ -117,6 +117,7 @@ on:
           - videos-missing-consent
           - seed-identity
           - library-scope
+          - library-rights
           - runtime-claims
           - shadow-filter-rate
           - medical-clearance-coverage
@@ -476,6 +477,7 @@ jobs:
               run_one videos-missing-consent pilot:check-videos-missing-consent
               run_one seed-identity       pilot:check-seed-identity
               run_one library-scope       pilot:check-library-scope
+              run_one library-rights      pilot:check-library-rights
               run_one runtime-claims      pilot:check-runtime-claims
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
@@ -497,6 +499,7 @@ jobs:
             videos-missing-consent) run_one videos-missing-consent pilot:check-videos-missing-consent ;;
             seed-identity)      run_one seed-identity       pilot:check-seed-identity ;;
             library-scope)      run_one library-scope       pilot:check-library-scope ;;
+            library-rights)     run_one library-rights      pilot:check-library-rights ;;
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
             deletion-preflight) run_one deletion-preflight  pilot:check-deletion-preflight ;;
             calibration-adjudication-ties) run_one calibration-adjudication-ties  pilot:check-calibration-adjudication-ties ;;
