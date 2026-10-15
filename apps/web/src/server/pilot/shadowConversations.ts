@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentit
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
+import { PASSAGE_DISPLAY_RIGHTS } from './shadowEvidence';
 import { isMinor } from './wallDisplay';
 
 export type ShadowConversationSessionType =
@@ -50,6 +51,8 @@ export interface ShadowConversationMessage {
     token: string;
     sourceTitle: string;
     documentName: string;
+    /** The cited passage, only within the rights rule (PASSAGE_DISPLAY_RIGHTS). */
+    excerpt?: string;
   }>;
 }
 
@@ -556,6 +559,7 @@ export async function loadConversationMessages(input: {
       token: string;
       sourceTitle: string;
       documentName: string;
+      excerpt?: string;
     }>;
   }>(
     `select
@@ -568,12 +572,20 @@ export async function loadConversationMessages(input: {
        m.created_at,
        coalesce(
          jsonb_agg(
-           jsonb_build_object(
+           jsonb_strip_nulls(jsonb_build_object(
              'evidenceId', mc.evidence_id,
              'token', '[E:' || mc.evidence_id::text || ']',
              'sourceTitle', ls.title,
-             'documentName', d.document_name
-           )
+             'documentName', d.document_name,
+             -- The passage, read again with its rights checked again
+             -- (shadowEvidence.ts PASSAGE_DISPLAY_RIGHTS, A-Q11): shown only
+             -- while both its cited source and its document's source are
+             -- PPBF-owned or open-licence. Null otherwise, and stripped.
+             'excerpt', case
+               when ls.rights_status = any($5::text[]) and ds.rights_status = any($5::text[])
+               then left(btrim(regexp_replace(c.text_content, '[[:space:]]+', ' ', 'g')), 900)
+             end
+           ))
            order by mc.ordinal
          ) filter (where mc.evidence_id is not null),
          '[]'::jsonb
@@ -603,6 +615,12 @@ export async function loadConversationMessages(input: {
      left join pilot.shadow_library_documents d
        on d.document_id = ei.document_id
       and d.organization_id = ei.library_organization_id
+     left join pilot.shadow_library_sources ds
+       on ds.source_id = d.source_id
+      and ds.organization_id = d.organization_id
+     left join pilot.shadow_library_chunks c
+       on c.chunk_id = ei.chunk_id
+      and c.organization_id = ei.library_organization_id
      where m.organization_id = $1
        and m.account_id = $2
        and m.conversation_id = $3
@@ -612,7 +630,7 @@ export async function loadConversationMessages(input: {
               case m.role when 'assistant' then 1 else 0 end desc,
               m.message_id desc
      limit $4`,
-    [input.actor.organizationId, input.actor.accountId, input.conversationId, limit],
+    [input.actor.organizationId, input.actor.accountId, input.conversationId, limit, PASSAGE_DISPLAY_RIGHTS],
   );
   return rows.reverse().map((row) => ({
     messageId: row.message_id,

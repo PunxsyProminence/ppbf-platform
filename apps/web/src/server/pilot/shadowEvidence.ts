@@ -4,7 +4,7 @@ import type { ActorIdentity } from './access';
 import { queryOne, withTransaction } from './db';
 import { SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
-import { searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
+import { RESEARCH_BRIDGE_EXPORTABLE_RIGHTS, searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
 
 const MAX_EVIDENCE_ITEMS = 4;
 const MAX_EXCERPT_CHARS = 900;
@@ -17,6 +17,24 @@ export interface ShadowEvidenceCitation {
   token: string;
   sourceTitle: string;
   documentName: string;
+}
+
+/**
+ * Which passages SHADOW shows under their source (OD-2026-10-08-005 A-Q11,
+ * ruling 4: "SHADOW shows the passage text under each source, within the
+ * rights rule"). Only text the gym may hold in full -- PPBF-owned or
+ * open-licence (OD-2026-10-02-013 answer 4A; OD-2026-10-03-002 Q3) -- and
+ * only when BOTH the source the passage cites and the source of the document
+ * it was cut from carry one of those values: the same two-source rule that
+ * decides which text may leave the database for the research bridge
+ * (listApprovedGlobalEvidenceForResearchBridge). A licensed excerpt or a
+ * source of unknown rights is cited by title only, as before.
+ */
+export const PASSAGE_DISPLAY_RIGHTS = RESEARCH_BRIDGE_EXPORTABLE_RIGHTS;
+
+/** A citation as the chat API sends it; `excerpt` only within the rights rule. */
+export interface ShadowPublicCitation extends ShadowEvidenceCitation {
+  excerpt?: string;
 }
 
 export interface ShadowEvidenceItem extends ShadowEvidenceCitation {
@@ -32,6 +50,8 @@ export interface ShadowEvidenceItem extends ShadowEvidenceCitation {
   authorityTier: number;
   evidenceClass: string | null;
   boxingSpecificity: string | null;
+  /** Set when the bundle is stored: may this passage be shown (PASSAGE_DISPLAY_RIGHTS)? */
+  passageDisplayable?: boolean;
 }
 
 export interface ShadowEvidenceBundle {
@@ -206,7 +226,11 @@ async function persistEvidenceBundle(input: {
   queryText: string;
   bundleId: string;
   items: ShadowEvidenceItem[];
-}): Promise<void> {
+}): Promise<Set<string>> {
+  // Evidence ids whose passage is within PASSAGE_DISPLAY_RIGHTS, read by the
+  // same statement that stores the item, so the rights and the stored row
+  // are one snapshot.
+  const displayable = new Set<string>();
   const availability: ShadowEvidenceAvailability = input.items.length > 0 ? 'available' : 'unavailable';
   await withTransaction(async (client) => {
     await client.query(
@@ -225,8 +249,9 @@ async function persistEvidenceBundle(input: {
     );
 
     for (const [index, item] of input.items.entries()) {
-      const inserted = await client.query<{ evidence_id: string }>(
-        `insert into pilot.shadow_evidence_items
+      const inserted = await client.query<{ evidence_id: string; passage_displayable: boolean }>(
+        `with stored as (
+         insert into pilot.shadow_evidence_items
            (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id, ordinal, excerpt_sha256, library_organization_id)
          select $1, $2, $3, $4, c.source_id, c.document_id, c.chunk_id, $8, $9, c.organization_id
          from pilot.shadow_library_chunks c
@@ -252,7 +277,22 @@ async function persistEvidenceBundle(input: {
              or c.subject_id is null
              or c.subject_id = $10
            )
-         returning evidence_id`,
+         returning evidence_id, source_id, document_id, library_organization_id
+         )
+         select stored.evidence_id,
+                (s.rights_status = any($12::text[]) and ds.rights_status = any($12::text[])) as passage_displayable
+           from stored
+           join pilot.shadow_library_sources s
+             on s.source_id = stored.source_id
+            and s.organization_id = stored.library_organization_id
+           join pilot.shadow_library_documents d
+             on d.document_id = stored.document_id
+            and d.organization_id = stored.library_organization_id
+           -- The source whose document the text was cut from: the text's
+           -- rights are its document's, as the database's own guard reads them.
+           join pilot.shadow_library_sources ds
+             on ds.source_id = d.source_id
+            and ds.organization_id = d.organization_id`,
         [
           item.evidenceId,
           input.bundleId,
@@ -265,13 +305,18 @@ async function persistEvidenceBundle(input: {
           sha256(item.excerpt),
           input.subjectId,
           libraryRetrievalOrganizationIds(input.actor.organizationId),
+          PASSAGE_DISPLAY_RIGHTS,
         ],
       );
       if (!inserted.rows[0]) {
         throw new Error('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
       }
+      if (inserted.rows[0].passage_displayable === true) {
+        displayable.add(inserted.rows[0].evidence_id);
+      }
     }
   });
+  return displayable;
 }
 
 export async function retrieveShadowEvidenceBundle(input: {
@@ -300,13 +345,16 @@ export async function retrieveShadowEvidenceBundle(input: {
   const items = buildEvidenceItems(rows);
   const bundleId = randomUUID();
 
-  await persistEvidenceBundle({
+  const displayable = await persistEvidenceBundle({
     actor: input.actor,
     subjectId,
     queryText,
     bundleId,
     items,
   });
+  for (const item of items) {
+    item.passageDisplayable = displayable.has(item.evidenceId);
+  }
 
   if (items.length === 0) {
     return {
@@ -327,15 +375,17 @@ export async function retrieveShadowEvidenceBundle(input: {
 export function publicEvidenceCitations(
   bundle: ShadowEvidenceBundle,
   citationIds: string[],
-): ShadowEvidenceCitation[] {
+): ShadowPublicCitation[] {
   const requested = new Set(citationIds);
   return bundle.items
     .filter((item) => requested.has(item.evidenceId))
-    .map(({ evidenceId, token, sourceTitle, documentName }) => ({
+    .map(({ evidenceId, token, sourceTitle, documentName, excerpt, passageDisplayable }) => ({
       evidenceId,
       token,
       sourceTitle,
       documentName,
+      // Within the rights rule only (PASSAGE_DISPLAY_RIGHTS); never otherwise.
+      ...(passageDisplayable === true ? { excerpt } : {}),
     }));
 }
 

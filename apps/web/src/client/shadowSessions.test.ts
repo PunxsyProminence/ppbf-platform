@@ -208,6 +208,12 @@ describe('restored citations', () => {
     expect(restored.citations).toEqual([citation]);
   });
 
+  test('a stored passage comes back with its citation (A-Q11)', () => {
+    const withPassage = { ...citation, excerpt: 'Pivot off the lead foot.' };
+    const restored = mapStoredShadowMessage({ ...base, citations: [withPassage, citation] });
+    expect(restored.citations).toEqual([withPassage, citation]);
+  });
+
   test('an answer stored without citations restores with none, not an empty block', () => {
     const restored = mapStoredShadowMessage({ ...base, citations: [] });
     expect(restored.citations).toBeUndefined();
