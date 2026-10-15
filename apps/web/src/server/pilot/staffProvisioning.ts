@@ -1106,6 +1106,22 @@ export async function removeGuardianLink(params: {
 }
 
 /**
+ * The gym's name as the platform owner registered it (pilot.organizations),
+ * for the admin people console's header. That header printed the
+ * organization id ("punxsy_prominence") where a name belongs (audit F-008).
+ * Null when the row or its name is missing: the console then prints no gym
+ * line rather than the id.
+ */
+export async function getOrganizationName(organizationId: string): Promise<string | null> {
+  const row = await queryOne<{ organization_name: string | null }>(
+    'select organization_name from pilot.organizations where organization_id = $1',
+    [organizationId],
+  );
+  const name = row?.organization_name?.trim();
+  return name ? name : null;
+}
+
+/**
  * Lists every account holding a membership in an organization, with enough
  * status detail for the admin people console to show who can actually sign in.
  *
