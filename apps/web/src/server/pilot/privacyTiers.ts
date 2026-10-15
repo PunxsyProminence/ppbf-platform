@@ -101,7 +101,8 @@ export const PRIVACY_TIER_DOCTRINE: Readonly<Record<PrivacyTier, TierDoctrine>> 
       + 'refused outright, which is what makes the two de-identified tiers lateral rather than above.',
   },
   minor_circle: {
-    audience: 'self, coach_of_subject, guardian_of_subject -- nobody else.',
+    audience: 'self, coach_of_subject (every coach of the athlete\'s gym since issue #1480 C2), '
+      + 'guardian_of_subject -- nobody else; the organization admin stays outside.',
     enforcedBy: ['profileVisibility.ts#MINOR_CIRCLE', 'profileIdentity.privacy.test.ts'],
     reason:
       'The circle a minor\'s face never leaves. Deliberately narrower than athlete_record: an '

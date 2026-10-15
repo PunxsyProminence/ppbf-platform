@@ -48,7 +48,8 @@ import { isMinor } from './wallDisplay';
 export type ProfileRelationship =
   /** The viewer is the subject. */
   | 'self'
-  /** The viewer is the coach of record for this athlete. */
+  /** The viewer is a coach of this athlete's gym (issue #1480 C2; until then,
+   *  the coach of record only). */
   | 'coach_of_subject'
   /** The viewer is a guardian linked to this athlete. */
   | 'guardian_of_subject'

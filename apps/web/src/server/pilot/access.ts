@@ -567,12 +567,10 @@ export function assertAthleteUpdateAllowed(
   // athlete's actual coach, who no longer matches coach_id, loses access.
   // A bound that the bounded party can write their way out of is not a bound.
   //
-  // The knock-on is worse than the record access. profileDb grants
-  // 'coach_of_subject' straight from athletes.coach_id, and that relationship
-  // is one of the three in profileVisibility's MINOR_CIRCLE -- the circle a
-  // minor's PHOTOGRAPH never leaves, and one organization admins are
-  // deliberately outside of. So this column is not only roster bookkeeping;
-  // writing to it admits the writer to a child's portrait.
+  // (Until issue #1480 C2 profileDb also granted 'coach_of_subject' -- a
+  // minor's photo circle -- straight from athletes.coach_id. Since then every
+  // coach of the gym is in that circle, so coach_id no longer decides it; it
+  // still decides "my athletes" and is_mine.)
   //
   // Refused outright rather than restricted to self-assignment: handing an
   // athlete to a different coach is equally an administrator's call, and

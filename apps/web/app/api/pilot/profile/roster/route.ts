@@ -43,16 +43,12 @@ export async function GET(request: NextRequest) {
     requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
     const url = new URL(request.url);
-    // Default to the coach's own athletes. `scope=organization` is available to
-    // an organization admin only, and it changes WHICH ROWS come back -- never
-    // what may be seen on one.
+    // Default to the coach's own athletes. `scope=organization` changes WHICH
+    // ROWS come back -- never what may be seen on one. Since issue #1480
+    // (OD-2026-10-11-007, which replaced OD-2026-10-05-024 ruling 2) a coach
+    // reaches every athlete of their own gym, so the whole-organization list
+    // is open to a coach as well as an organization admin.
     const wholeOrganization = url.searchParams.get('scope') === 'organization';
-    // OD-2026-10-05-024 ruling 2 (Jason 2026-10-05): a coach reads only the
-    // athletes they are assigned to, so the whole-organization list is an
-    // organization admin's alone. The coach screen asks without a scope.
-    if (wholeOrganization && !isOrganizationAdminRole(principal.role)) {
-      throw new Error('Forbidden: the whole-organization roster is for organization admins');
-    }
 
     // `a.deleted_at is null` on both branches, and it is not a performance
     // filter. A withdrawn athlete is soft-deleted: the row stays for the
@@ -98,14 +94,15 @@ export async function GET(request: NextRequest) {
 
     const items = rows.map((row) => {
       const profile = row.account_id ? profiles.get(row.account_id) : undefined;
-      // The relationship is known without a query here: this coach is the coach
-      // of record for this athlete, or they are not. An admin viewing the
-      // organization scope is 'organization_staff', which decidePortrait
-      // refuses for a minor -- the plate, deliberately, for the person who runs
-      // the gym as much as for anyone else.
-      const relationship = row.coach_id === principal.accountId && principal.role === 'coach'
+      // The relationship is known without a query here, and it is
+      // profileDb.resolveRelationship's answer: every coach of the athlete's
+      // gym is coach_of_subject (issue #1480 C2, "Any coach all coaches coach
+      // all athletes"). An admin is 'organization_staff', which decidePortrait
+      // refuses for a minor -- the plate, deliberately, for the person who
+      // runs the gym as much as for anyone else.
+      const relationship = principal.role === 'coach'
         ? 'coach_of_subject' as const
-        : isOrganizationAdminRole(principal.role) || principal.role === 'coach'
+        : isOrganizationAdminRole(principal.role)
           ? 'organization_staff' as const
           : 'none' as const;
 
