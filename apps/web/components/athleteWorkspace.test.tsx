@@ -60,6 +60,8 @@ let storedWorkouts: unknown;
  * The client never filters; there is nothing here for it to filter WITH.
  */
 let storedReferenceDrills: Array<Record<string, unknown>> = [];
+/** What POST /api/pilot/shadow/observation-projection answers (F-005). */
+let storedShadowObservations: Array<Record<string, unknown>> = [];
 /** W-D4A: the athlete detail for an opened drill, keyed by reference drill id. */
 let storedReferenceDrillDetails: Record<string, Record<string, unknown>> = {};
 /** W-D4A: make the detail read fail with a server error (not a 404). */
@@ -230,6 +232,7 @@ beforeEach(() => {
   storedAssignments = [];
   storedWorkouts = undefined;
   storedReferenceDrills = [];
+  storedShadowObservations = [];
   storedReferenceDrillDetails = {};
   detailReadFails = false;
   assignmentsFail = false;
@@ -383,7 +386,7 @@ beforeEach(() => {
       return jsonResponse({ drills: storedReferenceDrills });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
-      return jsonResponse({ items: [] });
+      return jsonResponse({ items: storedShadowObservations });
     }
     // BASE-05: the athlete's own attempt log reads the canonical ledger.
     if (url.includes('/api/pilot/training-attempts')) {
@@ -1839,6 +1842,36 @@ describe('reporting progress writes it', () => {
       expect(screen.getByTestId('goal-progress-value-goal_1').textContent).toContain('20%');
     });
     expect(screen.getByTestId('goal-progress-value-goal_1').textContent).not.toContain('90%');
+  });
+});
+
+describe('what SHADOW has noticed, as the athlete reads it (F-005)', () => {
+  test('system event names are left off, and the state is said in words, not as a stored value', async () => {
+    storedShadowObservations = [
+      { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+      { id: 'obs-2', source: 'telemetry', label: 'shadow.audit.login', review_state: 'unknown', created_at: '2026-10-11T12:01:00Z' },
+      { id: 'obs-3', source: 'event', label: 'You checked in tired three days running.', review_state: 'pending_review', created_at: '2026-10-11T12:02:00Z' },
+    ];
+    await renderWorkspace();
+    openTab('SHADOW Intel');
+
+    expect(await screen.findByText('You checked in tired three days running.')).toBeTruthy();
+    expect(screen.getByText('Waiting on a coach to look at it.')).toBeTruthy();
+    const page = document.body.textContent ?? '';
+    expect(page).not.toMatch(/SHADOW_AUDIT_LOGIN_ACCOUNT|shadow\.audit\.login/);
+    expect(page).not.toMatch(/Source: (event|telemetry)/);
+    expect(page).not.toMatch(/State: (unknown|pending_review)/);
+  });
+
+  test('a feed holding only system events reads as nothing noticed yet', async () => {
+    storedShadowObservations = [
+      { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+    ];
+    await renderWorkspace();
+    openTab('SHADOW Intel');
+
+    expect(await screen.findByText('SHADOW has not noticed anything yet. Keep training and checking in.')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('SHADOW_AUDIT_LOGIN_ACCOUNT');
   });
 });
 

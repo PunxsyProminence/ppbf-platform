@@ -81,7 +81,12 @@ jest.mock('./db', () => ({
 
 import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
-import { listPresentAthletes, setRunAthletePresent, staffPermittedAthleteIds } from './sessionRunAthletes';
+import {
+  listPresentAthletes,
+  setRunAthletePresent,
+  staffPermittedAthleteIds,
+  staffPermittedAthletes,
+} from './sessionRunAthletes';
 import {
   finishSessionScriptRun,
   listSettledRunsForOrganization,
@@ -622,6 +627,44 @@ describe('reading who was in a session', () => {
     );
     expect(await staffPermittedAthleteIds(gym.otherCoach)).toEqual([]);
     expect((await staffPermittedAthleteIds(gym.coach)).sort()).toEqual([gym.ada, gym.ben]);
+  });
+
+  test("the picker is that same set by name, in name order, with an id and a name and nothing else", async () => {
+    const gym = await newGym('picker');
+    const other = await newGym('picker-other');
+    await client.query(`update pilot.athletes set athlete_id = 'athlete-only-there' where organization_id = $1 and athlete_id = $2`, [other.organizationId, other.ben]);
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.cy]);
+    // Created out of name order, so the order below is the function's.
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'athlete-abe', 'Abe Lund', '2013-01-01', '90', 'active', 'contact', true, $2, now(), now())`,
+      [gym.organizationId, gym.coach.accountId],
+    );
+
+    const expected = [
+      { athlete_id: 'athlete-abe', full_name: 'Abe Lund' },
+      { athlete_id: gym.ada, full_name: 'Ada Reyes' },
+      { athlete_id: gym.ben, full_name: 'Ben Ortiz' },
+    ];
+    // Coach of record, another coach of the gym, and the admin: the whole gym, never the deleted
+    // athlete or the other gym's, and no field but the two (no dob, no emergency contact).
+    for (const reader of [gym.coach, gym.otherCoach, gym.admin]) {
+      expect(await staffPermittedAthletes(reader)).toEqual(expected);
+    }
+    for (const role of ['athlete', 'parent', 'platform_owner', 'board', 'volunteer', 'staff'] as PilotRole[]) {
+      expect(await staffPermittedAthletes({ ...gym.coach, role })).toEqual([]);
+    }
+    // The other gym's coach, signed in there, gets the other gym.
+    expect((await staffPermittedAthletes(other.coach)).map((athlete) => athlete.athlete_id)).toEqual([other.ada, 'athlete-only-there', other.cy]);
+    // The other gym's coach, with THIS gym named as the organization (no membership here): nobody.
+    // The session never carries such a pair today; this pins the membership check's organization.
+    expect(await staffPermittedAthletes({ ...other.coach, organizationId: gym.organizationId })).toEqual([]);
+    await client.query(
+      `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`,
+      [gym.otherCoach.accountId, gym.organizationId],
+    );
+    expect(await staffPermittedAthletes(gym.otherCoach)).toEqual([]);
   });
 });
 

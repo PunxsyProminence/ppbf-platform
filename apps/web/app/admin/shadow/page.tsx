@@ -506,7 +506,17 @@ function fromBackendStatus(status: 'pending_review' | 'approved' | 'rejected' | 
  * needle rather than parking it at zero and reporting a measurement nobody
  * took.
  */
-function RateGauge({ caption, percent }: { readonly caption: string; readonly percent: number | null }) {
+function RateGauge({
+  caption,
+  percent,
+  noReading = 'Unavailable',
+}: {
+  readonly caption: string;
+  readonly percent: number | null;
+  /* What the face says with no reading. "Unavailable" unless the route said
+     why there is none (F-024). */
+  readonly noReading?: string;
+}) {
   const known = percent != null && Number.isFinite(percent);
   const clamped = known ? Math.min(Math.max(percent, 0), 100) : 0;
   return (
@@ -521,7 +531,7 @@ function RateGauge({ caption, percent }: { readonly caption: string; readonly pe
         </div>
       </div>
       <div className="gauge-cap">{caption}</div>
-      <div className="gauge-val">{known ? `${clamped.toFixed(1)}%` : 'Unavailable'}</div>
+      <div className="gauge-val">{known ? `${clamped.toFixed(1)}%` : noReading}</div>
     </div>
   );
 }
@@ -550,6 +560,14 @@ function renderMetricsPanel(
             <RateGauge
               caption="Effectiveness"
               percent={growthMetrics.effectiveness.avgRecommendationScore}
+              /* The route's reason for a null score is that no outcome was
+                 reviewed by a person this period, which is a fact about the
+                 period, not a failed read (metrics/route.ts). */
+              noReading={
+                growthMetrics.effectiveness.unavailableReasons?.avgRecommendationScore === 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD'
+                  ? 'No reviewed outcomes yet'
+                  : 'Unavailable'
+              }
             />
           </div>
           <div className="grid grid-cols-2 gap-[var(--s3)] sm:grid-cols-3 lg:grid-cols-6">
@@ -1905,6 +1923,9 @@ export default function AdminShadowConsolePage() {
           the intake-write refusal and every review gate are untouched.
           FUNCTIONAL_CHANGES: NONE. */}
       <main className="ge-afterhours grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
+        {/* The page had no heading at all: the shell header is off for this
+            room (F-024). Same words as the shell's role label. */}
+        <h1 className="t-command col-span-full m-0" style={{ fontSize: 'var(--t-xl)' }}>SHADOW Admin Console</h1>
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {gymReads === true ? renderMetricsPanel(growthMetrics, metricsLoading, metricsError) : null}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}

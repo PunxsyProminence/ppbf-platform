@@ -80,7 +80,9 @@ function mockFetch(options: {
     if (url.includes('/api/pilot/auth/session')) {
       return {
         ok: true,
-        json: async () => ({ authenticated: true, role: options.role ?? 'coach', auth_provider: 'microsoft' }),
+        // A curator fixture signs in as an organization admin: the Library's
+        // curator sections are theirs, while a coach only attaches (A-Q13).
+        json: async () => ({ authenticated: true, role: options.role ?? (options.curator ? 'organization_admin' : 'coach'), auth_provider: 'microsoft' }),
       } as Response;
     }
     if (url.includes('/research-submissions') && init?.method === 'POST') {
@@ -123,6 +125,8 @@ test('the ladder badge renders from the batch answer-state read', async () => {
 });
 
 test('a viewer refused by the sources probe gets no Answer-a-Gap panel', async () => {
+  // The probe failing (a refused or broken read) hides the panel; the rest of
+  // the inbox, including a coach's Mark Resolved, stays.
   global.fetch = mockFetch({ curator: false });
 
   await act(async () => {
@@ -235,9 +239,12 @@ describe('general research intake', () => {
     metadata: { general_research: true, classification_domain: 'fundraising_donor_development' },
   };
 
-  function mockFetchGeneral(options: { curator: boolean; capture: { posts: unknown[]; patches: unknown[] } }) {
+  function mockFetchGeneral(options: { curator: boolean; capture: { posts: unknown[]; patches: unknown[] }; role?: string }) {
     return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => ({ authenticated: true, role: options.role ?? 'organization_admin', auth_provider: 'microsoft' }) } as Response;
+      }
       if (url.includes('/library/sources') && init?.method === 'POST') {
         options.capture.posts.push(JSON.parse(String(init.body)));
         return { ok: true, json: async () => ({ ok: true, source: {} }) } as Response;
@@ -258,14 +265,30 @@ describe('general research intake', () => {
     }) as unknown as typeof fetch;
   }
 
-  test('a non-curator sees no general research section', async () => {
-    global.fetch = mockFetchGeneral({ curator: false, capture: { posts: [], patches: [] } });
+  test('a viewer the sources list refuses sees no general research section', async () => {
+    global.fetch = mockFetchGeneral({ curator: false, capture: { posts: [], patches: [] }, role: 'volunteer' });
 
     await act(async () => {
       render(<ResearchIntakePage />);
     });
 
     expect(screen.queryByText('General Research Intake')).toBeNull();
+  });
+
+  // A coach reads the list (A-Q13) but does not register sources.
+  test('a coach, whom the sources list answers, still sees no general research section', async () => {
+    const capture = { posts: [] as unknown[], patches: [] as unknown[] };
+    global.fetch = mockFetchGeneral({ curator: true, capture, role: 'coach' });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('General Research Intake')).toBeNull();
+    expect(capture.posts).toHaveLength(0);
   });
 
   test('registration posts the taxonomy key and provenance under general_research', async () => {
@@ -640,6 +663,9 @@ describe('the picker at the cap', () => {
   function pagedFetch(pageOf: (offset: number) => unknown[] | null, gets: string[]) {
     return jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'organization_admin', auth_provider: 'microsoft' }) } as Response;
+      }
       if (url.includes('/library/sources')) {
         gets.push(url);
         if (url.includes('general_research=true')) return { ok: true, json: async () => ({ items: [] }) } as Response;
@@ -832,4 +858,50 @@ test('a requirement filed from SHADOW reads "Asked in SHADOW" with its open stat
   const other = screen.getByText('Is RPE reliable at age 12?').closest('article');
   expect(other?.textContent).toContain('question');
   expect(other?.textContent).not.toContain('Asked in SHADOW');
+});
+
+// OD-2026-10-08-005 A-Q13, ruling 6: "a coach may attach a source". The
+// sources list now answers a coach, so the attach panel shows; the Library's
+// curator sections (registering a source, adding its text) do not.
+describe('a coach attaches an existing source', () => {
+  test('the attach panel is offered and posts an unreviewed link; the curator sections are not shown', async () => {
+    const capture = { posts: [] as unknown[] };
+    global.fetch = mockFetch({ curator: true, capture, role: 'coach' });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('region', { name: 'Add source text to the Library' })).toBeNull();
+    expect(screen.queryByText('General Research Intake')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
+    });
+
+    expect(capture.posts).toHaveLength(1);
+    const posted = capture.posts[0] as Record<string, unknown>;
+    expect(posted.research_requirement_id).toBe(7);
+    expect(posted.source_id).toBe('src-1');
+    expect(posted).not.toHaveProperty('document_id');
+    expect(screen.getByText(/answers nothing until evidence review says so/i)).toBeTruthy();
+  });
+
+  test.each(['parent', 'athlete'])('a %s, refused the sources list, gets no attach panel', async (role) => {
+    global.fetch = mockFetch({ curator: false, role });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('button', { name: 'Answer this gap' })).toBeNull();
+  });
 });

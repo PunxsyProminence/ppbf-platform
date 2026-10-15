@@ -192,6 +192,25 @@ describe('POST /api/pilot/shadow/library/sources', () => {
 });
 
 describe('GET /api/pilot/shadow/library/sources', () => {
+  // OD-2026-10-08-005 A-Q13: a coach reads the list to pick a source to
+  // attach to a research requirement. Registering one stays curator-only (above).
+  test('a coach reads the gym shelf list', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockList.mockResolvedValueOnce([{ source_id: 'source_1' }] as never);
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-real' }));
+  });
+
+  test.each(['athlete', 'parent', 'board', 'volunteer', 'staff'] as const)('a %s cannot read the list', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+    expect((await GET(getRequest())).status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
   test('returns items under the key the seed script reads', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockList.mockResolvedValueOnce([{ source_id: 'source_1' }] as never);

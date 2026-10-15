@@ -37,4 +37,6 @@ export interface ShadowDisplayCitation {
   token: string;
   sourceTitle: string;
   documentName: string;
+  /** The cited passage; sent only within the rights rule (A-Q11). */
+  excerpt?: string;
 }
