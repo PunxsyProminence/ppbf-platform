@@ -630,6 +630,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let filesDeleted = 0;
   let filesMissing = 0;
   let correctionsDeleted = 0;
+  let askerQuestionsDeleted = 0;
   const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
@@ -776,6 +777,27 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           token, accountIds: athleteLogins, subjects: [{ ...subject, token }], names: knownNames,
         }]));
       }
+      /* THE QUESTIONS THIS ATHLETE ASKED SHADOW GO TOO (F-054). An athlete's or
+         parent's unanswered SHADOW question is filed as a research row holding
+         their words verbatim and naming their account. The row carries no
+         foreign key (a research requirement may outlive the athlete it was
+         about), so nothing cascades: left behind it would keep a minor's own
+         words readable by the organization admin after the purge. Only rows
+         filed under the asker entity type, by this athlete's login or asked
+         about this athlete (metadata.asker_athlete_id); a coach's or admin's
+         own filing is research work, not the child's words, and stays. */
+      let askerQuestionsHere = 0;
+      if (removed.rows.length > 0 && tables.researchRequirements) {
+        const askerRows = await client.query(
+          `delete from pilot.shadow_research_requirements
+            where organization_id = $1
+              and source_event_name = 'shadow_unanswered_question'
+              and source_entity_type = 'shadow_asker_question'
+              and (metadata->>'asker_athlete_id' = $2 or created_by_account_id = any($3::text[]))`,
+          [athlete.organization_id, athlete.athlete_id, athleteLogins],
+        );
+        askerQuestionsHere = askerRows.rowCount ?? 0;
+      }
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
          cleared the way a reviewer's removal clears it (profileDb.ts). */
       const portraitPaths = [];
@@ -827,6 +849,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       loginsUnlinked += unlinkedHere;
       loginsRetired += retiredHere;
       correctionsDeleted += correctionsHere;
+      askerQuestionsDeleted += askerQuestionsHere;
       addShadow(shadowHere);
       videosDeleted += videoPaths.length;
       filesDeleted += filesHere;
@@ -953,10 +976,23 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         subjects: guardianChildren.map((child) => ({ ...child, token: null })),
         names: guardianNames,
       }]));
+      // The guardian's own unanswered SHADOW questions (F-054), by the account
+      // that filed them: a parent's words about their child are the parent's
+      // record and go with the account.
+      const askerRows = tables.researchRequirements
+        ? await client.query(
+          `delete from pilot.shadow_research_requirements
+            where source_event_name = 'shadow_unanswered_question'
+              and source_entity_type = 'shadow_asker_question'
+              and created_by_account_id = $1`,
+          [accountId],
+        )
+        : { rowCount: 0 };
       await client.query('delete from pilot.accounts where account_id = $1', [accountId]);
       await client.query('release savepoint purge_account');
       accountsDeleted += 1;
       correctionsDeleted += corrections.rowCount ?? 0;
+      askerQuestionsDeleted += askerRows.rowCount ?? 0;
       addShadow(shadowHere);
     } catch (error) {
       await client.query('rollback to savepoint purge_account');
@@ -966,7 +1002,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
 
   return {
     athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
-    correctionsDeleted, shadow, blocked, guardianLinkLock,
+    correctionsDeleted, askerQuestionsDeleted, shadow, blocked, guardianLinkLock,
   };
 }
 
@@ -1061,6 +1097,7 @@ async function main() {
               to_regclass('pilot.shadow_rate_limit_buckets') is not null as "shadowBuckets",
               to_regclass('pilot.shadow_feature_unlock_snapshots') is not null as "shadowSnapshots",
               to_regclass('pilot.shadow_chat_audit') is not null as "shadowChatAudit",
+              to_regclass('pilot.shadow_research_requirements') is not null as "researchRequirements",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
@@ -1131,7 +1168,7 @@ async function main() {
     const outcome = families === 0 || applyInquiries
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
-        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0,
+        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
         shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
@@ -1191,6 +1228,7 @@ async function main() {
         would_unlink_athlete_logins: outcome.loginsUnlinked,
         would_retire_live_athlete_logins: outcome.loginsRetired,
         would_delete_shadow_memory_corrections: outcome.correctionsDeleted,
+        would_delete_asker_research_questions: outcome.askerQuestionsDeleted,
         ...shadowCountsFor(outcome.shadow, 'would_delete_', ''),
         blocked: blockedCount,
         blocked_by: outcome.blocked,
@@ -1241,6 +1279,7 @@ async function main() {
           files_deleted: outcome.filesDeleted,
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
+          asker_research_questions_deleted: outcome.askerQuestionsDeleted,
           ...shadowCountsFor(outcome.shadow, '', '_deleted'),
           guardians_held_for_safeguarding_chats: heldGuardians,
           total_rows_deleted:
@@ -1267,6 +1306,7 @@ async function main() {
       files_deleted: outcome.filesDeleted,
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,
+      asker_research_questions_deleted: outcome.askerQuestionsDeleted,
       ...shadowCountsFor(outcome.shadow, '', '_deleted'),
       guardians_held_for_safeguarding_chats: heldGuardians,
       total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,

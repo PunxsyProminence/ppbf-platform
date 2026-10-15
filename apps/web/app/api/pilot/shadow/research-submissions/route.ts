@@ -79,13 +79,17 @@ async function mayReadRequirement(
   requirementId: number,
   onPlatformShelf: boolean,
 ): Promise<boolean> {
-  if (isOrganizationAdminRole(actor.role)) {
-    return true;
-  }
-
+  // The row is read for the organization admin too: a marked-deleted asker's
+  // question is unreachable by id for everyone (getShadowResearchRequirementById
+  // answers null for it, F-054), and an id that names nothing is refused the
+  // same way a missing row always was (hiddenNotFound).
   const requirement = await getShadowResearchRequirementById(actor.organizationId, requirementId);
   if (!requirement) {
     return false;
+  }
+
+  if (isOrganizationAdminRole(actor.role)) {
+    return true;
   }
 
   const subjectAthleteId = subjectAthleteIdOf(requirement);

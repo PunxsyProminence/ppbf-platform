@@ -300,6 +300,8 @@
     "test:migrations:research-family-projection": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchFamilyProjection.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-fixture": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianContactFixture.pg.test.ts --testTimeout=180000",
     "test:migrations:behaviour-notes-staff-only": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/behaviourNotesStaffOnly.pg.test.ts --testTimeout=180000",
+    "test:migrations:asker-question-research-reads": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/askerQuestionResearchReads.pg.test.ts --testTimeout=180000",
+    "test:migrations:asker-question-deletion": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/askerQuestionDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:medical-clearance-expiry": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/medicalClearanceExpiry.pg.test.ts --testTimeout=180000",
     "test:migrations:clearance-type-seeds": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/clearanceTypeSeeds.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-repair": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/strandedGuardianRepair.pg.test.ts --testTimeout=180000",
