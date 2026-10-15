@@ -137,17 +137,28 @@ async function expectedIds(where: string, params: unknown[]): Promise<number[]> 
   return rows.rows.map((row) => Number(row.id));
 }
 
-async function insertRow(organizationId: string, entityId: string, createdAt: string, subjectId: string | null): Promise<void> {
+async function insertRow(
+  organizationId: string,
+  entityId: string,
+  createdAt: string,
+  subjectId: string | null,
+  extra: { metadata?: Record<string, unknown>; createdBy?: [string, string] } = {},
+): Promise<void> {
+  const [createdBy, createdByRole] = extra.createdBy ?? ['acct-rp-admin', 'organization_admin'];
   await db.query(
     `insert into pilot.shadow_research_requirements
        (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement,
         knowledge_gap, source_status, source_confidence_tier, source_verification_state,
         created_by_account_id, created_by_role, metadata, subject_id, created_at)
      values ($1, 'MANUAL_RESEARCH_NOTE', 'manual_note', $2, $3, 'gap', 'missing', 'INSUFFICIENT', 'unknown',
-             'acct-rp-admin', 'organization_admin', '{}'::jsonb, $4, $5::timestamptz)`,
-    [organizationId, entityId, `requirement ${entityId}`, subjectId, createdAt],
+             $6, $7, $8::jsonb, $4, $5::timestamptz)`,
+    [organizationId, entityId, `requirement ${entityId}`, subjectId, createdAt, createdBy, createdByRole,
+      JSON.stringify(extra.metadata ?? {})],
   );
 }
+
+/** What a guardian of A may read: rows about A (by column or legacy metadata) and the question they filed. */
+const GUARDIAN_A_ROWS = `organization_id = $1 and (subject_id = $2 or source_entity_id in ('a-legacy', 'mine-own'))`;
 
 beforeAll(async () => {
   PG_PORT = await freePort();
@@ -236,6 +247,11 @@ beforeAll(async () => {
   await insertRow(ORG, 'a-1', '2026-01-01 10:00:00.000001+00', ATHLETE_A);
   await insertRow(ORG, 'a-2', '2026-01-02 10:00:00.000001+00', ATHLETE_A);
   await insertRow(ORG, 'a-3', '2026-01-02 10:00:00.000001+00', ATHLETE_A);
+  // A legacy row that names A only in metadata, padded as old writers left
+  // it, and the guardian's own question about nobody: the SQL pre-filter for
+  // a reader outside staff must keep both.
+  await insertRow(ORG, 'a-legacy', '2026-01-03 10:00:00+00', null, { metadata: { athlete_id: ` ${ATHLETE_A} ` } });
+  await insertRow(ORG, 'mine-own', '2026-01-04 10:00:00+00', null, { createdBy: ['acct-rp-guardian-a', 'parent'] });
   // Two subject-less rows a microsecond apart inside one millisecond: a page
   // key carried as a JS Date would round them together.
   await insertRow(ORG, 'micro-1', '2026-02-01 10:00:00.123456+00', null);
@@ -283,7 +299,7 @@ describe('the research list is paged on the server (F-025)', () => {
 
   test('walking the pages returns every row of the gym once, newest first, ties by id', async () => {
     const expected = await expectedIds('organization_id = $1', [ORG]);
-    expect(expected).toHaveLength(B_ROWS + 5);
+    expect(expected).toHaveLength(B_ROWS + 7);
     const { pages, ids } = await walk(AS.admin(), 7);
     expect(ids).toEqual(expected);
     expect(new Set(ids).size).toBe(ids.length);
@@ -293,38 +309,40 @@ describe('the research list is paged on the server (F-025)', () => {
 
   test('page boundaries one microsecond apart, and between two rows of the same instant, neither repeat nor skip', async () => {
     const expected = await expectedIds('organization_id = $1', [ORG]);
-    // 0-229 about B, 230 micro-2, 231 micro-1, 232 a-3 and 233 a-2 (same
-    // instant, id decides), 234 a-1.
+    // 0-229 about B, 230 micro-2, 231 micro-1, 232 mine-own, 233 a-legacy,
+    // 234 a-3 and 235 a-2 (same instant, id decides), 236 a-1.
     const ids = (page: Page) => page.items.map((item) => Number(item.research_requirement_id));
     const after = (page: Page) => `&cursor=${encodeURIComponent(page.next ?? '')}`;
     const p1 = await pageAs(AS.admin(), '?limit=200');
     const p2 = await pageAs(AS.admin(), `?limit=31${after(p1)}`);
     expect(ids(p2)).toEqual(expected.slice(200, 231)); // ends on micro-2
-    const p3 = await pageAs(AS.admin(), `?limit=2${after(p2)}`);
-    expect(ids(p3)).toEqual(expected.slice(231, 233)); // micro-1, then a-3
-    const p4 = await pageAs(AS.admin(), `?limit=2${after(p3)}`);
-    expect(ids(p4)).toEqual(expected.slice(233)); // a-2 (same instant as a-3), a-1
+    const p3 = await pageAs(AS.admin(), `?limit=1${after(p2)}`);
+    expect(ids(p3)).toEqual(expected.slice(231, 232)); // micro-1
+    const p3b = await pageAs(AS.admin(), `?limit=3${after(p3)}`);
+    expect(ids(p3b)).toEqual(expected.slice(232, 235)); // mine-own, a-legacy, a-3
+    const p4 = await pageAs(AS.admin(), `?limit=2${after(p3b)}`);
+    expect(ids(p4)).toEqual(expected.slice(235)); // a-2 (same instant as a-3), a-1
     expect(p4.next).toBeNull();
   });
 
   test('a guardian reads past a full batch of rows about another child and gets full pages of their own', async () => {
-    const expected = await expectedIds('organization_id = $1 and subject_id = $2', [ORG, ATHLETE_A]);
-    expect(expected).toHaveLength(3);
-    const first = await pageAs(AS.guardianOfA(), '?limit=2');
-    expect(first.items.map((item) => Number(item.research_requirement_id))).toEqual(expected.slice(0, 2));
+    const expected = await expectedIds(GUARDIAN_A_ROWS, [ORG, ATHLETE_A]);
+    expect(expected).toHaveLength(5);
+    const first = await pageAs(AS.guardianOfA(), '?limit=3');
+    expect(first.items.map((item) => Number(item.research_requirement_id))).toEqual(expected.slice(0, 3));
     expect(first.next).not.toBeNull();
-    const second = await pageAs(AS.guardianOfA(), `?limit=2&cursor=${encodeURIComponent(first.next ?? '')}`);
-    expect(second.items.map((item) => Number(item.research_requirement_id))).toEqual(expected.slice(2));
+    const second = await pageAs(AS.guardianOfA(), `?limit=3&cursor=${encodeURIComponent(first.next ?? '')}`);
+    expect(second.items.map((item) => Number(item.research_requirement_id))).toEqual(expected.slice(3));
     expect(second.next).toBeNull();
     // A full last page with nothing after it still ends the list.
-    const exact = await pageAs(AS.guardianOfA(), '?limit=3');
-    expect(exact.items).toHaveLength(3);
+    const exact = await pageAs(AS.guardianOfA(), '?limit=5');
+    expect(exact.items).toHaveLength(5);
     expect(exact.next).toBeNull();
   });
 
   test('every page a guardian walks carries the family fields only, nothing about the other child', async () => {
     const { pages } = await walk(AS.guardianOfA(), 1);
-    expect(pages).toHaveLength(3);
+    expect(pages).toHaveLength(5);
     for (const page of pages) {
       expect(page.text).not.toContain('acct-rp-admin');
       expect(page.text).not.toContain(ATHLETE_B);

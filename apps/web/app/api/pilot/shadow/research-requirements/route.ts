@@ -19,6 +19,7 @@ import {
   COVERED_AFTER_RESOLUTION_KEY,
   getShadowResearchRequirementById,
   isResearchStaff,
+  listNamedAthleteIdsInResearch,
   listShadowResearchRequirementsBatch,
   mayReadSubjectlessResearchRow,
   namedAthleteId,
@@ -298,10 +299,23 @@ async function handleList(request: NextRequest) {
     // never counts toward a page, so it cannot shorten one or be inferred
     // from one. One row past the page is looked for, so next_cursor is null
     // exactly when nothing readable is left.
+    //
+    // A reader outside research staff sees only rows they filed and rows
+    // about athletes they reach, often a handful in a large gym. The read is
+    // narrowed in SQL to that superset first (visibleTo), with the reach
+    // asked of the one central gate, so filling a page does not walk the
+    // whole gym; the filter below still decides every row. Staff see nearly
+    // every row, so their batches fill pages as they are.
+    let visibleTo: { accountId: string; athleteIds: string[] } | undefined;
+    if (!isResearchStaff(principal.role)) {
+      const named = await listNamedAthleteIdsInResearch(principal.organizationId);
+      const reachable = named.length > 0 ? await accessibleAthleteIds(principal, named) : new Set<string>();
+      visibleTo = { accountId: principal.accountId, athleteIds: Array.from(reachable) };
+    }
     const page: Array<{ row: ShadowResearchRequirementRow; key: ResearchRequirementPageKey }> = [];
     let more = false;
     while (!more) {
-      const batch = await listShadowResearchRequirementsBatch(principal.organizationId, { after, limit: LIST_BATCH });
+      const batch = await listShadowResearchRequirementsBatch(principal.organizationId, { after, limit: LIST_BATCH, visibleTo });
       if (batch.length === 0) break;
       const kept = new Set(await scopeToReachableSubjects(principal, batch.map((entry) => entry.row)));
       for (const entry of batch) {
