@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 
 import { usePilotSession } from '@/components/usePilotSession';
@@ -58,6 +58,18 @@ export default function SetupWizard() {
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  // The step whose button was pressed once (F-094). The first press only arms
+  // it, and the button then names the gym the second press acts on -- the
+  // Cancel Class pattern (app/schedule/page.tsx), as on the platform desk.
+  // `target` is what the step would send when it was armed: change a field
+  // and the button is no longer armed, so the next press only arms it again.
+  const [armed, setArmed] = useState<{ step: number; target: string } | null>(null);
+
+  // The gyms that already exist. Step 1's write is an upsert
+  // (createOrganization): an id that is already taken renames that gym and
+  // opens it, so its armed label has to say so rather than "create".
+  const [existingGyms, setExistingGyms] = useState<{ organization_id: string; organization_name: string }[]>([]);
 
   function showFeedback(kind: FeedbackKind, text: string) {
     setFeedback({ kind, text });
@@ -135,7 +147,78 @@ export default function SetupWizard() {
     return `Saved ${enabledCount} feature${enabledCount === 1 ? '' : 's'} for your gym`;
   }
 
+  const enabledCapabilityCount = gymCapabilities.filter(({ id }) => gymCapabilityAccess[id] === true).length;
+
+  // Everything the step sends, as it stands now.
+  function targetOf(forStep: number): string {
+    if (forStep === 1) {
+      return JSON.stringify([gymId.trim(), gymName.trim()]);
+    }
+    if (forStep === 2) {
+      return JSON.stringify([gymId.trim(), adminEmail.trim()]);
+    }
+    return JSON.stringify([gymId.trim(), gymCapabilities.map(({ id }) => gymCapabilityAccess[id] === true)]);
+  }
+
+  function isArmed(forStep: number): boolean {
+    return armed?.step === forStep && armed.target === targetOf(forStep);
+  }
+
+  // Read from the same state the step reads, at render, so what the armed
+  // button names is what the second press sends.
+  function armedLabel(forStep: number): string {
+    const gym = gymName.trim() || gymId.trim();
+    if (forStep === 1) {
+      const taken = existingGyms.find((existing) => existing.organization_id === gymId.trim());
+      // "save", not "create": if the gym list did not load, this page cannot
+      // tell a new id from a taken one.
+      return taken
+        ? `Press again: overwrite ${taken.organization_name || taken.organization_id} (${gymId.trim()}): rename it ${gymName.trim()} and open it`
+        : `Press again: save ${gym} (${gymId.trim()})`;
+    }
+    if (forStep === 2) {
+      return `Press again: make ${adminEmail.trim()} admin of ${gym}`;
+    }
+    return `Press again: turn on ${enabledCapabilityCount} feature${enabledCapabilityCount === 1 ? '' : 's'} for ${gym}; the rest stay off`;
+  }
+
+  // First press arms; the second press of the same button runs the step. The
+  // second click of a double-click is part of the first press.
+  function pressToRun(event: MouseEvent<HTMLButtonElement>, forStep: number, run: () => void) {
+    if (forStep === 3 && enabledCapabilityCount === 0) {
+      setArmed(null);
+      showFeedback('error', 'Please select at least one feature for your gym');
+      return;
+    }
+    if (!isArmed(forStep)) {
+      setFeedback(null);
+      setArmed({ step: forStep, target: targetOf(forStep) });
+      return;
+    }
+    if (event.detail > 1) {
+      return;
+    }
+    setArmed(null);
+    run();
+  }
+
   const hasPlatformAccess = isMicrosoftSession && sessionRole === 'platform_owner';
+
+  useEffect(() => {
+    if (!hasPlatformAccess) {
+      return;
+    }
+    void (async () => {
+      const response = await fetch(`${apiBase()}/api/pilot/platform/organizations`, { credentials: 'include' }).catch(() => null);
+      if (!response?.ok) {
+        return;
+      }
+      const data = (await response.json().catch(() => ({}))) as {
+        organizations?: { organization_id: string; organization_name: string }[];
+      };
+      setExistingGyms(data.organizations ?? []);
+    })();
+  }, [hasPlatformAccess]);
 
   if (!authChecked) {
     return (
@@ -182,7 +265,16 @@ export default function SetupWizard() {
   const step2Complete = completedSteps.includes(2);
 
   return (
-    <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    // A held Enter key repeats the button's click: the first arms a step and
+    // the repeat would run it before the armed label could be read.
+    <main
+      className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]"
+      onKeyDownCapture={(event) => {
+        if (event.repeat && event.key === 'Enter' && event.target instanceof HTMLButtonElement) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         {/* Header */}
         <header className="frame">
@@ -291,17 +383,17 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={!canStep1 || isBusy}
-                onClick={() => {
+                onClick={(event) => pressToRun(event, 1, () => {
                   void runAction(createGym).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 1]);
                       setStep(2);
                     }
                   });
-                }}
+                })}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Creating...' : 'Create Gym & Continue'}
+                {isBusy ? 'Creating...' : isArmed(1) ? armedLabel(1) : 'Create Gym & Continue'}
               </button>
             </div>
           )}
@@ -349,17 +441,17 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={!canStep2 || isBusy}
-                onClick={() => {
+                onClick={(event) => pressToRun(event, 2, () => {
                   void runAction(createOrganizationAdmin).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 2]);
                       setStep(3);
                     }
                   });
-                }}
+                })}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Saving...' : 'Add Gym Admin & Continue'}
+                {isBusy ? 'Saving...' : isArmed(2) ? armedLabel(2) : 'Add Gym Admin & Continue'}
               </button>
             </div>
           )}
@@ -405,17 +497,17 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={isBusy}
-                onClick={() => {
+                onClick={(event) => pressToRun(event, 3, () => {
                   void runAction(saveCapabilities).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 3]);
                       setStep(4); // "Complete" state
                     }
                   });
-                }}
+                })}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Saving...' : 'Save & Complete Setup'}
+                {isBusy ? 'Saving...' : isArmed(3) ? armedLabel(3) : 'Save & Complete Setup'}
               </button>
             </div>
           )}
