@@ -14,7 +14,10 @@
 -- scholarship. No row means "none recorded", never "none provided".
 --
 -- WHO RECORDS (PH-12 Q-B default A): organization admins and admins, the same
--- seats that record memberships and scholarships. A row is born with its
+-- seats that record memberships and scholarships, of THIS gym: the recorder
+-- must hold the role written in the record's gym (an active organization
+-- membership, or the account's home gym), and whoever retires a record must
+-- be an organization admin or admin of that gym too. A row is born with its
 -- recorder named; when that account is removed the record stays (set null).
 --
 -- NO STAFF-ONLY TEXT. There is no note column: what support_kind says is
@@ -91,6 +94,20 @@ begin
       raise exception 'FAMILY_SUPPORT_RECORD_NAMES_ITS_RECORDER'
         using errcode = '23514', constraint = 'pilot_family_support_records_recorder_named';
     end if;
+    -- The recorder holds that role in this gym. A role outside the allowed
+    -- list is left to the role check, which names itself.
+    if new.recorded_by_role in ('organization_admin', 'admin') and not exists (
+      select 1 from pilot.organization_memberships om
+       where om.account_id = new.recorded_by_account_id and om.organization_id = new.organization_id
+         and om.active_flag and om.role = new.recorded_by_role
+      union all
+      select 1 from pilot.accounts a
+       where a.account_id = new.recorded_by_account_id and a.organization_id = new.organization_id
+         and a.role = new.recorded_by_role
+    ) then
+      raise exception 'FAMILY_SUPPORT_RECORD_WRITER_OF_THIS_GYM'
+        using errcode = '23514', constraint = 'pilot_family_support_records_writer_of_this_gym';
+    end if;
     -- When it was recorded is when it was written, not a value sent in.
     new.created_at := now();
     -- Provided, not planned: not after today in the gym's time zone.
@@ -118,6 +135,19 @@ begin
          old.recorded_by_account_id, old.recorded_by_role, old.created_at) then
     raise exception 'FAMILY_SUPPORT_RECORD_IS_ONLY_RETIRED'
       using errcode = '23514', constraint = 'pilot_family_support_records_only_retired';
+  end if;
+  -- Whoever retires it is an organization admin or admin of this gym.
+  if not exists (
+    select 1 from pilot.organization_memberships om
+     where om.account_id = new.retired_by_account_id and om.organization_id = new.organization_id
+       and om.active_flag and om.role in ('organization_admin', 'admin')
+    union all
+    select 1 from pilot.accounts a
+     where a.account_id = new.retired_by_account_id and a.organization_id = new.organization_id
+       and a.role in ('organization_admin', 'admin')
+  ) then
+    raise exception 'FAMILY_SUPPORT_RECORD_WRITER_OF_THIS_GYM'
+      using errcode = '23514', constraint = 'pilot_family_support_records_writer_of_this_gym';
   end if;
   -- The time a record was retired is when it happened, not a value sent in.
   new.retired_at := now();

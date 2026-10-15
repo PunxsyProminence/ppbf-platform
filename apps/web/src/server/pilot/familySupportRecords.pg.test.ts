@@ -250,6 +250,38 @@ describe('family support records migration (PH-12)', () => {
     }
   });
 
+  test("the recorder and the retirer are an admin seat of this gym, never another gym's or a coach", async () => {
+    const client = await freshDatabase('fsup_gym_writer');
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ('acct-sup-x-admin', 'organization_admin', $1, 'microsoft')`,
+        [OTHER_ORG],
+      );
+      await expect(record(client, { recorder: 'acct-sup-x-admin' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_support_records_writer_of_this_gym',
+      });
+      // This gym, written as a seat it does not hold.
+      await expect(record(client, { recorder: ADMIN, role: 'admin' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_support_records_writer_of_this_gym',
+      });
+      const { rows: [{ record_id: id }] } = await record(client);
+      for (const retirer of ['acct-sup-x-admin', COACH]) {
+        await expect(client.query(
+          'update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid',
+          [id, retirer],
+        )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_writer_of_this_gym' });
+      }
+      // The other gym's admin, given an admin seat here by membership, may.
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role) values ('acct-sup-x-admin', $1, 'organization_admin')`,
+        [ORG],
+      );
+      await client.query('update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid', [id, 'acct-sup-x-admin']);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a record is never edited: the one change is retiring it, once', async () => {
     const client = await freshDatabase('fsup_retire');
     try {
