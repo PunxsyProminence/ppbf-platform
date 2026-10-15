@@ -9,12 +9,17 @@ import {
   resolveEscalation,
 } from '@/src/server/pilot/escalationLadder';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { closeEndedHoldNotices } from '@/src/server/pilot/trainingHolds';
 
 jest.mock('@/src/server/pilot/escalationLadder', () => ({
   listEscalations: jest.fn(),
   acknowledgeEscalation: jest.fn(),
   resolveEscalation: jest.fn(),
   detectRepeatedPatternEscalations: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/trainingHolds', () => ({
+  closeEndedHoldNotices: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -46,6 +51,7 @@ const mockList = jest.mocked(listEscalations);
 const mockAcknowledge = jest.mocked(acknowledgeEscalation);
 const mockResolve = jest.mocked(resolveEscalation);
 const mockScanPatterns = jest.mocked(detectRepeatedPatternEscalations);
+const mockCloseEndedHoldNotices = jest.mocked(closeEndedHoldNotices);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -84,6 +90,21 @@ describe('GET /api/pilot/escalations', () => {
     expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: undefined });
   });
 
+  test('ended hold notices are closed for the organization before the list is read (#1596)', async () => {
+    for (const role of ['organization_admin', 'coach']) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+      mockList.mockResolvedValueOnce([]);
+      mockCloseEndedHoldNotices.mockClear();
+
+      const response = await GET(request('/api/pilot/escalations?status=open'));
+
+      expect(response.status).toBe(200);
+      expect(mockCloseEndedHoldNotices).toHaveBeenCalledWith('org-a');
+      expect(mockCloseEndedHoldNotices.mock.invocationCallOrder[0])
+        .toBeLessThan(mockList.mock.invocationCallOrder[mockList.mock.invocationCallOrder.length - 1]);
+    }
+  });
+
   test('athlete, parent, and board are refused -- this is a coach/admin surface', async () => {
     for (const role of ['athlete', 'parent', 'board']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
@@ -91,6 +112,7 @@ describe('GET /api/pilot/escalations', () => {
       expect(response.status).toBe(403);
     }
     expect(mockList).not.toHaveBeenCalled();
+    expect(mockCloseEndedHoldNotices).not.toHaveBeenCalled();
   });
 
   test('an invalid status filter is a 400', async () => {

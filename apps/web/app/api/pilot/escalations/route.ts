@@ -9,6 +9,7 @@ import {
   type SafetyEscalationStatus,
 } from '@/src/server/pilot/escalationLadder';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { closeEndedHoldNotices } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +43,9 @@ export async function GET(request: NextRequest) {
     const status = (statusParam ?? undefined) as SafetyEscalationStatus | undefined;
 
     const athleteIds = isCoach ? await athleteIdsForCoach(principal.organizationId, principal.accountId) : undefined;
+    // A hold notice whose hold has ended is closed before the list is read
+    // (#1596): it is not Open on anyone's list once the hold is gone.
+    await closeEndedHoldNotices(principal.organizationId);
     // athlete_voice rows are admin-surface only: their existence alone says
     // "this child said something", and the coach may be who it is about.
     const escalations = await listEscalations(principal.organizationId, {

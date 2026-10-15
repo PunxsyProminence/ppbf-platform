@@ -271,6 +271,14 @@ export default function SchedulerPage() {
   // The moment the page opened: what "today" and "has this class ended" are
   // measured from (#1524). Read once, so a render never asks the clock.
   const [nowMs] = useState(() => Date.now());
+  // Cancel Class goes once the class starts (#1595), so the page that stays
+  // open across a start needs a clock that moves. Ticked in an effect, not
+  // read in render.
+  const [cancelClockMs, setCancelClockMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCancelClockMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -525,6 +533,14 @@ export default function SchedulerPage() {
     const endsMs = Date.parse(item.end_at);
     return item.status !== 'cancelled' && !(Number.isFinite(endsMs) && endsMs < nowMs);
   };
+  /* Nobody cancels a class once it has started (#1595). The server's
+     can_cancel says so at load; this takes the button off a class that starts
+     while the page is open (within the clock's 15-second tick). A press after
+     the start is refused by the server. */
+  const notYetStarted = (item: SchedulerClass) => {
+    const startsMs = Date.parse(item.start_at);
+    return Number.isFinite(startsMs) && startsMs > cancelClockMs;
+  };
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -601,7 +617,7 @@ export default function SchedulerPage() {
             Cover Class
           </button>
         ) : null}
-        {item.can_cancel ? (
+        {item.can_cancel && notYetStarted(item) ? (
           <button
             type="button"
             onClick={() => {

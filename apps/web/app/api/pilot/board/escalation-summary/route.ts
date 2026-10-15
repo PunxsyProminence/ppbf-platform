@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getBoardEscalationSummary } from '@/src/server/pilot/escalationLadder';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { closeEndedHoldNotices } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['board']);
 
+    // Counts an ended hold's notice as resolved, not open (#1596).
+    await closeEndedHoldNotices(principal.organizationId);
     const summary = await getBoardEscalationSummary(principal.organizationId);
 
     return NextResponse.json(
