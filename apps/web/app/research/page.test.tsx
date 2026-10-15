@@ -125,7 +125,8 @@ test('the ladder badge renders from the batch answer-state read', async () => {
 });
 
 test('a viewer refused by the sources probe gets no Answer-a-Gap panel', async () => {
-  global.fetch = mockFetch({ curator: false });
+  // A volunteer: the sources list refuses them, so the probe fails.
+  global.fetch = mockFetch({ curator: false, role: 'volunteer' });
 
   await act(async () => {
     render(<ResearchIntakePage />);
@@ -237,11 +238,11 @@ describe('general research intake', () => {
     metadata: { general_research: true, classification_domain: 'fundraising_donor_development' },
   };
 
-  function mockFetchGeneral(options: { curator: boolean; capture: { posts: unknown[]; patches: unknown[] } }) {
+  function mockFetchGeneral(options: { curator: boolean; capture: { posts: unknown[]; patches: unknown[] }; role?: string }) {
     return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/pilot/auth/session')) {
-        return { ok: true, json: async () => ({ authenticated: true, role: 'organization_admin', auth_provider: 'microsoft' }) } as Response;
+        return { ok: true, json: async () => ({ authenticated: true, role: options.role ?? 'organization_admin', auth_provider: 'microsoft' }) } as Response;
       }
       if (url.includes('/library/sources') && init?.method === 'POST') {
         options.capture.posts.push(JSON.parse(String(init.body)));
@@ -263,14 +264,30 @@ describe('general research intake', () => {
     }) as unknown as typeof fetch;
   }
 
-  test('a non-curator sees no general research section', async () => {
-    global.fetch = mockFetchGeneral({ curator: false, capture: { posts: [], patches: [] } });
+  test('a viewer the sources list refuses sees no general research section', async () => {
+    global.fetch = mockFetchGeneral({ curator: false, capture: { posts: [], patches: [] }, role: 'volunteer' });
 
     await act(async () => {
       render(<ResearchIntakePage />);
     });
 
     expect(screen.queryByText('General Research Intake')).toBeNull();
+  });
+
+  // A coach reads the list (A-Q13) but does not register sources.
+  test('a coach, whom the sources list answers, still sees no general research section', async () => {
+    const capture = { posts: [] as unknown[], patches: [] as unknown[] };
+    global.fetch = mockFetchGeneral({ curator: true, capture, role: 'coach' });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('General Research Intake')).toBeNull();
+    expect(capture.posts).toHaveLength(0);
   });
 
   test('registration posts the taxonomy key and provenance under general_research', async () => {

@@ -12191,11 +12191,12 @@
     "id": "app/api/pilot/shadow/library/sources/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/library/sources",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "gate": "requirePrincipal + requireRole (SHADOW_SOURCE_ATTACH_ROLES)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
-      "platform_owner"
+      "platform_owner",
+      "coach"
     ],
     "athleteData": false,
     "writes": false,
@@ -12203,7 +12204,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "sources/route.ts:61-62 gate; lists library sources for the shelf via resolveLibraryShelf. Reference material, not athlete data.",
+    "notes": "sources/route.ts GET gate; lists library sources for the shelf via resolveLibraryShelf. Reference material, not athlete data (sources carry no subject_id). Coaches read it to pick a source to attach to a research requirement (OD-2026-10-08-005 A-Q13); POST and PATCH stay curator-only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12793,19 +12794,20 @@
     "id": "app/api/pilot/shadow/research-submissions/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/research-submissions",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "gate": "requirePrincipal + requireRole (SHADOW_SOURCE_ATTACH_ROLES) + for a coach: no document_id, mayReadRequirement (accessibleAthleteIds)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
-      "platform_owner"
+      "platform_owner",
+      "coach"
     ],
     "athleteData": false,
     "writes": true,
-    "coachReachRule": "n/a",
+    "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "POST/PATCH do not check the target requirement athlete subject, so a curator (incl. platform_owner) can attach sources to an athlete-subject requirement; no athlete data is returned, so low impact.",
+    "looksWrong": "Curators (incl. platform_owner on its own shelf) are not checked against the target requirement's athlete subject, so a curator can attach sources to an athlete-subject requirement; no athlete data is returned, so low impact. A coach is checked (mayReadRequirement).",
     "confidence": "medium",
-    "notes": "research-submissions/route.ts POST: role gate; checks requirement, source, document exist in the org, then createResearchSubmission. Source/document linkage, not athlete records.",
+    "notes": "research-submissions/route.ts POST: role gate; checks requirement, source, document exist in the org; a coach (OD-2026-10-08-005 A-Q13, 'a coach may attach a source') may name no document and only a requirement they may read; then createResearchSubmission, which lands 'unreviewed' (review stays curator-only on PATCH). Source/document linkage, not athlete records.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
