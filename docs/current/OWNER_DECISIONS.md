@@ -164,6 +164,112 @@ and should not try to.
 
 ---
 
+## OD-2026-10-15-001 -- Overwatch's application of an existing ruling, NOT a new ruling of Jason's: F-081, a person's SHADOW learning-loop notes are de-identified at the purge (OD-2026-10-06-012)
+
+**Provenance: DERIVED, not his words.** Overwatch applied a ruling already recorded here; he did not answer a question on F-081. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; the register edit and log line at line 4486, 2026-10-15T05:07:32.301Z). Read by script (records pass, 2026-10-15). The id carries 2026-10-15 because this UTC time is the early hours of 2026-10-15 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-013.
+
+**The finding** (REPORTED, Overwatch's findings register as quoted in the transcript, line 4455): "SHADOW learning-loop rows keep a person's own typed note under their login after the purge. The October 6 retention rulings likely govern; not yet checked."
+
+**Overwatch, as written** (line 4486): "COVERED by Jason 2026-10-06 ("delete any thing that personally Identifys the person but we keep data that [makes] the Ai and ML better", docs/DATA_RETENTION.md:388-389): lane L9 third PR (de-identify, keep the signal)." His typed words are OD-2026-10-06-012 (*"delete any thing that personally Identifys the person but we keep data that male the Ai and ML bette3r"*); `docs/DATA_RETENTION.md:388-389` quotes them with "[makes]" for "male" and "better" for "bette3r" (OBSERVED, origin/main `d3f6ecac`).
+
+**What was closed, and under what:** F-081 is closed under OD-2026-10-06-012. At the purge a person's own typed note in a learning-loop row is removed or de-identified; the learning signal stays.
+
+**Not ruled here:** nothing new. If he disagrees with the reading, his words on OD-2026-10-06-012 govern.
+
+**Status:** REPORTED. Sent to lane L9 as its third PR (issue #1600 is that lane's item; OBSERVED, `gh`, OPEN). Not built at the time of writing.
+
+---
+
+## OD-2026-10-14-003 -- Release 25: "Approved "
+
+**Provenance: PRIMARY.** One typed message from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; overwatch's link at line 4270, 2026-10-15T03:23:37.989Z; his message at line 4274, 2026-10-15T03:32:54.225Z). Read by script (records pass, 2026-10-15). Quoted exactly (it ends in a space). The id carries 2026-10-14 because this UTC time is the evening of 2026-10-14 Eastern. New; edits no earlier entry.
+
+**Overwatch, as written** (line 4270), with the approval link for run 38675987960: "OBSERVED: CI green, staging deployed and answering, no database change." Jason typed (line 4274): *"Approved "*
+
+**Ruling:** Release 25 (main `6005656c902728783c402076092964102e9d5c12`) goes to production. The approval click in GitHub was his.
+
+**Acted on:** deploy-production run 38675987960 completed success on `6005656c902728783c402076092964102e9d5c12` at 2026-10-15T03:34:25Z (OBSERVED, `gh`). It carries F-054 (#1575, OD-2026-10-13-018; `d3d665a9` is an ancestor of `6005656c`, OBSERVED, `git merge-base`).
+
+**Status:** done.
+
+---
+
+## OD-2026-10-14-002 -- Overwatch's application of an existing ruling, NOT a new ruling of Jason's: FC-06 Q-2, guardians of an athlete under 18 read, read-only, what a coach writes to that athlete
+
+**Provenance: DERIVED, not his words.** Overwatch applied an owner decision already on record in a design document; he did not answer FC-06 Q-2. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; its comment on issue #1542 and log line at line 4058, 2026-10-15T02:22:10.300Z). Read by script (records pass, 2026-10-15). The id carries 2026-10-14 because this UTC time is the evening of 2026-10-14 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-013.
+
+**The decision applied** (OBSERVED, `docs/design/ATHLETE_WORKSPACE_IA_MOCKUP.md:171-172` on origin/main `d3f6ecac`): "The owner decided (2026-08-16) that for youth, **guardians receive a copy** of athlete messages". That 2026-08-16 decision has no entry of its own in this file (searched "2026-08-16"); the mockup is the only record found.
+
+**Overwatch, as written** (line 4058, to the VS Code lane on #1542): "**Q-2 (do guardians see what a coach writes to their child): covered by an existing owner decision, applied, not asked again.** ... So build **B**: for an athlete under 18, every guardian linked to that athlete reads, read-only, what staff wrote to the athlete, labelled "Sent to your athlete" and kept separate from parent messages; gated by the guardian link on each request; staff names only (OD-2026-10-06-025, no account ids); with two guardians each reads the coach's messages (they are the coach's words, not the other guardian's). For an athlete 18 or over, no guardian copy (guardian access goes dormant at 18, Jason's Q3 on 2026-10-07)."
+
+**What was closed, and under what:** FC-06 Q-2 is closed under the 2026-08-16 guardian-copy decision, with the age line from OD-2026-10-07-008 (the guardian link goes dormant at 18) and the staff-name rule from OD-2026-10-06-025.
+
+**Not ruled here:** nothing new. FC-06 Q-1 (`note_type` `athlete_message`) is Overwatch's technical call, not his. If he disagrees with the reading, his own words govern.
+
+**Status:** REPORTED. PR #1594 "FC-06: a coach messages the athlete; the athlete reads From your coach" is open (OBSERVED, `gh`, 2026-10-15). Not merged, not live.
+
+---
+
+## OD-2026-10-14-001 -- Cancelling a class (#1550): "A: Its coaches + office (Recommended)"; "A: No, not after start (Recommended)"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 3014, 2026-10-14T16:45:10.253Z; answered at line 3015, 2026-10-14T18:54:09.822Z). Read by script (records pass, 2026-10-15). The button picks are quoted exactly; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Who cancels".** Overwatch, as written: "Cancel a class (#1550, live in Release 23): right now any coach can make themselves the cover on a class and then cancel it. Who may cancel a class? (Plain: should any coach be able to cancel any class, or only the coach running it and the office?)" Options as written: "A: Its coaches + office (Recommended)": "The scheduled coach, the coach covering it, and the org admin can cancel; covering stays open to any coach, but a cover added within the last hour cannot cancel."; "B: Any coach of the gym": "Keep it as it is now (matches your whole-gym coach rule)."; "C: Office only": "Only the org admin can cancel a class." Jason: *"A: Its coaches + office (Recommended)"*
+
+**Question "After start".** Overwatch, as written: "Can a class be cancelled after it has started? Today it can. (Plain: once the class has begun, should Cancel still be offered?)" Options as written: "A: No, not after start (Recommended)": "Cancel disappears at the start time; after that it is attendance, not cancellation."; "B: Yes, keep allowing it": "A coach can still cancel a class that has begun (for example if it was stopped early)." Jason: *"A: No, not after start (Recommended)"*
+
+**Ruling:** the scheduled coach, the coach covering the class and the org admin may cancel it; any coach may still cover, but a cover added within the last hour cannot cancel. No class can be cancelled once its start time has passed. Options B and C (first question) and B (second) were not chosen.
+
+**Acted on:** issue #1595 filed for cloud lane 3 (OBSERVED, `gh`, OPEN). PR #1597 "Cancel a class: its coaches and the office, a cover only after an hour, never after start (#1595)" merged `d3f6ecac6af4a12fa2019ec8229ce2b2fb09ef8d` at 2026-10-15T05:13:11Z (OBSERVED, `gh`).
+
+**Status:** merged to main after Release 25; not live at the time of writing.
+
+---
+
+## OD-2026-10-13-019 -- F-019, the "not built yet" notes on working pages: "C: Keep all"
+
+**Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 2574, 2026-10-14T03:32:12.655Z; answered at line 2582, 2026-10-14T03:34:09.328Z). Read by script (records pass, 2026-10-15). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because this UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**Question "F-019".** Overwatch, as written: "F-019: honest 'not built yet' notes on working pages (coach video page 5 panels, athlete video page 2 panels, admin home 3 stamps incl. 'Surfaces we still owe you'): remove or keep? (Plain: some screens say 'this part isn't built'. Should coaches and kids still see that?)" Options as written: "A: Remove, keep admin (Recommended)": "Take the notes off coach and athlete pages; keep the admin home's 'still owed' list as a true status for you."; "B: Remove all": "Take them off every page, admin home included."; "C: Keep all": "Leave every note as an honest roadmap." Jason: *"C: Keep all"*
+
+**Ruling:** every "not built yet" note stays, on coach, athlete and admin pages, as an honest roadmap. Option A (recommended) and B were not chosen.
+
+**Acted on:** PR #1586 "F-019: remove the planned / not-built lists from the athlete film and admin screens" closed unmerged with his ruling quoted (OBSERVED, `gh`, CLOSED; Overwatch's report, line 2596).
+
+**Status:** done; nothing to build.
+
+---
+
+## OD-2026-10-13-018 -- F-054, who reads the words of a kid's or parent's SHADOW question filed for research: "A: Office + asker (Recommended)"
+
+**Provenance: PRIMARY.** The first question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 2574, 2026-10-14T03:32:12.655Z; answered at line 2582, 2026-10-14T03:34:09.328Z). Read by script (records pass, 2026-10-15). The button pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because this UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry.
+
+**Question "F-054".** Overwatch, as written: "F-054: when SHADOW can't answer a kid's or parent's question and files it for research, who may read the question's words? (Plain: if a kid types something SHADOW can't answer, it gets passed along. The words might be about a coach, so who sees them?)" Options as written: "A: Office + asker (Recommended)": "Org admin and the person who asked read the words; coaches see only that a question went unanswered. Same idea as your Oct 7 ruling on flagged chats."; "B: Nobody but asker": "Filed with no words; coaches get a count only."; "C: Don't file theirs": "Only coach questions get filed, as before; the screen stops saying it was passed on." Jason: *"A: Office + asker (Recommended)"*
+
+**Ruling:** the org admin and the person who asked read the words of a filed question from a kid or parent; coaches see only that a question went unanswered. Options B and C were not chosen.
+
+**Acted on:** built by lane L7 in PR #1575 "F-054: an unanswered SHADOW question files its own research row and says so", merged `d3d665a99f1c208ba0d1f244163b8ac7c49ae2c9` at 2026-10-15T02:07:57Z (OBSERVED, `gh`); live with Release 25 (OD-2026-10-14-003).
+
+**Status:** live.
+
+---
+
+## OD-2026-10-13-017 -- Release 23 approval card: "Release 23,Just keep going"
+
+**Provenance: PRIMARY.** One typed message, then a one-question card, in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his message at line 2383, 2026-10-14T03:18:36.596Z; card put at line 2392, 2026-10-14T03:18:56.183Z; answered at line 2393, 2026-10-14T03:21:10.180Z). Read by script (records pass, 2026-10-15). The message and the button picks are quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-13 because these UTC times are the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows on from OD-2026-10-13-007.
+
+**Typed** (line 2383): *"Go"*
+
+**The card, question "Go on what"** (multiple choice allowed). Overwatch, as written: ""Go" on which item? (Plain: I don't want to guess on these two, one is a production release and one is about children's safety.)" Options as written: "F-054 A and F-019 A (Recommended)": "Take both recommendations: an unanswered SHADOW question from a kid or parent is readable by the org admin and the asker only; remove the 'not built yet' notes from coach and athlete pages, keep the admin home list."; "Release 23": "You want Release 23 live. I can't press approve for you because I opened that page, not you. Press 'Review deployments' on tab 2 of the in-app browser (or on GitHub), tick production, then 'Approve and deploy'."; "Just keep going": "No decision; carry on merging and running the lanes." Jason: *"Release 23,Just keep going"*
+
+**Ruling:** Release 23 goes live, and the lanes carry on. "Go" was not a ruling on F-054 or F-019; both were asked once more on their own card and answered there (OD-2026-10-13-018, -019).
+
+**Acted on:** deploy-production run 38491163580 completed success on `806059ddbbb1c00ccc30491cb62881e09d41b407` at 2026-10-14T03:28:15Z (OBSERVED, `gh`). The approval click was his.
+
+**Status:** done.
+
+---
+
 ## OD-2026-10-13-016 -- Overwatch's applications of existing rulings, NOT new rulings of Jason's: F-067 B, Q-4 and Q-5 closed without asking him
 
 **Provenance: DERIVED, not his words.** Overwatch applied rulings already recorded here; he did not answer these three questions. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; its report to him at line 501, 2026-10-14T00:42:07.629Z) and the running log `OVERWATCH-HANDOVER-2026-10-13.md` (REPORTED). Read by script (records pass, 2026-10-14). The id carries 2026-10-13 because the UTC time is the evening of 2026-10-13 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-013 (the rule that a ruling covers every case its words reach).
