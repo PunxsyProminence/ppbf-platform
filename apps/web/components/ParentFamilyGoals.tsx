@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDate, formatGymDay } from '@/src/lib/gymTime';
@@ -76,6 +76,9 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<{ goalId: string; draft: Draft } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // The guard itself: state set by one click is not seen by a second click
+  // in the same tick, a ref is.
+  const writing = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,7 +103,8 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
 
   // One write at a time; the answer replaces (or, for a retire, removes) that goal.
   async function run(key: string, write: () => Promise<FamilyGoalItem | null>, goalId?: string) {
-    if (busy) return;
+    if (writing.current) return false;
+    writing.current = true;
     setBusy(key);
     setNotice(null);
     try {
@@ -120,6 +124,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
       setNotice(error instanceof Error ? error.message : 'The goal was not saved.');
       return false;
     } finally {
+      writing.current = false;
       setBusy(null);
     }
   }
@@ -157,7 +162,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
           {read.items.map((goal) => (
             <li key={goal.goal_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
               {editing?.goalId === goal.goal_id ? (
-                <form onSubmit={(event) => void saveEdit(event)} className="space-y-[var(--s2)]">
+                <form onSubmit={(event) => void saveEdit(event)} className="space-y-[var(--s2)]" aria-label={`Edit ${goal.title}`}>
                   <GoalFields draft={editing.draft} idPrefix={`edit-${goal.goal_id}`}
                     onChange={(next) => setEditing({ goalId: goal.goal_id, draft: next })} />
                   <div className="flex gap-[var(--s2)]">
@@ -208,13 +213,17 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
         </ul>
       )}
 
-      <form onSubmit={(event) => void add(event)} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]" aria-label="Add a family goal">
-        <h4 className="t-label">Add a family goal</h4>
-        <GoalFields draft={draft} onChange={setDraft} idPrefix="new-goal" />
-        <button type="submit" className="btn" disabled={busy !== null || !draft.title.trim() || !draft.support.trim()}>
-          Add goal
-        </button>
-      </form>
+      {/* Only once the list has loaded: a goal saved into a list that never
+          loaded would have nowhere to show, and would be added twice. */}
+      {read.state === 'loaded' && (
+        <form onSubmit={(event) => void add(event)} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]" aria-label="Add a family goal">
+          <h4 className="t-label">Add a family goal</h4>
+          <GoalFields draft={draft} onChange={setDraft} idPrefix="new-goal" />
+          <button type="submit" className="btn" disabled={busy !== null || !draft.title.trim() || !draft.support.trim()}>
+            Add goal
+          </button>
+        </form>
+      )}
     </div>
   );
 }

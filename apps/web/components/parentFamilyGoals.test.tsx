@@ -73,12 +73,28 @@ test("reads the child's goals; own goals carry Done, Edit and Retire, a staff go
 });
 
 test('a done goal shows the day it was ticked', async () => {
-  // 15:00 UTC on Oct 20 is Oct 20 in the gym.
-  routed({ list: () => jsonResponse({ ok: true, items: [goal({ state: 'completed', completed_at: '2026-10-20T15:00:00.000Z' })] }) });
+  // 03:00 UTC on Oct 21 is still the evening of Oct 20 in the gym.
+  routed({ list: () => jsonResponse({ ok: true, items: [goal({ state: 'completed', completed_at: '2026-10-21T03:00:00.000Z' })] }) });
   await renderFor();
 
   expect(screen.getByText('Done October 20, 2026')).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Done' })).toBeChecked();
+});
+
+test('two presses in one tick send one write', async () => {
+  let finish: ((value: Response) => void) | null = null;
+  const fetchMock = routed({ write: () => new Promise<Response>((resolve) => { finish = resolve; }) });
+  await renderFor();
+
+  const retire = screen.getByRole('button', { name: 'Retire' });
+  act(() => {
+    fireEvent.click(retire);
+    fireEvent.click(retire);
+  });
+  expect(writes(fetchMock)).toHaveLength(1);
+  await act(async () => {
+    finish?.(jsonResponse({ ok: true, item: null }));
+  });
 });
 
 test('ticking sends done for that goal and shows the answer; unticking sends undo', async () => {
@@ -160,9 +176,10 @@ test('no goals says so; a failed read says so and never that there are none', as
   expect(screen.getByText('No family goals yet. Add one below.')).toBeInTheDocument();
 });
 
-test('a failed read is not an empty list', async () => {
+test('a failed read is not an empty list, and offers no add form a saved goal could vanish from', async () => {
   routed({ list: () => jsonResponse({ error: 'boom' }, false) });
   await renderFor();
   expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
   expect(screen.queryByText('No family goals yet. Add one below.')).toBeNull();
+  expect(screen.queryByRole('form', { name: 'Add a family goal' })).toBeNull();
 });

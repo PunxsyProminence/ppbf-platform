@@ -178,9 +178,6 @@ const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
-/* Progress on canvas: a brass fill on a recessed paper track — chrome, not a
-   status claim. The percent is always printed next to it. */
-
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
 
@@ -1559,12 +1556,11 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Family Goals"
-                description="Goals your family sets to support your child, and goals the gym sets for the family. Each says what the family will do; it shows Done with the date it was ticked, or In progress."
+                description="Goals your family sets to support your child. Each says what the family will do; it shows Done with the date it was ticked, or In progress."
                 usage={[
                   'Add a goal: what you are aiming for and what the family will do',
                   'Tick Done when it is done; untick it if it was ticked by mistake',
-                  'Edit or retire a goal you set',
-                  'A goal the gym set is marked as theirs; the gym ticks it'
+                  'Edit or retire a goal you set'
                 ]}
                 mistakes={[
                   'Writing a goal without what the family will actually do',
