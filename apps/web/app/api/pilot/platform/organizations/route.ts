@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing organization_id or organization_name');
     }
 
-    await createOrganization(organizationId, organizationName, principal.accountId);
+    // A taken id is refused (409), not renamed and reopened (F-096).
+    await createOrganization(organizationId, organizationName, principal.accountId, { refuseExisting: true });
 
     await writePilotAuditEvent({
       event_type: 'create',

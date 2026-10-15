@@ -327,3 +327,62 @@ describe('re-running it', () => {
     }
   });
 });
+
+describe('creating it again from the onboarding route (F-096)', () => {
+  test('a taken id is refused: nothing renamed, reopened or re-seeded', async () => {
+    // refuseExisting is what POST /api/pilot/platform/organizations passes.
+    // Without it this same call renames the gym and sets it active again --
+    // which is what the bootstrap route still relies on to recover Root.
+    const client = await freshClient();
+    try {
+      await client.query("update pilot.organizations set status = 'inactive' where organization_id = $1", [SEEDED_ORG]);
+      // Seeding is insert-if-missing, so only a removed row can show whether
+      // it ran again.
+      await client.query(
+        "delete from pilot.disciplines where organization_id = $1 and discipline = 'wrestling'",
+        [SEEDED_ORG],
+      );
+
+      await expect(auth.createOrganization(SEEDED_ORG, 'Renamed Gym', CREATOR, { refuseExisting: true }))
+        .rejects.toMatchObject({
+          status: 409,
+          code: 'ORGANIZATION_ID_TAKEN',
+          message: `Conflict: a gym with the id ${SEEDED_ORG} already exists (Seeded Gym). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.`,
+        });
+
+      const org = await client.query(
+        'select organization_name, status from pilot.organizations where organization_id = $1',
+        [SEEDED_ORG],
+      );
+      expect(org.rows).toEqual([{ organization_name: 'Seeded Gym', status: 'inactive' }]);
+      const wrestling = await client.query(
+        "select 1 from pilot.disciplines where organization_id = $1 and discipline = 'wrestling'",
+        [SEEDED_ORG],
+      );
+      expect(wrestling.rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a new id is still created and seeded', async () => {
+    const fresh = `${SEEDED_ORG}-f096`;
+    await auth.createOrganization(fresh, 'Fresh Gym', CREATOR, { refuseExisting: true });
+
+    const client = await freshClient();
+    try {
+      const org = await client.query(
+        'select organization_name, status from pilot.organizations where organization_id = $1',
+        [fresh],
+      );
+      expect(org.rows).toEqual([{ organization_name: 'Fresh Gym', status: 'active' }]);
+      const total = await client.query(
+        'select count(*)::int as n from pilot.disciplines where organization_id = $1',
+        [fresh],
+      );
+      expect(total.rows[0].n).toBe(seeds.DEFAULT_DISCIPLINES.length);
+    } finally {
+      await client.end();
+    }
+  });
+});
