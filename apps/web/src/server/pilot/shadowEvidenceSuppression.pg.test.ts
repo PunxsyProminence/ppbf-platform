@@ -319,4 +319,61 @@ describe('the evidence-bundle insert re-checks what search checked', () => {
       .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
     expect(await savedItemCount(client)).toBe(0);
   });
+
+  // The same rule for a bundle that names an athlete: their own filed
+  // document is citable, another athlete's is not.
+  async function withAthletes(client: Client): Promise<void> {
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, 'athlete-f087-a', 'Athlete A', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $2, now(), now()),
+         ($1, 'athlete-f087-b', 'Athlete B', '2012-05-04', 'youth-60', 'active', 'Guardian', true, $2, now(), now())`,
+      [ORG_ID, ADMIN_ID],
+    );
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
+       values ('acct-f087-a', 'athlete', $1, 'microsoft', 'athlete-f087-a'),
+              ('acct-f087-b', 'athlete', $1, 'microsoft', 'athlete-f087-b')`,
+      [ORG_ID],
+    );
+  }
+
+  it("saves athlete A's evidence from a document filed against A (control: the named subject keeps its own)", async () => {
+    activeClient = await freshDatabase('evidence_document_own_subject');
+    const client = activeClient;
+    await withAthletes(client);
+    await client.query(
+      `update pilot.shadow_library_documents set subject_id = 'athlete-f087-a' where organization_id = $1`,
+      [ORG_ID],
+    );
+
+    const bundle = await retrieveShadowEvidenceBundle({
+      actor: { accountId: 'acct-f087-a', organizationId: ORG_ID, athleteId: 'athlete-f087-a', role: 'athlete' },
+      queryText: QUERY,
+    });
+
+    expect(bundle.availability).toBe('available');
+    expect(bundle.items.map((item) => item.chunkId)).toEqual(['chunk-evidence']);
+    expect(await savedItemCount(client)).toBe(1);
+  });
+
+  it("refuses athlete B's bundle when the document is filed against A between search and save, and saves nothing", async () => {
+    activeClient = await freshDatabase('evidence_document_other_subject');
+    const client = activeClient;
+    await withAthletes(client);
+    afterSearch = async () => {
+      await client.query(
+        `update pilot.shadow_library_documents set subject_id = 'athlete-f087-a' where organization_id = $1`,
+        [ORG_ID],
+      );
+    };
+
+    await expect(retrieveShadowEvidenceBundle({
+      actor: { accountId: 'acct-f087-b', organizationId: ORG_ID, athleteId: 'athlete-f087-b', role: 'athlete' },
+      queryText: QUERY,
+    })).rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+    expect(await savedItemCount(client)).toBe(0);
+  });
 });
