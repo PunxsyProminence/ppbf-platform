@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server';
 
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
+
 import { GET, POST } from './route';
 import {
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
-  athleteIdsForCoach,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
@@ -51,9 +51,17 @@ jest.mock('@/src/server/pilot/access', () => ({
   // test says otherwise; the deleted-athlete refusal is pinned against a
   // real database in athleteSelfDeletionMark.pg.test.ts.
   assertAthleteBelongsToOrganization: jest.fn(),
-  assertCoachAssignedToAthlete: jest.fn(),
-  athleteIdsForCoach: jest.fn(),
   isOrganizationAdminRole: jest.fn((role: string) => role === 'organization_admin' || role === 'admin'),
+}));
+
+/* A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007, issue #1480). The
+   route asks organizationActionableRoster for the live athletes of the
+   coach's own gym; mockGymAthleteIds is that set. An athlete outside it is
+   one the gate refuses (deleted, or another gym's) -- "beyond reach" below. */
+const mockGymAthleteIds = jest.fn();
+jest.mock('@/src/server/pilot/coachAthleteRoster', () => ({
+  organizationActionableRoster: jest.fn(async () =>
+    ((await mockGymAthleteIds()) ?? []).map((athlete_id: string) => ({ athlete_id }))),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -133,7 +141,7 @@ beforeEach(() => {
   (listLatestClassCoverAudits as jest.Mock).mockResolvedValue(new Map());
   // The athletes a coach reaches outside any class register (assignment or
   // coverage). Tests about reach beyond the register override this.
-  (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ATH-1', 'ATH-2']);
+  mockGymAthleteIds.mockResolvedValue(['ATH-1', 'ATH-2']);
 });
 
 afterEach(() => {
@@ -984,7 +992,7 @@ describe('the class register: whole class plus walk-ins', () => {
 describe('the class register does not reach past the register', () => {
   const mockQueryOne = queryOne as jest.Mock;
   const mockQuery = query as jest.Mock;
-  const mockReach = athleteIdsForCoach as jest.Mock;
+  const mockReach = mockGymAthleteIds;
   afterEach(() => {
     mockQueryOne.mockReset();
     mockQuery.mockReset();
@@ -1171,7 +1179,7 @@ describe('review_coaching_request', () => {
   const mockGetCoachingRequest = getSchedulerCoachingRequestById as jest.Mock;
   const mockResolveRequest = resolveSchedulerCoachingRequest as jest.Mock;
   const mockAssertActiveCoach = assertActiveCoachAccount as jest.Mock;
-  const mockAssertCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
+  const mockAssertCanAccess = assertActorCanAccessAthlete as jest.Mock;
   const mockAuditEvent = writePilotAuditEvent as jest.Mock;
 
   const pendingRequest = {
@@ -1201,7 +1209,7 @@ describe('review_coaching_request', () => {
     mockGetCoachingRequest.mockResolvedValue(pendingRequest);
     mockResolveRequest.mockResolvedValue(true);
     mockAssertActiveCoach.mockResolvedValue(undefined);
-    mockAssertCoachAssigned.mockResolvedValue(undefined);
+    mockAssertCanAccess.mockResolvedValue(undefined);
   });
 
   // Owner policy 2026-08-14: org-admin-only. A coach must never approve,
@@ -1237,7 +1245,12 @@ describe('review_coaching_request', () => {
       assigned_coach_account_id: 'acct-coach-9',
     });
     expect(mockAssertActiveCoach).toHaveBeenCalledWith('org-1', 'acct-coach-9', 'assigned_coach_account_id');
-    expect(mockAssertCoachAssigned).toHaveBeenCalledWith('acct-coach-9', 'ath-1', 'org-1');
+    // The named coach is asked through the gate as that coach: since #1480
+    // any active coach of the gym reaches the athlete (#1480 Q2).
+    expect(mockAssertCanAccess).toHaveBeenCalledWith(
+      { accountId: 'acct-coach-9', role: 'coach', organizationId: 'org-1', athleteId: null },
+      'ath-1',
+    );
     expect(mockResolveRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: 'org-1',
@@ -1267,7 +1280,7 @@ describe('review_coaching_request', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true, status: 'declined' });
     expect(mockAssertActiveCoach).not.toHaveBeenCalled();
-    expect(mockAssertCoachAssigned).not.toHaveBeenCalled();
+    expect(mockAssertCanAccess).not.toHaveBeenCalled();
     expect(mockResolveRequest).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'declined', assignedCoachAccountId: null }),
     );
@@ -1294,19 +1307,36 @@ describe('review_coaching_request', () => {
     expect(mockResolveRequest).not.toHaveBeenCalled();
   });
 
-  test('a coach with no relationship to the athlete is refused, and the refusal names the coverage console', async () => {
-    // The assignment rides the existing coach<->athlete access model:
-    // coach-of-record or active coverage. This workflow validates, it never
-    // grants -- temporary access goes through the coverage console.
+  test('a coach the gate refuses for this athlete is refused, and nothing is resolved', async () => {
+    // The assignment rides the coach<->athlete access model. Since #1480 any
+    // active coach of the gym reaches a live athlete, so the gate refuses
+    // only an athlete who is not live in the gym (deleted, or another gym's).
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    mockAssertCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    mockAssertCanAccess.mockRejectedValueOnce(new Error('Missing athlete record'));
 
     const response = await POST(reviewRequest());
 
     expect(response.status).toBe(403);
     const body = (await response.json()) as { error?: string };
-    expect(body.error).toMatch(/coach coverage console/);
+    expect(body.error).toMatch(/cannot reach this athlete/);
     expect(mockResolveRequest).not.toHaveBeenCalled();
+  });
+
+  test('a coach with no assignment or coverage for the athlete may be named (#1480 Q2)', async () => {
+    // Nothing about coach of record or coverage is consulted: the gate, asked
+    // as the named coach, is the whole check.
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(reviewRequest({ assigned_coach_account_id: 'acct-coach-unassigned' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertCanAccess).toHaveBeenCalledWith(
+      { accountId: 'acct-coach-unassigned', role: 'coach', organizationId: 'org-1', athleteId: null },
+      'ath-1',
+    );
+    expect(mockResolveRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'approved', assignedCoachAccountId: 'acct-coach-unassigned' }),
+    );
   });
 
   test('an already-resolved request is refused without a second write', async () => {
@@ -1345,7 +1375,6 @@ describe('review_coaching_request', () => {
 
 
 describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reachable athletes', () => {
-  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
   const mockListStore = listSchedulerStore as jest.Mock;
 
   // The bug: the coach branch of filterStateForActor returned
@@ -1353,7 +1382,7 @@ describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reach
   // scope by athlete-reachability. A coaching request is athlete-linked and
   // carries free-text goals, so this disclosed every athlete's 1:1 coaching
   // request org-wide to any coach.
-  test('a coach receives coaching requests only for athletes they can reach, not the whole org', async () => {
+  test('a coach receives coaching requests only for live athletes of their own gym (#1480)', async () => {
     mockRequirePrincipal.mockResolvedValue({
       accountId: 'acct-coach',
       role: 'coach',
@@ -1362,7 +1391,7 @@ describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reach
       sessionToken: 'token',
       authProvider: 'microsoft',
     });
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue({
       classes: [],
       registrations: [],
@@ -1380,7 +1409,9 @@ describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reach
     const athleteIds = body.coaching_requests.map((row: { athlete_id: string }) => row.athlete_id);
     expect(athleteIds).toEqual(['ath-mine']);
     expect(athleteIds).not.toContain('ath-other');
-    expect(mockAthleteIdsForCoach).toHaveBeenCalledWith('org-1', 'acct-coach');
+    // ath-other stands for an athlete the gate refuses (deleted, or another
+    // gym's); the reach is read for the coach's own organization only.
+    expect(organizationActionableRoster).toHaveBeenCalledWith('org-1');
   });
 });
 
@@ -1401,7 +1432,6 @@ describe('GET /api/pilot/scheduler scopes coaching requests to a coach’s reach
  * writes. This is a read scope.
  */
 describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes', () => {
-  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
   const mockListStore = listSchedulerStore as jest.Mock;
 
   function coachPrincipal() {
@@ -1448,7 +1478,7 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
      self-granted cover still reads no other coach's notes (CL-A2, #1266). */
   test('the coach running a class sees every registration on it', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
@@ -1459,7 +1489,7 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
 
   test('the coach running a class sees every attendance status, but notes only for athletes they reach', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
@@ -1475,7 +1505,7 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
 
   test('a class the coach does not run discloses no registration or attendance', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     const store = storeWithCoveredClass();
     store.classes[0].covering_coach_account_id = 'acct-someone-else';
     mockListStore.mockResolvedValue(store);
@@ -1489,7 +1519,7 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
   test('a reachable athlete on an owned class is still returned', async () => {
     // Guards against "fixing" this by filtering everything out.
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
@@ -1538,7 +1568,7 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
 
   function arrangeStore(): void {
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
-    (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue({
       classes: [{
         class_id: 'class-1',
@@ -1747,7 +1777,6 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
 describe('GET /api/pilot/scheduler reports the true seat count without widening the rows', () => {
   const mockListStore = listSchedulerStore as jest.Mock;
   const mockGuardianAthleteIds = guardianAthleteIds as jest.Mock;
-  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
 
   function registration(id: string, athleteId: string, status: 'registered' | 'waitlisted' | 'cancelled') {
     return {
@@ -1851,7 +1880,7 @@ describe('GET /api/pilot/scheduler reports the true seat count without widening 
     // class's, so every row on it comes back; the family's account id on an
     // athlete this coach does not otherwise reach does not.
     arrangeFullClass();
-    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockGymAthleteIds.mockResolvedValue(['ath-mine']);
     mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach' }));
 
     const body = await (await schedulerGet()).json();

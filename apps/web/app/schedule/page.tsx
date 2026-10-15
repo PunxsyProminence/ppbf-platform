@@ -1122,7 +1122,7 @@ export default function SchedulerPage() {
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
-                            Coach to assign (their coach of record, or a coach holding active coverage)
+                            Coach to assign (any coach of the gym)
                           </label>
                           {/* Picked by name from the gym's active coaches, never
                               typed as an id (#1536). No free-text fallback: a

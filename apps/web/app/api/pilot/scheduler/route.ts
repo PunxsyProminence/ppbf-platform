@@ -8,10 +8,9 @@ import {
   assertActorCanAccessAthlete,
   assertActorCanMarkClassAthlete,
   assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
-  athleteIdsForCoach,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { gymDayIso, parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
@@ -197,18 +196,20 @@ function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass):
    parent marks do not come through here. */
 /* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
 
-   The register lets the coach running a class mark athletes they do not
-   otherwise reach (assignment or coverage). Reach for everything else is
-   unchanged (OD-2026-10-07-008 ruling 4, "Everything else stays
-   assigned-coach only"), so a register mark must not carry two things with it:
-   - the hold's reason, explanation and lift condition. The training-holds
-     route refuses those to an unassigned coach; without this, cover_class
-     plus a walk-in mark read any athlete's hold in the gym. The coach is
-     still told the athlete is held and at what scope (OD-2026-10-06-024
-     ruling 1), which is what they need on the floor.
+   The register lets the coach running a class mark athletes registered to
+   it. Since issue #1480 (OD-2026-10-11-007, "lets make it coaches to whole
+   gym", which replaced OD-2026-10-07-008 ruling 4's "Everything else stays
+   assigned-coach only") a coach reaches every live athlete of their own gym,
+   so for a coach "beyond reach" now means an athlete who is not live in the
+   gym (deleted, or another gym's). A register mark must not carry two things
+   to an athlete beyond reach:
+   - the hold's reason, explanation and lift condition, which the
+     training-holds route refuses for such an athlete. The coach is still
+     told the athlete is held and at what scope (OD-2026-10-06-024 ruling 1),
+     which is what they need on the floor.
    - the note. They cannot read it (Overwatch option B), so their mark keeps
      the stored note instead of overwriting it unseen, and a note from them
-     about an athlete they do not coach is refused.
+     about such an athlete is refused.
    Only a coach is narrowed; an organization admin reaches the whole gym. */
 async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly string[]): Promise<Set<string>> {
   if (actor.role !== 'coach') return new Set();
@@ -218,7 +219,7 @@ async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly s
 
 function assertNoNoteBeyondReach(beyondReach: ReadonlySet<string>, athleteId: string, note: string): void {
   if (note && beyondReach.has(athleteId)) {
-    throw new Error("Forbidden: an attendance note on an athlete you do not coach is for that athlete's own coach");
+    throw new Error('Forbidden: an attendance note is only for an athlete of your own gym');
   }
 }
 
@@ -255,9 +256,11 @@ async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
   return guardianAthleteIds(actor.organizationId, actor.accountId);
 }
 
-// The coach-reachable "my athletes" set (coach of record plus active coverage
-// grants), fed into filterStateForActor the way getParentAthleteIds feeds the
-// parent branch. Coaching requests are athlete-linked with no class_id, so
+// The athletes a coach reaches, fed into filterStateForActor the way
+// getParentAthleteIds feeds the parent branch. Since issue #1480
+// (OD-2026-10-11-007) that is every live athlete of the coach's own gym -- the
+// set assertActorCanAccessAthlete admits -- not "my athletes" (coach of record
+// plus coverage). Coaching requests are athlete-linked with no class_id, so
 // class ownership cannot scope them -- athlete-reachability is the dimension
 // that can.
 async function getCoachAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -265,7 +268,8 @@ async function getCoachAthleteIds(actor: SchedulerActor): Promise<string[]> {
     return [];
   }
 
-  return athleteIdsForCoach(actor.organizationId, actor.accountId);
+  const roster = await organizationActionableRoster(actor.organizationId);
+  return roster.map((athlete) => athlete.athlete_id);
 }
 
 async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): Promise<void> {
@@ -551,16 +555,17 @@ function filterStateForActor(
          run, every registration and every attendance STATUS (names-and-status,
          OD-2026-10-07-011 ruling 1). What a coach wrote about a child -- the
          attendance note -- and the family's account identifiers stay with
-         athletes the reader reaches (CL-A2, #1266). A self-granted cover is now
+         athletes the reader reaches (CL-A2, #1266): since issue #1480, every
+         live athlete of the coach's own gym. A self-granted cover is now
          visible as an audit row (cover_class, route-survey B6). */
       registrations: store.registrations
         .filter((row) => coachOwnedClassIds.has(row.class_id))
         .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyRegistration(row))),
       // Coaching requests carry an athlete_id and no class_id, so they are
       // scoped by athlete-reachability -- the same dimension the parent and
-      // athlete branches use -- not by class ownership. Returning
-      // store.coaching_requests unfiltered leaked every athlete's 1:1 request
-      // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
+      // athlete branches use -- not by class ownership. For a coach that is
+      // the live athletes of their own gym (issue #1480); a deleted athlete's
+      // request, or a row naming no live athlete, is not handed over.
       coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
       attendance: store.attendance
         .filter((row) => coachOwnedClassIds.has(row.class_id))
@@ -1046,19 +1051,23 @@ export async function POST(request: NextRequest) {
         assignedCoachAccountId = named;
         await assertActiveCoachAccount(actor.organizationId, assignedCoachAccountId, 'assigned_coach_account_id');
 
-        // The assignment must ride the existing coach<->athlete access
-        // model: the athlete's coach of record, or an active bounded
-        // coverage grant. This workflow validates rather than grants -- a
-        // temporary coach gets access through the coach-coverage console
-        // (expiring, revocable, audited), never through a parallel grant
-        // created here, and the permanent coach_id is never changed by an
-        // approval.
+        // The assignment rides the coach<->athlete access model: the named
+        // coach must reach the athlete through assertActorCanAccessAthlete,
+        // asked as that coach. Since issue #1480 (OD-2026-10-11-007; applied
+        // to 1:1 booking by Overwatch, #1480 Q2) a coach reaches every live
+        // athlete of their own gym, so any active coach of the gym may be
+        // named. The admin still chooses and approves. This workflow validates
+        // rather than grants, and the permanent coach_id is never changed by
+        // an approval.
         try {
-          await assertCoachAssignedToAthlete(assignedCoachAccountId, coachingRequest.athlete_id, actor.organizationId);
+          await assertActorCanAccessAthlete(
+            { accountId: assignedCoachAccountId, role: 'coach', organizationId: actor.organizationId, athleteId: null },
+            coachingRequest.athlete_id,
+          );
         } catch {
           throw new Error(
-            'Forbidden: the selected coach has no active relationship with this athlete. '
-            + 'Assign the coach of record, or grant temporary coverage from the coach coverage console first.',
+            'Forbidden: the selected coach cannot reach this athlete. '
+            + 'Choose an active coach of this gym.',
           );
         }
       }
