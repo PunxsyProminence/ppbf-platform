@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import {
   attendanceByAthleteCsv,
   attendanceByClassCsv,
@@ -60,6 +60,9 @@ export async function GET(request: NextRequest) {
     if (!isAdmin && !isCoach) {
       throw new Error('Forbidden: attendance reporting is available to coach and organization_admin/admin only');
     }
+    // The same roles, said where the route-gate convention can see them: the
+    // coach branch no longer reaches athleteIdsForCoach (issue #1480 PR B2).
+    requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
     const coachAccountId = isCoach ? principal.accountId : undefined;
     // Looked up only after each branch's own checks pass, so a refused or

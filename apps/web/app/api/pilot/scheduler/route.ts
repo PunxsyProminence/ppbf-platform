@@ -9,6 +9,7 @@ import {
   assertActorCanMarkClassAthlete,
   assertAthleteBelongsToOrganization,
   isOrganizationAdminRole,
+  requireRole,
 } from '@/src/server/pilot/access';
 import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { gymDayIso, parseInstantAsGymTime } from '@/src/lib/gymTime';
@@ -613,6 +614,12 @@ export async function GET(request: NextRequest) {
     };
 
     normalizeRole(actor.role);
+    /* Who this read is for, said where the route-gate convention can see it.
+       Until issue #1480 PR B2 the coach branch reached athleteIdsForCoach,
+       which the convention counts as a gate; a coach's reach is now the gym's
+       live roster, so the roles are named here. The specific refusals above
+       (board, normalizeRole) still answer first. */
+    requireRole(principal, ['athlete', 'parent', 'coach', 'organization_admin', 'admin']);
 
     const store = await listSchedulerStore(actor.organizationId);
     const [parentAthleteIds, coachAthleteIds] = await Promise.all([

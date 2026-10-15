@@ -10566,8 +10566,12 @@
       "sessionGates": [
         "requirePrincipal"
       ],
-      "authorizationGates": [],
-      "roleLiterals": []
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10593,8 +10597,12 @@
       "sessionGates": [
         "requirePrincipal"
       ],
-      "authorizationGates": [],
-      "roleLiterals": []
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {

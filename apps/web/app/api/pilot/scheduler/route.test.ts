@@ -52,6 +52,7 @@ jest.mock('@/src/server/pilot/access', () => ({
   // real database in athleteSelfDeletionMark.pg.test.ts.
   assertAthleteBelongsToOrganization: jest.fn(),
   isOrganizationAdminRole: jest.fn((role: string) => role === 'organization_admin' || role === 'admin'),
+  requireRole: jest.requireActual('@/src/server/pilot/access').requireRole,
 }));
 
 /* A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007, issue #1480). The

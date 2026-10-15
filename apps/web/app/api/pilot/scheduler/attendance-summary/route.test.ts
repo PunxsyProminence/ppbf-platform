@@ -28,6 +28,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
 
 jest.mock('@/src/server/pilot/access', () => ({
   isOrganizationAdminRole: (role: string) => role === 'organization_admin' || role === 'admin',
+  requireRole: jest.requireActual('@/src/server/pilot/access').requireRole,
 }));
 
 /* A coach's reach is the whole gym (OD-2026-10-11-007, issue #1480): the live
