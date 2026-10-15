@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { query, queryOne, withTransaction } from './db';
+import type { PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
@@ -60,10 +62,13 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  *
  * Each write records an audit event on entity 'session_staff_note' in the
  * SAME transaction. The note text stays out of the audit row; the table
- * holds it. shadow_mirror: false, because the mirrored shadow_events row
- * would be readable by the athlete and their guardians through
- * /api/pilot/shadow/events (tied by details.athlete_id), and staff notes are
- * staff only (OD-2026-10-10-003 ruling 3).
+ * holds it. shadow_mirror: false, so no mirrored shadow_events row is
+ * written: the row is tied to the athlete by details.athlete_id, and staff
+ * notes are staff only (OD-2026-10-10-003 ruling 3). Today the family
+ * allow-list (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES, auditReadAllowlist.ts) is
+ * empty, so the athlete and their guardians read no SHADOW_AUDIT_* row from
+ * /api/pilot/shadow/events anyway; this keeps the row off the feed if that
+ * list is ever filled.
  */
 
 export const STAFF_NOTE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
@@ -144,6 +149,76 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
     if (!(error instanceof Error && error.message.startsWith('Forbidden'))) throw error;
     return null;
   }
+}
+
+/**
+ * Inside a write's transaction: the actor's staff role HERE, if the actor
+ * STILL holds an active staff membership in this organization on an active,
+ * undeleted account; otherwise null. The membership and account rows are
+ * share-locked until the write commits.
+ *
+ * The same question staffNoteRoleInOrganization asks before the transaction,
+ * asked again inside it: an admin ending the membership, or deactivating or
+ * deleting the account, in between would otherwise not stop the write. FOR
+ * SHARE conflicts with the UPDATE that ends either, so a change already under
+ * way makes this wait and then read the committed rows, and one that starts
+ * now waits for this write.
+ *
+ * LOCK ORDER, one way only, so no two of these writes can deadlock: the
+ * actor's membership and account first, then (for a mark) the run row, then
+ * the athlete row, then the mark row.
+ */
+export async function lockStaffMembership(client: PoolClient, actor: ActorIdentity): Promise<StaffNoteRole | null> {
+  if (!(STAFF_NOTE_ROLES as readonly string[]).includes(actor.role)) return null;
+  const row = await client.query<{ role: StaffNoteRole }>(
+    `select om.role
+       from pilot.organization_memberships om
+       join pilot.accounts a on a.account_id = om.account_id
+      where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true
+        and om.role = any($3::text[])
+        and a.active_flag = true and not ${accountDeletedSql('a')}
+        for share`,
+    [actor.accountId, actor.organizationId, [...STAFF_NOTE_ROLES]],
+  );
+  return row.rows[0]?.role ?? null;
+}
+
+/**
+ * Inside a write's transaction: whether this athlete is STILL a live athlete
+ * of this organization, with the row share-locked until the write commits.
+ *
+ * The reach check (staffRoleReachingAthlete) runs before the transaction, so
+ * an athlete soft-deleted in between would otherwise still get a presence mark
+ * or a run note, and the foreign key would not stop it (the deleted row is
+ * kept). FOR SHARE conflicts with the UPDATE that sets deleted_at: a delete
+ * already under way makes this wait and then read the committed row, and a
+ * delete that starts now waits for this write. "Live" is the test
+ * assertActorCanAccessAthlete applies (this organization, deleted_at is null).
+ */
+export async function lockLiveAthlete(client: PoolClient, organizationId: string, athleteId: string): Promise<boolean> {
+  const row = await client.query<{ deleted_at: string | null }>(
+    `select deleted_at from pilot.athletes
+      where organization_id = $1 and athlete_id = $2
+        for share`,
+    [organizationId, athleteId],
+  );
+  return !!row.rows[0] && row.rows[0].deleted_at === null;
+}
+
+/**
+ * Inside a note write's transaction, before the note row is touched: the
+ * writer must STILL be staff here (lockStaffMembership) and the athlete STILL
+ * live (lockLiveAthlete), both share-locked until commit, in that order.
+ * Returns the role held now. One refusal for either, as before the transaction.
+ * Every note write (add on a run, change, remove) goes through this, so access
+ * ended between the first check and the write stops the write.
+ */
+async function relockNoteWriter(client: PoolClient, actor: ActorIdentity, athleteId: string): Promise<StaffNoteRole> {
+  const lockedRole = await lockStaffMembership(client, actor);
+  if (!lockedRole || !(await lockLiveAthlete(client, actor.organizationId, athleteId))) {
+    throw new ForbiddenError('This account may not read or write staff notes for this athlete.', 'SESSION_STAFF_NOTE_NOT_PERMITTED');
+  }
+  return lockedRole;
 }
 
 /**
@@ -243,10 +318,13 @@ export async function createRunStaffNote(input: {
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
 
-  const role = await assertStaffNoteAccess(input.actor, input.athleteId);
+  await assertStaffNoteAccess(input.actor, input.athleteId);
   const noteId = randomUUID();
 
   return withTransaction(async (client) => {
+    // The writer must still be staff here, and the athlete still live, now: not only when the
+    // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
+    const lockedRole = await relockNoteWriter(client, input.actor, input.athleteId);
     // FOR UPDATE on the mark row: taking a mark back updates that row, so it
     // queues behind this lock and this note is written against a mark that
     // stands. The table's own foreign key would not stop it (it proves the row
@@ -270,7 +348,7 @@ export async function createRunStaffNote(input: {
          (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note)
        values ($1, $2, $3, $4, $5, $6, $7)
        returning ${FIELDS}`,
-      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, role, text],
+      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, lockedRole, text],
     );
     const row = inserted.rows[0];
     if (!row) throw new Error('Session staff note insert returned no row');
@@ -278,7 +356,7 @@ export async function createRunStaffNote(input: {
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: input.actor.accountId,
-      actor_role: role,
+      actor_role: lockedRole,
       organization_id: input.actor.organizationId,
       entity_type: 'session_staff_note',
       entity_id: noteId,
@@ -385,9 +463,11 @@ export async function updateOwnSessionStaffNote(input: {
   const shapeError = staffNoteShapeError(input.note);
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
-  const { row: before, role } = await ownLiveNote(input.actor, input.noteId);
+  const { row: before } = await ownLiveNote(input.actor, input.noteId);
 
   return withTransaction(async (client) => {
+    // Access is checked again inside the write, as for adding a note.
+    const role = await relockNoteWriter(client, input.actor, before.athlete_id);
     const updated = await client.query<SessionStaffNoteRow>(
       `update pilot.session_staff_notes
           set note = $4, updated_at = clock_timestamp()
@@ -418,9 +498,11 @@ export async function removeOwnSessionStaffNote(input: {
   actor: ActorIdentity;
   noteId: string;
 }): Promise<void> {
-  const { row: before, role } = await ownLiveNote(input.actor, input.noteId);
+  const { row: before } = await ownLiveNote(input.actor, input.noteId);
 
   await withTransaction(async (client) => {
+    // Access is checked again inside the write, as for adding a note.
+    const role = await relockNoteWriter(client, input.actor, before.athlete_id);
     const removed = await client.query(
       `update pilot.session_staff_notes
           set deleted_at = clock_timestamp(), updated_at = clock_timestamp()

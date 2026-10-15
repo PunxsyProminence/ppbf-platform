@@ -203,6 +203,9 @@ describe('a linked guardian writes and reads back', () => {
       actor_role: 'parent',
       entity_type: 'parent_observation',
       details: { athlete_id: 'ath-a', category: 'motivation', rated: true },
+      // #1558 item two: audited, never mirrored into the SHADOW feed, where
+      // the row reached the other guardian and the child.
+      shadow_mirror: false,
     }), transactionClient);
   });
 

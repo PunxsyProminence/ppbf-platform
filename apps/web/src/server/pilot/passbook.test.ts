@@ -486,8 +486,9 @@ describe('getCoachPassbookGapQueue', () => {
     expect(sql).toContain('join pilot.athletes a');
     expect(sql).toContain('a.organization_id = g.organization_id');
     expect(sql).toContain('where g.organization_id = $1');
-    expect(sql).toContain("lower(trim(status)) in ('present', 'late')");
-    expect(sql).toContain("lower(trim(status)) = 'absent'");
+    expect(sql).toContain('from pilot.attendance_reconciled');
+    expect(sql).toContain("status = 'present'");
+    expect(sql).toContain("status = 'absent'");
     expect(sql.match(/organization_id = g\.organization_id/g)).toHaveLength(3);
     expect(result).toEqual([
       {

@@ -69,6 +69,7 @@ jest.mock('./db', () => ({
 }));
 
 import { attendanceOnDay } from './attendancePrecedence';
+import { getCoachPassbookGapQueue } from './passbook';
 
 const ORG_ID = 'org-attend';
 const ADMIN_ID = 'acct-attend-admin';
@@ -81,6 +82,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let activityLogSql: string;
+let progressionSql: string;
 let baseSchemaSql: string;
 
 function connectionStringFor(database: string): string {
@@ -251,6 +253,10 @@ beforeAll(async () => {
     'utf8',
   );
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  progressionSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_progression_migration.sql'),
+    'utf8',
+  );
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -715,6 +721,55 @@ describe('the roster read for one day', () => {
       expect(marks).toEqual([
         { athlete_id: ATHLETE_ID, status: 'present', source: 'activity_log' },
       ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+describe('coach passbook gap queue reads the reconciled view (LC-07)', () => {
+  async function openGap(client: Client, gapId: string, athleteId: string): Promise<void> {
+    await client.query(progressionSql);
+    // The queue's scope-B filter reads athletes.deleted_at, added by the retention migration.
+    await client.query('alter table pilot.athletes add column if not exists deleted_at timestamptz null');
+    await client.query(
+      `insert into pilot.progression_gaps
+         (gap_id, organization_id, athlete_id, coach_account_id, gap_type, gap_description,
+          severity, detected_from)
+       values ($1, $2, $3, $4, 'technique', 'AUDIT gap', 'medium', 'attendance')`,
+      [gapId, ORG_ID, athleteId, COACH_ID],
+    );
+  }
+
+  test('a class mark on the schedule is a visit, and activity_log outranks it', async () => {
+    const client = await freshDatabase('attend_gap_queue');
+    activeClient = client;
+    try {
+      // ATHLETE_ID: only a scheduler_attendance PRESENT (what /schedule writes).
+      // Raw pilot.attendance, the table the queue used to read, holds nothing.
+      await addClass(client, 'c-gap-1', '2026-03-10', '17:00');
+      await markClass(client, 'c-gap-1', ATHLETE_ID, 'present');
+      await openGap(client, 'gap-1', ATHLETE_ID);
+
+      // ATHLETE_TWO: a class PRESENT on the 10th, then an activity_log
+      // ABSENT on the 12th and a scheduler ABSENT on the 11th.
+      await addClass(client, 'c-gap-2', '2026-03-10', '17:00');
+      await markClass(client, 'c-gap-2', ATHLETE_TWO, 'present');
+      await addClass(client, 'c-gap-3', '2026-03-11', '17:00');
+      await markClass(client, 'c-gap-3', ATHLETE_TWO, 'absent');
+      await addActivityLog(client, ATHLETE_TWO, '2026-03-12', 'absent');
+      // Legacy PRESENT on the 11th loses to the scheduler's ABSENT that day.
+      await addLegacyAttendance(client, ATHLETE_TWO, '2026-03-11', 'present');
+      await openGap(client, 'gap-2', ATHLETE_TWO);
+
+      const queue = await getCoachPassbookGapQueue(ORG_ID, [ATHLETE_ID, ATHLETE_TWO]);
+      const byAthlete = Object.fromEntries(queue.map((item) => [item.athlete_id, item]));
+
+      expect(byAthlete[ATHLETE_ID].last_attended_on).toBe('2026-03-10');
+      expect(byAthlete[ATHLETE_ID].recorded_absences_since_last_visit).toBe(0);
+      expect(byAthlete[ATHLETE_TWO].last_attended_on).toBe('2026-03-10');
+      expect(byAthlete[ATHLETE_TWO].recorded_absences_since_last_visit).toBe(2);
     } finally {
       activeClient = null;
       await client.end();

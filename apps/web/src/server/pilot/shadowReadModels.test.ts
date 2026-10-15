@@ -1,7 +1,8 @@
 import { query, queryOne } from './db';
-import { FAMILY_READABLE_ENTITY_ID_TYPES, listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
+import { FAMILY_HIDDEN_EVENT_NAMES, FAMILY_HIDDEN_METRIC_NAMES, FAMILY_READABLE_ENTITY_ID_TYPES, listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 import type { PilotRole } from './contracts';
+import { COACH_ALLOWED_AUDIT_ENTITY_TYPES, FAMILY_ALLOWED_AUDIT_ENTITY_TYPES } from './auditReadAllowlist';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -236,6 +237,45 @@ describe('listShadowTelemetry athlete scoping', () => {
   });
 });
 
+/*
+ * #1558 item three: the review projection's "latest event of the case" reads
+ * the same rows a family reader is allowed through listShadowEvents.
+ * shadowEventAthleteScope.pg.test.ts shows it on real rows.
+ */
+describe('getShadowReviewProjection under the family rules', () => {
+  const lateral = () => String(mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.intake_cases c'))?.[0])
+    .replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ');
+  const itemsParams = () => (mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.intake_cases c'))?.[1] ?? []) as unknown[];
+
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  test('the latest-event lateral carries the three family rules', async () => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(String(sql).includes('count(*)') ? [{ count: '0' }] : []));
+    await getShadowReviewProjection(context({ actorRole: 'parent', actorAccountId: 'parent-1' }));
+
+    expect(lateral()).toContain(
+      "and ($9::text <> 'own' or left(e.event_name, length('SHADOW_AUDIT_')) <> 'SHADOW_AUDIT_' or e.entity_type = any($10::text[])) "
+      + "and ($9::text <> 'own' or e.event_name <> all($11::text[])) "
+      + "and ($9::text <> 'own' or e.actor_role is distinct from 'parent' or e.actor_account_id = $8) "
+      + 'order by e.created_at desc limit 1',
+    );
+    const params = itemsParams();
+    expect(params[7]).toBe('parent-1');
+    expect(params[8]).toBe('own');
+    expect(params[9]).toEqual([]);
+    expect(params[10]).toEqual(['SHADOW_INTAKE_DOMAIN_UPSERTED']);
+  });
+
+  test.each([['coach', 'coach'], ['organization_admin', 'admin']] as const)('a %s reads with reach %s, so none of the rules apply', async (actorRole, reach) => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(String(sql).includes('count(*)') ? [{ count: '0' }] : []));
+    await getShadowReviewProjection(context({ actorRole }));
+
+    expect(itemsParams()[8]).toBe(reach);
+  });
+});
+
 describe('getShadowReviewProjection athlete scoping', () => {
   test('parent only sees review items for their linked athletes', async () => {
     mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-linked-1' }]); // guardian links
@@ -382,10 +422,11 @@ describe('sanitizeEventPayload', () => {
  *
  * For some entity types the id is a person's: an account id (the login email
  * unless somebody chose otherwise) or a parent_id (`par-` plus that account
- * id). Rows about a guardian name the child, so they reach the athlete and
+ * id). Rows about a guardian name the child, so they reached the athlete and
  * both guardians; one guardian read the other's id here. The mocked query
- * returns the row whatever the role, so these exercise the projection alone;
- * shadowEventAthleteScope.pg.test.ts shows the rows really arrive.
+ * returns the row whatever the role, so these exercise the projection alone
+ * (item two has since stopped those particular rows reaching a family reader;
+ * shadowEventAthleteScope.pg.test.ts shows which rows still arrive).
  */
 describe('entity_id by reader', () => {
   const row = (entityType: string, entityId: string, payload: Record<string, unknown> = {}) => ({
@@ -978,5 +1019,188 @@ describe('paging values are whole numbers before they reach SQL (CL-C24)', () =>
     const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
     expect(numbers).toEqual(expect.arrayContaining([1, 0]));
     expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
+  });
+});
+
+/*
+ * #1558 item two: A FILTER MUST NOT CONFIRM WHAT THE ANSWER WITHHOLDS.
+ *
+ * The feed matches a caller's entity_id and correlation_id exactly. With the
+ * id withheld from the row but still matched on, a guardian could post a
+ * guessed `par-<address>:<child>` and learn from whether rows came back that
+ * the address is the other guardian's login. shadowEventAthleteScope.pg.test.ts
+ * runs that against real rows; these pin the statement and its parameter.
+ */
+describe('a caller\'s id filter matches only what that reader is sent', () => {
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  const NAMED_TYPES = ['athlete', 'intake_case', 'intake_document', 'shadow_intake'];
+  const flat = (table: string) => {
+    const call = mockQuery.mock.calls.find(([sql]) => String(sql).includes(`from pilot.${table}`));
+    return {
+      sql: String(call?.[0]).replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim(),
+      params: (call?.[1] ?? []) as unknown[],
+    };
+  };
+
+  test('the events statement ties both id matches to the named types and keeps correlation_id for staff', async () => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowEvents(context({ actorRole: 'parent' }), { entityId: 'par-guess:ath-1', correlationId: 'par-guess:ath-1' });
+
+    const { sql } = flat('shadow_events');
+    expect(sql).toContain('and ($3::text is null or (entity_id = $3 and ($14::text[] is null or entity_type = any($14::text[]))))');
+    expect(sql).toContain(
+      "and ( $6::text is null or (entity_id = $6 and ($14::text[] is null or entity_type = any($14::text[]))) "
+      + "or payload->>'intake_case_id' = $6 or payload->>'intake_document_id' = $6 "
+      + "or ($14::text[] is null and payload->>'correlation_id' = $6) )",
+    );
+  });
+
+  test.each(['parent', 'athlete', 'volunteer', 'staff', 'board'] as const)('events: a %s may match an id only on the four named types', async (actorRole) => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowEvents(context({ actorRole }), { entityId: 'x' });
+
+    const { params } = flat('shadow_events');
+    expect(params).toHaveLength(17);
+    expect(params[13]).toEqual(NAMED_TYPES);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'] as const)('events: a %s matches any id, as before', async (actorRole) => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowEvents(context({ actorRole }), { entityId: 'x' });
+
+    expect(flat('shadow_events').params[13]).toBeNull();
+  });
+
+  test('the telemetry statement matches a non-staff reader on entity_id of a named type only', async () => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowTelemetry(context({ actorRole: 'parent' }), { correlationId: 'par-guess:ath-1' });
+
+    const { sql, params } = flat('shadow_telemetry_events');
+    expect(sql).toContain(
+      "and ( $4::text is null or ($9::text[] is null and dimensions->>'intake_case_id' = $4) "
+      + "or ($9::text[] is null and dimensions->>'intake_document_id' = $4) "
+      + "or (dimensions->>'entity_id' = $4 and ($9::text[] is null or dimensions->>'entity_type' = any($9::text[]))) "
+      + "or ($9::text[] is null and dimensions->>'correlation_id' = $4) )",
+    );
+    expect(params).toHaveLength(12);
+    expect(params[8]).toEqual(NAMED_TYPES);
+  });
+
+  test.each(['coach', 'organization_admin', 'platform_owner'] as const)('telemetry: a %s matches any key, as before', async (actorRole) => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowTelemetry(context({ actorRole }), { correlationId: 'x' });
+
+    expect(flat('shadow_telemetry_events').params[8]).toBeNull();
+  });
+});
+
+/*
+ * #1558 item two: WHICH LINES A FAMILY READER IS SENT AT ALL.
+ *
+ * A parent's barrier report is a row ABOUT the child, so the athlete scope
+ * alone handed it to the child and to the other guardian. The mirrored audit
+ * rows an athlete or parent may read are now a named list, and the intake
+ * "a record was saved" lines are not sent to them at all (Jason, Q-2: "B: Hide
+ * all of them (Recommended)"). shadowEventAthleteScope.pg.test.ts shows the
+ * rows; these pin the statement, the parameters and the lists.
+ */
+describe('which lines a family reader is sent', () => {
+  afterEach(() => {
+    mockQuery.mockReset();
+  });
+
+  const callFor = (table: string) => {
+    const call = mockQuery.mock.calls.find(([sql]) => String(sql).includes(`from pilot.${table}`));
+    return {
+      sql: String(call?.[0]).replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim(),
+      params: (call?.[1] ?? []) as unknown[],
+    };
+  };
+
+  test('the events statement holds a family reader to the family list and drops the hidden event names', async () => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowEvents(context({ actorRole: 'parent' }));
+
+    const { sql, params } = callFor('shadow_events');
+    expect(sql).toContain(
+      "<> 'SHADOW_AUDIT_' or ($11::text = 'own' and e.entity_type = any($15::text[])) "
+      + "or ($11::text = 'admin' and left(e.entity_type, length($13::text)) <> $13::text) "
+      + "or ($11::text = 'coach' and e.entity_type = any($12::text[])) ) "
+      + "and ($11::text <> 'own' or e.event_name <> all($16::text[])) "
+      + "and ($11::text <> 'own' or (actor_role is distinct from 'parent' or actor_account_id = $17))",
+    );
+    // No bare "own reads every mirror" disjunct is left.
+    expect(sql).not.toContain("or $11::text = 'own'");
+    expect(params[10]).toBe('own');
+    expect(params[14]).toEqual([...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES]);
+    expect(params[15]).toEqual(['SHADOW_INTAKE_DOMAIN_UPSERTED']);
+    // A row a guardian wrote is compared with the READER's own account.
+    expect(params[16]).toBe('acct-1');
+  });
+
+  test.each([
+    ['parent', 'own'], ['athlete', 'own'], ['coach', 'coach'], ['organization_admin', 'admin'], ['admin', 'admin'],
+    ['volunteer', 'none'], ['staff', 'none'], ['board', 'none'], ['platform_owner', 'none'],
+  ] as const)('a %s reads the feed with reach %s', async (actorRole, reach) => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowEvents(context({ actorRole }));
+
+    expect(callFor('shadow_events').params[10]).toBe(reach);
+  });
+
+  test('the telemetry statement drops the hidden metric names for a family reader only', async () => {
+    mockQuery.mockImplementation(() => Promise.resolve([]));
+    await listShadowTelemetry(context({ actorRole: 'parent' }));
+
+    const { sql, params } = callFor('shadow_telemetry_events');
+    expect(sql).toContain(
+      'and ($10::boolean is not true or metric_name <> all($11::text[])) '
+      + "and ($10::boolean is not true or (actor_role is distinct from 'parent' or actor_account_id = $12))",
+    );
+    expect(params[9]).toBe(true);
+    expect(params[10]).toEqual(['shadow.intake.domain_upsert']);
+    expect(params[11]).toBe('acct-1');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'volunteer', 'staff'] as const)(
+    'telemetry: a %s is not a family reader, so no metric is dropped for them',
+    async (actorRole) => {
+      mockQuery.mockImplementation(() => Promise.resolve([]));
+      await listShadowTelemetry(context({ actorRole }));
+
+      expect(callFor('shadow_telemetry_events').params[9]).toBe(false);
+    },
+  );
+
+  /* THE PINS. Each list is a decision; changing one has to change this test. */
+  test('the hidden lines are exactly the intake "a record was saved" event and metric', () => {
+    expect([...FAMILY_HIDDEN_EVENT_NAMES]).toEqual(['SHADOW_INTAKE_DOMAIN_UPSERTED']);
+    expect([...FAMILY_HIDDEN_METRIC_NAMES]).toEqual(['shadow.intake.domain_upsert']);
+  });
+
+  // Jason, 2026-10-13, Q-1 on #1558: "A". Empty = an athlete or parent reads
+  // no SHADOW_AUDIT_* row. A type added to auditReadAllowlist.ts has to change
+  // this line, and the test below still has to hold.
+  test('the family audit list is what the owner ruled: empty', () => {
+    expect([...FAMILY_ALLOWED_AUDIT_ENTITY_TYPES].sort()).toEqual([]);
+  });
+
+  test('whatever the family audit list holds, it never holds a guardian, account, consent, intake or staff-conduct type', () => {
+    const NEVER = [
+      'account', 'guardian', 'guardian_link', 'guardian_media_consent', 'parent', 'parent_barrier_report',
+      'parent_observation', 'intake_case', 'intake_document', 'safety_flag', 'training_hold', 'behavior_standard',
+      'coach_note', 'coach_review', 'coach_coverage', 'session_staff_note', 'person_clearance', 'payment_account',
+      'board_seat', 'organization_membership',
+    ];
+    for (const type of NEVER) {
+      expect(FAMILY_ALLOWED_AUDIT_ENTITY_TYPES.has(type)).toBe(false);
+    }
+    // And nothing a coach may not read either: the family list is never wider.
+    for (const type of FAMILY_ALLOWED_AUDIT_ENTITY_TYPES) {
+      expect(COACH_ALLOWED_AUDIT_ENTITY_TYPES.has(type)).toBe(true);
+    }
   });
 });

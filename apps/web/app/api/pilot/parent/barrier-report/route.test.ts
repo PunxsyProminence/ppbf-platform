@@ -75,6 +75,22 @@ test('a parent can file a home barrier report for their own child', async () => 
   const payload = await response.json();
   expect(payload.ok).toBe(true);
   expect(payload.note_id).toBe('note-1');
+
+  // #1558 item two: the report is audited and NOT mirrored into the SHADOW
+  // feed. The mirror is tied to the child, and it told the child and the
+  // other guardian that a parent had filed a barrier report, and when.
+  const { writePilotAuditEvent } = jest.requireMock('@/src/server/pilot/audit') as { writePilotAuditEvent: jest.Mock };
+  expect(writePilotAuditEvent).toHaveBeenCalledTimes(1);
+  expect(writePilotAuditEvent).toHaveBeenCalledWith({
+    event_type: 'create',
+    actor_account_id: 'parent-1',
+    actor_role: 'parent',
+    organization_id: 'org-1',
+    entity_type: 'parent_barrier_report',
+    entity_id: 'note-1',
+    details: { athlete_id: 'athlete-1', barrier_type: 'home' },
+    shadow_mirror: false,
+  });
 });
 
 test('barrierType transportation maps to note_type transportation_barrier', async () => {

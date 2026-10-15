@@ -483,7 +483,10 @@ interface CoachEscalation {
    reads "Pain report", not a severity word. Its stored rung still sets the
    tone and the order. */
 function escalationBadgeLabel(escalation: CoachEscalation): string {
-  return isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity;
+  if (isPainReportEscalation(escalation.metadata)) return PAIN_ESCALATION_LABEL;
+  // F-069, same ruling as pain: the hold a coach placed is not graded to them.
+  if (escalation.source_type === 'training_hold') return 'Training hold';
+  return escalation.severity;
 }
 
 // athlete_voice is deliberately absent: the server never sends it to a coach.
