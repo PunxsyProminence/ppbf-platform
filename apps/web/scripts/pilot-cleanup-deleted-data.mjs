@@ -631,6 +631,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let filesMissing = 0;
   let correctionsDeleted = 0;
   let askerQuestionsDeleted = 0;
+  let subjectRequirementsDeleted = 0;
+  let subjectSubmissionsDeleted = 0;
   const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
@@ -798,6 +800,52 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         );
         askerQuestionsHere = askerRows.rowCount ?? 0;
       }
+      /* THE RESEARCH ROWS ABOUT THIS ATHLETE GO TOO (F-079). A research
+         requirement names the child it is about in subject_id, or, from the
+         writers that predate that column, metadata.subject_id or
+         metadata.athlete_id: the three fields every reader resolves a row's
+         subject from (shadowResearch.ts namedAthleteIdsOf), trimmed as they
+         trim. ANY of the three, not only the first: a row filed against the
+         child under any of them is about the child. No foreign key reaches
+         these (a requirement may outlive the athlete it was about), so the
+         mark only hides them; left behind, the question, the knowledge gap
+         and an intake reviewer's notes about a purged child stay readable.
+         A coach's or admin's filing about the child goes with the child; a
+         row that names no athlete is the gym's research and stays. This
+         organization only: another gym's athlete with the same id is another
+         child. The submissions attached to a row go first, by their own
+         statement, so their count is earned (the foreign key would cascade
+         them uncounted). */
+      let subjectRequirementsHere = 0;
+      let subjectSubmissionsHere = 0;
+      if (removed.rows.length > 0 && tables.researchRequirements) {
+        const about = await client.query(
+          `select research_requirement_id from pilot.shadow_research_requirements
+            where organization_id = $1
+              and (btrim(subject_id) = $2
+                or btrim(metadata->>'subject_id') = $2
+                or btrim(metadata->>'athlete_id') = $2)
+              for update`,
+          key,
+        );
+        const requirementIds = about.rows.map((row) => row.research_requirement_id);
+        if (requirementIds.length > 0) {
+          if (tables.researchSubmissions) {
+            const submissions = await client.query(
+              `delete from pilot.shadow_research_submissions
+                where organization_id = $1 and research_requirement_id = any($2::bigint[])`,
+              [athlete.organization_id, requirementIds],
+            );
+            subjectSubmissionsHere = submissions.rowCount ?? 0;
+          }
+          const requirements = await client.query(
+            `delete from pilot.shadow_research_requirements
+              where organization_id = $1 and research_requirement_id = any($2::bigint[])`,
+            [athlete.organization_id, requirementIds],
+          );
+          subjectRequirementsHere = requirements.rowCount ?? 0;
+        }
+      }
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
          cleared the way a reviewer's removal clears it (profileDb.ts). */
       const portraitPaths = [];
@@ -850,6 +898,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       loginsRetired += retiredHere;
       correctionsDeleted += correctionsHere;
       askerQuestionsDeleted += askerQuestionsHere;
+      subjectRequirementsDeleted += subjectRequirementsHere;
+      subjectSubmissionsDeleted += subjectSubmissionsHere;
       addShadow(shadowHere);
       videosDeleted += videoPaths.length;
       filesDeleted += filesHere;
@@ -1002,7 +1052,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
 
   return {
     athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
-    correctionsDeleted, askerQuestionsDeleted, shadow, blocked, guardianLinkLock,
+    correctionsDeleted, askerQuestionsDeleted, subjectRequirementsDeleted, subjectSubmissionsDeleted,
+    shadow, blocked, guardianLinkLock,
   };
 }
 
@@ -1098,6 +1149,7 @@ async function main() {
               to_regclass('pilot.shadow_feature_unlock_snapshots') is not null as "shadowSnapshots",
               to_regclass('pilot.shadow_chat_audit') is not null as "shadowChatAudit",
               to_regclass('pilot.shadow_research_requirements') is not null as "researchRequirements",
+              to_regclass('pilot.shadow_research_submissions') is not null as "researchSubmissions",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
@@ -1169,6 +1221,7 @@ async function main() {
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
+        subjectRequirementsDeleted: 0, subjectSubmissionsDeleted: 0,
         shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
@@ -1229,6 +1282,8 @@ async function main() {
         would_retire_live_athlete_logins: outcome.loginsRetired,
         would_delete_shadow_memory_corrections: outcome.correctionsDeleted,
         would_delete_asker_research_questions: outcome.askerQuestionsDeleted,
+        would_delete_subject_research_requirements: outcome.subjectRequirementsDeleted,
+        would_delete_subject_research_submissions: outcome.subjectSubmissionsDeleted,
         ...shadowCountsFor(outcome.shadow, 'would_delete_', ''),
         blocked: blockedCount,
         blocked_by: outcome.blocked,
@@ -1280,6 +1335,8 @@ async function main() {
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
           asker_research_questions_deleted: outcome.askerQuestionsDeleted,
+          subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
+          subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
           ...shadowCountsFor(outcome.shadow, '', '_deleted'),
           guardians_held_for_safeguarding_chats: heldGuardians,
           total_rows_deleted:
@@ -1307,6 +1364,8 @@ async function main() {
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,
       asker_research_questions_deleted: outcome.askerQuestionsDeleted,
+      subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
+      subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
       ...shadowCountsFor(outcome.shadow, '', '_deleted'),
       guardians_held_for_safeguarding_chats: heldGuardians,
       total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,
