@@ -132,6 +132,33 @@ describe('the then-and-now frame', () => {
     expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 
+  it('names a catalogue milestone in its own words, never by its key (F-004)', async () => {
+    installFetch((url) => {
+      if (url.includes('/sessions/list')) return jsonResponse({ items: [{ date: '2026-07-01' }] });
+      if (url.includes('/achievements/milestones')) {
+        return jsonResponse({
+          ok: true,
+          items: [
+            { milestone_key: 'community.kept_it_together_outside', note: '', awarded_at: '2026-07-02T00:00:00Z' },
+            { milestone_key: 'conditioning.mile_unbroken', note: '', awarded_at: '2026-08-02T00:00:00Z' },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true, items: [] });
+    });
+
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(<ThenAndNow athleteId="ath-1" />);
+    });
+
+    expect(await screen.findByText('Ran a mile without stopping')).toBeTruthy();
+    expect(screen.getByText('Held up your end outside the gym')).toBeTruthy();
+    const text = view.container.textContent ?? '';
+    expect(text).not.toMatch(/conditioning|community|mile unbroken|kept it together outside/i);
+    expect(view.container.querySelector('.capitalize')).toBeNull();
+  });
+
   it('renders nothing at all without a resolved athlete identity', () => {
     const { container } = render(<ThenAndNow athleteId={null} />);
     expect(container.firstChild).toBeNull();
