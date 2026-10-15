@@ -5549,6 +5549,33 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/athlete-messages",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's read-only copy of what the gym's staff wrote to their children under 18 (athlete_message notes, staff-written only, newest first, named, no account id), for 'Sent to your athlete' on the parent hub (athleteCoachMessages.ts; #1542 FC-06 Q-2 ruled B). Scope is guardianAthleteIds resolved on each request: linked, not deleted, under 18; nothing for an athlete 18 or over; organization in the query.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-message-reads/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-message-reads",

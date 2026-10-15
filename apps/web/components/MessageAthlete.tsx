@@ -12,8 +12,8 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * selected athlete reads under "From your coach" on their Dashboard. It goes
  * through the existing coach-note write (intake/domain-upsert) with
  * note_type 'athlete_message'; that route admits coach and organization admin
- * and gates the athlete to the caller's own gym. Guardians do not read it
- * (FC-06 Q-2 default A). One send per press; a refused or failed send keeps
+ * and gates the athlete to the caller's own gym. For an athlete under 18,
+ * their guardians read a copy (FC-06 Q-2, ruled B). One send per press; a refused or failed send keeps
  * the words and says why. Rendered with key={athleteId}, so switching athletes
  * starts a fresh form and an answer for the athlete just left lands nowhere.
  *
@@ -112,7 +112,9 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
   return (
     <form onSubmit={(event) => void send(event)} className="space-y-[var(--s3)]">
       <h2 className="t-command text-[length:var(--t-lg)]">Message the Athlete</h2>
-      <p className="t-muted">The athlete reads it on their Dashboard. Their family does not see it.</p>
+      <p className="t-muted">
+        The athlete reads it on their Dashboard. For an athlete under 18, their family can read it too.
+      </p>
       <label className="field">
         <span className="t-label">Message to the athlete</span>
         <textarea

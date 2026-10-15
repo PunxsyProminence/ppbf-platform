@@ -1138,9 +1138,11 @@ export async function listBarrierReports(
  *   through its own inbox -- GET /api/pilot/athlete/coach-messages
  *   (athleteCoachMessages.ts), the athlete's own record, staff-written rows
  *   only -- not through these generic readers; staff see what was sent
- *   through GET /api/pilot/coach/athlete-messages. Adding it here would also
- *   mean adding it to the passbook's list in step, and the passbook is not
- *   where a message to the athlete belongs.
+ *   through GET /api/pilot/coach/athlete-messages, and the guardians of an
+ *   athlete under 18 read a copy through GET /api/pilot/parent/athlete-messages
+ *   (FC-06 Q-2, ruled B). Adding it here would also mean adding it to the
+ *   passbook's list in step, and the passbook is not where a message to the
+ *   athlete belongs.
  * - parent: `parent_message` only, byte-for-byte the set `listParentMessages`
  *   already decided for the guardian-facing read. It also closes a case that
  *   set never had to consider: two guardians linked to one athlete, where an

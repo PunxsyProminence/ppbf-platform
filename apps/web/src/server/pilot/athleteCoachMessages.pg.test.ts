@@ -248,3 +248,89 @@ describe('listAthleteCoachMessages on real rows (FC-06)', () => {
     expect(items.find((item) => item.note_text === 'See you Thursday.')?.from_name).toBe('Your coach');
   });
 });
+
+/*
+ * GUARDIANS OF A MINOR GET A COPY (FC-06 Q-2, ruled B): the scope is
+ * guardianAthleteIds -- linked children, under 18, not deleted -- resolved by
+ * the caller. Seeded here: a guardian of the minor athlete, a second guardian
+ * of the same minor, a guardian of an athlete aged 18 or over, a guardian of
+ * another family's child, and a guardian in the other gym.
+ */
+describe('guardian copies (listGuardianCopiesOfAthleteMessages, FC-06 Q-2 B)', () => {
+  const ADULT = 'ATH-ACM-ADULT';
+  const GUARDIANS: Array<[string, string, string, string]> = [
+    // [account, parent id, org, linked athlete]
+    ['acct-acm-guardian-a', 'P-A', ORG_ID, ATHLETE],
+    ['acct-acm-guardian-b', 'P-B', ORG_ID, ATHLETE],
+    ['acct-acm-guardian-adult', 'P-ADULT', ORG_ID, ADULT],
+    ['acct-acm-guardian-other', 'P-OTHER', ORG_ID, OTHER_ATHLETE],
+    ['acct-acm-guardian-x', 'P-X', OTHER_ORG_ID, ATHLETE],
+  ];
+
+  async function addGuardians(client: Client) {
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+         emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Adult Athlete', '2000-01-01', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [ORG_ID, ADULT, COACH],
+    );
+    await client.query(
+      `insert into pilot.coach_observations
+         (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text, created_at)
+       values ($1, gen_random_uuid(), $2, $3, 'coach', 'athlete_message', 'For the adult athlete.', '2026-10-13T16:00:00Z')`,
+      [ORG_ID, ADULT, COACH],
+    );
+    for (const [account, parentId, org, athleteId] of GUARDIANS) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'parent', $2, 'microsoft')`,
+        [account, org],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'A Guardian')`,
+        [org, parentId, account],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'parent')`,
+        [org, parentId, athleteId],
+      );
+    }
+  }
+
+  async function guardianReads(account: string, org = ORG_ID) {
+    const { guardianAthleteIds } = await import('./guardianAccess');
+    const scope = await guardianAthleteIds(org, account);
+    return messages.listGuardianCopiesOfAthleteMessages(org, scope);
+  }
+
+  test("each guardian of the minor reads what staff wrote to them, named, newest first", async () => {
+    await addGuardians(activeClient!);
+    for (const account of ['acct-acm-guardian-a', 'acct-acm-guardian-b']) {
+      const items = await guardianReads(account);
+      expect(items.map(({ athlete_id, note_text, from_name }) => ({ athlete_id, note_text, from_name }))).toEqual([
+        { athlete_id: ATHLETE, note_text: 'Great work on the jab.', from_name: 'Coach Pat Smith' },
+        { athlete_id: ATHLETE, note_text: 'Your membership card is ready.', from_name: 'Your gym' },
+        { athlete_id: ATHLETE, note_text: 'See you Thursday.', from_name: 'Coach Sam Jones' },
+      ]);
+      expect(JSON.stringify(items)).not.toMatch(/acct-|@ppbf\.test/);
+    }
+  });
+
+  test('a guardian of an athlete aged 18 or over reads no copy', async () => {
+    await addGuardians(activeClient!);
+    expect(await guardianReads('acct-acm-guardian-adult')).toEqual([]);
+  });
+
+  test("another family's guardian reads only their own child's, and the other gym's guardian only theirs", async () => {
+    await addGuardians(activeClient!);
+    expect((await guardianReads('acct-acm-guardian-other')).map((item) => item.note_text)).toEqual(['For the other athlete.']);
+    expect((await guardianReads('acct-acm-guardian-x', OTHER_ORG_ID)).map((item) => item.note_text)).toEqual(['Other gym.']);
+  });
+
+  test('the athlete still reads their own, and an empty scope reads nothing', async () => {
+    await addGuardians(activeClient!);
+    expect((await messages.listAthleteCoachMessages(ORG_ID, ATHLETE)).map((item) => item.note_text)).toEqual([
+      'Great work on the jab.', 'Your membership card is ready.', 'See you Thursday.',
+    ]);
+    expect(await messages.listGuardianCopiesOfAthleteMessages(ORG_ID, [])).toEqual([]);
+  });
+});

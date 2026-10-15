@@ -67,6 +67,8 @@ type Handler = (init?: RequestInit) => Promise<Response>;
 function installFetch(options: { messages?: Handler; messagesPost?: Handler; roster?: Handler } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/athletes/list')) {
       if (options.roster) return options.roster(init);
       return jsonResponse({

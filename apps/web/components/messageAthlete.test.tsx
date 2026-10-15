@@ -78,6 +78,8 @@ test('sends the words to that athlete as an athlete message, clears the box, and
   expect(String(fetchMock.mock.calls.find((call) => (call[1] as RequestInit | undefined)?.method === 'POST')![0])).toContain('/api/pilot/intake/domain-upsert');
   expect(screen.getByLabelText('Message to the athlete')).toHaveValue('');
   expect(screen.getByRole('status').textContent).toContain("on the athlete's Dashboard");
+  // FC-06 Q-2, ruled B: the family of an athlete under 18 reads a copy.
+  expect(screen.getByText(/For an athlete under 18, their family can read it too\./)).toBeInTheDocument();
   expect(sentListReads(fetchMock)).toHaveLength(2);
   expect(within(screen.getByRole('list', { name: 'Sent to this athlete' })).getByText('Great work on the jab.')).toBeInTheDocument();
 });

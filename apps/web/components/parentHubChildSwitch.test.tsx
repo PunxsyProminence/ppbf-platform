@@ -46,6 +46,8 @@ function installFetch(
 ): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
 
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1' });
@@ -169,6 +171,8 @@ describe('request ordering when the guardian switches child', () => {
     let firstChildCardReads = 0;
     const fetchMock = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
@@ -239,6 +243,8 @@ describe('request ordering when the guardian switches child', () => {
     let secondChildCardReads = 0;
     global.fetch = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
