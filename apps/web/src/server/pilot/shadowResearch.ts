@@ -283,10 +283,11 @@ export async function listShadowResearchRequirements(
 }
 
 /**
- * Where a page of the research list stops: the stored created_at, as
- * Postgres prints it, and the row's id. The text keeps the microseconds a JS
- * Date drops, so the next read starts exactly after this row; the id breaks
- * ties between rows created in the same instant.
+ * Where a page of the research list stops: the stored created_at as UTC text
+ * with microseconds (fixed format, whatever the session's DateStyle), and the
+ * row's id. The text keeps the microseconds a JS Date drops, so the next read
+ * starts exactly after this row; the id breaks ties between rows created in
+ * the same instant.
  */
 export interface ResearchRequirementPageKey {
   createdAt: string;
@@ -306,7 +307,7 @@ export async function listShadowResearchRequirementsBatch(
   const rows = await query<ShadowResearchRequirementRow & { page_created_at: string }>(
     `select
        ${REQUIREMENT_COLUMNS},
-       created_at::text as page_created_at
+       to_char(created_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') || '+00' as page_created_at
      from pilot.shadow_research_requirements
      where organization_id = $1
        and ($2::timestamptz is null or (created_at, research_requirement_id) < ($2::timestamptz, $3::bigint))
