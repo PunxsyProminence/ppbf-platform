@@ -66,9 +66,10 @@ export default function SetupWizard() {
   // and the button is no longer armed, so the next press only arms it again.
   const [armed, setArmed] = useState<{ step: number; target: string } | null>(null);
 
-  // The gyms that already exist. Step 1's write is an upsert
-  // (createOrganization): an id that is already taken renames that gym and
-  // opens it, so its armed label has to say so rather than "create".
+  // The gyms that already exist. An id that is taken is refused at the first
+  // press, naming the gym that holds it: the wizard creates, and the server
+  // refuses a taken id too (F-096). Before that, the server's create was an
+  // upsert that renamed and reopened the gym.
   const [existingGyms, setExistingGyms] = useState<{ organization_id: string; organization_name: string }[]>([]);
 
   function showFeedback(kind: FeedbackKind, text: string) {
@@ -169,12 +170,7 @@ export default function SetupWizard() {
   function armedLabel(forStep: number): string {
     const gym = gymName.trim() || gymId.trim();
     if (forStep === 1) {
-      const taken = existingGyms.find((existing) => existing.organization_id === gymId.trim());
-      // "save", not "create": if the gym list did not load, this page cannot
-      // tell a new id from a taken one.
-      return taken
-        ? `Press again: overwrite ${taken.organization_name || taken.organization_id} (${gymId.trim()}): rename it ${gymName.trim()} and open it`
-        : `Press again: save ${gym} (${gymId.trim()})`;
+      return `Press again: save ${gym} (${gymId.trim()})`;
     }
     if (forStep === 2) {
       return `Press again: make ${adminEmail.trim()} admin of ${gym}`;
@@ -185,6 +181,15 @@ export default function SetupWizard() {
   // First press arms; the second press of the same button runs the step. The
   // second click of a double-click is part of the first press.
   function pressToRun(event: MouseEvent<HTMLButtonElement>, forStep: number, run: () => void) {
+    const taken = forStep === 1 ? existingGyms.find((existing) => existing.organization_id === gymId.trim()) : undefined;
+    if (taken) {
+      setArmed(null);
+      showFeedback(
+        'error',
+        `A gym with the id ${taken.organization_id} already exists (${taken.organization_name || taken.organization_id}). Choose another id.`,
+      );
+      return;
+    }
     if (forStep === 3 && enabledCapabilityCount === 0) {
       setArmed(null);
       showFeedback('error', 'Please select at least one feature for your gym');

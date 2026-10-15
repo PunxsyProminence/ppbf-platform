@@ -97,16 +97,16 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     expect(posts).toHaveLength(0);
   });
 
-  test('an id that is already taken is named as an overwrite, not a create', async () => {
+  test('an id that is already taken is refused at the first press, naming the gym that holds it', async () => {
     const { posts } = await mountWizard();
     fireEvent.change(screen.getByPlaceholderText('golden_boxing'), { target: { value: 'punxsy_prominence' } });
     fireEvent.change(screen.getByPlaceholderText('Golden Boxing Studio'), { target: { value: 'New Name' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Gym & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Gym & Continue' }));
 
-    expect(await screen.findByRole('button', {
-      name: 'Press again: overwrite Punxsy Prominence (punxsy_prominence): rename it New Name and open it',
-    })).toBeInTheDocument();
+    expect(screen.getByText(/A gym with the id punxsy_prominence already exists \(Punxsy Prominence\)\. Choose another id\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Press again/ })).toBeNull();
     expect(posts).toHaveLength(0);
   });
 
