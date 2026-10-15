@@ -84,6 +84,22 @@ export function announcementReachesPlacement(item: AnnouncementItem, placement: 
   return item.placement === placement || item.placement === 'everywhere';
 }
 
+/**
+ * The byline's role in plain words (#1542, FC-07): a guardian reads "Gym
+ * admin", not the stored literal "organization_admin". A role not named here
+ * prints as stored.
+ */
+const BYLINE_ROLE_LABELS: Readonly<Record<string, string>> = {
+  coach: 'Coach',
+  organization_admin: 'Gym admin',
+  admin: 'Gym admin',
+  board: 'Board',
+};
+
+export function bylineRoleLabel(role: string): string {
+  return BYLINE_ROLE_LABELS[role] ?? role;
+}
+
 export function formatAnnouncementTime(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) {
@@ -112,6 +128,8 @@ interface AnnouncementBannerProps {
    */
   readonly source?: 'session' | 'public';
   readonly heading?: string;
+  /** A line under the heading saying what this section is (FC-07). */
+  readonly note?: string;
   readonly className?: string;
   readonly showByline?: boolean;
 }
@@ -130,6 +148,7 @@ export default function AnnouncementBanner({
   limit = 3,
   source = 'session',
   heading,
+  note,
   className,
   showByline,
 }: Readonly<AnnouncementBannerProps>) {
@@ -194,6 +213,7 @@ export default function AnnouncementBanner({
       className={className ?? 'rounded-lg border border-[rgba(0,0,0,0.12)]  p-3'}
     >
       {heading ? <p className="mb-2 text-xs font-semibold">{heading}</p> : null}
+      {note ? <p className="mb-2 text-xs opacity-75">{note}</p> : null}
       <div className="space-y-2">
         {items.map((item) => (
           <article
@@ -203,7 +223,7 @@ export default function AnnouncementBanner({
             <p className="text-sm leading-6">{item.message}</p>
             {withByline ? (
               <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] opacity-60">
-                By {item.author_name} ({item.author_role}) - {formatAnnouncementTime(item.created_at)}
+                By {item.author_name} ({bylineRoleLabel(item.author_role)}) - {formatAnnouncementTime(item.created_at)}
               </p>
             ) : null}
           </article>
