@@ -68,6 +68,17 @@ type SchedulerCoachingRequest = {
   created_at: string;
 };
 
+/* A request nobody answered before its preferred time read "pending" for
+   months (F-043). It is still pending in the data and staff can still resolve
+   it; the line just says the time has gone. Wording PROPOSED. */
+function coachingRequestStatusText(item: SchedulerCoachingRequest, nowMs: number): string {
+  const preferredMs = Date.parse(item.preferred_at);
+  if (item.status === 'pending' && Number.isFinite(preferredMs) && preferredMs < nowMs) {
+    return 'not answered, and the preferred time has passed';
+  }
+  return item.status;
+}
+
 type MembershipFlag = {
   membership_id: string;
   program_name: string;
@@ -1113,7 +1124,7 @@ export default function SchedulerPage() {
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
                       <p className="text-[color:var(--bone-300)]">
-                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}
+                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, nowMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}

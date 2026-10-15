@@ -280,8 +280,8 @@ test('the hold row is shown even when the response sends no training-hold gate',
  * Owner decision 2026-09-29 (Q4 A): show the guardian the waiver statuses the
  * route has returned since #799. Only the guardian can sign the travel waiver
  * the competition gate reads, so a status that reads wrong here is worse than
- * none: missing must read Missing, and anything the page does not recognise
- * must read Unknown -- never Signed. */
+ * none: missing must read Not on file, with what to do about it (F-065), and
+ * anything the page does not recognise must read Unknown -- never Signed. */
 
 function waiverRow(article: HTMLElement, type: string): HTMLElement {
   const row = article.querySelector<HTMLElement>(`[data-waiver-type="${type}"]`);
@@ -335,7 +335,7 @@ test('each tracked waiver renders with its label, status glyph and status word',
 
   const travel = waiverRow(article, 'travel');
   expect(within(travel).getByText('Travel')).toBeInTheDocument();
-  expect(within(travel).getByText('Missing')).toBeInTheDocument();
+  expect(within(travel).getByText('Not on file')).toBeInTheDocument();
 });
 
 test('photo_only reads Photos only as a restricted badge, never Signed', async () => {
@@ -353,20 +353,45 @@ test('photo_only reads Photos only as a restricted badge, never Signed', async (
   expect(within(photo).queryByText('Signed')).not.toBeInTheDocument();
 });
 
-test('a missing waiver reads Missing with the warning mark, never Signed', async () => {
+test('a missing waiver reads Not on file, never Signed, with no warning mark (F-065)', async () => {
   const article = await renderCard(
     athleteWith({ general: 'signed', medical_release: 'signed', photo_media: 'signed', travel: 'missing' }),
   );
 
   const travel = waiverRow(article, 'travel');
-  expect(within(travel).getByText('Missing')).toBeInTheDocument();
-  expect(within(travel).getByText('▲')).toBeInTheDocument();
+  expect(within(travel).getByText('Not on file')).toBeInTheDocument();
+  expect(within(travel).queryByText('▲')).not.toBeInTheDocument();
+  expect(within(travel).getByText('◌')).toBeInTheDocument();
   expect(within(travel).queryByText('Signed')).not.toBeInTheDocument();
   expect(within(travel).queryByText('✓')).not.toBeInTheDocument();
-  expect(within(travel).getByText('Missing').closest('.badge')).not.toHaveClass('badge--cleared');
+  const badge = within(travel).getByText('Not on file').closest('.badge');
+  expect(badge).not.toHaveClass('badge--cleared');
+  expect(badge).not.toHaveClass('badge--restricted');
 });
 
-test('an unrecognised status reads Unknown, never Signed or Missing', async () => {
+test('a missing waiver says what the family can do about it (F-065)', async () => {
+  const article = await renderCard(
+    athleteWith({ general: 'missing', medical_release: 'missing', photo_media: 'missing', travel: 'missing' }),
+  );
+
+  for (const type of ['general', 'medical_release', 'travel']) {
+    expect(
+      within(waiverRow(article, type)).getByText('Hand the signed paper form to the gym office, and they record it.'),
+    ).toBeInTheDocument();
+  }
+  expect(
+    within(waiverRow(article, 'photo_media')).getByText('Sign it on the Photo & Video Consent page below.'),
+  ).toBeInTheDocument();
+});
+
+test('a signed or unknown waiver carries no what-to-do line', async () => {
+  const article = await renderCard(athleteWith({ general: 'signed', medical_release: 'pending' }));
+
+  expect(within(article).queryByText(/gym office/)).not.toBeInTheDocument();
+  expect(within(article).queryByText(/Photo & Video Consent page below/)).not.toBeInTheDocument();
+});
+
+test('an unrecognised status reads Unknown, never Signed or Not on file', async () => {
   const article = await renderCard(
     athleteWith({ general: 'pending', medical_release: 'SIGNED', photo_media: 42, travel: null }),
   );
@@ -376,7 +401,7 @@ test('an unrecognised status reads Unknown, never Signed or Missing', async () =
     expect(within(row).getByText('Unknown')).toBeInTheDocument();
     expect(within(row).getByText('◌')).toBeInTheDocument();
     expect(within(row).queryByText('Signed')).not.toBeInTheDocument();
-    expect(within(row).queryByText('Missing')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Not on file')).not.toBeInTheDocument();
   }
 });
 
@@ -389,14 +414,14 @@ test('a tracked type the response leaves out still gets a row, reading Unknown',
   }
 });
 
-test('no waivers field at all reads Unknown for every tracked type, not Missing or Signed', async () => {
+test('no waivers field at all reads Unknown for every tracked type, not Not on file or Signed', async () => {
   const article = await renderCard(athleteWith(undefined));
 
   for (const type of ['general', 'medical_release', 'photo_media', 'travel']) {
     const row = waiverRow(article, type);
     expect(within(row).getByText('Unknown')).toBeInTheDocument();
   }
-  expect(within(article).queryByText('Missing')).not.toBeInTheDocument();
+  expect(within(article).queryByText('Not on file')).not.toBeInTheDocument();
   expect(within(article).queryByText('Signed')).not.toBeInTheDocument();
 });
 
@@ -426,7 +451,7 @@ test('each child card shows its own waivers', async () => {
   const sam = (await screen.findByText('Sam R.')).closest('article') as HTMLElement;
   const casey = screen.getByText('Casey W.').closest('article') as HTMLElement;
   expect(within(waiverRow(sam, 'travel')).getByText('Signed')).toBeInTheDocument();
-  expect(within(waiverRow(casey, 'travel')).getByText('Missing')).toBeInTheDocument();
+  expect(within(waiverRow(casey, 'travel')).getByText('Not on file')).toBeInTheDocument();
 });
 
 test('the header names the four tracked waivers and keeps "what your child can see" to the hold and checks', async () => {
@@ -443,9 +468,10 @@ test('the header names the four tracked waivers and keeps "what your child can s
     'the status of the four waivers the gym tracks: general, medical release, photo & media and travel.',
   );
   expect(copy).toContain('Photo & media reads Signed only when every guardian on file for your child has signed it');
-  // Jason 2026-09-29 (P3 A): every child reads Missing until the gym records
-  // these waiver types, so the page says what Missing means.
-  expect(copy).toContain('Missing means the gym has no signed waiver of that kind on file.');
+  // Jason 2026-09-29 (P3 A): every child reads missing until the gym records
+  // these waiver types, so the page says what that means (shown as Not on
+  // file since F-065).
+  expect(copy).toContain('Not on file means the gym has no signed waiver of that kind yet, and the row says what to do.');
   // Owner decision 2026-10-04: guardians read their child's injury record, so the header says so.
   expect(copy).toContain(
     'Then your child’s injury record: each injury the gym recorded, where and what kind, who reported it and when they are expected back -- the same record your child sees, without staff notes.',
