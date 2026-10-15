@@ -24,6 +24,7 @@ import {
   type AthleteWellnessTodayRead,
 } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import { observationsForAthlete, reviewStateLine } from './shadowObservationsForAthlete';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -4045,15 +4046,17 @@ export default function AthleteWorkspace() {
                     </div>
                   </div>
                 ) : null}
-                {!shadowObservationError && shadowObservations.length === 0 ? (
+                {/* Bare event names (SHADOW_AUDIT_LOGIN_ACCOUNT) are the system's
+                    own log, not something SHADOW noticed: they are left off, and
+                    the state is said in words (F-005). */}
+                {!shadowObservationError && observationsForAthlete(shadowObservations).length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">SHADOW has not noticed anything yet. Keep training and checking in.</p>
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
-                  {shadowObservations.slice(0, 6).map((item) => (
+                  {observationsForAthlete(shadowObservations).slice(0, 6).map((item) => (
                     <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{item.label}</p>
-                      <p>Source: {item.source}</p>
-                      <p>State: {item.review_state}</p>
+                      <p>{reviewStateLine(item.review_state)}</p>
                     </div>
                   ))}
                 </div>

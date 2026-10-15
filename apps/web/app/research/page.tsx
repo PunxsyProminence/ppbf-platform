@@ -58,6 +58,13 @@ function mayFileRequirement(role: PilotSessionRole | null): boolean {
   return mayOfferResolve(role);
 }
 
+/* A coach reads the source list to attach a source to a requirement
+   (OD-2026-10-08-005 A-Q13); registering sources and adding their text stay
+   with the curators, whom the sources POST alone admits. */
+function mayCurateLibrary(role: PilotSessionRole | null): boolean {
+  return isOrganizationAdminSessionRole(role) || role === 'platform_owner';
+}
+
 /* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
    status ladder, never a bare lowercase word or colour alone. */
 const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { className: string; glyph: string; label: string }> = {
@@ -269,9 +276,10 @@ export default function ResearchIntakePage() {
     })();
   }, []);
 
-  // One probe decides whether this viewer curates: the sources list is gated
-  // by the same roles as the submission POST, so a 403 here means the panel
-  // would be refused anyway and is not rendered at all.
+  // One probe decides whether this viewer may attach a source: the sources
+  // list is gated by the same roles as the submission POST (curators and
+  // coaches), so a 403 here means the panel would be refused anyway and is
+  // not rendered at all. The curator-only sections also check the role.
   const fetchSourcesPage = async (signal: AbortSignal | undefined, generalOnly: boolean, offset: number) => {
     const filter = generalOnly ? '&general_research=true' : '';
     const page = offset > 0 ? `&offset=${offset}` : '';
@@ -976,7 +984,7 @@ export default function ResearchIntakePage() {
           ) : null}
         </section>
 
-        {curatorSources !== null ? (
+        {curatorSources !== null && mayCurateLibrary(session.role) ? (
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               General Research Intake
@@ -1079,7 +1087,7 @@ export default function ResearchIntakePage() {
             ) : null}
           </section>
         ) : null}
-        {curatorSources !== null ? (
+        {curatorSources !== null && mayCurateLibrary(session.role) ? (
           <LibraryTextIntakePanel
             sources={curatorSources}
             shelf={onPlatformShelf ? 'platform' : 'gym'}

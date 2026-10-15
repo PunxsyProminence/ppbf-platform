@@ -96,7 +96,7 @@ describe('register_class membership flag banner', () => {
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Register First Athlete' }));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Class registration submitted.'));
     expect(screen.queryByText(/membership is not active/)).toBeNull();
@@ -118,7 +118,7 @@ describe('register_class membership flag banner', () => {
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Register First Athlete' }));
 
     const status = await screen.findByRole('status');
     await waitFor(() => expect(status).toHaveTextContent('Class registration submitted.'));
@@ -136,7 +136,7 @@ describe('register_class membership flag banner', () => {
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Register First Athlete' }));
 
     const status = await screen.findByRole('status');
     await waitFor(() => expect(status).toHaveTextContent('The class is full, so this athlete was added to the waitlist.'));

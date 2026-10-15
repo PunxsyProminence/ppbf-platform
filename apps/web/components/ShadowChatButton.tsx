@@ -12,6 +12,29 @@ interface ShadowChatButtonProps {
   readonly subject?: string;
 }
 
+/* The chip names the reader's role in words. It printed the stored value
+   upper-cased ("PLATFORM_OWNER", "ORGANIZATION_ADMIN") on every page that
+   carries the button (audit F-008). The role sent to /shadow is unchanged. */
+const ROLE_CHIP_LABELS: Record<string, string> = {
+  platform_owner: 'Platform owner',
+  organization_admin: 'Gym admin',
+  admin: 'Gym admin',
+  coach: 'Coach',
+  athlete: 'Athlete',
+  parent: 'Parent',
+  board: 'Board',
+  volunteer: 'Volunteer',
+  staff: 'Staff',
+  guest: 'Guest',
+};
+
+export function roleChipLabel(role: string): string {
+  const known = ROLE_CHIP_LABELS[role];
+  if (known) return known;
+  const words = role.replace(/_+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Guest';
+}
+
 export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT', context, subject }: ShadowChatButtonProps) {
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const [resolvedRole, setResolvedRole] = useState<string>(session?.role ?? '');
@@ -61,7 +84,7 @@ export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT'
   }, [session]);
 
   const role = resolvedRole || session?.role || 'guest';
-  const roleLabel = role.toUpperCase();
+  const roleLabel = roleChipLabel(role);
   const mode = role === 'admin' || role === 'organization_admin' || role === 'platform_owner' ? 'master' : 'scoped';
   const roleParam = encodeURIComponent(role);
   const contextParam = context ? `&context=${encodeURIComponent(context)}` : '';
@@ -72,7 +95,7 @@ export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT'
   return (
     <Link href={href} className={buttonClasses(className)}>
       <span>{label}</span>
-      <span className="border border-[color:currentColor] px-1 text-[10px] tracking-[0.08em]">{roleLabel}</span>
+      <span className="border border-[color:currentColor] px-1 text-[length:var(--t-xs)] tracking-[0.08em]">{roleLabel}</span>
     </Link>
   );
 }

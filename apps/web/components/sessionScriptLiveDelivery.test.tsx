@@ -93,6 +93,8 @@ interface Handlers {
   logPost?: (body: Record<string, unknown>) => Response | Promise<Response>;
   roster?: () => Response | Promise<Response>;
   readinessBoard?: () => Response | Promise<Response>;
+  /** GET /runs/[runId]/athletes: who is marked here, and the gym's athletes (F-067). */
+  presence?: () => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -125,6 +127,11 @@ function mockFetch(handlers: Handlers = {}) {
     if (url.endsWith('/timer')) {
       return jsonResponse({ timer: null });
     }
+    // Who is here (F-067) has its own route and its own suite (sessionRunPresence.test.tsx); here
+    // the default is a healthy read of a gym where nobody is marked yet.
+    if (url.endsWith('/athletes')) {
+      return handlers.presence ? handlers.presence() : jsonResponse({ present: [], gym: [] });
+    }
     if (url.includes('/api/pilot/session-scripts/runs/')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       if (handlers.patch) return handlers.patch(body);
@@ -145,7 +152,7 @@ function mockFetch(handlers: Handlers = {}) {
 
 function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
   return fetchMock.mock.calls
-    .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/') && !String(call[0]).endsWith('/timer'))
+    .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/') && !String(call[0]).endsWith('/timer') && !String(call[0]).endsWith('/athletes'))
     .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
 }
 
@@ -229,10 +236,11 @@ describe('the server owns the clock', () => {
     });
     expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('2:08');
 
-    // Presentation only: the tick produced zero requests.
+    // Presentation only: the tick produced zero requests. (The round timer and who-is-here each
+    // read once when the screen opens, by GET; neither is the clock.)
     expect(patchCalls(fetchMock)).toHaveLength(0);
     expect(
-      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/runs') && !String(call[0]).endsWith('/timer')),
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes('/runs') && !String(call[0]).endsWith('/timer') && !String(call[0]).endsWith('/athletes')),
     ).toHaveLength(0);
   });
 
@@ -477,6 +485,88 @@ describe('finishing a session', () => {
       },
     ]);
     expect(onSettled).toHaveBeenCalledWith(settledRow);
+  });
+
+  it('the athletes present box starts from the athletes marked here, and the coach\'s own number is what is sent', async () => {
+    const marked = {
+      present: [
+        { athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-08-14T22:05:00.000Z' },
+        { athlete_id: 'ath-2', full_name: 'Ben Ortiz', marked_at: '2026-08-14T22:06:00.000Z' },
+      ],
+      gym: [
+        { athlete_id: 'ath-1', full_name: 'Ada Reyes' },
+        { athlete_id: 'ath-2', full_name: 'Ben Ortiz' },
+        { athlete_id: 'ath-3', full_name: 'Cy Marsh' },
+      ],
+    };
+    const settledRow = { ...liveRun(), run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' };
+    const { fetchMock } = await renderLive(liveRun(), {
+      presence: () => jsonResponse(marked),
+      patch: () => jsonResponse({ run: settledRow }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('2');
+    expect(screen.getByText('Filled in from the athletes marked here. Change it if your count is different.')).toBeInTheDocument();
+
+    // The coach counted a late arrival nobody marked: their number wins and is what is saved.
+    fireEvent.change(screen.getByLabelText('Athletes present'), { target: { value: '3' } });
+    expect(screen.queryByText('Filled in from the athletes marked here. Change it if your count is different.')).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'finish', run_state: 'completed', athletes_present: 3 }]);
+  });
+
+  it('a number the coach typed stays when more athletes are marked afterwards (ruling G)', async () => {
+    const settledRow = { ...liveRun(), run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' };
+    const { fetchMock } = await renderLive(liveRun(), {
+      presence: () => jsonResponse({
+        present: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-08-14T22:05:00.000Z' }],
+        gym: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }, { athlete_id: 'ath-3', full_name: 'Cy Marsh' }],
+      }),
+      patch: () => jsonResponse({ run: settledRow }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('1');
+    fireEvent.change(screen.getByLabelText('Athletes present'), { target: { value: '5' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark here Cy Marsh' }));
+    });
+    expect(screen.getByText('2 marked here.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('5');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'finish', run_state: 'completed', athletes_present: 5 }]);
+  });
+
+  it('a count stated when the session started is kept; the marks do not replace it', async () => {
+    await renderLive(liveRun({ athletes_present: 11 }), {
+      presence: () => jsonResponse({
+        present: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-08-14T22:05:00.000Z' }],
+        gym: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }],
+      }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('11');
+    expect(screen.queryByText('Filled in from the athletes marked here. Change it if your count is different.')).not.toBeInTheDocument();
+  });
+
+  it('with nobody marked the box stays empty, so no empty room is recorded that nobody counted', async () => {
+    const settledRow = { ...liveRun(), run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' };
+    const { fetchMock } = await renderLive(liveRun(), {
+      presence: () => jsonResponse({ present: [], gym: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }] }),
+      patch: () => jsonResponse({ run: settledRow }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'finish', run_state: 'completed' }]);
   });
 
   it('abandoned is its own named outcome, not a variant of completed', async () => {

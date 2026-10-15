@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
+import FinishedSessions from '@/components/FinishedSessions';
 import { apiBase } from '@/lib/apiBase';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
@@ -822,6 +823,10 @@ function CoachSessionScripts() {
             )}
           </section>
         )}
+
+        {/* Every session the gym has ended, plain ones included (F-067). It is not shown over a
+            live session, so it is mounted, and reads, again once a session ends here. */}
+        <FinishedSessions />
         </>)}
 
       {/* The four words, at the foot of the page — the same foot the
