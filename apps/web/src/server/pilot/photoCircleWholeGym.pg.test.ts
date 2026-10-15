@@ -331,6 +331,19 @@ describe("a minor's photo circle under the whole-gym coach rule (real database)"
     }
   });
 
+  test("asked as another gym, the child has no identity: the path every route takes refuses it", async () => {
+    // Routes resolve the subject with getSubjectIdentity(principal.organizationId, ...),
+    // so another gym's coach never reaches resolveRelationship with this child.
+    const client = await freshDatabase('pc_other_gym_identity');
+    activeClient = client;
+    try {
+      await expect(getSubjectIdentity(OTHER_ORG, CHILD_ACCOUNT)).resolves.toBeNull();
+      await expect(getSubjectIdentity(ORG, CHILD_ACCOUNT)).resolves.not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a deleted child has no identity, so no coach is in any circle for them', async () => {
     const client = await freshDatabase('pc_deleted');
     activeClient = client;

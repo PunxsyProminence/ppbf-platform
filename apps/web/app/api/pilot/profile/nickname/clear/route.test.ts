@@ -151,12 +151,13 @@ describe('who may take a ring name down', () => {
     },
   );
 
-  it('refuses a coach who is not the coach of record, without saying so', async () => {
-    // A covering coach under an active pilot.coach_coverage grant REACHES this
-    // athlete -- assertViewerMayReachSubject passes for them -- and
-    // resolveRelationship still answers 'organization_staff'. Reaching a child
-    // is not standing to moderate their name.
-    callerIs('coach', 'coach-substitute@punxsyprominence.org', 'organization_staff');
+  it('refuses a viewer outside the child\'s circle, without saying so', async () => {
+    // Since issue #1480 C2 every coach of the athlete's gym resolves as
+    // coach_of_subject (photoCircleWholeGym.pg.test.ts), so a same-gym coach
+    // can no longer be refused here. The mocked relationship stands for any
+    // viewer the circle leaves out -- reaching a record is not standing to
+    // moderate a child's name.
+    callerIs('coach', 'coach-substitute@punxsyprominence.org', 'none');
 
     const response = await POST(request({ account_id: SUBJECT_ACCOUNT }));
     const payload = await response.json();
@@ -272,7 +273,7 @@ describe('the audit row', () => {
   it('writes nothing when the clear was refused', async () => {
     // An audit trail that records attempts as though they were actions is a
     // trail that cannot be read.
-    callerIs('coach', 'coach-substitute@punxsyprominence.org', 'organization_staff');
+    callerIs('coach', 'coach-substitute@punxsyprominence.org', 'none');
 
     await POST(request({ account_id: SUBJECT_ACCOUNT }));
 

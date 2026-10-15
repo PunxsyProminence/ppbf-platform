@@ -40,10 +40,10 @@
 import { isMinor } from './wallDisplay';
 
 /**
- * How the viewer stands to the subject. Resolved by profileDb.ts from
- * pilot.athletes.coach_id and pilot.guardian_links -- the same two joins
- * access.ts uses, so there is one definition of "your coach" and one of "your
- * guardian" in the codebase rather than a parallel pair invented here.
+ * How the viewer stands to the subject. Resolved by profileDb.ts: "your coach"
+ * is every coach of the athlete's gym (issue #1480 C2, the same rule access.ts
+ * applies), "your guardian" is pilot.guardian_links -- one definition of each
+ * in the codebase rather than a parallel pair invented here.
  */
 export type ProfileRelationship =
   /** The viewer is the subject. */

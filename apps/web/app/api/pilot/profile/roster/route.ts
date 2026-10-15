@@ -32,10 +32,10 @@ interface RosterRow {
  * documents that none of those has a backend feed and that fabricating them is
  * a safety bug, not a cosmetic one. This route does not invent them either.
  *
- * And no photograph of an athlete this coach is not the coach of. The
- * per-athlete decision runs for every row -- a coach browsing the organization
- * roster gets plates for the children who are not theirs, which is the same
- * answer the single-portrait route gives, produced by the same function.
+ * Photographs follow the per-athlete decision on every row -- the same answer
+ * the single-portrait route gives, produced by the same function. Since issue
+ * #1480 C2 every coach of the gym is inside a child's circle; an organization
+ * admin browsing the organization roster still gets plates for children.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -75,7 +75,8 @@ export async function GET(request: NextRequest) {
       // active coverage (OD-2026-10-05-024 item 2). A covering coach gets the
       // covered athletes' ROWS; the portrait decision below still runs per
       // row, so coverage changes which rows come back, never what may be
-      // seen on one (is_mine and coach_of_subject stay coach-of-record).
+      // seen on one (is_mine stays coach-of-record; coach_of_subject is every
+      // coach of the gym since issue #1480 C2, see below).
       : await query<RosterRow>(
         `select a.athlete_id, acc.account_id, a.full_name, a.dob, a.coach_id
            from pilot.athletes a
