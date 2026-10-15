@@ -70,11 +70,12 @@ const READINESS_QUERY = `
            or (c.conname = 'pilot_parent_resources_type_check'
              and d.def like '%''guide''%' and d.def like '%''checklist''%' and d.def like '%''video''%' and d.def like '%''policy''%')
            or (c.conname = 'pilot_parent_resources_destination_check'
-             and d.def like '%''internal''%' and d.def like '%''external''%' and d.def like '%https://%' and d.def like '%2000%')
+             and d.def like '%''internal''%' and d.def like '%''external''%' and d.def like '%https://%' and d.def like '%2000%'
+             and d.def like '%!~%' and d.def like '%^/[^/]%' and d.def like '%@%')
            or (c.conname = 'pilot_parent_resources_state_check'
              and d.def like '%''draft''%' and d.def like '%''published''%' and d.def like '%''archived''%')
            or (c.conname = 'pilot_parent_resources_published_check'
-             and d.def like '%''draft''%' and d.def like '%published_at IS NULL%')
+             and d.def like '%''draft''%' and d.def like '%published_at IS NULL%' and d.def like '%published_at IS NOT NULL%')
            or (c.conname in ('pilot_parent_resources_created_by_role_check', 'pilot_parent_resources_updated_by_role_check')
              and d.def like '%''coach''%' and d.def like '%''organization_admin''%' and d.def like '%''admin''%'
              and d.def not like '%''parent''%')

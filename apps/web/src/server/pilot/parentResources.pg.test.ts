@@ -241,6 +241,13 @@ describe('parent resources migration (PH-10)', () => {
         ['internal', '/has a space'],
         ['elsewhere', '/help'],
         ['external', `https://example.org/${'x'.repeat(2000)}`],
+        // Browsers read a backslash as a slash in a link: these would leave the app.
+        ['internal', '/\\evil.example'],
+        ['internal', '/\\/evil.example'],
+        ['external', 'https://example.org\\@evil.example'],
+        // The host is what follows the last '@'.
+        ['external', 'https://usaboxing.org@evil.example'],
+        ['external', 'https://usaboxing.org:pw@evil.example/x'],
       ] as const) {
         await expect(resource(client, { kind, destination })).rejects.toMatchObject({
           code: '23514', constraint: 'pilot_parent_resources_destination_check',
@@ -270,6 +277,12 @@ describe('parent resources migration (PH-10)', () => {
   test('published carries its first time: a draft has none, and the first time is kept through archive and re-publish', async () => {
     const client = await freshDatabase('pres_published');
     try {
+      // A draft can be archived without ever being published.
+      const { rows: [{ resource_id: abandoned }] } = await resource(client, { title: 'Abandoned draft' });
+      await client.query(`update pilot.parent_resources set state = 'archived', ${EDITOR()} where resource_id = $1::uuid`, [abandoned]);
+      const archived = await client.query('select state, published_at from pilot.parent_resources where resource_id = $1::uuid', [abandoned]);
+      expect(archived.rows).toEqual([{ state: 'archived', published_at: null }]);
+
       await expect(resource(client, { state: 'published' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_check' });
       await expect(resource(client, { publishedAt: '2026-10-15T12:00:00Z' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_check' });
 
@@ -283,7 +296,7 @@ describe('parent resources migration (PH-10)', () => {
       await expect(
         client.query(`update pilot.parent_resources set state = 'draft', published_at = null, ${EDITOR()} where resource_id = $1::uuid`, [id]),
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_kept' });
-      const row = await client.query('select state, published_at from pilot.parent_resources');
+      const row = await client.query('select state, published_at from pilot.parent_resources where resource_id = $1::uuid', [id]);
       expect(row.rows[0].state).toBe('published');
       expect(row.rows[0].published_at.toISOString()).toBe('2026-10-15T12:00:00.000Z');
     } finally {

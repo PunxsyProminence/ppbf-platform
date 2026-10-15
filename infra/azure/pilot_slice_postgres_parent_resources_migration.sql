@@ -22,7 +22,9 @@
 -- app.
 --
 -- PUBLISHED OR NOT. state is 'draft', 'published' or 'archived';
--- published_at is when it was first published and is kept after that.
+-- published_at is when it was first published and is kept after that. A
+-- draft has none; a published resource has one; an archived one has one only
+-- if it was ever published (a draft can be archived without being published).
 -- Who reads what is PH-11's (published only, by the child's program).
 --
 -- WHO PUBLISHES: coaches and organization admins (PH-10 Q1 default A). A
@@ -81,20 +83,26 @@ create table if not exists pilot.parent_resources (
   constraint pilot_parent_resources_type_check
     check (resource_type in ('guide', 'checklist', 'video', 'policy')),
   -- An app path ('/x', never '//host'), or an https address with a host.
+  -- No whitespace and no backslash anywhere: browsers read '\' as '/' in a
+  -- link, so '/\evil.example' would leave the app. No '@' before the host:
+  -- 'https://usaboxing.org@evil.example' goes to evil.example.
   constraint pilot_parent_resources_destination_check
     check (
       char_length(destination) <= 2000
-      and destination !~ '\s'
+      and destination !~ '[\s\\]'
       and (
         (destination_kind = 'internal' and destination ~ '^/[^/]')
-        or (destination_kind = 'external' and destination ~ '^https://[^/\s]+')
+        or (destination_kind = 'external' and destination ~ '^https://[^/@?#]+(/|$)' and destination !~ '^https://[^/]*@')
       )
     ),
   constraint pilot_parent_resources_state_check
     check (state in ('draft', 'published', 'archived')),
   -- First published at a recorded time; a draft has never been published.
   constraint pilot_parent_resources_published_check
-    check ((state = 'draft') = (published_at is null)),
+    check (
+      (state <> 'draft' or published_at is null)
+      and (state <> 'published' or published_at is not null)
+    ),
   constraint pilot_parent_resources_created_by_role_check
     check (created_by_role in ('coach', 'organization_admin', 'admin')),
   constraint pilot_parent_resources_updated_by_role_check
