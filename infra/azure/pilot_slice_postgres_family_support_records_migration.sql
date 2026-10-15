@@ -85,12 +85,14 @@ begin
   if tg_op = 'INSERT' then
     if new.retired_at is not null or new.retired_by_account_id is not null then
       raise exception 'FAMILY_SUPPORT_RECORD_IS_BORN_LIVE'
-        using errcode = '23514', constraint = 'pilot_family_support_records_only_retired';
+        using errcode = '23514', constraint = 'pilot_family_support_records_born_live';
     end if;
     if new.recorded_by_account_id is null then
       raise exception 'FAMILY_SUPPORT_RECORD_NAMES_ITS_RECORDER'
         using errcode = '23514', constraint = 'pilot_family_support_records_recorder_named';
     end if;
+    -- When it was recorded is when it was written, not a value sent in.
+    new.created_at := now();
     -- Provided, not planned: not after today in the gym's time zone.
     if new.provided_on > (now() at time zone 'America/New_York')::date then
       raise exception 'FAMILY_SUPPORT_RECORD_IS_NOT_IN_THE_FUTURE'
@@ -105,9 +107,9 @@ begin
     return new;
   end if;
 
-  -- By hand, the one change is retiring a live record, naming who did it.
+  -- By hand, the one change is retiring a live record, naming who did it;
+  -- the guard stamps the time.
   if old.retired_at is not null
-     or new.retired_at is null
      or new.retired_by_account_id is null
      or (new.organization_id, new.record_id, new.athlete_id, new.support_kind, new.provided_on,
          new.recorded_by_account_id, new.recorded_by_role, new.created_at)

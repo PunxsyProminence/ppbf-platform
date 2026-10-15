@@ -229,8 +229,21 @@ describe('family support records migration (PH-12)', () => {
            (organization_id, athlete_id, support_kind, provided_on, recorded_by_account_id, recorded_by_role, retired_at, retired_by_account_id)
          values ($1, $2, 'x', '2026-10-01', $3, 'organization_admin', now(), $3)`,
         [ORG, ATHLETE, ADMIN],
-      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_only_retired' });
-      const count = await client.query('select count(*)::int as n from pilot.family_support_records');
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_born_live' });
+      // The recorded time is the database's, not one sent in.
+      const { rows: [{ record_id: stamped }] } = await client.query(
+        `insert into pilot.family_support_records
+           (organization_id, athlete_id, support_kind, provided_on, recorded_by_account_id, recorded_by_role, created_at)
+         values ($1, $2, 'Stamped', '2026-10-01', $3, 'organization_admin', '2020-01-01')
+         returning record_id::text as record_id`,
+        [ORG, ATHLETE, ADMIN],
+      );
+      const createdAt = await client.query(
+        `select created_at > now() - interval '1 minute' as now_stamped from pilot.family_support_records where record_id = $1::uuid`,
+        [stamped],
+      );
+      expect(createdAt.rows).toEqual([{ now_stamped: true }]);
+      const count = await client.query(`select count(*)::int as n from pilot.family_support_records where support_kind <> 'Stamped'`);
       expect(count.rows[0].n).toBe(0);
     } finally {
       await client.end();
@@ -255,9 +268,9 @@ describe('family support records migration (PH-12)', () => {
           code: '23514', constraint: 'pilot_family_support_records_only_retired',
         });
       }
-      // Retired by a named admin; the time sent is not the time kept.
+      // Retired by a named admin, naming only who; the guard stamps the time.
       await client.query(
-        `update pilot.family_support_records set retired_at = '2020-01-01', retired_by_account_id = $2 where record_id = $1::uuid`,
+        `update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid`,
         [id, ADMIN],
       );
       const retired = await client.query(
