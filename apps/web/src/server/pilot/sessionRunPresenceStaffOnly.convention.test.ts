@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
