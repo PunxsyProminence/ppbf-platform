@@ -156,11 +156,10 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
-      'The roster list (athletes/list, getAthletesForCoach) still returns dob only for the coach of record '
-      + 'or the holder of an active coverage grant. athletes/get + athletes/update + intake/domain-get go '
-      + 'through assertActorCanAccessAthlete, which since issue #1480 (Jason 2026-10-12) admits every coach '
-      + 'of the athlete\'s gym, so a coach reads dob per athlete there; whether the roster blanking should '
-      + 'follow is an open owner question on #1480. profile/roster selects dob to feed the portrait age gate and never '
+      'The roster list (athletes/list, getAthletesForCoach) returns dob to every coach of the athlete\'s gym '
+      + 'since issue #1480 PR C (OD-2026-10-11-007), matching athletes/get + athletes/update + intake/domain-get, '
+      + 'which go through assertActorCanAccessAthlete; until then the roster blanked it for athletes the coach '
+      + 'had no assignment or live coverage on. profile/roster selects dob to feed the portrait age gate and never '
       + 'returns it. coach/development-block-templates reads it through developmentBlockTemplates.ts after '
       + 'assertActorCanAccessAthlete and returns only an adult/not-adult boolean. Organization admins still read it org-wide, which is exactly what keeps this '
       + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
@@ -188,9 +187,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['entities.ts#getAthletesForCoach'],
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
-      + 'public read (wall denylist). Blanked on the roster list for coaches by the same field split as '
-      + 'athletes.dob, and, as with dob, readable per athlete by every coach of the gym through '
-      + 'assertActorCanAccessAthlete since issue #1480 (an open owner question there). The roster export '
+      + 'public read (wall denylist). Readable by every coach of the athlete\'s gym, on the roster list and per '
+      + 'athlete through assertActorCanAccessAthlete, since issue #1480 PR C (OD-2026-10-11-007; staff see '
+      + 'everything, OD-2026-10-13-006, which keeps a PARENT to relationship only). The roster export '
       + '(admin/export/roster) still carries it and is gated to organization_admin alone.',
   },
   'account_profiles.photo_blob_path': {

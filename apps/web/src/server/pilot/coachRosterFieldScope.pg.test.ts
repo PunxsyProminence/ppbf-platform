@@ -1,13 +1,11 @@
-// Real PostgreSQL-backed test for the coach roster field split
-// (entities.ts#getAthletesForCoach).
+// Real PostgreSQL-backed test for the coach roster (entities.ts#getAthletesForCoach).
 //
-// This one CANNOT be proven with a mock, by construction. The redaction is a
-// `case when <relationship> then dob end` evaluated by Postgres, and the
-// relationship predicate includes now() window comparisons against
-// pilot.coach_coverage. A fake db client answers the query with whatever rows
-// the test hands it, so a unit test would assert its own fixture and pass
-// just as happily against a predicate that redacts nothing. Every assertion
-// below reads the columns back out of a real database.
+// Until issue #1480 PR C this pinned a field split: dob and emergency_contact
+// were blanked for athletes the coach had no assignment or live coverage on.
+// Since OD-2026-10-11-007 ("lets make it coaches to whole gym") every coach of
+// the gym reads both for every live athlete of it, and the cases below pin
+// that -- plus the two boundaries that remain: another gym, and deletion.
+// Every assertion reads the columns back out of a real database.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -65,11 +63,11 @@ const RECORD_COACH = 'acct-coach-record';
 const OTHER_COACH = 'acct-coach-other';
 const ADMIN_ACCOUNT = 'acct-admin-roster';
 
-/** Coached by RECORD_COACH: the relationship that reveals the fields. */
+/** Coached by RECORD_COACH. */
 const ATH_MINE = 'ATH-MINE';
-/** Coached by OTHER_COACH, no grant: the redacted case. */
+/** Coached by OTHER_COACH, no grant: redacted for RECORD_COACH until #1480. */
 const ATH_THEIRS = 'ATH-THEIRS';
-/** Coached by OTHER_COACH, the one coverage grants are written against. */
+/** Coached by OTHER_COACH: the coverage case until #1480. */
 const ATH_COVERED = 'ATH-COVERED';
 
 const CONTACT_MINE = 'Rosa Vance 814-555-0110';
@@ -174,39 +172,6 @@ async function freshDatabase(name: string, { dropCoverageTable = false }: { drop
   return client;
 }
 
-async function insertGrant(
-  client: Client,
-  overrides: Partial<{
-    organization_id: string;
-    athlete_id: string;
-    covering_coach_id: string;
-    starts_at: string;
-    expires_at: string;
-  }> = {},
-): Promise<void> {
-  const grant = {
-    organization_id: ORG_ID,
-    athlete_id: ATH_COVERED,
-    covering_coach_id: RECORD_COACH,
-    starts_at: "now() - interval '1 hour'",
-    expires_at: "now() + interval '1 hour'",
-    ...overrides,
-  };
-  // covering_coach_id and granted_by_account_id are FK'd on accounts(account_id)
-  // ALONE -- not composite with organization_id -- so a grant row in another
-  // organization naming THIS coach really is insertable. That is the whole
-  // point of the cross-org case: the coach id matches, the athlete id matches,
-  // the window is live, and only the organization_id comparison in the
-  // relationship predicate stands between this coach and another gym's child.
-  await client.query(
-    `insert into pilot.coach_coverage (
-       organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at
-     ) values ($1,$2,$3,$4, ${grant.starts_at}, ${grant.expires_at})`,
-    [grant.organization_id, grant.athlete_id, grant.covering_coach_id, ADMIN_ACCOUNT],
-  );
-}
-
-/** The row for one athlete out of a roster read, by id. */
 function rowFor<T extends { athlete_id: string }>(items: T[], athleteId: string): T {
   const found = items.find((item) => item.athlete_id === athleteId);
   if (!found) throw new Error(`test bug: ${athleteId} missing from the roster`);
@@ -305,7 +270,15 @@ describe('the list stays whole', () => {
   });
 });
 
-describe('the fields narrow', () => {
+/* THE FIELDS FOLLOW THE WHOLE-GYM RULE (issue #1480 PR C).
+
+   Until #1480 the roster blanked dob and emergency_contact for athletes the
+   coach was not coach of record for and held no live coverage grant on. Since
+   OD-2026-10-11-007 ("lets make it coaches to whole gym") assertActorCanAccessAthlete
+   admits every coach of the athlete's gym, so athletes/get already returned both
+   fields per athlete; the roster now matches. Another gym's child and a
+   deleted athlete never appear at all. */
+describe('every coach of the gym reads the fields for every live athlete of it', () => {
   test('the coach of record reads dob and emergency_contact for their own athlete', async () => {
     const client = await freshDatabase('ppbf_test_roster_mine');
     activeClient = client;
@@ -319,177 +292,74 @@ describe('the fields narrow', () => {
     }
   });
 
-  // The finding this change exists to close.
-  test('an athlete this coach has no relationship to comes back with both fields null', async () => {
+  test('an athlete this coach is not assigned to and holds no grant on comes back with both fields', async () => {
     const client = await freshDatabase('ppbf_test_roster_theirs');
     activeClient = client;
     try {
-      const theirs = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_THEIRS);
+      const items = await getAthletesForCoach(ORG_ID, RECORD_COACH);
+      const theirs = rowFor(items, ATH_THEIRS);
+      const covered = rowFor(items, ATH_COVERED);
 
-      expect(theirs.dob).toBeNull();
-      expect(theirs.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('the guardian phone number is absent from the whole payload, not merely from the field', async () => {
-    const client = await freshDatabase('ppbf_test_roster_no_leak');
-    activeClient = client;
-    try {
-      const serialized = JSON.stringify(await getAthletesForCoach(ORG_ID, RECORD_COACH));
-
-      expect(serialized).toContain(CONTACT_MINE);
-      expect(serialized).not.toContain(CONTACT_THEIRS);
-      expect(serialized).not.toContain(CONTACT_COVERED);
-    } finally {
-      await client.end();
-    }
-  });
-});
-
-describe('a coverage grant is the second way in, and only while it is live', () => {
-  test('an active grant reveals both fields on the covered athlete', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_active');
-    activeClient = client;
-    try {
-      await insertGrant(client);
-
-      const covered = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_COVERED);
-
-      expect(covered.dob).not.toBeNull();
+      expect(theirs.dob).not.toBeNull();
+      expect(theirs.emergency_contact).toBe(CONTACT_THEIRS);
       expect(covered.emergency_contact).toBe(CONTACT_COVERED);
     } finally {
       await client.end();
     }
   });
 
-  test('an active grant reveals nothing about the athletes it does not name', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_narrow');
+  test('a second coach of the same gym reads the same fields for the first coach\'s athlete', async () => {
+    const client = await freshDatabase('ppbf_test_roster_other_coach');
     activeClient = client;
     try {
-      await insertGrant(client);
+      const mine = rowFor(await getAthletesForCoach(ORG_ID, OTHER_COACH), ATH_MINE);
 
+      expect(mine.dob).not.toBeNull();
+      expect(mine.emergency_contact).toBe(CONTACT_MINE);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('another gym\'s child and their contact are absent from the whole payload', async () => {
+    const client = await freshDatabase('ppbf_test_roster_no_leak');
+    activeClient = client;
+    try {
+      const serialized = JSON.stringify(await getAthletesForCoach(ORG_ID, RECORD_COACH));
+
+      expect(serialized).not.toContain('Other Org Child');
+      expect(serialized).not.toContain('other org contact');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a deleted athlete is not on the roster, fields and all', async () => {
+    const client = await freshDatabase('ppbf_test_roster_deleted');
+    activeClient = client;
+    try {
+      await client.query(
+        'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
+        [ORG_ID, ATH_THEIRS],
+      );
+      const serialized = JSON.stringify(await getAthletesForCoach(ORG_ID, RECORD_COACH));
+
+      expect(serialized).not.toContain(ATH_THEIRS);
+      expect(serialized).not.toContain(CONTACT_THEIRS);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the roster no longer depends on pilot.coach_coverage at all', async () => {
+    // The relationship test it used to run is gone, so a database without the
+    // coverage table reads the same roster, fields included.
+    const client = await freshDatabase('ppbf_test_roster_no_coverage', { dropCoverageTable: true });
+    activeClient = client;
+    try {
       const theirs = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_THEIRS);
 
-      expect(theirs.dob).toBeNull();
-      expect(theirs.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('an expired grant redacts again, with no cleanup job having run', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_expired');
-    activeClient = client;
-    try {
-      await insertGrant(client, {
-        starts_at: "now() - interval '4 hours'",
-        expires_at: "now() - interval '1 hour'",
-      });
-
-      const covered = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_COVERED);
-
-      expect(covered.dob).toBeNull();
-      expect(covered.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('a grant that has not started yet reveals nothing', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_future');
-    activeClient = client;
-    try {
-      await insertGrant(client, {
-        starts_at: "now() + interval '1 hour'",
-        expires_at: "now() + interval '4 hours'",
-      });
-
-      const covered = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_COVERED);
-
-      expect(covered.dob).toBeNull();
-      expect(covered.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  // Revocation forces expires_at to now(). It must stop the roster read the
-  // same instant it stops the per-athlete gate, or a revoked coach keeps
-  // reading a child's birth date off a list.
-  test('a revoked grant stops revealing the fields immediately', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_revoked');
-    activeClient = client;
-    try {
-      await insertGrant(client);
-      await client.query(
-        `update pilot.coach_coverage set expires_at = now()
-         where organization_id = $1 and athlete_id = $2 and covering_coach_id = $3`,
-        [ORG_ID, ATH_COVERED, RECORD_COACH],
-      );
-
-      const covered = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_COVERED);
-
-      expect(covered.dob).toBeNull();
-      expect(covered.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('a grant in another organization does not unlock this one\'s row', async () => {
-    const client = await freshDatabase('ppbf_test_roster_cov_cross_org');
-    activeClient = client;
-    try {
-      await insertGrant(client, { organization_id: OTHER_ORG_ID });
-
-      const covered = rowFor(await getAthletesForCoach(ORG_ID, RECORD_COACH), ATH_COVERED);
-
-      expect(covered.dob).toBeNull();
-      expect(covered.emergency_contact).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-});
-
-describe('a database the coverage migration has not reached', () => {
-  // Migrations are operator-applied, so this database really exists in the
-  // wild. The roster must not 500, and the failure must land on the safe side.
-  test('the roster still reads, and redacts everything the coach is not coach of record for', async () => {
-    const client = await freshDatabase('ppbf_test_roster_no_cov_table', { dropCoverageTable: true });
-    activeClient = client;
-    try {
-      const items = await getAthletesForCoach(ORG_ID, RECORD_COACH);
-
-      expect(items).toHaveLength(3);
-      expect(rowFor(items, ATH_MINE).emergency_contact).toBe(CONTACT_MINE);
-      expect(rowFor(items, ATH_THEIRS).emergency_contact).toBeNull();
-      expect(rowFor(items, ATH_COVERED).emergency_contact).toBeNull();
-      expect(rowFor(items, ATH_COVERED).dob).toBeNull();
-    } finally {
-      await client.end();
-    }
-  });
-
-  // The fallback is scoped to exactly one Postgres error. Anything else must
-  // still surface, or a genuine database fault becomes a silently redacted
-  // roster that looks like a working feature.
-  test('a database error that is not a missing relation still propagates', async () => {
-    const client = await freshDatabase('ppbf_test_roster_other_error');
-    activeClient = client;
-    try {
-      // Break a column ONLY the coverage lookup reads. A fault in
-      // pilot.athletes would break the record-only fallback query too, so the
-      // error would surface from the fallback and the assertion would hold
-      // even against a catch that swallowed everything -- proving nothing.
-      // Renaming coach_coverage.expires_at fails the first query with 42703
-      // while leaving the fallback perfectly able to succeed, so this can only
-      // pass if the catch really is scoped to 42P01.
-      await client.query('alter table pilot.coach_coverage rename column expires_at to expires_at_moved');
-
-      await expect(getAthletesForCoach(ORG_ID, RECORD_COACH)).rejects.toThrow(/expires_at/);
+      expect(theirs.emergency_contact).toBe(CONTACT_THEIRS);
     } finally {
       await client.end();
     }
