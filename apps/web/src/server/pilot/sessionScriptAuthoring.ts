@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
+import { FROM_TEMPLATE, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
@@ -131,7 +132,8 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
   return steps.map((step, index) => {
     const start = offset;
     offset += step.duration_minutes ?? DEFAULT_STEP_MINUTES;
-    const facts = [step.block.trim(), step.rep_count === null ? '' : `${step.rep_count} reps`]
+    // In words, and said to be the template's (F-078): "From the template: Warm-up, 3 reps".
+    const facts = [step.block.trim() === '' ? '' : templateSectionWords(step.block), step.rep_count === null ? '' : `${step.rep_count} reps`]
       .filter((part) => part !== '');
     const label = (step.head_drill_name ?? step.free_text_drill ?? '').trim() || `Step ${index + 1}`;
     return {
@@ -140,7 +142,7 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
       end_offset_min: offset,
       block_label: label.slice(0, MAX_TEXT_LENGTH),
       what_to_say: step.coach_note?.trim() || null,
-      what_to_explain: facts.length > 0 ? facts.join(' - ') : `From workout template: ${templateName}`,
+      what_to_explain: `${FROM_TEMPLATE}${facts.length > 0 ? facts.join(', ') : templateName}`,
       block_kind: step.drill_id === null ? 'instruction' : 'drill_round',
       drill_id: step.drill_id,
       scale_level: step.scale_level,
@@ -190,7 +192,7 @@ export async function createSessionScriptFromTemplate(
       `insert into pilot.session_scripts (
          organization_id, script_id, lineage_id, version, name, total_minutes, contact_structure,
          authoring_state, source_document, created_by_account_id
-       ) values ($1, $2, $2, 1, $3, $4, $5, 'coach_reviewed', $6, $7)`,
+       ) values ($1, $2, $2, 1, $3, $4, $5, 'draft', $6, $7)`,
       [
         params.organizationId,
         scriptId,
@@ -494,8 +496,22 @@ export interface RetiredSessionScript {
   version: number;
 }
 
-/** What a plan a coach brings back is: a coach has looked at it and chosen to run it. */
-const BROUGHT_BACK_STATE = 'coach_reviewed';
+/** The states a plan can be brought back to: whatever it was before it was retired. */
+const RESTORABLE_STATES = ['draft', 'coach_reviewed', 'in_use'] as const;
+
+async function stateBeforeRetiring(client: PoolClient, organizationId: string, scriptId: string): Promise<string> {
+  const row = await client.query<{ state_before: string | null }>(
+    `select details->>'state_before' as state_before
+       from pilot.audit_events
+      where organization_id = $1 and entity_type = 'session_script' and entity_id = $2
+        and details->>'outcome' = 'retired'
+      order by created_at desc, audit_id desc
+      limit 1`,
+    [organizationId, scriptId],
+  );
+  const before = row.rows[0]?.state_before ?? null;
+  return before !== null && (RESTORABLE_STATES as readonly string[]).includes(before) ? before : 'draft';
+}
 
 /**
  * Retire a script, or bring a retired one back.
@@ -525,7 +541,9 @@ export async function setSessionScriptRetired(
     if (isRetired === params.retired) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    const stateAfter = params.retired ? 'retired' : BROUGHT_BACK_STATE;
+    // Brought back, a plan is what it was before it was retired (the retire's own audit row holds
+    // state_before), not a review nobody did (F-078). No such row: a draft.
+    const stateAfter = params.retired ? 'retired' : await stateBeforeRetiring(client, params.organizationId, script.script_id);
     await client.query(
       `update pilot.session_scripts
           set authoring_state = $3,

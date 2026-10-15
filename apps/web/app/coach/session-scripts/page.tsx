@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import { apiBase } from '@/lib/apiBase';
+import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type {
@@ -76,7 +77,8 @@ function blockWindow(block: Block): string {
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
     { label: 'Say', value: block.what_to_say ?? '' },
-    { label: 'Explain', value: block.what_to_explain ?? '' },
+    // Template facts are labelled as the template's, and stored codes read as words (F-078).
+    explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
   ].filter((line) => line.value.trim() !== '');
@@ -557,7 +559,7 @@ function CoachSessionScripts() {
               <article key={script.script_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{script.name}</h3>
-                  <span className="plaque">{script.authoring_state.replace(/_/g, ' ')}</span>
+                  <span className="plaque">{authoringStateWords(script.authoring_state)}</span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">
                   {script.discipline}

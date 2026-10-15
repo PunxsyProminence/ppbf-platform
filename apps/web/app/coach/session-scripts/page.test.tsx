@@ -183,6 +183,35 @@ describe('coach session scripts page', () => {
     expect(screen.getByText(/not an empty set of scripts/i)).toBeInTheDocument();
   });
 
+  it("names each plan's state in words, never as a code (F-078)", async () => {
+    mockFetch(() => jsonResponse({ scripts: [FRIDAY, { ...TUESDAY, authoring_state: 'draft' }, { ...TUESDAY, script_id: 'scr-c', name: 'Coached', authoring_state: 'coach_reviewed' }] }));
+
+    render(<CoachSessionScriptsPage />);
+
+    expect(await screen.findByText('In use')).toBeInTheDocument();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+    expect(screen.getByText('Coach reviewed')).toBeInTheDocument();
+    expect(screen.queryByText(/in_use|coach_reviewed|^draft$/)).not.toBeInTheDocument();
+  });
+
+  it("labels a block's template facts as the template's, and shows an old section code in words (F-078)", async () => {
+    const [first, second] = detail().blocks as Array<Record<string, unknown>>;
+    mockFetch((url) => (url.includes('script_id')
+      ? jsonResponse({ script: detail({ blocks: [
+        { ...first, what_to_say: null, what_to_explain: 'From the template: Warm-up, 3 reps' },
+        { ...second, what_to_say: null, what_to_watch: null, what_to_explain: 'skill_work - 8 reps' },
+      ] }) })
+      : jsonResponse({ scripts: [FRIDAY] })));
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText('Warm-up, 3 reps')).toBeInTheDocument();
+    expect(screen.getByText('From the template:')).toBeInTheDocument();
+    expect(screen.getByText('Skill work, 8 reps')).toBeInTheDocument();
+    expect(screen.queryByText(/skill_work/)).not.toBeInTheDocument();
+  });
+
   it('shows block windows as minutes, never as clock times', async () => {
     mockFetch((url) => (url.includes('script_id')
       ? jsonResponse({ script: detail() })

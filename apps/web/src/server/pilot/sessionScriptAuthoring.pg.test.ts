@@ -179,7 +179,7 @@ async function insertReference(gym: Gym, drillId: string, name: string): Promise
 /**
  * The fixture template, three steps, inserted OUT of order so only `ordinal`
  * can put them right:
- *   1  'warm-up'    drill ref-jab, scale A, 6 minutes, a coach note
+ *   1  'warm-up'                        drill ref-jab, scale A, 6 minutes, a coach note
  *   2  'technical'  typed step 'Partner mirror', 10 reps, no minutes
  *   3  ''           drill ref-spar, controlled sparring (so no minutes or reps), no note
  */
@@ -361,7 +361,8 @@ describe('making a session script from a workout template', () => {
       // The template's stated length (45), not the 16 minutes its blocks add up to.
       total_minutes: 45,
       contact_structure: 'split_non_contact_then_contact',
-      authoring_state: 'coach_reviewed',
+      // Made from a template, not reviewed by anyone: a draft (F-078).
+      authoring_state: 'draft',
       source_document: 'Workout template: Fixture Workout v3',
       created_by_account_id: gym.coachId,
     });
@@ -378,9 +379,9 @@ describe('making a session script from a workout template', () => {
       say: block.what_to_say,
       explain: block.what_to_explain,
     }))).toEqual([
-      { order: 1, window: [0, 6], label: 'Jab Drill', kind: 'drill_round', drill: 'ref-jab', scale: 'A', contact: 'none', say: 'Hands up.', explain: 'warm-up' },
-      { order: 2, window: [6, 11], label: 'Partner mirror', kind: 'instruction', drill: null, scale: null, contact: 'none', say: null, explain: 'technical - 10 reps' },
-      { order: 3, window: [11, 16], label: 'Sparring Round', kind: 'drill_round', drill: 'ref-spar', scale: null, contact: 'controlled_sparring', say: null, explain: 'From workout template: Fixture Workout' },
+      { order: 1, window: [0, 6], label: 'Jab Drill', kind: 'drill_round', drill: 'ref-jab', scale: 'A', contact: 'none', say: 'Hands up.', explain: 'From the template: Warm-up' },
+      { order: 2, window: [6, 11], label: 'Partner mirror', kind: 'instruction', drill: null, scale: null, contact: 'none', say: null, explain: 'From the template: Technical, 10 reps' },
+      { order: 3, window: [11, 16], label: 'Sparring Round', kind: 'drill_round', drill: 'ref-spar', scale: null, contact: 'controlled_sparring', say: null, explain: 'From the template: Fixture Workout' },
     ]);
 
     const audit = await query<{ event_type: string; actor_account_id: string; entity_id: string; details: Record<string, unknown> }>(
@@ -469,7 +470,7 @@ describe('what a family is sent of a coach-made script', () => {
       const text = JSON.stringify(sent);
       for (const staffOnly of [
         'Jab Drill', 'Partner mirror', 'Sparring Round', // block titles
-        'Hands up.', 'warm-up', 'technical - 10 reps', 'From workout template', // what to say / explain
+        'Hands up.', 'From the template: Warm-up', 'From the template: Technical, 10 reps', 'From the template', // what to say / explain
         'Workout template: Fixture Workout v3', // source document
         gym.coachId,
         'Coach-typed intent',
@@ -562,14 +563,15 @@ describe('editing a session script', () => {
       version: 2,
       // A block moved, but the blocks still end inside the 45 minutes stated: it stays 45.
       total_minutes: 45,
-      authoring_state: 'coach_reviewed',
+      // Made from a template, not reviewed by anyone: a draft (F-078).
+      authoring_state: 'draft',
       source_document: 'Workout template: Fixture Workout v3',
       contact_structure: 'split_non_contact_then_contact',
     });
     expect(v2!.blocks.map((block) => [block.block_order, block.block_label, block.start_offset_min, block.end_offset_min, block.drill_id, block.what_to_say, block.what_to_explain])).toEqual([
-      [1, 'Long jab round', 0, 12, 'ref-jab', 'Hands up.', 'warm-up'],
-      [2, 'Partner mirror', 6, 11, null, null, 'technical - 10 reps'],
-      [3, 'Sparring Round', 11, 16, 'ref-spar', null, 'From workout template: Fixture Workout'],
+      [1, 'Long jab round', 0, 12, 'ref-jab', 'Hands up.', 'From the template: Warm-up'],
+      [2, 'Partner mirror', 6, 11, null, null, 'From the template: Technical, 10 reps'],
+      [3, 'Sparring Round', 11, 16, 'ref-spar', null, 'From the template: Fixture Workout'],
     ]);
     // Re-minted, never shared: a version-1 run's cursor can never land on a version-2 block.
     const v1BlockIds = v1!.blocks.map((block) => block.block_id);
@@ -825,7 +827,7 @@ describe('retiring a session script', () => {
   const listed = async (gym: Gym, includeRetired = false) =>
     (await listSessionScripts(gym.organizationId, { includeRetired })).map((script) => script.script_id);
 
-  test('a retired plan leaves the list and is kept whole; brought back, it returns as coach reviewed', async () => {
+  test('a retired plan leaves the list and is kept whole; brought back, it returns to what it was before (F-078)', async () => {
     const gym = await newGym('retire');
     await insertTemplate(gym);
     const created = await create(gym);
@@ -855,7 +857,8 @@ describe('retiring a session script', () => {
 
     expect(back).toEqual({ outcome: 'brought_back', script_id: created.script_id, version: 1 });
     expect(await listed(gym)).toEqual([created.script_id]);
-    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('coach_reviewed');
+    // In use before it was retired, so in use again: not a review nobody did.
+    expect((await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state).toBe('in_use');
     expect(await allButState(gym, created.script_id)).toBe(before);
     expect((await retire(gym, created.script_id, false)).outcome).toBe('unchanged');
 
@@ -867,8 +870,40 @@ describe('retiring a session script', () => {
     );
     expect(audit.map((row) => [row.event_type, row.actor_account_id, row.details.outcome, row.details.state_before, row.details.state_after])).toEqual([
       ['update', gym.otherCoachId, 'retired', 'in_use', 'retired'],
-      ['update', gym.otherCoachId, 'brought_back', 'retired', 'coach_reviewed'],
+      ['update', gym.otherCoachId, 'brought_back', 'retired', 'in_use'],
     ]);
+  });
+
+  test('brought back, a plan takes the state of its LAST retire; with no retire on record, it is a draft (F-078)', async () => {
+    const gym = await newGym('retire-restore');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const state = async () => (await getSessionScriptWithDetail(gym.organizationId, created.script_id))!.authoring_state;
+    const setState = (value: string) => client.query(
+      `update pilot.session_scripts set authoring_state = $3 where organization_id = $1 and script_id = $2`,
+      [gym.organizationId, created.script_id, value],
+    );
+
+    // Made from a template: a draft, retired from draft, back as a draft.
+    expect(await state()).toBe('draft');
+    await retire(gym, created.script_id, true);
+    await retire(gym, created.script_id, false);
+    expect(await state()).toBe('draft');
+
+    // Reviewed later, retired again: the newer retire is the one that counts.
+    await setState('coach_reviewed');
+    await retire(gym, created.script_id, true);
+    await retire(gym, created.script_id, false);
+    expect(await state()).toBe('coach_reviewed');
+
+    // Retired with no retire on record (as an import may leave it): a draft, never a review.
+    await setState('retired');
+    await client.query(
+      `delete from pilot.audit_events where organization_id = $1 and entity_type = 'session_script' and entity_id = $2`,
+      [gym.organizationId, created.script_id],
+    );
+    await retire(gym, created.script_id, false);
+    expect(await state()).toBe('draft');
   });
 
   test('retiring a delivered plan makes no new version and leaves the delivered night as it was', async () => {
