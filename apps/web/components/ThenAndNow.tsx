@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { formatGymDay } from '@/src/lib/gymTime';
+import { milestoneByKey } from '@/src/shared/achievementPaths';
 
 import { apiBase } from '@/lib/apiBase';
 
@@ -48,8 +49,12 @@ interface ThenAndNowProps {
 
 
 
-function prettyKey(key: string): string {
-  return key.replace(/[_-]+/g, ' ').trim();
+/* The milestone in the catalogue's own words ("Ran a mile without stopping").
+   Only a key the catalogue does not know falls back to the key with its
+   punctuation taken out. The athlete used to read "Conditioning.Mile
+   Unbroken" here: the key, capitalised by CSS (F-004). */
+function milestoneName(key: string): string {
+  return milestoneByKey(key)?.label ?? key.replace(/[._-]+/g, ' ').trim();
 }
 
 export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
@@ -163,7 +168,7 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             )}
             {firstMilestone && (
               <p className="t-muted mt-[var(--s2)]">
-                First thing sealed: <span className="capitalize">{prettyKey(firstMilestone.milestone_key)}</span>
+                First thing sealed: <span>{milestoneName(firstMilestone.milestone_key)}</span>
               </p>
             )}
           </div>
@@ -178,7 +183,7 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             )}
             {latestMilestone && (
               <p className="t-muted mt-[var(--s2)]">
-                Latest seal: <span className="capitalize">{prettyKey(latestMilestone.milestone_key)}</span>
+                Latest seal: <span>{milestoneName(latestMilestone.milestone_key)}</span>
               </p>
             )}
             {latestRecognition && (

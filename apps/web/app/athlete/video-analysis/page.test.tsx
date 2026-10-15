@@ -14,7 +14,7 @@
  * a kid told to try again will sit there trying.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import AthleteVideoAnalysisPage from './page';
@@ -34,14 +34,14 @@ const video = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-function mockFetch(options: { openVideo?: () => Response } = {}) {
+function mockFetch(options: { openVideo?: () => Response; observations?: unknown[] } = {}) {
   return jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/pilot/video/list')) {
       return { ok: true, json: async () => ({ items: [video()] }) } as Response;
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
-      return { ok: true, json: async () => ({ items: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.observations ?? [] }) } as Response;
     }
     // The Play path. '/list' is handled above, so a bare id is all that is
     // left under this prefix.
@@ -191,5 +191,41 @@ describe("coach notes on the athlete's film screen", () => {
 
     await screen.findByText('Blocked: photo-only media consent on file.');
     expect(screen.queryByText('Coach notes')).toBeNull();
+  });
+});
+
+describe("what SHADOW noticed, on the athlete's film screen (F-005)", () => {
+  test('a system event name is left off; a note written as a sentence stays, with its state in words', async () => {
+    global.fetch = mockFetch({
+      observations: [
+        { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', entity_type: null, entity_id: null, review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+        { id: 'obs-2', source: 'event', label: 'Your guard dropped late in round 2.', entity_type: null, entity_id: null, review_state: 'approved', created_at: '2026-10-11T12:01:00Z' },
+      ],
+    }) as unknown as typeof fetch;
+    render(<AthleteVideoAnalysisPage />);
+
+    await screen.findByText('Your guard dropped late in round 2.');
+    expect(screen.getByText('A coach looked at it and agreed.')).toBeTruthy();
+    expect(screen.queryByText('SHADOW_AUDIT_LOGIN_ACCOUNT')).toBeNull();
+  });
+
+  test('a feed holding only system events reads as nothing noticed', async () => {
+    global.fetch = mockFetch({
+      observations: [
+        { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', entity_type: null, entity_id: null, review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+      ],
+    }) as unknown as typeof fetch;
+    render(<AthleteVideoAnalysisPage />);
+    // "Nothing noticed yet." also shows before the feed answers, so wait for
+    // the feed to have answered before reading the list.
+    await waitFor(() => {
+      expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).includes('observation-projection'))).toBe(true);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByText('Nothing noticed yet.')).toBeTruthy();
+    expect(screen.queryByText('SHADOW_AUDIT_LOGIN_ACCOUNT')).toBeNull();
   });
 });

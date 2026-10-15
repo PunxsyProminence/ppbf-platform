@@ -101,6 +101,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  // The bundle insert reads rights_status to decide which passages may be shown.
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 const actor = {
@@ -156,10 +158,12 @@ async function freshDatabase(name: string): Promise<Client> {
   );
   await client.query(
     `insert into pilot.shadow_library_sources
-       (source_id, organization_id, title, source_type, authority_tier, status,
+       (source_id, organization_id, title, source_type, authority_tier, status, rights_status,
         approval_state, verification_state,
         approved_by_account_id, approved_at, verified_by_account_id, verified_at)
-     values ($1, $2, $1, 'article', 1, 'active', 'approved', 'verified', $3, now(), $3, now())`,
+     -- PPBF-owned: the chunk below holds full text, which the rights guard
+     -- allows only for an owned or open-licence source.
+     values ($1, $2, $1, 'article', 1, 'active', 'ppbf_owned', 'approved', 'verified', $3, now(), $3, now())`,
     [SOURCE_ID, ORG_ID, ADMIN_ID],
   );
   await client.query(
@@ -189,6 +193,16 @@ async function retractSource(client: Client): Promise<void> {
             suppressed_by_account_id = $3
       where organization_id = $1 and source_id = $2`,
     [ORG_ID, SOURCE_ID, ADMIN_ID],
+  );
+}
+
+/** What the retention purge writes on a row it holds (F-086). */
+async function markHeld(client: Client, table: 'shadow_library_documents' | 'shadow_library_chunks'): Promise<void> {
+  await client.query(
+    `update pilot.${table}
+        set metadata = metadata || jsonb_build_object('subject_purged_at', now())
+      where organization_id = $1`,
+    [ORG_ID],
   );
 }
 
@@ -274,4 +288,17 @@ describe('the evidence-bundle insert re-checks what search checked', () => {
       .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
     expect(await savedItemCount(client)).toBe(0);
   });
+
+  it.each(['shadow_library_documents', 'shadow_library_chunks'] as const)(
+    'refuses a %s row the retention purge held between search and save (F-086), and saves nothing',
+    async (table) => {
+      activeClient = await freshDatabase(`evidence_held_${table}`);
+      const client = activeClient;
+      afterSearch = () => markHeld(client, table);
+
+      await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
+        .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+      expect(await savedItemCount(client)).toBe(0);
+    },
+  );
 });

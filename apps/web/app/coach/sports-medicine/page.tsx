@@ -683,8 +683,10 @@ export default function SportsMedicinePage() {
             throws a green pool from the top of the wall and nothing in the app
             ever hung the lamp casting it. Right-hung deliberately: every
             masthead in this room is left-aligned, so the pool falls on bare
-            wall and on the top-right of the panel, never across type. */}
-        <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+            wall and on the top-right of the panel, never across type.
+            Never nearer the edge than 73px: the light hangs 72px past the
+            shade, so 8% alone widened the page on a phone (F-023, #1503). */}
+        <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
         <div className="mx-auto max-w-4xl">
           {/* Room DNA (clinic), Feel line: varnished cabinetry. The room's own
               material was unused app-wide -- nine clinic surfaces, 29 panels,

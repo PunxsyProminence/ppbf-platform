@@ -205,6 +205,7 @@ describe('SHADOW durable conversation isolation', () => {
       'account-a',
       'conversation-a',
       12,
+      ['ppbf_owned', 'open_licence'],
     ]);
     expect(messages[0].citations).toEqual([expect.objectContaining({
       sourceTitle: 'Approved source',

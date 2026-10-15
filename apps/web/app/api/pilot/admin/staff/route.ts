@@ -10,6 +10,7 @@ import {
 import {
   ORG_ADMIN_INVITABLE_ROLES,
   createOrUpdateMicrosoftStaffAccount,
+  getOrganizationName,
   listOrganizationGuardianLinks,
   listOrganizationMembers,
   removeGuardianLink,
@@ -42,14 +43,18 @@ export async function GET(request: NextRequest) {
       throw new Error('Forbidden: role not allowed');
     }
 
-    const [members, guardianLinks] = await Promise.all([
+    const [members, guardianLinks, organizationName] = await Promise.all([
       listOrganizationMembers(principal.organizationId),
       listOrganizationGuardianLinks(principal.organizationId),
+      getOrganizationName(principal.organizationId),
     ]);
 
     return NextResponse.json({
       ok: true,
       organization_id: principal.organizationId,
+      // What the console prints as the gym; the id above stays for callers
+      // that key on it and is never printed (F-008).
+      organization_name: organizationName,
       members,
       guardian_links: guardianLinks,
     });

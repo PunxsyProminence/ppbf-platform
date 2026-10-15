@@ -72,9 +72,48 @@ const isSeedLoaderPath = (file) =>
     'apps/web/src/testing/legacyLoaderGolden',
   ]);
 
+/* WHAT THE PG SUITES IMPORT FROM OUTSIDE THE PREFIXES BELOW (F-039). The
+   suites reach these through their import graph -- gymTime.ts alone is under
+   210 of them -- and none of them matched a predicate, so a PR changing only
+   one of them ran no pg suite. Exact paths, not their folders: src/lib/,
+   src/shared/ and lib/ are mostly client code, and matching the folders would
+   put a ~35-minute pg run on PRs no suite can see.
+
+   The list is checked, not trusted: ciClassifierScopeContract.test.ts walks
+   every .pg.test.ts suite's imports and fails naming any file it reaches that
+   this predicate misses, so a suite that starts importing a new shared file
+   reds that test until the file is added here. It also fails on an entry here
+   that no longer exists. */
+export const PG_SUITE_DEPENDENCIES = [
+  'apps/web/app/board/boardWorkspaceConfig.ts',
+  'apps/web/components/drills/drillDetailView.ts',
+  'apps/web/lib/calendarDay.ts',
+  'apps/web/lib/feedbackWording.ts',
+  'apps/web/src/lib/drillAdoptionReadiness.ts',
+  'apps/web/src/lib/drillCueRule.ts',
+  'apps/web/src/lib/drillFloorValidation.ts',
+  'apps/web/src/lib/drillPresentation.ts',
+  'apps/web/src/lib/gymTime.ts',
+  'apps/web/src/lib/sessionScriptWords.ts',
+  'apps/web/src/shared/achievementPaths.ts',
+  'apps/web/src/shared/adultPathwayStages.ts',
+  'apps/web/src/shared/coachDevelopment.ts',
+  'apps/web/src/shared/coachDisplayName.ts',
+  'apps/web/src/shared/organizationProfile.ts',
+  'apps/web/src/shared/painScoreLabel.ts',
+  'apps/web/src/shared/parentObservations.ts',
+  'apps/web/src/shared/pilotRoleRouting.ts',
+  'apps/web/src/shared/researchClassification.ts',
+  'apps/web/src/shared/researchQuestionKey.ts',
+  'apps/web/src/shared/sessionNoteSemantics.ts',
+  'apps/web/src/shared/wellnessScales.ts',
+  'apps/web/src/testing/captureFixture.ts',
+];
+
 const isMigrationPath = (file) =>
   isSeedDataPath(file) ||
   isSeedLoaderPath(file) ||
+  PG_SUITE_DEPENDENCIES.includes(file) ||
   startsWithAny(file, [
     'infra/azure/',
     'apps/web/src/server/pilot/',
