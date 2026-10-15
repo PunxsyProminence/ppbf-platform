@@ -26,9 +26,10 @@ import { Client } from 'pg';
  *     that only cites a source is held under its document's source;
  *   - documents marked 'indexed' whose index_completed_at is null, which
  *     SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL (libraryServability.ts) refuses,
- *     and how many of those hold text of their own. Those can be completed by
- *     the indexing step the app already runs (it stamps the time when it
- *     finishes); one with no text cannot. Running that step is a curator's or
+ *     and how many of those the indexing step the app already runs would
+ *     complete (completeShadowLibraryDocumentIndexing, shadowLibrary.ts): a
+ *     non-blank chunk of its own and, for a manual-text intake, every declared
+ *     part present. It refuses the rest. Running that step is a curator's or
  *     operator's call, not this script's. None of these documents can be
  *     approved (shadow_library_documents_review_pair_check requires the time
  *     for an approval).
@@ -37,6 +38,27 @@ import { Client } from 'pg';
  * ids. SELECT statements only, inside an explicit READ ONLY transaction, so
  * Postgres refuses any write this file could attempt.
  */
+
+// The indexing step's own completeness rule. A second copy, kept identical to
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL in src/server/pilot/shadowLibrary.ts (this
+// plain .mjs cannot import the TypeScript module); libraryRightsAudit.pg.test.ts
+// fails if the two texts differ. Written against alias d.
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL:BEGIN
+const MANUAL_TEXT_INTAKE_COMPLETE_SQL = `(
+  d.metadata->>'intake_method' is distinct from 'manual_text'
+  or case
+    when d.metadata->>'chunk_count' ~ '^[1-9][0-9]{0,5}$' then (
+      select count(*) = (d.metadata->>'chunk_count')::int
+         and min(c.ordinal) = 0
+         and max(c.ordinal) = (d.metadata->>'chunk_count')::int - 1
+      from pilot.shadow_library_chunks c
+      where c.document_id = d.document_id
+        and c.organization_id = d.organization_id
+    )
+    else false
+  end
+)`;
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL:END
 
 async function loadEnvLocal() {
   const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.env.local');
@@ -116,10 +138,12 @@ export async function checkLibraryRights(client) {
     const documents = await client.query(
       `select d.organization_id,
               count(*)::int as indexed_without_completion,
+              -- The indexer's own two conditions (completeShadowLibraryDocumentIndexing).
               count(*) filter (where exists (
                 select 1 from pilot.shadow_library_chunks c
                  where c.document_id = d.document_id and c.organization_id = d.organization_id
-              ))::int as with_text
+                   and length(trim(c.text_content)) > 0
+              ) and ${MANUAL_TEXT_INTAKE_COMPLETE_SQL})::int as completable
          from pilot.shadow_library_documents d
         where d.ingest_state = 'indexed'
           and d.index_completed_at is null
@@ -160,12 +184,12 @@ export async function run() {
   const unknownTotal = unknown.reduce((sum, row) => sum + row.sources, 0);
   console.log(`  -> ${unknownTotal} source(s) carry rights 'unknown' and wait for a curator to classify them.`);
   console.log('');
-  console.log("Documents marked 'indexed' with no index_completed_at (not servable), per shelf (documents / of which hold text):");
+  console.log("Documents marked 'indexed' with no index_completed_at (not servable), per shelf (documents / of which the indexing step would complete):");
   if (report.documents.length === 0) {
     console.log('  none');
   }
   for (const row of report.documents) {
-    console.log(`  ${row.organization_id}: ${row.indexed_without_completion} / ${row.with_text}`);
+    console.log(`  ${row.organization_id}: ${row.indexed_without_completion} / ${row.completable}`);
   }
   console.log('====================================================================');
   return report;

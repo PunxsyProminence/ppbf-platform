@@ -9,6 +9,7 @@
 // It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -65,7 +66,7 @@ interface Report {
     sources_holding_text: number;
     sources_holding_full_text: number;
   }>;
-  documents: Array<{ organization_id: string; indexed_without_completion: number; with_text: number }>;
+  documents: Array<{ organization_id: string; indexed_without_completion: number; completable: number }>;
 }
 
 let PG_PORT: number;
@@ -206,6 +207,24 @@ beforeAll(async () => {
   // Indexed with its time: not counted.
   await document(GYM, 'src-owned', 'doc-owned-3', 'indexed');
   await document(OTHER_GYM, 'src-other-unknown', 'doc-other', 'indexed-no-time');
+  // Indexed without a time, holding only a blank chunk: the indexer refuses it.
+  await document(GYM, 'src-owned', 'doc-blank', 'indexed-no-time');
+  await db.query(
+    `insert into pilot.shadow_library_chunks (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind)
+     values ('doc-blank-chunk', 'doc-blank', 'src-owned', $1, 0, '   ', 'full_text')`,
+    [GYM],
+  );
+  // A manual-text intake that declared three parts and holds one: refused too.
+  await document(GYM, 'src-owned', 'doc-manual-partial', 'indexed-no-time');
+  await db.query(
+    `update pilot.shadow_library_documents set metadata = '{"intake_method": "manual_text", "chunk_count": "3"}'::jsonb
+      where document_id = 'doc-manual-partial'`,
+  );
+  await db.query(
+    `insert into pilot.shadow_library_chunks (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind)
+     values ('doc-manual-partial-0', 'doc-manual-partial', 'src-owned', $1, 0, 'Part one of three.', 'full_text')`,
+    [GYM],
+  );
 
   const scriptModule = await nativeDynamicImport(pathToFileURL(SCRIPT_PATH).href);
   checkLibraryRights = scriptModule.checkLibraryRights as typeof checkLibraryRights;
@@ -247,12 +266,24 @@ describe('the library rights audit counts what waits on a person (#1468 PR 3)', 
 
   test("documents marked 'indexed' with no completion time, per shelf", async () => {
     const report = await checkLibraryRights(db);
-    // doc-licensed holds text (the indexing step can complete it); doc-owned-1
-    // and doc-other do not; doc-owned-3 has its time and is not counted.
+    // doc-licensed: the indexing step would complete it. doc-owned-1 and
+    // doc-other hold no text; doc-blank only a blank chunk; doc-manual-partial
+    // one of three declared parts -- the indexer refuses all four.
+    // doc-owned-3 has its time and is not counted.
     expect(report.documents).toEqual([
-      { organization_id: GYM, indexed_without_completion: 2, with_text: 1 },
-      { organization_id: OTHER_GYM, indexed_without_completion: 1, with_text: 0 },
+      { organization_id: GYM, indexed_without_completion: 4, completable: 1 },
+      { organization_id: OTHER_GYM, indexed_without_completion: 1, completable: 0 },
     ]);
+  });
+
+  test("the audit's copy of the indexing completeness rule is the server's, character for character", async () => {
+    const { MANUAL_TEXT_INTAKE_COMPLETE_SQL } = jest.requireActual<typeof import('./shadowLibrary')>('./shadowLibrary');
+    const script = (await fs.readFile(SCRIPT_PATH, 'utf8')).replace(/\r\n/g, '\n');
+    const begin = '// MANUAL_TEXT_INTAKE_COMPLETE_SQL:BEGIN\nconst MANUAL_TEXT_INTAKE_COMPLETE_SQL = `';
+    const start = script.indexOf(begin);
+    expect(start).toBeGreaterThan(-1);
+    const end = script.indexOf('`;\n// MANUAL_TEXT_INTAKE_COMPLETE_SQL:END', start);
+    expect(script.slice(start + begin.length, end)).toBe(MANUAL_TEXT_INTAKE_COMPLETE_SQL);
   });
 
   test('the audit carries counts and shelf ids only: no titles, no text, no account ids', async () => {
