@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
 import ProfilePortrait from './ProfilePortrait';
@@ -4087,6 +4088,15 @@ export default function CoachWorkspace() {
                     notes for the selected athlete; the route decides access. */}
                 {athleteChosenByCoach && selectedAthleteId && (
                   <CapacityNotesPanel key={`capacity-${selectedAthleteId}`} athleteId={selectedAthleteId} athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'} />
+                )}
+
+                {/* Issue #1527 (OD-2026-10-12-011): the goals the athlete set,
+                    their reported progress and "I did it", read-only, with
+                    the athlete's "why it matters" line, which is staff's to
+                    read and never the family's. Keyed by athlete; the routes
+                    decide access. */}
+                {athleteChosenByCoach && selectedAthleteId && (
+                  <AthleteGoalsReadOnly key={`goals-${selectedAthleteId}`} athleteId={selectedAthleteId} audience="coach" />
                 )}
 
                 {/* Open Tasks */}

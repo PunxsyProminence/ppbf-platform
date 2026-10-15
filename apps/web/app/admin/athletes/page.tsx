@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
+import AthleteGoalsReadOnly from '@/components/AthleteGoalsReadOnly';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
@@ -879,6 +880,17 @@ function AthleteRecordsConsoleContent() {
               key={`coach-notes-${selected.athlete_id}`}
               athleteId={selected.athlete_id}
               athleteName={selected.full_name}
+            />
+
+            {/* Issue #1527 (OD-2026-10-12-011): the athlete's goals, reported
+                progress and "I did it", read-only, with their "why it
+                matters" line, which staff read and the family never does.
+                The coach workspace stays closed to the admin, so this is
+                where the admin reads them. Keyed by athlete. */}
+            <AthleteGoalsReadOnly
+              key={`goals-${selected.athlete_id}`}
+              athleteId={selected.athlete_id}
+              audience="coach"
             />
 
             <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">

@@ -10,7 +10,7 @@
 // roster that could not be read never renders as a gym with no athletes.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import AthleteRecordsPage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -100,6 +100,11 @@ function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | 
     // overrides this branch via `handler` to exercise the populated case.
     if (String(url).includes('/api/pilot/intake/domain-get')) {
       return jsonResponse({ ok: true, athlete_id: 'ath-001', emergency_contacts: [] });
+    }
+    // The goals block under a selected athlete (issue #1527): none set,
+    // unless a test overrides these through `handler`.
+    if (String(url).includes('/api/pilot/goals/personal') || String(url).includes('/api/pilot/goals/list')) {
+      return jsonResponse({ ok: true, items: [] });
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -629,5 +634,75 @@ describe('the coach-notes block', () => {
     expect(screen.queryByRole('heading', { name: 'Coach notes' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Capacity notes' })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #1527 (OD-2026-10-12-011): the organization admin reads an athlete's
+// goals, reported progress and "I did it", with the athlete's "why it matters"
+// line, on this page; the coach workspace stays closed to the admin. The
+// block's own behaviour is in athleteGoalsReadOnly.test.tsx; who the routes
+// answer is in goalsStaffReach.pg.test.ts. These pin where it is mounted and
+// for which athlete.
+describe('the goals block', () => {
+  const goalsFor = (athleteId: string) => ({
+    personal: {
+      ok: true,
+      items: [{ goal_id: `own-${athleteId}`, title: `Own words of ${athleteId}`, why_it_matters: `The reason of ${athleteId}`, target_date: null, reached_at: '2026-10-09T15:00:00.000Z' }],
+    },
+    list: {
+      items: [{ goal_id: `smart-${athleteId}`, title: `Measured goal of ${athleteId}`, target_date: '2026-12-01', metric: 'rounds', progress_percent: 40, status: 'active', goal_kind: 'smart' }],
+    },
+  });
+  const goalsHandler = (url: string) => {
+    const athleteId = /athlete_id=([^&]+)/.exec(url)?.[1] ?? '';
+    if (url.includes('/api/pilot/goals/personal')) return jsonResponse(goalsFor(athleteId).personal);
+    if (url.includes('/api/pilot/goals/list')) return jsonResponse(goalsFor(athleteId).list);
+    return undefined;
+  };
+  const goalReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/pilot/goals/'));
+
+  test('is under the selected athlete, with progress, "I did it" and the why line, and no control', async () => {
+    const fetchMock = consoleFetch(goalsHandler);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    // No athlete chosen: no block and no goal read.
+    await screen.findByRole('button', { name: /correct record/i });
+    expect(screen.queryByTestId('athlete-goals')).toBeNull();
+    expect(goalReads(fetchMock)).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: /correct record/i }));
+    const block = await screen.findByTestId('athlete-goals');
+    expect(await within(block).findByText('Own words of ath-001')).toBeDefined();
+    expect(within(block).getByText('Why it matters to them: The reason of ath-001')).toBeDefined();
+    expect(within(block).getByText(/Did it/)).toBeDefined();
+    expect(await within(block).findByText('Reported progress: 40%')).toBeDefined();
+    expect(within(block).queryAllByRole('button')).toHaveLength(0);
+    expect(block.querySelectorAll('input, textarea, select, form')).toHaveLength(0);
+
+    const reads = goalReads(fetchMock);
+    expect(reads.some((url) => url.includes('/goals/personal?athlete_id=ath-001'))).toBe(true);
+    expect(reads.some((url) => url.includes('/goals/list?athlete_id=ath-001'))).toBe(true);
+  });
+
+  test("opening another athlete takes the first athlete's goals off the screen", async () => {
+    const second = { ...rosterBody.items[0], athlete_id: 'ath-002', full_name: 'Second Athlete' };
+    const fetchMock = consoleFetch((url) => (
+      url.includes('/api/pilot/athletes/list') ? jsonResponse({ items: [rosterBody.items[0], second] }) : goalsHandler(url)
+    ));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    const openButtons = await screen.findAllByRole('button', { name: /correct record/i });
+    fireEvent.click(openButtons[0]);
+    await screen.findByText('Own words of ath-001');
+
+    fireEvent.click(openButtons[1]);
+    expect(await screen.findByText('Own words of ath-002')).toBeDefined();
+    expect(screen.queryByText('Own words of ath-001')).toBeNull();
+    expect(screen.queryByText('Why it matters to them: The reason of ath-001')).toBeNull();
   });
 });
