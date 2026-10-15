@@ -283,7 +283,34 @@ describe('family goals migration (PH-05)', () => {
       await expect(goal(client, { athleteId: OTHER_ONLY })).rejects.toMatchObject({
         code: '23503', constraint: 'pilot_family_goals_athlete_fk',
       });
+      // The other gym's goal is written by someone of that gym: here this gym's
+      // coach, who also coaches there by membership.
+      await expect(goal(client, { org: OTHER_ORG, athleteId: OTHER_ONLY, creator: COACH, role: 'coach' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_goals_writer_of_this_gym',
+      });
+      await client.query(`insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')`, [COACH, OTHER_ORG]);
       await goal(client, { org: OTHER_ORG, athleteId: OTHER_ONLY, creator: COACH, role: 'coach' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an author or editor holds the role written in this gym', async () => {
+    const client = await freshDatabase('fgoal_gym_writer');
+    try {
+      // The right gym, the wrong role.
+      await expect(goal(client, { creator: GUARDIAN, role: 'coach' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_family_goals_writer_of_this_gym',
+      });
+      const { rows: [{ goal_id: goalId }] } = await goal(client);
+      await expect(client.query(
+        `update pilot.family_goals set title = 'x', updated_by_account_id = $2, updated_by_role = 'coach' where goal_id = $1::uuid`,
+        [goalId, GUARDIAN],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_writer_of_this_gym' });
+      await client.query(
+        `update pilot.family_goals set title = 'x', updated_by_account_id = $2, updated_by_role = 'coach' where goal_id = $1::uuid`,
+        [goalId, COACH],
+      );
     } finally {
       await client.end();
     }
