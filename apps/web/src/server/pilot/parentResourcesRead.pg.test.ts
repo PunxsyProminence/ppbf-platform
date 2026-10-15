@@ -78,6 +78,7 @@ async function findFreePort(): Promise<number> {
 const ORG_ID = 'org-pr';
 const OTHER_ORG_ID = 'org-pr-other';
 const COACH = 'acct-pr-coach';
+const OTHER_COACH = 'acct-pr-other-coach';
 const GUARDIAN = 'acct-pr-guardian';
 const GUARDIAN_LAPSED = 'acct-pr-guardian-lapsed';
 const GUARDIAN_ADULT = 'acct-pr-guardian-adult';
@@ -107,6 +108,7 @@ async function freshDatabase(name: string): Promise<Client> {
   }
   for (const [accountId, role, org] of [
     [COACH, 'coach', ORG_ID],
+    [OTHER_COACH, 'coach', OTHER_ORG_ID],
     [GUARDIAN, 'parent', ORG_ID],
     [GUARDIAN_LAPSED, 'parent', ORG_ID],
     [GUARDIAN_ADULT, 'parent', ORG_ID],
@@ -164,7 +166,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [ORG_ID, 'Fitness: home circuit', FITNESS, 'published', '/help', '2026-10-11T12:00:00Z'],
     [ORG_ID, 'Old program: notes', RETIRED_PROGRAM, 'published', '/help', '2026-10-09T12:00:00Z'],
     [ORG_ID, 'Draft for everyone', null, 'draft', '/help', null],
-    [ORG_ID, 'Archived for everyone', null, 'archived', '/help', '2026-10-01T12:00:00Z'],
+    [ORG_ID, 'Archived for everyone', null, 'archived', '/help', null],
     [ORG_ID, 'Staff page link', null, 'published', '/admin', '2026-10-13T12:00:00Z'],
     [ORG_ID, 'Parent page link', null, 'published', '/parent/safety?tab=holds', '2026-10-08T12:00:00Z'],
     [OTHER_ORG_ID, 'Other gym for everyone', null, 'published', '/help', '2026-10-14T12:00:00Z'],
@@ -174,7 +176,7 @@ async function freshDatabase(name: string): Promise<Client> {
          (organization_id, title, summary, resource_type, destination_kind, destination, program_id, state, published_at,
           created_by_account_id, created_by_role)
        values ($1, $2, 'A summary.', 'guide', $3, $4, $5, $6, $7::timestamptz, $8, 'coach')`,
-      [org, title, destination.startsWith('https://') ? 'external' : 'internal', destination, program, state, publishedAt, COACH],
+      [org, title, destination.startsWith('https://') ? 'external' : 'internal', destination, program, state, publishedAt, org === ORG_ID ? COACH : OTHER_COACH],
     );
   }
   return client;
