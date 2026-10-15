@@ -2596,12 +2596,13 @@ export default function CoachWorkspace() {
       }
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
-        setReviewSyncMessage(payload.error || 'Coach review persistence failed');
+        const payload = (await response.json().catch(() => ({ error: 'Coach review was not saved.' }))) as { error?: string };
+        setReviewSyncMessage(payload.error || 'Coach review was not saved.');
         return;
       }
 
-      setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+      // The review's id is the database's business, not the coach's (F-072).
+      setReviewSyncMessage('Coach review saved.');
       // Close the loop: the review just written comes back from the server's
       // own read, so the panel shows what was actually stored, not what this
       // tab believes it sent.
@@ -4834,9 +4835,6 @@ export default function CoachWorkspace() {
                     </select>
                   </label>
                 )}
-                {reviewSessionId ? (
-                  <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
-                ) : null}
 
                 {/* Lane P5: staff notes on the picked session. Staff only
                     (OD-2026-10-10-003 ruling 3); the route decides access. */}
@@ -4875,7 +4873,7 @@ export default function CoachWorkspace() {
                           {' -- '}
                           {review.coachId === coachAccountId
                             ? 'your review'
-                            : `another coach (${review.coachId || 'account unknown'})`}
+                            : 'another coach'}
                           {formatGymDateTimeShort(review.createdAt) ? ` -- ${formatGymDateTimeShort(review.createdAt)}` : ''}
                         </p>
                         {review.notes.trim() !== '' && (

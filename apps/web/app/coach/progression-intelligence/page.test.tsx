@@ -2060,6 +2060,33 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     expect(within(cardOf('Rear-foot pivot')).queryByText(/^Cancelled\./)).toBeNull();
   });
 
+  // F-072: the row said "% complete · in_progress" and dropped the due date
+  // and times a week the coach had just set; statuses read as stored codes.
+  test('an assigned drill shows its due date and times a week, and every status in words', async () => {
+    const dated: DrillAssignment = { ...IN_PROGRESS, due_date: '2026-10-20', frequency_per_week: 2 };
+    await openBoard([], { assignments: [dated] });
+
+    const card = cardOf('Lead hook check');
+    expect(within(card).getByText('33% complete · In progress')).toBeTruthy();
+    expect(within(card).getByText('Due October 20, 2026 · 2 times a week')).toBeTruthy();
+    // The athlete's logged completion is waiting on a coach, said in words.
+    expect(await within(card).findByText('Waiting for a coach')).toBeTruthy();
+    // The gap's status is words too.
+    expect(screen.getByText('Noted')).toBeTruthy();
+    for (const code of ['in_progress', 'pending', 'identified', '2026-10-20']) {
+      expect({ code, shown: (document.body.textContent ?? '').includes(code) }).toEqual({ code, shown: false });
+    }
+  });
+
+  test('one time a week reads "once a week", and nothing is said when the coach set neither', async () => {
+    const once: DrillAssignment = { ...ASSIGNED, frequency_per_week: 1 };
+    const neither: DrillAssignment = { ...work('assign-plain', 'Slip line', 'assigned'), frequency_per_week: null };
+    await openBoard([], { assignments: [once, neither] });
+
+    expect(within(cardOf('Jab return')).getByText('once a week')).toBeTruthy();
+    expect(within(cardOf('Slip line')).queryByText(/a week|^Due /)).toBeNull();
+  });
+
   test('the first press only asks, and says the athlete is released and the history stays', async () => {
     const sent: Sent[] = [];
     await openBoard(sent, { assignments: [ASSIGNED] });
@@ -2088,7 +2115,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
 
     expect(screen.queryByRole('group', { name: 'Cancel Jab return?' })).toBeNull();
     expect(sent.slice(before)).toEqual([]);
-    expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+    expect(within(cardOf('Jab return')).getByText('0% complete · Assigned')).toBeTruthy();
     await nextFrame();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel assignment: Jab return' }));
   });
@@ -2102,7 +2129,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     await confirmCancel('Lead hook check');
 
     await waitFor(() =>
-      expect(within(cardOf('Lead hook check')).getByText('33% complete · cancelled')).toBeTruthy(),
+      expect(within(cardOf('Lead hook check')).getByText('33% complete · Cancelled')).toBeTruthy(),
     );
     const since = sent.slice(before);
     expect(writes(since)).toEqual([
@@ -2123,7 +2150,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     expect(within(card).getByRole('button', { name: 'Verify' })).toBeTruthy();
     expect(within(card).getByRole('button', { name: 'Dispute' })).toBeTruthy();
     // The other open work is left alone.
-    expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+    expect(within(cardOf('Jab return')).getByText('0% complete · Assigned')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel assignment: Jab return' })).toBeTruthy();
     // And the result is said, in the section's polite live region.
     const notice = screen.getByText(/^Lead hook check is cancelled\./);
@@ -2142,7 +2169,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     await confirmCancel('Lead hook check');
 
     await waitFor(() => expect(listReads(sent).length).toBe(readsBefore + 1));
-    expect(within(cardOf('Lead hook check')).getByText('33% complete · in_progress')).toBeTruthy();
+    expect(within(cardOf('Lead hook check')).getByText('33% complete · In progress')).toBeTruthy();
     expect(within(cardOf('Lead hook check')).queryByText(/^Cancelled\./)).toBeNull();
   });
 
@@ -2193,7 +2220,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
       expect(within(question('Jab return')).getByRole('button', { name: 'Yes, cancel assignment' })).toBeTruthy();
       // The card still shows what the server last said, and nothing claims a
       // cancel happened.
-      expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+      expect(within(cardOf('Jab return')).getByText('0% complete · Assigned')).toBeTruthy();
       expect(screen.queryByText(/^Cancelled\./)).toBeNull();
       expect(screen.queryByText(/is cancelled\./)).toBeNull();
       // No re-read: nothing changed that the page knows of.
@@ -2240,14 +2267,14 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
       // happened: both would be a guess.
       expect(alert.textContent).not.toMatch(/Nothing was cancelled|did not go through|failed/i);
       expect(alert.textContent).not.toMatch(/\bis cancelled\b|\bwas cancelled\b/i);
-      expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+      expect(within(cardOf('Jab return')).getByText('0% complete · Assigned')).toBeTruthy();
 
       // Trying again from the same question reaches the same work and ends in
       // what the server now says.
       const before = sent.length;
       await confirmCancel('Jab return');
 
-      await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy());
+      await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · Cancelled')).toBeTruthy());
       expect(writes(sent.slice(before))).toEqual([
         { path: CANCEL_PATH, method: 'POST', body: { assignment_id: 'assign-open', athlete_id: 'athlete-001' } },
       ]);
@@ -2271,7 +2298,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     expect(offered()).toEqual([]);
 
     await confirmCancel('Jab return');
-    await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy());
+    await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · Cancelled')).toBeTruthy());
     expect(offered()).toEqual([]);
     // In particular, cancelled work -- the two now on screen -- offers no way back.
     for (const name of ['Jab return', 'Slip line']) {
@@ -2395,7 +2422,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
       await confirmCancel('Jab return');
 
       await waitFor(() =>
-        expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy(),
+        expect(within(cardOf('Jab return')).getByText('0% complete · Cancelled')).toBeTruthy(),
       );
       // One cancel, for that assignment and that athlete -- the identical
       // request the coach's own confirmation sends.
