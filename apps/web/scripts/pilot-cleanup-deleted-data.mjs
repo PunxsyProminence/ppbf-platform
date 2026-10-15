@@ -417,8 +417,13 @@ async function clearShadowProfileMentions(client, tables, subjects) {
    (shadow_learning_events and shadow_recommendation_effectiveness by
    feedback_id, chat messages with no athlete_id by correlation_id; F-088),
    which join a feedback row back to the login; sharing the chat audit's
-   token would carry that join to every de-identified chat turn of theirs. */
-async function deidentifyFeedbackNotes(client, tables, accountIds, token) {
+   token would carry that join to every de-identified chat turn of theirs.
+
+   ONE GYM ON THE ATHLETE PATH (Overwatch 2026-10-15): an athlete's login can
+   be active in another gym, whose feedback is not this purge's, so
+   organizationId scopes all three statements there. A purged guardian's
+   account itself is deleted, so that path passes null: everything it wrote. */
+async function deidentifyFeedbackNotes(client, tables, accountIds, token, organizationId) {
   const counts = { shadowFeedback: 0, shadowReviewFlagNotes: 0, shadowLearningRows: 0 };
   if (accountIds.length === 0) return counts;
   if (tables.reviewFlags) {
@@ -426,21 +431,23 @@ async function deidentifyFeedbackNotes(client, tables, accountIds, token) {
       `update pilot.shadow_library_review_flags f
           set account_id = case when f.account_id = any($1::text[]) then null else f.account_id end,
               user_note = null
-        where f.account_id = any($1::text[])
+        where ($2::text is null or f.organization_id = $2)
+          and (f.account_id = any($1::text[])
            or (f.user_note is not null and ${tables.shadowFeedback
     ? `exists (select 1 from pilot.shadow_feedback fb
                        where fb.organization_id = f.organization_id
                          and fb.account_id = any($1::text[])
                          and fb.comment = f.user_note)`
-    : 'false'})`,
-      [accountIds],
+    : 'false'}))`,
+      [accountIds, organizationId],
     );
     counts.shadowReviewFlagNotes = flags.rowCount ?? 0;
   }
   if (tables.shadowFeedback) {
     const feedback = await client.query(
-      'update pilot.shadow_feedback set account_id = $2, comment = null where account_id = any($1::text[])',
-      [accountIds, token],
+      `update pilot.shadow_feedback set account_id = $2, comment = null
+        where account_id = any($1::text[]) and ($3::text is null or organization_id = $3)`,
+      [accountIds, token, organizationId],
     );
     counts.shadowFeedback = feedback.rowCount ?? 0;
   }
@@ -452,8 +459,9 @@ async function deidentifyFeedbackNotes(client, tables, accountIds, token) {
                 || ''' was judged insufficient and requires evidence reinforcement.',
               metadata = metadata - 'note'
         where source_event_name = 'shadow_learning_negative_outcome'
-          and created_by_account_id = any($1::text[])`,
-      [accountIds, token],
+          and created_by_account_id = any($1::text[])
+          and ($3::text is null or organization_id = $3)`,
+      [accountIds, token, organizationId],
     );
     counts.shadowLearningRows = learning.rowCount ?? 0;
   }
@@ -851,7 +859,9 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           organizationId: athlete.organization_id,
           token, accountIds: athleteLogins, subjects: [{ ...subject, token }], names: knownNames,
         }]));
-        Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, athleteLogins, anonymousToken()));
+        Object.assign(shadowHere, await deidentifyFeedbackNotes(
+          client, tables, athleteLogins, anonymousToken(), athlete.organization_id,
+        ));
       }
       /* THE QUESTIONS THIS ATHLETE ASKED SHADOW GO TOO (F-054). An athlete's or
          parent's unanswered SHADOW question is filed as a research row holding
@@ -1226,7 +1236,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         names: guardianNames,
       }]));
       // Their feedback notes, before the account row (and its set-null key) goes.
-      Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, [accountId], anonymousToken()));
+      Object.assign(shadowHere, await deidentifyFeedbackNotes(client, tables, [accountId], anonymousToken(), null));
       // The guardian's own unanswered SHADOW questions (F-054), by the account
       // that filed them: a parent's words about their child are the parent's
       // record and go with the account.

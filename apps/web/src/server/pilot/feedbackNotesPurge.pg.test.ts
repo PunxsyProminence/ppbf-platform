@@ -104,6 +104,7 @@ const NOTE_A = 'NOTE-A-7731 my coach yelled at me';
 const NOTE_G = 'NOTE-G-4419 my son came home upset';
 const NOTE_B = 'NOTE-B-2208 too many rounds';
 const NOTE_X = 'NOTE-X-9001 other gym';
+const NOTE_A_ELSEWHERE = 'NOTE-AE-3131 at the other gym';
 const LOGIN_A = 'acct-fb-athlete-a';
 const LOGIN_B = 'acct-fb-athlete-b';
 const GUARDIAN = 'acct-fb-guardian';
@@ -250,6 +251,11 @@ beforeAll(async () => {
   await learningRow(ORG, GUARDIAN, 'parent', 'weight-cut', NOTE_G);
   await learningRow(ORG, LOGIN_B, 'athlete', 'hook', NOTE_B);
   await learningRow(OTHER_ORG, OTHER_GYM_LOGIN, 'athlete', 'jab', NOTE_X);
+  // A's login is also active in the other gym: its feedback there is that
+  // gym's, not this purge's.
+  await feedback(OTHER_ORG, LOGIN_A, 'athlete', NOTE_A_ELSEWHERE);
+  await reviewFlag(OTHER_ORG, LOGIN_A, 'uppercut', NOTE_A_ELSEWHERE);
+  await learningRow(OTHER_ORG, LOGIN_A, 'athlete', 'uppercut', NOTE_A_ELSEWHERE);
   // A flag the library-change proposal re-pointed at B, still holding A's
   // note (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview, before
   // its fix): A's words go with A, the flag keeps naming B.
@@ -313,7 +319,7 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     expect(dry.would_deidentify_shadow_learning_research_rows).toBe(3);
     expect(await textAnywhere(NOTE_A)).toBe(4);
     for (const note of [NOTE_G, NOTE_B, NOTE_X]) expect(await textAnywhere(note)).toBe(3);
-    expect(await loginAnywhere(LOGIN_A)).toBe(5);
+    expect(await loginAnywhere(LOGIN_A)).toBe(8);
   });
 
   test("the purge empties the athlete's and the guardian's notes and drops their logins", async () => {
@@ -327,8 +333,9 @@ describe("the retention purge and a purged person's own feedback notes", () => {
     expect(event.shadow_learning_research_rows_deidentified).toBe(3);
     for (const note of [NOTE_A, NOTE_G, 'NOTE-LEGACY-7070']) expect(await textAnywhere(note)).toBe(0);
     expect(await loginAnywhere(GUARDIAN)).toBe(0);
-    // Only A's row that is not the learning loop's keeps A's login and words.
-    expect(await loginAnywhere(LOGIN_A)).toBe(1);
+    // Only A's row that is not the learning loop's, and A's three rows in the
+    // other gym, keep A's login.
+    expect(await loginAnywhere(LOGIN_A)).toBe(4);
     const manual = await db.query(
       `select created_by_account_id, knowledge_gap from pilot.shadow_research_requirements where source_entity_id = 'manual-a'`,
     );
@@ -402,6 +409,17 @@ describe("the retention purge and a purged person's own feedback notes", () => {
       { topic: 'jab', account_id: null, user_note: null, flag_count: 1, outcome_signal: 'negative' },
       { topic: 'weight-cut', account_id: null, user_note: null, flag_count: 1, outcome_signal: 'negative' },
     ]);
+  });
+
+  test("the same login's feedback in another gym is that gym's, and untouched", async () => {
+    expect(await textAnywhere(NOTE_A_ELSEWHERE)).toBe(3);
+    const elsewhere = await db.query(
+      `select (select count(*) from pilot.shadow_feedback where organization_id = $1 and account_id = $2)
+            + (select count(*) from pilot.shadow_library_review_flags where organization_id = $1 and account_id = $2)
+            + (select count(*) from pilot.shadow_research_requirements where organization_id = $1 and created_by_account_id = $2) as n`,
+      [OTHER_ORG, LOGIN_A],
+    );
+    expect(Number(elsewhere.rows[0].n)).toBe(3);
   });
 
   test("another person's and another gym's notes are untouched", async () => {
