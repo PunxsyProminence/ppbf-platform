@@ -426,6 +426,19 @@ describe('family goals migration (PH-05)', () => {
     }
   });
 
+  test('the runner refuses an index of that name over other columns', async () => {
+    const client = await freshDatabase('fgoal_index_shape');
+    try {
+      // The file's if-not-exists keeps a same-named index, so only readiness can say it is wrong.
+      await client.query('drop index pilot.idx_family_goals_athlete');
+      await client.query('create index idx_family_goals_athlete on pilot.family_goals(athlete_id, organization_id)');
+
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_GOALS_NOT_READY: athlete_index_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a result it did not produce', async () => {
     const client = await freshDatabase('fgoal_not_ready', 'none');
     try {
