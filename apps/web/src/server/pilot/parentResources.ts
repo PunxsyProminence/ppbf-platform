@@ -36,10 +36,22 @@ export interface ParentResourceItem {
   destination: string;
 }
 
-/** True when the building map lists the page an app path opens as one a parent may open. */
+/**
+ * True when the building map lists the page an app path opens as one a parent
+ * may open. The path is read as a browser will read it: one that a browser
+ * would rewrite ('/dashboard/../admin', '/dashboard/%2e%2e/admin' both open
+ * /admin) is not judged by the door it starts with -- it is left out.
+ */
 export function parentMayOpenPath(destination: string): boolean {
-  const pathname = destination.split(/[?#]/, 1)[0] ?? '';
-  const door = doorForPath(pathname);
+  const written = destination.split(/[?#]/, 1)[0] ?? '';
+  let opened: URL;
+  try {
+    opened = new URL(destination, 'http://app.invalid');
+  } catch {
+    return false;
+  }
+  if (opened.origin !== 'http://app.invalid' || opened.pathname !== written) return false;
+  const door = doorForPath(opened.pathname);
   return door !== null && (door.roles === OPEN || door.roles.includes('parent'));
 }
 
