@@ -84,15 +84,16 @@ create table if not exists pilot.parent_resources (
     check (resource_type in ('guide', 'checklist', 'video', 'policy')),
   -- An app path ('/x', never '//host'), or an https address with a host.
   -- No whitespace and no backslash anywhere: browsers read '\' as '/' in a
-  -- link, so '/\evil.example' would leave the app. No '@' before the host:
-  -- 'https://usaboxing.org@evil.example' goes to evil.example.
+  -- link, so '/\evil.example' would leave the app. The host runs to the first
+  -- '/' and holds no '@', '?' or '#': 'https://usaboxing.org@evil.example'
+  -- goes to evil.example and is refused.
   constraint pilot_parent_resources_destination_check
     check (
       char_length(destination) <= 2000
       and destination !~ '[\s\\]'
       and (
         (destination_kind = 'internal' and destination ~ '^/[^/]')
-        or (destination_kind = 'external' and destination ~ '^https://[^/@?#]+(/|$)' and destination !~ '^https://[^/]*@')
+        or (destination_kind = 'external' and destination ~ '^https://[^/@?#]+(/|$)')
       )
     ),
   constraint pilot_parent_resources_state_check
