@@ -24,16 +24,25 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
 
 const SHEET = readDesignSystemCss(DESIGN_SYSTEM_ENTRY).replace(/\/\*[\s\S]*?\*\//g, ' ');
 
-function widthOf(selector: string): number {
+/**
+ * The px widths every rule ending in `selector` declares. A room may restate
+ * the pool for its own lamp (`.ge-frontoffice .lamp::after` is 208px), so the
+ * guard takes the WIDEST pool and the NARROWEST shade rather than the first
+ * rule it meets: a room that widened its light would otherwise go unseen.
+ */
+function widthsOf(selector: string): number[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\:]/g, '\\$&');
-  const rule = SHEET.match(new RegExp(`(?:^|[}\\s])${escaped}\\s*\\{([^}]*)\\}`));
-  const width = rule?.[1].match(/(?:^|;|\s)width:\s*([\d.]+)px/);
-  if (!width) throw new Error(`no px width for ${selector} in the resolved design system`);
-  return Number(width[1]);
+  const widths: number[] = [];
+  for (const [, body] of SHEET.matchAll(new RegExp(`${escaped}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, 'g'))) {
+    const width = body.match(/(?:^|;|\s)width:\s*([\d.]+)px/);
+    if (width) widths.push(Number(width[1]));
+  }
+  if (widths.length === 0) throw new Error(`no px width for ${selector} in the resolved design system`);
+  return widths;
 }
 
 /** How far the pool of light reaches past each side of the lamp's own box. */
-const OVERHANG = (widthOf('.lamp::after') - widthOf('.lamp')) / 2;
+const OVERHANG = (Math.max(...widthsOf('.lamp::after')) - Math.min(...widthsOf('.lamp'))) / 2;
 
 type Lamp = { readonly where: string; readonly tag: string };
 
@@ -41,6 +50,12 @@ type Lamp = { readonly where: string; readonly tag: string };
 function lamps(): Lamp[] {
   const found: Lamp[] = [];
   for (const { relativePath, code } of readComponentSource()) {
+    /* A lamp whose class list is computed cannot be read here. Say so rather
+       than skip it: a skipped lamp is a lamp nobody checked. */
+    for (const match of code.matchAll(/className=\{[^}]*(?:^|[\s'"`])lamp(?=[\s'"`])[^}]*\}/g)) {
+      const line = code.slice(0, match.index).split('\n').length;
+      found.push({ where: `${relativePath.replace(/\\/g, '/')}:${line}`, tag: `computed ${match[0]}` });
+    }
     for (const match of code.matchAll(/<[a-z]+\b[^>]*?className="([^"]*)"[^>]*?>/g)) {
       if (!/(?:^|\s)lamp(?:\s|$)/.test(match[1])) continue;
       const line = code.slice(0, match.index).split('\n').length;
@@ -52,6 +67,7 @@ function lamps(): Lamp[] {
 
 /** Why this lamp's light can leave the screen, or null when it cannot. */
 function escapes({ tag }: Lamp): string | null {
+  if (tag.startsWith('computed ')) return 'its className is computed, so its placement cannot be read; use a string literal';
   /* Hung from the middle: the light is centred on the page and is narrower
      than any screen the app supports. */
   if (/left:\s*'50%'/.test(tag) && /translate:\s*'-50%/.test(tag)) return null;
