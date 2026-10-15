@@ -11,8 +11,9 @@
 //
 // './db' is routed into a disposable embedded Postgres. Mocked: the session
 // lookup (requirePrincipal), the model provider (fetch), the Library evidence
-// lookup, the context retrieval, the unlock evaluation and the deploy-time
-// readiness probe, none of which this change touches.
+// lookup, the context retrieval, the unlock evaluation, the deploy-time
+// readiness probe and the replay of earlier turns, none of which this change
+// touches.
 // It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
@@ -95,6 +96,13 @@ jest.mock('./shadowChat', () => ({
 // the tables it asks for are in the base schema applied below.
 jest.mock('./shadowReadiness', () => ({
   assertShadowRuntimeReadiness: jest.fn(async () => undefined),
+}));
+
+// Replaying an earlier turn into the prompt reads the Library tables, which
+// this change does not touch. Access checks and the stored exchange stay real.
+jest.mock('./shadowConversations', () => ({
+  ...jest.requireActual('./shadowConversations'),
+  loadConversationMessages: jest.fn(async () => []),
 }));
 
 jest.mock('./shadowUnlocks', () => ({
@@ -220,7 +228,7 @@ function principal(accountId: string, role: PilotPrincipal['role'], athleteId: s
   };
 }
 
-async function sendAsAthlete(message: string) {
+async function sendAsAthlete(message: string, conversationId?: string) {
   mockRequirePrincipal.mockResolvedValue(principal(ATHLETE_ACCOUNT, 'athlete', ATHLETE_ID));
   const fetchSpy = jest.fn().mockResolvedValue({
     ok: true,
@@ -230,7 +238,7 @@ async function sendAsAthlete(message: string) {
   const response = await chatPOST(new NextRequest('http://localhost/api/pilot/shadow/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(conversationId ? { message, conversationId } : { message }),
   }));
   return { status: response.status, body: await response.json(), providerCalled: fetchSpy.mock.calls.length > 0 };
 }
@@ -341,7 +349,8 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
         expect(sent).toMatchObject({ status: 200, providerCalled: true, body: { state: 'ok' } });
         expect(sent.body.response).toBe(ANSWER);
         expect(sent.body.handoff ?? null).toBeNull();
-        expect(sent.body.researchFiled).toBe(false);
+        // Told what main told them; the words are kept out (asserted below).
+        expect(sent.body.researchFiled).toBe(true);
 
         // Exactly one new escalation, for this athlete.
         const { rows } = await client.query(
@@ -405,6 +414,29 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
       expect(escalations.rows[0].n).toBe(4);
       const reviews = await client.query(`select count(*)::int as n from pilot.shadow_human_review_queue where category = 'safeguarding_disclosure'`);
       expect(reviews.rows[0].n).toBe(3);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // "my coach yells at me" then, in the same conversation, a disclosure that
+  // names nobody: the coach must not receive the second one.
+  test('once a conversation names gym staff, its later disclosures stay admin-only', async () => {
+    const client = await freshDatabase('ppbf_test_shadow_disclosure_sticky');
+    activeClient = client;
+    try {
+      const first = await sendAsAthlete('my coach yells at me');
+      expect(first).toMatchObject({ status: 200, body: { state: 'ok' } });
+      const second = await sendAsAthlete('I want to kill myself', first.body.conversationId);
+      expect(second).toMatchObject({ status: 200, body: { state: 'ok', conversationId: first.body.conversationId } });
+
+      const { rows } = await client.query(
+        `select escalation_id, source_type from pilot.safety_escalations order by created_at`,
+      );
+      expect(rows.map((row: { source_type: string }) => row.source_type)).toEqual(['athlete_voice', 'athlete_voice']);
+      const coachView = await escalationIdsReadableBy(COACH_OF_RECORD, 'coach');
+      for (const row of rows) expect(coachView).not.toContain(row.escalation_id);
     } finally {
       activeClient = null;
       await client.end();

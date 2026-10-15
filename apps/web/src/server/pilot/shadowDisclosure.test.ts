@@ -2,9 +2,10 @@ jest.mock('./escalationLadder', () => ({
   ...jest.requireActual('./escalationLadder'),
   fileEscalation: jest.fn(async (input: Record<string, unknown>) => ({ escalation_id: 'esc-1', ...input })),
 }));
-jest.mock('./db', () => ({ query: jest.fn(), queryOne: jest.fn(), withTransaction: jest.fn() }));
+jest.mock('./db', () => ({ query: jest.fn(), queryOne: jest.fn(async () => null), withTransaction: jest.fn() }));
 
 import { ATHLETE_VOICE_TRIAGED_HIGH_CUES, athleteVoiceSeverity } from './athleteVoice';
+import { queryOne } from './db';
 import { fileEscalation } from './escalationLadder';
 import { validateShadowRequest } from './shadowChat';
 import {
@@ -32,6 +33,7 @@ export const F076_SENTENCES: ReadonlyArray<{ message: string; namesGymStaff: boo
 
 beforeEach(() => {
   mockFileEscalation.mockClear();
+  jest.mocked(queryOne).mockClear();
 });
 
 describe('detectShadowDisclosure', () => {
@@ -70,6 +72,18 @@ describe('detectShadowDisclosure', () => {
 
 describe('namesGymStaff', () => {
   test.each([
+    'Mr Dave touched me and told me not to tell anyone',
+    'Mr. Neale makes me stay behind',
+    'Miss Sarah yells at me every practice',
+    'sir keeps me after when everyone leaves',
+    'my coachhh hits me',
+    'my cooooach touched me',
+    'my c0ach touched me',
+    'c o a c h touched me',
+    'my coatch grabbed my arm',
+    'the guy who runs the gym touched me',
+    'the man who holds the pads grabbed my neck',
+    'mi entrenador me pego',
     'my COACH yells at me',
     'the trainer touched me',
     'an instructor keeps me after',
@@ -88,6 +102,23 @@ describe('namesGymStaff', () => {
       expect(namesGymStaff(message)).toBe(false);
     },
   );
+});
+
+describe('adminOnly', () => {
+  test.each([
+    'Dave touches me when everyone leaves',
+    'he keeps me after and says its our secret',
+    'My uncle touched me',
+  ])('"%s" is admin-only with no staff word', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.namesGymStaff).toBe(false);
+    expect(disclosure?.adminOnly).toBe(true);
+  });
+
+  test.each(F076_SENTENCES)('"$message" is admin-only exactly when it names staff', ({ message, namesGymStaff: staff }) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.adminOnly).toBe(staff);
+  });
 });
 
 describe('markShadowDisclosure leaves the answer alone', () => {
@@ -138,6 +169,40 @@ describe('fileShadowDisclosureEscalation', () => {
       expect(stored).not.toContain(word);
     }
     for (const cue of disclosure.cues) expect(stored).not.toContain(cue);
+  });
+
+  test('a conversation that already filed admin-only keeps every later disclosure admin-only', async () => {
+    jest.mocked(queryOne).mockResolvedValueOnce({ found: true });
+    const disclosure = detectShadowDisclosure('I want to kill myself', 'athlete')!;
+    expect(disclosure.adminOnly).toBe(false);
+    await fileShadowDisclosureEscalation({ organizationId: 'org-1', athleteId: 'ATH-1', conversationId: 'conv-1', disclosure });
+
+    expect(jest.mocked(queryOne)).toHaveBeenCalledWith(expect.stringContaining("source_type = 'athlete_voice'"), ['org-1', 'ATH-1', 'conv-1']);
+    expect(mockFileEscalation.mock.calls[0][0]).toEqual(expect.objectContaining({
+      sourceType: 'athlete_voice',
+      escalatedToRole: 'organization_admin',
+    }));
+  });
+
+  test('a database without the shadow_disclosure value files admin-only instead of losing it', async () => {
+    mockFileEscalation.mockRejectedValueOnce(Object.assign(new Error('violates check constraint'), { code: '23514' }));
+    const disclosure = detectShadowDisclosure('My dad hits me', 'athlete')!;
+    await fileShadowDisclosureEscalation({ organizationId: 'org-1', athleteId: 'ATH-1', conversationId: null, disclosure });
+
+    expect(mockFileEscalation).toHaveBeenCalledTimes(2);
+    expect(mockFileEscalation.mock.calls[0][0].sourceType).toBe('shadow_disclosure');
+    expect(mockFileEscalation.mock.calls[1][0]).toEqual(expect.objectContaining({
+      sourceType: 'athlete_voice',
+      escalatedToRole: 'organization_admin',
+    }));
+  });
+
+  test('any other failure is not retried', async () => {
+    mockFileEscalation.mockRejectedValueOnce(Object.assign(new Error('connection lost'), { code: '08006' }));
+    const disclosure = detectShadowDisclosure('My dad hits me', 'athlete')!;
+    await expect(fileShadowDisclosureEscalation({ organizationId: 'org-1', athleteId: 'ATH-1', conversationId: null, disclosure }))
+      .rejects.toThrow('connection lost');
+    expect(mockFileEscalation).toHaveBeenCalledTimes(1);
   });
 
   test('no athlete record files nothing', async () => {

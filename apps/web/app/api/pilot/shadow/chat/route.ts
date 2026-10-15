@@ -720,10 +720,9 @@ async function handleShadowChat(
     // words stay out of the research feed. The answer is unchanged -- see
     // shadowDisclosure.ts.
     const shadowDisclosure = detectShadowDisclosure(message, userRole);
-    const requestValidation = markShadowDisclosure(
-      validateShadowRequest(message, userRole, organizationId),
-      shadowDisclosure,
-    );
+    const baseRequestValidation = validateShadowRequest(message, userRole, organizationId);
+    const requestValidation = markShadowDisclosure(baseRequestValidation, shadowDisclosure);
+    const disclosureMarked = requestValidation !== baseRequestValidation;
 
     // -----------------------------------------------------------------
     // THE HUMAN-REVIEW WRITES.
@@ -1754,7 +1753,7 @@ async function handleShadowChat(
     // human review, handed off, or touched by a filter must not be copied into the
     // coaches' research feed (OD-2026-10-07-009 ruling 4). Each fact below is a
     // separate guard in mayFileUnansweredQuestion.
-    const researchFilingAllowed = mayFileUnansweredQuestion({
+    const researchFilingFacts = {
       state,
       requiresHumanReview: persistedRequiresHumanReview,
       hasHandoff: Boolean(persistedHandoff),
@@ -1766,8 +1765,22 @@ async function handleShadowChat(
       requestFlagged: Boolean(requestValidation.classification)
         || (Boolean(requestValidation.topic) && requestValidation.topic !== 'none'),
       requestRiskOwed: requestRiskState.owed,
+    };
+    const researchFilingAllowed = mayFileUnansweredQuestion(researchFilingFacts);
+    const researchNoticeApplies = unsupportedAnswer && !libraryEmpty && !evidenceBundle.retrievalDegraded;
+    // A disclosure (F-076) is never filed as research, but the athlete is told
+    // what main would have told them: "Passed to the gym administrator." is
+    // true, because the escalation and the admin review row are that hand-off,
+    // and a note that vanished only for disclosures would tell whoever is
+    // beside the child that the words were caught.
+    const mainWouldHaveFiled = disclosureMarked && mayFileUnansweredQuestion({
+      ...researchFilingFacts,
+      requestHighRisk: baseRequestValidation.highRisk === true,
+      requestFlagged: Boolean(baseRequestValidation.classification)
+        || (Boolean(baseRequestValidation.topic) && baseRequestValidation.topic !== 'none'),
+      requestRiskOwed: false,
     });
-    const researchFiled = researchFilingAllowed && unsupportedAnswer && !libraryEmpty && !evidenceBundle.retrievalDegraded
+    const researchFiled = researchFilingAllowed && researchNoticeApplies
       ? await fileUnansweredShadowQuestion({
         organizationId,
         accountId: userId,
@@ -1776,7 +1789,7 @@ async function handleShadowChat(
         athleteId: athleteId || null,
         askerAthleteId: principal.athleteId ?? null,
       })
-      : false;
+      : mainWouldHaveFiled && researchNoticeApplies;
 
     return NextResponse.json({
       success: state === 'ok' || state === 'queued',

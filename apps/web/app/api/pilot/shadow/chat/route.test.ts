@@ -3619,9 +3619,33 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
       conversationId: 'conversation-1',
     }));
 
-    // The words are not filed as a research "Library gap".
+    // The words are not filed as a research "Library gap", and the athlete
+    // is told what main told them ("Passed to the gym administrator.").
     expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
-    expect(body.researchFiled).toBe(false);
+    expect(body.researchFiled).toBe(true);
+  });
+
+  test('a withheld disclosure still files, and the reply is the one main gives', async () => {
+    const message = 'My dad hits me and now I have a headache';
+    const { body: asCoach } = await askAsAthlete(message, 'coach');
+    jest.clearAllMocks();
+    const { response, body } = await askAsAthlete(message);
+
+    expect(response.status).toBe(400);
+    expect(body.state).toBe('filtered');
+    expect(body.response).toBe(asCoach.response);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ATH-SELF' }));
+  });
+
+  test('a disclosure met by a failed provider still files', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }) as unknown as typeof fetch;
+    const response = await POST(postRequest({ message: 'My dad hits me' }));
+    const body = await response.json();
+
+    expect(body.state).toBe('degraded');
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
   });
 
   test('CONTROL: a plain training question files nothing and is filed as research as before', async () => {
@@ -3632,6 +3656,7 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
     expect(mockFileDisclosure).not.toHaveBeenCalled();
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
     expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
+    expect(body.researchFiled).toBe(true);
   });
 
   test('the same sentence from a coach files no disclosure escalation', async () => {
