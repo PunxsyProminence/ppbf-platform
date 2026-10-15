@@ -2674,7 +2674,7 @@ export default function CoachWorkspace() {
         meta: `${BARRIER_TYPE_LABEL[report.note_type] ?? report.note_type} · reported by ${report.reporter_role === 'parent' ? 'a guardian' : report.reporter_role} · ${formatGymDateTimeShort(report.created_at) ?? report.created_at}`,
         details: [],
         body: report.note_text,
-        link: { href: '/coach/decision-loop', label: 'Open Decision Loop to Message Home' },
+        link: { href: '/coach/decision-loop', label: "Open Decision Loop to Post to the Family's Page" },
       });
     }
     return queue;
@@ -3082,14 +3082,14 @@ export default function CoachWorkspace() {
                   </div>
                   <p className="text-sm text-[color:var(--bone-200)]">{report.note_text}</p>
                   <p className="text-xs text-[color:var(--bone-400)]">
-                    Reply through the Message Home panel on the decision loop.
+                    Answer the family through Post to the Family&apos;s Page on the Decision Loop.
                   </p>
                 </article>
               ))}
 
               {!boardShown && (
                 <Link href="/coach/decision-loop" className="btn btn--ghost">
-                  Open Decision Loop to Message Home
+                  Open Decision Loop to Post to the Family&apos;s Page
                 </Link>
               )}
             </div>
@@ -3419,8 +3419,8 @@ export default function CoachWorkspace() {
                         )}
                       </div>
                       {/* The Show on TV switch, the same one the live screen
-                          carries. Off by default on every run. The honest line
-                          below is removed in the slice that makes the TV read it. */}
+                          carries. Off by default on every run. The switch alone puts
+                          nothing on a TV: the coach sends the run from Gym TVs below. */}
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
                         {liveRun.show_on_wall ? (
                           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
@@ -3437,7 +3437,7 @@ export default function CoachWorkspace() {
                         </button>
                       </div>
                       <p className="t-data text-[color:var(--bone-400)]">
-                        The gym TV does not show sessions yet. This switch is saved now and takes effect when it does.
+                        Switching this on lets you send the session to a gym TV from Gym TVs below.
                       </p>
                       {showOnWallError && (
                         <p role="alert" className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">

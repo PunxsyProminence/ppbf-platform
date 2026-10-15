@@ -284,7 +284,7 @@ test('on the Dashboard each report action is on the board only, and the full lis
   // No action below the board: none until the coach opens an item on it.
   expect(screen.queryAllByRole('button', { name: 'Acknowledge' })).toHaveLength(0);
   expect(screen.queryAllByRole('link', { name: /record what you did/i })).toHaveLength(0);
-  expect(screen.queryAllByRole('link', { name: /Message Home/ })).toHaveLength(0);
+  expect(screen.queryAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(0);
 
   // Each one, opened on the board, is there exactly once on the page.
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
@@ -295,14 +295,19 @@ test('on the Dashboard each report action is on the board only, and the full lis
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
   fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
-  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
 
   // Off the Dashboard the board is gone and the lists carry the actions.
   fireEvent.click(screen.getByRole('button', { name: /^Goals/ }));
   expect(screen.queryByRole('region', { name: 'The floor' })).toBeNull();
   expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
-  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
+
+  // F-042: the reply hint names the panel by its heading on the Decision
+  // Loop; nothing there is called Message Home.
+  expect(screen.getAllByText("Answer the family through Post to the Family's Page on the Decision Loop.").length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/Message Home/)).toHaveLength(0);
 });
 
 test('a live-run read that failed shows the session gauge as unknown, never "None"', async () => {
