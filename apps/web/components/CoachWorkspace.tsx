@@ -2662,7 +2662,9 @@ export default function CoachWorkspace() {
           { label: 'Recorded', value: painReportTime(report.recordedAt), muted: !report.recordedAt },
         ],
         note: PAIN_PROVENANCE[report.reporter],
-        link: { href: '/coach/decision-loop', label: 'Record what you did' },
+        // The Decision Loop opens on this athlete (#1474 item 5); the id is
+        // handed over in page memory, not put in the address.
+        link: { href: '/coach/decision-loop', label: 'Record what you did', athleteId: report.athleteId },
       });
     }
     for (const report of barrierReports) {

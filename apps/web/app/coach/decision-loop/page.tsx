@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
@@ -573,17 +574,35 @@ export default function DecisionLoopReviewPage() {
   const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
   const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
 
+  /* ARRIVING FROM "Record what you did" (#1474 item 5): the athlete the coach
+     came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
+     on the first effect; undefined means not yet taken. */
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
     void (async () => {
+      let roster: AthleteListItem[] | null = null;
       try {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { items?: AthleteListItem[] };
-        setAthletes(payload.items ?? []);
+        if (response.ok) {
+          const payload = (await response.json()) as { items?: AthleteListItem[] };
+          roster = payload.items ?? [];
+          setAthletes(roster);
+        }
       } catch {
         // Manual athleteId entry remains available if the roster fetch fails.
       }
+      /* The arriving athlete is selected only if the roster lists them: the
+         roster is the server's answer to whom this coach may reach. Not
+         listed, or no roster, and the page opens as it always has, with
+         nobody chosen. A pick the coach made while the roster loaded wins. */
+      const arriving = arrivalAthleteRef.current;
+      arrivalAthleteRef.current = null;
+      if (arriving && roster && !selectedAthleteRef.current && roster.some((athlete) => athlete.athlete_id === arriving)) {
+        selectAthlete(arriving);
+      }
     })();
+    // Once, on arrival. selectAthlete moves refs and state setters only.
   }, []);
 
   const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {

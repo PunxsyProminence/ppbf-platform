@@ -7,6 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import DecisionLoopReviewPage from './page';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 /* A PROBE ON EVERY COMMIT. WorkAxis sits at the foot of the page and renders
    whenever the page does. This stand-in records, after each commit and before
@@ -2909,4 +2910,102 @@ test("a saved decision's time is printed in gym time, not raw", async () => {
   const line = await screen.findByText(/^By coach at /);
   expect(line.textContent).toMatch(/11:15\sAM/);
   expect(line.textContent).not.toContain('2026-10-12T15:15:31.004Z');
+});
+
+// #1474 item 5: a coach who follows a pain report's "Record what you did"
+// arrives with that athlete already chosen. The athlete is handed over in page
+// memory, never the address (Overwatch, #1474 Q2 = C), and is selected only if
+// the roster -- the server's answer to whom this coach may reach -- lists them.
+describe('arriving from "Record what you did"', () => {
+  const EMPTY_STATE = 'Select or enter an athlete to review their decision loop.';
+  const shadowReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/pilot/shadow/'));
+  const rosterRead = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/athletes/list'));
+
+  afterEach(() => {
+    takeArrivalAthlete();
+  });
+
+  test('the athlete handed over is selected when the roster lists them, and their records are read', async () => {
+    const fetchMock = installFetch();
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText('Behavior & Habit Note');
+    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('ath-1');
+    expect(screen.queryByText(EMPTY_STATE)).toBeNull();
+    await waitFor(() => {
+      expect(shadowReads(fetchMock).some((url) => url.includes('medical-status?athleteId=ath-1'))).toBe(true);
+    });
+  });
+
+  test('an athlete the roster does not list: nobody is chosen and nothing is read for anyone', async () => {
+    const fetchMock = installFetch();
+    handOffArrivalAthlete('ath-not-yours');
+    render(<DecisionLoopReviewPage />);
+
+    await waitFor(() => expect(rosterRead(fetchMock)).toBe(true));
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText(EMPTY_STATE)).toBeInTheDocument();
+    expect(shadowReads(fetchMock)).toEqual([]);
+  });
+
+  test('a roster that would not load: nobody is chosen', async () => {
+    const base = installFetch();
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => (
+      String(url).includes('/api/pilot/athletes/list') ? jsonResponse({ error: 'boom' }, false) : base(url, init)
+    ));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await waitFor(() => expect(rosterRead(fetchMock)).toBe(true));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText(EMPTY_STATE)).toBeInTheDocument();
+    expect(shadowReads(fetchMock)).toEqual([]);
+  });
+
+  test('the hand-off is taken once: the next visit opens on nobody', async () => {
+    installFetch();
+    handOffArrivalAthlete('ath-1');
+    const first = render(<DecisionLoopReviewPage />);
+    await screen.findByText('Behavior & Habit Note');
+    first.unmount();
+
+    const fetchMock = installFetch();
+    render(<DecisionLoopReviewPage />);
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('');
+    expect(shadowReads(fetchMock)).toEqual([]);
+  });
+
+  test('a pick the coach makes while the roster is still loading wins', async () => {
+    const base = installFetch();
+    let releaseRoster: () => void = () => undefined;
+    const rosterHeld = new Promise<void>((resolve) => {
+      releaseRoster = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/athletes/list')) {
+        await rosterHeld;
+        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }, { athlete_id: 'ath-2', full_name: 'Casey R.' }] });
+      }
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-2' } });
+    await act(async () => {
+      releaseRoster();
+      await rosterHeld;
+    });
+    await screen.findByRole('option', { name: 'Casey R.' });
+    expect((screen.getByPlaceholderText('athlete-id') as HTMLInputElement).value).toBe('ath-2');
+  });
 });
