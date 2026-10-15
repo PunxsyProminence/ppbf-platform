@@ -798,9 +798,12 @@ describe('a hold that ends closes the escalation it filed (F-069)', () => {
       }
       // Notices as they were left before F-069: the hold ended in storage,
       // its notice still open (or acknowledged) with nothing resolved.
+      // An acknowledged one was acknowledged after its hold ended, as a coach
+      // reading a stale list would have.
       const reopen = (holdId: string, status: string, note: string) => client.query(
         `update pilot.safety_escalations
-         set status = $3, resolved_by_account_id = null, resolved_at = null, resolution_note = $4
+         set status = $3, resolved_by_account_id = null, resolved_at = null, resolution_note = $4,
+             acknowledged_at = case when $3 = 'acknowledged' then now() - interval '1 day' else null end
          where organization_id = $1 and source_type = 'training_hold' and source_id = $2`,
         [ORG_ID, holdId, status, note],
       );
@@ -844,11 +847,18 @@ describe('a hold that ends closes the escalation it filed (F-069)', () => {
       )).rows[0];
       const closedLift = await escalationFor(client, 'training_hold', lifted.hold_id);
       expect(closedLift).toMatchObject({ status: 'resolved', resolved_by_account_id: ADMIN_ID, resolution_note: 'Hold lifted.' });
-      expect(closedLift.resolved_at).toEqual(liftedHold.lifted_at);
+      // Closed now, as a lift or sweep writes it, never backdated to the hold.
+      expect(new Date(closedLift.resolved_at).getTime()).toBeGreaterThan(new Date(liftedHold.lifted_at).getTime());
 
       const closedOld = await escalationFor(client, 'training_hold', oldExpired.hold_id);
       expect(closedOld).toMatchObject({ status: 'resolved', resolved_by_account_id: null, resolution_note: 'Coach saw it.' });
-      expect(closedOld.resolved_at).not.toBeNull();
+      // Never resolved before it was acknowledged (Codex review on #1599).
+      const { rows: [acked] } = await client.query(
+        `select resolved_at >= acknowledged_at as in_order from pilot.safety_escalations
+         where organization_id = $1 and source_type = 'training_hold' and source_id = $2`,
+        [ORG_ID, oldExpired.hold_id],
+      );
+      expect(acked.in_order).toBe(true);
 
       expect(await escalationFor(client, 'training_hold', lapsed.hold_id)).toMatchObject({
         status: 'resolved', resolved_by_account_id: null, resolution_note: 'Hold expired.',

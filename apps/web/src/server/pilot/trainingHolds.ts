@@ -427,8 +427,11 @@ export async function listTrainingHolds(
  *   - a hold whose clock ran out but that nothing has swept yet: the sweep
  *     above expires it and closes its notice ('Hold expired.');
  *   - a hold lifted or expired before F-069, whose notice was never
- *     closed: 'Hold lifted.' with the lifter and lift time, or 'Hold
- *     expired.' with the time the hold was swept.
+ *     closed: 'Hold lifted.' with the lifter, or 'Hold expired.'.
+ * resolved_at is when the notice is closed here, as a lift or a sweep
+ * writes it: an older hold time could fall before the notice's own
+ * acknowledged_at and read as resolved before it was acknowledged. When
+ * the hold ended stays on the hold (lifted_at, updated_at).
  * A note already written is kept. Only notices still open or acknowledged
  * are touched, so after the first run this matches no rows. It never lifts,
  * places or extends a hold.
@@ -443,7 +446,7 @@ export async function closeEndedHoldNotices(organizationId: string): Promise<voi
       `update pilot.safety_escalations e
        set status = 'resolved',
            resolved_by_account_id = case when h.status = 'lifted' then h.lifted_by_account_id else null end,
-           resolved_at = case when h.status = 'lifted' then coalesce(h.lifted_at, h.updated_at) else h.updated_at end,
+           resolved_at = now(),
            resolution_note = case when e.resolution_note <> '' then e.resolution_note
                                   when h.status = 'lifted' then 'Hold lifted.' else 'Hold expired.' end,
            updated_at = now()
