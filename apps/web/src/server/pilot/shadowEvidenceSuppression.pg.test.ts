@@ -301,4 +301,22 @@ describe('the evidence-bundle insert re-checks what search checked', () => {
       expect(await savedItemCount(client)).toBe(0);
     },
   );
+
+  // F-087: the insert read the chunk's subject only. The chunk here has none,
+  // so filing its document against an athlete must still stop a gym-wide
+  // bundle from citing it.
+  it('refuses a chunk whose document was filed against an athlete between search and save, and saves nothing', async () => {
+    activeClient = await freshDatabase('evidence_document_filed');
+    const client = activeClient;
+    afterSearch = async () => {
+      await client.query(
+        `update pilot.shadow_library_documents set subject_id = 'athlete-f087' where organization_id = $1`,
+        [ORG_ID],
+      );
+    };
+
+    await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
+      .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+    expect(await savedItemCount(client)).toBe(0);
+  });
 });
