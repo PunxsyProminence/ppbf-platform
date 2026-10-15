@@ -44,7 +44,9 @@ import type { ShadowValidationResult } from './shadowChat';
  * Cues that alone are a medical question, not a disclosure. "My legs are sore
  * after roadwork" trips pain_or_injury, and SHADOW already handles it as a
  * personal health question. A message whose only cues are these files nothing
- * (Overwatch, 2026-10-15, item D). With any other cue present it files.
+ * (Overwatch, 2026-10-15, item D) -- unless it names a person at the gym
+ * ("coach hurt my arm on purpose", "coach broke my nose"), which files
+ * admin-only (Overwatch, 2026-10-15, decision 2).
  */
 export const SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES: readonly string[] = ['pain_or_injury', 'broken_bone'];
 
@@ -58,26 +60,43 @@ const MEDICAL_ONLY = new Set(SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES);
  * Titles count ("Mr Dave", "sir", "Miss Sarah"): a child names an adult at
  * the gym by title and first name far more often than by role.
  */
-const GYM_STAFF_PATTERN = new RegExp(
-  '\\b(?:'
-  + [
-    'coach', 'coaches', 'coachs', 'coaching', 'coch', 'cooch', 'couch', 'coatch', 'caoch', 'coahc', 'coack', 'choach', 'coachh',
-    'mr', 'mrs', 'ms', 'miss', 'mister', 'sir', 'maam', 'madam',
-    'head coach', 'assistant coach',
-    'trainer', 'trainers', 'instructor', 'instructors',
-    'staff', 'staffer', 'volunteer', 'volunteers', 'helper', 'helpers',
-    'sensei', 'teacher', 'teachers', 'mentor',
-    'cornerman', 'corner man', 'cutman', 'cut man', 'referee', 'ref', 'judge',
-    'manager', 'owner', 'boss', 'director', 'admin', 'supervisor', 'chaperone',
-    'adult at the gym', 'adults at the gym', 'grown up at the gym', 'man at the gym',
-    'guy at the gym', 'lady at the gym', 'woman at the gym', 'someone at the gym',
-    'at the gym', 'in the gym', 'at boxing', 'at practice', 'at the club',
-    'in the locker room', 'locker room', 'in the office',
-    'runs the gym', 'owns the gym', 'holds the pads', 'holds pads', 'holds the mitts',
-    'entrenador', 'entrenadora', 'profe',
-  ].join('|')
-  + ')\\b',
-);
+function wordList(words: readonly string[]): RegExp {
+  return new RegExp(`\\b(?:${words.join('|')})\\b`);
+}
+
+/**
+ * A person at the gym, said plainly enough to act on: decides item D's
+ * carve-out and the staff-harm marker below, where a false match would file
+ * an alert.
+ */
+const GYM_PERSON_WORDS: readonly string[] = [
+  'coach', 'coaches', 'coachs', 'coaching', 'coch', 'cooch', 'coatch', 'caoch', 'coahc', 'coack', 'choach', 'coachh',
+  'head coach', 'assistant coach',
+  'mr', 'mrs', 'mister', 'sir',
+  'trainer', 'trainers', 'instructor', 'instructors',
+  'staff', 'staffer', 'volunteer', 'volunteers', 'sensei', 'cornerman', 'corner man',
+  'adult at the gym', 'adults at the gym', 'grown up at the gym', 'man at the gym',
+  'guy at the gym', 'lady at the gym', 'woman at the gym', 'someone at the gym',
+  'runs the gym', 'owns the gym', 'holds the pads', 'holds pads', 'holds the mitts',
+  'entrenador', 'entrenadora', 'profe',
+];
+
+/**
+ * Everything that may point at gym staff, for routing only: a false match
+ * here just narrows an alert that is already being filed to admins.
+ */
+const GYM_STAFF_ROUTING_WORDS: readonly string[] = [
+  ...GYM_PERSON_WORDS,
+  'couch', 'ms', 'miss', 'maam', 'madam',
+  'helper', 'helpers', 'teacher', 'teachers', 'mentor',
+  'cutman', 'cut man', 'referee', 'ref', 'judge',
+  'manager', 'owner', 'boss', 'director', 'admin', 'supervisor', 'chaperone',
+  'at the gym', 'in the gym', 'at boxing', 'at practice', 'at the club',
+  'in the locker room', 'locker room', 'in the office',
+];
+
+const GYM_PERSON_PATTERN = wordList(GYM_PERSON_WORDS);
+const GYM_STAFF_PATTERN = wordList(GYM_STAFF_ROUTING_WORDS);
 
 /**
  * Digits typed for letters ("c0ach") and a word spelled out letter by letter
@@ -89,13 +108,82 @@ function foldForStaffMatch(normalized: string): string {
     .replace(/\b(?:[a-z] ){2,}[a-z]\b/g, (run) => run.replace(/ /g, ''));
 }
 
-export function namesGymStaff(message: string): boolean {
+function matchesStaffForm(message: string, pattern: RegExp): boolean {
   // Both elongation readings, as the safety scan itself does: "coachhh"
   // collapses to "coachh" at two letters and to "coach" fully.
   const normalized = foldForStaffMatch(normalizeForSafetyScan(message));
   const fullyCollapsed = normalized.replace(/(.)\1+/g, '$1');
-  return GYM_STAFF_PATTERN.test(normalized) || GYM_STAFF_PATTERN.test(fullyCollapsed);
+  return pattern.test(normalized) || pattern.test(fullyCollapsed);
 }
+
+export function namesGymStaff(message: string): boolean {
+  return matchesStaffForm(message, GYM_STAFF_PATTERN);
+}
+
+export function namesGymPerson(message: string): boolean {
+  return matchesStaffForm(message, GYM_PERSON_PATTERN);
+}
+
+/**
+ * Boxing-technique context (Overwatch, 2026-10-15, decision 1, option A). The
+ * Tell us cues read ordinary sparring talk as harm: "how do I keep my guard
+ * up when he punches me?" is someone_is_hurting_me. With any of these words
+ * present a message files nothing, unless it also carries an override marker
+ * (SHADOW_DISCLOSURE_OVERRIDE_CUES, staff harm, SPARRING_INTENT_WORDS, or
+ * OUTSIDE_GYM_WORDS).
+ * OD-2026-10-10-007: an ordinary sparring question must reach nobody's list.
+ */
+//
+// Every word here is boxing-only. Words with an everyday sense are left out on
+// purpose: "partner" (a mom's partner), "guard" (a security guard), "fight"
+// (a fight at home), "bag", "match", "cross", "block", "counter".
+export const BOXING_CONTEXT_WORDS: readonly string[] = [
+  'spar', 'spars', 'sparring', 'sparred', 'sparing', 'sparring partner', 'spar partner', 'drill partner',
+  'jab', 'jabs', 'hook', 'hooks', 'uppercut', 'uppercuts', 'combo', 'combos', 'combination', 'combinations',
+  'my guard', 'guard up', 'hands up', 'slip', 'slipping', 'blocking punches', 'block punches', 'parry', 'footwork', 'stance',
+  'pads', 'pad work', 'mitts', 'mitt work', 'heavy bag', 'speed bag', 'bag work',
+  'rounds', 'gloves', 'glove', 'headgear', 'mouthguard', 'drill', 'drills',
+  'fight night', 'first fight', 'next fight', 'my bout', 'bout', 'bouts', 'tournament', 'opponent',
+  'getting hit', 'get hit', 'got hit', 'take a punch', 'taking punches',
+];
+
+/**
+ * A person outside the gym, or a place outside it. Boxing words never
+ * suppress a message that names one: "my dad hits me when we spar" files.
+ */
+export const OUTSIDE_GYM_WORDS: readonly string[] = [
+  'dad', 'daddy', 'father', 'mom', 'mommy', 'mum', 'mother', 'stepdad', 'stepmom', 'stepfather', 'stepmother',
+  'brother', 'sister', 'uncle', 'aunt', 'grandpa', 'grandma', 'grandfather', 'grandmother', 'cousin',
+  'boyfriend', 'girlfriend', 'babysitter', 'foster', 'parents', 'parent',
+  'at home', 'at school', 'my house', 'his house', 'her house',
+];
+
+/**
+ * Words that say the harm was meant, which a sparring question does not.
+ * "makes me" is deliberately absent: "sparring makes me nervous" is ordinary.
+ */
+export const SPARRING_INTENT_WORDS: readonly string[] = [
+  'on purpose', 'purpose', 'wont stop', 'wouldnt stop', 'didnt stop', 'doesnt stop', 'keeps going after',
+  'after practice', 'after class', 'after training',
+  'i said stop', 'i told him to stop', 'i told her to stop', 'told them to stop', 'when i say stop', 'even when i tap',
+  'after i tapped', 'after the bell', 'after time',
+];
+
+/** Cues that file even in boxing context. */
+export const SHADOW_DISCLOSURE_OVERRIDE_CUES: readonly string[] = [
+  'crisis', 'crisis_indirect', 'grooming_or_isolation', 'secrecy', 'does_not_feel_safe',
+];
+
+/** Cues that, with a person at the gym named, are staff harm and file in boxing context. */
+const STAFF_HARM_CUES: ReadonlySet<string> = new Set([
+  'someone_is_hurting_me', 'contact_with_body_part', 'pain_or_injury', 'broken_bone',
+  'someone_is_frightening_me', 'harm_to_someone_else',
+]);
+
+const BOXING_CONTEXT_PATTERN = wordList(BOXING_CONTEXT_WORDS);
+const OUTSIDE_GYM_PATTERN = wordList(OUTSIDE_GYM_WORDS);
+const SPARRING_INTENT_PATTERN = wordList(SPARRING_INTENT_WORDS);
+const OVERRIDE_CUES: ReadonlySet<string> = new Set(SHADOW_DISCLOSURE_OVERRIDE_CUES);
 
 /**
  * Cues that go admin-only whoever is named. Grooming and secrecy are how an
@@ -127,15 +215,29 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
   if (role !== 'athlete') return null;
   const scan = scanForSafetyLanguage(message);
   if (!scan.safeguarding) return null;
-  if (scan.cues.every((cue) => MEDICAL_ONLY.has(cue))) return null;
+  const normalized = normalizeForSafetyScan(message);
+  const person = namesGymPerson(message);
+  if (!person && scan.cues.every((cue) => MEDICAL_ONLY.has(cue))) return null;
+  if (BOXING_CONTEXT_PATTERN.test(normalized)) {
+    const overridden = scan.cues.some((cue) => OVERRIDE_CUES.has(cue))
+      || (person && scan.cues.some((cue) => STAFF_HARM_CUES.has(cue)))
+      || SPARRING_INTENT_PATTERN.test(normalized)
+      || OUTSIDE_GYM_PATTERN.test(normalized);
+    if (!overridden) return null;
+  }
   const staff = namesGymStaff(message);
   const adminOnly = staff
     || scan.cues.some((cue) => ADMIN_ONLY_CUES.has(cue))
-    || TOUCH_PATTERN.test(normalizeForSafetyScan(message));
+    || TOUCH_PATTERN.test(normalized);
   return { cues: scan.cues, namesGymStaff: staff, adminOnly };
 }
 
-/** Not a FALLBACK_RESPONSES key and not in the route's critical list, so the answer is unchanged. */
+/** A disclosure the Tell us box would file 'critical'. Its review row takes the critical allowance. */
+export function isCriticalShadowDisclosure(disclosure: ShadowDisclosure | null): boolean {
+  return disclosure !== null && athleteVoiceSeverity(disclosure.cues) === 'critical';
+}
+
+/** Not a FALLBACK_RESPONSES key, so the answer is unchanged. */
 export const SHADOW_DISCLOSURE_CLASSIFICATION = 'safeguarding_disclosure';
 
 /**

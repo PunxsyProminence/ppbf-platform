@@ -11,6 +11,7 @@ import { validateShadowRequest } from './shadowChat';
 import {
   detectShadowDisclosure,
   fileShadowDisclosureEscalation,
+  isCriticalShadowDisclosure,
   markShadowDisclosure,
   namesGymStaff,
   SHADOW_DISCLOSURE_CLASSIFICATION,
@@ -102,6 +103,73 @@ describe('namesGymStaff', () => {
       expect(namesGymStaff(message)).toBe(false);
     },
   );
+});
+
+// Overwatch 2026-10-15, decision 1 (option A): ordinary sparring talk reaches
+// nobody's list; the reviewer's sentences, verbatim.
+describe('boxing-technique context', () => {
+  test.each([
+    'How do I keep my guard up when he punches me?',
+    'My sparring partner keeps hitting me with his jab, how do I slip it?',
+    'He hit my head with a hook in sparring, how do I block that?',
+    'I get nervous about my first fight',
+    'How do I stop being scared of getting hit?',
+    'my new gloves are uncomfortable',
+    'I dont want to spar today',
+    'I hurt my wrist on the heavy bag',
+  ])('"%s" files nothing', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toBeNull();
+  });
+
+  test.each([
+    // staff harm
+    ['coach hits me in sparring on purpose', true],
+    ['my coach punches me in the face during pad work', true],
+    // intent markers
+    ['My sparring partner hits me after the bell every time', false],
+    ['he keeps punching me in sparring even when i tap', false],
+    // crisis, grooming, secrecy, not feeling safe
+    ['I want to kill myself after sparring', false],
+    ['he keeps me after sparring when everyone leaves', true],
+    ['I dont feel safe sparring with him', false],
+    // a person or place outside the gym
+    ['My dad hits me when we spar at home', false],
+  ])('"%s" still files (admin-only: %s)', (message, adminOnly) => {
+    const disclosure = detectShadowDisclosure(message as string, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.adminOnly).toBe(adminOnly);
+  });
+
+  test.each([
+    'my moms partner hits me',
+    'the security guard touched me',
+    'my brother hits me when we fight',
+  ])('an everyday sense of a boxing word does not suppress "%s"', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).not.toBeNull();
+  });
+});
+
+// Overwatch 2026-10-15, decision 2: item D's exemption needs no person at the gym named.
+describe('medical-only cues with a person at the gym', () => {
+  test.each(['Coach hurt my arm on purpose', 'coach broke my nose'])('"%s" files admin-only', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.adminOnly).toBe(true);
+  });
+
+  test('a location alone is not a person: "I hurt my wrist at the gym" files nothing', () => {
+    expect(detectShadowDisclosure('I hurt my wrist at the gym', 'athlete')).toBeNull();
+  });
+});
+
+// Overwatch 2026-10-15, decision 3.
+describe('isCriticalShadowDisclosure', () => {
+  test('critical where the Tell us box files critical, and only there', () => {
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('I want to kill myself', 'athlete'))).toBe(true);
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('My dad hits me', 'athlete'))).toBe(true);
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('I am scared of the older kids', 'athlete'))).toBe(false);
+    expect(isCriticalShadowDisclosure(null)).toBe(false);
+  });
 });
 
 describe('adminOnly', () => {

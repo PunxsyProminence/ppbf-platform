@@ -10,6 +10,7 @@ import { fileUnansweredShadowQuestion, mayFileUnansweredQuestion } from '@/src/s
 import {
   detectShadowDisclosure,
   fileShadowDisclosureEscalation,
+  isCriticalShadowDisclosure,
   markShadowDisclosure,
   SHADOW_DISCLOSURE_CLASSIFICATION,
 } from '@/src/server/pilot/shadowDisclosure';
@@ -809,8 +810,13 @@ async function handleShadowChat(
       return { result: 'failed', error: lastError };
     };
 
+    // A disclosure the Tell us box would file 'critical' (crisis, harm,
+    // grooming) takes the critical review allowance (Overwatch, 2026-10-15):
+    // routine rows in the hour cannot stop its row being written. The owner's
+    // three an hour is unchanged.
     const reviewIsCritical = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-      .includes(requestValidation.classification ?? '');
+      .includes(requestValidation.classification ?? '')
+      || isCriticalShadowDisclosure(shadowDisclosure);
     const reviewSeverity = reviewIsCritical ? ('critical' as const) : ('high' as const);
 
     // THE REQUEST-RISK ROW: DECIDED HERE, WRITTEN ONCE WHEN THE REQUEST ENDS.

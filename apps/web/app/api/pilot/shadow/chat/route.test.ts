@@ -42,7 +42,11 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { fileUnansweredShadowQuestion } from '@/src/server/pilot/shadowResearchFiling';
 import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
-import { fileShadowDisclosureEscalation } from '@/src/server/pilot/shadowDisclosure';
+import {
+  detectShadowDisclosure,
+  fileShadowDisclosureEscalation,
+  isCriticalShadowDisclosure,
+} from '@/src/server/pilot/shadowDisclosure';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -3611,12 +3615,18 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
       disclosure: expect.objectContaining({ namesGymStaff: staff }),
     }));
 
-    // The admin SHADOW review row, under its own category.
+    // The admin SHADOW review row, under its own category. A disclosure the
+    // Tell us box files critical takes the critical allowance (decision 3).
+    const critical = isCriticalShadowDisclosure(detectShadowDisclosure(message, 'athlete'));
+    expect(critical).toBe(!message.includes('touched'));
     expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
       category: 'safeguarding_disclosure',
-      severity: 'high',
+      severity: critical ? 'critical' : 'high',
       conversationId: 'conversation-1',
+    }));
+    expect(mockConsumeReviewSlot).toHaveBeenCalledWith(expect.objectContaining({
+      event: { kind: 'request_risk', critical },
     }));
 
     // The words are not filed as a research "Library gap", and the athlete
@@ -3657,6 +3667,16 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
     expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
     expect(body.researchFiled).toBe(true);
+  });
+
+  test('CONTROL: an ordinary sparring question files nothing and is filed as research as before', async () => {
+    const { body } = await askAsAthlete('How do I keep my guard up when he punches me?');
+
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
   });
 
   test('the same sentence from a coach files no disclosure escalation', async () => {

@@ -331,6 +331,9 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
       expect(control).toMatchObject({ status: 200, body: { state: 'ok' } });
       expect(control.body.researchFiled).toBe(true);
       expect(await researchRowsText(client)).toContain('better jab');
+      // An ordinary sparring question reaches nobody (decision 1, option A).
+      const sparring = await sendAsAthlete('How do I keep my guard up when he punches me?');
+      expect(sparring).toMatchObject({ status: 200, body: { state: 'ok', response: ANSWER } });
       const afterControl = await client.query('select count(*)::int as n from pilot.safety_escalations');
       expect(afterControl.rows[0].n).toBe(0);
 
