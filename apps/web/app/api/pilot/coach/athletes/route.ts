@@ -11,13 +11,12 @@ export const dynamic = 'force-dynamic';
  * The athletes this staff member may act ON, for a picker.
  *
  * WHY THIS IS NOT /api/pilot/athletes/list. That route answers a coach with
- * getAthletesForCoach, which returns EVERY athlete in the organization and
- * merely redacts dob and emergency_contact for the ones the coach is
- * unrelated to. It is a display projection and it says so. Populating a
- * "which athlete am I logging this for" control from it offers a coach
- * athletes whose writes the server will refuse -- a picker full of options
- * that fail, on a safeguarding surface, with the refusal arriving only after
- * the coach has typed the session in.
+ * getAthletesForCoach, a DISPLAY projection that redacts dob and
+ * emergency_contact for athletes the coach is unrelated to; it is not an
+ * access contract and says so. While a coach's reach was "my athletes", a
+ * picker built on it offered athletes whose writes the server refused. The
+ * picker's membership is decided here, from the same rule the write path
+ * applies, so the two cannot drift apart again.
  *
  * A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007, issue #1480):
  * assertActorCanAccessAthlete admits a coach to every live athlete of their

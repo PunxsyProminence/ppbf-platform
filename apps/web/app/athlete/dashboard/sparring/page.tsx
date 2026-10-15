@@ -163,10 +163,9 @@ export default function SparringTelemetryPage() {
      /api/pilot/coach/athletes -- for a coach, every live athlete of their own
      gym (issue #1480), the set the observations route's
      assertActorCanAccessAthlete admits.
-     Deliberately NOT /api/pilot/athletes/list: for a coach that route returns
-     every athlete in the gym (a display projection with field redaction), so a
-     picker built on it would offer children this coach cannot log for and the
-     refusal would arrive only after the session had been typed in.
+     Deliberately NOT /api/pilot/athletes/list: that route is a display
+     projection with field redaction, not the access contract, so a picker
+     built on it can drift from what the observations route accepts.
 
      'loaded' and 'unavailable' are distinct because an empty picker must never
      be the rendering of a failed read: "you are assigned no athletes" and "we

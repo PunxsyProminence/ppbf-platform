@@ -92,8 +92,9 @@ export async function GET(
     /*
      * A partner's tag is listed (decision 3: the clip is shared), but which
      * sparring entry it links to is that athlete's sparring record, which a
-     * coach who is not theirs cannot read. So a coach sees the link only on
-     * their own athletes' tags.
+     * coach reads only for an athlete the gate admits them to -- since issue
+     * #1480, any live athlete of their own gym. So a coach sees the link only
+     * on those athletes' tags.
      */
     const own = isOrganizationAdminRole(principal.role)
       ? null

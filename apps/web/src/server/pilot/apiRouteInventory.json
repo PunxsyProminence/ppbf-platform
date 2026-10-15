@@ -4786,13 +4786,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Today's attendance marks for every live athlete of the caller's own gym (attendance-today/route.ts GET); coach and org admin alike since issue #1480 (OD-2026-10-11-007).",
+    "notes": "Today's attendance marks for every live athlete of the caller's own gym (attendance-today/route.ts GET); coach and org admin alike since issue #1480 (OD-2026-10-11-007). A coach is also sent `mine` (athleteIdsForCoach, coach of record UNION live coverage) for the workspace's \"Not your athlete\" marker.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"

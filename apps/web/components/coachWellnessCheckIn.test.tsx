@@ -50,7 +50,7 @@ const READ_FAILED =
  *  athlete's own coach, a covering coach and organization admins. Pinned as a literal for the same reason as
  *  the rest -- imported copy would pass whatever the component said. */
 const NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to the coaches and organization admins of the athlete’s own gym.';
 
 /** The panel's one empty state, which A-FIN-08 made cover both subsections.
  *  The wellness-only sentence it replaces would otherwise have stood beside a
@@ -564,19 +564,20 @@ describe('an empty day, a failed read and a refusal are three different answers'
     expect(panel().textContent).not.toMatch(/Forbidden|403/);
   });
 
-  it('the refusal names the relationship rule the route enforces, not organization membership', async () => {
-    /* OD-2026-10-05-024 ruling 2: wellness is limited to the athlete's own
-       coach, a coach covering for them, and organization admins. A refusal
-       that still said "coaches in the athlete's own organization" would be a
-       true refusal behind a false explanation. */
-    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }));
+  it('the refusal names the rule the route enforces: the coaches of the athlete\'s own gym', async () => {
+    /* Issue #1480 (OD-2026-10-11-007, replacing OD-2026-10-05-024 ruling 2):
+       any coach of the athlete's gym reads wellness, so a 403 now means
+       another gym's athlete or a deleted one. A refusal that still said "the
+       athlete's own coach, a coach covering for them" would be a true refusal
+       behind a false explanation. */
+    await renderWorkspace(() => jsonResponse({ error: 'Missing athlete record' }, { ok: false, status: 403 }));
     await pickAthlete('Jordan P.');
 
     const text = panel().textContent ?? '';
     expect(text).toContain(NO_ACCESS);
-    expect(text).toMatch(/own coach/i);
-    expect(text).toMatch(/covering/i);
-    expect(text).not.toMatch(/in the athlete.s own organization/i);
+    expect(text).toMatch(/coaches and organization admins of the athlete.s own gym/i);
+    expect(text).not.toMatch(/covering/i);
+    expect(text).not.toMatch(/athlete.s own coach/i);
   });
 
   it('a failed read can be tried again, and the retry reads the same athlete', async () => {

@@ -33,6 +33,11 @@ jest.mock('@/src/server/pilot/coachAthleteRoster', () => ({
   organizationActionableRoster: jest.fn(async () => []),
 }));
 
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  athleteIdsForCoach: jest.fn(async () => ['ath-7']),
+}));
+
 jest.mock('@/src/server/pilot/attendancePrecedence', () => ({
   attendanceOnDay: jest.fn(async () => []),
 }));
@@ -173,6 +178,19 @@ describe('marks are marks, and silence is not one', () => {
        exists to carry. What must not exist is a MARK for it. */
     expect(body.marks.some((m: { athlete_id: string }) => m.athlete_id === 'ath-2')).toBe(false);
     expect(body.covered).toContain('ath-2');
+  });
+
+  test("a coach is also told which athletes are their own (`mine`); an admin is not", async () => {
+    // The register covers the whole gym (issue #1480); "Not your athlete" on
+    // the workspace reads the coach's own set from `mine` instead.
+    mockPrincipal.mockResolvedValue(principal());
+    const coachBody = await (await GET(request())).json();
+    expect(coachBody.covered).toEqual(['ath-1', 'ath-2']);
+    expect(coachBody.mine).toEqual(['ath-7']);
+
+    mockPrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    const adminBody = await (await GET(request())).json();
+    expect(adminBody).not.toHaveProperty('mine');
   });
 
   test('the response names which athletes it covered', async () => {

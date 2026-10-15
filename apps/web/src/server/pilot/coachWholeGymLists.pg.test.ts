@@ -417,9 +417,11 @@ describe('acknowledging an escalation (real database)', () => {
       await insertEscalation(client, ORG_ID, 'esc-deleted', DELETED_ATHLETE);
       signedInAs(UNASSIGNED_COACH, 'coach');
 
-      const { status } = await acknowledge('esc-deleted');
+      const { status, body } = await acknowledge('esc-deleted');
 
       expect(status).toBe(400);
+      // The same answer as a bogus id: a deleted record is not told apart.
+      expect(body).toEqual({ error: 'Missing escalation record' });
       const row = await client.query(
         'select status from pilot.safety_escalations where organization_id = $1 and escalation_id = $2',
         [ORG_ID, 'esc-deleted'],
