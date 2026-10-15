@@ -294,6 +294,9 @@ async function persistEvidenceBundle(input: {
              or c.subject_id is null
              or c.subject_id = $10
            )
+           -- Held by the retention purge (F-086): never cited again.
+           and not (d.metadata ? 'subject_purged_at')
+           and not (c.metadata ? 'subject_purged_at')
          returning evidence_id, source_id, document_id, chunk_id, library_organization_id
          )
          -- Left joins: a row that does not line up makes the passage not

@@ -196,6 +196,16 @@ async function retractSource(client: Client): Promise<void> {
   );
 }
 
+/** What the retention purge writes on a row it holds (F-086). */
+async function markHeld(client: Client, table: 'shadow_library_documents' | 'shadow_library_chunks'): Promise<void> {
+  await client.query(
+    `update pilot.${table}
+        set metadata = metadata || jsonb_build_object('subject_purged_at', now())
+      where organization_id = $1`,
+    [ORG_ID],
+  );
+}
+
 async function savedItemCount(client: Client): Promise<number> {
   const result = await client.query<{ n: string }>(
     'select count(*)::text as n from pilot.shadow_evidence_items',
@@ -278,4 +288,17 @@ describe('the evidence-bundle insert re-checks what search checked', () => {
       .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
     expect(await savedItemCount(client)).toBe(0);
   });
+
+  it.each(['shadow_library_documents', 'shadow_library_chunks'] as const)(
+    'refuses a %s row the retention purge held between search and save (F-086), and saves nothing',
+    async (table) => {
+      activeClient = await freshDatabase(`evidence_held_${table}`);
+      const client = activeClient;
+      afterSearch = () => markHeld(client, table);
+
+      await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
+        .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+      expect(await savedItemCount(client)).toBe(0);
+    },
+  );
 });

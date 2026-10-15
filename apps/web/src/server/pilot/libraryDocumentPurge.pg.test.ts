@@ -280,6 +280,14 @@ beforeAll(async () => {
   await cite('doc-a-cited-by-a', '44444444-4444-4444-8444-444444444444', ATHLETE_A);
   await insertDocument(ORG, HELD, SOURCE, ATHLETE_A, { blobPath: 'library/org-lb-1/held.pdf' });
   await cite(HELD, '55555555-5555-4555-8555-555555555555', null);
+  // Already marked by an earlier purge (a reissued id purged again): the mark
+  // keeps its first date.
+  await db.query(
+    `update pilot.shadow_library_documents
+        set metadata = metadata || '{"subject_purged_at": "2020-01-01T00:00:00Z"}'::jsonb
+      where document_id = $1`,
+    [HELD],
+  );
 
   await insertDocument(ORG, HELD_BY_MOVED_CHUNK, SOURCE, ATHLETE_A);
   await insertDocument(ORG, HELD_BY_CHUNK_MOVED_OUT, SOURCE, ATHLETE_A);
@@ -352,6 +360,12 @@ describe('the retention purge and the Library documents filed against a purged a
       expect(await documentCount(documentId)).toBe(1);
     }
     expect(await chunkCount('doc-gym-stray')).toBe(2);
+    // The dry run leaves no mark of its own: the only one is HELD's earlier one.
+    const marked = await db.query(
+      `select (select count(*) from pilot.shadow_library_documents where metadata ? 'subject_purged_at')
+            + (select count(*) from pilot.shadow_library_chunks where metadata ? 'subject_purged_at') as n`,
+    );
+    expect(Number(marked.rows[0].n)).toBe(1);
   });
 
   test('the purge deletes the documents about the athlete with their chunks, and is not blocked by the held one', async () => {
@@ -380,6 +394,31 @@ describe('the retention purge and the Library documents filed against a purged a
       [[`${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`, 'moved-out']],
     );
     expect(citations.rows[0].n).toBe(3);
+  });
+
+  test('what is held is marked subject_purged_at (F-086), and nothing else is', async () => {
+    const documents = await db.query(
+      `select document_id from pilot.shadow_library_documents
+        where metadata ? 'subject_purged_at' order by document_id`,
+    );
+    expect(documents.rows.map((row) => row.document_id)).toEqual(
+      [HELD_BY_CHUNK_MOVED_OUT, HELD, HELD_BY_MOVED_CHUNK].sort(),
+    );
+    const chunks = await db.query(
+      `select chunk_id from pilot.shadow_library_chunks
+        where metadata ? 'subject_purged_at' order by chunk_id`,
+    );
+    expect(chunks.rows.map((row) => row.chunk_id)).toEqual(
+      [`${HELD_BY_CHUNK_MOVED_OUT}-c0`, `${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`, 'stray-a-cited'].sort(),
+    );
+  });
+
+  test('a row already marked keeps its first mark date', async () => {
+    const held = await db.query(
+      `select metadata->>'subject_purged_at' as at from pilot.shadow_library_documents where document_id = $1`,
+      [HELD],
+    );
+    expect(held.rows[0].at).toBe('2020-01-01T00:00:00Z');
   });
 
   test("a stray chunk about the athlete under the gym's own document goes, the document stays; a cited one is held", async () => {
@@ -425,6 +464,10 @@ describe('the retention purge and the Library documents filed against a purged a
 
   test('an athlete whose purge is refused keeps their documents, and the run counts none', async () => {
     await insertDocument(ORG, 'doc-d', SOURCE, ATHLETE_D);
+    // And one D's purge would hold (cited by an answer about no one): its mark
+    // must roll back with the rest.
+    await insertDocument(ORG, 'doc-d-held', SOURCE, ATHLETE_D);
+    await cite('doc-d-held', '99999999-9999-4999-8999-999999999999', null);
     // A video and no storage: the athlete's savepoint is rolled back
     // (STORAGE_CREDENTIAL_MISSING), the document delete with it.
     await db.query(
@@ -446,5 +489,12 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(event.subject_library_chunks_deleted).toBe(0);
     expect(await documentCount('doc-d')).toBe(1);
     expect(await chunkCount('doc-d')).toBe(1);
+    const marks = await db.query(
+      `select (select count(*) from pilot.shadow_library_documents
+                where document_id = 'doc-d-held' and metadata ? 'subject_purged_at')
+            + (select count(*) from pilot.shadow_library_chunks
+                where document_id = 'doc-d-held' and metadata ? 'subject_purged_at') as n`,
+    );
+    expect(Number(marks.rows[0].n)).toBe(0);
   });
 });

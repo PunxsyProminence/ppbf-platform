@@ -100,7 +100,10 @@ export async function sourceExistsInOrg(organizationId: string, sourceId: string
 
 export async function documentExistsInOrg(organizationId: string, documentId: string): Promise<boolean> {
   const row = await queryOne<{ document_id: string }>(
-    'select document_id from pilot.shadow_library_documents where organization_id = $1 and document_id = $2',
+    `select document_id from pilot.shadow_library_documents
+      where organization_id = $1 and document_id = $2
+        -- A document the retention purge held is attached to nothing new (F-086).
+        and not (metadata ? 'subject_purged_at')`,
     [organizationId, documentId],
   );
   return row !== null;

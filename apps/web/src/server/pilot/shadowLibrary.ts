@@ -927,6 +927,8 @@ export async function listShadowLibraryReviewQueue(input: {
          -- that athlete is deleted (deletion scope B, "10 C"); gym-wide
          -- documents (subject_id null) are untouched.
          and ${athleteNotDeletedSql('d', 'subject_id')}
+         -- Nor once that athlete is purged: a document the purge held (F-086).
+         and not (d.metadata ? 'subject_purged_at')
        group by
          d.document_id,
          d.source_id,
@@ -1135,6 +1137,10 @@ export async function createShadowLibraryChunk(input: {
   excerptLocator?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryChunkRow> {
+  // The retention purge's mark is its own to write (F-086), on chunks as on documents.
+  if (input.metadata && Object.hasOwn(input.metadata, 'subject_purged_at')) {
+    throw new ValidationError(reservedProvenanceMessage('subject_purged_at'));
+  }
   const excerptLocator = input.excerptLocator?.trim() || null;
   const chunkId = `chunk_${randomUUID()}`;
 
@@ -1159,6 +1165,8 @@ export async function createShadowLibraryChunk(input: {
           and s.source_id = (
             select d.source_id from pilot.shadow_library_documents d
              where d.document_id = $1 and d.organization_id = $2
+               -- A document the retention purge held takes no new chunk (F-086).
+               and not (d.metadata ? 'subject_purged_at')
           )
         for no key update of s`,
       [input.documentId, input.organizationId],
@@ -1391,6 +1399,7 @@ export async function reviewShadowLibraryDocument(input: {
          updated_at = now()
      where document_id = $4
        and organization_id = $5
+       and not (metadata ? 'subject_purged_at')
        and (
          $1 <> 'approved'
          or (ingest_state = 'indexed' and index_completed_at is not null)
@@ -1553,6 +1562,10 @@ export async function searchShadowLibrary(
                ($2::text = 'scoped' and c.subject_id is null)
                or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
              )
+             -- Held by the retention purge (F-086): never served, so a reissued
+             -- athlete id cannot reach the purged child's text.
+             and not (d.metadata ? 'subject_purged_at')
+             and not (c.metadata ? 'subject_purged_at')
              and c.chunk_id > $5
            order by c.chunk_id asc
            limit $6`,
@@ -1661,6 +1674,9 @@ export async function searchShadowLibrary(
            ($2::text = 'scoped' and c.subject_id is null)
            or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
          )
+         -- Held by the retention purge (F-086), as in the semantic path.
+         and not (d.metadata ? 'subject_purged_at')
+         and not (c.metadata ? 'subject_purged_at')
      ) ranked
      where score > 0
      order by score desc, authority_tier asc, ordinal asc, chunk_id asc
