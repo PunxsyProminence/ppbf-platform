@@ -21,6 +21,12 @@ jest.mock('next/link', () => ({
 }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+// The finished-sessions list (F-067) has its own route read and its own suite
+// (finishedSessions.test.tsx); here it is a marker, so these tests keep owning every fetch.
+jest.mock('@/components/FinishedSessions', () => ({
+  __esModule: true,
+  default: () => <div data-testid="finished-sessions" />,
+}));
 
 function jsonResponse(body: unknown, ok = true) {
   return { ok, json: async () => body } as Response;
@@ -155,6 +161,19 @@ beforeEach(() => {
 });
 
 describe('coach session scripts page', () => {
+  it("shows the gym's finished sessions while no session is live, and not over a live one (F-067)", async () => {
+    routedFetch({ runsGet: () => jsonResponse({ run: null }) });
+    const { unmount } = render(<CoachSessionScriptsPage />);
+    expect(await screen.findByText('Friday sparring')).toBeInTheDocument();
+    expect(screen.getByTestId('finished-sessions')).toBeInTheDocument();
+    unmount();
+
+    routedFetch({ runsGet: () => jsonResponse({ run: liveRunRow() }) });
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
+    expect(screen.queryByTestId('finished-sessions')).not.toBeInTheDocument();
+  });
+
   it('lists the scripts returned by the route', async () => {
     mockFetch(() => jsonResponse({ scripts: [FRIDAY, TUESDAY] }));
 
