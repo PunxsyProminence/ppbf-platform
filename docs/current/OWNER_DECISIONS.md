@@ -164,6 +164,32 @@ and should not try to.
 
 ---
 
+## OD-2026-10-15-002 -- Overwatch's application of an existing ruling, NOT a new pick of Jason's: F-076, a child's disclosure of harm typed into SHADOW chat is an athlete-scoped high-risk SHADOW message under OD-2026-10-01-008 section 3; "You just asked me that are you fucking with me now"; "I already answered it ..."
+
+**Provenance: DERIVED, with his words PRIMARY.** He did not pick a letter on F-076; he said he had already answered it, and Overwatch then applied his OD-2026-10-01-008 section 3 ruling. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-15). His words are quoted exactly, spelling and spacing kept (the second ends in a space). New; edits no earlier entry. It follows from OD-2026-10-13-013.
+
+**The question was put twice.** The first F-076 card (line 4802, 2026-10-15T05:16:18.495Z) never got an answer on record: the app restarted, and the call is logged as interrupted (line 4806, 13:46:00.623Z: "the session ended before this call's result was recorded"). Overwatch put the same card again (line 4850, 13:47:21.594Z). Asking the same thing a second time is the failure the ASKED ONCE, RULED ONCE rule (OD-2026-10-13-013) is there to stop.
+
+**The card, question "F-076".** Overwatch, as written: "when an athlete types a disclosure of harm into SHADOW chat (tested: "My coach hits me and I am scared to go to the gym", "My dad hits me", "I want to kill myself"), no person is told. The same sentence in the athlete "Tell us" box is already escalated to the organization admin. What should SHADOW chat do?" Options as written: "A: Office, like Tell us (Recommended)"; "B: Office and coaches"; "C: Leave it as is".
+
+**Answered on the card** (line 4858, 2026-10-15T13:48:04.940Z): *"You just asked me that are you fucking with me now"*
+
+**Overwatch, as written** (line 4876, 13:48:27.311Z): "Not on purpose. The app restarted while your first answer was on screen, and the answer never reached me."
+
+**Typed** (queued at line 5005, 2026-10-15T13:50:12.087Z; delivered at line 5008): *"I already answered it look at my answers your just asking the same qu3stion in a different format, tactically questions me until I answer in agreement tor your recommendations "*
+
+**Overwatch, as written** (line 5094, 13:52:52.311Z): "You're right: your Oct 1 ruling covers F-076. A high-risk SHADOW message goes to the athlete's coach, any covering coach and the admins, in-app only. That alert was never built." and "The cost, stated once: if a child names their own coach, that coach gets the alert too. The admins see every one."
+
+**The ruling applied** (OD-2026-10-01-008 section 3, as recorded): "Who 'the coach' is: 'A'. A SHADOW safety alert goes to the athlete's coach of record and any coach covering them, plus admins, on the existing in-app alert. No athlete in the chat means admin review only. No email, text or push."
+
+**What was closed, and under what:** F-076 is closed under OD-2026-10-01-008 section 3. A disclosure of harm a child types into SHADOW chat counts as an athlete-scoped high-risk SHADOW message, and reaches the athlete's coach of record, any covering coach and the admins, in-app only. The card's options were not picked; option A's "office only" is not what was applied.
+
+**Not ruled here:** nothing new.
+
+**Status:** REPORTED. Lane L18 builds it (Overwatch's message to the records lane, 2026-10-15). Not built at the time of writing.
+
+---
+
 ## OD-2026-10-15-001 -- Overwatch's application of an existing ruling, NOT a new ruling of Jason's: F-081, a person's SHADOW learning-loop notes are de-identified at the purge (OD-2026-10-06-012)
 
 **Provenance: DERIVED, not his words.** Overwatch applied a ruling already recorded here; he did not answer a question on F-081. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; the register edit and log line at line 4486, 2026-10-15T05:07:32.301Z). Read by script (records pass, 2026-10-15). The id carries 2026-10-15 because this UTC time is the early hours of 2026-10-15 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-013.
