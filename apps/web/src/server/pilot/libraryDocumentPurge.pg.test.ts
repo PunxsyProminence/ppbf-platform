@@ -187,8 +187,11 @@ const KEPT = ['doc-b', 'doc-gym', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-m
 // About A, but cited by a bundle that outlives A (the held-chat case): kept.
 // And about A, its chunk cited under the id of the document it was moved
 // from: kept too.
+// And about A, cited under its own id through a chunk since moved out of it
+// to the gym's own document: kept as well.
 const HELD = 'doc-a-held';
 const HELD_BY_MOVED_CHUNK = 'doc-a-moved-chunk';
+const HELD_BY_CHUNK_MOVED_OUT = 'doc-a-chunk-moved-out';
 
 beforeAll(async () => {
   PG_PORT = await freePort();
@@ -279,6 +282,7 @@ beforeAll(async () => {
   await cite(HELD, '55555555-5555-4555-8555-555555555555', null);
 
   await insertDocument(ORG, HELD_BY_MOVED_CHUNK, SOURCE, ATHLETE_A);
+  await insertDocument(ORG, HELD_BY_CHUNK_MOVED_OUT, SOURCE, ATHLETE_A);
 
   await insertDocument(ORG, 'doc-b', SOURCE, ATHLETE_B);
   await insertDocument(ORG, 'doc-gym', SOURCE, null);
@@ -286,6 +290,8 @@ beforeAll(async () => {
   await insertDocument(OTHER_ORG, 'doc-other-gym-a', OTHER_SOURCE, ATHLETE_A);
   await insertDocument(ORG, 'doc-near-miss', SOURCE, `${ATHLETE_A}-2`);
   await cite(HELD_BY_MOVED_CHUNK, '66666666-6666-4666-8666-666666666666', null, { citedDocumentId: 'doc-gym' });
+  await insertChunk('doc-gym', 'moved-out', null, 1);
+  await cite(HELD_BY_CHUNK_MOVED_OUT, '88888888-8888-4888-8888-888888888888', null, { chunkId: 'moved-out' });
 
   // The gym's own documents holding an imported chunk about A: the stray
   // chunk goes and the document stays; a cited stray chunk is held.
@@ -339,10 +345,12 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(dry.blocked_by ?? {}).toEqual({});
     expect(dry.would_delete_subject_library_documents).toBe(4);
     expect(dry.would_delete_subject_library_chunks).toBe(6);
-    expect(dry.subject_library_documents_held).toBe(2);
+    expect(dry.subject_library_documents_held).toBe(3);
     expect(dry.subject_library_chunks_held).toBe(1);
     expect(dry.subject_library_documents_with_file_path).toBe(1);
-    for (const documentId of [...ABOUT_A, HELD, HELD_BY_MOVED_CHUNK, ...KEPT]) expect(await documentCount(documentId)).toBe(1);
+    for (const documentId of [...ABOUT_A, HELD, HELD_BY_MOVED_CHUNK, HELD_BY_CHUNK_MOVED_OUT, ...KEPT]) {
+      expect(await documentCount(documentId)).toBe(1);
+    }
     expect(await chunkCount('doc-gym-stray')).toBe(2);
   });
 
@@ -353,7 +361,7 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(event.athletes).toBe(1);
     expect(event.subject_library_documents_deleted).toBe(4);
     expect(event.subject_library_chunks_deleted).toBe(6);
-    expect(event.subject_library_documents_held).toBe(2);
+    expect(event.subject_library_documents_held).toBe(3);
     expect(event.subject_library_chunks_held).toBe(1);
     expect(event.subject_library_documents_with_file_path).toBe(1);
     for (const documentId of ABOUT_A) {
@@ -363,15 +371,15 @@ describe('the retention purge and the Library documents filed against a purged a
   });
 
   test('a document a surviving answer still cites is held, with its chunk and citation, by document or by a moved chunk', async () => {
-    for (const documentId of [HELD, HELD_BY_MOVED_CHUNK]) {
+    for (const documentId of [HELD, HELD_BY_MOVED_CHUNK, HELD_BY_CHUNK_MOVED_OUT]) {
       expect(await documentCount(documentId)).toBe(1);
       expect(await chunkCount(documentId)).toBe(1);
     }
     const citations = await db.query(
       'select count(*)::int as n from pilot.shadow_evidence_items where chunk_id = any($1::text[])',
-      [[`${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`]],
+      [[`${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`, 'moved-out']],
     );
-    expect(citations.rows[0].n).toBe(2);
+    expect(citations.rows[0].n).toBe(3);
   });
 
   test("a stray chunk about the athlete under the gym's own document goes, the document stays; a cited one is held", async () => {
@@ -384,9 +392,10 @@ describe('the retention purge and the Library documents filed against a purged a
 
   test("another child's, the gym's own, a child inside retention's, another gym's and a near-miss id's documents all stay", async () => {
     for (const documentId of KEPT) expect(await documentCount(documentId)).toBe(1);
-    for (const documentId of ['doc-b', 'doc-gym', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-miss']) {
+    for (const documentId of ['doc-b', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-miss']) {
       expect(await chunkCount(documentId)).toBe(1);
     }
+    expect(await chunkCount('doc-gym')).toBe(2);
   });
 
   test("a submission that attached the athlete's document stays, its document pointer cleared", async () => {
@@ -405,7 +414,7 @@ describe('the retention purge and the Library documents filed against a purged a
       athletes_deleted: 1,
       subject_library_documents_deleted: 4,
       subject_library_chunks_deleted: 6,
-      subject_library_documents_held: 2,
+      subject_library_documents_held: 3,
       subject_library_chunks_held: 1,
       subject_library_documents_with_file_path: 1,
     });
