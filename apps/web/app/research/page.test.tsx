@@ -125,8 +125,9 @@ test('the ladder badge renders from the batch answer-state read', async () => {
 });
 
 test('a viewer refused by the sources probe gets no Answer-a-Gap panel', async () => {
-  // A volunteer: the sources list refuses them, so the probe fails.
-  global.fetch = mockFetch({ curator: false, role: 'volunteer' });
+  // The probe failing (a refused or broken read) hides the panel; the rest of
+  // the inbox, including a coach's Mark Resolved, stays.
+  global.fetch = mockFetch({ curator: false });
 
   await act(async () => {
     render(<ResearchIntakePage />);
