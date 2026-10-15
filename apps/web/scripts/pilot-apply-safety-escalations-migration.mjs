@@ -67,6 +67,7 @@ const READINESS_QUERY = `
         and pg_get_constraintdef(oid) like '%''incident''%'
         and pg_get_constraintdef(oid) like '%''video_scan''%'
         and pg_get_constraintdef(oid) like '%''compliance_violation''%'
+        and pg_get_constraintdef(oid) like '%''shadow_disclosure''%'
     ) as source_type_vocabulary_ready,
     exists (
       select 1 from pg_constraint

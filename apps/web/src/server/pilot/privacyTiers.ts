@@ -370,7 +370,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['escalationLadder.ts#listEscalations'],
     note:
       'athlete_voice rows are stricter than the tier says: excluded from every coach-scoped read, '
-      + 'because their existence alone says a child said something and the coach may be who it is about.',
+      + 'because their existence alone says a child said something and the coach may be who it is about. '
+      + 'shadow_disclosure rows reach the coach of record and covering coach by ruling (OD-2026-10-01-008 s3); '
+      + 'a SHADOW message naming gym staff is filed as athlete_voice instead.',
   },
   'scheduler_attendance.checked_in_by_account_id': {
     tier: 'organization',
