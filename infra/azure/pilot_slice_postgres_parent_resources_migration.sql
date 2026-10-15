@@ -27,8 +27,10 @@
 -- if it was ever published (a draft can be archived without being published).
 -- Who reads what is PH-11's (published only, by the child's program).
 --
--- WHO PUBLISHES: coaches and organization admins (PH-10 Q1 default A). A
--- resource is born with its author named (the column is nullable only for
+-- WHO PUBLISHES: coaches and organization admins (PH-10 Q1 default A), of
+-- THIS gym: the author, and every editor, must hold the role they are written
+-- with in the resource's gym (an organization membership, or the account's
+-- home gym). A resource is born with its author named (the column is nullable only for
 -- the account-removal set null); the writer is kept and never changes by hand; a change by hand must carry an
 -- editor (the application sets it to whoever makes that change). When the
 -- writer's account is removed the resource stays with no writer (set null).
@@ -84,16 +86,19 @@ create table if not exists pilot.parent_resources (
     check (resource_type in ('guide', 'checklist', 'video', 'policy')),
   -- An app path ('/x', never '//host'), or an https address with a host.
   -- No whitespace and no backslash anywhere: browsers read '\' as '/' in a
-  -- link, so '/\evil.example' would leave the app. The host runs to the first
-  -- '/' and holds no '@', '?' or '#': 'https://usaboxing.org@evil.example'
-  -- goes to evil.example and is refused.
+  -- link, so '/\evil.example' would leave the app. The host is a domain name
+  -- (labels of letters, digits and inner hyphens, ending in a letters-only
+  -- top-level label), with an optional port, then '/' or the end: no '@'
+  -- ('https://usaboxing.org@evil.example' goes to evil.example), no empty or
+  -- made-up host ('https://:'), no '?' or '#' before the path.
   constraint pilot_parent_resources_destination_check
     check (
       char_length(destination) <= 2000
       and destination !~ '[\s\\]'
       and (
         (destination_kind = 'internal' and destination ~ '^/[^/]')
-        or (destination_kind = 'external' and destination ~ '^https://[^/@?#]+(/|$)')
+        or (destination_kind = 'external'
+            and destination ~ '^https://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(:[0-9]{1,5})?(/|$)')
       )
     ),
   constraint pilot_parent_resources_state_check
@@ -132,6 +137,25 @@ begin
       raise exception 'PARENT_RESOURCE_NAMES_ITS_AUTHOR'
         using errcode = '23514', constraint = 'pilot_parent_resources_author_named';
     end if;
+    -- The author holds that role in this gym. A role outside the allowed list
+    -- is left to the role check, which names itself.
+    if new.created_by_role in ('coach', 'organization_admin', 'admin') and not exists (
+      select 1 from pilot.organization_memberships om
+       where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
+         and om.active_flag and om.role = new.created_by_role
+      union all
+      select 1 from pilot.accounts a
+       where a.account_id = new.created_by_account_id and a.organization_id = new.organization_id
+         and a.role = new.created_by_role
+    ) then
+      raise exception 'PARENT_RESOURCE_WRITER_OF_THIS_GYM'
+        using errcode = '23514', constraint = 'pilot_parent_resources_writer_of_this_gym';
+    end if;
+    -- First published means published: a time arrives only with that state.
+    if new.published_at is not null and new.state in ('draft', 'archived') then
+      raise exception 'PARENT_RESOURCE_PUBLISHED_ONLY_BY_PUBLISHING'
+        using errcode = '23514', constraint = 'pilot_parent_resources_published_on_publish';
+    end if;
     return new;
   end if;
 
@@ -154,7 +178,12 @@ begin
       using errcode = '23514', constraint = 'pilot_parent_resources_fixed_writer';
   end if;
 
-  -- First published is kept: archiving or re-publishing does not move it.
+  -- First published is set only by publishing, and is kept after that:
+  -- archiving or re-publishing does not move it.
+  if old.published_at is null and new.published_at is not null and new.state in ('draft', 'archived') then
+    raise exception 'PARENT_RESOURCE_PUBLISHED_ONLY_BY_PUBLISHING'
+      using errcode = '23514', constraint = 'pilot_parent_resources_published_on_publish';
+  end if;
   if old.published_at is not null and new.published_at is distinct from old.published_at then
     raise exception 'PARENT_RESOURCE_FIRST_PUBLISHED_IS_KEPT'
       using errcode = '23514', constraint = 'pilot_parent_resources_published_kept';
@@ -163,6 +192,18 @@ begin
   if new.updated_by_account_id is null or new.updated_by_role is null then
     raise exception 'PARENT_RESOURCE_CHANGE_NAMES_ITS_EDITOR'
       using errcode = '23514', constraint = 'pilot_parent_resources_editor_named';
+  end if;
+  if new.updated_by_role in ('coach', 'organization_admin', 'admin') and not exists (
+    select 1 from pilot.organization_memberships om
+     where om.account_id = new.updated_by_account_id and om.organization_id = new.organization_id
+       and om.active_flag and om.role = new.updated_by_role
+    union all
+    select 1 from pilot.accounts a
+     where a.account_id = new.updated_by_account_id and a.organization_id = new.organization_id
+       and a.role = new.updated_by_role
+  ) then
+    raise exception 'PARENT_RESOURCE_WRITER_OF_THIS_GYM'
+      using errcode = '23514', constraint = 'pilot_parent_resources_writer_of_this_gym';
   end if;
 
   new.updated_at := now();

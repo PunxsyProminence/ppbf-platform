@@ -71,7 +71,7 @@ const READINESS_QUERY = `
              and d.def like '%''guide''%' and d.def like '%''checklist''%' and d.def like '%''video''%' and d.def like '%''policy''%')
            or (c.conname = 'pilot_parent_resources_destination_check'
              and d.def like '%''internal''%' and d.def like '%''external''%' and d.def like '%https://%' and d.def like '%2000%'
-             and d.def like '%!~%' and d.def like '%^/[^/]%' and d.def like '%@%')
+             and d.def like '%!~%' and d.def like '%^/[^/]%' and d.def like '%[A-Za-z]{2,63}%')
            or (c.conname = 'pilot_parent_resources_state_check'
              and d.def like '%''draft''%' and d.def like '%''published''%' and d.def like '%''archived''%')
            or (c.conname = 'pilot_parent_resources_published_check'
