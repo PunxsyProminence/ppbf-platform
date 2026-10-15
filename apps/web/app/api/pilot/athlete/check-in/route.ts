@@ -109,11 +109,14 @@ export async function POST(request: NextRequest) {
           checked_in_on: result.row.checked_in_on,
           body_mass_sent: typeof body.body_mass === 'number',
         },
-        // shadow_mirror: false -- the mirrored shadow_events row would carry
-        // body_mass_sent, a weigh-in signal about a child, to every reader of
-        // /api/pilot/shadow/events tied to this athlete. A child's weight
-        // record is health data whose family-feed exposure is not decided
-        // (athleteBodyMass.ts, athleteMinorLimits.ts hold the same line).
+        // shadow_mirror: false -- no mirrored shadow_events row is written. It
+        // would carry body_mass_sent, a weigh-in signal about a child, to the
+        // readers of /api/pilot/shadow/events tied to this athlete. Today the
+        // family allow-list (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES,
+        // auditReadAllowlist.ts) is empty, so the athlete and guardians read no
+        // SHADOW_AUDIT_* row there anyway; a child's weight record is health
+        // data whose family-feed exposure is not decided, so it stays off the
+        // feed (athleteBodyMass.ts, athleteMinorLimits.ts hold the same line).
         shadow_mirror: false,
       });
     }

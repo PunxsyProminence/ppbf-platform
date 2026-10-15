@@ -63,6 +63,7 @@ const OTHER_NOTE_ID = '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
 const MINE = {
   note_id: NOTE_ID,
   session_id: 'sess-1',
+  run_id: null,
   athlete_id: 'ath-1',
   author_role: 'coach',
   author_name: 'Coach Jason',
@@ -83,6 +84,7 @@ const THEIRS = {
 const STORED = {
   note_id: NOTE_ID,
   session_id: 'sess-1',
+  run_id: null,
   athlete_id: 'ath-1',
   author_account_id: 'acct-coach',
   author_role: 'coach',
@@ -183,6 +185,7 @@ describe('GET', () => {
         {
           note_id: OTHER_NOTE_ID,
           session_id: 'sess-1',
+          run_id: null,
           athlete_id: 'ath-1',
           note: 'Parent asked about Saturday.',
           author_name: 'Coach Gym Admin',
@@ -194,6 +197,7 @@ describe('GET', () => {
         {
           note_id: NOTE_ID,
           session_id: 'sess-1',
+          run_id: null,
           athlete_id: 'ath-1',
           note: 'Before: tight shoulders, keep it light.',
           author_name: 'Coach Jason',

@@ -5,21 +5,24 @@
  * travel only with a playback the consent check has already allowed.
  */
 
-import { getCoachDisplayName } from './achievements';
+import { getCoachDisplayName, getStaffDisplayName } from './achievements';
 import { queryOne } from './db';
 import {
   FAMILY_COACH_NAME_FLOOR,
+  FAMILY_GYM_NAME_FLOOR,
   familyCoachName,
+  familyHoldPlacerName,
   isFamilyVideoCaller,
   toFamilyVideoListItem,
   toFamilyVideoPlayback,
 } from './videoFamilyView';
 
 jest.mock('./db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
-jest.mock('./achievements', () => ({ getCoachDisplayName: jest.fn() }));
+jest.mock('./achievements', () => ({ getCoachDisplayName: jest.fn(), getStaffDisplayName: jest.fn() }));
 
 const mockQueryOne = jest.mocked(queryOne);
 const mockCoachName = jest.mocked(getCoachDisplayName);
+const mockStaffName = jest.mocked(getStaffDisplayName);
 
 afterEach(() => {
   jest.resetAllMocks();
@@ -128,5 +131,28 @@ describe("the coach's name for a family", () => {
     mockCoachName.mockResolvedValueOnce('Coach Jane');
     await expect(familyCoachName('org-1', 'coach-acct-1')).resolves.toBe('Coach Jane');
     expect(mockCoachName).toHaveBeenCalledWith('org-1', 'coach-acct-1');
+  });
+});
+
+// Codex on #1592: a hold an organization admin placed must not read "Coach".
+describe('who placed a hold, for a family', () => {
+  test('a coach placer is named as familyCoachName names them', async () => {
+    mockQueryOne.mockResolvedValueOnce({ deleted_at: null });
+    mockCoachName.mockResolvedValueOnce('Coach Jane');
+    await expect(familyHoldPlacerName('org-1', 'coach-acct-1', 'coach')).resolves.toBe('Coach Jane');
+    expect(mockStaffName).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin'])('an %s placer is named without the Coach title', async (role) => {
+    mockStaffName.mockResolvedValueOnce('Pat Reyes');
+    await expect(familyHoldPlacerName('org-1', 'admin-acct-1', role)).resolves.toBe('Pat Reyes');
+    expect(mockStaffName).toHaveBeenCalledWith('org-1', 'admin-acct-1');
+    expect(mockCoachName).not.toHaveBeenCalled();
+  });
+
+  test('a non-coach placer who cannot be named is the gym floor, never "Your coach"', async () => {
+    mockStaffName.mockResolvedValueOnce(null);
+    await expect(familyHoldPlacerName('org-1', 'admin-acct-1', 'organization_admin')).resolves.toBe(FAMILY_GYM_NAME_FLOOR);
+    expect(FAMILY_GYM_NAME_FLOOR).toBe('The gym');
   });
 });

@@ -65,6 +65,13 @@ const FAMILY_ITEM = {
   updated_at: '2026-08-02T00:00:00.000Z',
 };
 
+/* What a PARENT receives: the same, without emergency_contact (#1558 item
+   three; Jason 2026-10-13, Q-C, OD-2026-10-13-006: "A: Relationship only
+   (Recommended)"). That field is free text holding a contact's name and
+   phone, usually the other parent's, and has no relationship to show. */
+const PARENT_ITEM = Object.fromEntries(Object.entries(FAMILY_ITEM).filter(([key]) => key !== 'emergency_contact'));
+const FAMILY_ITEM_FOR = { athlete: FAMILY_ITEM, parent: PARENT_ITEM } as const;
+
 /**
  * queryOne answers by statement: the athlete branch's live-row check gets the
  * athlete; the real getCoachDisplayName's account lookup gets the coach's
@@ -206,8 +213,12 @@ describe('which read a role gets', () => {
     mockQuery.mockResolvedValue([ROW]);
 
     const response = await GET(makeRequest());
+    const text = await response.text();
 
-    expect(await response.json()).toEqual({ items: [FAMILY_ITEM] });
+    expect(JSON.parse(text)).toEqual({ items: [PARENT_ITEM] });
+    // The contact's name and number, under any key.
+    expect(text).not.toContain('Rosa Vance');
+    expect(text).not.toContain('814-555-0110');
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('pilot.guardian_links'), ['org-1', 'parent-1']);
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
   });
@@ -233,7 +244,7 @@ describe('what a family receives', () => {
   test.each([
     ['athlete', principal({ role: 'athlete', athleteId: 'ATH-1' })],
     ['parent', principal({ role: 'parent', accountId: 'parent-1' })],
-  ])('%s: no staff account id anywhere in the body, coach_name in its place', async (_role, who) => {
+  ])('%s: no staff account id anywhere in the body, coach_name in its place', async (role, who) => {
     mockRequirePrincipal.mockResolvedValue(who);
     dbWithCoach('alvarez@punxsyprominence.org');
     mockGetAthleteById.mockResolvedValue(ROW);
@@ -248,7 +259,7 @@ describe('what a family receives', () => {
     const body = JSON.parse(text) as { items: Array<Record<string, unknown>> };
     expect(body.items.length).toBeGreaterThan(0);
     for (const item of body.items) {
-      expect(Object.keys(item).sort()).toEqual(Object.keys(FAMILY_ITEM).sort());
+      expect(Object.keys(item).sort()).toEqual(Object.keys(FAMILY_ITEM_FOR[role as 'athlete' | 'parent']).sort());
       expect(item.coach_name).toBe('Coach Alvarez');
     }
     // The name came from the tenancy-scoped reader, asked in this gym.

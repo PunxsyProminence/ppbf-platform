@@ -72,6 +72,7 @@ function filedRow(overrides: Partial<Requirement> = {}): Requirement {
 interface ServerOptions {
   role?: string;
   evidenceNotice?: string;
+  researchFiled?: boolean;
   requirements?: Requirement[] | 'fail';
   /** Served instead of `requirements` from the second list read on. */
   laterRequirements?: Requirement[];
@@ -106,6 +107,7 @@ function mockServer(options: ServerOptions = {}) {
           response: 'Rest guidance varies; nothing in the Library covers this.',
           evidenceTier: 'RESEARCH_NEEDED',
           evidenceNotice: options.evidenceNotice ?? 'NO_VERIFIED_EVIDENCE',
+          researchFiled: options.researchFiled,
           messageId,
         }),
       };
@@ -340,4 +342,21 @@ test('outside an athlete conversation the question is filed with no subject', as
 
   expect(posts[0]).not.toHaveProperty('subject_id');
   expect(posts[0]).toMatchObject({ source_entity_id: KEY });
+});
+
+test.each(['athlete', 'parent'])('a %s is told the question was passed to the coaches, once the server filed it', async (role) => {
+  mockRole = role;
+  mockServer({ role, researchFiled: true });
+  await askUnansweredQuestion();
+
+  expect(await screen.findByText('Passed to the gym administrator.')).toBeTruthy();
+  expect(screen.queryByTestId('research-filing')).toBeNull();
+});
+
+test('an athlete is never told it was passed on when the server did not file it', async () => {
+  mockRole = 'athlete';
+  mockServer({ role: 'athlete', researchFiled: false });
+  await askUnansweredQuestion();
+
+  expect(screen.queryByText('Passed to the gym administrator.')).toBeNull();
 });

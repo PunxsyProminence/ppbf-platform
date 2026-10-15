@@ -552,4 +552,41 @@ export async function listSettledRunsForScript(
   );
 }
 
+// The same columns qualified to the run alias, for the read below that joins the script.
+const RUN_COLUMNS_QUALIFIED = RUN_COLUMNS.split(',').map((column) => `r.${column.trim()}`).join(', ');
+
+/** A settled run with the name of the plan it was delivered from (null for a plain session). */
+export interface SettledSessionRun extends SessionScriptRunRow {
+  script_name: string | null;
+}
+
+// The gym's finished sessions, newest first: plain and scripted alike (audit finding F-067).
+//
+// listSettledRunsForScript above is reached from an open plan, so a PLAIN session -- which has no
+// plan -- could never be read back once it ended, and its end notes with it. This read is by
+// organization instead. It carries the coach's own end notes (deviation_note, what_worked,
+// what_did_not), which are staff text: the routes that call it admit coach and organization admin
+// only. WHO WAS PRESENT is not here; that is sessionRunAthletes.ts, which filters by the athletes
+// the reader may reach.
+//
+// Live runs are left out for the reason given above: a session still on the floor is not yet a
+// record. Legacy rows with no run_state are left out too; they predate live delivery and are
+// reached through their plan.
+export async function listSettledRunsForOrganization(
+  organizationId: string,
+  limit = 50,
+): Promise<SettledSessionRun[]> {
+  return query<SettledSessionRun>(
+    `select ${RUN_COLUMNS_QUALIFIED}, s.name as script_name
+       from pilot.session_script_runs r
+       left join pilot.session_scripts s
+         on s.organization_id = r.organization_id and s.script_id = r.script_id
+      where r.organization_id = $1
+        and r.run_state in ('completed', 'abandoned')
+      order by r.ended_at desc nulls last, r.created_at desc, r.run_id
+      limit $2`,
+    [organizationId, limit],
+  );
+}
+
 export const __testables = { computeElapsedSeconds };

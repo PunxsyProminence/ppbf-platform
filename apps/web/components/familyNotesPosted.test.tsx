@@ -44,9 +44,18 @@ afterEach(() => {
 
 // The panel reads the notes and, alongside them, the family's replies (FC-03).
 // Each answers its own URL.
-function byUrl(notes: () => Response, replies: () => Response = () => jsonResponse({ items: [] })): jest.Mock {
-  return jest.fn(async (input: RequestInfo | URL) =>
-    (String(input).includes('/family-message-replies') ? replies() : notes()));
+function byUrl(
+  notes: () => Response,
+  replies: () => Response = () => jsonResponse({ items: [] }),
+  opened: () => Response = () => jsonResponse({ items: [] }),
+): jest.Mock {
+  return jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/family-message-replies')) return replies();
+    // Whether the family opened each note (FC-05).
+    if (url.includes('/family-message-reads')) return opened();
+    return notes();
+  });
 }
 
 test('each note reads with its author, gym time, due date and the family state, in the order the server gives', async () => {
@@ -251,5 +260,78 @@ describe('family replies under each note (FC-03)', () => {
     expect(screen.getByRole('alert').textContent).toContain('replies could not be loaded');
     expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Family replies' })).toBeNull();
+  });
+});
+
+/*
+ * OPENED BY THE FAMILY (FC-05): under each note, "Opened by the family" and
+ * when, or "Not opened by the family yet" -- never which guardian; a failed
+ * read says so once and the notes stay.
+ */
+describe('opened by the family (FC-05)', () => {
+  test('each note says whether the family opened it, and when, in gym time', async () => {
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [DONE, OPEN] }),
+      () => jsonResponse({ items: [] }),
+      // 23:10 UTC on Oct 13 is 7:10 PM in the gym.
+      () => jsonResponse({ items: [{ note_id: 'n2', first_read_at: '2026-10-13T23:10:00.000Z' }] }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]!.textContent).toMatch(/Opened by the family · .*7:10/);
+    expect(items[1]!.textContent).toContain('No open recorded on the Messages tab yet');
+    expect(screen.getByText(/An open is recorded when a message is shown on the family's Messages tab/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/pilot/coach/family-message-reads?athlete_id=ath-1'),
+      expect.anything(),
+    );
+  });
+
+  test('a failed read says so once, claims nothing about any note, and the notes stay', async () => {
+    global.fetch = byUrl(
+      () => jsonResponse({ items: [DONE, OPEN] }),
+      () => jsonResponse({ items: [] }),
+      () => jsonResponse({ error: 'boom' }, false),
+    ) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Whether the family opened these could not be loaded');
+    expect(screen.queryByText('No open recorded on the Messages tab yet')).toBeNull();
+    expect(screen.queryByText(/Opened by the family/)).toBeNull();
+    expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
+  });
+
+  test("an opened answer for the athlete just left never lands under the next athlete's notes", async () => {
+    let finishFirst: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/family-message-reads') && url.includes('athlete_id=ath-1')) {
+        return new Promise<Response>((resolve) => { finishFirst = resolve; });
+      }
+      if (url.includes('/family-message-reads') || url.includes('/family-message-replies')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      return Promise.resolve(jsonResponse({ items: [OPEN] }));
+    }) as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+    });
+    await act(async () => {
+      finishFirst?.(jsonResponse({ items: [{ note_id: 'n1', first_read_at: '2026-10-13T23:10:00.000Z' }] }));
+    });
+
+    expect(screen.queryByText(/Opened by the family/)).toBeNull();
+    expect(screen.getByText('No open recorded on the Messages tab yet')).toBeInTheDocument();
   });
 });

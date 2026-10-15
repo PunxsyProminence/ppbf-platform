@@ -1,4 +1,4 @@
-import { getCoachDisplayName } from './achievements';
+import { getCoachDisplayName, getStaffDisplayName } from './achievements';
 import type { PilotRole } from './contracts';
 import { queryOne } from './db';
 
@@ -112,6 +112,27 @@ export async function familyCoachName(organizationId: string, accountId: string)
   );
   if (!account || account.deleted_at !== null) return FAMILY_COACH_NAME_FLOOR;
   return getCoachDisplayName(organizationId, accountId);
+}
+
+// What a family reads when a non-coach placer (an organization admin or admin)
+// cannot be named. PROPOSED wording, not an owner ruling.
+export const FAMILY_GYM_NAME_FLOOR = 'The gym';
+
+/**
+ * Who placed a training hold, for a family. A coach reads as familyCoachName
+ * does. Anyone else the schema allows (organization_admin, admin) reads by
+ * name without the "Coach" title, or the gym floor: a hold is a safety
+ * decision, and calling an admin "Coach" sends the family to the wrong person.
+ * Never the account id. getStaffDisplayName refuses a deleted account or one
+ * with no claim on this organization, as getCoachDisplayName does.
+ */
+export async function familyHoldPlacerName(
+  organizationId: string,
+  accountId: string,
+  placedByRole: string,
+): Promise<string> {
+  if (placedByRole === 'coach') return familyCoachName(organizationId, accountId);
+  return (await getStaffDisplayName(organizationId, accountId)) ?? FAMILY_GYM_NAME_FLOOR;
 }
 
 /**

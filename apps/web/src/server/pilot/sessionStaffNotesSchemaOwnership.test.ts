@@ -23,10 +23,11 @@ describe('session staff notes schema ownership', () => {
     expect(body).not.toMatch(/delete\s+from/i);
 
     const statements = body.match(/`[^`]*pilot\.session_staff_notes[^`]*`/g) ?? [];
-    expect(statements.length).toBe(5);
+    // Five for a note on a session, and two for a note on a run (F-067): its list and its insert.
+    expect(statements.length).toBe(7);
     for (const statement of statements) {
       expect(statement).toMatch(
-        /where organization_id = \$1 and (session_id|note_id) = \$2|insert into pilot\.session_staff_notes\s*\(\s*organization_id/,
+        /where organization_id = \$1 and (session_id|run_id|note_id) = \$2|insert into pilot\.session_staff_notes\s*\(\s*organization_id/,
       );
     }
     // Author-only edit and removal live in the UPDATE's own WHERE.

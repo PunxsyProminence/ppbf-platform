@@ -70,7 +70,13 @@ import { bodyMassCorrectionAuditEvent } from './athleteBodyMass';
 import { writePilotAuditEvent } from './audit';
 import { FAMILY_ALLOWED_AUDIT_ENTITY_TYPES } from './auditReadAllowlist';
 import { emitShadowEvent } from './shadowEvents';
-import { getShadowKnowledgeProjection, getShadowObservationProjection, listShadowEvents, listShadowTelemetry } from './shadowReadModels';
+import {
+  getShadowKnowledgeProjection,
+  getShadowObservationProjection,
+  getShadowReviewProjection,
+  listShadowEvents,
+  listShadowTelemetry,
+} from './shadowReadModels';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 jest.setTimeout(180_000);
@@ -1068,5 +1074,100 @@ describe('ITEM TWO: a guessed id cannot be confirmed through the feed\'s filters
     for (const reader of [asGuardianOne, asAthlete]) {
       expect(await listShadowEvents(reader, { eventName: 'SHADOW_INTAKE_DOMAIN_UPSERTED', limit: 200 })).toEqual([]);
     }
+  });
+});
+
+/*
+ * #1558 ITEM THREE, T6: THE REVIEW PROJECTION. getShadowReviewProjection reads
+ * pilot.shadow_events directly for the latest event of each intake case, and
+ * shadow/review-projection and intake/review-queue admit a parent. It now reads
+ * the same rows a family reader is allowed through listShadowEvents: no audit
+ * mirror (the family list is empty, Jason Q-1 "A"), none of the hidden intake
+ * lines (Q-2 "B"), and a row a guardian wrote only for that guardian
+ * (OD-2026-10-12-024). A fourth organization, so nothing above changes.
+ */
+const ORG_R = 'org-sesc-review';
+const ADMIN_R = 'acct-admin-r-sesc';
+const ATHLETE_R = 'ATH-SESC-R';
+const GUARDIAN_R1 = 'guardian.one.r.sesc@example.test';
+const GUARDIAN_R2 = 'guardian.two.r.sesc@example.test';
+const CASE_R = '33333333-2222-4111-8000-000000000001';
+
+describe('ITEM THREE: the review projection holds a family reader to the same rules', () => {
+  beforeAll(async () => {
+    const client = activeClient!;
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [ORG_R],
+    );
+    for (const [accountId, role] of [[ADMIN_R, 'organization_admin'], [GUARDIAN_R1, 'parent'], [GUARDIAN_R2, 'parent']] as const) {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
+        [accountId, role, ORG_R],
+      );
+    }
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+         gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Reviewed Athlete', '2012-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [ORG_R, ATHLETE_R, ADMIN_R],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, 'par-r1', $2, 'Guardian One'), ($1, 'par-r2', $3, 'Guardian Two')`,
+      [ORG_R, GUARDIAN_R1, GUARDIAN_R2],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'par-r1', $2, 'mother'), ($1, 'par-r2', $2, 'father')`,
+      [ORG_R, ATHLETE_R],
+    );
+    await client.query(
+      `insert into pilot.intake_cases
+         (organization_id, intake_case_id, status, primary_athlete_id, summary, submitted_by_account_id)
+       values ($1, $2, 'pending_review', $3, 'Registration', $4)`,
+      [ORG_R, CASE_R, ATHLETE_R, ADMIN_R],
+    );
+
+    // Four rows keyed to the case, oldest first. Only the first is one a
+    // family reader may read.
+    const rows: Array<[string, string, string, string, string, Record<string, unknown>]> = [
+      // staff, not a mirror: what every family reader of the case reads
+      ['SHADOW_INTAKE_CASE_APPROVED', 'intake_case', CASE_R, ADMIN_R, 'organization_admin', { athlete_id: ATHLETE_R }],
+      // a line a family reader is not sent at all (Q-2 B)
+      ['SHADOW_INTAKE_DOMAIN_UPSERTED', 'intake_waiver', 'waiver-r-1', ADMIN_R, 'organization_admin', { athlete_id: ATHLETE_R, intake_case_id: CASE_R }],
+      // an audit mirror (the family list is empty)
+      ['SHADOW_AUDIT_UPDATE_INTAKE_CASE', 'intake_case', CASE_R, ADMIN_R, 'organization_admin', { event_type: 'update', details: { athlete_id: ATHLETE_R } }],
+      // the newest: a row Guardian Two wrote
+      ['SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED', 'shadow_intake', 'intake-r-1', GUARDIAN_R2, 'parent', { athlete_id: ATHLETE_R, intake_case_id: CASE_R }],
+    ];
+    for (const [index, [eventName, entityType, entityId, actor, role, payload]] of rows.entries()) {
+      await client.query(
+        `insert into pilot.shadow_events
+           (organization_id, event_name, entity_type, entity_id, actor_account_id, actor_role, payload, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, now() - make_interval(mins => $8::int))`,
+        [ORG_R, eventName, entityType, entityId, actor, role, JSON.stringify(payload), 40 - index * 10],
+      );
+    }
+  });
+
+  const latestFor = async (actorAccountId: string, actorRole: PilotRole) => {
+    const { items } = await getShadowReviewProjection(
+      { organizationId: ORG_R, actorAccountId, actorRole, athleteId: null },
+      { limit: 50 },
+    );
+    return items.filter((item) => item.intake_case_id === CASE_R).map((item) => item.shadow_event_name);
+  };
+
+  test('control: the organization admin sees the newest row of the case, as before', async () => {
+    expect(await latestFor(ADMIN_R, 'organization_admin')).toEqual(['SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED']);
+  });
+
+  test('Guardian One sees the case by the newest row they may read: not the other guardian\'s, not a mirror, not a hidden line', async () => {
+    expect(await latestFor(GUARDIAN_R1, 'parent')).toEqual(['SHADOW_INTAKE_CASE_APPROVED']);
+  });
+
+  test('Guardian Two, who wrote the newest row, sees it', async () => {
+    expect(await latestFor(GUARDIAN_R2, 'parent')).toEqual(['SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED']);
   });
 });

@@ -511,11 +511,15 @@ export async function correctBodyMass(
  *
  * shadow_mirror: false -- writePilotAuditEvent otherwise mirrors the row into
  * pilot.shadow_events, and listShadowEvents ties that mirror to the athlete
- * through details.athlete_id, so the athlete and their guardians would read
- * "body mass corrected, <time>" in /api/pilot/shadow/events. A child's weight
- * record is health data (OD-2026-10-04-029: the athlete or their coach), and
- * whether the family feed carries it is not decided; athleteMinorLimits.ts
- * holds the same line for a child's limits. The audit table keeps the record.
+ * through details.athlete_id. Today the family allow-list
+ * (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES, auditReadAllowlist.ts) is empty, so the
+ * athlete and their guardians read no SHADOW_AUDIT_* row in
+ * /api/pilot/shadow/events anyway; this keeps "body mass corrected, <time>"
+ * off the feed for every reader, and would if that list were ever filled. A child's
+ * weight record is health data (OD-2026-10-04-029: the athlete or their
+ * coach), and whether the family feed carries it is not decided;
+ * athleteMinorLimits.ts holds the same line for a child's limits. The audit
+ * table keeps the record.
  */
 export function bodyMassCorrectionAuditEvent(input: {
   actor: Pick<ActorIdentity, 'accountId' | 'role'>;

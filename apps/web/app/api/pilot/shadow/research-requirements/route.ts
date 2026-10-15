@@ -28,6 +28,7 @@ import {
   subjectAthleteIdOf,
   SUBJECT_NAMING_METADATA_KEYS,
   type ShadowResearchRequirementRow,
+  omitDeletedAskerRows,
 } from '@/src/server/pilot/shadowResearch';
 
 // Requirement kinds only the server writes: the capability-coverage check's gap
@@ -35,7 +36,7 @@ import {
 // first, so a caller who could file one could send their own text out of the
 // platform under it (CL-C5).
 const SERVER_WRITTEN_EVENT_NAMES = new Set([CAPABILITY_GAP_SOURCE_EVENT_NAME, 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED']);
-const SERVER_WRITTEN_ENTITY_TYPES = new Set([CAPABILITY_GAP_SOURCE_ENTITY_TYPE, 'shadow_library_claim']);
+const SERVER_WRITTEN_ENTITY_TYPES = new Set([CAPABILITY_GAP_SOURCE_ENTITY_TYPE, 'shadow_library_claim', 'shadow_asker_question']);
 import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
@@ -96,6 +97,10 @@ const COVERAGE_CHECK_METADATA_KEYS = [
 /** The closing record (A-Q13) is written from closing_note and
  *  closing_submission_id, never from caller metadata. */
 const CLOSING_METADATA_KEYS = ['closing_note', 'closing_submission_id'] as const;
+/** The tie an asker's unanswered question has to the athlete it is about
+ *  (shadowResearchFiling.ts). Server-written: a resolver who could rewrite it
+ *  would detach the row from that athlete's deletion (F-054 review). */
+const ASKER_TIE_METADATA_KEYS = ['asker_athlete_id'] as const;
 const CLOSING_NOTE_MAX = 2000;
 
 /**
@@ -171,8 +176,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 async function scopeToReachableSubjects(
   actor: ActorIdentity,
-  rows: ShadowResearchRequirementRow[],
+  allRows: ShadowResearchRequirementRow[],
 ): Promise<ShadowResearchRequirementRow[]> {
+  // An asker's question leaves every reader when its asker is marked deleted
+  // (F-054; shadowResearch.ts omitDeletedAskerRows), whoever is reading.
+  const rows = await omitDeletedAskerRows(actor.organizationId, allRows);
   if (isOrganizationAdminRole(actor.role)) {
     // The whole gym -- except a deleted athlete, whose requirements are
     // marked deleted with them (scope B). Every other role already loses
@@ -416,6 +424,14 @@ export async function POST(request: NextRequest) {
       if (reservedKey) {
         return NextResponse.json(
           { ok: false, error: `resolve metadata cannot set ${reservedKey}; the coverage check writes it` },
+          { status: 400 },
+        );
+      }
+
+      const askerTieKey = ASKER_TIE_METADATA_KEYS.find((key) => key in metadata);
+      if (askerTieKey) {
+        return NextResponse.json(
+          { ok: false, error: `resolve metadata cannot set ${askerTieKey}; the filing writes it` },
           { status: 400 },
         );
       }

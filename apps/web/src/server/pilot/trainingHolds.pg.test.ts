@@ -669,3 +669,101 @@ describe('training holds runner readiness assertion', () => {
     }
   });
 });
+
+// F-069: the escalation a hold files is a notice that the hold was placed. When
+// the hold ends it is resolved in the same statement as the lift or the expiry
+// sweep, and ONLY the escalation that hold filed.
+describe('a hold that ends closes the escalation it filed (F-069)', () => {
+  const OTHER_ATHLETE_ID = 'ATH-HOLD-2';
+
+  async function escalationFor(client: Client, sourceType: string, sourceId: string) {
+    const { rows } = await client.query(
+      `select status, resolved_by_account_id, resolved_at, resolution_note
+       from pilot.safety_escalations
+       where organization_id = $1 and source_type = $2 and source_id = $3`,
+      [ORG_ID, sourceType, sourceId],
+    );
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  }
+
+  test('lifting resolves the hold\'s own escalation: lifter, time and note recorded', async () => {
+    const client = await freshDatabase('ppbf_test_holds_esc_lift', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      const placed = await placeTrainingHold(placeInput());
+      expect(await escalationFor(client, 'training_hold', placed.hold_id)).toMatchObject({
+        status: 'open', resolved_by_account_id: null, resolved_at: null,
+      });
+
+      await liftTrainingHold(ORG_ID, placed.hold_id, ADMIN_ID, 'Doctor cleared.');
+
+      const closed = await escalationFor(client, 'training_hold', placed.hold_id);
+      expect(closed).toMatchObject({
+        status: 'resolved',
+        resolved_by_account_id: ADMIN_ID,
+        resolution_note: 'Hold lifted.',
+      });
+      expect(closed.resolved_at).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a hold that lapses has its escalation resolved by the sweep, with no resolver', async () => {
+    const client = await freshDatabase('ppbf_test_holds_esc_expiry', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      const placed = await placeTrainingHold(placeInput());
+      await client.query(
+        `update pilot.training_holds
+         set placed_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+         where organization_id = $1 and hold_id = $2`,
+        [ORG_ID, placed.hold_id],
+      );
+
+      // The reader sweeps the lapsed hold to 'expired' and closes its notice.
+      await expect(getActiveTrainingHold(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
+
+      const closed = await escalationFor(client, 'training_hold', placed.hold_id);
+      expect(closed).toMatchObject({
+        status: 'resolved',
+        resolved_by_account_id: null,
+        resolution_note: 'Hold expired.',
+      });
+      expect(closed.resolved_at).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a lift leaves other escalations alone: another source type, and another hold\'s', async () => {
+    const client = await freshDatabase('ppbf_test_holds_esc_scope', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_ID, OTHER_ATHLETE_ID, COACH_ID],
+      );
+      const lifted = await placeTrainingHold(placeInput());
+      const stillActive = await placeTrainingHold(placeInput({ athleteId: OTHER_ATHLETE_ID }));
+      // Another kind of escalation for the SAME athlete, sharing the hold's id
+      // as its source_id on purpose: only source_type 'training_hold' may match.
+      await client.query(
+        `insert into pilot.safety_escalations
+           (organization_id, escalation_id, source_type, source_id, athlete_id, severity, reason, escalated_to_role, triggered_by)
+         values ($1, 'esc-near-miss', 'near_miss', $2, $3, 'high', 'A near miss.', 'coach', 'system')`,
+        [ORG_ID, lifted.hold_id, ATHLETE_ID],
+      );
+
+      await liftTrainingHold(ORG_ID, lifted.hold_id, ADMIN_ID, 'Cleared.');
+
+      expect((await escalationFor(client, 'training_hold', lifted.hold_id)).status).toBe('resolved');
+      expect((await escalationFor(client, 'training_hold', stillActive.hold_id)).status).toBe('open');
+      expect((await escalationFor(client, 'near_miss', lifted.hold_id)).status).toBe('open');
+    } finally {
+      await client.end();
+    }
+  });
+});
