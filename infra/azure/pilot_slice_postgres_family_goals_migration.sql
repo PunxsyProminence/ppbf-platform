@@ -26,7 +26,9 @@
 -- OD-2026-10-12-024's principle a guardian reads the goals they created and
 -- those staff created for the child, never another guardian's; staff read all
 -- of a child's goals. created_by_account_id and created_by_role are what make
--- that enforceable, so a goal is born with its author named (the column is
+-- that enforceable, so a goal is born with its author named, and the author
+-- and every editor must hold the role they are written with in the goal's
+-- gym (an active organization membership, or the account's home gym) (the column is
 -- nullable only for the account-removal set null) and they never change by
 -- hand. A change by hand must carry
 -- an editor (updated_by_account_id and updated_by_role are not null after it);
@@ -114,6 +116,20 @@ begin
       raise exception 'FAMILY_GOAL_NAMES_ITS_AUTHOR'
         using errcode = '23514', constraint = 'pilot_family_goals_author_named';
     end if;
+    -- The author holds that role in this gym. A role outside the allowed list
+    -- is left to the role check, which names itself.
+    if new.created_by_role in ('parent', 'coach', 'organization_admin', 'admin') and not exists (
+      select 1 from pilot.organization_memberships om
+       where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
+         and om.active_flag and om.role = new.created_by_role
+      union all
+      select 1 from pilot.accounts a
+       where a.account_id = new.created_by_account_id and a.organization_id = new.organization_id
+         and a.role = new.created_by_role
+    ) then
+      raise exception 'FAMILY_GOAL_WRITER_OF_THIS_GYM'
+        using errcode = '23514', constraint = 'pilot_family_goals_writer_of_this_gym';
+    end if;
     return new;
   end if;
 
@@ -151,6 +167,18 @@ begin
   if new.updated_by_account_id is null or new.updated_by_role is null then
     raise exception 'FAMILY_GOAL_CHANGE_NAMES_ITS_EDITOR'
       using errcode = '23514', constraint = 'pilot_family_goals_editor_named';
+  end if;
+  if new.updated_by_role in ('parent', 'coach', 'organization_admin', 'admin') and not exists (
+    select 1 from pilot.organization_memberships om
+     where om.account_id = new.updated_by_account_id and om.organization_id = new.organization_id
+       and om.active_flag and om.role = new.updated_by_role
+    union all
+    select 1 from pilot.accounts a
+     where a.account_id = new.updated_by_account_id and a.organization_id = new.organization_id
+       and a.role = new.updated_by_role
+  ) then
+    raise exception 'FAMILY_GOAL_WRITER_OF_THIS_GYM'
+      using errcode = '23514', constraint = 'pilot_family_goals_writer_of_this_gym';
   end if;
 
   new.updated_at := now();
