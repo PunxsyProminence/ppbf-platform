@@ -633,7 +633,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let askerQuestionsDeleted = 0;
   let subjectRequirementsDeleted = 0;
   let subjectSubmissionsDeleted = 0;
-  const library = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 };
+  const library = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 };
   const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
@@ -865,44 +865,76 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          key would cascade them uncounted).
 
          A DOCUMENT STILL CITED IS HELD. A citation (shadow_evidence_items)
-         has no delete action onto the document, so deleting a cited one is
-         refused and would roll this whole athlete back. Every citation of a
-         document about this child is in a bundle about this child, and those
-         went with the athlete row above (the bundle's athlete key, or after
-         shadow-deidentify-keys its trigger) -- except a bundle a held chat
-         cites (subject_deleted_at, the safeguarding hold: Jason 2026-10-07,
-         "2 years after deletion (Recommended)"). A held chat keeps what it
-         cites, so that document stays, counted as held, and the child's
-         purge goes on.
+         has no delete action onto the document or the chunk, so deleting a
+         cited one is refused and would roll this whole athlete back. A
+         citation made by the app of a chunk about this child is in a bundle
+         about this child, and those went with the athlete row above (the
+         bundle's athlete key, or after shadow-deidentify-keys its trigger) --
+         except a bundle a held chat cites (subject_deleted_at, the
+         safeguarding hold: Jason 2026-10-07, "2 years after deletion
+         (Recommended)"), or a citation of imported rows the app's own rules
+         would not have made. A held document stays with its chunks, counted
+         as held, and the child's purge goes on. NOTHING REVISITS IT: once the
+         athlete row is gone no later run selects it (see DATA_RETENTION.md).
 
          The row only: a document's blob_path is a label its registrant
          supplied, and no code stores or reads a file through it. How many
          of the deleted documents carried one is counted, never the path. */
-      const libraryHere = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 };
+      const libraryHere = { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 };
       if (removed.rows.length > 0 && tables.libraryDocuments) {
         const documents = await client.query(
           `select document_id from pilot.shadow_library_documents
             where organization_id = $1 and btrim(subject_id) = $2
+            order by document_id
               for update`,
           key,
         );
         const documentIds = documents.rows.map((row) => row.document_id);
-        const cited = new Set(documentIds.length > 0 && tables.evidenceItems
+        const aboutChild = new Set(documentIds);
+        // The chunks: every chunk of those documents, and any chunk that itself
+        // names the child under a document that does not (the research importer
+        // writes a chunk's subject on its own, import-shadow-research.mjs).
+        const chunkRows = tables.libraryChunks
           ? (await client.query(
-            'select distinct document_id from pilot.shadow_evidence_items where document_id = any($1::text[])',
-            [documentIds],
-          )).rows.map((row) => row.document_id)
-          : []);
-        const deletable = documentIds.filter((documentId) => !cited.has(documentId));
-        libraryHere.documentsHeld = documentIds.length - deletable.length;
+            `select chunk_id, document_id from pilot.shadow_library_chunks
+              where document_id = any($3::text[])
+                 or (organization_id = $1 and btrim(subject_id) = $2)
+              order by chunk_id
+                for update`,
+            [...key, documentIds],
+          )).rows
+          : [];
+        // Cited by document or by chunk: a citation keeps the document id its
+        // chunk had when it was cited, and a chunk can since have moved
+        // (pilot-rescope-library-baseline.mjs), so either key can refuse.
+        const citations = tables.evidenceItems && (documentIds.length > 0 || chunkRows.length > 0)
+          ? (await client.query(
+            `select document_id, chunk_id from pilot.shadow_evidence_items
+              where document_id = any($1::text[]) or chunk_id = any($2::text[])`,
+            [documentIds, chunkRows.map((row) => row.chunk_id)],
+          )).rows
+          : [];
+        const citedChunks = new Set(citations.map((row) => row.chunk_id));
+        const held = new Set(citations.map((row) => row.document_id).filter((documentId) => aboutChild.has(documentId)));
+        for (const row of chunkRows) {
+          if (aboutChild.has(row.document_id) && citedChunks.has(row.chunk_id)) held.add(row.document_id);
+        }
+        const deletable = documentIds.filter((documentId) => !held.has(documentId));
+        // A held document keeps all its chunks; a stray chunk goes unless cited.
+        const chunkIds = chunkRows
+          .filter((row) => (aboutChild.has(row.document_id) ? !held.has(row.document_id) : !citedChunks.has(row.chunk_id)))
+          .map((row) => row.chunk_id);
+        libraryHere.documentsHeld = held.size;
+        libraryHere.chunksHeld = chunkRows
+          .filter((row) => !aboutChild.has(row.document_id) && citedChunks.has(row.chunk_id)).length;
+        if (chunkIds.length > 0) {
+          const chunks = await client.query(
+            'delete from pilot.shadow_library_chunks where chunk_id = any($1::text[])',
+            [chunkIds],
+          );
+          libraryHere.chunksDeleted = chunks.rowCount ?? 0;
+        }
         if (deletable.length > 0) {
-          if (tables.libraryChunks) {
-            const chunks = await client.query(
-              'delete from pilot.shadow_library_chunks where document_id = any($1::text[])',
-              [deletable],
-            );
-            libraryHere.chunksDeleted = chunks.rowCount ?? 0;
-          }
           const deleted = await client.query(
             `delete from pilot.shadow_library_documents
               where organization_id = $1 and document_id = any($2::text[])
@@ -1131,6 +1163,7 @@ function libraryCounts(library) {
     subject_library_documents_deleted: library.documentsDeleted,
     subject_library_chunks_deleted: library.chunksDeleted,
     subject_library_documents_held: library.documentsHeld,
+    subject_library_chunks_held: library.chunksHeld,
     subject_library_documents_with_file_path: library.documentsWithFilePath,
   };
 }
@@ -1303,7 +1336,7 @@ async function main() {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
         subjectRequirementsDeleted: 0, subjectSubmissionsDeleted: 0,
-        library: { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, documentsWithFilePath: 0 },
+        library: { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 },
         shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
@@ -1369,6 +1402,7 @@ async function main() {
         would_delete_subject_library_documents: outcome.library.documentsDeleted,
         would_delete_subject_library_chunks: outcome.library.chunksDeleted,
         subject_library_documents_held: outcome.library.documentsHeld,
+        subject_library_chunks_held: outcome.library.chunksHeld,
         subject_library_documents_with_file_path: outcome.library.documentsWithFilePath,
         ...shadowCountsFor(outcome.shadow, 'would_delete_', ''),
         blocked: blockedCount,

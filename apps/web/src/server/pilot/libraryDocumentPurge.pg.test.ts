@@ -129,9 +129,27 @@ async function insertDocument(
   }
 }
 
-/** A SHADOW answer's citation of a document's first chunk, in a bundle
- *  about `bundleSubject` (null: about no one). */
-async function cite(documentId: string, bundleId: string, bundleSubject: string | null) {
+/** One chunk with its own subject under an existing document, as the
+ *  research importer can write it (import-shadow-research.mjs). */
+async function insertChunk(documentId: string, chunkId: string, subjectId: string | null, ordinal: number) {
+  await db.query(
+    `insert into pilot.shadow_library_chunks
+       (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, text_kind)
+     values ($1, $2, $3, $4, $5, $6, 'Imported text', 'full_text')`,
+    [chunkId, documentId, SOURCE, ORG, subjectId, ordinal],
+  );
+}
+
+/** A SHADOW answer's citation of a chunk (by default the document's first),
+ *  in a bundle about `bundleSubject` (null: about no one). `citedDocumentId`
+ *  is the document id the citation recorded, which a chunk moved since
+ *  (pilot-rescope-library-baseline.mjs) no longer matches. */
+async function cite(
+  documentId: string,
+  bundleId: string,
+  bundleSubject: string | null,
+  options: { chunkId?: string; citedDocumentId?: string } = {},
+) {
   await db.query(
     `insert into pilot.shadow_evidence_bundles
        (bundle_id, organization_id, account_id, subject_id, query_sha256, availability, item_count)
@@ -143,7 +161,7 @@ async function cite(documentId: string, bundleId: string, bundleSubject: string 
        (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id,
         ordinal, excerpt_sha256, library_organization_id)
      values (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 1, $7, $2)`,
-    [bundleId, ORG, COACH, SOURCE, documentId, `${documentId}-c0`, 'b'.repeat(64)],
+    [bundleId, ORG, COACH, SOURCE, options.citedDocumentId ?? documentId, options.chunkId ?? `${documentId}-c0`, 'b'.repeat(64)],
   );
 }
 
@@ -165,9 +183,12 @@ const chunkCount = async (documentId: string) =>
 const ABOUT_A = ['doc-a-plain', 'doc-a-padded', 'doc-a-file', 'doc-a-cited-by-a'];
 // Must stay: another child, the gym's own, a child inside retention, another
 // gym's same athlete id, an id that only starts with A's.
-const KEPT = ['doc-b', 'doc-gym', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-miss'];
+const KEPT = ['doc-b', 'doc-gym', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-miss', 'doc-gym-stray', 'doc-gym-stray-cited'];
 // About A, but cited by a bundle that outlives A (the held-chat case): kept.
+// And about A, its chunk cited under the id of the document it was moved
+// from: kept too.
 const HELD = 'doc-a-held';
+const HELD_BY_MOVED_CHUNK = 'doc-a-moved-chunk';
 
 beforeAll(async () => {
   PG_PORT = await freePort();
@@ -257,11 +278,22 @@ beforeAll(async () => {
   await insertDocument(ORG, HELD, SOURCE, ATHLETE_A, { blobPath: 'library/org-lb-1/held.pdf' });
   await cite(HELD, '55555555-5555-4555-8555-555555555555', null);
 
+  await insertDocument(ORG, HELD_BY_MOVED_CHUNK, SOURCE, ATHLETE_A);
+
   await insertDocument(ORG, 'doc-b', SOURCE, ATHLETE_B);
   await insertDocument(ORG, 'doc-gym', SOURCE, null);
   await insertDocument(ORG, 'doc-c-recent', SOURCE, ATHLETE_C);
   await insertDocument(OTHER_ORG, 'doc-other-gym-a', OTHER_SOURCE, ATHLETE_A);
   await insertDocument(ORG, 'doc-near-miss', SOURCE, `${ATHLETE_A}-2`);
+  await cite(HELD_BY_MOVED_CHUNK, '66666666-6666-4666-8666-666666666666', null, { citedDocumentId: 'doc-gym' });
+
+  // The gym's own documents holding an imported chunk about A: the stray
+  // chunk goes and the document stays; a cited stray chunk is held.
+  await insertDocument(ORG, 'doc-gym-stray', SOURCE, null);
+  await insertChunk('doc-gym-stray', 'stray-a', ` ${ATHLETE_A}`, 1);
+  await insertDocument(ORG, 'doc-gym-stray-cited', SOURCE, null);
+  await insertChunk('doc-gym-stray-cited', 'stray-a-cited', ATHLETE_A, 1);
+  await cite('doc-gym-stray-cited', '77777777-7777-4777-8777-777777777777', null, { chunkId: 'stray-a-cited' });
 
   // A research submission that attached A's document to the gym's own
   // question: the submission stays, its document pointer cleared.
@@ -306,10 +338,12 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(dry.event).toBe('retention.cleanup.dry-run');
     expect(dry.blocked_by ?? {}).toEqual({});
     expect(dry.would_delete_subject_library_documents).toBe(4);
-    expect(dry.would_delete_subject_library_chunks).toBe(5);
-    expect(dry.subject_library_documents_held).toBe(1);
+    expect(dry.would_delete_subject_library_chunks).toBe(6);
+    expect(dry.subject_library_documents_held).toBe(2);
+    expect(dry.subject_library_chunks_held).toBe(1);
     expect(dry.subject_library_documents_with_file_path).toBe(1);
-    for (const documentId of [...ABOUT_A, HELD, ...KEPT]) expect(await documentCount(documentId)).toBe(1);
+    for (const documentId of [...ABOUT_A, HELD, HELD_BY_MOVED_CHUNK, ...KEPT]) expect(await documentCount(documentId)).toBe(1);
+    expect(await chunkCount('doc-gym-stray')).toBe(2);
   });
 
   test('the purge deletes the documents about the athlete with their chunks, and is not blocked by the held one', async () => {
@@ -318,8 +352,9 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(event.blocked_by ?? {}).toEqual({});
     expect(event.athletes).toBe(1);
     expect(event.subject_library_documents_deleted).toBe(4);
-    expect(event.subject_library_chunks_deleted).toBe(5);
-    expect(event.subject_library_documents_held).toBe(1);
+    expect(event.subject_library_chunks_deleted).toBe(6);
+    expect(event.subject_library_documents_held).toBe(2);
+    expect(event.subject_library_chunks_held).toBe(1);
     expect(event.subject_library_documents_with_file_path).toBe(1);
     for (const documentId of ABOUT_A) {
       expect(await documentCount(documentId)).toBe(0);
@@ -327,19 +362,29 @@ describe('the retention purge and the Library documents filed against a purged a
     }
   });
 
-  test('a document a surviving answer still cites is held, with its chunk and citation', async () => {
-    expect(await documentCount(HELD)).toBe(1);
-    expect(await chunkCount(HELD)).toBe(1);
+  test('a document a surviving answer still cites is held, with its chunk and citation, by document or by a moved chunk', async () => {
+    for (const documentId of [HELD, HELD_BY_MOVED_CHUNK]) {
+      expect(await documentCount(documentId)).toBe(1);
+      expect(await chunkCount(documentId)).toBe(1);
+    }
     const citations = await db.query(
-      'select count(*)::int as n from pilot.shadow_evidence_items where document_id = $1',
-      [HELD],
+      'select count(*)::int as n from pilot.shadow_evidence_items where chunk_id = any($1::text[])',
+      [[`${HELD}-c0`, `${HELD_BY_MOVED_CHUNK}-c0`]],
     );
-    expect(citations.rows[0].n).toBe(1);
+    expect(citations.rows[0].n).toBe(2);
+  });
+
+  test("a stray chunk about the athlete under the gym's own document goes, the document stays; a cited one is held", async () => {
+    const chunks = await db.query(
+      'select chunk_id from pilot.shadow_library_chunks where document_id = any($1::text[]) order by chunk_id',
+      [['doc-gym-stray', 'doc-gym-stray-cited']],
+    );
+    expect(chunks.rows.map((row) => row.chunk_id)).toEqual(['doc-gym-stray-c0', 'doc-gym-stray-cited-c0', 'stray-a-cited']);
   });
 
   test("another child's, the gym's own, a child inside retention's, another gym's and a near-miss id's documents all stay", async () => {
-    for (const documentId of KEPT) {
-      expect(await documentCount(documentId)).toBe(1);
+    for (const documentId of KEPT) expect(await documentCount(documentId)).toBe(1);
+    for (const documentId of ['doc-b', 'doc-gym', 'doc-c-recent', 'doc-other-gym-a', 'doc-near-miss']) {
       expect(await chunkCount(documentId)).toBe(1);
     }
   });
@@ -359,8 +404,9 @@ describe('the retention purge and the Library documents filed against a purged a
     expect(audit.rows[0].details).toMatchObject({
       athletes_deleted: 1,
       subject_library_documents_deleted: 4,
-      subject_library_chunks_deleted: 5,
-      subject_library_documents_held: 1,
+      subject_library_chunks_deleted: 6,
+      subject_library_documents_held: 2,
+      subject_library_chunks_held: 1,
       subject_library_documents_with_file_path: 1,
     });
     const text = JSON.stringify(audit.rows[0].details);

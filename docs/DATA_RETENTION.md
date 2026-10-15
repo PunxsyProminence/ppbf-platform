@@ -437,12 +437,20 @@ not found. Pinned by `askerQuestionDeletion.pg.test.ts` and `subjectResearchPurg
 purges that athlete, in that athlete's savepoint and gym, with its chunks (the extracted text);
 a research submission that attached it keeps its row with `document_id` cleared. Counted as
 `subject_library_documents_deleted` and `subject_library_chunks_deleted` (dry run
-`would_delete_subject_library_documents` / `_chunks`). A document a SHADOW answer still cites
-(`pilot.shadow_evidence_items`) is **held**, not deleted, and counted as
-`subject_library_documents_held`: every citation of a document about a child sits in an answer
+`would_delete_subject_library_documents` / `_chunks`). A chunk that itself names the athlete
+under a document that does not (the research importer writes a chunk's subject on its own) is
+deleted too and its document stays. A document a SHADOW answer still cites
+(`pilot.shadow_evidence_items`, by the document or by one of its chunks) is **held**, not
+deleted, with its chunks, and counted as `subject_library_documents_held` (a cited stray chunk:
+`subject_library_chunks_held`): a citation the app makes of a child's chunk sits in an answer
 about that child, which goes with the child, except one a safeguarding-held chat cites (Jason
-2026-10-07, "2 years after deletion (Recommended)"); a held document does not stop the child's
-purge. Rows only: a document's `blob_path` is a label its registrant supplied and no code stores
+2026-10-07, "2 years after deletion (Recommended)") or one of imported rows. A held document
+does not stop the child's purge. **Not yet built:** nothing revisits a held document once the
+child's row is gone, so it keeps the child's `subject_id` with no end date, and the curator queue
+and subject-scoped search no longer hide it (they hide by the deletion mark, which went with the
+row); a roster that reissues the id would put it in front of the new child. Nothing sets the
+hold today (`subject_deleted_at` is written by nothing), so the count is expected to be 0.
+Rows only: a document's `blob_path` is a label its registrant supplied and no code stores
 or reads a file through it; how many deleted documents carried one is counted
 (`subject_library_documents_with_file_path`), never the path. Pinned by
 `libraryDocumentPurge.pg.test.ts`.
