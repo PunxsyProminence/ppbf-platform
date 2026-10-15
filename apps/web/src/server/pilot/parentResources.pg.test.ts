@@ -34,8 +34,13 @@ const MIGRATION_FILE = 'pilot_slice_postgres_parent_resources_migration.sql';
 
 const ORG = 'org-res';
 const OTHER_ORG = 'org-res-other';
+// Home gym of the coaches who are not this gym's own; the other gym keeps no
+// home accounts, so it can be removed whole in the cascade test.
+const THIRD_ORG = 'org-res-third';
 const COACH = 'acct-res-coach';
 const ADMIN = 'acct-res-admin';
+const OTHER_COACH = 'acct-res-other-coach';
+const VISITING_COACH = 'acct-res-visiting-coach';
 const PROGRAM = 'junior-boxing';
 const OTHER_PROGRAM = 'other-gym-program';
 
@@ -84,7 +89,7 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
 
   // The whole schema in the `all` order, which now includes this migration.
   await applyFullSchema(client, { infraDir: INFRA_DIR });
-  for (const org of [ORG, OTHER_ORG]) {
+  for (const org of [ORG, OTHER_ORG, THIRD_ORG]) {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
       [org],
@@ -92,8 +97,14 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
   }
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'coach', $3, 'microsoft'), ($2, 'organization_admin', $3, 'microsoft')`,
-    [COACH, ADMIN, ORG],
+     values ($1, 'coach', $3, 'microsoft'), ($2, 'organization_admin', $3, 'microsoft'),
+            ($4, 'coach', $5, 'microsoft'), ($6, 'coach', $5, 'microsoft')`,
+    [COACH, ADMIN, ORG, OTHER_COACH, THIRD_ORG, VISITING_COACH],
+  );
+  // A coach whose home gym is the other one, but who also coaches here.
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')`,
+    [VISITING_COACH, ORG],
   );
   for (const [org, programId, name] of [[ORG, PROGRAM, 'Junior Boxing'], [OTHER_ORG, OTHER_PROGRAM, 'Other Gym Program']] as const) {
     await client.query(
@@ -193,7 +204,8 @@ function resource(
   );
 }
 
-const EDITOR = (account = COACH) => `updated_by_account_id = '${account}', updated_by_role = 'coach'`;
+const EDITOR = (account = COACH) =>
+  `updated_by_account_id = '${account}', updated_by_role = '${account === ADMIN ? 'organization_admin' : 'coach'}'`;
 
 describe('parent resources migration (PH-10)', () => {
   test('a gym-wide and a program resource are stored and read back, and re-applying is a no-op', async () => {
@@ -227,6 +239,7 @@ describe('parent resources migration (PH-10)', () => {
         ['internal', '/drills/jab-basics'],
         ['internal', '/help/parent-guide?tab=resources'],
         ['external', 'https://www.usaboxing.org/safesport'],
+        ['external', 'https://Example.ORG:8443'],
       ] as const) {
         await resource(client, { kind, destination });
       }
@@ -248,6 +261,12 @@ describe('parent resources migration (PH-10)', () => {
         // The host is what follows the last '@'.
         ['external', 'https://usaboxing.org@evil.example'],
         ['external', 'https://usaboxing.org:pw@evil.example/x'],
+        // No real host.
+        ['external', 'https://:'],
+        ['external', 'https://:443/x'],
+        ['external', 'https://localhost/x'],
+        ['external', 'https://-bad.example/x'],
+        ['external', 'https://example.123/x'],
       ] as const) {
         await expect(resource(client, { kind, destination })).rejects.toMatchObject({
           code: '23514', constraint: 'pilot_parent_resources_destination_check',
@@ -284,7 +303,15 @@ describe('parent resources migration (PH-10)', () => {
       expect(archived.rows).toEqual([{ state: 'archived', published_at: null }]);
 
       await expect(resource(client, { state: 'published' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_check' });
-      await expect(resource(client, { publishedAt: '2026-10-15T12:00:00Z' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_check' });
+      await expect(resource(client, { publishedAt: '2026-10-15T12:00:00Z' })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_on_publish' });
+      // Never published: neither arriving archived with a time, nor archived with one later.
+      await expect(resource(client, { state: 'archived', publishedAt: '2026-10-15T12:00:00Z' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_parent_resources_published_on_publish',
+      });
+      const { rows: [{ resource_id: neverPublished }] } = await resource(client, { title: 'Never published' });
+      await expect(
+        client.query(`update pilot.parent_resources set state = 'archived', published_at = now(), ${EDITOR()} where resource_id = $1::uuid`, [neverPublished]),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_on_publish' });
 
       const { rows: [{ resource_id: id }] } = await resource(client);
       await client.query(`update pilot.parent_resources set state = 'published', published_at = '2026-10-15T12:00:00Z', ${EDITOR()} where resource_id = $1::uuid`, [id]);
@@ -299,6 +326,32 @@ describe('parent resources migration (PH-10)', () => {
       const row = await client.query('select state, published_at from pilot.parent_resources where resource_id = $1::uuid', [id]);
       expect(row.rows[0].state).toBe('published');
       expect(row.rows[0].published_at.toISOString()).toBe('2026-10-15T12:00:00.000Z');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("an author or editor holds that role in this gym: a home-gym account or a member, never another gym's", async () => {
+    const client = await freshDatabase('pres_gym_writer');
+    try {
+      await expect(resource(client, { creator: OTHER_COACH })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym',
+      });
+      // The right gym but not the role written.
+      await expect(resource(client, { creator: COACH, role: 'organization_admin' })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym',
+      });
+      // A member of this gym through an organization membership.
+      const { rows: [{ resource_id: id }] } = await resource(client, { creator: VISITING_COACH });
+      await expect(
+        client.query(`update pilot.parent_resources set title = 'x', updated_by_account_id = $2, updated_by_role = 'coach' where resource_id = $1::uuid`, [id, OTHER_COACH]),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym' });
+      await client.query(`update pilot.parent_resources set title = 'x', ${EDITOR(ADMIN)} where resource_id = $1::uuid`, [id]);
+      // A membership switched off no longer counts.
+      await client.query(`update pilot.organization_memberships set active_flag = false where account_id = $1`, [VISITING_COACH]);
+      await expect(resource(client, { creator: VISITING_COACH })).rejects.toMatchObject({
+        code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym',
+      });
     } finally {
       await client.end();
     }
@@ -363,6 +416,7 @@ describe('parent resources migration (PH-10)', () => {
 
       // A gym going (here the one with no accounts) takes its programs and its resources in one
       // cascade: the program key is checked at the end of the statement, so this goes through.
+      await client.query(`insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')`, [COACH, OTHER_ORG]);
       await resource(client, { org: OTHER_ORG, program: OTHER_PROGRAM });
       await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG]);
       const left = await client.query('select organization_id from pilot.parent_resources');
