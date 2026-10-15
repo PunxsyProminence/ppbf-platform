@@ -285,6 +285,15 @@ describe('family goals for a guardian (#1593, PH-06)', () => {
     expect(stored.rows).toEqual([{ state: 'active', title: 'Get to the gym twice a week', retired_at: null }]);
   });
 
+  test('a guardian whose link has ended cannot change a goal they wrote', async () => {
+    const created = await add(GUARDIAN_A);
+    await activeClient!.query(`delete from pilot.guardian_links where organization_id = $1 and parent_id = 'P-A' and athlete_id = $2`, [ORG_ID, ATHLETE]);
+    await expect(goals.updateFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, goalId: created.goal_id, change: { kind: 'done', done: true } }))
+      .rejects.toThrow(/^Not found/);
+    const stored = await activeClient!.query('select state from pilot.family_goals where goal_id = $1::uuid', [created.goal_id]);
+    expect(stored.rows).toEqual([{ state: 'active' }]);
+  });
+
   test('a staff goal is read-only to every guardian', async () => {
     const [staffGoal] = await goals.listFamilyGoalsForGuardian(ORG_ID, GUARDIAN_A, ATHLETE);
     expect(staffGoal?.mine).toBe(false);
