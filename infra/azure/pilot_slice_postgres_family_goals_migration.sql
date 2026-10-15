@@ -26,7 +26,9 @@
 -- OD-2026-10-12-024's principle a guardian reads the goals they created and
 -- those staff created for the child, never another guardian's; staff read all
 -- of a child's goals. created_by_account_id and created_by_role are what make
--- that enforceable, so they never change by hand. A change by hand must carry
+-- that enforceable, so a goal is born with its author named (the column is
+-- nullable only for the account-removal set null) and they never change by
+-- hand. A change by hand must carry
 -- an editor (updated_by_account_id and updated_by_role are not null after it);
 -- the application sets them to whoever is making that change on every write.
 -- When the writer's account is removed the goal stays, about the child, with
@@ -106,6 +108,15 @@ begin
     return old;
   end if;
 
+  if tg_op = 'INSERT' then
+    -- A goal nobody wrote would be no guardian's and look like staff's.
+    if new.created_by_account_id is null then
+      raise exception 'FAMILY_GOAL_NAMES_ITS_AUTHOR'
+        using errcode = '23514', constraint = 'pilot_family_goals_author_named';
+    end if;
+    return new;
+  end if;
+
   -- UPDATE. A cascade (an account going sets its writer columns to null) runs
   -- from inside the foreign key's own trigger, so it is let through as is.
   if pg_trigger_depth() > 1 then
@@ -149,5 +160,5 @@ $family_goals_guard$;
 
 drop trigger if exists trg_family_goals_guard on pilot.family_goals;
 create trigger trg_family_goals_guard
-  before update or delete on pilot.family_goals
+  before insert or update or delete on pilot.family_goals
   for each row execute function pilot.family_goals_guard();

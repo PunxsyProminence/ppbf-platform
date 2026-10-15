@@ -56,16 +56,25 @@ const READINESS_QUERY = `
          and (select a.attname from pg_attribute a where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'account_id'
     ) = 2 as writer_fks_set_null,
     (
-      select count(*) from pg_constraint
-       where conrelid = to_regclass('pilot.family_goals')
-         and contype = 'c' and convalidated
-         and conname in (
-           'pilot_family_goals_title_check',
-           'pilot_family_goals_support_action_check',
-           'pilot_family_goals_state_check',
-           'pilot_family_goals_completed_check',
-           'pilot_family_goals_created_by_role_check',
-           'pilot_family_goals_updated_by_role_check'
+      -- Each check by name AND by what it says (key fragments of pg_get_constraintdef, as the
+      -- achievements runner does): a same-named CHECK (true) left by an earlier table must not
+      -- pass for the real one.
+      select count(*) from pg_constraint c,
+             lateral (select pg_get_constraintdef(c.oid) as def) d
+       where c.conrelid = to_regclass('pilot.family_goals')
+         and c.contype = 'c' and c.convalidated
+         and (
+           (c.conname = 'pilot_family_goals_title_check'
+             and d.def like '%char_length(btrim(title))%' and d.def like '%1%' and d.def like '%200%')
+           or (c.conname = 'pilot_family_goals_support_action_check'
+             and d.def like '%char_length(btrim(support_action))%' and d.def like '%500%')
+           or (c.conname = 'pilot_family_goals_state_check'
+             and d.def like '%''active''%' and d.def like '%''completed''%')
+           or (c.conname = 'pilot_family_goals_completed_check'
+             and d.def like '%''completed''%' and d.def like '%completed_at IS NOT NULL%')
+           or (c.conname in ('pilot_family_goals_created_by_role_check', 'pilot_family_goals_updated_by_role_check')
+             and d.def like '%''parent''%' and d.def like '%''coach''%'
+             and d.def like '%''organization_admin''%' and d.def like '%''admin''%')
          )
     ) = 6 as checks_ready,
     exists (
@@ -81,7 +90,7 @@ const READINESS_QUERY = `
          ) = array['organization_id', 'athlete_id', 'created_at']
     ) as athlete_index_ready,
     exists (
-      -- BEFORE (bit 2), ROW (bit 1), on DELETE (bit 8) and UPDATE (bit 16), firing in ordinary
+      -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4), DELETE (bit 8) and UPDATE (bit 16), firing in ordinary
       -- sessions (O or A; R fires only under replication, D never), and calling this
       -- migration's function.
       select 1 from pg_trigger t
@@ -89,7 +98,7 @@ const READINESS_QUERY = `
          and t.tgname = 'trg_family_goals_guard' and not t.tgisinternal
          and t.tgenabled in ('O', 'A')
          and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1
-         and (t.tgtype & 8) = 8 and (t.tgtype & 16) = 16
+         and (t.tgtype & 4) = 4 and (t.tgtype & 8) = 8 and (t.tgtype & 16) = 16
          and t.tgfoid = to_regprocedure('pilot.family_goals_guard()')
     ) as guard_ready
 `;
