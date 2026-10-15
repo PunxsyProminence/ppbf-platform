@@ -105,7 +105,7 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Create Gym & Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create Gym & Continue' }));
 
-    expect(screen.getByText(/A gym with the id punxsy_prominence already exists \(Punxsy Prominence\)\. Choose another id\./)).toBeInTheDocument();
+    expect(screen.getByText(/A gym with the id punxsy_prominence already exists \(Punxsy Prominence\)\. Nothing was changed\. For a new gym, choose another id; to add this gym's admin, use the Platform Desk\./)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Press again/ })).toBeNull();
     expect(posts).toHaveLength(0);
   });

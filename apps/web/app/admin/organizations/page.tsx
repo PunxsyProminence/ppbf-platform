@@ -186,7 +186,7 @@ export default function SetupWizard() {
       setArmed(null);
       showFeedback(
         'error',
-        `A gym with the id ${taken.organization_id} already exists (${taken.organization_name || taken.organization_id}). Choose another id.`,
+        `A gym with the id ${taken.organization_id} already exists (${taken.organization_name || taken.organization_id}). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.`,
       );
       return;
     }
