@@ -283,6 +283,44 @@ export async function listShadowResearchRequirements(
 }
 
 /**
+ * Where a page of the research list stops: the stored created_at, as
+ * Postgres prints it, and the row's id. The text keeps the microseconds a JS
+ * Date drops, so the next read starts exactly after this row; the id breaks
+ * ties between rows created in the same instant.
+ */
+export interface ResearchRequirementPageKey {
+  createdAt: string;
+  id: number;
+}
+
+/**
+ * One batch of the organization's research list, newest first, starting
+ * after `after`. The order (created_at, then id, both descending) is total,
+ * so batches neither repeat nor skip a row. Unscoped like the full list:
+ * the route decides which rows a reader keeps.
+ */
+export async function listShadowResearchRequirementsBatch(
+  organizationId: string,
+  options: { after: ResearchRequirementPageKey | null; limit: number },
+): Promise<Array<{ row: ShadowResearchRequirementRow; key: ResearchRequirementPageKey }>> {
+  const rows = await query<ShadowResearchRequirementRow & { page_created_at: string }>(
+    `select
+       ${REQUIREMENT_COLUMNS},
+       created_at::text as page_created_at
+     from pilot.shadow_research_requirements
+     where organization_id = $1
+       and ($2::timestamptz is null or (created_at, research_requirement_id) < ($2::timestamptz, $3::bigint))
+     order by created_at desc, research_requirement_id desc
+     limit $4`,
+    [organizationId, options.after?.createdAt ?? null, options.after?.id ?? null, options.limit],
+  );
+  return rows.map(({ page_created_at: createdAt, ...row }) => ({
+    row,
+    key: { createdAt, id: Number(row.research_requirement_id) },
+  }));
+}
+
+/**
  * THE CAPABILITY-COVERAGE GAP TICKET.
  *
  * recomputeShadowCapabilityCoverage opens one of these for a rule that grades
