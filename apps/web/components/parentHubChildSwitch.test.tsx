@@ -353,9 +353,21 @@ describe('authored announcements on the parent hub', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('HELP: Messages from the coaches'));
     });
-    expect(screen.getByText('Reply under a message to answer the coach')).toBeTruthy();
+    expect(screen.getByText('Reply under a message to answer the gym')).toBeTruthy();
     expect(screen.getByText('Tick a to-do as Done when it is done')).toBeTruthy();
     expect(screen.queryByText('Ask questions about training')).toBeNull();
+  });
+
+  test('the overview button opens the Messages tab by its new name', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'View Messages from the Coaches' }));
+    });
+    expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
   });
 
   test('nothing live leaves no heading and no empty box behind', async () => {

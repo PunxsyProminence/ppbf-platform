@@ -1625,7 +1625,7 @@ export default function ParentHub() {
                 description="Each message here was written by a coach or the gym's staff to your family, about your child. Gym-wide announcements are not messages; they sit at the top of the hub."
                 usage={[
                   'Read each message the coaches wrote to your family',
-                  'Reply under a message to answer the coach',
+                  'Reply under a message to answer the gym',
                   'Tick a to-do as Done when it is done',
                   'Share what you see at home on the Observations tab'
                 ]}
