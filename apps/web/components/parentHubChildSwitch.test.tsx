@@ -73,6 +73,13 @@ function installFetch(
     if (url.includes('/api/pilot/scheduler')) {
       return scheduler();
     }
+    if (url.includes('/api/pilot/parent/resources')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id');
+      return jsonResponse({
+        ok: true,
+        items: [{ resource_id: `r-${athleteId}`, title: `Resource for ${athleteId}`, summary: 'S.', resource_type: 'guide', destination_kind: 'internal', destination: '/help' }],
+      });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -83,6 +90,31 @@ function installFetch(
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+// #1593 PH-11: the Resources tab is built, so its "not built yet" stamp is
+// gone (F-019), and it reads the selected child's family resources, per child.
+describe('resources on the parent hub', () => {
+  test("the tab reads the selected child's resources and follows a switch", async () => {
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Resources' }));
+    });
+
+    expect(screen.queryByText(/no backend feed for parent resources/)).toBeNull();
+    expect(screen.getByText('Resource for ath_1')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    expect(screen.queryByText('Resource for ath_1')).toBeNull();
+    expect(screen.getByText('Resource for ath_2')).toBeInTheDocument();
+    const reads = fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/parent/resources'));
+    expect(reads.map((url) => new URL(url, 'http://localhost').searchParams.get('athlete_id'))).toEqual(['ath_1', 'ath_2']);
+  });
 });
 
 describe('parent hub child selector', () => {

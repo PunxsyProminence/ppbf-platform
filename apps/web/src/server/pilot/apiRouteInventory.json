@@ -8735,6 +8735,33 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/resources/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/resources",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in parentResources.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The resources a gym has published for one linked child's family (pilot.parent_resources; parentResources.ts; #1593 PH-11): published for every family plus those for a program the child is an active member of (program_memberships matched to an active pilot.programs row by canonical name). Drafts and archived never; internal links only to pages the building map lists for parents. The child must be linked on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. No writer or account id.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/message-reads/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/parent/message-reads",
