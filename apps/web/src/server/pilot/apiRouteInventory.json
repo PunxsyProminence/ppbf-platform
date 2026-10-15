@@ -12212,7 +12212,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+        "<[...SHADOW_SOURCE_ATTACH_ROLES]>"
       ]
     }
   },
@@ -12811,10 +12811,11 @@
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+        "<[...SHADOW_SOURCE_ATTACH_ROLES]>"
       ]
     }
   },
