@@ -58,8 +58,14 @@ const SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/pilot-check-librar
 
 interface Report {
   database: string;
-  sources: Array<{ organization_id: string; rights_status: string; sources: number; sources_holding_text: number }>;
-  documents: Array<{ organization_id: string; indexed_without_completion: number }>;
+  sources: Array<{
+    organization_id: string;
+    rights_status: string;
+    sources: number;
+    sources_holding_text: number;
+    sources_holding_full_text: number;
+  }>;
+  documents: Array<{ organization_id: string; indexed_without_completion: number; with_text: number }>;
 }
 
 let PG_PORT: number;
@@ -80,21 +86,43 @@ async function source(organizationId: string, sourceId: string, rights: string):
   );
 }
 
-async function document(organizationId: string, sourceId: string, documentId: string, indexedWithoutTime: boolean): Promise<void> {
+type DocumentState = 'pending' | 'indexed-no-time' | 'indexed';
+
+async function document(organizationId: string, sourceId: string, documentId: string, state: DocumentState): Promise<void> {
   await db.query(
-    `insert into pilot.shadow_library_documents (document_id, source_id, organization_id, document_name, ingest_state)
-     values ($1, $2, $3, $4, $5)`,
-    [documentId, sourceId, organizationId, `Document ${documentId}`, indexedWithoutTime ? 'indexed' : 'pending'],
+    `insert into pilot.shadow_library_documents
+       (document_id, source_id, organization_id, document_name, ingest_state, index_completed_at)
+     values ($1, $2, $3, $4, $5, case when $6 then now() else null end)`,
+    [documentId, sourceId, organizationId, `Document ${documentId}`, state === 'pending' ? 'pending' : 'indexed', state === 'indexed'],
   );
 }
 
-async function excerpt(organizationId: string, sourceId: string, documentId: string): Promise<void> {
+/** A chunk in `documentId` that cites `citedSourceId` (often, not always, the document's own source). */
+async function excerpt(organizationId: string, citedSourceId: string, documentId: string, ordinal = 1): Promise<void> {
   await db.query(
     `insert into pilot.shadow_library_chunks
        (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind, excerpt_locator)
-     values ($1, $2, $3, $4, 1, 'A short passage.', 'excerpt', 'p. 3')`,
-    [`${documentId}-chunk`, documentId, sourceId, organizationId],
+     values ($1, $2, $3, $4, $5, 'A short passage.', 'excerpt', 'p. 3')`,
+    [`${documentId}-chunk-${ordinal}`, documentId, citedSourceId, organizationId, ordinal],
   );
+}
+
+/**
+ * Full text. Allowed by the rights guard only under an owned or open document
+ * source; `legacy` writes it past the guard, as rows from before it exist.
+ */
+async function fullText(organizationId: string, sourceId: string, documentId: string, legacy = false): Promise<void> {
+  if (legacy) await db.query(`set session_replication_role = replica`);
+  try {
+    await db.query(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind)
+       values ($1, $2, $3, $4, 9, 'The whole text.', 'full_text')`,
+      [`${documentId}-full`, documentId, sourceId, organizationId],
+    );
+  } finally {
+    if (legacy) await db.query(`set session_replication_role = origin`);
+  }
 }
 
 beforeAll(async () => {
@@ -159,15 +187,25 @@ beforeAll(async () => {
   await source(GYM, 'src-licensed', 'licensed_excerpt_only');
   await source(GYM, 'src-unknown-text', 'unknown');
   await source(GYM, 'src-unknown-empty', 'unknown');
+  await source(GYM, 'src-unknown-legacy', 'unknown');
   await source(OTHER_GYM, 'src-other-unknown', 'unknown');
 
-  await document(GYM, 'src-unknown-text', 'doc-unknown-text', false);
+  await document(GYM, 'src-unknown-text', 'doc-unknown-text', 'pending');
   await excerpt(GYM, 'src-unknown-text', 'doc-unknown-text');
-  await document(GYM, 'src-licensed', 'doc-licensed', true);
+  // Full text under 'unknown', from before the rights guard: the urgent case.
+  await document(GYM, 'src-unknown-legacy', 'doc-unknown-legacy', 'pending');
+  await fullText(GYM, 'src-unknown-legacy', 'doc-unknown-legacy', true);
+  await document(GYM, 'src-licensed', 'doc-licensed', 'indexed-no-time');
   await excerpt(GYM, 'src-licensed', 'doc-licensed');
-  await document(GYM, 'src-owned', 'doc-owned-1', true);
-  await document(GYM, 'src-owned', 'doc-owned-2', false);
-  await document(OTHER_GYM, 'src-other-unknown', 'doc-other', true);
+  await document(GYM, 'src-owned', 'doc-owned-1', 'indexed-no-time');
+  await document(GYM, 'src-owned', 'doc-owned-2', 'pending');
+  await fullText(GYM, 'src-owned', 'doc-owned-2');
+  // Held under src-owned (its document's source) though it CITES
+  // src-unknown-empty: the text's rights are its document's.
+  await excerpt(GYM, 'src-unknown-empty', 'doc-owned-2', 2);
+  // Indexed with its time: not counted.
+  await document(GYM, 'src-owned', 'doc-owned-3', 'indexed');
+  await document(OTHER_GYM, 'src-other-unknown', 'doc-other', 'indexed-no-time');
 
   const scriptModule = await nativeDynamicImport(pathToFileURL(SCRIPT_PATH).href);
   checkLibraryRights = scriptModule.checkLibraryRights as typeof checkLibraryRights;
@@ -198,18 +236,22 @@ describe('the library rights audit counts what waits on a person (#1468 PR 3)', 
     const report = await checkLibraryRights(db);
     expect(report.database).toBe(TEST_DB_NAME);
     expect(report.sources).toEqual([
-      { organization_id: GYM, rights_status: 'licensed_excerpt_only', sources: 1, sources_holding_text: 1 },
-      { organization_id: GYM, rights_status: 'ppbf_owned', sources: 1, sources_holding_text: 0 },
-      { organization_id: GYM, rights_status: 'unknown', sources: 2, sources_holding_text: 1 },
-      { organization_id: OTHER_GYM, rights_status: 'unknown', sources: 1, sources_holding_text: 0 },
+      { organization_id: GYM, rights_status: 'licensed_excerpt_only', sources: 1, sources_holding_text: 1, sources_holding_full_text: 0 },
+      { organization_id: GYM, rights_status: 'ppbf_owned', sources: 1, sources_holding_text: 1, sources_holding_full_text: 1 },
+      // src-unknown-empty is only CITED by a chunk in an owned document, so it
+      // holds nothing; src-unknown-legacy holds full text from before the guard.
+      { organization_id: GYM, rights_status: 'unknown', sources: 3, sources_holding_text: 2, sources_holding_full_text: 1 },
+      { organization_id: OTHER_GYM, rights_status: 'unknown', sources: 1, sources_holding_text: 0, sources_holding_full_text: 0 },
     ]);
   });
 
   test("documents marked 'indexed' with no completion time, per shelf", async () => {
     const report = await checkLibraryRights(db);
+    // doc-licensed holds text (the indexing step can complete it); doc-owned-1
+    // and doc-other do not; doc-owned-3 has its time and is not counted.
     expect(report.documents).toEqual([
-      { organization_id: GYM, indexed_without_completion: 2 },
-      { organization_id: OTHER_GYM, indexed_without_completion: 1 },
+      { organization_id: GYM, indexed_without_completion: 2, with_text: 1 },
+      { organization_id: OTHER_GYM, indexed_without_completion: 1, with_text: 0 },
     ]);
   });
 
@@ -227,12 +269,25 @@ describe('the library rights audit counts what waits on a person (#1468 PR 3)', 
               (select string_agg(rights_status, ',' order by source_id) from pilot.shadow_library_sources) as r`,
     );
     const statements: string[] = [];
+    let writeRefusal: string | undefined;
     const spy: Client = Object.create(db);
-    spy.query = ((text: string, values?: unknown[]) => {
+    spy.query = (async (text: string, values?: unknown[]) => {
       statements.push(String(text));
-      return db.query(text, values);
+      const result = await db.query(text, values);
+      // Inside the audit's own transaction, Postgres itself must refuse a write.
+      if (statements.length === 1) {
+        await db.query('savepoint write_probe');
+        try {
+          await db.query('update pilot.shadow_library_sources set title = title');
+        } catch (error) {
+          writeRefusal = (error as { code?: string }).code;
+        }
+        await db.query('rollback to savepoint write_probe');
+      }
+      return result;
     }) as Client['query'];
     await checkLibraryRights(spy);
+    expect(writeRefusal).toBe('25006'); // read_only_sql_transaction
     expect(statements[0]).toBe('BEGIN TRANSACTION READ ONLY');
     expect(statements.every((statement) => /^\s*(begin transaction read only|select|commit)\b/i.test(statement))).toBe(true);
     const after = await db.query(
