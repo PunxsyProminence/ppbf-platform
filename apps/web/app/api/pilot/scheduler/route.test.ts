@@ -139,8 +139,9 @@ beforeEach(() => {
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
   mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
   (listLatestClassCoverAudits as jest.Mock).mockResolvedValue(new Map());
-  // The athletes a coach reaches outside any class register (assignment or
-  // coverage). Tests about reach beyond the register override this.
+  // The athletes a coach reaches: the live athletes of their own gym (issue
+  // #1480). ATH-OUTSIDE stands for one the gate refuses (deleted, or another
+  // gym's). Tests about reach beyond the register override this.
   mockGymAthleteIds.mockResolvedValue(['ATH-1', 'ATH-2']);
 });
 
