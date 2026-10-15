@@ -223,6 +223,13 @@ describe('family support records migration (PH-12)', () => {
       }
       await expect(record(client, { recorder: null })).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_recorder_named' });
       await expect(record(client, { athleteId: OTHER_ONLY })).rejects.toMatchObject({ code: '23503', constraint: 'pilot_family_support_records_athlete_fk' });
+      // A record is born live: it cannot arrive already retired.
+      await expect(client.query(
+        `insert into pilot.family_support_records
+           (organization_id, athlete_id, support_kind, provided_on, recorded_by_account_id, recorded_by_role, retired_at, retired_by_account_id)
+         values ($1, $2, 'x', '2026-10-01', $3, 'organization_admin', now(), $3)`,
+        [ORG, ATHLETE, ADMIN],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_only_retired' });
       const count = await client.query('select count(*)::int as n from pilot.family_support_records');
       expect(count.rows[0].n).toBe(0);
     } finally {
@@ -240,15 +247,24 @@ describe('family support records migration (PH-12)', () => {
         `athlete_id = '${OTHER_ATHLETE}'`,
         `recorded_by_account_id = '${OTHER_ADMIN}'`,
         `recorded_by_role = 'admin'`,
-        `retired_at = now(), support_kind = 'Changed while retiring'`,
+        `retired_at = now(), retired_by_account_id = '${ADMIN}', support_kind = 'Changed while retiring'`,
+        `retired_at = now()`,
         `retired_at = null`,
       ]) {
         await expect(client.query(`update pilot.family_support_records set ${change} where record_id = $1::uuid`, [id])).rejects.toMatchObject({
           code: '23514', constraint: 'pilot_family_support_records_only_retired',
         });
       }
-      await client.query(`update pilot.family_support_records set retired_at = now() where record_id = $1::uuid`, [id]);
-      for (const change of ['retired_at = null', 'retired_at = now()']) {
+      // Retired by a named admin; the time sent is not the time kept.
+      await client.query(
+        `update pilot.family_support_records set retired_at = '2020-01-01', retired_by_account_id = $2 where record_id = $1::uuid`,
+        [id, ADMIN],
+      );
+      const retired = await client.query(
+        `select retired_by_account_id, retired_at > now() - interval '1 minute' as now_stamped from pilot.family_support_records`,
+      );
+      expect(retired.rows).toEqual([{ retired_by_account_id: ADMIN, now_stamped: true }]);
+      for (const change of ['retired_at = null', 'retired_at = now()', `retired_by_account_id = '${OTHER_ADMIN}'`]) {
         await expect(client.query(`update pilot.family_support_records set ${change} where record_id = $1::uuid`, [id])).rejects.toMatchObject({
           code: '23514', constraint: 'pilot_family_support_records_only_retired',
         });
@@ -263,13 +279,19 @@ describe('family support records migration (PH-12)', () => {
   test('a record is not deleted by hand; it stays when its recorder account goes, and goes with its athlete', async () => {
     const client = await freshDatabase('fsup_cascade');
     try {
-      await record(client, { recorder: OTHER_ADMIN, role: 'admin' });
+      const { rows: [{ record_id: id }] } = await record(client, { recorder: OTHER_ADMIN, role: 'admin' });
+      await client.query(
+        'update pilot.family_support_records set retired_at = now(), retired_by_account_id = $2 where record_id = $1::uuid',
+        [id, OTHER_ADMIN],
+      );
       await expect(client.query('delete from pilot.family_support_records')).rejects.toMatchObject({
         code: '23514', constraint: 'pilot_family_support_records_no_delete',
       });
       await client.query('delete from pilot.accounts where account_id = $1', [OTHER_ADMIN]);
-      const kept = await client.query('select recorded_by_account_id, recorded_by_role from pilot.family_support_records');
-      expect(kept.rows).toEqual([{ recorded_by_account_id: null, recorded_by_role: 'admin' }]);
+      const kept = await client.query(
+        'select recorded_by_account_id, recorded_by_role, retired_by_account_id, retired_at is not null as retired from pilot.family_support_records',
+      );
+      expect(kept.rows).toEqual([{ recorded_by_account_id: null, recorded_by_role: 'admin', retired_by_account_id: null, retired: true }]);
 
       await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, ATHLETE]);
       const left = await client.query('select count(*)::int as n from pilot.family_support_records');

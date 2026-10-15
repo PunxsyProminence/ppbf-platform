@@ -22,8 +22,10 @@
 -- question on #1542), so nothing here needs stripping before it reaches them.
 --
 -- A RECORD IS NOT EDITED, AND NOTHING IS HARD-DELETED. The only change by
--- hand is retiring it (retired_at, once, final) -- a record entered in error
--- is retired and a correct one added. A direct DELETE is refused; one that
+-- hand is retiring it, once and final -- a record entered in error is
+-- retired and a correct one added. Retiring names who retired it
+-- (retired_by_account_id) and the database stamps the time (now()), so the
+-- trail of who decided what is kept. A direct DELETE is refused; one that
 -- arrives as a cascade (its athlete or gym going) runs from inside another
 -- trigger, so pg_trigger_depth() is above 1 and it goes through. Each refusal
 -- is a 23514 with its own constraint name.
@@ -49,6 +51,7 @@ create table if not exists pilot.family_support_records (
 
   created_at timestamptz not null default now(),
   retired_at timestamptz,
+  retired_by_account_id text references pilot.accounts(account_id) on delete set null,
 
   constraint pilot_family_support_records_pkey primary key (organization_id, record_id),
 
@@ -80,6 +83,10 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
+    if new.retired_at is not null or new.retired_by_account_id is not null then
+      raise exception 'FAMILY_SUPPORT_RECORD_IS_BORN_LIVE'
+        using errcode = '23514', constraint = 'pilot_family_support_records_only_retired';
+    end if;
     if new.recorded_by_account_id is null then
       raise exception 'FAMILY_SUPPORT_RECORD_NAMES_ITS_RECORDER'
         using errcode = '23514', constraint = 'pilot_family_support_records_recorder_named';
@@ -98,9 +105,10 @@ begin
     return new;
   end if;
 
-  -- By hand, the one change is retiring a live record.
+  -- By hand, the one change is retiring a live record, naming who did it.
   if old.retired_at is not null
      or new.retired_at is null
+     or new.retired_by_account_id is null
      or (new.organization_id, new.record_id, new.athlete_id, new.support_kind, new.provided_on,
          new.recorded_by_account_id, new.recorded_by_role, new.created_at)
         is distinct from
@@ -109,6 +117,8 @@ begin
     raise exception 'FAMILY_SUPPORT_RECORD_IS_ONLY_RETIRED'
       using errcode = '23514', constraint = 'pilot_family_support_records_only_retired';
   end if;
+  -- The time a record was retired is when it happened, not a value sent in.
+  new.retired_at := now();
   return new;
 end;
 $family_support_records_guard$;

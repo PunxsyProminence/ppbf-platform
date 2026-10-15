@@ -16,8 +16,8 @@ function sslConfig() {
 }
 
 // Readiness asserts the result, not the attempt: the table, its primary key over (gym,
-// record), its athlete foreign key over (gym, athlete) with the cascade, the recorder foreign
-// key with set null, both named checks by what they say, the per-child index, and the guard
+// record), its athlete foreign key over (gym, athlete) with the cascade, the recorder and
+// retirer foreign keys with set null, both named checks by what they say, the per-child index, and the guard
 // trigger on insert, update and delete. Each is looked up by name ON its own table, so a
 // same-named object elsewhere does not pass.
 const READINESS_QUERY = `
@@ -45,15 +45,17 @@ const READINESS_QUERY = `
             where a.attrelid = c.conrelid and a.attnum = any (c.conkey)
          ) = array['athlete_id', 'organization_id']
     ) as athlete_fk_ready,
-    exists (
-      select 1 from pg_constraint c
+    (
+      -- Exactly recorded_by_account_id and retired_by_account_id -> accounts.account_id, set null.
+      select count(*) from pg_constraint c
        where c.conrelid = to_regclass('pilot.family_support_records')
          and c.contype = 'f' and c.confrelid = to_regclass('pilot.accounts')
          and c.confdeltype = 'n'
          and array_length(c.conkey, 1) = 1 and array_length(c.confkey, 1) = 1
-         and (select a.attname from pg_attribute a where a.attrelid = c.conrelid and a.attnum = c.conkey[1]) = 'recorded_by_account_id'
+         and (select a.attname from pg_attribute a where a.attrelid = c.conrelid and a.attnum = c.conkey[1])
+             in ('recorded_by_account_id', 'retired_by_account_id')
          and (select a.attname from pg_attribute a where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'account_id'
-    ) as recorder_fk_set_null,
+    ) = 2 as person_fks_set_null,
     (
       -- Each check by name AND by what it says (key fragments of pg_get_constraintdef, as the
       -- achievements runner does): a same-named CHECK (true) must not pass for the real one.
