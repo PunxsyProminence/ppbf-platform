@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { roleRoutes } from '@/components/roleRoutes';
 import { formatGymCustom } from '@/src/lib/gymTime';
 
 // Mirrors the closed vocabularies in src/server/pilot/announcements.ts and the
@@ -85,19 +86,14 @@ export function announcementReachesPlacement(item: AnnouncementItem, placement: 
 }
 
 /**
- * The byline's role in plain words (#1542, FC-07): a guardian reads "Gym
- * admin", not the stored literal "organization_admin". A role not named here
- * prints as stored.
+ * The byline's role in plain words (#1542, FC-07): the stored author_role is
+ * 'coach', 'admin' or a board seat ('board-treasurer', ...), and a reader sees
+ * "Coach", "Admin" or "Treasurer". Same vocabulary as /notices (roleRoutes),
+ * so the two cannot drift; a value roleRoutes has no label for prints as
+ * stored rather than as a blank.
  */
-const BYLINE_ROLE_LABELS: Readonly<Record<string, string>> = {
-  coach: 'Coach',
-  organization_admin: 'Gym admin',
-  admin: 'Gym admin',
-  board: 'Board',
-};
-
 export function bylineRoleLabel(role: string): string {
-  return BYLINE_ROLE_LABELS[role] ?? role;
+  return roleRoutes.find((route) => route.role === role)?.label ?? role;
 }
 
 export function formatAnnouncementTime(value: string): string {

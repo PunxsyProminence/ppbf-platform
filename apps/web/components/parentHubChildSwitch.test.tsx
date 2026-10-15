@@ -345,7 +345,7 @@ describe('authored announcements on the parent hub', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
     });
     expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
-    expect(screen.getByText(/What the coaches wrote to your family about your child\. You can reply under a message\. Gym announcements for every family are at the top of the hub\./)).toBeTruthy();
+    expect(screen.getByText(/What the coaches and gym staff wrote to your family about your child\. You can reply under a message\. Gym announcements for every family are at the top of the hub\./)).toBeTruthy();
     expect(screen.getAllByText('Bring a mouthguard Thursday.')).toHaveLength(1);
     expect(screen.getAllByText('Gym closed Monday for the holiday.')).toHaveLength(1);
     expect(notices.contains(screen.getByText('Bring a mouthguard Thursday.'))).toBe(false);

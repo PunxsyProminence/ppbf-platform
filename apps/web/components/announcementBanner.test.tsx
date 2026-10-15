@@ -136,10 +136,11 @@ describe('AnnouncementBanner', () => {
   // FC-07 (#1542): the byline's role in plain words, never the stored literal,
   // and a line under the heading saying what the section is.
   test.each([
-    ['organization_admin', 'By Coach M. (Gym admin)'],
-    ['admin', 'By Coach M. (Gym admin)'],
-    ['board', 'By Coach M. (Board)'],
-    ['volunteer', 'By Coach M. (volunteer)'],
+    // The values the post route stores: 'coach', 'admin' and a board seat.
+    ['admin', 'By Coach M. (Admin)'],
+    ['board-treasurer', 'By Coach M. (Treasurer)'],
+    ['board-safety-director', 'By Coach M. (Program & Safety Director)'],
+    ['a-retired-role', 'By Coach M. (a-retired-role)'],
   ])('a %s byline reads in plain words', async (role, byline) => {
     await renderBanner(
       jest.fn(async () => jsonResponse({ ok: true, announcements: [item({ author_role: role })] })),
@@ -147,7 +148,7 @@ describe('AnnouncementBanner', () => {
     );
 
     expect(screen.getByText((_, element) => element?.tagName === 'P' && (element.textContent ?? '').startsWith(byline))).toBeTruthy();
-    expect(screen.queryByText(/organization_admin/)).toBeNull();
+    expect(screen.queryByText(/board-/)).toBeNull();
     expect(screen.getByText('Posted for every family.')).toBeTruthy();
   });
 

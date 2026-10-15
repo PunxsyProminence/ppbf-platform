@@ -1622,7 +1622,7 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Messages from the coaches"
-                description="What the coaches wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub."
+                description="Each message here was written by a coach or the gym's staff to your family, about your child. Gym-wide announcements are not messages; they sit at the top of the hub."
                 usage={[
                   'Read each message the coaches wrote to your family',
                   'Reply under a message to answer the coach',
@@ -1638,7 +1638,7 @@ export default function ParentHub() {
               {/* What this tab holds, always on screen (FC-07): only what was
                   written to this family; gym announcements are not here. */}
               <p className="t-body">
-                What the coaches wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub.
+                What the coaches and gym staff wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub.
               </p>
 
               {/* A read that did not answer is not an empty inbox.
