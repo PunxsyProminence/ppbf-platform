@@ -55,6 +55,8 @@ async function freePort(): Promise<number> {
 }
 
 const ORG = 'org-pt-1';
+const OTHER_ORG = 'org-pt-2';
+const ATHLETE = 'ath-pt-1';
 const ADMIN = 'acct-pt-admin';
 const QUERY = 'southpaw footwork pivot';
 
@@ -80,25 +82,59 @@ async function source(sourceId: string, rights: string): Promise<void> {
   );
 }
 
-async function document(documentId: string, sourceId: string): Promise<void> {
+async function document(documentId: string, sourceId: string, subjectId: string | null = null): Promise<void> {
   await db.query(
     `insert into pilot.shadow_library_documents
-       (document_id, source_id, organization_id, document_name, ingest_state, index_completed_at,
+       (document_id, source_id, organization_id, document_name, ingest_state, index_completed_at, subject_id,
         approval_state, verification_state, approved_by_account_id, approved_at, verified_by_account_id, verified_at)
-     values ($1, $2, $3, $1, 'indexed', now(), 'approved', 'verified', $4, now(), $4, now())`,
-    [documentId, sourceId, ORG, ADMIN],
+     values ($1, $2, $3, $1, 'indexed', now(), $5, 'approved', 'verified', $4, now(), $4, now())`,
+    [documentId, sourceId, ORG, ADMIN, subjectId],
   );
 }
 
 /** A passage in `documentId` citing `citedSourceId`; an excerpt unless the document's source may hold full text. */
-async function chunk(chunkId: string, documentId: string, citedSourceId: string, ordinal: number, full: boolean): Promise<void> {
+async function chunk(
+  chunkId: string,
+  documentId: string,
+  citedSourceId: string,
+  ordinal: number,
+  full: boolean,
+  text = `Southpaw footwork pivot: passage ${chunkId}.`,
+  subjectId: string | null = null,
+): Promise<void> {
   await db.query(
     `insert into pilot.shadow_library_chunks
-       (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind, excerpt_locator)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [chunkId, documentId, citedSourceId, ORG, ordinal, `Southpaw footwork pivot: passage ${chunkId}.`,
-      full ? 'full_text' : 'excerpt', full ? null : 'p. 4'],
+       (chunk_id, document_id, source_id, organization_id, ordinal, text_content, text_kind, excerpt_locator, subject_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [chunkId, documentId, citedSourceId, ORG, ordinal, text, full ? 'full_text' : 'excerpt', full ? null : 'p. 4', subjectId],
   );
+}
+
+async function conversationCiting(bundle: Awaited<ReturnType<typeof evidence.retrieveShadowEvidenceBundle>>): Promise<string> {
+  const conversationId = randomUUID();
+  const messageId = randomUUID();
+  await db.query(
+    `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id) values ($1, $2, $3)`,
+    [conversationId, ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content, response_state)
+     values ($1, $2, $3, $4, 'assistant', 'An answer.', 'ok')`,
+    [messageId, conversationId, ORG, ADMIN],
+  );
+  for (const [index, item] of bundle.items.entries()) {
+    await db.query(
+      `insert into pilot.shadow_message_citations (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [messageId, item.evidenceId, bundle.bundleId, ORG, ADMIN, index + 1],
+    );
+  }
+  return conversationId;
+}
+
+async function reopened(conversationId: string) {
+  const [message] = await conversations.loadConversationMessages({ actor, conversationId });
+  return message.citations ?? [];
 }
 
 beforeAll(async () => {
@@ -148,7 +184,20 @@ beforeAll(async () => {
     infraDir: INFRA_DIR,
   });
 
-  await db.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, 'Punxsy Prominence', 'active')`, [ORG]);
+  await db.query(
+    `insert into pilot.organizations (organization_id, organization_name, status) values ($1, 'Punxsy Prominence', 'active'), ($2, 'Another Gym', 'active')`,
+    [ORG, OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ('acct-pt-coach', 'coach', $1, 'microsoft')`,
+    [ORG],
+  );
+  await db.query(
+    `insert into pilot.athletes
+       (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Rosa Ortiz', '2012-04-03', 'youth-60', 'active', 'Guardian', true, 'acct-pt-coach', now(), now())`,
+    [ORG, ATHLETE],
+  );
   await db.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'organization_admin', $2, 'microsoft')`, [ADMIN, ORG]);
 
   await source('src-owned', 'ppbf_owned');
@@ -165,6 +214,29 @@ beforeAll(async () => {
   await chunk('chunk-licensed', 'doc-licensed', 'src-licensed', 1, false);
   // Not shown: it cites an open source, but its text was cut from a licensed document.
   await chunk('chunk-open-in-licensed', 'doc-licensed', 'src-open', 2, false);
+
+  // Budget: four long owned passages; the fourth is cut short for the model.
+  await document('doc-hook', 'src-owned');
+  for (let index = 1; index <= 4; index += 1) {
+    await chunk(`chunk-hook-${index}`, 'doc-hook', 'src-owned', index, true,
+      `Hook counter drill ${index}: ${'keep the elbow level and turn the hip through. '.repeat(25)}`);
+  }
+
+  // An owned passage filed against one athlete: a title only, live.
+  await document('doc-athlete', 'src-owned', ATHLETE);
+  await chunk('chunk-athlete', 'doc-athlete', 'src-owned', 1, true, 'Jab feint drill: passage chunk-athlete.', ATHLETE);
+  // A document in this gym whose source row sits in another organization:
+  // the evidence is still saved; its passage is not shown.
+  await db.query(
+    `insert into pilot.shadow_library_sources
+       (source_id, organization_id, title, source_type, authority_tier, status, rights_status,
+        approval_state, verification_state, approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+     values ('src-other-org', $1, 'Title src-other-org', 'peer_reviewed', 1, 'active', 'ppbf_owned',
+             'pending_review', 'unverified', null, null, null, null)`,
+    [OTHER_ORG],
+  );
+  await document('doc-cross-org', 'src-other-org');
+  await chunk('chunk-cross-org', 'doc-cross-org', 'src-owned', 1, true, 'Jab feint drill: passage chunk-cross-org.');
 
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
@@ -255,5 +327,60 @@ describe('SHADOW shows a cited passage only within the rights rule (OD-2026-10-0
     citationOf = await read();
     expect(citationOf('chunk-cites-unknown')?.excerpt).toBe('Southpaw footwork pivot: passage chunk-cites-unknown.');
     await db.query(`update pilot.shadow_library_sources set rights_status = 'unknown' where source_id = 'src-unknown'`);
+  });
+});
+
+describe('the passage rule holds at its edges (review findings)', () => {
+  test('a passage filed against one athlete stays a title; a document whose source is in another organization does not cost the evidence', async () => {
+    const bundle = await evidence.retrieveShadowEvidenceBundle({ actor, subjectId: ATHLETE, queryText: 'jab feint drill' });
+    const chunks = bundle.items.map((item) => item.chunkId).sort();
+    expect(chunks).toEqual(['chunk-athlete', 'chunk-cross-org']);
+    const citations = evidence.publicEvidenceCitations(bundle, bundle.items.map((item) => item.evidenceId));
+    expect(citations.every((citation) => citation.excerpt === undefined)).toBe(true);
+  });
+
+  test('a reopened conversation replays the exact passage given, even one the bundle budget cut short', async () => {
+    const bundle = await evidence.retrieveShadowEvidenceBundle({ actor, queryText: 'hook counter drill' });
+    expect(bundle.items).toHaveLength(4);
+    const live = evidence.publicEvidenceCitations(bundle, bundle.items.map((item) => item.evidenceId));
+    const shortest = Math.min(...live.map((citation) => citation.excerpt?.length ?? 0));
+    expect(shortest).toBeGreaterThan(0);
+    expect(shortest).toBeLessThan(evidence.MAX_EXCERPT_CHARS);
+
+    const restored = await reopened(await conversationCiting(bundle));
+    for (const citation of live) {
+      expect(restored.find((entry) => entry.evidenceId === citation.evidenceId)?.excerpt).toBe(citation.excerpt);
+    }
+    for (const entry of restored) {
+      expect(entry).not.toHaveProperty('passageSource');
+      expect(entry).not.toHaveProperty('passageSha');
+    }
+  });
+
+  test('a reopened conversation shows no passage once its source is suppressed or its text has changed', async () => {
+    const bundle = await evidence.retrieveShadowEvidenceBundle({ actor, queryText: QUERY });
+    const ownedId = bundle.items.find((item) => item.chunkId === 'chunk-owned')?.evidenceId;
+    const conversationId = await conversationCiting(bundle);
+    const ownedExcerpt = async () => (await reopened(conversationId)).find((entry) => entry.evidenceId === ownedId)?.excerpt;
+
+    expect(await ownedExcerpt()).toBe('Southpaw footwork pivot: passage chunk-owned.');
+
+    await db.query(
+      `update pilot.shadow_library_sources
+          set retrieval_suppressed = true, suppression_reason = 'Retracted (test).', suppressed_at = now(), suppressed_by_account_id = $1
+        where source_id = 'src-owned'`,
+      [ADMIN],
+    );
+    expect(await ownedExcerpt()).toBeUndefined();
+    await db.query(
+      `update pilot.shadow_library_sources
+          set retrieval_suppressed = false, suppression_reason = null, suppressed_at = null, suppressed_by_account_id = null
+        where source_id = 'src-owned'`,
+    );
+    expect(await ownedExcerpt()).toBe('Southpaw footwork pivot: passage chunk-owned.');
+
+    await db.query(`update pilot.shadow_library_chunks set text_content = 'Rewritten passage.' where chunk_id = 'chunk-owned'`);
+    expect(await ownedExcerpt()).toBeUndefined();
+    await db.query(`update pilot.shadow_library_chunks set text_content = 'Southpaw footwork pivot: passage chunk-owned.' where chunk_id = 'chunk-owned'`);
   });
 });

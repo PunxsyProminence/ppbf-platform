@@ -7,7 +7,7 @@ import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { RESEARCH_BRIDGE_EXPORTABLE_RIGHTS, searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
 
 const MAX_EVIDENCE_ITEMS = 4;
-const MAX_EXCERPT_CHARS = 900;
+export const MAX_EXCERPT_CHARS = 900;
 const MAX_BUNDLE_CHARS = 3_200;
 
 export type ShadowEvidenceAvailability = 'available' | 'unavailable';
@@ -31,6 +31,23 @@ export interface ShadowEvidenceCitation {
  * source of unknown rights is cited by title only, as before.
  */
 export const PASSAGE_DISPLAY_RIGHTS = RESEARCH_BRIDGE_EXPORTABLE_RIGHTS;
+
+/**
+ * The passage a reopened conversation may show again: the exact text the
+ * answer was given, found as the prefix of the chunk's current text (with the
+ * live answer's whitespace rule) whose sha256 is the one stored with the
+ * evidence. The live excerpt may have been cut short by the bundle budget;
+ * this finds that length. A chunk whose text has since changed matches no
+ * prefix, and its citation stays a title.
+ */
+export function replayCitedPassage(currentText: string, excerptSha256: string): string | undefined {
+  const normalized = currentText.replace(/\s+/g, ' ').trim();
+  for (let length = Math.min(MAX_EXCERPT_CHARS, normalized.length); length > 0; length -= 1) {
+    const candidate = normalized.slice(0, length);
+    if (sha256(candidate) === excerptSha256) return candidate;
+  }
+  return undefined;
+}
 
 /** A citation as the chat API sends it; `excerpt` only within the rights rule. */
 export interface ShadowPublicCitation extends ShadowEvidenceCitation {
@@ -277,20 +294,30 @@ async function persistEvidenceBundle(input: {
              or c.subject_id is null
              or c.subject_id = $10
            )
-         returning evidence_id, source_id, document_id, library_organization_id
+         returning evidence_id, source_id, document_id, chunk_id, library_organization_id
          )
+         -- Left joins: a row that does not line up makes the passage not
+         -- shown (fails closed), never the evidence itself unsaved.
          select stored.evidence_id,
-                (s.rights_status = any($12::text[]) and ds.rights_status = any($12::text[])) as passage_displayable
+                coalesce(s.rights_status = any($12::text[])
+                         and ds.rights_status = any($12::text[])
+                         -- Gym-wide text only, as the research bridge: a
+                         -- passage filed against one athlete stays a title.
+                         and c.subject_id is null
+                         and d.subject_id is null, false) as passage_displayable
            from stored
-           join pilot.shadow_library_sources s
+           left join pilot.shadow_library_sources s
              on s.source_id = stored.source_id
             and s.organization_id = stored.library_organization_id
-           join pilot.shadow_library_documents d
+           left join pilot.shadow_library_documents d
              on d.document_id = stored.document_id
             and d.organization_id = stored.library_organization_id
+           left join pilot.shadow_library_chunks c
+             on c.chunk_id = stored.chunk_id
+            and c.organization_id = stored.library_organization_id
            -- The source whose document the text was cut from: the text's
            -- rights are its document's, as the database's own guard reads them.
-           join pilot.shadow_library_sources ds
+           left join pilot.shadow_library_sources ds
              on ds.source_id = d.source_id
             and ds.organization_id = d.organization_id`,
         [

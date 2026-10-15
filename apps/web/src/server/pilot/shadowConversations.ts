@@ -4,7 +4,12 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentit
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
-import { PASSAGE_DISPLAY_RIGHTS } from './shadowEvidence';
+import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
+import { PASSAGE_DISPLAY_RIGHTS, replayCitedPassage } from './shadowEvidence';
+
+// This query's `s` is the chat session, so the source predicate is written
+// against `ls`, the cited source, here.
+const SERVABLE_CITED_SOURCE_SQL = SERVABLE_LIBRARY_SOURCE_SQL.replace(/\bs\./g, 'ls.');
 import { isMinor } from './wallDisplay';
 
 export type ShadowConversationSessionType =
@@ -559,7 +564,8 @@ export async function loadConversationMessages(input: {
       token: string;
       sourceTitle: string;
       documentName: string;
-      excerpt?: string;
+      passageSource?: string;
+      passageSha?: string;
     }>;
   }>(
     `select
@@ -577,14 +583,19 @@ export async function loadConversationMessages(input: {
              'token', '[E:' || mc.evidence_id::text || ']',
              'sourceTitle', ls.title,
              'documentName', d.document_name,
-             -- The passage, read again with its rights checked again
-             -- (shadowEvidence.ts PASSAGE_DISPLAY_RIGHTS, A-Q11): shown only
-             -- while both its cited source and its document's source are
-             -- PPBF-owned or open-licence. Null otherwise, and stripped.
-             'excerpt', case
+             -- The passage, read again with everything checked again
+             -- (A-Q11): both its cited source and its document's source
+             -- PPBF-owned or open-licence (PASSAGE_DISPLAY_RIGHTS), gym-wide,
+             -- and still servable. The text and the stored hash go to
+             -- replayCitedPassage below and are never sent; null otherwise.
+             'passageSource', case
                when ls.rights_status = any($5::text[]) and ds.rights_status = any($5::text[])
-               then left(btrim(regexp_replace(c.text_content, '[[:space:]]+', ' ', 'g')), 900)
-             end
+                and c.subject_id is null
+                and ${SERVABLE_CITED_SOURCE_SQL}
+                and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
+               then c.text_content
+             end,
+             'passageSha', ei.excerpt_sha256
            ))
            order by mc.ordinal
          ) filter (where mc.evidence_id is not null),
@@ -640,7 +651,12 @@ export async function loadConversationMessages(input: {
     evidenceTier: row.evidence_tier,
     handoff: row.handoff,
     createdAt: row.created_at.toISOString(),
-    citations: Array.isArray(row.citations) ? row.citations : [],
+    citations: (Array.isArray(row.citations) ? row.citations : []).map(({ passageSource, passageSha, ...citation }) => {
+      const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
+        ? replayCitedPassage(passageSource, passageSha)
+        : undefined;
+      return excerpt ? { ...citation, excerpt } : citation;
+    }),
   }));
 }
 
