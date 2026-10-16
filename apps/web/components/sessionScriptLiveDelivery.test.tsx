@@ -394,9 +394,12 @@ describe('the Show on TV switch', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('SOMETHING_ELSE');
   });
 
-  it('says plainly that the TV does not show sessions yet', async () => {
+  // F-060: the TV has shown sessions since Release 21. The switch alone puts
+  // nothing on it; the coach sends the run from Gym TVs on coach home.
+  it('says how the session reaches a TV, not that TVs cannot show it', async () => {
     await renderLive(liveRun());
-    expect(screen.getByText(/The gym TV does not show sessions yet/)).toBeInTheDocument();
+    expect(screen.getByText('Switching this on lets you send the session to a gym TV from Gym TVs on your coach home.')).toBeInTheDocument();
+    expect(screen.queryByText(/does not show sessions yet/)).toBeNull();
   });
 });
 

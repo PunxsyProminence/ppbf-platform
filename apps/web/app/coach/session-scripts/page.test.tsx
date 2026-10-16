@@ -1144,3 +1144,78 @@ describe('ordinary errors on this page', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// MARKING A PLAN REVIEWED (F-092). A plan made from a template starts as a
+// draft; a coach marks it reviewed. Draft only: nothing un-marks a review.
+// ---------------------------------------------------------------------------
+describe('marking a plan reviewed', () => {
+  const READ_AT = '2026-10-13T15:00:00.000Z';
+  const stored = (overrides: Record<string, unknown> = {}) => detail({ version: 1, updated_at: READ_AT, ...overrides });
+
+  /** The list and the open plan both read `state`; a successful PATCH moves it on. */
+  function reviewFetch(initial: string, answer?: (body: Record<string, unknown>) => Response) {
+    let state = initial;
+    const patches: Array<Record<string, unknown>> = [];
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        if (answer) return answer(body);
+        state = 'coach_reviewed';
+        return jsonResponse({ outcome: 'reviewed', script: stored({ authoring_state: state, updated_at: '2026-10-13T16:00:00.000Z' }) });
+      }
+      return url.includes('script_id=')
+        ? jsonResponse({ script: stored({ authoring_state: state }) })
+        : jsonResponse({ scripts: [{ ...FRIDAY, authoring_state: state }] });
+    });
+    return { patches };
+  }
+
+  async function openPlan() {
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+    await screen.findByText('Arrival and wraps');
+  }
+
+  it('a draft offers Mark reviewed; pressed, the list reads "Coach reviewed" and the button goes', async () => {
+    const { patches } = reviewFetch('draft');
+    await openPlan();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is marked coach reviewed.');
+    expect(patches).toEqual([{ script_id: 'scr-friday', expected_updated_at: READ_AT, reviewed: true }]);
+    expect(await screen.findByText('Coach reviewed')).toBeInTheDocument();
+    expect(screen.queryByText('Draft')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    // Still open, and the other controls are as they were.
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retire this plan' })).toBeInTheDocument();
+  });
+
+  it.each(['coach_reviewed', 'in_use', 'retired'])('a plan that is %s offers no Mark reviewed', async (state) => {
+    reviewFetch(state);
+    await openPlan();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+  });
+
+  it.each([
+    [409, { error: 'SESSION_SCRIPT_RETIRED' }, /This plan is retired, so it was not marked reviewed\. Bring it back first\./],
+    [409, { error: 'SESSION_SCRIPT_CHANGED' }, /This plan was saved after you opened it, so it was not changed/],
+    [403, { error: 'Forbidden: role not allowed' }, /Your account may not mark session scripts reviewed, so the plan was not changed/],
+  ])('a refusal (%i %j) says so in a plain sentence and leaves the plan open as a draft', async (status, body, sentence) => {
+    reviewFetch('draft', () => ({ ok: false, status, json: async () => body }) as Response);
+    await openPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark reviewed' })).not.toBeDisabled());
+  });
+});
