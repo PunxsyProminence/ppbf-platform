@@ -26,9 +26,9 @@ export const runtime = 'nodejs';
 // -- so the status change discloses nothing the hidden not-found was hiding.
 //
 // The entries READ stays org-wide for coaches by design, and is not a gap:
-// athletes/list records the doctrine ("a coach plans a floor and picks up
-// cover across the whole gym") and already lets any coach read every athlete's
-// name and gym status org-wide, restricting only dob and emergency contact. An
+// since issue #1480 (OD-2026-10-11-007) a coach reaches every athlete of
+// their own gym, and athletes/list already lets any coach read every athlete's
+// name, gym status, dob and emergency contact org-wide. An
 // entry row exposes a name, an entry status and a result -- nothing about the
 // child's body or family. Full gate list: competitionSafetyGates.ts and
 // docs/capabilities/GATES.md §9.

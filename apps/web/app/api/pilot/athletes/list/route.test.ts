@@ -114,11 +114,10 @@ beforeEach(() => {
 });
 
 describe('which read a role gets', () => {
-  // The whole point of the field split. A coach reading the roster must go
-  // through the relationship-scoped read; if this route ever falls back to
-  // getAthletesByOrganization for a coach, every coach in the organization is
-  // handed every child's date of birth and guardian phone number again, and
-  // nothing errors while it happens.
+  // A coach reads through getAthletesForCoach, which bounds the roster to the
+  // coach's own gym and its LIVE athletes (issue #1480 PR C). The admin read
+  // has its own paging and filters; the two are kept apart so a change to
+  // either is a decision, not an accident.
   test('a coach reads through getAthletesForCoach, never the org-wide read', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
 
@@ -337,9 +336,10 @@ describe('what staff receive is unchanged', () => {
 });
 
 describe('what the coach branch hands back', () => {
-  // The route is a pass-through: it must not re-add the columns the scoped
-  // read redacted, and it must not drop the keys either.
-  test('redacted rows reach the client with the keys present and null', async () => {
+  // The route is a pass-through: since issue #1480 PR C every coach of the gym
+  // reads dob and emergency_contact for every athlete of it, and a row with
+  // none recorded keeps the keys, null.
+  test('rows reach the client as the scoped read returned them, keys present', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetAthletesForCoach.mockResolvedValue([
       {
@@ -360,7 +360,7 @@ describe('what the coach branch hands back', () => {
         dob: null,
         weight_class: '145',
         gym_status: 'active',
-        emergency_contact: null,
+        emergency_contact: null, // none recorded
         active_flag: true,
         coach_id: 'coach-other@punxsyprominence.org',
         created_at: '2026-08-02T00:00:00.000Z',
@@ -376,7 +376,7 @@ describe('what the coach branch hands back', () => {
     expect(body.items[1]).toHaveProperty('dob', null);
     expect(body.items[1]).toHaveProperty('emergency_contact', null);
     // Still a whole roster: the athlete this coach does not coach is present
-    // and nameable, which is the half of the split that keeps cover working.
+    // and nameable.
     expect(body.items[1].full_name).toBe('Devon Pike');
     expect(body.items[1].gym_status).toBe('active');
   });
