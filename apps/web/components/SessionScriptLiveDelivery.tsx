@@ -507,10 +507,10 @@ export default function SessionScriptLiveDelivery({
         >
           {run.show_on_wall ? 'Take off the TV' : 'Show on TV'}
         </button>
-        {/* Honest until the wall reads this switch (the next slice of the gym
-            TV work). Remove this line in the slice that makes the TV show it. */}
+        {/* The switch alone puts nothing on a TV: the coach sends the run from
+            Gym TVs on coach home (GymTvPanel), which refuses while it is off. */}
         <p className="t-data text-[color:var(--bone-400)]">
-          The gym TV does not show sessions yet. This switch is saved now and takes effect when it does.
+          Switching this on lets you send the session to a gym TV from Gym TVs on your coach home.
         </p>
       </div>
 

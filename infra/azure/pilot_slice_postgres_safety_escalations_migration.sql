@@ -96,6 +96,17 @@
 -- videoScanReview.ts already documents. triggered_by is always 'system' --
 -- an automated screen decided this, not a person.
 --
+-- 'shadow_disclosure' is filed by shadowDisclosure.ts when an athlete's
+-- SHADOW chat message trips feedbackSafetyScan.ts's safeguarding cues
+-- (F-076). Jason's ruling OD-2026-10-01-008 section 3 sends an athlete-scoped
+-- SHADOW safety alert to the athlete's coach of record, any coach actively
+-- covering them, and admins, so unlike 'athlete_voice' these rows are NOT
+-- excluded from coach-scoped reads. A message that names a coach or other
+-- gym staff is filed as 'athlete_voice' instead (admin-only), because that
+-- coach may be who it is about. Like athlete_voice, the reason and metadata
+-- carry NO message words: source_id is null and metadata holds only the
+-- conversation pointer an admin follows into SHADOW human review.
+--
 -- escalated_to_role IS CONSTRAINED, UNLIKE violation_escalations.escalated_to_role
 --
 -- The compliance table's equivalent column is unconstrained free text and in
@@ -118,7 +129,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -145,14 +156,15 @@ create table if not exists pilot.safety_escalations (
 -- Idempotent repair for a database where an earlier revision of this
 -- migration created the table with a narrower source_type vocabulary
 -- (pre-athlete_voice/#198, pre-training_hold/#82, pre-incident/#152, or
--- pre-video_scan, or pre-compliance_violation): the create-if-not-exists
+-- pre-video_scan, pre-compliance_violation, or pre-shadow_disclosure): the create-if-not-exists
 -- above no-ops there, which would leave every newer source_type's
 -- escalation violating the stale CHECK -- and the filing code deliberately
 -- swallows that failure (oracle safety), so the loss would be silent.
 -- Re-running this migration must therefore widen the CHECK in place,
 -- straight to the current full vocabulary regardless of which earlier
 -- revision is on disk. The runner's readiness probe also refuses to PASS
--- until both 'video_scan' and 'compliance_violation' are in the constraint,
+-- until 'video_scan', 'compliance_violation' and 'shadow_disclosure' are in
+-- the constraint,
 -- so a stale database fails loudly instead of dropping disclosures,
 -- incident reports, blocked/infected video verdicts, or compliance
 -- escalations.
@@ -167,13 +179,14 @@ begin
     and pg_get_constraintdef(oid) like '%source_type%'
     and pg_get_constraintdef(oid) like '%''near_miss''%'
     and (pg_get_constraintdef(oid) not like '%''video_scan''%'
-      or pg_get_constraintdef(oid) not like '%''compliance_violation''%');
+      or pg_get_constraintdef(oid) not like '%''compliance_violation''%'
+      or pg_get_constraintdef(oid) not like '%''shadow_disclosure''%');
 
   if stale_constraint is not null then
     execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
-      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation'));
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure'));
   end if;
 end $$;
 

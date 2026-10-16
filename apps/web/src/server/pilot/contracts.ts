@@ -23,21 +23,16 @@ export interface PilotAthlete {
 }
 
 /**
- * One athlete as a COACH reads them off the roster list, which is not the same
- * row an organization admin reads.
+ * One athlete as a COACH reads them off the roster list.
  *
- * A coach needs every athlete's name and gym status to plan a floor and to
- * pick up cover, so the roster stays org-wide. A coach does not need the date
- * of birth and the emergency contact of a child they have no relationship to
- * -- that pair is a minor's identity and a phone number belonging to an adult
- * who never agreed to appear on a staff screen. So the LIST stays whole and
- * the FIELDS narrow: both are null unless the reader is the coach of record or
- * holds an active pilot.coach_coverage grant.
+ * Since issue #1480 PR C (OD-2026-10-11-007, "lets make it coaches to whole
+ * gym") a coach reads every live athlete of their own gym with dob and
+ * emergency_contact, as the per-athlete gate already allowed. Until then the
+ * two fields were null for athletes the coach had no assignment or live
+ * coverage on. Both stay nullable: a row may have no recorded dob.
  *
- * `null` rather than an absent key, deliberately. The key stays present so a
- * client cannot tell "redacted" apart from "this build predates the field" by
- * shape, and null is already the value this codebase treats as fail-safe --
- * wallDisplay.ts#isMinor reads a null dob as a minor, never as an adult.
+ * A null dob means none is recorded; wallDisplay.ts#isMinor reads it as a
+ * minor, never as an adult.
  */
 export type CoachRosterAthlete = Omit<PilotAthlete, 'dob' | 'emergency_contact'> & {
   dob: string | null;

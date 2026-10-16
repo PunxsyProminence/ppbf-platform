@@ -67,13 +67,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, minors, 'parent') });
     }
 
-    // Coaches and organization admins both read the whole roster, and they do
-    // NOT read the same row. An admin administers the organization's records;
-    // a coach coaches particular athletes. So the coach's read goes through
-    // getAthletesForCoach, which keeps every athlete's name and gym status --
-    // a coach plans a floor and picks up cover across the whole gym -- while
-    // returning dob and emergency_contact only for athletes this coach is the
-    // coach of record for or holds an active coverage grant on.
+    // Coaches and organization admins both read the whole roster. The coach's
+    // read goes through getAthletesForCoach: every live athlete of their own
+    // gym with name, gym status, dob and emergency_contact (issue #1480 PR C,
+    // OD-2026-10-11-007; the two fields were blanked for athletes the coach had
+    // no assignment or coverage on until then).
     //
     // Checked before the admin branch, and with an exact role comparison: a
     // coach is never an organization admin, and isOrganizationAdminRole's

@@ -10549,7 +10549,7 @@
     "id": "app/api/pilot/scheduler/attendance-summary/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/scheduler/attendance-summary",
-    "gate": "requirePrincipal + inline role check (coach / org admin) + athleteIdsForCoach",
+    "gate": "requirePrincipal + inline role check (coach / org admin) + organizationActionableRoster reach for a coach",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -10561,15 +10561,17 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. ?report=classes&from=&to= (RP-02, #1542): one row per class occurrence in the period by gym day -- registered, present, absent, excused, unmarked and rate, counts only, no names -- as JSON with totals or format=csv; same roles and coach scope (own classes, athletes in reach).",
+    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by inReach (since issue #1480 the live athletes of the coach's own gym), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. ?report=classes&from=&to= (RP-02, #1542): one row per class occurrence in the period by gym day -- registered, present, absent, excused, unmarked and rate, counts only, no names -- as JSON with totals or format=csv; same roles and coach scope (own classes, athletes in reach).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10590,15 +10592,17 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside athleteIdsForCoach; no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside the coach's reach (since issue #1480 the live athletes of their own gym); no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -10619,15 +10623,13 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside athleteIdsForCoach the hold warning carries scope only and the stored note is kept, a note from them refused. cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside the coach's reach (since issue #1480 any athlete not live in their own gym) the hold warning carries scope only and the stored note is kept, a note from them refused. review_coaching_request: the named coach must reach the athlete through assertActorCanAccessAthlete asked as that coach (any active coach of the gym, #1480 Q2). cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertActorCanAccessAthlete",
-        "athleteIdsForCoach",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": []
     }

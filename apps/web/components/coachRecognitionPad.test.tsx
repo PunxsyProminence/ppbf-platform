@@ -247,3 +247,23 @@ it('says the roster failed rather than showing an empty gym', async () => {
     expect(screen.getByText(/roster did not load/i)).toBeTruthy();
   });
 });
+
+it('tells the page who it was sent to, only once the server took it (F-071 read-back)', async () => {
+  const onSent = jest.fn();
+  render(<CoachRecognitionPad onSent={onSent} />);
+  await screen.findByRole('button', { name: 'Ada Rivera' });
+
+  postFails = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Ada Rivera' }));
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Good partner' }));
+  });
+  expect(onSent).not.toHaveBeenCalled();
+
+  postFails = false;
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Good partner' }));
+  });
+  expect(onSent).toHaveBeenCalledTimes(1);
+  expect(onSent).toHaveBeenCalledWith('ath_1');
+});
