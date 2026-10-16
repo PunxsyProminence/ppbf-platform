@@ -400,6 +400,10 @@ const EMPTY_DRAFTS: Drafts = {
 
 type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
 
+/** A roster read that has not answered by then is treated as failed, so the
+    coach is offered Check again rather than a picker that never fills. */
+const ROSTER_TIMEOUT_MS = 15_000;
+
 const PREVIOUS_ATHLETE_WRITE_FAILED =
   'Something you submitted for the athlete you were on before did not go through. Go back to them and check.';
 
@@ -578,21 +582,33 @@ export default function DecisionLoopReviewPage() {
      came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
      on the first effect; undefined means not yet taken. */
   const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
-  /* The picker is the only way to choose an athlete, so a roster that would
-     not load says so and offers another try -- an empty picker would read as
-     "no athletes". */
+  /* The picker is the only way to choose an athlete, so it is never an empty
+     picker that reads as "no athletes": while the roster is read it says so,
+     and a roster that would not load -- or has not answered within
+     ROSTER_TIMEOUT_MS -- says that and offers another try. */
   const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const loadRoster = useCallback(async () => {
     let roster: AthleteListItem[] | null = null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ROSTER_TIMEOUT_MS);
+    // Settles the read as failed on the timeout even if the request ignores the abort.
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new Error('Roster read timed out')));
+    });
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+      const response = await Promise.race([
+        fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include', signal: controller.signal }),
+        timedOut,
+      ]);
       if (response.ok) {
-        const payload = (await response.json()) as { items?: AthleteListItem[] };
+        const payload = (await Promise.race([response.json(), timedOut])) as { items?: AthleteListItem[] };
         roster = payload.items ?? [];
         setAthletes(roster);
       }
     } catch {
       // Said on the page below the picker.
+    } finally {
+      clearTimeout(timer);
     }
     setRosterState(roster ? 'loaded' : 'failed');
     /* The arriving athlete is selected only if the roster lists them: the
@@ -1231,6 +1247,7 @@ export default function DecisionLoopReviewPage() {
               <select
                 value={athleteId}
                 onChange={(event) => selectAthlete(event.target.value)}
+                disabled={rosterState === 'loading'}
                 className="select max-w-md"
               >
                 <option value="">Select an athlete…</option>
@@ -1242,6 +1259,7 @@ export default function DecisionLoopReviewPage() {
                 ))}
               </select>
             </label>
+            {rosterState === 'loading' && <p className="t-muted mt-[var(--s3)]">Loading your athletes…</p>}
             {rosterState === 'failed' && (
               <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
                 <p className="t-body">Couldn&apos;t load your athletes.</p>

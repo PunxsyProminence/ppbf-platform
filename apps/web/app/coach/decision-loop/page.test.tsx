@@ -3034,6 +3034,70 @@ describe('arriving from "Record what you did"', () => {
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
   });
 
+  test('while the roster is read the page says so and the picker waits; the answer replaces the line', async () => {
+    const base = installFetch();
+    let releaseRoster: () => void = () => undefined;
+    const rosterHeld = new Promise<void>((resolve) => {
+      releaseRoster = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/athletes/list')) await rosterHeld;
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    render(<DecisionLoopReviewPage />);
+
+    expect(screen.getByText('Loading your athletes…')).toBeInTheDocument();
+    expect(athletePicker()).toBeDisabled();
+    expect(screen.queryByText("Couldn't load your athletes.")).toBeNull();
+
+    await act(async () => {
+      releaseRoster();
+      await rosterHeld;
+    });
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect(screen.queryByText('Loading your athletes…')).toBeNull();
+    expect(athletePicker()).not.toBeDisabled();
+  });
+
+  test('a roster read that never answers ends in "Couldn\'t load your athletes." and Check again, not an endless wait', async () => {
+    jest.useFakeTimers();
+    try {
+      const base = installFetch();
+      let rosterUp = false;
+      global.fetch = jest.fn((url: string, init?: RequestInit) => (
+        String(url).includes('/api/pilot/athletes/list') && !rosterUp
+          ? new Promise<Response>(() => undefined) // a dropped connection: never settles, ignores the abort
+          : base(url, init)
+      )) as unknown as typeof fetch;
+      render(<DecisionLoopReviewPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByText('Loading your athletes…')).toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(14_000);
+      });
+      expect(screen.queryByText("Couldn't load your athletes.")).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1_001);
+      });
+      expect(screen.getByText("Couldn't load your athletes.")).toBeInTheDocument();
+      expect(screen.queryByText('Loading your athletes…')).toBeNull();
+
+      rosterUp = true;
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+      await act(async () => {
+        await jest.runOnlyPendingTimersAsync();
+      });
+      expect(screen.getByRole('option', { name: 'Jordan T.' })).toBeInTheDocument();
+      expect(screen.queryByText("Couldn't load your athletes.")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('a roster that answered says nothing about loading', async () => {
     installFetch();
     render(<DecisionLoopReviewPage />);
