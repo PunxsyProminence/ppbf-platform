@@ -11,6 +11,7 @@ const end = SCRIPT.indexOf('\n}\n', start);
 if (start < 0 || end < 0) throw new Error('namePattern not found in the retention script');
 const namePattern = new Function(`${SCRIPT.slice(start, end + 3)}\nreturn namePattern;`)() as (
   names: Array<string | null | undefined>,
+  gymWide?: boolean,
 ) => string | null;
 
 /* The scrub pattern the retention purge hands Postgres (regexp_replace, flags
@@ -42,5 +43,14 @@ describe('namePattern', () => {
 
   test('dedupes names that repeat across sources', () => {
     expect(namePattern(['Casey Pike', 'Casey Pike', 'Pike'])).toBe('\\m(Casey Pike|Casey|Pike)\\M');
+  });
+
+  test("gym-wide, a particle or a part under three letters is not a name on its own; the full name still is", () => {
+    // The person's own notes and the ones about them: every part, particles included.
+    expect(namePattern(['Maria de la Cruz'])).toBe('\\m(Maria de la Cruz|Maria|Cruz|de|la)\\M');
+    // Everyone else's notes in the gym (Overwatch 2026-10-16): "of" or "de" in a coach's note stays.
+    expect(namePattern(['Maria de la Cruz'], true)).toBe('\\m(Maria de la Cruz|Maria|Cruz)\\M');
+    expect(namePattern(['Al Van Der Berg Jr.', 'Ed'], true)).toBe('\\m(Al Van Der Berg Jr|Berg)\\M');
+    expect(namePattern(['Mac', 'Of'], true)).toBeNull();
   });
 });

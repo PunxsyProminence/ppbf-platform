@@ -47,7 +47,7 @@ const ATHLETE_B = 'ath-gn-b'; // live: Sam Rivera
 const COACH = 'acct-gn-coach';
 const LOGIN_A = 'acct-gn-athlete-a';
 const LOGIN_B = 'acct-gn-athlete-b';
-const GUARDIAN = 'acct-gn-guardian'; // purged: Gale Pike, deleted 13 months ago, nothing flagged
+const GUARDIAN = 'acct-gn-guardian'; // purged: Maria de la Cruz, deleted 13 months ago, nothing flagged
 const PARENT_B = 'acct-gn-parent-b'; // live: Sam's parent
 const OTHER_COACH = 'acct-gn-coach-2';
 
@@ -125,7 +125,7 @@ async function notesIn(organizationId: string): Promise<Record<string, string[]>
   };
 }
 
-/** Another person's notes in a gym that name Rosa (the purged child), Gale (the purged guardian) and Sam (live). */
+/** Another person's notes in a gym that name Rosa (the purged child), Maria de la Cruz (the purged guardian) and Sam (live). */
 async function seedNotes(organizationId: string, staff: string, parent: string | null, samAthleteId: string) {
   const conversation = (await db.query<{ id: string }>('select gen_random_uuid()::text as id')).rows[0].id;
   await db.query(
@@ -137,7 +137,7 @@ async function seedNotes(organizationId: string, staff: string, parent: string |
     `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content, created_at)
      values (gen_random_uuid(), $1, $2, $3, 'user', 'Should Rosa spar Sam?', now() - interval '3 minutes'),
             (gen_random_uuid(), $1, $2, $3, 'assistant', 'Rosa Ortiz and Sam can drill together.', now() - interval '2 minutes'),
-            (gen_random_uuid(), $1, $2, $3, 'user', 'Talked to Gale today about the move.', now() - interval '1 minute')`,
+            (gen_random_uuid(), $1, $2, $3, 'user', 'Talked to Maria de la Cruz today about a lot of drills, de facto the plan.', now() - interval '1 minute')`,
     [conversation, organizationId, staff],
   );
   await db.query(
@@ -256,7 +256,7 @@ beforeAll(async () => {
   );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
-     values ($1, 'par-gn-g', $2, 'Gale Pike', '555-0100', 'g@example.test')`,
+     values ($1, 'par-gn-g', $2, 'Maria de la Cruz', '555-0100', 'g@example.test')`,
     [ORG, GUARDIAN],
   );
   await db.query(`update pilot.accounts set deleted_at = now() - interval '13 months' where account_id = $1`, [GUARDIAN]);
@@ -339,7 +339,7 @@ afterAll(async () => {
 });
 
 // Rows changed, summed over the two purged people: the coach's chat holds two
-// messages naming Rosa (the child's purge) and one naming Gale (the guardian's),
+// messages naming Rosa (the child's purge) and one naming Maria de la Cruz (the guardian's; its "of" stays),
 // its title names Rosa; one feedback comment, one flag note, one review summary;
 // four research rows (the learning loop's, the live parent's question, a
 // staff question and a Library question). A's own question is deleted, not
@@ -386,7 +386,7 @@ describe("the retention purge and other people's notes that name a purged person
       keys: [],
       messages: [
         'Should [name] spar Sam?',
-        'Talked to [name] today about the move.',
+        'Talked to [name] today about a lot of drills, de facto the plan.',
         '[name] and Sam can drill together.',
         'Lena called; comcast.net is down, net weight is 60.',
       ].sort(),
@@ -425,7 +425,7 @@ describe("the retention purge and other people's notes that name a purged person
     const elsewhere = await notesIn(OTHER_ORG);
     expect(elsewhere.titles).toEqual(['Pair Rosa with Sam']);
     expect(elsewhere.messages).toContain('Rosa Ortiz and Sam can drill together.');
-    expect(elsewhere.messages).toContain('Talked to Gale today about the move.');
+    expect(elsewhere.messages).toContain('Talked to Maria de la Cruz today about a lot of drills, de facto the plan.');
     expect(elsewhere.feedback).toEqual(['Rosa needs a simpler answer']);
     expect(elsewhere.flags).toEqual(['Rosa Ortiz was given the wrong round count']);
     expect(elsewhere.reviews).toEqual(["Coach note: Rosa seemed upset after Sam's session"]);
@@ -440,6 +440,6 @@ describe("the retention purge and other people's notes that name a purged person
       shadow_research_rows_names_scrubbed: EXPECTED.research,
     });
     const text = JSON.stringify(audit.rows[0].details);
-    for (const secret of ['Rosa', 'Ortiz', 'Gale', 'Pike']) expect(text).not.toContain(secret);
+    for (const secret of ['Rosa', 'Ortiz', 'Maria', 'Cruz']) expect(text).not.toContain(secret);
   });
 });

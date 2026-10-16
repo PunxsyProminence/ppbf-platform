@@ -342,8 +342,19 @@ function emptyShadowCounts() {
  * j), so a part must be two characters or more. Short common words that are
  * also name parts ("Will", "de") are scrubbed too: the method prefers losing
  * a word of kept text to keeping a name.
+ *
+ * GYM-WIDE (`gymWide`, for every OTHER note in the gym, not the person's own
+ * or the ones about them): a single part shorter than three letters, or a
+ * particle on its own (de, la, van, of, jr, mc ...), is not a name there --
+ * blanking "of" in every note of the gym would damage the gym's own text
+ * (Overwatch 2026-10-16). A full multi-part name still matches as a phrase:
+ * "Maria de la Cruz" goes, "a lot of drills" keeps "of". The cost: a
+ * two-letter first name ("Al", "Jo") alone is left in other people's notes.
  */
-function namePattern(names) {
+function namePattern(names, gymWide = false) {
+  const particles = new Set([
+    'de', 'da', 'del', 'la', 'le', 'van', 'von', 'der', 'den', 'of', 'the', 'jr', 'sr', 'ii', 'iii', 'mc', 'mac',
+  ]);
   const parts = new Set();
   for (const name of names) {
     const whole = (name ?? '').trim();
@@ -353,7 +364,10 @@ function namePattern(names) {
     const candidates = [whole, named, ...named.split(/[\s,.'’()@\-]+/)];
     for (const candidate of candidates) {
       const part = candidate.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-      if (part.length >= 2) parts.add(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      if (part.length < 2) continue;
+      const phrase = /[^\p{L}\p{N}]/u.test(part);
+      if (gymWide && !phrase && (part.length < 3 || particles.has(part.toLowerCase()))) continue;
+      parts.add(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }
   }
   if (parts.size === 0) return null;
@@ -711,7 +725,7 @@ async function scrubGymNotes(client, tables, organizationId, names) {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
   };
-  const pattern = namePattern(names);
+  const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
   const scrub = async (present, table, column) => (present
     ? (await client.query(
@@ -837,7 +851,7 @@ async function deidentifyShadowChatAudit(client, tables, people) {
     gyms.set(person.organizationId, entry);
   }
   const gymRows = [...gyms.values()]
-    .map((row) => ({ ...row, pattern: namePattern(row.names) }))
+    .map((row) => ({ ...row, pattern: namePattern(row.names, true) }))
     .filter((row) => row.pattern !== null);
   const scrubbed = await client.query(
     `update pilot.shadow_chat_audit a

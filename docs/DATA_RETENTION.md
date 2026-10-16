@@ -420,7 +420,11 @@ letters a to f and digits ("Cade") can also blank part of a citation token `[E:<
 reply. Pinned by `gymNameScrubPurge.pg.test.ts`. **The
 method's limits:** a nickname never recorded, a misspelling, a plural or a description is not
 caught; **over-blanking**: a common word that is also a name part ("Will", a ring name "Kid") is
-blanked to `[name]` in every turn and note of that gym, other children's kept AI text included; people
+blanked to `[name]` in every turn and note of that gym, other children's kept AI text included,
+except that in other people's turns and notes a part under three letters or a particle on its own
+(de, da, del, la, le, van, von, der, den, of, the, jr, sr, ii, iii, mc, mac) is left, while the full
+name still goes as a phrase (Overwatch 2026-10-16: "Maria de la Cruz" goes, "a lot of drills" keeps
+"of"; a two-letter first name such as "Al" alone is then left in those notes); people
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
 read-only production count). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
