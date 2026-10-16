@@ -9,8 +9,11 @@
  * cascade, or the shadow_rows_follow_account trigger once
  * shadow-deidentify-keys is applied: nothing writes subject_deleted_at). The
  * script now leaves a guardian with any review-queue row until deleted_at +
- * 2 years. At two years they are purged like anyone else; the de-identifying
- * sweep the ruling also names is not built.
+ * 2 years. At two years they are purged like anyone else, and the review
+ * entry is de-identified, not deleted (Q14: "then de-identified";
+ * retiredLoginPurge.pg.test.ts covers it in full). These guardians have no
+ * name on record, so their flagged conversation cannot be name-scrubbed and
+ * goes.
  *
  * Spins up the same disposable, local-only embedded Postgres the other
  * migration suites use. It NEVER connects to production or staging.
@@ -242,8 +245,15 @@ test('a flagged guardian deleted 13 months ago is held; 25 months ago, or unflag
 
   // Held: the account, the review entry and the conversation it points at.
   expect(await present(held.account, held.conversation)).toEqual({ account: 1, reviews: 1, conversation: 1 });
-  // Past two years: purged, review entry and conversation with it.
+  // Past two years: purged; the review entry stays de-identified (status
+  // kept), and the conversation, with no name to scrub, goes.
   expect(await present(past.account, past.conversation)).toEqual({ account: 0, reviews: 0, conversation: 0 });
+  const deidentified = await client.query(
+    `select status from pilot.shadow_human_review_queue
+      where organization_id = $1 and deidentified_at is not null and account_id like 'anon\_%'`,
+    [ORG_ID],
+  );
+  expect(deidentified.rows).toEqual([{ status: 'resolved' }]);
   // Unflagged: purged at one year, as before.
   expect(await present(unflagged.account, null)).toEqual({ account: 0, reviews: 0, conversation: 0 });
   // Not due at all.
