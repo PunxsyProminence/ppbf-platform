@@ -41,7 +41,8 @@
  * excerpt hash -- no account id and no text. The dry run prints evidence counts only.
  * The detached set is part of the plan fingerprint, and DETACH_RADIUS_EXCEEDED
  * refuses past DEFAULT_MAX_DETACH_ROWS. Evidence under the safeguarding hold
- * (a session with subject_deleted_at set) is never detached:
+ * (a session flagged in shadow_human_review_queue, by conversation or by
+ * account, or with subject_deleted_at set) is never detached:
  * DETACH_WOULD_BREAK_HOLD refuses, and the case goes to Jason.
  *
  * Other rows that point AT the moving rows from somewhere else are not moved,
@@ -307,17 +308,33 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   )).rows;
   const citationKey = (row) => `${row.assistant_message_id}:${row.evidence_id}`;
 
-  // The safeguarding hold (Jason 2026-10-07): a chat session with
-  // subject_deleted_at set is kept, identified, with its messages and the
-  // evidence those messages cite -- the account-delete trigger spares a
-  // bundle claimed or cited from such a session
-  // (pilot_slice_postgres_shadow_deidentify_keys_migration.sql, function
-  // shadow_rows_follow_account). Held evidence is never detached: any held
-  // item or citation refuses the apply (DETACH_WOULD_BREAK_HOLD). On apply the
-  // sessions that touch the citing bundles are read FOR SHARE first, so a hold
-  // set while the move runs waits for it rather than slipping past the count.
+  // The safeguarding hold (Jason 2026-10-07, Q7: a flagged SHADOW chat is kept
+  // two years past the person's deletion). Held evidence is never detached:
+  // any held item or citation refuses the apply (DETACH_WOULD_BREAK_HOLD).
+  // A session counts as held when ANY of:
+  //   - a shadow_human_review_queue row points at it, or names its account --
+  //     the hold actually enforced: the deleted-data purge keeps an account
+  //     with any review-queue row, and its conversations, for two years
+  //     (pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md). A flagged
+  //     person who is not deleted yet counts too: detaching now would empty
+  //     the record the hold keeps once they are;
+  //   - subject_deleted_at is set (the column the account-delete trigger
+  //     spares; nothing writes it yet).
+  // An item is held when its own account is flagged (the purge keeps the whole
+  // account, bundles included), or when its bundle is claimed or cited from a
+  // held session, as the trigger reads it (shadow_rows_follow_account).
+  // On apply, before the count: the citing bundles FOR UPDATE (no new claim
+  // can attach), the review queue in SHARE mode (no new flag), and the
+  // sessions touching the bundles FOR SHARE (no hold set mid-run).
   const citingBundleIds = [...new Set(citingItems.map((row) => row.bundle_id))];
   if (lock && citingBundleIds.length > 0) {
+    await client.query(
+      `select bundle_id from pilot.shadow_evidence_bundles
+        where bundle_id = any($1::uuid[])
+        order by bundle_id for update`,
+      [citingBundleIds],
+    );
+    await client.query('lock table pilot.shadow_human_review_queue in share mode');
     await client.query(
       `select s.conversation_id
          from pilot.shadow_chat_sessions s
@@ -334,12 +351,19 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   }
   const heldRow = (await client.query(
     `with held_sessions as (
-       select conversation_id from pilot.shadow_chat_sessions where subject_deleted_at is not null
+       select s.conversation_id
+         from pilot.shadow_chat_sessions s
+        where s.subject_deleted_at is not null
+           or exists (
+                select 1 from pilot.shadow_human_review_queue q
+                 where q.conversation_id = s.conversation_id or q.account_id = s.account_id)
      )
      select
        (select count(*)::int from pilot.shadow_evidence_items e
          where e.evidence_id = any($1::uuid[])
            and (exists (
+                  select 1 from pilot.shadow_human_review_queue q where q.account_id = e.account_id)
+                or exists (
                   select 1 from pilot.shadow_evidence_claims c
                    where c.bundle_id = e.bundle_id and c.account_id = e.account_id
                      and c.conversation_id in (select conversation_id from held_sessions))

@@ -242,6 +242,8 @@ function runTool(spec: Spec): Outcome {
         if (/^select evidence_id::text as evidence_id/i.test(t)) return ok(spec.citingItems ?? []);
         if (/^select assistant_message_id::text as assistant_message_id/i.test(t)) return ok(spec.messageCitations ?? []);
         if (/^select s\\.conversation_id/i.test(t)) return ok([]);
+        if (/^select bundle_id from pilot\\.shadow_evidence_bundles/i.test(t)) return ok([]);
+        if (/^lock table pilot\\.shadow_human_review_queue in share mode$/i.test(t)) return ok();
         if (/^with held_sessions as/i.test(t)) {
           return ok([{ held_items: spec.held?.items ?? 0, held_message_citations: spec.held?.message_citations ?? 0 }]);
         }
@@ -643,21 +645,29 @@ describe('detaching citing evidence', () => {
     expectRolledBackWithoutWrites(out);
   });
 
-  test('apply holds the sessions that touch the citing bundles before counting the hold; a dry run takes no lock', () => {
+  test('apply locks bundles, the review queue and the sessions before counting the hold; a dry run takes no lock', () => {
     const applied = runTool({ ...citedShelf(), options: applyOptions() });
     const all = texts(applied);
-    const lockAt = all.findIndex((t) => /^select s\.conversation_id/i.test(t));
-    const countAt = all.findIndex((t) => /^with held_sessions as/i.test(t));
-    expect(all[lockAt]).toMatch(/for share$/i);
-    expect(lockAt).toBeGreaterThan(-1);
-    expect(lockAt).toBeLessThan(countAt);
-    expect(applied.calls[lockAt].values).toEqual([[
-      '00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b2',
-    ]]);
+    const at = (shape: RegExp) => all.findIndex((t) => shape.test(t));
+    const bundlesAt = at(/^select bundle_id from pilot\.shadow_evidence_bundles/i);
+    const queueAt = at(/^lock table pilot\.shadow_human_review_queue in share mode$/i);
+    const sessionsAt = at(/^select s\.conversation_id/i);
+    const countAt = at(/^with held_sessions as/i);
+    expect(bundlesAt).toBeGreaterThan(-1);
+    expect(bundlesAt).toBeLessThan(queueAt);
+    expect(queueAt).toBeLessThan(sessionsAt);
+    expect(sessionsAt).toBeLessThan(countAt);
+    expect(all[bundlesAt]).toMatch(/for update$/i);
+    expect(all[sessionsAt]).toMatch(/for share$/i);
+    const bundles = ['00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b2'];
+    expect(applied.calls[bundlesAt].values).toEqual([bundles]);
+    expect(applied.calls[sessionsAt].values).toEqual([bundles]);
+    // A review-queue flag holds a session by conversation or by account.
+    expect(all[countAt]).toMatch(/q\.conversation_id = s\.conversation_id or q\.account_id = s\.account_id/);
 
     const dry = runTool({ ...citedShelf(), options: dryRunOptions() });
-    expect(texts(dry).some((t) => /^select s\.conversation_id/i.test(t))).toBe(false);
-    expect(texts(dry).some((t) => /for share/i.test(t))).toBe(false);
+    expect(texts(dry).some((t) => /^lock table|^select s\.conversation_id|^select bundle_id/i.test(t))).toBe(false);
+    expect(texts(dry).some((t) => /for share|for update/i.test(t))).toBe(false);
   });
 
   test('DETACH_RADIUS_EXCEEDED past the detach cap, which is separate from the move cap', () => {

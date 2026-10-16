@@ -723,6 +723,40 @@ describe('citing evidence report (real database)', () => {
     }
   });
 
+  /** A safeguarding review-queue row, as SHADOW files one. */
+  async function flag(client: Client, reviewId: string, accountId: string, conversationId: string | null) {
+    await client.query(
+      `insert into pilot.shadow_human_review_queue
+         (review_id, organization_id, conversation_id, account_id, category, severity, summary)
+       values ($1, $2, $3, $4, 'safeguarding', 'high', 'flagged')`,
+      [reviewId, FROM, conversationId, accountId],
+    );
+  }
+
+  test('a review-queue flag on a conversation that cites the shelf: DETACH_WOULD_BREAK_HOLD', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // Flags ADMIN's conversation, which cites E1 from bundle B1 (E1, E2).
+      await flag(client, '00000000-0000-4000-8000-0000000000a1', ADMIN, '00000000-0000-4000-8000-0000000000c1');
+      await expectHoldRefuses(client, { items: 2, message_citations: 1 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a review-queue flag naming an asker, with no conversation: DETACH_WOULD_BREAK_HOLD', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // COACH's bundle B2 (E3) is in no conversation; the flag names the account.
+      await flag(client, '00000000-0000-4000-8000-0000000000a2', COACH, null);
+      await expectHoldRefuses(client, { items: 1, message_citations: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a held conversation that only claims a citing bundle: DETACH_WOULD_BREAK_HOLD', async () => {
     const client = await freshDatabase();
     try {

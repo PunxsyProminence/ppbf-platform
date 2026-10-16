@@ -95,6 +95,9 @@ concurrency:
 
 jobs:
   move:
+    # Display text only. A production run waits for approval on this job, and
+    # the waiting box and approval dialog show its name, not the summary.
+    name: Move policy shelf (apply PERMANENTLY DELETES SHADOW evidence citing the shelf; counts in the dry run's citing_evidence)
     environment: ${{ inputs.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -253,8 +256,9 @@ jobs:
             echo ''
             echo '**Apply permanently deletes SHADOW evidence.** The SHADOW evidence items'
             echo 'that cite the moving rows, and the chat-answer citations of them, are'
-            echo 'deleted before the move. The dry run counts them in `citing_evidence`'
-            echo '(`items`, `message_citations`). The answers keep their text but lose their'
+            echo 'deleted before the move. The dry run log line `library.policy_move.dry-run`'
+            echo 'counts them in `citing_evidence` (`items`, `message_citations`, `held`).'
+            echo 'The answers keep their text but lose their'
             echo 'Sources list. The deleted rows survive only as ids, cited ids and excerpt'
             echo 'hashes in the audit row. Evidence under the safeguarding hold is never'
             echo 'deleted: `DETACH_WOULD_BREAK_HOLD` refuses the apply.'
