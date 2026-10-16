@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 28;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 29;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -131,6 +131,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 28;
 // flagged, handed-off, filtered or human-review exchange (OD-2026-10-07-009
 // ruling 4). No job context changed; the route is a watched file, so the version
 // moves. A v24 job still queued at deploy is refused as STALE.
+// 29: F-087 (lane L24): Library search, the evidence-bundle insert and the
+// empty-Library check also read the document's subject, so a chunk with no
+// subject under another athlete's document is no longer retrieved or cited.
+// Job context can only narrow. A v28 job still queued at deploy is refused as
+// STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -214,6 +219,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 26, sha256: 'e1ebb7cc56b45d077798b4ddb744dddd3f11355fe0e5d08ff7982c8fa91422e8' },
   { version: 27, sha256: '04dc8b1bbd8383064d38a3283a6859e58bf3526190bd3942ef99e871d2925a08' },
   { version: 28, sha256: '09d3d786140e40a64a5a53d0fd8544b80510325cdeb56f0abcc84979ce77a15d' },
+  { version: 29, sha256: 'b218a8f0960b9cfcda1bf881269551da92586c48367f6db323162f27da9e8b21' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
