@@ -117,7 +117,7 @@ export default function PortraitReviewPage() {
       // admin/video-review's approve confirm: the irreversible, releasing
       // direction is the one that gets the friction.
       const confirmed = window.confirm(
-        `Approve this portrait of ${item.full_name}? It is released under the platform’s visibility rules — for a child, to their own coaches and guardians. You are attesting that you have looked at the photograph above and that it is an appropriate photograph of this member.`,
+        `Approve this portrait of ${item.full_name}? It is released under the platform’s visibility rules — for a child, to the coaches of their gym and their guardians. You are attesting that you have looked at the photograph above and that it is an appropriate photograph of this member.`,
       );
       if (!confirmed) return;
     }

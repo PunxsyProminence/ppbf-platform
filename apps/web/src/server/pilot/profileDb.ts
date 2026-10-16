@@ -269,7 +269,17 @@ export async function resolveRelationship(
   if (viewer.role === 'board') return 'none';
 
   if (subject.athleteId) {
-    if (viewer.role === 'coach' && subject.coachAccountId === viewer.accountId) {
+    /* A COACH OF THE ATHLETE'S GYM IS THE ATHLETE'S COACH (issue #1480 C2).
+       Jason, 2026-10-12: "Any coach all coaches coach all athletes"
+       (OD-2026-10-12-016), applied by Overwatch to the photo circle (#1480
+       Q5) on top of OD-2026-10-11-007 ("lets make it coaches to whole gym").
+       Until then only the coach of record (athletes.coach_id) was
+       coach_of_subject. Another gym never gets here (the organization check
+       above), a deleted athlete has no identity (getSubjectIdentity), and the
+       organization admin stays organization_staff -- outside a minor's
+       circle, as before. "My athlete" (the roster's is_mine) is still the
+       coach of record; that is a different question. */
+    if (viewer.role === 'coach') {
       return 'coach_of_subject';
     }
     if (viewer.role === 'parent') {
@@ -291,7 +301,7 @@ export async function resolveRelationship(
       // return is the cross-family boundary for portraits.
       return linked ? 'guardian_of_subject' : 'none';
     }
-    if (isOrganizationAdminRole(viewer.role) || viewer.role === 'coach') {
+    if (isOrganizationAdminRole(viewer.role)) {
       return 'organization_staff';
     }
     return 'none';
