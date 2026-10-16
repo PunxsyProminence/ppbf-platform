@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
+import PastTrainingHolds from '@/components/PastTrainingHolds';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
@@ -1057,6 +1058,13 @@ export default function SportsMedicinePage() {
                         </div>
                       </div>
                     )}
+                    {/* Lifted and expired holds, read on demand (F-071). Athlete-safe
+                        fields only, under this board's 2026-08-15 rule. */}
+                    <PastTrainingHolds
+                      athleteId={row.athlete_id}
+                      athleteName={row.full_name}
+                      reloadKey={row.hold?.hold_id ?? 'none'}
+                    />
                     {rowRefusal ? (
                       <div className="mt-[var(--s3)]" role="alert">
                         {/* Brass, not red. The bare .stamp renders in

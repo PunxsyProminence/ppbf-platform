@@ -68,9 +68,8 @@ export async function GET(request: NextRequest) {
 
     /* `covered` is not decoration and it is not the same list as `marks`.
        The workspace roster comes from /api/pilot/athletes/list, which returns
-       EVERY athlete in the organization to a coach and merely redacts dob and
-       emergency_contact for the ones they are unrelated to -- it is a display
-       projection and says so. This route asks the access contract instead --
+       every live athlete of the gym to a coach -- a display projection, and it
+       says so. This route asks the access contract instead --
        for a coach and an admin alike, every live athlete of their own gym.
 
        Without saying which athletes it covered, a caller cannot tell "this

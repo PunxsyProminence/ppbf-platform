@@ -19,8 +19,8 @@ export const runtime = 'nodejs';
 //   * coach is bounded by the central access contract, athleteIdsForCoach --
 //     coach_id of record UNION active, unexpired coverage, the same union
 //     /api/pilot/escalations applies. getAthletesForCoach supplies display
-//     names for exactly that subset; its own org-wide list is a redacted
-//     display projection, never an access boundary.
+//     names for exactly that subset; its own org-wide list is a display
+//     projection, never an access boundary.
 //   * athlete, parent, and every other role: forbidden. This is a staff
 //     reporting surface; athlete- and parent-facing progression views exist
 //     separately and carry their own scoping.

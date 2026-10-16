@@ -42,10 +42,12 @@ export async function assertCoachReachesAthlete(organizationId: string, athleteI
  * Whether a coach has a RELATIONSHIP with an athlete: the coach of record, or
  * an active coverage grant (started, not yet expired or revoked).
  *
- * Not a reach check any more (see assertCoachReachesAthlete). Its one caller
- * is the scheduler, which asks it about the coach an ADMIN names for a
- * one-on-one session with a child -- an adult chosen for a private
- * arrangement, which the 2026-10-12 ruling did not widen (issue #1480 Q2).
+ * Not a reach check any more (see assertCoachReachesAthlete), and since issue
+ * #1480 PR B2 it has no caller: the scheduler's check on the coach an ADMIN
+ * names for a one-on-one session now asks assertActorCanAccessAthlete as that
+ * coach, so any active coach of the gym may be named (#1480 Q2, Overwatch's
+ * application of OD-2026-10-12-016, "Any coach all coaches coach all
+ * athletes"). Kept for routeGateWalk's gate list until it is removed.
  *
  * Both failures throw the SAME message on purpose: whether a coach has no
  * relationship to this athlete, an expired grant, or a revoked one is not
@@ -567,12 +569,10 @@ export function assertAthleteUpdateAllowed(
   // athlete's actual coach, who no longer matches coach_id, loses access.
   // A bound that the bounded party can write their way out of is not a bound.
   //
-  // The knock-on is worse than the record access. profileDb grants
-  // 'coach_of_subject' straight from athletes.coach_id, and that relationship
-  // is one of the three in profileVisibility's MINOR_CIRCLE -- the circle a
-  // minor's PHOTOGRAPH never leaves, and one organization admins are
-  // deliberately outside of. So this column is not only roster bookkeeping;
-  // writing to it admits the writer to a child's portrait.
+  // (Until issue #1480 C2 profileDb also granted 'coach_of_subject' -- a
+  // minor's photo circle -- straight from athletes.coach_id. Since then every
+  // coach of the gym is in that circle, so coach_id no longer decides it; it
+  // still decides "my athletes" and is_mine.)
   //
   // Refused outright rather than restricted to self-assignment: handing an
   // athlete to a different coach is equally an administrator's call, and

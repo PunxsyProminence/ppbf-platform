@@ -17,10 +17,9 @@ import { getAthletesForCoach } from './entities';
  *
  *   athleteIdsForCoach   the central access contract -- coach of record UNION
  *                        active, unexpired coverage. This decides membership.
- *   getAthletesForCoach  a DISPLAY projection that deliberately returns every
- *                        athlete in the organization with dob and
- *                        emergency_contact redacted for the ones this coach is
- *                        unrelated to. This supplies names, and nothing else.
+ *   getAthletesForCoach  a DISPLAY projection that returns every live athlete
+ *                        of the organization (with no fields redacted since
+ *                        #1480 PR C). This supplies names, and nothing else.
  *
  * getAthletesForCoach IS NOT AN AUTHORIZATION BOUNDARY and must never be used
  * as one. Its own header says so and /api/pilot/coach/intelligence's says so

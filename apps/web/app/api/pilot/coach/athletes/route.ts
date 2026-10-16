@@ -11,9 +11,8 @@ export const dynamic = 'force-dynamic';
  * The athletes this staff member may act ON, for a picker.
  *
  * WHY THIS IS NOT /api/pilot/athletes/list. That route answers a coach with
- * getAthletesForCoach, a DISPLAY projection that redacts dob and
- * emergency_contact for athletes the coach is unrelated to; it is not an
- * access contract and says so. While a coach's reach was "my athletes", a
+ * getAthletesForCoach, a DISPLAY projection of the gym's live athletes (since
+ * #1480 PR C with every field); it is not an access contract and says so. While a coach's reach was "my athletes", a
  * picker built on it offered athletes whose writes the server refused. The
  * picker's membership is decided here, from the same rule the write path
  * applies, so the two cannot drift apart again.

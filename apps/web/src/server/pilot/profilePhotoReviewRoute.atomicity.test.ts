@@ -341,6 +341,50 @@ describe('POST /api/pilot/profile/photo/review -- the decision is bound to the p
   });
 });
 
+/* Issue #1480 C2 (Q5, "Any coach all coaches coach all athletes"): the REAL
+   resolveRelationship, so the route's own decision is what is proven -- a
+   coach of the gym who is not the coach of record may release a child's
+   portrait, held to the same look as anyone. */
+describe('POST /api/pilot/profile/photo/review -- any coach of the gym (issue #1480 C2)', () => {
+  test("a coach who is not the coach of record, having looked, releases a child's portrait", async () => {
+    const actual = jest.requireActual('@/src/server/pilot/profileDb') as { resolveRelationship: typeof resolveRelationship };
+    mockResolveRelationship.mockImplementation(actual.resolveRelationship);
+    mockGetSubjectIdentity.mockResolvedValue({
+      accountId: SUBJECT,
+      fullName: 'Sample Athlete',
+      athleteId: 'ath-1',
+      dob: '2014-03-02',
+      coachAccountId: 'acct-coach-of-record',
+      memberSince: null,
+    });
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(200);
+    expect(row.photo_review_state).toBe('released');
+    expect(row.photo_reviewed_by_account_id).toBe('acct-coach');
+  });
+
+  test('the same coach without the look is still refused', async () => {
+    const actual = jest.requireActual('@/src/server/pilot/profileDb') as { resolveRelationship: typeof resolveRelationship };
+    mockResolveRelationship.mockImplementation(actual.resolveRelationship);
+    mockGetSubjectIdentity.mockResolvedValue({
+      accountId: SUBJECT,
+      fullName: 'Sample Athlete',
+      athleteId: 'ath-1',
+      dob: '2014-03-02',
+      coachAccountId: 'acct-coach-of-record',
+      memberSince: null,
+    });
+    views = [];
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(403);
+    expect(row.photo_review_state).toBe('pending_review');
+  });
+});
+
 describe('POST /api/pilot/profile/photo/review -- a release rests on a look at THIS photograph (lane W7)', () => {
   test("a coach who never opened their athlete's portrait cannot release it", async () => {
     views = [];

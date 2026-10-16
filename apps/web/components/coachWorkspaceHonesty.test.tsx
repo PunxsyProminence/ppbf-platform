@@ -793,7 +793,9 @@ describe('coach review submission', () => {
     await act(async () => {
       releaseReview?.();
     });
-    await waitFor(() => expect(screen.queryByText(/Coach review persisted/i)).not.toBeNull());
+    await waitFor(() => expect(screen.queryByText('Coach review saved.')).not.toBeNull());
+    // The minted review id is not shown to the coach (F-072).
+    expect(document.body.textContent).not.toMatch(/review_\w/);
     expect(reviewCalls()).toBe(1);
 
     // The guard releases after the request settles, so a genuine second review
@@ -988,8 +990,15 @@ describe('coach review read-back', () => {
     expect(screen.queryByText('Reviews already on this session')).not.toBeNull();
     expect(screen.queryByText(/your review/)).not.toBeNull();
     expect(screen.queryByText('Clean angles all night.')).not.toBeNull();
-    // The other coach's review is attributed to another coach, not to this one.
-    expect(screen.queryByText(/another coach \(acct_coach_2\)/)).not.toBeNull();
+    // The other coach's review is attributed to another coach, not to this one,
+    // and their account id is not printed (F-072).
+    expect(screen.queryByText(/another coach/)).not.toBeNull();
+    expect(document.body.textContent).not.toContain('acct_coach_2');
+    // Nor is the picked session's id (F-072: "Session ID session_...").
+    expect(document.body.textContent).not.toContain('Session ID');
+    expect(document.body.textContent).not.toContain('session_1');
+    // The review's day and time are the gym's: 22:30 UTC is 6:30 PM at the gym.
+    expect(document.body.textContent).toContain('Aug 13, 2026, 6:30 PM');
     // The saved decision reads in the picker's words, not as the stored code.
     expect(screen.queryByText('Approved', { selector: 'span' })).not.toBeNull();
     expect(screen.queryByText('Not decided yet', { selector: 'span' })).not.toBeNull();
