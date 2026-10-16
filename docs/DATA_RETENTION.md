@@ -475,8 +475,23 @@ treated like any other); nothing writes `subject_deleted_at` yet. Pinned by
 feedback and learning rows', and the review, receipt and flagged-conversation rows'. **Not yet
 built:** a flagged conversation someone ELSE had about the purged child (`athlete_id` set) is still
 deleted with the child by the athlete trigger, not de-identified; the purged
-athlete's own `pilot.accounts` row keeps its login (F-102), and `shadow_events.actor_account_id`
-still names it. The
+athlete's own `pilot.accounts` row keeps its login (F-102), and `shadow_telemetry_events.actor_account_id`
+still names it (F-106).
+**SHADOW's event log.** The person's rows in `pilot.shadow_events` (SHADOW's activity feed) are
+deleted, in the purged gym (a guardian's everywhere: their account goes): every row that names them
+as actor, as entity (their login, athlete id, `<athlete>:<key>`, `<org>:<login>` for a gym
+membership, their guardian record `par-<account>` or `<parent>:<athlete>`, each guardian record id
+in its own gym), by one of the child's records (their videos, the intake cases filed about them),
+or anywhere in its payload by athlete id or login (`shadow_events_deleted`; Overwatch 2026-10-16,
+option A, under the 2026-10-06 ruling). Deleted, not de-identified: nothing reads it for the AI or
+for metrics, and a tokened row ties to no athlete, which the read model shows to every role that
+sees unscoped rows (before this, a coach could read a purged guardian's rows and a row naming a
+purged child's milestone). A row that names the child among other athletes is deleted whole. An
+intake case loses all its rows or none: the review queue reads a case's status from its latest row
+here and from the case's own status when it has none. A row tied by id to a conversation or review
+entry still under the safeguarding hold stays, and keeps naming the person after the hold (nothing
+writes `subject_deleted_at` yet). `pilot.audit_events`, the legal record, is not touched. Pinned by
+`shadowEventsPurge.pg.test.ts`, which also reads the feed as a coach. The
 script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
