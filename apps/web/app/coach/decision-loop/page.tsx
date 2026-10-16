@@ -8,7 +8,7 @@ import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
-import { formatGymDate, formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
@@ -212,6 +212,14 @@ function readMedicalStatus(
    which not every browser's Date will read. ISO 8601 all of them do. */
 function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
+/* A stored instant as the gym reads it: "Oct 11, 2026, 7:45 PM". The routes
+   send ISO or Postgres text; either way a coach never reads the raw form or
+   the UTC day (F-072). Anything unreadable is shown as sent. */
+function gymStamp(value: string | null | undefined): string {
+  if (typeof value !== 'string' || value.trim() === '') return '';
+  return formatGymDateTimeShort(isoInstant(value)) ?? value;
 }
 
 /* The medical status on file, stated as a fact (issue #1474): the words after
@@ -1123,9 +1131,10 @@ export default function DecisionLoopReviewPage() {
      date to a posted message; a coach who needs the deadline posts a short
      follow-up with the date set.
 
-     The date is printed as typed (YYYY-MM-DD), not through the gym-time
-     formatters: those read a bare date as UTC midnight and would show the
-     day before. */
+     The date is a bare calendar day (YYYY-MM-DD). It is printed through
+     formatGymDay, which keeps a bare day on the day it names ("October 20,
+     2026"); the instant formatters would read it as UTC midnight and show
+     the day before. */
   async function attachDueDate(
     noteId: string,
     forAthleteId: string,
@@ -1146,7 +1155,7 @@ export default function DecisionLoopReviewPage() {
         const task = returnedRow(envelope, 'task');
         return task !== null && task.due_date === dueDate;
       });
-      return { outcome: 'saved', text: `Posted to the family's page, due ${dueDate}.` };
+      return { outcome: 'saved', text: `Posted to the family's page, due ${formatGymDay(dueDate) ?? dueDate}.` };
     } catch (error) {
       if (answered && error instanceof Error && error.message !== WRITE_NOT_CONFIRMED) {
         return {
@@ -1306,7 +1315,7 @@ export default function DecisionLoopReviewPage() {
                       </p>
                     )}
                     <p className="t-data text-[color:var(--bone-400)]">
-                      Set by {medicalStatus.set_by_role} ({medicalStatus.set_by_account_id}) at {medicalStatus.effective_at}
+                      Set by {medicalStatus.set_by_role.replaceAll('_', ' ')}, {gymStamp(medicalStatus.effective_at)}
                     </p>
                     {medicalStatus.source_reference && (
                       <p className="t-data text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
@@ -1371,7 +1380,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-muted mt-[var(--s2)]">Expected: {rec.expected_outcome}</p>
                       <p className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s3)]">
                         <StatusBadge status={rec.status} />
-                        <span className="t-data text-[color:var(--bone-400)]">expires {rec.expires_at}</span>
+                        <span className="t-data text-[color:var(--bone-400)]">expires {gymStamp(rec.expires_at)}</span>
                       </p>
                       {rec.status === 'provisional' && (
                         <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
@@ -1411,7 +1420,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="font-semibold text-[color:var(--bone-100)]">{decision.decision_text}</p>
                       <p className="t-muted mt-[var(--s2)]">Expected: {decision.expected_outcome}</p>
                       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                        By {decision.decided_by_role} at {formatGymDateTimeShort(decision.decided_at) ?? decision.decided_at}
+                        By {decision.decided_by_role.replaceAll('_', ' ')} at {formatGymDateTimeShort(decision.decided_at) ?? decision.decided_at}
                       </p>
                       {typeof decision.medical_status_on_file === 'string' && (
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
@@ -1511,7 +1520,7 @@ export default function DecisionLoopReviewPage() {
                         {/* A pain report reads as its number only (#1528). */}
                         {isPainReportNearMiss(nearMiss.metadata)
                           ? painReportLabel(painScoreFromMetadata(nearMiss.metadata))
-                          : `Severity: ${nearMiss.severity}`} · {nearMiss.created_at}
+                          : `Severity: ${nearMiss.severity}`} · {gymStamp(nearMiss.created_at)}
                       </p>
                     </article>
                   ))}

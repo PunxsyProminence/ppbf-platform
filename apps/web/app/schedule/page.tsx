@@ -137,9 +137,10 @@ type CheckInHoldWarning = {
   reason_category: string;
   athlete_explanation: string;
   lift_condition_text: string;
-  // The coach marked an athlete on their class register whom they do not
-  // otherwise coach: the route says the athlete is held and at what scope,
-  // and keeps the reason and the lift condition with the athlete's own coach.
+  // The route withholds the reason and the lift condition for an athlete
+  // beyond the marker's reach -- since issue #1480, for a coach, only an
+  // athlete who is not live in their gym -- and still says the athlete is
+  // held and at what scope.
   details_withheld: boolean;
 };
 
@@ -1035,7 +1036,7 @@ export default function SchedulerPage() {
                       </p>
                       {shownCheckInHold.details_withheld ? (
                         <p className="t-body mt-[var(--s3)]">
-                          The reason and what lifts it are with this athlete&apos;s own coach.
+                          The reason and what lifts it are not shown to you here.
                         </p>
                       ) : (
                         <>
@@ -1122,7 +1123,7 @@ export default function SchedulerPage() {
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
-                            Coach to assign (their coach of record, or a coach holding active coverage)
+                            Coach to assign (any coach of the gym)
                           </label>
                           {/* Picked by name from the gym's active coaches, never
                               typed as an id (#1536). No free-text fallback: a

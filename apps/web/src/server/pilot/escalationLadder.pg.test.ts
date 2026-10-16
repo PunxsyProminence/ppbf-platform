@@ -640,6 +640,73 @@ describe('safety escalations against real Postgres', () => {
       await client.end();
     }
   });
+
+  // F-076: shadowDisclosure.ts files 'shadow_disclosure' when an athlete's
+  // SHADOW chat message trips the safeguarding scan (OD-2026-10-01-008 s3).
+  // The insert is swallowed by its caller, so a database whose CHECK still
+  // lacks the value would drop the disclosure silently.
+  test('the shadow_disclosure source_type stores', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_shadow_disclosure', { dropEscalationsTableFirst: true, applyIncrement: true });
+    try {
+      await insertEscalation(client, { source_type: 'shadow_disclosure', escalated_to_role: 'coach' });
+      const { rows } = await client.query(
+        `select source_type, escalated_to_role from pilot.safety_escalations where escalation_id = 'esc-1'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'shadow_disclosure', escalated_to_role: 'coach' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('re-running the migration widens a stale pre-shadow_disclosure CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_shadow_disclosure_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      // The exact vocabulary production holds before this change.
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'shadow_disclosure' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      await applyMigrationTransaction(client, migrationSql);
+      await insertEscalation(client, {
+        escalation_id: 'esc-shadow-disclosure-repaired',
+        source_type: 'shadow_disclosure',
+      });
+      const { rows } = await client.query(
+        `select source_type from pilot.safety_escalations where escalation_id = 'esc-shadow-disclosure-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'shadow_disclosure' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a database whose CHECK lacks shadow_disclosure', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_runner_refuses_shadow_disclosure', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation'))`,
+      );
+      // A no-op body: only the readiness probe runs against the stale CHECK.
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow('SAFETY_ESCALATIONS_NOT_READY');
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 // ─── the real listEscalations against real rows (#198 coach exclusion) ───────
@@ -675,6 +742,27 @@ describe('the real listEscalations against real rows', () => {
       // An explicit false behaves like omission, not like true.
       const explicitFalse = await listEscalations(ORG_ID, { athleteIds: [ATHLETE_ID], excludeAthleteVoice: false });
       expect(explicitFalse.map((row) => row.escalation_id).sort()).toEqual(['esc-av', 'esc-nm']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // F-076 / OD-2026-10-01-008 s3: a SHADOW disclosure reaches the athlete's
+  // coaches. The coach-shaped read must keep it while still stripping
+  // athlete_voice (where a message naming gym staff is filed instead).
+  test('excludeAthleteVoice keeps shadow_disclosure rows on the coach-shaped read', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_shadow_disclosure_list', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    activeClient = client;
+    try {
+      await insertEscalation(client, { escalation_id: 'esc-sd', source_type: 'shadow_disclosure' });
+      await insertEscalation(client, { escalation_id: 'esc-av', source_type: 'athlete_voice' });
+
+      const coachView = await listEscalations(ORG_ID, { athleteIds: [ATHLETE_ID], excludeAthleteVoice: true });
+      expect(coachView.map((row) => row.escalation_id)).toEqual(['esc-sd']);
     } finally {
       activeClient = null;
       await client.end();

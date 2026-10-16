@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymMonthDay } from '@/src/lib/gymTime';
-import { milestoneByKey } from '@/src/shared/achievementPaths';
+import { milestoneByKey, recognitionPhrase } from '@/src/shared/achievementPaths';
 
 /**
  * FROM THE CORNER -- the parent digest.
@@ -70,6 +70,16 @@ function prettyKey(key: string): string {
  *  read "Conditioning.Plank One Minute" (F-051). */
 function milestoneLabel(key: string): string {
   return milestoneByKey(key)?.family ?? prettyKey(key);
+}
+
+/** What the coach's line says. A recognition is a kind and an optional note:
+ *  the note when the coach typed one, otherwise the gym's family sentence for
+ *  the kind ("Helped somebody in the gym who needed it."). Printing the note
+ *  alone left a signature with no words above it (F-063). */
+function recognitionWords(item: RecognitionItem): string {
+  const note = item.note?.trim() ?? '';
+  if (note) return note;
+  return recognitionPhrase(item.kind)?.family ?? prettyKey(item.kind ?? '');
 }
 
 export default function ParentDigest({ athleteId, childName }: ParentDigestProps) {
@@ -232,7 +242,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
               <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
                 {recognitions.map((item) => (
                   <li key={item.recognition_id} className="border-l-[3px] border-[color:var(--brass-700)] pl-[var(--s3)]">
-                    <p className="t-hand" style={{ fontSize: 'var(--t-md)' }}>{item.note}</p>
+                    <p className="t-hand" style={{ fontSize: 'var(--t-md)' }}>{recognitionWords(item)}</p>
                     <p className="mt-[var(--s1)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.08em] text-[color:var(--card-ink-muted)]">
                       — {item.coach_display_name}
                       {item.created_at && ` · ${shortDate(item.created_at)}`}

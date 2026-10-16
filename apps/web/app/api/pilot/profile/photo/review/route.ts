@@ -41,8 +41,8 @@ export const runtime = 'nodejs';
  *
  * WHO ACTUALLY REACHES THIS, AND WHY THE COACH BRANCH HAS NO SCREEN.
  *
- * The gate below admits organization admins, an athlete's own coaches, and the
- * account itself. Only the first of those has a surface: /admin/portrait-review
+ * The gate below admits organization admins, an athlete's coaches (since issue
+ * #1480 C2 every coach of the athlete's gym), and the account itself. Only the first of those has a surface: /admin/portrait-review
  * lists who is waiting and decides on them, and it calls the SIBLING route
  * (api/pilot/admin/portrait-review), not this one. T-004 built that console and
  * "narrows the actor to organization admin only, per the ticket", while
@@ -90,9 +90,11 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
-    // A coach may only review the portraits of athletes they actually coach --
-    // and their own. A coach with an unassigned athlete resolves to
-    // 'organization_staff', which is not enough to release a face.
+    // A coach may review the portraits of the athletes they coach -- since
+    // issue #1480 C2 every athlete of their own gym ("Any coach all coaches
+    // coach all athletes") -- and their own. A release still needs a look at
+    // this photograph first (lane W7). The organization admin is admitted by
+    // role; anyone else resolves outside the circle and gets the hidden 404.
     const relationship = await resolveRelationship(principal, identity, principal.organizationId);
     const mayReview = isOrganizationAdminRole(principal.role)
       || relationship === 'coach_of_subject'

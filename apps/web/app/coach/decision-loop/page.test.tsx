@@ -339,7 +339,7 @@ describe('Message Home (#90)', () => {
     fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
-    await screen.findByText("Posted to the family's page, due 2026-10-20.");
+    await screen.findByText("Posted to the family's page, due October 20, 2026.");
 
     const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/domain-upsert') || u.includes('/parent-tasks'));
     expect(urls.map((u) => u.replace(/^.*\/api\/pilot/, ''))).toEqual(['/intake/domain-upsert', '/parent-tasks']);
@@ -1718,7 +1718,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     render(<DecisionLoopReviewPage />);
     fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
 
-    expect(await screen.findByText(/Set by organization_admin \(acct-1\)/)).toBeTruthy();
+    expect(await screen.findByText(/Set by organization admin,/)).toBeTruthy();
     expect(screen.queryByText(/could not be read/i)).toBeNull();
   });
 
@@ -1737,7 +1737,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       installReadsForB({ '/medical-status': () => jsonResponse(body) });
       render(<DecisionLoopReviewPage />);
       fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
-      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+      await screen.findByText(/Set by organization admin,/);
       return within(medicalSection());
     }
 
@@ -1764,7 +1764,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(panel.queryByText('cleared_expired')).toBeNull();
       expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
       // Who cleared this athlete, and when, is still on the record.
-      expect(panel.getByText(/Set by organization_admin \(acct-1\) at 2026-08-01T10:00:00.000Z/)).toBeTruthy();
+      expect(panel.getByText(/Set by organization admin, Aug 1, 2026, 6:00 AM/)).toBeTruthy();
       expect(screen.queryByText(/could not be read/i)).toBeNull();
     });
 
@@ -1810,7 +1810,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       installReadsForB({ '/medical-status': () => answer() });
       const view = render(<DecisionLoopReviewPage />);
       fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
-      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+      await screen.findByText(/Set by organization admin,/);
       return view;
     }
 
@@ -1940,12 +1940,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       });
       render(<DecisionLoopReviewPage />);
       fireEvent.change(await rosterLoaded(), { target: { value: 'ath-b' } });
-      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+      await screen.findByText(/Set by organization admin,/);
     }
 
     async function switchToC() {
       fireEvent.change(athletePicker(), { target: { value: 'ath-c' } });
-      await screen.findByText(/Set by coach \(acct-1\)/);
+      await screen.findByText(/Set by coach,/);
     }
 
     test('an athlete the coach has left is not read again; the one now on screen is, at their own end date, even when it is the same instant', async () => {
@@ -1961,7 +1961,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(readsOf('/medical-status?athleteId=ath-b')).toBe(1);
       expect(readsOf('/medical-status?athleteId=ath-c')).toBe(2);
       expectLapsed();
-      expect(within(medicalSection()).getByText(/Set by coach \(acct-1\)/)).toBeTruthy();
+      expect(within(medicalSection()).getByText(/Set by coach,/)).toBeTruthy();
     });
 
     test('a re-read for B still out when the coach changes to C does not paint under C', async () => {
@@ -1980,7 +1980,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
       // C is in force; B's late answer says lapsed. C's panel still says cleared.
       expectStillCleared();
-      expect(within(medicalSection()).getByText(/Set by coach \(acct-1\)/)).toBeTruthy();
+      expect(within(medicalSection()).getByText(/Set by coach,/)).toBeTruthy();
       expect(screen.queryByText(/could not be read/i)).toBeNull();
     });
 
@@ -2898,11 +2898,11 @@ describe('a pain report near miss reads as its number only (#1528)', () => {
     await screen.findByText(PAIN.description);
 
     const pain = row(PAIN.description);
-    expect(within(pain).getByText(`Pain report 6/10 · ${PAIN.created_at}`)).toBeTruthy();
+    expect(within(pain).getByText('Pain report 6/10 · Oct 11, 2026, 2:00 PM')).toBeTruthy();
     expect(pain.textContent).not.toMatch(/\b(severity|low|moderate|high|critical)\b/i);
 
     const other = row(OTHER.description);
-    expect(within(other).getByText(`Severity: moderate · ${OTHER.created_at}`)).toBeTruthy();
+    expect(within(other).getByText('Severity: moderate · Oct 11, 2026, 2:00 PM')).toBeTruthy();
     expect(other.textContent).not.toMatch(/\/10/);
   });
 
@@ -2912,7 +2912,7 @@ describe('a pain report near miss reads as its number only (#1528)', () => {
     await screen.findByText(PAIN.description);
 
     const pain = row(PAIN.description);
-    expect(within(pain).getByText(`Pain report, no score · ${PAIN.created_at}`)).toBeTruthy();
+    expect(within(pain).getByText('Pain report, no score · Oct 11, 2026, 2:00 PM')).toBeTruthy();
     expect(pain.textContent).not.toMatch(/\b(severity|high)\b/i);
   });
 });
@@ -3139,5 +3139,118 @@ describe('arriving from "Record what you did"', () => {
     expect(document.body.textContent).not.toContain('ath-nameless');
     expect(document.body.textContent).not.toContain('ath-none');
     expect(screen.queryByText('Or enter an athlete ID directly')).toBeNull();
+  });
+});
+
+// F-072: what the coach reads on this page is the gym's day and time in words,
+// never a stored instant in computer form or the account id of who set it.
+// Each instant below is late in the gym's evening, so a UTC day is the wrong day.
+describe('dates and people read as the gym reads them (F-072)', () => {
+  function installDatedFetch() {
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (init?.method === 'POST') return acknowledge(key, init);
+      if (key.includes('/api/pilot/athletes/list')) {
+        return jsonResponse({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }] });
+      }
+      if (key.includes('/medical-status')) {
+        return jsonResponse({
+          status: {
+            status_id: 'st-1',
+            athlete_id: 'ath-1',
+            status: 'cleared',
+            restriction_flags: {},
+            source_reference: null,
+            set_by_account_id: 'acct-hidden-7731',
+            set_by_role: 'organization_admin',
+            effective_at: '2026-10-12T02:52:00.000Z',
+            created_at: '2026-10-12T02:52:00.000Z',
+          },
+          effectiveStatus: 'cleared',
+        });
+      }
+      if (key.includes('/recommendations')) {
+        return jsonResponse({
+          recommendations: [{
+            recommendation_id: 'rec-1',
+            athlete_id: 'ath-1',
+            recommendation_text: 'Easy skipping only.',
+            expected_outcome: 'Calf settles.',
+            status: 'provisional',
+            created_by_account_id: 'acct-1',
+            created_at: '2026-10-11T12:00:00.000Z',
+            // Postgres text form, as the route sends it.
+            expires_at: '2026-10-21 03:15:00+00',
+            decided_by_account_id: null,
+            decided_at: null,
+          }],
+        });
+      }
+      if (key.includes('/decisions')) {
+        return jsonResponse({
+          decisions: [{
+            decision_id: 'dec-1',
+            athlete_id: 'ath-1',
+            recommendation_id: null,
+            decision_text: 'Easy skipping only today.',
+            expected_outcome: 'Recheck next session.',
+            decided_by_account_id: 'acct-hidden-7731',
+            decided_by_role: 'organization_admin',
+            status: 'active',
+            decided_at: '2026-10-12T02:52:00.000Z',
+          }],
+        });
+      }
+      if (key.includes('/near-misses')) {
+        return jsonResponse({
+          nearMisses: [{
+            near_miss_id: 'nm-1',
+            athlete_id: 'ath-1',
+            decision_id: null,
+            description: 'Calf tightness.',
+            severity: 'moderate',
+            detected_by: 'human',
+            metadata: { trigger: 'athlete_pain_report', severity_1_10: 2 },
+            created_at: '2026-10-11T23:45:05.044Z',
+          }],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${key}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  test('the medical status line names the role and the gym time, not the account id or the ISO instant', async () => {
+    installDatedFetch();
+    await selectAthlete();
+
+    expect(await screen.findByText('Set by organization admin, Oct 11, 2026, 10:52 PM')).toBeTruthy();
+    // The decision row names the role in words too, never "organization_admin".
+    expect(screen.getByText('By organization admin at Oct 11, 2026, 10:52 PM')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('organization_admin');
+    expect(document.body.textContent).not.toContain('acct-hidden-7731');
+    expect(document.body.textContent).not.toContain('2026-10-12T02:52');
+  });
+
+  test('a recommendation expiry and a pain report are dated by the gym', async () => {
+    installDatedFetch();
+    await selectAthlete();
+
+    expect(await screen.findByText('expires Oct 20, 2026, 11:15 PM')).toBeTruthy();
+    expect(screen.getByText(/Pain report 2\/10 · Oct 11, 2026, 7:45 PM/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('2026-10-21 03:15');
+    expect(document.body.textContent).not.toContain('2026-10-11T23:45');
+  });
+
+  test("the family post's due date is said in words", async () => {
+    installFetch();
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Medical form is due.' } });
+    fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-16' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    expect(await screen.findByText("Posted to the family's page, due October 16, 2026.")).toBeTruthy();
   });
 });
