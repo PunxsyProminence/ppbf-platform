@@ -94,6 +94,33 @@ test('a pending request whose preferred time has passed says so, and no longer r
   expect(statusLineFor('Extra conditioning')).not.toContain('preferred time has passed');
 });
 
+test('a request whose preferred time passes while the page is open flips to the new line', async () => {
+  // Only the interval and the clock are faked; fetch and findBy keep real
+  // timers (as cancelClass.test.tsx does for the same 15-second clock).
+  jest.restoreAllMocks();
+  jest.useFakeTimers({
+    doNotFake: [
+      'setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+      'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+      'hrtime', 'performance',
+    ],
+  });
+  jest.setSystemTime(GYM_NOON);
+  try {
+    install('parent', [request('soon', 10_000, 'pending', 'Southpaw sparring prep')]);
+    await renderPage();
+    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: pending');
+
+    act(() => {
+      jest.advanceTimersByTime(15_000);
+    });
+
+    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: not answered, and the preferred time has passed');
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('the office can still resolve a pending request whose preferred time has passed', async () => {
   install('organization_admin', [request('old', -60 * DAY, 'pending', 'Footwork before the August show')]);
   await renderPage();

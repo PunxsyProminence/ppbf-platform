@@ -284,7 +284,7 @@ export default function SchedulerPage() {
   const [nowMs] = useState(() => Date.now());
   // Cancel Class goes once the class starts (#1595), so the page that stays
   // open across a start needs a clock that moves. Ticked in an effect, not
-  // read in render.
+  // read in render. The stale coaching-request line reads it too (F-043).
   const [cancelClockMs, setCancelClockMs] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setCancelClockMs(Date.now()), 15_000);
@@ -1124,7 +1124,7 @@ export default function SchedulerPage() {
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
                       <p className="text-[color:var(--bone-300)]">
-                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, nowMs)}
+                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
