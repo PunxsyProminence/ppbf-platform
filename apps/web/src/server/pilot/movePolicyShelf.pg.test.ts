@@ -570,6 +570,32 @@ describe('citing evidence report (real database)', () => {
     const client = await freshDatabase();
     try {
       await seedCitations(client);
+      // Rows the detach must leave alone: an answer citing the research item,
+      // which does not cite the shelf, and a claim on a bundle that loses items.
+      const coachConversation = '00000000-0000-4000-8000-0000000000c2';
+      const coachAnswer = '00000000-0000-4000-8000-0000000000d2';
+      await client.query(
+        `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id) values ($1, $2, $3)`,
+        [coachConversation, FROM, COACH],
+      );
+      await client.query(
+        `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content)
+         values ($1, $2, $3, $4, 'assistant', 'answer')`,
+        [coachAnswer, coachConversation, FROM, COACH],
+      );
+      await client.query(
+        `insert into pilot.shadow_message_citations
+           (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
+         values ($1, $2, $3, $4, $5, 1)`,
+        [coachAnswer, E(4), B(3), FROM, COACH],
+      );
+      await client.query(
+        `insert into pilot.shadow_evidence_claims
+           (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+         values ($1, $2, $3, $4, $5, $6, 'supported')`,
+        ['00000000-0000-4000-8000-0000000000f1', FROM, ADMIN, '00000000-0000-4000-8000-0000000000c1', ANSWER, B(1)],
+      );
+
       const dry = await movePolicyShelf(client, options(), { log: silent });
       const result = await movePolicyShelf(
         client,
@@ -586,7 +612,12 @@ describe('citing evidence report (real database)', () => {
       // The three citing items and the one citation of them are gone.
       expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_items where evidence_id = any($1::uuid[])',
         [[E(1), E(2), E(3)]])).toBe(0);
-      expect(await count(client, 'select count(*)::int as n from pilot.shadow_message_citations')).toBe(0);
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_message_citations where evidence_id = $1',
+        [E(1)])).toBe(0);
+      // The citation of the item that does not cite the shelf, and the claim, stay.
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_message_citations where evidence_id = $1',
+        [E(4)])).toBe(1);
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_claims')).toBe(1);
       // The item citing the research source, which stays, is untouched.
       expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_items where evidence_id = $1',
         [E(4)])).toBe(1);

@@ -38,7 +38,7 @@
  * member of the gym, overwatch ruled to detach). The chat answers keep their
  * text and lose their citation list; bundles and claims are not touched. The
  * audit_events row records every detached id, the ids it cited and its
- * excerpt hash -- no account id and no text. The dry run prints counts only.
+ * excerpt hash -- no account id and no text. The dry run prints evidence counts only.
  * The detached set is part of the plan fingerprint, and DETACH_RADIUS_EXCEEDED
  * refuses past DEFAULT_MAX_DETACH_ROWS.
  *

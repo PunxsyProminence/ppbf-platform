@@ -623,6 +623,10 @@ describe('detaching citing evidence', () => {
     expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
     expect(out.result!.blockers).toEqual([{ code: 'DETACH_RADIUS_EXCEEDED', detaching: 5, max: 4 }]);
     expectRolledBackWithoutWrites(out);
+
+    // Exactly at the cap is allowed.
+    const atCap = runTool({ ...citedShelf(), options: applyOptions({ maxDetachRows: 5 }) });
+    expect(atCap.result!.status).toBe('applied');
   });
 
   test('the detach cap defaults to 2000', () => {
@@ -696,7 +700,11 @@ describe('apply', () => {
     const all = texts(out);
 
     expect(all[1]).toMatch(/^set local lock_timeout/i);
-    for (const shape of [/^select source_id, title/i, /^select document_id, source_id, organization_id/i, /^select chunk_id/i]) {
+    for (const shape of [
+      /^select source_id, title/i, /^select document_id, source_id, organization_id/i, /^select chunk_id/i,
+      // The rows that are detached.
+      /^select evidence_id::text as evidence_id/i, /^select assistant_message_id::text as assistant_message_id/i,
+    ]) {
       expect(all.find((t) => shape.test(t))).toMatch(/for update$/i);
     }
   });
