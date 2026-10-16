@@ -90,7 +90,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired, or revoked, 30 days ago (`SESSION_TOKEN_RETENTION_DAYS`). Deleted by `.github/workflows/session-token-cleanup.yml` (`npm run session:cleanup`), nightly at 07:50 UTC or by dispatch with `apply=APPLY`. **The scheduled run only reports the count** until the repository variable `PPBF_SESSION_CLEANUP_SCHEDULED_APPLY` is `true`. |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **The 2-year hold is enforced; the de-identification is not.** A guardian with any `pilot.shadow_human_review_queue` row (whatever its status) is not purged at the 1-year account window: `scripts/pilot-cleanup-deleted-data.mjs` holds the account (the review entries, the guardian's own conversations, the guardian record) until `deleted_at` + 2 years, and every run reports the held count as `guardians_held_for_safeguarding_chats`. At 2 years the guardian is **purged, review entries and chats included, not de-identified**: the de-identifying sweep is not built, and `subject_deleted_at` (shadow-deidentify-keys migration) is still written by nothing. **Not held:** a flagged conversation that is about a child (`athlete_id` set) is deleted with that child at the child's own `deleted_at` + 2 years, which can come before the guardian's hold ends; the guardian's review entry stays. Whether a guardian's flag should hold a child's record is not decided. The athlete's own flagged chats coincide with the 2-year athlete purge. Purges run only on a manual `apply=APPLY` dispatch. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **The 2-year hold is enforced, and the de-identification at the person's purge.** A guardian with any `pilot.shadow_human_review_queue` row (whatever its status) is not purged at the 1-year account window: `scripts/pilot-cleanup-deleted-data.mjs` holds the account (the review entries, the guardian's own conversations, the guardian record) until `deleted_at` + 2 years, and every run reports the held count as `guardians_held_for_safeguarding_chats`. At 2 years the guardian is purged: their review entries and the flagged conversations they point at are **de-identified** (one token for both; the summary and title replaced, metadata cleared, the person's own messages deleted, SHADOW's replies kept with the person's known names scrubbed). A flagged conversation of someone with no name on record cannot be scrubbed and is deleted; their unflagged conversations are deleted. `subject_deleted_at` (shadow-deidentify-keys migration) is still written by nothing, so no entry is held past the person's own purge. **Not held:** a flagged conversation that is about a child (`athlete_id` set) is deleted with that child at the child's own `deleted_at` + 2 years, which can come before the guardian's hold ends; the guardian's review entry stays. Whether a guardian's flag should hold a child's record is not decided. The athlete's own flagged chats coincide with the 2-year athlete purge. Purges run only on a manual `apply=APPLY` dispatch. |
 
 ### Public interest-form inquiries
 
@@ -407,9 +407,7 @@ method's limits:** a nickname never recorded, a misspelling, a plural or a descr
 caught; **over-blanking**: a common word that is also a name part ("Will", a ring name "Kid") is
 blanked to `[name]` in every turn of that gym, other children's kept AI text included; people
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
-read-only production count); the token can still be matched to the retired login through its
-chat sessions and messages until those are de-identified too (**not yet built**: the sessions /
-messages / evidence / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code; `shadow_feedback` has never had an account key and needs no migration). A
+read-only production count). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
 `shadowDeidentifyPurge.pg.test.ts`; the name pattern by `shadowNamePattern.test.ts`, which
@@ -424,10 +422,42 @@ the learning loop filed from their feedback
 `knowledge_gap` becomes the loop's own sentence for no note. Rating, outcome, topic and counts
 stay (`shadow_feedback_deidentified`, `shadow_review_flag_notes_cleared`,
 `shadow_learning_research_rows_deidentified`). Pinned by `feedbackNotesPurge.pg.test.ts`.
-**Not yet built (F-088):** a purged athlete's login is retired, not deleted, so their
-`shadow_learning_events` and `shadow_recommendation_effectiveness` rows (by `feedback_id`) and chat
-messages in a session with no athlete (by `correlation_id`) still carry it and join a
-de-identified feedback row back to the login; that is why its token is not the chat log's. The
+A feedback row of theirs still awaiting review leaves the queue (`human_review_required` false)
+with no staff decision recorded: `verification_state`, reviewer and `reviewed_at` are left as
+they were, so it never reads as approved or rejected (`shadow_feedback_reviews_closed`; F-089),
+and a legacy `shadow_event_id` (the event names the login) is cleared (F-091).
+**The rest of the login's SHADOW rows (F-088).** A purged athlete's login is retired, not
+deleted, so the `pilot.accounts` trigger the shadow-deidentify-keys migration installs never
+fires for it; the purge does that work itself, for the athlete's logins in the purged gym and,
+before the account goes, for a purged guardian. `shadow_learning_events` and
+`shadow_recommendation_effectiveness` (the learning signal) are kept under the person's feedback
+token, with the message or event id they copied cleared (learning `shadow_event_id` and `message_id`, effectiveness `recommendation_id`; a legacy feedback row's event `correlation_id`, the feedback's `recommendation_ref`, and a message id in the learning loop's research `source_entity_id` too) (`shadow_learning_events_deidentified`,
+`shadow_recommendation_effectiveness_deidentified`). Their own chat sessions, messages and
+evidence bundles are deleted, as the trigger deletes them for a deleted login
+(`shadow_chat_sessions_deleted`, `shadow_chat_messages_deleted`,
+`shadow_evidence_bundles_deleted`): a message is what joins feedback and learning rows to the
+chat, and SHADOW's replies are already kept, de-identified, in `shadow_chat_audit`. A FLAGGED
+conversation (one a review entry points at) is de-identified instead (Jason 2026-10-07, Q14:
+"then de-identified"): their own messages deleted (Q1), SHADOW's replies kept with the person's
+known names scrubbed to `[name]`, the title replaced by a fixed sentence, the session and replies
+under the review entries' token so an entry keeps its conversation; the evidence those replies
+cited is deleted and a rating of one of them loses its message correlation
+(`shadow_flagged_conversations_deidentified`, `shadow_flagged_conversation_own_messages_deleted`).
+With no usable name on record it is deleted with the rest. Their
+safeguarding review entries are de-identified once the two-year hold is over (Jason 2026-10-07:
+"2 years after deletion (Recommended)"): a token of their own and `deidentified_at` in one
+update, category, severity, status and reviewer kept, the summary replaced by a fixed sentence
+and `metadata` cleared (`shadow_review_queue_deidentified`); their deletion requests keep status
+and dates under the same token as an anonymous receipt (`shadow_deletion_requests_deidentified`).
+A conversation or review entry held for safeguarding (`subject_deleted_at` within two years) is
+left identified (this purge is the last run that selects the person, so one whose hold is over is
+treated like any other); nothing writes `subject_deleted_at` yet. Pinned by
+`retiredLoginPurge.pg.test.ts`. Three tokens per person, none shared: the chat log's, the
+feedback and learning rows', and the review, receipt and flagged-conversation rows'. **Not yet
+built:** a flagged conversation someone ELSE had about the purged child (`athlete_id` set) is still
+deleted with the child by the athlete trigger, not de-identified; the purged
+athlete's own `pilot.accounts` row keeps its login (F-102), and `shadow_events.actor_account_id`
+still names it. The
 script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
