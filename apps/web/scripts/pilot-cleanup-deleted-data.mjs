@@ -405,7 +405,12 @@ async function clearShadowProfileMentions(client, tables, subjects) {
      library-change proposal re-points a flag at a later account without
      clearing the note (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview),
      so a flag whose note is one of this person's own feedback comments loses
-     the note too, whoever it now names. First, while the comments still exist.
+     the note too, whoever it now names -- but ONLY a row that proposal last
+     wrote (proposed_action set): the two negative-flag writers set
+     proposed_action null as they write the note, and the proposal path never
+     writes one, so on such a row the note is provably an earlier flagger's.
+     A row the current flagger wrote keeps their note even when its words
+     match this person's (Codex P2 on #1624). First, while the comments exist.
    - pilot.shadow_research_requirements filed by the learning loop
      (shadow_learning_negative_outcome): created_by_account_id becomes the
      token; knowledge_gap, which holds the note when one was typed, becomes the
@@ -433,7 +438,7 @@ async function deidentifyFeedbackNotes(client, tables, accountIds, token, organi
               user_note = null
         where ($2::text is null or f.organization_id = $2)
           and (f.account_id = any($1::text[])
-           or (f.user_note is not null and ${tables.shadowFeedback
+           or (f.user_note is not null and f.proposed_action is not null and ${tables.shadowFeedback
     ? `exists (select 1 from pilot.shadow_feedback fb
                        where fb.organization_id = f.organization_id
                          and fb.account_id = any($1::text[])
