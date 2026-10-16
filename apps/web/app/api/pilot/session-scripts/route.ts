@@ -7,6 +7,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  markSessionScriptReviewed,
   setSessionScriptRetired,
   type SessionScriptBlockEdit,
 } from '@/src/server/pilot/sessionScriptAuthoring';
@@ -162,12 +163,15 @@ export async function POST(request: NextRequest) {
 // With `retired: true | false` instead of name and blocks it retires the
 // script (kept, left out of the browse list) or brings it back, in place;
 // `outcome` is then 'retired', 'brought_back' or 'unchanged'.
+// With `reviewed: true` instead, a coach marks a draft plan reviewed, in place
+// (F-092); `outcome` is then 'reviewed' or 'unchanged', and a retired plan is
+// refused (409 SESSION_SCRIPT_RETIRED). Only true: a review is not taken back.
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
 
-    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks', 'retired']);
+    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks', 'retired', 'reviewed']);
     if (record instanceof NextResponse) return record;
     if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
       return badRequest('script_id');
@@ -180,6 +184,23 @@ export async function PATCH(request: NextRequest) {
     }
     if (record.blocks !== undefined && !(Array.isArray(record.blocks) && record.blocks.every(isBlockEdit))) {
       return badRequest('blocks');
+    }
+
+    // Marking a plan reviewed is its own request too, for the same reason
+    // retiring is (below), and is not mixed with a retire either.
+    if (record.reviewed !== undefined) {
+      if (record.reviewed !== true || record.retired !== undefined || record.name !== undefined || record.blocks !== undefined) {
+        return badRequest('reviewed');
+      }
+      const reviewed = await markSessionScriptReviewed({
+        organizationId: principal.organizationId,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        scriptId: record.script_id.trim(),
+        expectedUpdatedAt: record.expected_updated_at,
+      });
+      const script = await getSessionScriptWithDetail(principal.organizationId, reviewed.script_id);
+      return NextResponse.json({ outcome: reviewed.outcome, script });
     }
 
     // Retiring a script, or bringing it back, is its own request: it changes
