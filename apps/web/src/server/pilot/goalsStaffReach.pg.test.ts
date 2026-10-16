@@ -5,8 +5,9 @@
 // (Recommended)"): an athlete's goals, their reported progress and "I did it"
 // show read-only to the coach and to the parent; the athlete's "why it
 // matters" line shows to the coach only. A coach's reach is the whole gym
-// (OD-2026-10-11-007), and the organization admin reads as staff (lane L10
-// brief). Nobody but the athlete writes.
+// (OD-2026-10-11-007). Nobody but the athlete writes. What the organization
+// admin is sent today is not pinned here: it is registered as F-100, and only
+// the admin's refusals (another gym; every write) are asserted.
 //
 // WHY REAL POSTGRES. goalsAudience.test.ts proves the same rules over a
 // stood-in database, where "another gym" is whatever the mock says. Here the
@@ -16,7 +17,7 @@
 // Only the principal is stood in.
 //
 // EVERY REFUSAL HAS A CONTROL. The gym-2 staff are refused the same athlete
-// gym 1's staff read in full; a staff write is refused on the same goal the
+// gym 1's coach reads in full; a staff write is refused on the same goal the
 // athlete then updates. A change that broke reads or writes outright would
 // otherwise satisfy every refusal in here.
 //
@@ -357,12 +358,9 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }).catch(() => {});
 });
 
-describe('the gym\'s staff read an athlete\'s goals, progress and the "why it matters" line', () => {
-  test.each([
-    ['a coach of the gym who is not the athlete\'s coach of record', asGymCoach],
-    ['the organization admin of the gym', asGymAdmin],
-  ])('%s reads both kinds of goal, the reported progress and the why line', async (_who, as) => {
-    const read = await readAs(as());
+describe('the gym\'s coach reads an athlete\'s goals, progress and the "why it matters" line', () => {
+  test('a coach of the gym who is not the athlete\'s coach of record reads both kinds of goal, the reported progress and the why line', async () => {
+    const read = await readAs(asGymCoach());
     expect(read.personalStatus).toBe(200);
     expect(read.listStatus).toBe(200);
 
@@ -375,16 +373,14 @@ describe('the gym\'s staff read an athlete\'s goals, progress and the "why it ma
     expect(smart).toMatchObject({ title: SMART_TITLE, progress_percent: 40, metric: 'rounds' });
   });
 
-  test('"I did it" reaches the staff once the athlete marks it', async () => {
+  test('"I did it" reaches the coach once the athlete marks it', async () => {
     mockRequirePrincipal.mockResolvedValue(asAthlete());
     const marked = await personalPATCH(send('/api/pilot/goals/personal', 'PATCH', { athlete_id: ATHLETE, goal_id: ownWordsGoalId }));
     expect(marked.status).toBe(200);
 
-    for (const as of [asGymCoach, asGymAdmin]) {
-      const read = await readAs(as());
-      const personal = JSON.parse(read.personalText) as { items: Array<Record<string, unknown>> };
-      expect(typeof personal.items.find((goal) => goal.goal_id === ownWordsGoalId)?.reached_at).toBe('string');
-    }
+    const read = await readAs(asGymCoach());
+    const personal = JSON.parse(read.personalText) as { items: Array<Record<string, unknown>> };
+    expect(typeof personal.items.find((goal) => goal.goal_id === ownWordsGoalId)?.reached_at).toBe('string');
   });
 
   test('POST /goals/get sends the gym coach the goal with its why line (the control for its refusals below)', async () => {
@@ -395,12 +391,10 @@ describe('the gym\'s staff read an athlete\'s goals, progress and the "why it ma
   });
 });
 
-describe("one athlete id in two gyms: each gym's staff read only their own child", () => {
+describe("one athlete id in two gyms: each gym's coach reads only their own child", () => {
   test.each([
     ['gym 1 coach', asGymCoach, GYM_CHILD_GOAL, OTHER_GYM_CHILD_GOAL],
-    ['gym 1 org admin', asGymAdmin, GYM_CHILD_GOAL, OTHER_GYM_CHILD_GOAL],
     ['gym 2 coach', asOtherCoach, OTHER_GYM_CHILD_GOAL, GYM_CHILD_GOAL],
-    ['gym 2 org admin', asOtherAdmin, OTHER_GYM_CHILD_GOAL, GYM_CHILD_GOAL],
   ])('%s', async (_who, as, own, other) => {
     const read = await readAs(as(), SHARED_ID_ATHLETE);
     expect(read.personalStatus).toBe(200);
