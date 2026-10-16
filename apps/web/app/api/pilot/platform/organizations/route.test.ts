@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { createOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -85,18 +86,45 @@ test('the platform owner provisions a named organization', async () => {
   // Attributed to the acting platform account, and filed under the id the
   // caller named -- a provisioning route that quietly created something else
   // would pass a status assertion and still fail the person using it.
-  expect(mockCreateOrganization).toHaveBeenCalledWith('new-gym', 'New Gym', 'platform_owner-account');
+  // refuseExisting: this route creates; it never renames and reopens a gym
+  // whose id is already taken (F-096).
+  expect(mockCreateOrganization).toHaveBeenCalledWith(
+    'new-gym',
+    'New Gym',
+    'platform_owner-account',
+    expect.objectContaining({ refuseExisting: true }),
+  );
+});
+
+// F-096: the helper's own refusal of a taken id reaches the caller as a 409
+// that names the gym, and no create is logged for a gym that was not created.
+test('a taken id is refused with 409 naming the gym, and leaves no audit row', async () => {
+  mockCreateOrganization.mockRejectedValue(new ConflictError(
+    "Conflict: a gym with the id punxsy_prominence already exists (Punxsy Prominence). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.",
+    'ORGANIZATION_ID_TAKEN',
+  ));
+
+  const response = await post({ organization_id: 'punxsy_prominence', organization_name: 'New Name' });
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toEqual({
+    error: "Conflict: a gym with the id punxsy_prominence already exists (Punxsy Prominence). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.",
+    code: 'ORGANIZATION_ID_TAKEN',
+  });
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 // The record of a gym's creation belongs in that gym's log. It used to be
 // filed under the platform owner's own organization ('platform' here), where
-// the new gym's admin would never see it.
+// the new gym's admin would never see it. It is handed to createOrganization
+// to write inside the create's transaction (#1641 review), so the route
+// writes none of its own; disciplineSeeds.pg.test.ts proves the rollback.
 test("the audit row for a new gym is filed under that gym, not the platform owner's own", async () => {
   const response = await post({ organization_id: '  new-gym  ', organization_name: 'New Gym' });
 
   expect(response.status).toBe(200);
-  expect(mockAudit).toHaveBeenCalledTimes(1);
-  expect(mockAudit.mock.calls[0][0]).toEqual({
+  expect(mockAudit).not.toHaveBeenCalled();
+  expect(mockCreateOrganization.mock.calls[0][3]?.audit).toEqual({
     event_type: 'create',
     actor_account_id: 'platform_owner-account',
     actor_role: 'platform_owner',
