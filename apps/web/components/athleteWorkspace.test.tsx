@@ -2887,6 +2887,22 @@ describe('a session check-in goes where the day actually is', () => {
     expect(screen.getByText('You are checked in. Do your wellness check next -- it opens your floor.')).toBeTruthy();
   });
 
+  // F-042: the line is about the whole visit, so it stays on every tab. Once
+  // the wellness check is recorded it stopped being true and used to stay.
+  test('once the wellness check is recorded, the line no longer says to do it next', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(openSurface()).toBe('Wellness'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+    await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
+
+    expect(await screen.findByText("You are checked in. Your coach's work is on your floor.")).toBeTruthy();
+    expect(screen.queryByText(/Do your wellness check next/)).toBeNull();
+  });
+
   test('refused: the athlete stays where they pressed it, and is told nothing was saved', async () => {
     sessionCreateFails = true;
     await renderWorkspace();
@@ -4476,6 +4492,16 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     expect(postedTo('/api/pilot/sessions/update')[0].body.notes).toBe('Left wrist still sore from Tuesday.');
     expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
+  });
+
+  // F-042: the box's help names the control the test above presses, so the
+  // promise points at something the athlete can actually find.
+  test('the pre-check-in note help names the Share with coach button', async () => {
+    await renderWorkspace();
+
+    const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
+    const help = document.getElementById(box.getAttribute('aria-describedby') ?? '');
+    expect(help?.textContent).toBe('Optional. You can leave it empty. Nobody sees this until you check in and press Share with coach.');
   });
 
   test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {
