@@ -23,6 +23,8 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 //   editSessionScript  the name, and each block's title and minutes.
 //   setSessionScriptRetired  retires a script (kept, left out of the browse
 //     list) or brings a retired one back. In place, never a new version.
+//   markSessionScriptReviewed  a coach marks a draft plan reviewed. In place,
+//     never a new version.
 //
 // AN EDIT NEVER CHANGES A NIGHT ALREADY DELIVERED. A run pins script_id and
 // script_version (sessionScriptRuns.ts startSessionScriptRun) and reads that
@@ -574,5 +576,67 @@ export async function setSessionScriptRetired(
       client,
     );
     return { outcome, script_id: script.script_id, version: script.version };
+  });
+}
+
+export interface ReviewedSessionScript {
+  outcome: 'unchanged' | 'reviewed';
+  script_id: string;
+  version: number;
+}
+
+/**
+ * A coach marks a draft plan reviewed (F-092). "The AI teaches and drafts;
+ * coaches decide" (OWNER_DECISIONS, app description): a plan made from a
+ * template starts as a draft, and this is the coach's word that it has been
+ * read and is fit to run. Engine-unlock proposal 029 would count only reviewed
+ * and in-use plans (an open question in that proposal, not a rule here).
+ *
+ * Draft to coach_reviewed only. A plan already reviewed or in use is left as it
+ * is. Nothing here writes in_use and nothing takes a review back: no ruling
+ * covers either. A retired plan is refused: it is brought back first.
+ *
+ * IN PLACE, NEVER A NEW VERSION, for the reason retiring is
+ * (setSessionScriptRetired): authoring_state is lifecycle, not content. Any
+ * coach of the gym may mark any of its plans (OD-2026-10-11-007, whole-gym
+ * reach); the role gate is the route's. The audit row names the coach.
+ */
+export async function markSessionScriptReviewed(
+  params: Actor & { scriptId: string; expectedUpdatedAt?: string },
+): Promise<ReviewedSessionScript> {
+  return withTransaction(async (client) => {
+    const script = await lockCurrentScript(client, params);
+    if (script.authoring_state === 'retired') {
+      throw new SessionScriptAuthoringError('SESSION_SCRIPT_RETIRED', 409);
+    }
+    if (script.authoring_state !== 'draft') {
+      return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
+    }
+    await client.query(
+      `update pilot.session_scripts
+          set authoring_state = 'coach_reviewed',
+              updated_at = greatest(now(), updated_at + interval '1 millisecond')
+        where organization_id = $1 and script_id = $2`,
+      [params.organizationId, script.script_id],
+    );
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: params.actorAccountId,
+        actor_role: params.actorRole,
+        organization_id: params.organizationId,
+        entity_type: 'session_script',
+        entity_id: script.script_id,
+        details: {
+          name: script.name,
+          version: script.version,
+          outcome: 'reviewed',
+          state_before: script.authoring_state,
+          state_after: 'coach_reviewed',
+        },
+      },
+      client,
+    );
+    return { outcome: 'reviewed', script_id: script.script_id, version: script.version };
   });
 }

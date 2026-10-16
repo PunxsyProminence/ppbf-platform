@@ -1562,6 +1562,10 @@ export async function searchShadowLibrary(
                ($2::text = 'scoped' and c.subject_id is null)
                or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
              )
+             -- The document's subject too (F-087): nothing ties a chunk's
+             -- subject to its document's, so a chunk with none under a
+             -- document filed against one athlete reached every other reader.
+             and (d.subject_id is null or ($2::text = 'subject' and d.subject_id = $3))
              -- Held by the retention purge (F-086): never served, so a reissued
              -- athlete id cannot reach the purged child's text.
              and not (d.metadata ? 'subject_purged_at')
@@ -1674,6 +1678,8 @@ export async function searchShadowLibrary(
            ($2::text = 'scoped' and c.subject_id is null)
            or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
          )
+         -- The document's subject too (F-087), as in the semantic path.
+         and (d.subject_id is null or ($2::text = 'subject' and d.subject_id = $3))
          -- Held by the retention purge (F-086), as in the semantic path.
          and not (d.metadata ? 'subject_purged_at')
          and not (c.metadata ? 'subject_purged_at')
