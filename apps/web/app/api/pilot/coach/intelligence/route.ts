@@ -23,8 +23,7 @@ export const runtime = 'nodejs';
 // a coach and another coach's athlete's safeguarding record, which is why it
 // comes from the access contract and NOT from getAthletesForCoach -- that
 // roster read deliberately returns every athlete in the organization (a
-// display projection with field redaction) and must never be used as an
-// access boundary. Full gate list: getCoachIntelligence's own comments,
+// display projection) and must never be used as an access boundary. Full gate list: getCoachIntelligence's own comments,
 // including the athlete_voice exclusion the digest applies unconditionally
 // because it is handed ids and an organization but never a role.
 

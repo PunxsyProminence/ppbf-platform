@@ -143,8 +143,10 @@ export async function hasRetrievableLibraryEvidence(input: {
           and d.verification_state = 'verified'
           -- Gym-wide chunks only. An athlete-scoped chunk is retrievable for
           -- that athlete alone, so a Library holding only those is empty for
-          -- every other asker and must say so (CL-C21).
+          -- every other asker and must say so (CL-C21). The document's
+          -- subject counts too, as in search (F-087).
           and c.subject_id is null
+          and d.subject_id is null
      ) as any_evidence`,
     [libraryRetrievalOrganizationIds(input.organizationId)],
   );
@@ -294,6 +296,9 @@ async function persistEvidenceBundle(input: {
              or c.subject_id is null
              or c.subject_id = $10
            )
+           -- And the document's, as search reads it (F-087): a chunk with no
+           -- subject under another athlete's document is never cited.
+           and (d.subject_id is null or d.subject_id = $10)
            -- Held by the retention purge (F-086): never cited again.
            and not (d.metadata ? 'subject_purged_at')
            and not (c.metadata ? 'subject_purged_at')

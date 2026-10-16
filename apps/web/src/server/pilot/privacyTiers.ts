@@ -101,7 +101,8 @@ export const PRIVACY_TIER_DOCTRINE: Readonly<Record<PrivacyTier, TierDoctrine>> 
       + 'refused outright, which is what makes the two de-identified tiers lateral rather than above.',
   },
   minor_circle: {
-    audience: 'self, coach_of_subject, guardian_of_subject -- nobody else.',
+    audience: 'self, coach_of_subject (every coach of the athlete\'s gym since issue #1480 C2), '
+      + 'guardian_of_subject -- nobody else; the organization admin stays outside.',
     enforcedBy: ['profileVisibility.ts#MINOR_CIRCLE', 'profileIdentity.privacy.test.ts'],
     reason:
       'The circle a minor\'s face never leaves. Deliberately narrower than athlete_record: an '
@@ -154,43 +155,40 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   },
   'athletes.dob': {
     tier: 'athlete_record',
-    enforcedBy: ['entities.ts#getAthletesForCoach'],
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'entities.ts#getAthletesForCoach'],
     note:
-      'The roster list (athletes/list, getAthletesForCoach) still returns dob only for the coach of record '
-      + 'or the holder of an active coverage grant. athletes/get + athletes/update + intake/domain-get go '
-      + 'through assertActorCanAccessAthlete, which since issue #1480 (Jason 2026-10-12) admits every coach '
-      + 'of the athlete\'s gym, so a coach reads dob per athlete there; whether the roster blanking should '
-      + 'follow is an open owner question on #1480. profile/roster selects dob to feed the portrait age gate and never '
+      'The roster list (athletes/list, getAthletesForCoach) returns dob to every coach of the athlete\'s gym '
+      + 'since issue #1480 PR C (OD-2026-10-11-007), matching athletes/get + athletes/update + intake/domain-get, '
+      + 'which go through assertActorCanAccessAthlete; until then the roster blanked it for athletes the coach '
+      + 'had no assignment or live coverage on. profile/roster selects dob to feed the portrait age gate and never '
       + 'returns it. coach/development-block-templates reads it through developmentBlockTemplates.ts after '
       + 'assertActorCanAccessAthlete and returns only an adult/not-adult boolean. Organization admins still read it org-wide, which is exactly what keeps this '
-      + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
-      + 'wherever age gates anything (wallDisplay.ts#isMinor).',
+      + 'athlete_record rather than minor_circle. getAthletesForCoach now bounds only the gym and deletion. '
+      + 'A null (unrecorded) dob is treated as a minor wherever age gates anything (wallDisplay.ts#isMinor).',
   },
   'athletes.weight_class': {
     tier: 'organization',
     enforcedBy: ['organizationScope.convention.test.ts'],
     note:
       'A record about a person\'s body; the public floor is separately held by the wall denylist '
-      + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list, and left that way on '
-      + 'purpose when dob and emergency_contact were narrowed: a coach matching people for sparring or '
-      + 'picking up cover needs it across the gym, and it identifies a body far less than a birth date '
-      + 'or a guardian\'s phone number does.',
+      + '(wallOfNamesPrivacy.test.ts). Org-wide for staff through athletes/list: a coach matching people '
+      + 'for sparring or picking up cover needs it across the gym.',
   },
   'athletes.gym_status': {
     tier: 'organization',
     enforcedBy: ['organizationScope.convention.test.ts'],
     note:
-      'Public floor held by the wall denylist; org-wide for staff through athletes/list, kept that way '
-      + 'deliberately in the same field split -- who is active is what a coach plans a floor from.',
+      'Public floor held by the wall denylist; org-wide for staff through athletes/list -- who is '
+      + 'active is what a coach plans a floor from.',
   },
   'athletes.emergency_contact': {
     tier: 'athlete_record',
-    enforcedBy: ['entities.ts#getAthletesForCoach'],
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'entities.ts#getAthletesForCoach'],
     note:
       'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
-      + 'public read (wall denylist). Blanked on the roster list for coaches by the same field split as '
-      + 'athletes.dob, and, as with dob, readable per athlete by every coach of the gym through '
-      + 'assertActorCanAccessAthlete since issue #1480 (an open owner question there). The roster export '
+      + 'public read (wall denylist). Readable by every coach of the athlete\'s gym, on the roster list and per '
+      + 'athlete through assertActorCanAccessAthlete, since issue #1480 PR C (OD-2026-10-11-007; staff see '
+      + 'everything, OD-2026-10-13-006, which keeps a PARENT to relationship only). The roster export '
       + '(admin/export/roster) still carries it and is gated to organization_admin alone.',
   },
   'account_profiles.photo_blob_path': {
@@ -248,9 +246,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'add a note of their own instead of rewriting the athlete\'s.'
       + '\n\n'
       + 'THE ENFORCED TIER IS athlete_record. The dedicated staff route (A-FIN-08) is gated by '
-      + 'assertActorCanAccessAthlete -- coach of record, a covering coach with a live grant, or '
-      + 'an organization admin -- since OD-2026-10-05-024 ruling 2 (Jason 2026-10-05), which '
-      + 'superseded the 2026-09-25 "any coach or admin in the organization" read. '
+      + 'assertActorCanAccessAthlete -- since issue #1480 (OD-2026-10-11-007) every coach of the '
+      + 'athlete\'s gym, or an organization admin. That replaced OD-2026-10-05-024 ruling 2 '
+      + '(coach of record or a covering coach with a live grant). '
       + '/api/pilot/sessions/list returns the whole session record behind the same gate.'
       + '\n\n'
       + 'LINKED GUARDIANS ARE EXCLUDED. The passbook omits the key entirely for a parent '
@@ -424,7 +422,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '"lets make it coaches to whole gym", replacing OD-2026-10-05-024 ruling 2) admits every coach of '
       + 'the athlete\'s gym and the organization admin, for an adult and a youth alike. bodyMassVisibleTo '
       + 'narrows a YOUTH (and an athlete with no recorded date of birth) behind that gate only by role; '
-      + 'whether a youth\'s weight should stay with the coach of record is an open owner question on #1480. Parents read it for a youth only.',
+      + 'a youth\'s weight follows the same whole-gym rule (OD-2026-10-12-016, Jason: "Any coach all coaches '
+      + 'coach all athletes"). Parents read it for a youth only.',
   },
   'training_holds.reason_category': {
     tier: 'organization',
@@ -567,7 +566,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed about a child. Staff only: families never receive it, so the tier '
       + 'is organization, not athlete_record (which would admit the athlete and guardians). Within '
       + 'staff, org admins read the whole gym; a coach reads a note only for a class they own AND '
-      + 'an athlete they reach (athleteIdsForCoach: coach of record or a live coverage grant). '
+      + 'an athlete they reach -- since issue #1480 (OD-2026-10-11-007) any live athlete of their own '
+      + 'gym (organizationActionableRoster). '
       + 'Class ownership alone was self-grantable through cover_class (CL-A2), so both readers '
       + 'filter by reach: the attendance-summary route (inReach) and GET /api/pilot/scheduler '
       + '(coachReachableAthleteIds). getClassAttendanceRoster is NOT itself a gate -- it returns '
@@ -584,7 +584,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note:
       'A self-talk phrase the athlete typed in their own words, minors included (owner answers '
       + '2026-10-04). Every read goes through readMentalSkills, which calls assertActorCanAccessAthlete '
-      + 'before selecting: self, linked guardian, coach of record or covering coach, org admin. '
+      + 'before selecting: self, linked guardian, any coach of the athlete\'s gym (issue #1480), org admin. '
       + 'Writes are self-only. The text is kept out of audit details.',
   },
 };

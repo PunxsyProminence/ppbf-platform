@@ -462,6 +462,9 @@ async function queueLibraryEntryChangeForHumanReview(
        feedback_id = EXCLUDED.feedback_id,
        session_type = EXCLUDED.session_type,
        outcome_signal = EXCLUDED.outcome_signal,
+       -- The row now names this account: an earlier flagger's note must not
+       -- be shown as theirs (#1600 PR 3).
+       user_note = NULL,
        last_flagged_at = NOW(),
        latest_outcome_signal = EXCLUDED.outcome_signal,
        proposed_action = EXCLUDED.proposed_action,

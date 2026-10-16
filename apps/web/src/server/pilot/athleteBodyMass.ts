@@ -385,9 +385,9 @@ export async function bodyMassVisibleTo(
 //
 // WHO: the athlete, for their own record, or a coach of the athlete's gym --
 // the two arms of assertActorCanAccessAthlete Jason named (since issue #1480,
-// 2026-10-12, a coach's arm is the whole gym; whether a youth's weight should
-// stay with the coach of record is an open owner question there). Everyone
-// else is refused: a parent, the organization admin and the platform owner.
+// 2026-10-12, a coach's arm is the whole gym, and a youth's weight follows the
+// same rule: OD-2026-10-12-016, Jason: "Any coach all coaches coach all
+// athletes"). Everyone else is refused: a parent, the organization admin and the platform owner.
 //
 // WHEN: an entry observed in the last BODY_MASS_CORRECTION_DAYS days -- the
 // recommended 7, plus the day of tolerance MVP-12 allows when it picks the

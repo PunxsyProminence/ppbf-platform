@@ -50,7 +50,7 @@ export default function TaggedClipsList({
           return;
         }
         if (res.status === 403) {
-          if (live) setError('You can list clips only for athletes you coach.');
+          if (live) setError('You can list clips only for athletes of your own gym.');
           return;
         }
         if (!res.ok) {

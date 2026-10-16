@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 
 import { apiBase } from '@/lib/apiBase';
@@ -63,6 +63,8 @@ const DEMOTE_ROLES = [
   { value: 'parent', label: 'Parent / Guardian' },
   { value: 'athlete', label: 'Athlete' },
 ];
+
+type ArmedAction = 'invite' | 'athlete' | 'promote' | 'transfer' | 'disable' | 'restore' | 'grant' | 'revoke';
 
 const ORG_STATUSES = ['active', 'inactive', 'suspended', 'pending'] as const;
 type OrgStatus = (typeof ORG_STATUSES)[number];
@@ -240,6 +242,14 @@ export default function PlatformConsole() {
   // (not gym-scoped) privilege flag -- POST /api/pilot/platform/users/master-shadow-access.
   const [shadowAccountId, setShadowAccountId] = useState('');
 
+  // The account write whose button was pressed once (F-084). The first press
+  // only arms it, and the button then says what the second press does and to
+  // which gym -- the Cancel Class pattern (app/schedule/page.tsx). The gym is
+  // otherwise named only in the picker at the top of the page. `target` is
+  // what the write would send when it was armed: change the gym or any field
+  // and the button is no longer armed, so the next press only arms it again.
+  const [armed, setArmed] = useState<{ action: ArmedAction; target: string } | null>(null);
+
   useEffect(() => {
     if (!hasPlatformAccess) {
       return;
@@ -299,15 +309,6 @@ export default function PlatformConsole() {
 
   async function inviteStaff() {
     const email = inviteEmail.trim();
-    if (!selectedOrgId) {
-      showFeedback('error', 'Choose a gym first');
-      return;
-    }
-    if (!email) {
-      showFeedback('error', 'Enter an email address');
-      return;
-    }
-
     setIsBusy(true);
     try {
       await postJson('/api/pilot/platform/staff', {
@@ -333,15 +334,6 @@ export default function PlatformConsole() {
   async function createAthleteShell() {
     const accountId = athleteAccountId.trim();
     const rosterId = athleteRosterId.trim();
-    if (!selectedOrgId) {
-      showFeedback('error', 'Choose a gym first');
-      return;
-    }
-    if (!accountId || !rosterId) {
-      showFeedback('error', 'Enter both an account ID and the athlete’s roster ID');
-      return;
-    }
-
     setIsBusy(true);
     try {
       const result = await postJson('/api/pilot/platform/athlete-shell', {
@@ -361,15 +353,6 @@ export default function PlatformConsole() {
 
   async function promoteToOrganizationAdmin() {
     const accountId = promoteAccountId.trim();
-    if (!selectedOrgId) {
-      showFeedback('error', 'Choose a gym first');
-      return;
-    }
-    if (!accountId) {
-      showFeedback('error', 'Enter the account ID to promote');
-      return;
-    }
-
     setIsBusy(true);
     try {
       await postJson('/api/pilot/platform/organizations/assign-admin', {
@@ -388,15 +371,6 @@ export default function PlatformConsole() {
   async function transferOrganizationAdminSeat() {
     const fromAccountId = transferFromAccountId.trim();
     const toAccountId = transferToAccountId.trim();
-    if (!selectedOrgId) {
-      showFeedback('error', 'Choose a gym first');
-      return;
-    }
-    if (!fromAccountId || !toAccountId) {
-      showFeedback('error', 'Enter both the current admin and the incoming admin');
-      return;
-    }
-
     setIsBusy(true);
     try {
       await postJson('/api/pilot/platform/organizations/transfer-admin', {
@@ -423,6 +397,8 @@ export default function PlatformConsole() {
   // writes the same audit event. Everything this ticket added is the wording
   // and the confirmation in front of it.
   async function changeOrganizationStatus(status: OrgStatus) {
+    // A half-pressed account write does not survive another action.
+    setArmed(null);
     if (!selectedOrgId) {
       showFeedback('error', 'Choose a gym first');
       return;
@@ -451,6 +427,11 @@ export default function PlatformConsole() {
     }
   }
 
+  function askForStanding(status: Exclude<OrgStatus, 'active'>) {
+    setArmed(null);
+    setPendingStanding(status);
+  }
+
   // The only path from the three sign-everybody-out standings to the POST.
   async function confirmStandingChange() {
     if (!pendingStanding) {
@@ -461,15 +442,6 @@ export default function PlatformConsole() {
 
   async function changeAccountStatus(activeFlag: boolean) {
     const accountId = statusAccountId.trim();
-    if (!selectedOrgId) {
-      showFeedback('error', 'Choose a gym first');
-      return;
-    }
-    if (!accountId) {
-      showFeedback('error', 'Enter the account ID');
-      return;
-    }
-
     setIsBusy(true);
     try {
       await postJson('/api/pilot/platform/users/status', {
@@ -490,11 +462,6 @@ export default function PlatformConsole() {
 
   async function changeMasterShadowAccess(granted: boolean) {
     const accountId = shadowAccountId.trim();
-    if (!accountId) {
-      showFeedback('error', 'Enter the account ID');
-      return;
-    }
-
     setIsBusy(true);
     try {
       await postJson('/api/pilot/platform/users/master-shadow-access', {
@@ -512,6 +479,113 @@ export default function PlatformConsole() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  // What stops a write before it is armed, so an armed button never names a
+  // blank account. Master SHADOW access is the one write with no gym.
+  function problemWith(action: ArmedAction): string | null {
+    if (action === 'grant' || action === 'revoke') {
+      return shadowAccountId.trim() ? null : 'Enter the account ID';
+    }
+    if (!selectedOrgId) {
+      return 'Choose a gym first';
+    }
+    switch (action) {
+      case 'invite':
+        return inviteEmail.trim() ? null : 'Enter an email address';
+      case 'athlete':
+        return athleteAccountId.trim() && athleteRosterId.trim()
+          ? null
+          : 'Enter both an account ID and the athlete’s roster ID';
+      case 'promote':
+        return promoteAccountId.trim() ? null : 'Enter the account ID to promote';
+      case 'transfer':
+        return transferFromAccountId.trim() && transferToAccountId.trim()
+          ? null
+          : 'Enter both the current admin and the incoming admin';
+      default:
+        return statusAccountId.trim() ? null : 'Enter the account ID';
+    }
+  }
+
+  // Read from the same state the write reads, at render, so what the armed
+  // button names is what the second press sends.
+  function armedLabel(action: ArmedAction): string {
+    const gym = selectedGymName;
+    switch (action) {
+      case 'invite':
+        return `Press again: add ${inviteEmail.trim()} as ${inviteRole.replace('_', ' ')} to ${gym}`;
+      case 'athlete':
+        return `Press again: prepare ${athleteAccountId.trim()} in ${gym}`;
+      case 'promote':
+        return `Press again: make ${promoteAccountId.trim()} admin of ${gym}`;
+      case 'transfer':
+        return `Press again: hand ${gym}’s admin seat from ${transferFromAccountId.trim()} to`
+          + ` ${transferToAccountId.trim()}; ${transferFromAccountId.trim()} becomes`
+          + ` ${DEMOTE_ROLES.find((role) => role.value === transferDemoteRole)?.label ?? transferDemoteRole}`;
+      case 'disable':
+        return `Press again: disable ${statusAccountId.trim()} in ${gym}`;
+      case 'restore':
+        return `Press again: restore ${statusAccountId.trim()} in ${gym}`;
+      case 'grant':
+        return `Press again: grant ${shadowAccountId.trim()} SHADOW access in every gym`;
+      case 'revoke':
+        return `Press again: revoke ${shadowAccountId.trim()}’s SHADOW access in every gym`;
+    }
+  }
+
+  // Everything the write sends, as it stands now.
+  function targetOf(action: ArmedAction): string {
+    switch (action) {
+      case 'invite':
+        return JSON.stringify([selectedOrgId, inviteEmail.trim(), inviteRole]);
+      case 'athlete':
+        return JSON.stringify([selectedOrgId, athleteAccountId.trim(), athleteRosterId.trim()]);
+      case 'promote':
+        return JSON.stringify([selectedOrgId, promoteAccountId.trim()]);
+      case 'transfer':
+        return JSON.stringify([selectedOrgId, transferFromAccountId.trim(), transferToAccountId.trim(), transferDemoteRole]);
+      case 'disable':
+      case 'restore':
+        return JSON.stringify([selectedOrgId, statusAccountId.trim()]);
+      case 'grant':
+      case 'revoke':
+        return JSON.stringify([shadowAccountId.trim()]);
+    }
+  }
+
+  function isArmed(action: ArmedAction): boolean {
+    return armed?.action === action && armed.target === targetOf(action);
+  }
+
+  function buttonLabel(action: ArmedAction, idle: string): string {
+    if (isBusy) {
+      return 'Working...';
+    }
+    return isArmed(action) ? armedLabel(action) : idle;
+  }
+
+  // First press arms; the second press of the same button writes. Pressing a
+  // different button re-arms that one instead. The second click of a
+  // double-click is part of the first press, not the second one.
+  function pressToWrite(event: MouseEvent<HTMLButtonElement>, action: ArmedAction, write: () => Promise<void>) {
+    const problem = problemWith(action);
+    if (problem) {
+      setArmed(null);
+      showFeedback('error', problem);
+      return;
+    }
+    if (!isArmed(action)) {
+      setPendingStanding(null);
+      setFeedback(null);
+      setArmed({ action, target: targetOf(action) });
+      return;
+    }
+    if (event.detail > 1) {
+      return;
+    }
+    setArmed(null);
+    void write();
   }
 
   if (!authChecked) {
@@ -560,7 +634,16 @@ export default function PlatformConsole() {
   }
 
   return (
-    <main className="room room--office min-h-screen">
+    // A held Enter key repeats the button's click: the first arms a write and
+    // the repeat would send it before the armed label could be read.
+    <main
+      className="room room--office min-h-screen"
+      onKeyDownCapture={(event) => {
+        if (event.repeat && event.key === 'Enter' && event.target instanceof HTMLButtonElement) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Platform Desk</p>
@@ -610,6 +693,8 @@ export default function PlatformConsole() {
                 // another gym while one is open would leave a slip on screen
                 // that asks about a gym nobody is looking at any more.
                 setPendingStanding(null);
+                // An armed button names one gym, the same way.
+                setArmed(null);
                 setSelectedOrgId(event.target.value);
               }}
               className="select"
@@ -678,10 +763,10 @@ export default function PlatformConsole() {
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
-              onClick={() => void inviteStaff()}
+              onClick={(event) => pressToWrite(event, 'invite', inviteStaff)}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isBusy ? 'Working...' : 'Add To Gym'}
+              {buttonLabel('invite', 'Add To Gym')}
             </button>
           </div>
         </section>
@@ -716,14 +801,14 @@ export default function PlatformConsole() {
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
-              onClick={() => void createAthleteShell()}
+              onClick={(event) => pressToWrite(event, 'athlete', createAthleteShell)}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {/* The h2 above already says it in the clerk's words -- "Prepare
                   An Athlete Account" -- and then the button that does it said
                   "Create Account Shell", which is what the code calls the row,
                   not what the desk calls the job. */}
-              {isBusy ? 'Working...' : 'Prepare The Account'}
+              {buttonLabel('athlete', 'Prepare The Account')}
             </button>
           </div>
         </section>
@@ -750,10 +835,10 @@ export default function PlatformConsole() {
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
-              onClick={() => void promoteToOrganizationAdmin()}
+              onClick={(event) => pressToWrite(event, 'promote', promoteToOrganizationAdmin)}
               className="btn btn--ghost w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isBusy ? 'Working...' : 'Promote To Organization Admin'}
+              {buttonLabel('promote', 'Promote To Organization Admin')}
             </button>
           </div>
 
@@ -794,10 +879,10 @@ export default function PlatformConsole() {
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
-              onClick={() => void transferOrganizationAdminSeat()}
+              onClick={(event) => pressToWrite(event, 'transfer', transferOrganizationAdminSeat)}
               className="btn btn--ghost w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isBusy ? 'Working...' : 'Transfer Admin Seat'}
+              {buttonLabel('transfer', 'Transfer Admin Seat')}
             </button>
           </div>
         </section>
@@ -870,7 +955,7 @@ export default function PlatformConsole() {
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
-              onClick={() => setPendingStanding(CLOSED_STATUS)}
+              onClick={() => askForStanding(CLOSED_STATUS)}
               className="btn--lever mt-[var(--s4)] w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
             >
               {STANDING_CHANGE[CLOSED_STATUS].trigger}
@@ -892,12 +977,14 @@ export default function PlatformConsole() {
                 onClick={() => void changeOrganizationStatus('active')}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Open This Gym
+                {/* One press by design (STANDING_CHANGE), so the press itself
+                    names the gym it opens. */}
+                {selectedOrgId ? `Open ${selectedGymName}` : 'Open This Gym'}
               </button>
               <button
                 type="button"
                 disabled={isBusy || !selectedOrgId}
-                onClick={() => setPendingStanding('suspended')}
+                onClick={() => askForStanding('suspended')}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {STANDING_CHANGE.suspended.trigger}
@@ -905,7 +992,7 @@ export default function PlatformConsole() {
               <button
                 type="button"
                 disabled={isBusy || !selectedOrgId}
-                onClick={() => setPendingStanding('pending')}
+                onClick={() => askForStanding('pending')}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {STANDING_CHANGE.pending.trigger}
@@ -997,18 +1084,18 @@ export default function PlatformConsole() {
               <button
                 type="button"
                 disabled={isBusy || !selectedOrgId}
-                onClick={() => void changeAccountStatus(false)}
+                onClick={(event) => pressToWrite(event, 'disable', () => changeAccountStatus(false))}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Disable Account
+                {buttonLabel('disable', 'Disable Account')}
               </button>
               <button
                 type="button"
                 disabled={isBusy || !selectedOrgId}
-                onClick={() => void changeAccountStatus(true)}
+                onClick={(event) => pressToWrite(event, 'restore', () => changeAccountStatus(true))}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Restore Account
+                {buttonLabel('restore', 'Restore Account')}
               </button>
             </div>
           </div>
@@ -1036,18 +1123,18 @@ export default function PlatformConsole() {
               <button
                 type="button"
                 disabled={isBusy}
-                onClick={() => void changeMasterShadowAccess(true)}
+                onClick={(event) => pressToWrite(event, 'grant', () => changeMasterShadowAccess(true))}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Grant Access
+                {buttonLabel('grant', 'Grant Access')}
               </button>
               <button
                 type="button"
                 disabled={isBusy}
-                onClick={() => void changeMasterShadowAccess(false)}
+                onClick={(event) => pressToWrite(event, 'revoke', () => changeMasterShadowAccess(false))}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Revoke Access
+                {buttonLabel('revoke', 'Revoke Access')}
               </button>
             </div>
           </div>

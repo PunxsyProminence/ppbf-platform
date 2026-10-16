@@ -68,6 +68,17 @@ type SchedulerCoachingRequest = {
   created_at: string;
 };
 
+/* A request nobody answered before its preferred time read "pending" for
+   months (F-043). It is still pending in the data and staff can still resolve
+   it; the line just says the time has gone. Wording PROPOSED. */
+function coachingRequestStatusText(item: SchedulerCoachingRequest, nowMs: number): string {
+  const preferredMs = Date.parse(item.preferred_at);
+  if (item.status === 'pending' && Number.isFinite(preferredMs) && preferredMs < nowMs) {
+    return 'not answered, and the preferred time has passed';
+  }
+  return item.status;
+}
+
 type MembershipFlag = {
   membership_id: string;
   program_name: string;
@@ -137,9 +148,10 @@ type CheckInHoldWarning = {
   reason_category: string;
   athlete_explanation: string;
   lift_condition_text: string;
-  // The coach marked an athlete on their class register whom they do not
-  // otherwise coach: the route says the athlete is held and at what scope,
-  // and keeps the reason and the lift condition with the athlete's own coach.
+  // The route withholds the reason and the lift condition for an athlete
+  // beyond the marker's reach -- since issue #1480, for a coach, only an
+  // athlete who is not live in their gym -- and still says the athlete is
+  // held and at what scope.
   details_withheld: boolean;
 };
 
@@ -273,7 +285,7 @@ export default function SchedulerPage() {
   const [nowMs] = useState(() => Date.now());
   // Cancel Class goes once the class starts (#1595), so the page that stays
   // open across a start needs a clock that moves. Ticked in an effect, not
-  // read in render.
+  // read in render. The stale coaching-request line reads it too (F-043).
   const [cancelClockMs, setCancelClockMs] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setCancelClockMs(Date.now()), 15_000);
@@ -1035,7 +1047,7 @@ export default function SchedulerPage() {
                       </p>
                       {shownCheckInHold.details_withheld ? (
                         <p className="t-body mt-[var(--s3)]">
-                          The reason and what lifts it are with this athlete&apos;s own coach.
+                          The reason and what lifts it are not shown to you here.
                         </p>
                       ) : (
                         <>
@@ -1113,7 +1125,7 @@ export default function SchedulerPage() {
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
                       <p className="text-[color:var(--bone-300)]">
-                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}
+                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
@@ -1122,7 +1134,7 @@ export default function SchedulerPage() {
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
-                            Coach to assign (their coach of record, or a coach holding active coverage)
+                            Coach to assign (any coach of the gym)
                           </label>
                           {/* Picked by name from the gym's active coaches, never
                               typed as an id (#1536). No free-text fallback: a

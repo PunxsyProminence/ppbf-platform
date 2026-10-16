@@ -33,9 +33,10 @@ export const runtime = 'nodejs';
  * film study: nothing here scores footage.
  *
  * A coach may act on a video they can already see -- unattributed, or showing
- * at least one athlete who is theirs (decision 3) -- and may tag only athletes
- * who are theirs. Tagging their own athlete cannot open someone else's video,
- * because the video has to be visible before the tag is added.
+ * at least one athlete the access gate admits them to (decision 3) -- and may
+ * tag only such athletes. Since issue #1480 that is every live athlete of the
+ * coach's own gym. Tagging cannot open another gym's video, because the video
+ * has to be visible before the tag is added.
  */
 async function staffCanSeeVideo(
   principal: PilotPrincipal,
@@ -91,8 +92,9 @@ export async function GET(
     /*
      * A partner's tag is listed (decision 3: the clip is shared), but which
      * sparring entry it links to is that athlete's sparring record, which a
-     * coach who is not theirs cannot read. So a coach sees the link only on
-     * their own athletes' tags.
+     * coach reads only for an athlete the gate admits them to -- since issue
+     * #1480, any live athlete of their own gym. So a coach sees the link only
+     * on those athletes' tags.
      */
     const own = isOrganizationAdminRole(principal.role)
       ? null
