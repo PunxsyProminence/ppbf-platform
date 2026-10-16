@@ -679,7 +679,13 @@ describe("the retention purge and a purged person's remaining SHADOW rows", () =
   });
 
   test("a flagged conversation is kept de-identified: their own words gone, SHADOW's reply name-scrubbed, under the review entry's token", async () => {
-    for (const seeded of [seededA, seededGuardian]) {
+    // The guardian (Gale Ortiz) shares the child's surname: the child's purge,
+    // first in the run, already blanked "Ortiz" in every note of the gym
+    // (scrubGymNotes), and the guardian's own purge blanks "Gale".
+    for (const [seeded, reply] of [
+      [seededA, '[name], please tell your coach today.'],
+      [seededGuardian, '[name] [name], please tell your coach today.'],
+    ] as const) {
       const session = await db.query(
         `select account_id, athlete_id, title, deidentified_at is not null as stamped
            from pilot.shadow_chat_sessions where conversation_id = $1`,
@@ -698,7 +704,7 @@ describe("the retention purge and a purged person's remaining SHADOW rows", () =
         [seeded.flaggedConversationId],
       );
       expect(messages.rows).toEqual([{
-        id: seeded.flaggedReplyId, account_id: token, role: 'assistant', content: '[name], please tell your coach today.',
+        id: seeded.flaggedReplyId, account_id: token, role: 'assistant', content: reply,
       }]);
       const review = await db.query(
         `select account_id from pilot.shadow_human_review_queue where conversation_id = $1`,

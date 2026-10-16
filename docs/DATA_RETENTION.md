@@ -398,14 +398,33 @@ to them; their own typed words are emptied and SHADOW's replies kept (Q1, "Delet
 AI replies"); a coach's turn about them keeps the coach and the text with the person's known
 names scrubbed to `[name]` (2026-10-07, "Scrub the child's name, keep"): full name, ring name,
 login email and linked guardians' names, whole and part by part (split on spaces, hyphens,
-apostrophes, periods, `@`), case-insensitively, on word boundaries. A purged guardian's names
+apostrophes, periods; from an email only the part before `@`, never the domain),
+case-insensitively, on word boundaries. A purged guardian's names
 also leave the turns about each child they were still linked to, because a guardian is purged a
 year before the child and the child's purge can no longer learn the name. The names then leave
 every other kept turn in the person's gym as well, keyed to anyone or to nobody (Jason
-2026-10-07: "Gym-wide (Recommended)"; counted as `shadow_chat_audit_names_scrubbed`). **The
+2026-10-07: "Gym-wide (Recommended)"; counted as `shadow_chat_audit_names_scrubbed`), and so do
+every other kept AI chat note in that gym (F-090; OD-2026-10-06-027 ruling 1, "removed from every
+kept AI chat note in the gym"). There only the deleted person's own names are used (full name, ring
+name, login email), not a living guardian's: other people's SHADOW chat messages and conversation titles
+(`shadow_chat_messages_names_scrubbed`, `shadow_chat_titles_names_scrubbed`), feedback comments
+(`shadow_feedback_comments_names_scrubbed`), Library review-flag notes
+(`shadow_review_flag_notes_names_scrubbed`), research rows' requirement text, knowledge gap and
+`metadata` note, question and closing note, and a staff question's key, which is its own text and
+becomes `purged-<id>` (a coach re-filing that question from an old chat then files a second row)
+(`shadow_research_rows_names_scrubbed`), and safeguarding review summaries
+(`shadow_review_summaries_names_scrubbed`; review metadata holds no typed text). The author of each
+note is kept. Not reached: a SHA-256 of a question (an asker row's key, an evidence bundle's
+`query_sha256`) can still be checked against a guessed question; a name part made only of the
+letters a to f and digits ("Cade") can also blank part of a citation token `[E:<uuid>]` in a kept
+reply. Pinned by `gymNameScrubPurge.pg.test.ts`. **The
 method's limits:** a nickname never recorded, a misspelling, a plural or a description is not
 caught; **over-blanking**: a common word that is also a name part ("Will", a ring name "Kid") is
-blanked to `[name]` in every turn of that gym, other children's kept AI text included; people
+blanked to `[name]` in every turn and note of that gym, other children's kept AI text included,
+except that in other people's turns and notes a part under three letters or a particle on its own
+(de, da, del, la, le, van, von, der, den, of, the, jr, sr, ii, iii, mc, mac) is left, while the full
+name still goes as a phrase (Overwatch 2026-10-16: "Maria de la Cruz" goes, "a lot of drills" keeps
+"of"; a two-letter first name such as "Al" alone is then left in those notes); people
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
 read-only production count). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
