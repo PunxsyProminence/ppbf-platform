@@ -219,8 +219,8 @@ beforeAll(async () => {
   );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
-     values ($1, 'par-ad-p', 'acct-ad-parent', 'Parent of D', '555-0100', 'p@example.test'),
-            ($1, 'par-ad-p2', 'acct-ad-parent-2', 'Parent Two', '555-0200', 'p2@example.test')`,
+     values ($1, 'par-ad-p', 'acct-ad-parent', 'Dana Park', '555-0100', 'p@example.test'),
+            ($1, 'par-ad-p2', 'acct-ad-parent-2', 'Robin Hale', '555-0200', 'p2@example.test')`,
     [ORG],
   );
   await db.query(

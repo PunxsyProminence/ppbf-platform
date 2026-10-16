@@ -24,14 +24,14 @@ describe('namePattern', () => {
 
   test('escapes regex metacharacters, trims edge punctuation, splits on it, and skips single characters', () => {
     expect(namePattern(["Ann O'Brien (Jr.)", 'J', 'a@b.test'])).toBe(
-      "\\m(Ann O'Brien \\(Jr|a@b\\.test|Brien|test|Ann|Jr)\\M",
+      "\\m(Ann O'Brien \\(Jr|a@b\\.test|Brien|Ann|Jr)\\M",
     );
   });
 
-  test('splits hyphenated names and takes an email local part', () => {
+  test('splits hyphenated names and takes an email local part, never its domain', () => {
     expect(namePattern(['Mary-Kate Lee'])).toBe('\\m(Mary-Kate Lee|Mary|Kate|Lee)\\M');
     expect(namePattern(['jordan.pike2013@example.test'])).toBe(
-      '\\m(jordan\\.pike2013@example\\.test|jordan\\.pike2013|pike2013|example|jordan|test)\\M',
+      '\\m(jordan\\.pike2013@example\\.test|jordan\\.pike2013|pike2013|jordan)\\M',
     );
   });
 
