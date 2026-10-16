@@ -42,10 +42,12 @@ export async function assertCoachReachesAthlete(organizationId: string, athleteI
  * Whether a coach has a RELATIONSHIP with an athlete: the coach of record, or
  * an active coverage grant (started, not yet expired or revoked).
  *
- * Not a reach check any more (see assertCoachReachesAthlete). Its one caller
- * is the scheduler, which asks it about the coach an ADMIN names for a
- * one-on-one session with a child -- an adult chosen for a private
- * arrangement, which the 2026-10-12 ruling did not widen (issue #1480 Q2).
+ * Not a reach check any more (see assertCoachReachesAthlete), and since issue
+ * #1480 PR B2 it has no caller: the scheduler's check on the coach an ADMIN
+ * names for a one-on-one session now asks assertActorCanAccessAthlete as that
+ * coach, so any active coach of the gym may be named (#1480 Q2, Overwatch's
+ * application of OD-2026-10-12-016, "Any coach all coaches coach all
+ * athletes"). Kept for routeGateWalk's gate list until it is removed.
  *
  * Both failures throw the SAME message on purpose: whether a coach has no
  * relationship to this athlete, an expired grant, or a revoked one is not
