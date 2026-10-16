@@ -470,6 +470,9 @@ describe('citing evidence report (real database)', () => {
 
       const expected = {
         items: 3,
+        message_citations: 1,
+        bundles: 2,
+        answers: 1,
         by_asking_organization: [{
           asking_organization_id: FROM,
           items: 3,
@@ -482,16 +485,18 @@ describe('citing evidence report (real database)', () => {
           all_asking_accounts_active_in_target: false,
         }],
       };
-      expect(result).toMatchObject({ status: 'dry-run', would_apply: false });
+      // Citing items no longer block: they are detached on apply.
+      expect(result).toMatchObject({ status: 'dry-run', would_apply: true, blockers: [] });
       expect(result.citing_evidence).toEqual(expected);
-      expect(blockerCodes(result)).toContain('EVIDENCE_ITEMS_CITE_ROWS');
       expect(events.find((e) => e.event === 'dry-run')!.payload.citing_evidence).toEqual(expected);
-      // Counts only: no account id is printed anywhere.
+      // Counts only: no account id, evidence id or answer id is printed.
       const printed = JSON.stringify(events);
       expect(printed).not.toContain(ADMIN);
       expect(printed).not.toContain(COACH);
-      // The items do not move, so they do not change what the move fingerprints.
-      expect(result.plan_fingerprint).toBe(cleanFingerprint);
+      expect(printed).not.toContain('00000000-0000-4000-8000-0000000000e1');
+      expect(printed).not.toContain('00000000-0000-4000-8000-0000000000d1');
+      // The detached set is part of the fingerprint.
+      expect(result.plan_fingerprint).not.toBe(cleanFingerprint);
       expect(after).toEqual(before);
     } finally {
       await client.end();
@@ -550,6 +555,106 @@ describe('citing evidence report (real database)', () => {
     } finally {
       await client.end();
     }
+  });
+
+  describe('detach, then move (real database)', () => {
+  const E = (n: number) => `00000000-0000-4000-8000-0000000000e${n}`;
+  const B = (n: number) => `00000000-0000-4000-8000-0000000000b${n}`;
+  const ANSWER = '00000000-0000-4000-8000-0000000000d1';
+
+  async function count(client: Client, sql: string, values: unknown[] = []): Promise<number> {
+    return Number((await client.query<{ n: number }>(sql, values)).rows[0].n);
+  }
+
+  test('apply detaches the citing items and their citations, moves the shelf, and records the detached ids', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      const dry = await movePolicyShelf(client, options(), { log: silent });
+      const result = await movePolicyShelf(
+        client,
+        options({ apply: true, confirm: PHRASE, expectFingerprint: dry.plan_fingerprint }),
+        { log: silent },
+      );
+
+      expect(result).toMatchObject({
+        status: 'applied',
+        detached: { message_citations: 1, evidence_items: 3 },
+        moved: { sources: 4, documents: 3, chunks: 5, citation_checks: 1, retraction_checks: 1 },
+      });
+
+      // The three citing items and the one citation of them are gone.
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_items where evidence_id = any($1::uuid[])',
+        [[E(1), E(2), E(3)]])).toBe(0);
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_message_citations')).toBe(0);
+      // The item citing the research source, which stays, is untouched.
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_items where evidence_id = $1',
+        [E(4)])).toBe(1);
+      // The answer keeps its text; bundles and the conversation stay.
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_chat_messages where message_id = $1',
+        [ANSWER])).toBe(1);
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_bundles where bundle_id = any($1::uuid[])',
+        [[B(1), B(2), B(3)]])).toBe(3);
+      // Nothing cites a moved row from the old organization any more.
+      expect(await count(client,
+        `select count(*)::int as n from pilot.shadow_evidence_items
+          where source_id = any($1::text[]) or chunk_id = any($2::text[])`,
+        [['pol-authority', 'pol-a', 'pol-b', 'prog-copy'], ['auth-chunk-1', 'auth-chunk-2', 'pol-a-chunk']])).toBe(0);
+      expect(await orgOf(client, 'shadow_library_chunks', 'chunk_id', 'auth-chunk-1')).toBe(TO);
+
+      const audit = await client.query<{ details: Record<string, unknown> }>(
+        `select details from pilot.audit_events where entity_type = 'shadow_library_policy_move'`,
+      );
+      expect(audit.rows).toHaveLength(1);
+      const details = audit.rows[0].details as {
+        detached_counts: unknown;
+        detached: { evidence_items: Array<Record<string, unknown>>; message_citations: unknown[] };
+      };
+      expect(details.detached_counts).toEqual({ message_citations: 1, evidence_items: 3 });
+      expect(details.detached.evidence_items.map((row) => row.evidence_id).sort()).toEqual([E(1), E(2), E(3)]);
+      expect(details.detached.evidence_items.find((row) => row.evidence_id === E(2))).toEqual({
+        evidence_id: E(2),
+        bundle_id: B(1),
+        asking_organization_id: FROM,
+        source_id: 'pol-a',
+        document_id: 'doc-copy-1',
+        chunk_id: 'pol-a-chunk',
+        library_organization_id: FROM,
+        ordinal: 2,
+        excerpt_sha256: 'b'.repeat(64),
+      });
+      expect(details.detached.message_citations).toEqual([
+        { assistant_message_id: ANSWER, evidence_id: E(1), bundle_id: B(1), ordinal: 1 },
+      ]);
+      const recorded = JSON.stringify(details);
+      expect(recorded).not.toContain(ADMIN);
+      expect(recorded).not.toContain(COACH);
+      expect(recorded).not.toMatch(/account/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an item citing the shelf added after the reviewed dry run: PLAN_FINGERPRINT_MISMATCH, nothing changes', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      const reviewed = await movePolicyShelf(client, options(), { log: silent });
+      await seedEvidence(client, B(5), COACH, [[E(5), 'pol-b', 'doc-copy-2', 'pol-b-chunk']]);
+      const before = await snapshot(client);
+      const result = await movePolicyShelf(
+        client,
+        options({ apply: true, confirm: PHRASE, expectFingerprint: reviewed.plan_fingerprint }),
+        { log: silent },
+      );
+      const after = await snapshot(client);
+
+      expect(result).toMatchObject({ status: 'refused', reason: 'PLAN_FINGERPRINT_MISMATCH' });
+      expect(after).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
   });
 });
 
@@ -683,25 +788,6 @@ describe('refusals leave the database unchanged (real database)', () => {
     await expectRefusedUnchanged(async (client) => {
       await seedDocument(client, TO, 'gym-dup-doc', 'gym-own', 'sha-track-1');
     }, 'TARGET_ORG_COLLISION');
-  });
-
-  test('an evidence item cites a moving chunk', async () => {
-    await expectRefusedUnchanged(async (client) => {
-      const bundleId = '00000000-0000-4000-8000-000000000001';
-      await client.query(
-        `insert into pilot.shadow_evidence_bundles
-           (bundle_id, organization_id, account_id, subject_id, query_sha256, availability, item_count)
-         values ($1, $2, $3, null, $4, 'available', 1)`,
-        [bundleId, FROM, ADMIN, 'a'.repeat(64)],
-      );
-      await client.query(
-        `insert into pilot.shadow_evidence_items
-           (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id,
-            ordinal, excerpt_sha256, library_organization_id)
-         values ($1, $2, $3, $4, 'pol-authority', 'doc-authority', 'auth-chunk-1', 1, $5, $3)`,
-        ['00000000-0000-4000-8000-000000000002', bundleId, FROM, ADMIN, 'b'.repeat(64)],
-      );
-    }, 'EVIDENCE_ITEMS_CITE_ROWS');
   });
 
   test('a lesson in the old organization cites a moving document', async () => {

@@ -50,9 +50,14 @@ type Spec = {
   chunks?: Row[];
   citationChecks?: Row[];
   retractionChecks?: Row[];
-  evidenceItems?: number;
-  // Raw rows of the grouped citing-evidence query; overrides evidenceItems.
+  // Evidence items citing a moving row, and the answers' citations of them.
+  citingItems?: Row[];
+  messageCitations?: Row[];
+  // Raw rows of the grouped citing-evidence query; derived from citingItems
+  // when absent.
   evidenceGroups?: Row[];
+  // A detach delete that removes one row fewer than planned.
+  shortDetach?: 'message_citations' | 'evidence_items';
   submissions?: Row[];
   rabbitHoles?: Row[];
   collisions?: { sourceUrls?: Row[]; documentShas?: Row[]; citationIds?: Row[]; retractionIds?: Row[] };
@@ -232,13 +237,23 @@ function runTool(spec: Spec): Outcome {
         if (/^select chunk_id, document_id, source_id, organization_id, subject_id/i.test(t)) return ok(spec.chunks ?? []);
         if (/^select organization_id, check_id, source_id/i.test(t)) return ok(spec.citationChecks ?? []);
         if (/^select organization_id, retraction_check_id, source_id/i.test(t)) return ok(spec.retractionChecks ?? []);
+        if (/^select evidence_id::text as evidence_id/i.test(t)) return ok(spec.citingItems ?? []);
+        if (/^select assistant_message_id::text as assistant_message_id/i.test(t)) return ok(spec.messageCitations ?? []);
         if (/^with citing as/i.test(t)) {
           if (spec.evidenceGroups) return ok(spec.evidenceGroups);
-          const n = spec.evidenceItems ?? 0;
-          return ok(n > 0 ? [{
-            asking_organization_id: ${JSON.stringify(FROM)}, items: n, bundles: n, message_citations: 0,
-            asking_accounts: 1, asking_accounts_active_in_target: 0,
+          const items = spec.citingItems ?? [];
+          return ok(items.length > 0 ? [{
+            asking_organization_id: ${JSON.stringify(FROM)}, items: items.length,
+            bundles: new Set(items.map((i) => i.bundle_id)).size,
+            message_citations: (spec.messageCitations ?? []).length,
+            asking_accounts: 1, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 0,
           }] : []);
+        }
+        match = /^delete from pilot\\.(shadow_message_citations|shadow_evidence_items)/i.exec(t);
+        if (match) {
+          const key = match[1] === 'shadow_message_citations' ? 'message_citations' : 'evidence_items';
+          const n = Math.max(0, values[0].length - (spec.shortDetach === key ? 1 : 0));
+          return ok(values[0].slice(0, n).map((id) => ({ evidence_id: id })), n);
         }
         if (/^select organization_id, submission_id/i.test(t)) return ok(spec.submissions ?? []);
         if (/^select organization_id, rabbit_hole_id/i.test(t)) return ok(spec.rabbitHoles ?? []);
@@ -258,6 +273,8 @@ function runTool(spec: Spec): Outcome {
             sources_in_to: moved.sources ?? 0,
             documents_in_to_with_local_source: moved.documents ?? 0,
             chunks_in_to_with_local_document_and_source: moved.chunks ?? 0,
+            evidence_items_citing_moved_rows: 0,
+            message_citations_of_detached_items: 0,
             ...(spec.verifyOverride ?? {}),
           }]);
         }
@@ -401,7 +418,11 @@ describe('dry run', () => {
   test('exit code: 0 for a clean dry run, 1 for a dry run with blockers', () => {
     expect(runTool({ ...cleanShelf(), options: dryRunOptions() }).exitCode).toBe(0);
 
-    const blocked = runTool({ ...cleanShelf(), evidenceItems: 1, options: dryRunOptions() });
+    const blocked = runTool({
+      ...cleanShelf(),
+      submissions: [{ organization_id: FROM, submission_id: 'sub-1', source_id: 'pol-a', document_id: null }],
+      options: dryRunOptions(),
+    });
     expect(blocked.result).toMatchObject({ status: 'dry-run', would_apply: false });
     expect(blocked.exitCode).toBe(1);
   });
@@ -410,7 +431,6 @@ describe('dry run', () => {
     const spec = cleanShelf();
     const out = runTool({
       ...spec,
-      evidenceItems: 2,
       collisions: { sourceUrls: [{ source_id: 'gym-own', url: 'https://ex.test/a' }] },
       submissions: [{ organization_id: FROM, submission_id: 'sub-1', source_id: 'pol-a', document_id: null }],
       options: dryRunOptions(),
@@ -418,71 +438,211 @@ describe('dry run', () => {
 
     expect(out.result).toMatchObject({ status: 'dry-run', would_apply: false });
     expect(out.result!.blockers).toEqual(expect.arrayContaining([
-      'EVIDENCE_ITEMS_CITE_ROWS', 'TARGET_ORG_COLLISION', 'RESEARCH_SUBMISSIONS_REFERENCE_ROWS',
+      'TARGET_ORG_COLLISION', 'RESEARCH_SUBMISSIONS_REFERENCE_ROWS',
     ]));
     expectRolledBackWithoutWrites(out);
   });
+});
 
-  test('reports citing evidence items per asking organization, with target membership, and writes nothing', () => {
-    const out = runTool({
-      ...cleanShelf(),
-      evidenceGroups: [
-        { asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4, asking_accounts: 2, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 2 },
-        { asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0, asking_accounts: 1, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0 },
-      ],
-      options: dryRunOptions(),
-    });
+/** Three items citing the shelf, two of them cited from one chat answer. */
+function citedShelf(): Spec {
+  const item = (n: number, bundle: string, chunk: string, source: string, document: string): Row => ({
+    evidence_id: `00000000-0000-4000-8000-00000000000${n}`,
+    bundle_id: bundle,
+    organization_id: FROM,
+    source_id: source,
+    document_id: document,
+    chunk_id: chunk,
+    library_organization_id: FROM,
+    ordinal: n,
+    excerpt_sha256: String(n).repeat(64),
+  });
+  const bundleA = '00000000-0000-4000-8000-0000000000b1';
+  const bundleB = '00000000-0000-4000-8000-0000000000b2';
+  return {
+    ...cleanShelf(),
+    citingItems: [
+      item(1, bundleA, 'ch-auth-1', 'pol-authority', 'doc-authority'),
+      item(2, bundleA, 'ch-a-1', 'pol-a', 'doc-copy-1'),
+      item(3, bundleB, 'ch-auth-2', 'pol-authority', 'doc-authority'),
+    ],
+    messageCitations: [
+      { assistant_message_id: '00000000-0000-4000-8000-0000000000d1', evidence_id: '00000000-0000-4000-8000-000000000001', bundle_id: bundleA, ordinal: 1 },
+      { assistant_message_id: '00000000-0000-4000-8000-0000000000d1', evidence_id: '00000000-0000-4000-8000-000000000002', bundle_id: bundleA, ordinal: 2 },
+    ],
+  };
+}
+
+const LATE_CITATION: Row = {
+  assistant_message_id: '00000000-0000-4000-8000-0000000000d2',
+  evidence_id: '00000000-0000-4000-8000-000000000003',
+  bundle_id: '00000000-0000-4000-8000-0000000000b2',
+  ordinal: 1,
+};
+
+describe('detaching citing evidence', () => {
+  test('a dry run counts what would be detached, prints no evidence id, and writes nothing', () => {
+    const spec = citedShelf();
+    const out = runTool({ ...spec, options: dryRunOptions() });
+
+    expect(out.result).toMatchObject({ status: 'dry-run', would_apply: true, blockers: [] });
     const expected = {
-      items: 6,
-      by_asking_organization: [
-        {
-          asking_organization_id: FROM, items: 5, bundles: 3, message_citations: 4,
-          asking_accounts: 2, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 2,
-          all_asking_accounts_active_in_target: true,
-        },
-        {
-          asking_organization_id: 'org-other', items: 1, bundles: 1, message_citations: 0,
-          asking_accounts: 1, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0,
-          all_asking_accounts_active_in_target: false,
-        },
-      ],
+      items: 3,
+      message_citations: 2,
+      bundles: 2,
+      answers: 1,
+      by_asking_organization: [{
+        asking_organization_id: FROM, items: 3, bundles: 2, message_citations: 2,
+        asking_accounts: 1, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 0,
+        all_asking_accounts_active_in_target: false,
+      }],
     };
-
     expect(out.result!.citing_evidence).toEqual(expected);
     expect((planEvent(out) as unknown as Record<string, unknown>).citing_evidence).toEqual(expected);
     expect(out.events.find((e) => e.event === 'dry-run')!.payload.citing_evidence).toEqual(expected);
-    expect(out.result!.blockers).toContain('EVIDENCE_ITEMS_CITE_ROWS');
-    // Membership is asked of the target organization.
+    // Counts only: no evidence id, answer id or excerpt hash in anything logged.
+    const printed = JSON.stringify(out.events);
+    for (const row of [...spec.citingItems!, ...spec.messageCitations!]) {
+      for (const value of Object.values(row)) {
+        if (typeof value === 'string' && value.length > 30) expect(printed).not.toContain(value);
+      }
+    }
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('membership in the report is asked of the target, for accounts sign-in would honour', () => {
+    const out = runTool({ ...citedShelf(), options: dryRunOptions() });
     const query = out.calls.find((c) => /^with citing as/i.test(c.text))!;
     expect(query.values![3]).toBe(TO);
     expect(query.text).toMatch(/m\.active_flag = true/);
     expect(query.text).toMatch(/a\.active_flag = true and a\.deleted_at is null/);
+    // The row-level read never selects an account id.
+    const items = out.calls.find((c) => /^select evidence_id::text as evidence_id/i.test(c.text))!;
+    expect(items.text).not.toMatch(/account_id/);
+  });
+
+  test('a clean shelf reports nothing to detach and issues no delete', () => {
+    const dry = runTool({ ...cleanShelf(), options: dryRunOptions() });
+    expect(dry.result!.citing_evidence).toEqual({
+      items: 0, message_citations: 0, bundles: 0, answers: 0, by_asking_organization: [],
+    });
+    const applied = runTool({ ...cleanShelf(), options: applyOptions() });
+    expect(applied.result!.status).toBe('applied');
+    expect(texts(applied).some((t) => /^delete/i.test(t))).toBe(false);
+  });
+
+  test('the detached set is part of the plan fingerprint', () => {
+    const base = runTool({ ...citedShelf(), options: dryRunOptions() }).result!.plan_fingerprint;
+    expect(runTool({ ...citedShelf(), options: dryRunOptions() }).result!.plan_fingerprint).toBe(base);
+
+    const fewerItems = citedShelf();
+    fewerItems.citingItems = fewerItems.citingItems!.slice(0, 2);
+    expect(runTool({ ...fewerItems, options: dryRunOptions() }).result!.plan_fingerprint).not.toBe(base);
+
+    const moreCitations = citedShelf();
+    moreCitations.messageCitations = [...moreCitations.messageCitations!, LATE_CITATION];
+    expect(runTool({ ...moreCitations, options: dryRunOptions() }).result!.plan_fingerprint).not.toBe(base);
+  });
+
+  test('a citation added after the reviewed dry run stops the apply before any delete', () => {
+    const reviewed = runTool({ ...citedShelf(), options: dryRunOptions() });
+    const grown = citedShelf();
+    grown.messageCitations = [...grown.messageCitations!, LATE_CITATION];
+    const out = runTool({ ...grown, options: applyOptions({ expectFingerprint: reviewed.result!.plan_fingerprint }) });
+
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_FINGERPRINT_MISMATCH' });
     expectRolledBackWithoutWrites(out);
   });
 
-  test('a clean shelf reports no citing evidence', () => {
-    const out = runTool({ ...cleanShelf(), options: dryRunOptions() });
-    expect(out.result!.citing_evidence).toEqual({ items: 0, by_asking_organization: [] });
-  });
+  test('apply detaches citations, then items, then moves, then records the detached ids', () => {
+    const spec = citedShelf();
+    const out = runTool({ ...spec, options: applyOptions() });
 
-  test('citing items do not move, so they do not change the plan fingerprint', () => {
-    const clean = runTool({ ...cleanShelf(), options: dryRunOptions() });
-    const cited = runTool({ ...cleanShelf(), evidenceItems: 3, options: dryRunOptions() });
-    expect(cited.result!.plan_fingerprint).toBe(clean.result!.plan_fingerprint);
-  });
-
-  test('a refused apply carries the per-organization counts on its blocker', () => {
-    const out = runTool({ ...cleanShelf(), evidenceItems: 2, options: applyOptions() });
-    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
-    const blocker = (out.result!.blockers as Array<Record<string, unknown>>)
-      .find((b) => b.code === 'EVIDENCE_ITEMS_CITE_ROWS')!;
-    expect(blocker).toMatchObject({
-      count: 2,
-      by_asking_organization: [expect.objectContaining({ asking_organization_id: FROM, items: 2 })],
+    expect(out.result).toMatchObject({
+      status: 'applied',
+      detached: { message_citations: 2, evidence_items: 3 },
+      moved: { sources: 3, documents: 3, chunks: 4, citation_checks: 1, retraction_checks: 1 },
     });
-    expect(writes(out)).toEqual([]);
+    const order = writes(out).map((t) => {
+      const m = /^(\w+)(?: from| into)? pilot\.(\w+)/i.exec(t)!;
+      return `${m[1]} ${m[2]}`;
+    });
+    expect(order).toEqual([
+      'delete shadow_message_citations',
+      'delete shadow_evidence_items',
+      'update shadow_library_sources',
+      'update shadow_library_documents',
+      'update shadow_library_chunks',
+      'update source_citation_checks',
+      'update source_retraction_checks',
+      'insert audit_events',
+    ]);
+    const citationDelete = out.calls.find((c) => /^delete from pilot\.shadow_message_citations/i.test(c.text))!;
+    expect(citationDelete.values).toEqual([
+      ['00000000-0000-4000-8000-0000000000d1', '00000000-0000-4000-8000-0000000000d1'],
+      ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'],
+    ]);
+    const itemDelete = out.calls.find((c) => /^delete from pilot\.shadow_evidence_items/i.test(c.text))!;
+    expect(itemDelete.values).toEqual([spec.citingItems!.map((row) => row.evidence_id)]);
+
+    const audit = out.calls.find((c) => /^insert into pilot\.audit_events/i.test(c.text))!;
+    const details = JSON.parse(audit.values![1] as string);
+    expect(details.detached_counts).toEqual({ message_citations: 2, evidence_items: 3 });
+    expect(details.detached.evidence_items).toEqual(spec.citingItems!.map((row) => ({
+      evidence_id: row.evidence_id,
+      bundle_id: row.bundle_id,
+      asking_organization_id: FROM,
+      source_id: row.source_id,
+      document_id: row.document_id,
+      chunk_id: row.chunk_id,
+      library_organization_id: FROM,
+      ordinal: row.ordinal,
+      excerpt_sha256: row.excerpt_sha256,
+    })));
+    expect(details.detached.message_citations).toEqual(spec.messageCitations);
+    expect(JSON.stringify(details)).not.toMatch(/account/);
+    expect(texts(out)[texts(out).length - 1]).toBe('commit');
   });
 
+  test.each(['message_citations', 'evidence_items'] as const)(
+    'a %s delete that removes fewer rows than planned rolls back: PLAN_DETACH_COUNT_MISMATCH',
+    (table) => {
+      const out = runTool({ ...citedShelf(), shortDetach: table, options: applyOptions() });
+
+      expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_DETACH_COUNT_MISMATCH', table });
+      const all = texts(out);
+      expect(all[all.length - 1]).toBe('rollback');
+      expect(all).not.toContain('commit');
+      // Nothing moves after a short detach.
+      expect(all.some((t) => /^update/i.test(t))).toBe(false);
+    },
+  );
+
+  test('DETACH_RADIUS_EXCEEDED past the detach cap, which is separate from the move cap', () => {
+    const out = runTool({ ...citedShelf(), options: applyOptions({ maxDetachRows: 4 }) });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
+    expect(out.result!.blockers).toEqual([{ code: 'DETACH_RADIUS_EXCEEDED', detaching: 5, max: 4 }]);
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('the detach cap defaults to 2000', () => {
+    const out = execFileSync(process.execPath, [
+      '--input-type=module', '-e',
+      `import { DEFAULT_MAX_DETACH_ROWS } from ${JSON.stringify(MODULE_URL)}; console.log(DEFAULT_MAX_DETACH_ROWS);`,
+    ], { encoding: 'utf8' });
+    expect(out.trim()).toBe('2000');
+  });
+
+  test('a detach cap that is not a positive integer refuses before any statement: INVALID_MAX_DETACH', () => {
+    for (const maxDetachRows of [0, -1, 1.5, '10']) {
+      const out = runTool({ ...citedShelf(), options: dryRunOptions({ maxDetachRows }) });
+      expect(out.result).toMatchObject({ status: 'refused', reason: 'INVALID_MAX_DETACH' });
+      expect(out.calls).toEqual([]);
+    }
+  });
+});
+
+describe('dry run, continued', () => {
   test('capability rules that ask for the type are listed and never moved', () => {
     const out = runTool({
       ...cleanShelf(),
@@ -633,6 +793,8 @@ describe('apply', () => {
     ['retraction_checks_left_in_from', 1, 'retraction_checks_left_in_from=1!=0'],
     ['sources_in_to', 2, 'sources_in_to=2!=3'],
     ['documents_in_to_with_local_source', 2, 'documents_in_to_with_local_source=2!=3'],
+    ['evidence_items_citing_moved_rows', 1, 'evidence_items_citing_moved_rows=1!=0'],
+    ['message_citations_of_detached_items', 1, 'message_citations_of_detached_items=1!=0'],
   ];
 
   test.each(verifyCases)('END_STATE_MISMATCH on %s', (key, value, mismatch) => {
@@ -846,7 +1008,6 @@ describe('refusals inside the transaction roll back with nothing written', () =>
       ...s,
       chunks: [...s.chunks!, { chunk_id: 'ch-stray', document_id: 'doc-not-moving', source_id: 'pol-a', organization_id: FROM, subject_id: null }],
     })],
-    ['EVIDENCE_ITEMS_CITE_ROWS', (s) => ({ ...s, evidenceItems: 1 })],
     ['RESEARCH_SUBMISSIONS_REFERENCE_ROWS', (s) => ({
       ...s, submissions: [{ organization_id: FROM, submission_id: 'sub-1', source_id: 'pol-a', document_id: null }],
     })],
