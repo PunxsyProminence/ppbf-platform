@@ -588,6 +588,14 @@ export async function getOrganizationPublications(
     publicationType?: string;
     limit?: number;
     athleteIds?: readonly string[];
+    /* With athleteIds: ALSO the rows this account submitted, whatever the
+       athlete. A coach's list is "my athletes" (OD-2026-10-11-007: "my
+       athletes" lists keep working), but since issue #1480 a coach may draft a
+       publication for any athlete of the gym, and their own draft must not
+       vanish from their own list (Overwatch, #1480 PR B; the same reasoning
+       as the coach-cards list). Still inside the organization and the
+       deleted-athlete rule above. Ignored without athleteIds. */
+    orSubmittedBy?: string;
   },
 ): Promise<VideoPublication[]> {
   let sql = `
@@ -616,8 +624,13 @@ export async function getOrganizationPublications(
   // would widen the read to the whole organization at the exact moment a
   // coach's access ended.
   if (filters?.athleteIds !== undefined) {
-    sql += ` and athlete_id = any($${params.length + 1}::text[])`;
-    params.push([...filters.athleteIds]);
+    if (filters.orSubmittedBy) {
+      sql += ` and (athlete_id = any($${params.length + 1}::text[]) or submitted_by_account_id = $${params.length + 2})`;
+      params.push([...filters.athleteIds], filters.orSubmittedBy);
+    } else {
+      sql += ` and athlete_id = any($${params.length + 1}::text[])`;
+      params.push([...filters.athleteIds]);
+    }
   }
 
   sql += ` order by created_at desc limit $${params.length + 1}`;

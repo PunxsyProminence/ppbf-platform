@@ -685,9 +685,10 @@ type WellnessCheckInRead =
 /* Latest weigh-in and seven-day change, as GET
    /api/pilot/coach/athlete-body-mass returns it in `body_mass`
    (src/server/pilot/athleteBodyMass.ts). Null when there is no
-   weigh-in in the last month OR when this coach may not see it -- a youth's
-   weight goes only to their assigned or covering coach and the organization
-   admin -- and the screen does not try to tell those apart. The flag sentence
+   weigh-in in the last month OR when this coach may not see it -- since
+   OD-2026-10-12-016 a youth's weight goes to any coach of the athlete's gym
+   and the organization admin -- and the screen does not try to tell those
+   apart. The flag sentence
    is the server's, shown as written. */
 interface CoachBodyMass {
   readonly pounds: number;
@@ -734,7 +735,7 @@ const WELLNESS_READ_FAILED =
    another gym's athlete, a soft-deleted one and an id that names nobody, and
    the panel must not invent a distinction the server withheld. */
 const WELLNESS_NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to the coaches and organization admins of the athlete’s own gym.';
 
 /* A stored answer is a finite number or null. Anything else -- a missing key,
    a string, NaN -- makes the response unreadable, and it is treated as a
@@ -1715,14 +1716,20 @@ export default function CoachWorkspace() {
       if (!response.ok) throw new Error('attendance');
       const payload = (await response.json()) as {
         covered?: string[];
+        mine?: string[];
         marks?: Array<{ athlete_id: string; status: 'present' | 'absent' | 'excused' }>;
       };
       const byAthlete = new Map(
         (payload.marks ?? []).map((mark) => [mark.athlete_id, mark.status] as const),
       );
       const covered = new Set(payload.covered ?? []);
+      /* The coach's own athletes, sent only to a coach. Since issue #1480 a
+         coach's register covers the whole gym, so "Not your athlete" comes
+         from here rather than from `covered`; it only ever says false. */
+      const mine = Array.isArray(payload.mine) ? new Set(payload.mine) : null;
       const LABEL = { present: 'Present', absent: 'Absent', excused: 'Excused' } as const;
-      setAthletes((prior) => prior.map((athlete) => {
+      setAthletes((prior) => prior.map((ownedOrNot) => {
+        const athlete = mine && !mine.has(ownedOrNot.id) ? { ...ownedOrNot, isMine: false } : ownedOrNot;
         const mark = byAthlete.get(athlete.id);
         if (mark) return { ...athlete, attendance: LABEL[mark] };
         /* An athlete the register did not cover was never asked about. This
@@ -2239,14 +2246,12 @@ export default function CoachWorkspace() {
   }
 
   /* GET /api/pilot/coach/athlete-check-in decides, server-side, whether this
-     coach may see this athlete at all: the athlete's coach of record, a coach
-     with a live coverage grant, or an organization admin (OD-2026-10-05-024
-     ruling 2, superseding A-FIN-03R1). The roster picker still offers the
-     whole gym, so a coach picking an athlete they are not assigned to gets a
-     refusal.
+     coach may see this athlete at all: since issue #1480 (OD-2026-10-11-007)
+     any coach of the athlete's gym, or an organization admin (that replaced
+     OD-2026-10-05-024 ruling 2).
 
-     A 403 is an expected outcome, not a bug -- not this coach's athlete, an
-     athlete outside this organization, or one who has been deleted -- so it keeps its own plain
+     A 403 is an expected outcome, not a bug -- an athlete outside this
+     organization, or one who has been deleted -- so it keeps its own plain
      sentence and is never softened into "no check-in". The status of any
      other failure goes to the console, not to the coach: a bare "500" tells a
      coach nothing they can act on. */

@@ -421,7 +421,7 @@ describe('coach cohorts page -- setting a level', () => {
 
     await chooseAndSave('footwork', 'exploring');
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('You can only set levels for athletes you coach or cover.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('You can only set levels for athletes in your gym.');
     expect(screen.queryByText(/Saved\./)).not.toBeInTheDocument();
   });
 

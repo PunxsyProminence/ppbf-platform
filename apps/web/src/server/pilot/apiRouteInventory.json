@@ -4745,7 +4745,7 @@
     "id": "app/api/pilot/coach/athletes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athletes",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via coachAuthorizedRoster / organizationActionableRoster",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via organizationActionableRoster",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4757,7 +4757,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Returns roster (athlete_id, full_name). Coach gets coachAuthorizedRoster which uses athleteIdsForCoach (coachAthleteRoster.ts:1,35); org admin gets all actionable athletes.",
+    "notes": "Returns roster (athlete_id, full_name). A coach and an org admin both get every live athlete of their own gym (organizationActionableRoster), the set assertActorCanAccessAthlete admits since issue #1480 (OD-2026-10-11-007).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -4774,7 +4774,7 @@
     "id": "app/api/pilot/coach/attendance-today/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/attendance-today",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via coachAuthorizedRoster / organizationActionableRoster",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via organizationActionableRoster",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4786,13 +4786,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Today's attendance marks for the caller's authorized roster (attendance-today/route.ts GET); coach scoped via athleteIdsForCoach (coachAthleteRoster.ts:35).",
+    "notes": "Today's attendance marks for every live athlete of the caller's own gym (attendance-today/route.ts GET); coach and org admin alike since issue #1480 (OD-2026-10-11-007). A coach is also sent `mine` (athleteIdsForCoach, coach of record UNION live coverage) for the workspace's \"Not your athlete\" marker.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -5011,7 +5012,7 @@
     "id": "app/api/pilot/coach/cards/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/cards",
-    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (athleteIdsForCoach)",
+    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (live athletes of the actor's own gym)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -5023,7 +5024,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards (coachCards.ts:368-403) gives admin all rows and a coach only athleteIdsForCoach plus own-issued filter.",
+    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards gives admin all rows and a coach the cards they issued to any live athlete of their own gym (issue #1480); other roles read nothing.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7301,7 +7302,7 @@
     "id": "app/api/pilot/escalations/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/escalations",
-    "gate": "requirePrincipal + inline role check (route.ts:65-69) + athleteIdsForCoach membership check for coach acknowledge (92-100); resolve and scan_patterns admin-only (113, 150)",
+    "gate": "requirePrincipal + inline role check + accessibleAthleteIds on the escalation's athlete for coach acknowledge; resolve and scan_patterns admin-only",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -7313,13 +7314,13 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "acknowledge (coach or admin), resolve (admin, note required) or scan_patterns (admin) on safety escalations about minors. Coach acknowledge is reach-checked against own escalation list excluding athlete_voice.",
+    "notes": "acknowledge (coach or admin), resolve (admin, note required) or scan_patterns (admin) on safety escalations about minors. Coach acknowledge is reach-checked through accessibleAthleteIds (since issue #1480 any live athlete of the coach's gym), athlete_voice excluded.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "accessibleAthleteIds"
       ],
       "roleLiterals": []
     }

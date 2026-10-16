@@ -560,7 +560,7 @@ test('the picker offers only athletes the injury route will open for this coach'
 test('a coach who coaches or covers nobody is told so, and the roster ids were sent to be checked', async () => {
   accessibleReply = [];
   render(<CoachInjuriesPage />);
-  expect(await screen.findByRole('option', { name: 'No athletes you coach or cover' })).toBeTruthy();
+  expect(await screen.findByRole('option', { name: 'No athletes in your gym' })).toBeTruthy();
   const check = (global.fetch as jest.Mock).mock.calls.find(([, init]) => init?.method === 'POST');
   expect(JSON.parse(String(check?.[1].body))).toEqual({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-x'] });
 });

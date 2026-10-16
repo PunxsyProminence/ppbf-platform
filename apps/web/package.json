@@ -174,6 +174,7 @@
     "test:migrations:coach-coverage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachCoverage.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-ids-for-coach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteIdsForCoach.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-authorized-roster": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachAuthorizedRoster.pg.test.ts --testTimeout=180000",
+    "test:migrations:coach-whole-gym-lists": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachWholeGymLists.pg.test.ts --testTimeout=180000",
     "test:migrations:photo-circle-whole-gym": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/photoCircleWholeGym.pg.test.ts --testTimeout=180000",
     "test:migrations:soft-deleted-athlete-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/softDeletedAthleteAccess.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-self-deletion-mark": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteSelfDeletionMark.pg.test.ts --testTimeout=180000",

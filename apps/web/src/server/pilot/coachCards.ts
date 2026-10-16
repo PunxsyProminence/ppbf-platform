@@ -4,7 +4,6 @@ import type { PoolClient } from 'pg';
 
 import {
   accessibleAthleteIds,
-  athleteIdsForCoach,
   isOrganizationAdminRole,
   type ActorIdentity,
 } from './access';
@@ -359,17 +358,21 @@ export async function issueCoachCardToProgram(params: {
  *
  * TWO SCOPES, AND ONLY ONE OF THEM IS THE BOUNDARY.
  *
- * The boundary is athleteIdsForCoach -- the central access contract added
- * in #546 (coach_id of record UNION active, unexpired coach_coverage),
- * evaluated NOW, on every read. The issuer filter that sits beside it is a
- * convenience ("cards I issued"), not a permission.
+ * The boundary is the access gate's, evaluated NOW, on every read. Since
+ * issue #1480 (OD-2026-10-11-007) a coach reaches every live athlete of their
+ * own gym, exactly as an organization admin does, so the boundary for both is
+ * the join below: the athlete's row in the actor's own organization with
+ * deleted_at null. (It was athleteIdsForCoach -- coach of record UNION live
+ * coverage -- until the gate widened; left that way it hid from a coach the
+ * cards they had issued to any other athlete of the gym.) The issuer filter
+ * that sits beside it is a convenience ("cards I issued"), not a permission.
  *
  * That distinction is the whole point. This function first shipped scoped
  * by assigned_by_account_id ALONE, and issuer identity never changes: once
  * a coach had issued a card, they kept reading that athlete's name, their
- * completion notes and their verification state forever -- through a roster
- * reassignment, and past the expiry of the temporary coverage grant that
- * was the only reason they could reach the athlete in the first place.
+ * completion notes and their verification state forever -- past whatever
+ * ended their reach (then a reassignment or a lapsed coverage grant; since
+ * #1480, the athlete's deletion).
  * assertActorCanAccessAthlete would have refused them, and the verify
  * branch of /api/pilot/progression/completions DOES recheck before it
  * flips anything, so the write was already bounded while the read was not.
@@ -379,16 +382,15 @@ export async function issueCoachCardToProgram(params: {
  * is org-wide and carries no issuer filter -- unchanged, and the reason the
  * card does not disappear from the gym when a coach loses access to it.
  *
- * Note the empty-set case is a real answer, not a missing filter: a coach
- * who currently reaches nobody reads no cards. `= any('{}')` is false for
- * every row, which is exactly right; passing null would have meant
- * "unbounded" and is reserved for the admin branch.
+ * Any other role reads nothing: `= any('{}')` is false for every row. null
+ * means "bounded by the join alone" and is for the two roles the gate admits
+ * to the whole gym.
  */
 export async function listCoachCards(actor: ActorIdentity): Promise<CoachCardRow[]> {
   const organizationId = actor.organizationId;
   const isAdmin = isOrganizationAdminRole(actor.role);
   const issuedByAccountId = isAdmin ? null : actor.accountId;
-  const athleteIds = isAdmin ? null : await athleteIdsForCoach(organizationId, actor.accountId);
+  const athleteIds = isAdmin || actor.role === 'coach' ? null : [];
   return query<CoachCardRow>(
     `select ${CARD_FIELDS},
             ath.full_name as athlete_name,
