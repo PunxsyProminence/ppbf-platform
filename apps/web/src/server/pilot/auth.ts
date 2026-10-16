@@ -15,7 +15,7 @@ import {
   refuseIfLoginDeleted,
   type AccountDeletionFlag,
 } from './deletedAccountSignIn';
-import { writePilotAuditEvent } from './audit';
+import { writePilotAuditEvent, type PilotAuditEvent } from './audit';
 import { PILOT_SESSION_COOKIE } from './env';
 import { MicrosoftIdentityMismatchError, type MicrosoftDirectoryIdentity } from './federatedAuth';
 import { clearMicrosoftIdentityTx } from './microsoftIdentityUnbind';
@@ -1271,8 +1271,10 @@ export async function createOrganization(
   // F-096: the onboarding route creates; it must not rename and reopen a gym
   // whose id was typed by mistake. The bootstrap route leaves this off on
   // purpose: re-running it against Root is the platform owner's recovery
-  // path (CL-A19), so for it an existing id is the normal case.
-  options: { refuseExisting?: boolean } = {},
+  // path (CL-A19), so for it an existing id is the normal case. `audit` is
+  // written in the same transaction: a gym with no creation row, which a
+  // retry could no longer repair once a taken id is refused, cannot exist.
+  options: { refuseExisting?: boolean; audit?: PilotAuditEvent } = {},
 ): Promise<void> {
   // The reserved organization owning the platform evidence baseline is not a
   // gym, and the bootstrap path is an upsert: a platform_owner POSTing that id would rename
@@ -1339,6 +1341,10 @@ export async function createOrganization(
     await seedDefaultSafetyGates(organizationId, client);
     await seedDefaultDisciplines(organizationId, client);
     await seedDefaultClearanceTypes(organizationId, client);
+
+    if (options.audit) {
+      await writePilotAuditEvent(options.audit, client);
+    }
   });
 }
 

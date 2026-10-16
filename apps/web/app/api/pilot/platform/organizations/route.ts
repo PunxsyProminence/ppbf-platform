@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { createOrganization } from '@/src/server/pilot/auth';
-import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { excludePlatformLibraryOrganizationSql } from '@/src/server/pilot/platformLibraryScope';
@@ -54,19 +53,22 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing organization_id or organization_name');
     }
 
-    // A taken id is refused (409), not renamed and reopened (F-096).
-    await createOrganization(organizationId, organizationName, principal.accountId, { refuseExisting: true });
-
-    await writePilotAuditEvent({
-      event_type: 'create',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      // The organization acted ON, not the actor's own: the row has to appear
-      // in the log of the gym that was just created.
-      organization_id: organizationId,
-      entity_type: 'organization',
-      entity_id: organizationId,
-      details: { organization_name: organizationName },
+    // A taken id is refused (409), not renamed and reopened (F-096). The
+    // audit row is written inside the create's transaction, so a failed audit
+    // rolls the gym back instead of leaving one a retry would now refuse.
+    await createOrganization(organizationId, organizationName, principal.accountId, {
+      refuseExisting: true,
+      audit: {
+        event_type: 'create',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        // The organization acted ON, not the actor's own: the row has to appear
+        // in the log of the gym that was just created.
+        organization_id: organizationId,
+        entity_type: 'organization',
+        entity_id: organizationId,
+        details: { organization_name: organizationName },
+      },
     });
 
     return NextResponse.json({ ok: true, organization_id: organizationId, organization_name: organizationName });
