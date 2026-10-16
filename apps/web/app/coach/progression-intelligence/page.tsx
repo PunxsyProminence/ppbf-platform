@@ -8,7 +8,7 @@ import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymStamp } from '@/src/lib/gymTime';
+import { formatGymDay, formatGymStamp } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 
@@ -205,6 +205,36 @@ function holdWarningFrom(value: unknown): ActiveHoldSummary | 'unreadable' | nul
 // can cancel. The same two statuses the server's conditional update accepts;
 // completed, incomplete and cancelled work offers nothing.
 const isOpenWork = (status: string) => status === 'assigned' || status === 'in_progress';
+
+// F-072: statuses read in words, not as the stored code ("in_progress"). The
+// codes are the CHECK lists in pilot_slice_postgres_progression_migration.sql;
+// one the list does not know is shown with its underscores taken out.
+// Wording PROPOSED.
+const STATUS_WORDS: Record<string, string> = {
+  identified: 'Noted',
+  assigned: 'Assigned',
+  in_progress: 'In progress',
+  completed: 'Done',
+  deferred: 'Put off for now',
+  incomplete: 'Not finished',
+  cancelled: 'Cancelled',
+  pending: 'Waiting for a coach',
+  verified: 'Verified',
+  disputed: 'Disputed',
+};
+const statusWords = (status: string) => STATUS_WORDS[status] ?? status.replaceAll('_', ' ');
+
+/** "Due October 20, 2026 · 2 times a week" -- what the coach set, or nothing. */
+function assignmentPlan(assignment: { due_date: string | null; frequency_per_week: number | null }): string {
+  const parts: string[] = [];
+  const due = assignment.due_date ? formatGymDay(assignment.due_date) : null;
+  if (due) parts.push(`Due ${due}`);
+  const times = assignment.frequency_per_week;
+  if (typeof times === 'number' && Number.isFinite(times) && times > 0) {
+    parts.push(times === 1 ? 'once a week' : `${times} times a week`);
+  }
+  return parts.join(' · ');
+}
 
 /**
  * What the coach reads when a cancel fails. Plain sentences keyed on the
@@ -1240,7 +1270,7 @@ export default function CoachProgressionIntelligencePage() {
                           <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s3)]">
                             <span className="t-data text-[color:var(--bone-300)]">{gap.gap_type}</span>
                             <span className="t-data text-[color:var(--bone-300)]">{gap.severity}</span>
-                            <span className="t-data text-[color:var(--bone-400)]">{gap.status}</span>
+                            <span className="t-data text-[color:var(--bone-400)]">{statusWords(gap.status)}</span>
                           </div>
                         </div>
                         <button
@@ -1337,8 +1367,12 @@ export default function CoachProgressionIntelligencePage() {
                               />
                             </div>
                             <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                              {assignment.completion_percentage}% complete · {assignment.status}
+                              {assignment.completion_percentage}% complete · {statusWords(assignment.status)}
                             </p>
+                            {/* The due date and times a week the coach set (F-072: the row dropped them). */}
+                            {assignmentPlan(assignment) && (
+                              <p className="t-data mt-[var(--s1)] text-[color:var(--bone-300)]">{assignmentPlan(assignment)}</p>
+                            )}
                             {/* A legacy assignment has no drill behind it, so nothing to open. */}
                             {assignment.drill_id && (
                               <div className="mt-[var(--s3)]">
@@ -1445,7 +1479,7 @@ export default function CoachProgressionIntelligencePage() {
                                     {formatGymStamp(completion.completed_at)}
                                   </span>
                                   <span className="t-data ml-[var(--s2)] text-[color:var(--bone-400)]">
-                                    {completion.verification_status}
+                                    {statusWords(completion.verification_status)}
                                   </span>
                                   {completion.notes ? (
                                     <p className="t-muted mt-[var(--s1)] text-[length:var(--t-xs)]">{completion.notes}</p>

@@ -276,7 +276,7 @@ describe('nothing was taken away', () => {
     const { posts } = mountDesk();
     await chooseGym('Second Street Boxing');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open This Gym' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Second Street Boxing' }));
 
     await waitFor(() => expect(statusPosts(posts)).toHaveLength(1));
     expect(statusPosts(posts)[0].body).toEqual({ organization_id: 'org-second', status: 'active' });
@@ -342,6 +342,7 @@ describe('lane N4-02: the desk says what its buttons do', () => {
 
     fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Press again: add/ }));
 
     // Default role is organization_admin: a Microsoft credential.
     expect(await screen.findByText(/coach@example\.org is now organization admin in this gym\. Nothing was emailed; tell them\. They sign in with Microsoft once they are in the PPBF Microsoft tenant/)).toBeTruthy();
@@ -357,6 +358,7 @@ describe('lane N4-02: the desk says what its buttons do', () => {
     fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
     fireEvent.change(screen.getByDisplayValue('Organization Admin'), { target: { value: 'coach' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Press again: add/ }));
 
     expect(await screen.findByText(/coach@example\.org is now coach in this gym\. Nothing was emailed; tell them\. They sign in with an email link: on the login page they enter coach@example\.org\. No Microsoft account is needed\./)).toBeTruthy();
     expect(screen.queryByText(/PPBF Microsoft tenant/)).toBeNull();
@@ -409,5 +411,239 @@ describe('lane N4-02: the refusal sends each visitor to their own home (#1430 le
     expect(refusalHrefs({ role: null, authProvider: null, accountId: null })).toEqual([
       ['Sign In With Microsoft', '/login'],
     ]);
+  });
+});
+
+// F-084: every account write on this desk used to fire at one press, and the
+// gym it acted on was named only in the picker at the top of the page. Each
+// one now arms on the first press, and the armed button names the gym (or,
+// for master SHADOW access, says it is every gym) before the second press
+// sends anything -- the Cancel Class pattern from /schedule.
+describe('F-084: no desk write without the gym named at the press', () => {
+  function sectionNamed(heading: string) {
+    const section = screen.getByRole('heading', { name: heading }).closest('section');
+    if (!section) {
+      throw new Error(`no section for ${heading}`);
+    }
+    return within(section);
+  }
+  function accountStatusField() {
+    return sectionNamed('Account Status').getByPlaceholderText('account-id');
+  }
+  function shadowField() {
+    return sectionNamed('Master SHADOW Access').getByPlaceholderText('account-id');
+  }
+  function postsTo(posts: { url: string; body: Record<string, unknown> }[], route: string) {
+    return posts.filter((post) => post.url.endsWith(route));
+  }
+
+  const ACCOUNT_WRITES: {
+    button: string;
+    route: string;
+    fill: () => void;
+    armed: RegExp;
+    sent: Record<string, unknown>;
+  }[] = [
+    {
+      button: 'Add To Gym',
+      route: '/api/pilot/platform/staff',
+      fill: () => fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } }),
+      armed: /^Press again: add coach@example\.org as organization admin to Punxsy Prominence$/,
+      sent: { organization_id: 'org-punxsy', login_email: 'coach@example.org', role: 'organization_admin' },
+    },
+    {
+      button: 'Prepare The Account',
+      route: '/api/pilot/platform/athlete-shell',
+      fill: () => {
+        fireEvent.change(screen.getByPlaceholderText("Account ID (how they'll sign in)"), { target: { value: 'kid-1' } });
+        fireEvent.change(screen.getByPlaceholderText('Existing athlete roster ID'), { target: { value: 'roster-1' } });
+      },
+      armed: /^Press again: prepare kid-1 in Punxsy Prominence$/,
+      sent: { organization_id: 'org-punxsy', account_id: 'kid-1', athlete_id: 'roster-1' },
+    },
+    {
+      button: 'Promote To Organization Admin',
+      route: '/api/pilot/platform/organizations/assign-admin',
+      fill: () => fireEvent.change(screen.getByLabelText(/already a member of this gym/i), { target: { value: 'acct-9' } }),
+      armed: /^Press again: make acct-9 admin of Punxsy Prominence$/,
+      sent: { organization_id: 'org-punxsy', account_id: 'acct-9' },
+    },
+    {
+      button: 'Transfer Admin Seat',
+      route: '/api/pilot/platform/organizations/transfer-admin',
+      fill: () => {
+        fireEvent.change(screen.getByPlaceholderText('current-admin-account-id'), { target: { value: 'old-admin' } });
+        fireEvent.change(screen.getByPlaceholderText('incoming-admin-account-id'), { target: { value: 'new-admin' } });
+      },
+      armed: /^Press again: hand Punxsy Prominence’s admin seat from old-admin to new-admin; old-admin becomes Coach$/,
+      sent: { organization_id: 'org-punxsy', from_account_id: 'old-admin', to_account_id: 'new-admin', demote_role: 'coach' },
+    },
+    {
+      button: 'Disable Account',
+      route: '/api/pilot/platform/users/status',
+      fill: () => fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } }),
+      armed: /^Press again: disable acct-7 in Punxsy Prominence$/,
+      sent: { organization_id: 'org-punxsy', account_id: 'acct-7', active_flag: false },
+    },
+    {
+      button: 'Restore Account',
+      route: '/api/pilot/platform/users/status',
+      fill: () => fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } }),
+      armed: /^Press again: restore acct-7 in Punxsy Prominence$/,
+      sent: { organization_id: 'org-punxsy', account_id: 'acct-7', active_flag: true },
+    },
+    {
+      button: 'Grant Access',
+      route: '/api/pilot/platform/users/master-shadow-access',
+      fill: () => fireEvent.change(shadowField(), { target: { value: 'acct-5' } }),
+      armed: /^Press again: grant acct-5 SHADOW access in every gym$/,
+      sent: { account_id: 'acct-5', granted: true },
+    },
+    {
+      button: 'Revoke Access',
+      route: '/api/pilot/platform/users/master-shadow-access',
+      fill: () => fireEvent.change(shadowField(), { target: { value: 'acct-5' } }),
+      armed: /^Press again: revoke acct-5’s SHADOW access in every gym$/,
+      sent: { account_id: 'acct-5', granted: false },
+    },
+  ];
+
+  test.each(ACCOUNT_WRITES)('$button: the first press sends nothing and names where it acts', async (write) => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    write.fill();
+
+    fireEvent.click(screen.getByRole('button', { name: write.button }));
+
+    expect(screen.getByRole('button', { name: write.armed })).toBeInTheDocument();
+    expect(postsTo(posts, write.route)).toHaveLength(0);
+  });
+
+  test.each(ACCOUNT_WRITES)('$button: the second press sends it once, to the gym it named', async (write) => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    write.fill();
+
+    fireEvent.click(screen.getByRole('button', { name: write.button }));
+    fireEvent.click(screen.getByRole('button', { name: write.armed }));
+
+    await waitFor(() => expect(postsTo(posts, write.route)).toHaveLength(1));
+    expect(postsTo(posts, write.route)[0].body).toEqual(expect.objectContaining(write.sent));
+    expect(await screen.findByRole('button', { name: write.button })).toBeInTheDocument();
+  });
+
+  test('choosing another gym disarms the button, so the next press only arms it again', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+
+    await chooseGym('Second Street Boxing');
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+
+    expect(screen.getByRole('button', { name: 'Press again: disable acct-7 in Second Street Boxing' })).toBeInTheDocument();
+    expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Press again: disable acct-7 in Second Street Boxing' }));
+    await waitFor(() => expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(1));
+    expect(postsTo(posts, '/api/pilot/platform/users/status')[0].body).toEqual(
+      expect.objectContaining({ organization_id: 'org-second', account_id: 'acct-7' }),
+    );
+  });
+
+  test('changing what the write would send disarms it', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-8' } });
+
+    expect(screen.getByRole('button', { name: 'Disable Account' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+    expect(screen.getByRole('button', { name: 'Press again: disable acct-8 in Punxsy Prominence' })).toBeInTheDocument();
+    expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(0);
+  });
+
+  test('a double-click arms and does not write', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }), { detail: 1 });
+    fireEvent.click(screen.getByRole('button', { name: /^Press again: disable acct-7/ }), { detail: 2 });
+
+    expect(screen.getByRole('button', { name: /^Press again: disable acct-7/ })).toBeInTheDocument();
+    expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(0);
+  });
+
+  test('a held Enter key does not repeat a press into a write', async () => {
+    mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    const button = screen.getByRole('button', { name: 'Disable Account' });
+
+    // fireEvent returns false when the default action was prevented.
+    expect(fireEvent.keyDown(button, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+  });
+
+  test('opening a gym disarms an account write', async () => {
+    mountDesk();
+    await chooseGym('Second Street Boxing');
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Second Street Boxing' }));
+
+    expect(await screen.findByRole('button', { name: 'Disable Account' })).toBeInTheDocument();
+  });
+
+  test('arming an account write closes an open gym standing slip', async () => {
+    mountDesk();
+    await chooseGym();
+    fireEvent.click(screen.getByRole('button', { name: 'Close This Gym' }));
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  test('arming one write disarms another', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore Account' }));
+
+    expect(screen.getByRole('button', { name: 'Disable Account' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Press again: restore acct-7/ })).toBeInTheDocument();
+    expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(0);
+  });
+
+  test('starting a gym standing change disarms an account write', async () => {
+    mountDesk();
+    await chooseGym();
+    fireEvent.change(accountStatusField(), { target: { value: 'acct-7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close This Gym' }));
+
+    expect(screen.getByRole('button', { name: 'Disable Account' })).toBeInTheDocument();
+  });
+
+  test('a write with a blank account is refused at the first press and never armed', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Account' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter the account ID');
+    expect(screen.queryByRole('button', { name: /^Press again/ })).toBeNull();
+    expect(postsTo(posts, '/api/pilot/platform/users/status')).toHaveLength(0);
+  });
+
+  test('opening a gym stays one press, and that press names the gym', async () => {
+    mountDesk();
+    await chooseGym('Second Street Boxing');
+
+    expect(screen.queryByRole('button', { name: 'Open This Gym' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open Second Street Boxing' })).toBeInTheDocument();
   });
 });
