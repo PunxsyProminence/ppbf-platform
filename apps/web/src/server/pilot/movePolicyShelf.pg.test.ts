@@ -378,6 +378,181 @@ describe('dry run (real database)', () => {
   });
 });
 
+describe('citing evidence report (real database)', () => {
+  const COACH = 'acct-move-coach';
+
+  async function seedEvidence(client: Client, bundleId: string, accountId: string, items: Array<[string, string, string, string]>) {
+    await client.query(
+      `insert into pilot.shadow_evidence_bundles
+         (bundle_id, organization_id, account_id, subject_id, query_sha256, availability, item_count)
+       values ($1, $2, $3, null, $4, 'available', $5)`,
+      [bundleId, FROM, accountId, 'a'.repeat(64), items.length],
+    );
+    let ordinal = 0;
+    for (const [evidenceId, sourceId, documentId, chunkId] of items) {
+      ordinal += 1;
+      await client.query(
+        `insert into pilot.shadow_evidence_items
+           (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id,
+            ordinal, excerpt_sha256, library_organization_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $3)`,
+        [evidenceId, bundleId, FROM, accountId, sourceId, documentId, chunkId, ordinal, 'b'.repeat(64)],
+      );
+    }
+  }
+
+  /** Two askers in the old organization: ADMIN (inactive in the target) and a
+   * coach who is an active member of the target. One of ADMIN's items is cited
+   * from a chat answer; one item cites a row that does not move. */
+  async function seedCitations(client: Client): Promise<void> {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $2, 'microsoft')`,
+      [COACH, FROM],
+    );
+    // Both askers are active members of the old organization, so a membership
+    // check that stopped asking about the target would read them as members.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $3, 'coach', true), ($2, $3, 'coach', false),
+              ($1, $4, 'coach', true), ($2, $4, 'organization_admin', true)`,
+      [COACH, ADMIN, TO, FROM],
+    );
+    await seedEvidence(client, '00000000-0000-4000-8000-0000000000b1', ADMIN, [
+      ['00000000-0000-4000-8000-0000000000e1', 'pol-authority', 'doc-authority', 'auth-chunk-1'],
+      ['00000000-0000-4000-8000-0000000000e2', 'pol-a', 'doc-copy-1', 'pol-a-chunk'],
+    ]);
+    await seedEvidence(client, '00000000-0000-4000-8000-0000000000b2', COACH, [
+      ['00000000-0000-4000-8000-0000000000e3', 'pol-authority', 'doc-authority', 'auth-chunk-2'],
+    ]);
+    // Cites the research source, which stays: not counted.
+    await seedEvidence(client, '00000000-0000-4000-8000-0000000000b3', COACH, [
+      ['00000000-0000-4000-8000-0000000000e4', 'research-1', 'doc-research', 'research-chunk'],
+    ]);
+
+    const conversationId = '00000000-0000-4000-8000-0000000000c1';
+    const messageId = '00000000-0000-4000-8000-0000000000d1';
+    await client.query(
+      `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id) values ($1, $2, $3)`,
+      [conversationId, FROM, ADMIN],
+    );
+    await client.query(
+      `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content)
+       values ($1, $2, $3, $4, 'assistant', 'answer')`,
+      [messageId, conversationId, FROM, ADMIN],
+    );
+    await client.query(
+      `insert into pilot.shadow_message_citations
+         (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
+       values ($1, $2, $3, $4, $5, 1)`,
+      [messageId, '00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000b1', FROM, ADMIN],
+    );
+  }
+
+  test('a dry run groups citing items by asking organization, with target membership, and writes nothing', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      const clean = await freshDatabase();
+      let cleanFingerprint: string | undefined;
+      try {
+        cleanFingerprint = (await movePolicyShelf(clean, options(), { log: silent })).plan_fingerprint;
+      } finally {
+        await clean.end();
+      }
+
+      const before = await snapshot(client);
+      const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+      const result = await movePolicyShelf(client, options(), {
+        log: (event, payload) => events.push({ event, payload: payload as Record<string, unknown> }),
+      });
+      const after = await snapshot(client);
+
+      const expected = {
+        items: 3,
+        by_asking_organization: [{
+          asking_organization_id: FROM,
+          items: 3,
+          bundles: 2,
+          message_citations: 1,
+          asking_accounts: 2,
+          asking_accounts_deidentified: 0,
+          // The coach is an active member of the target; ADMIN's membership is inactive.
+          asking_accounts_active_in_target: 1,
+          all_asking_accounts_active_in_target: false,
+        }],
+      };
+      expect(result).toMatchObject({ status: 'dry-run', would_apply: false });
+      expect(result.citing_evidence).toEqual(expected);
+      expect(blockerCodes(result)).toContain('EVIDENCE_ITEMS_CITE_ROWS');
+      expect(events.find((e) => e.event === 'dry-run')!.payload.citing_evidence).toEqual(expected);
+      // Counts only: no account id is printed anywhere.
+      const printed = JSON.stringify(events);
+      expect(printed).not.toContain(ADMIN);
+      expect(printed).not.toContain(COACH);
+      // The items do not move, so they do not change what the move fingerprints.
+      expect(result.plan_fingerprint).toBe(cleanFingerprint);
+      expect(after).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every asking account active in the target reads true', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      await client.query(
+        `update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`,
+        [ADMIN, TO],
+      );
+      const result = await movePolicyShelf(client, options(), { log: silent });
+      expect(result.citing_evidence).toMatchObject({
+        items: 3,
+        by_asking_organization: [{ asking_accounts: 2, asking_accounts_active_in_target: 2, all_asking_accounts_active_in_target: true }],
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an asker sign-in would refuse, or a de-identified asker, is not active in the target', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      await client.query(
+        `update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`,
+        [ADMIN, TO],
+      );
+      const activeInTarget = async () => {
+        const result = await movePolicyShelf(client, options(), { log: silent });
+        return (result.citing_evidence as { by_asking_organization: Array<Record<string, unknown>> })
+          .by_asking_organization[0];
+      };
+
+      // An inactive account with an active target membership.
+      await client.query(`update pilot.accounts set active_flag = false where account_id = $1`, [COACH]);
+      expect(await activeInTarget()).toMatchObject({ asking_accounts: 2, asking_accounts_active_in_target: 1 });
+
+      // A deleted account, even while still active.
+      await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [ADMIN]);
+      expect(await activeInTarget()).toMatchObject({ asking_accounts: 2, asking_accounts_active_in_target: 0 });
+
+      // A de-identified asker: the purge's anon_<uuid> token, with no account row.
+      const anon = 'anon_00000000-0000-4000-8000-0000000000aa';
+      await seedEvidence(client, '00000000-0000-4000-8000-0000000000b4', anon, [
+        ['00000000-0000-4000-8000-0000000000e5', 'pol-b', 'doc-copy-2', 'pol-b-chunk'],
+      ]);
+      expect(await activeInTarget()).toMatchObject({
+        items: 4, asking_accounts: 3, asking_accounts_deidentified: 1, asking_accounts_active_in_target: 0,
+        all_asking_accounts_active_in_target: false,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('apply (real database)', () => {
   test('moves exactly the planned rows and nothing else, with every constraint holding', async () => {
     const client = await freshDatabase();
