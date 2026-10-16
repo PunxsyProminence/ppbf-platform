@@ -197,12 +197,13 @@ const ESCALATION_SOURCES = [
   'incident',
   'video_scan',
   'compliance_violation',
+  'shadow_disclosure',
 ] as const;
 const ESCALATION_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as const;
 const ESCALATION_STATUSES = ['open', 'open', 'acknowledged', 'open', 'resolved', 'acknowledged', 'open', 'resolved'] as const;
 
 function escalationRows() {
-  // Nine rows, one per source_type, so every Source label renders.
+  // One row per source_type, so every Source label renders.
   return ESCALATION_SOURCES.map((source, i) => ({
     escalation_id: id('esc', 3000 + i),
     source_type: source,
