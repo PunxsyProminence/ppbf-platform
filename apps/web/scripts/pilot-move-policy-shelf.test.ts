@@ -56,6 +56,8 @@ type Spec = {
   // Raw rows of the grouped citing-evidence query; derived from citingItems
   // when absent.
   evidenceGroups?: Row[];
+  // Held (safeguarding) counts the hold query returns.
+  held?: { items: number; message_citations: number };
   // A detach delete that removes one row fewer than planned.
   shortDetach?: 'message_citations' | 'evidence_items';
   submissions?: Row[];
@@ -239,6 +241,10 @@ function runTool(spec: Spec): Outcome {
         if (/^select organization_id, retraction_check_id, source_id/i.test(t)) return ok(spec.retractionChecks ?? []);
         if (/^select evidence_id::text as evidence_id/i.test(t)) return ok(spec.citingItems ?? []);
         if (/^select assistant_message_id::text as assistant_message_id/i.test(t)) return ok(spec.messageCitations ?? []);
+        if (/^select s\\.conversation_id/i.test(t)) return ok([]);
+        if (/^with held_sessions as/i.test(t)) {
+          return ok([{ held_items: spec.held?.items ?? 0, held_message_citations: spec.held?.message_citations ?? 0 }]);
+        }
         if (/^with citing as/i.test(t)) {
           if (spec.evidenceGroups) return ok(spec.evidenceGroups);
           const items = spec.citingItems ?? [];
@@ -491,6 +497,7 @@ describe('detaching citing evidence', () => {
       message_citations: 2,
       bundles: 2,
       answers: 1,
+      held: { items: 0, message_citations: 0 },
       by_asking_organization: [{
         asking_organization_id: FROM, items: 3, bundles: 2, message_citations: 2,
         asking_accounts: 1, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 0,
@@ -524,7 +531,8 @@ describe('detaching citing evidence', () => {
   test('a clean shelf reports nothing to detach and issues no delete', () => {
     const dry = runTool({ ...cleanShelf(), options: dryRunOptions() });
     expect(dry.result!.citing_evidence).toEqual({
-      items: 0, message_citations: 0, bundles: 0, answers: 0, by_asking_organization: [],
+      items: 0, message_citations: 0, bundles: 0, answers: 0, held: { items: 0, message_citations: 0 },
+      by_asking_organization: [],
     });
     const applied = runTool({ ...cleanShelf(), options: applyOptions() });
     expect(applied.result!.status).toBe('applied');
@@ -617,6 +625,40 @@ describe('detaching citing evidence', () => {
       expect(all.some((t) => /^update/i.test(t))).toBe(false);
     },
   );
+
+  test.each([
+    ['a held item', { items: 1, message_citations: 0 }],
+    ['a held answer citation', { items: 0, message_citations: 1 }],
+  ])('evidence under the safeguarding hold is never detached: %s refuses with DETACH_WOULD_BREAK_HOLD', (_label, held) => {
+    const dry = runTool({ ...citedShelf(), held, options: dryRunOptions() });
+    expect(dry.result).toMatchObject({ status: 'dry-run', would_apply: false, blockers: ['DETACH_WOULD_BREAK_HOLD'] });
+    expect((dry.result!.citing_evidence as Record<string, unknown>).held).toEqual(held);
+    expect(dry.exitCode).toBe(1);
+
+    const out = runTool({ ...citedShelf(), held, options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
+    expect(out.result!.blockers).toEqual([{
+      code: 'DETACH_WOULD_BREAK_HOLD', held_items: held.items, held_message_citations: held.message_citations,
+    }]);
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('apply holds the sessions that touch the citing bundles before counting the hold; a dry run takes no lock', () => {
+    const applied = runTool({ ...citedShelf(), options: applyOptions() });
+    const all = texts(applied);
+    const lockAt = all.findIndex((t) => /^select s\.conversation_id/i.test(t));
+    const countAt = all.findIndex((t) => /^with held_sessions as/i.test(t));
+    expect(all[lockAt]).toMatch(/for share$/i);
+    expect(lockAt).toBeGreaterThan(-1);
+    expect(lockAt).toBeLessThan(countAt);
+    expect(applied.calls[lockAt].values).toEqual([[
+      '00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b2',
+    ]]);
+
+    const dry = runTool({ ...citedShelf(), options: dryRunOptions() });
+    expect(texts(dry).some((t) => /^select s\.conversation_id/i.test(t))).toBe(false);
+    expect(texts(dry).some((t) => /for share/i.test(t))).toBe(false);
+  });
 
   test('DETACH_RADIUS_EXCEEDED past the detach cap, which is separate from the move cap', () => {
     const out = runTool({ ...citedShelf(), options: applyOptions({ maxDetachRows: 4 }) });

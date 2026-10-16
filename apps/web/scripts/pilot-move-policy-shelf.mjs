@@ -40,7 +40,9 @@
  * audit_events row records every detached id, the ids it cited and its
  * excerpt hash -- no account id and no text. The dry run prints evidence counts only.
  * The detached set is part of the plan fingerprint, and DETACH_RADIUS_EXCEEDED
- * refuses past DEFAULT_MAX_DETACH_ROWS.
+ * refuses past DEFAULT_MAX_DETACH_ROWS. Evidence under the safeguarding hold
+ * (a session with subject_deleted_at set) is never detached:
+ * DETACH_WOULD_BREAK_HOLD refuses, and the case goes to Jason.
  *
  * Other rows that point AT the moving rows from somewhere else are not moved,
  * and any of them refuses the apply:
@@ -305,6 +307,58 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   )).rows;
   const citationKey = (row) => `${row.assistant_message_id}:${row.evidence_id}`;
 
+  // The safeguarding hold (Jason 2026-10-07): a chat session with
+  // subject_deleted_at set is kept, identified, with its messages and the
+  // evidence those messages cite -- the account-delete trigger spares a
+  // bundle claimed or cited from such a session
+  // (pilot_slice_postgres_shadow_deidentify_keys_migration.sql, function
+  // shadow_rows_follow_account). Held evidence is never detached: any held
+  // item or citation refuses the apply (DETACH_WOULD_BREAK_HOLD). On apply the
+  // sessions that touch the citing bundles are read FOR SHARE first, so a hold
+  // set while the move runs waits for it rather than slipping past the count.
+  const citingBundleIds = [...new Set(citingItems.map((row) => row.bundle_id))];
+  if (lock && citingBundleIds.length > 0) {
+    await client.query(
+      `select s.conversation_id
+         from pilot.shadow_chat_sessions s
+        where s.conversation_id in (
+                select c.conversation_id from pilot.shadow_evidence_claims c
+                 where c.bundle_id = any($1::uuid[])
+                union
+                select m.conversation_id from pilot.shadow_message_citations mc
+                  join pilot.shadow_chat_messages m on m.message_id = mc.assistant_message_id
+                 where mc.bundle_id = any($1::uuid[]))
+        order by s.conversation_id for share`,
+      [citingBundleIds],
+    );
+  }
+  const heldRow = (await client.query(
+    `with held_sessions as (
+       select conversation_id from pilot.shadow_chat_sessions where subject_deleted_at is not null
+     )
+     select
+       (select count(*)::int from pilot.shadow_evidence_items e
+         where e.evidence_id = any($1::uuid[])
+           and (exists (
+                  select 1 from pilot.shadow_evidence_claims c
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
+                     and c.conversation_id in (select conversation_id from held_sessions))
+                or exists (
+                  select 1 from pilot.shadow_message_citations c
+                    join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
+                     and m.conversation_id in (select conversation_id from held_sessions)))) as held_items,
+       (select count(*)::int from pilot.shadow_message_citations c
+          join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+         where c.evidence_id = any($1::uuid[])
+           and m.conversation_id in (select conversation_id from held_sessions)) as held_message_citations`,
+    [citingItemIds],
+  )).rows[0] ?? {};
+  const held = {
+    items: Number(heldRow.held_items ?? 0),
+    message_citations: Number(heldRow.held_message_citations ?? 0),
+  };
+
   // Why detach and not re-point: the CHECK
   // pilot_shadow_evidence_items_library_scope_check lets an item cite only its
   // own (asking) organization or __platform__. The plan groups the citing
@@ -365,6 +419,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
     message_citations: messageCitations.length,
     bundles: new Set(citingItems.map((row) => row.bundle_id)).size,
     answers: new Set(messageCitations.map((row) => row.assistant_message_id)).size,
+    held,
     by_asking_organization: evidenceByAskingOrganization,
   };
 
@@ -462,6 +517,11 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
     .map((row) => ({ chunk_id: row.chunk_id, source_id: row.source_id, document_id: row.document_id }));
   if (openChunks.length > 0) blockers.push({ code: 'CLOSURE_BROKEN', chunks: openChunks });
 
+  if (held.items > 0 || held.message_citations > 0) {
+    blockers.push({
+      code: 'DETACH_WOULD_BREAK_HOLD', held_items: held.items, held_message_citations: held.message_citations,
+    });
+  }
   if (detaching > maxDetachRows) {
     blockers.push({ code: 'DETACH_RADIUS_EXCEEDED', detaching, max: maxDetachRows });
   }

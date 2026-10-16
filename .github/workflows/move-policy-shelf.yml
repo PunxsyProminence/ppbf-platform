@@ -15,8 +15,18 @@ name: move-policy-shelf
 # Dry run by default. The tool refuses, before connecting, when the target
 # organization is missing, when from equals to, or when either side is
 # __platform__; inside its transaction it refuses unknown organizations, rows
-# cited from elsewhere, key collisions in the target, and any mismatch between
-# the plan and what the update touched.
+# cited from elsewhere (other than SHADOW evidence, below), key collisions in
+# the target, and any mismatch between the plan and what the update touched.
+#
+# APPLY PERMANENTLY DELETES SHADOW EVIDENCE. Evidence items that cite a moving
+# row cannot follow it (a CHECK keeps an item citing only its own organization
+# or __platform__), so apply first deletes those items and the chat-answer
+# citations of them, then moves (OD-2026-10-08-009 D22; overwatch ruled
+# "detach, then move"). The answers keep their text and lose their Sources
+# list. The deleted rows survive only as ids, cited ids and excerpt hashes in
+# the run's pilot.audit_events row. The dry run reports how many
+# (citing_evidence). Evidence under the safeguarding hold is never deleted:
+# DETACH_WOULD_BREAK_HOLD refuses the apply.
 #
 # Apply moves only the plan that was reviewed: it needs expected_fingerprint
 # set to the plan_fingerprint a dry run of the same target printed, and it
@@ -240,4 +250,12 @@ jobs:
             echo 'Apply re-plans inside its own transaction, refuses unless that plan has'
             echo 'the expected fingerprint, verifies the end state before committing, and'
             echo 'records the move in pilot.audit_events.'
+            echo ''
+            echo '**Apply permanently deletes SHADOW evidence.** The SHADOW evidence items'
+            echo 'that cite the moving rows, and the chat-answer citations of them, are'
+            echo 'deleted before the move. The dry run counts them in `citing_evidence`'
+            echo '(`items`, `message_citations`). The answers keep their text but lose their'
+            echo 'Sources list. The deleted rows survive only as ids, cited ids and excerpt'
+            echo 'hashes in the audit row. Evidence under the safeguarding hold is never'
+            echo 'deleted: `DETACH_WOULD_BREAK_HOLD` refuses the apply.'
           } >> "$GITHUB_STEP_SUMMARY"

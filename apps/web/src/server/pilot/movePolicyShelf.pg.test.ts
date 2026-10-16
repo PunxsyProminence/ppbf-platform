@@ -473,6 +473,7 @@ describe('citing evidence report (real database)', () => {
         message_citations: 1,
         bundles: 2,
         answers: 1,
+        held: { items: 0, message_citations: 0 },
         by_asking_organization: [{
           asking_organization_id: FROM,
           items: 3,
@@ -682,6 +683,70 @@ describe('citing evidence report (real database)', () => {
 
       expect(result).toMatchObject({ status: 'refused', reason: 'PLAN_FINGERPRINT_MISMATCH' });
       expect(after).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
+  /** Dry run, then apply with its fingerprint: the hold must refuse and change nothing. */
+  async function expectHoldRefuses(client: Client, held: { items: number; message_citations: number }) {
+    const dry = await movePolicyShelf(client, options(), { log: silent });
+    expect(dry).toMatchObject({ status: 'dry-run', would_apply: false });
+    expect(blockerCodes(dry)).toEqual(['DETACH_WOULD_BREAK_HOLD']);
+    expect((dry.citing_evidence as { held: unknown }).held).toEqual(held);
+
+    const before = await snapshot(client);
+    const result = await movePolicyShelf(
+      client,
+      options({ apply: true, confirm: PHRASE, expectFingerprint: dry.plan_fingerprint }),
+      { log: silent },
+    );
+    expect(result).toMatchObject({ status: 'refused', reason: 'PLAN_BLOCKED' });
+    expect(result.blockers).toEqual([{
+      code: 'DETACH_WOULD_BREAK_HOLD', held_items: held.items, held_message_citations: held.message_citations,
+    }]);
+    expect(await snapshot(client)).toEqual(before);
+  }
+
+  test('a held conversation that cites the shelf (safeguarding hold): DETACH_WOULD_BREAK_HOLD, nothing changes', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // ADMIN's conversation cites E1 from bundle B1, which also holds E2.
+      await client.query(
+        `update pilot.shadow_chat_sessions set subject_deleted_at = now() where conversation_id = $1`,
+        ['00000000-0000-4000-8000-0000000000c1'],
+      );
+      await expectHoldRefuses(client, { items: 2, message_citations: 1 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a held conversation that only claims a citing bundle: DETACH_WOULD_BREAK_HOLD', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      const heldConversation = '00000000-0000-4000-8000-0000000000c3';
+      const heldAnswer = '00000000-0000-4000-8000-0000000000d3';
+      await client.query(
+        `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id, subject_deleted_at)
+         values ($1, $2, $3, now())`,
+        [heldConversation, FROM, COACH],
+      );
+      await client.query(
+        `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content)
+         values ($1, $2, $3, $4, 'assistant', 'answer')`,
+        [heldAnswer, heldConversation, FROM, COACH],
+      );
+      // Bundle B2 (item E3) is claimed from the held conversation, never cited.
+      await client.query(
+        `insert into pilot.shadow_evidence_claims
+           (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+         values ($1, $2, $3, $4, $5, $6, 'supported')`,
+        ['00000000-0000-4000-8000-0000000000f2', FROM, COACH, heldConversation, heldAnswer, B(2)],
+      );
+      await expectHoldRefuses(client, { items: 1, message_citations: 0 });
     } finally {
       await client.end();
     }
