@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
@@ -407,6 +408,10 @@ const EMPTY_DRAFTS: Drafts = {
 
 type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
 
+/** A roster read that has not answered by then is treated as failed, so the
+    coach is offered Check again rather than a picker that never fills. */
+const ROSTER_TIMEOUT_MS = 15_000;
+
 const PREVIOUS_ATHLETE_WRITE_FAILED =
   'Something you submitted for the athlete you were on before did not go through. Go back to them and check.';
 
@@ -581,18 +586,56 @@ export default function DecisionLoopReviewPage() {
   const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
   const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { items?: AthleteListItem[] };
-        setAthletes(payload.items ?? []);
-      } catch {
-        // Manual athleteId entry remains available if the roster fetch fails.
+  /* ARRIVING FROM "Record what you did" (#1474 item 5): the athlete the coach
+     came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
+     on the first effect; undefined means not yet taken. */
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  /* The picker is the only way to choose an athlete, so it is never an empty
+     picker that reads as "no athletes": while the roster is read it says so,
+     and a roster that would not load -- or has not answered within
+     ROSTER_TIMEOUT_MS -- says that and offers another try. */
+  const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const loadRoster = useCallback(async () => {
+    let roster: AthleteListItem[] | null = null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ROSTER_TIMEOUT_MS);
+    // Settles the read as failed on the timeout even if the request ignores the abort.
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new Error('Roster read timed out')));
+    });
+    try {
+      const response = await Promise.race([
+        fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include', signal: controller.signal }),
+        timedOut,
+      ]);
+      if (response.ok) {
+        const payload = (await Promise.race([response.json(), timedOut])) as { items?: AthleteListItem[] };
+        roster = payload.items ?? [];
+        setAthletes(roster);
       }
-    })();
+    } catch {
+      // Said on the page below the picker.
+    } finally {
+      clearTimeout(timer);
+    }
+    setRosterState(roster ? 'loaded' : 'failed');
+    /* The arriving athlete is selected only if the roster lists them: the
+       roster is the server's answer to whom this coach may reach. Not listed,
+       and the page opens as it always has, with nobody chosen. With no roster
+       yet, the arrival waits for a "Check again" that loads one. */
+    if (!roster) return;
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && roster.some((athlete) => athlete.athlete_id === arriving)) {
+      selectAthlete(arriving);
+    }
+    // selectAthlete moves refs and state setters only.
   }, []);
+  useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
+    // The roster's answer sets state when it arrives, never in this effect's body.
+    void Promise.resolve().then(loadRoster);
+  }, [loadRoster]);
 
   const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
     // A write for athlete A that finishes after the coach moved to B asks to
@@ -1213,25 +1256,34 @@ export default function DecisionLoopReviewPage() {
               <select
                 value={athleteId}
                 onChange={(event) => selectAthlete(event.target.value)}
+                disabled={rosterState === 'loading'}
                 className="select max-w-md"
               >
                 <option value="">Select an athlete…</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                    {athlete.full_name || athlete.athlete_id}
+                    {/* Never the raw id: an athlete with no name on file is named as such. */}
+                    {athlete.full_name?.trim() || 'Unnamed athlete'}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field mt-[var(--s3)] block">
-              <span className="t-label">Or enter an athlete ID directly</span>
-              <input
-                value={athleteId}
-                onChange={(event) => selectAthlete(event.target.value)}
-                placeholder="athlete-id"
-                className="input max-w-md"
-              />
-            </label>
+            {rosterState === 'loading' && <p className="t-muted mt-[var(--s3)]">Loading your athletes…</p>}
+            {rosterState === 'failed' && (
+              <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+                <p className="t-body">Couldn&apos;t load your athletes.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRosterState('loading');
+                    void loadRoster();
+                  }}
+                  className="btn btn--ghost"
+                >
+                  Check again
+                </button>
+              </div>
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine
@@ -1242,7 +1294,7 @@ export default function DecisionLoopReviewPage() {
           </section>
 
           {!athleteId ? (
-            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select or enter an athlete to review their decision loop.</p>
+            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select an athlete to review their decision loop.</p>
           ) : (
             <div className="mt-[var(--s5)] grid gap-[var(--s5)] xl:grid-cols-2">
               {/* Medical Administrative Status */}
