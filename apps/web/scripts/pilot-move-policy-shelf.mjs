@@ -29,14 +29,24 @@
  * so the database would not stop them being left behind as a gym's rows about
  * another tenant's sources. They follow, as they did in the rescope.
  *
- * Rows that point AT the moving rows from somewhere else are not moved, and
- * any of them refuses the apply:
- *   - shadow_evidence_items cite (id, library_organization_id) by composite
- *     foreign key with no ON UPDATE action, and a CHECK lets an item cite only
- *     its asking organization or __platform__, so they cannot be re-pointed
- *     into the target. The plan reports them per asking organization, with
- *     whether every asking account is an active member of the target, so the
- *     choice of what to do with them is made on counts;
+ * SHADOW evidence items that cite a moving row are DETACHED, in the same
+ * transaction and before the move: their shadow_message_citations rows, then
+ * the items themselves, are deleted. They cannot be re-pointed: they cite
+ * (id, library_organization_id) by composite foreign key with no ON UPDATE
+ * action, and a CHECK lets an item cite only its asking organization or
+ * __platform__ (OD-2026-10-08-009 D22 asked for a re-point; with no asker a
+ * member of the gym, overwatch ruled to detach). The chat answers keep their
+ * text and lose their citation list; bundles and claims are not touched. The
+ * audit_events row records every detached id, the ids it cited and its
+ * excerpt hash -- no account id and no text. The dry run prints evidence counts only.
+ * The detached set is part of the plan fingerprint, and DETACH_RADIUS_EXCEEDED
+ * refuses past DEFAULT_MAX_DETACH_ROWS. Evidence under the safeguarding hold
+ * (a session flagged in shadow_human_review_queue, by conversation or by
+ * account, or with subject_deleted_at set) is never detached:
+ * DETACH_WOULD_BREAK_HOLD refuses, and the case goes to Jason.
+ *
+ * Other rows that point AT the moving rows from somewhere else are not moved,
+ * and any of them refuses the apply:
  *   - shadow_research_submissions hang off a research requirement that stays
  *     in the old organization;
  *   - rabbit_holes.library_document_id has no foreign key and resolves only in
@@ -95,6 +105,10 @@ export const DEFAULT_SOURCE_TYPE = 'internal_policy';
 // that and far below the 1,194-source baseline, so a selection that somehow
 // grabbed a corpus refuses instead of moving it.
 export const DEFAULT_MAX_ROWS = 500;
+// Evidence items plus message citations detached by one run. Staging held
+// about 1,136 and production 2 (dry runs, 2026-10-16); separate from the move
+// cap, which counts only rows that move.
+export const DEFAULT_MAX_DETACH_ROWS = 2000;
 export const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 const EVENT_PREFIX = 'library.policy_move';
@@ -111,7 +125,7 @@ function defaultLog(event, payload) {
  */
 export function validateMoveOptions(options) {
   const {
-    fromOrganizationId, toOrganizationId, sourceType, apply, confirm, maxRows, expectFingerprint,
+    fromOrganizationId, toOrganizationId, sourceType, apply, confirm, maxRows, expectFingerprint, maxDetachRows,
   } = options ?? {};
   // Only a real boolean decides the mode. A truthy string would otherwise skip
   // the phrase check below and still open a writing transaction.
@@ -126,6 +140,9 @@ export function validateMoveOptions(options) {
     return { reason: 'UNSUPPORTED_SOURCE_TYPE', source_type: sourceType ?? null };
   }
   if (!Number.isInteger(maxRows) || maxRows < 1) return { reason: 'INVALID_MAX' };
+  if (maxDetachRows !== undefined && (!Number.isInteger(maxDetachRows) || maxDetachRows < 1)) {
+    return { reason: 'INVALID_MAX_DETACH' };
+  }
   if (apply === true && confirm !== CONFIRM_PHRASE) return { reason: 'APPLY_WITHOUT_CONFIRM_PHRASE' };
   if (apply === true && !expectFingerprint) return { reason: 'APPLY_WITHOUT_EXPECTED_FINGERPRINT' };
   if (apply === true && !FINGERPRINT_PATTERN.test(String(expectFingerprint))) {
@@ -152,7 +169,7 @@ export function parseMoveOptions(env = process.env) {
   return refusal ? { ok: false, refusal } : { ok: true, options };
 }
 
-/** sha256 over the exact ids the plan would move, so two runs can be compared. */
+/** sha256 over the exact ids the plan would move or detach, so two runs can be compared. */
 export function planFingerprint(plan) {
   const material = JSON.stringify({
     from: plan.from,
@@ -163,6 +180,8 @@ export function planFingerprint(plan) {
     chunks: [...plan.ids.chunks].sort(),
     citation_checks: [...plan.ids.citationChecks].sort(),
     retraction_checks: [...plan.ids.retractionChecks].sort(),
+    detach_evidence_items: [...plan.ids.evidenceItems].sort(),
+    detach_message_citations: [...plan.ids.messageCitations].sort(),
   });
   return `sha256:${crypto.createHash('sha256').update(material).digest('hex')}`;
 }
@@ -209,7 +228,7 @@ async function countOrganizations(client, organizationIds) {
  * FOR UPDATE to the rows that move (apply only -- a read-only transaction
  * cannot take row locks).
  */
-async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
+async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows, lock }) {
   const forUpdate = lock ? ' for update' : '';
 
   const sources = (await client.query(
@@ -265,12 +284,111 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
   )).rows;
   const retractionChecks = retractionChecksAnyOrg.filter((row) => row.organization_id === from);
 
-  // Citing items cannot simply be re-pointed: the CHECK
+  // The evidence items that cite a moving row, and the chat-answer citations of
+  // them: both are detached before the move. Locked on apply; with the cited
+  // rows already locked, no new item or citation can appear mid-run (an insert
+  // takes a key-share lock on the row it references). account_id is never
+  // selected.
+  const citingItems = (await client.query(
+    `select evidence_id::text as evidence_id, bundle_id::text as bundle_id, organization_id,
+            source_id, document_id, chunk_id, library_organization_id, ordinal, excerpt_sha256
+       from pilot.shadow_evidence_items
+      where source_id = any($1::text[]) or document_id = any($2::text[]) or chunk_id = any($3::text[])
+      order by evidence_id${forUpdate}`,
+    [sourceIds, documentIds, chunkIds],
+  )).rows;
+  const citingItemIds = citingItems.map((row) => row.evidence_id);
+  const messageCitations = (await client.query(
+    `select assistant_message_id::text as assistant_message_id, evidence_id::text as evidence_id,
+            bundle_id::text as bundle_id, ordinal
+       from pilot.shadow_message_citations
+      where evidence_id = any($1::uuid[])
+      order by assistant_message_id, evidence_id${forUpdate}`,
+    [citingItemIds],
+  )).rows;
+  const citationKey = (row) => `${row.assistant_message_id}:${row.evidence_id}`;
+
+  // The safeguarding hold (Jason 2026-10-07, Q7: a flagged SHADOW chat is kept
+  // two years past the person's deletion). Held evidence is never detached:
+  // any held item or citation refuses the apply (DETACH_WOULD_BREAK_HOLD).
+  // A session counts as held when ANY of:
+  //   - a shadow_human_review_queue row points at it, or names its account --
+  //     the hold actually enforced: the deleted-data purge keeps an account
+  //     with any review-queue row, and its conversations, for two years
+  //     (pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md). A flagged
+  //     person who is not deleted yet counts too: detaching now would empty
+  //     the record the hold keeps once they are;
+  //   - subject_deleted_at is set (the column the account-delete trigger
+  //     spares; nothing writes it yet).
+  // An item is held when its own account is flagged (the purge keeps the whole
+  // account, bundles included), or when its bundle is claimed or cited from a
+  // held session, as the trigger reads it (shadow_rows_follow_account).
+  // On apply, before the count: the citing bundles FOR UPDATE (no new claim
+  // can attach), the review queue in SHARE mode (no new flag), and the
+  // sessions touching the bundles FOR SHARE (no hold set mid-run).
+  const citingBundleIds = [...new Set(citingItems.map((row) => row.bundle_id))];
+  if (lock && citingBundleIds.length > 0) {
+    await client.query(
+      `select bundle_id from pilot.shadow_evidence_bundles
+        where bundle_id = any($1::uuid[])
+        order by bundle_id for update`,
+      [citingBundleIds],
+    );
+    await client.query('lock table pilot.shadow_human_review_queue in share mode');
+    await client.query(
+      `select s.conversation_id
+         from pilot.shadow_chat_sessions s
+        where s.conversation_id in (
+                select c.conversation_id from pilot.shadow_evidence_claims c
+                 where c.bundle_id = any($1::uuid[])
+                union
+                select m.conversation_id from pilot.shadow_message_citations mc
+                  join pilot.shadow_chat_messages m on m.message_id = mc.assistant_message_id
+                 where mc.bundle_id = any($1::uuid[]))
+        order by s.conversation_id for share`,
+      [citingBundleIds],
+    );
+  }
+  const heldRow = (await client.query(
+    `with held_sessions as (
+       select s.conversation_id
+         from pilot.shadow_chat_sessions s
+        where s.subject_deleted_at is not null
+           or exists (
+                select 1 from pilot.shadow_human_review_queue q
+                 where q.conversation_id = s.conversation_id or q.account_id = s.account_id)
+     )
+     select
+       (select count(*)::int from pilot.shadow_evidence_items e
+         where e.evidence_id = any($1::uuid[])
+           and (exists (
+                  select 1 from pilot.shadow_human_review_queue q where q.account_id = e.account_id)
+                or exists (
+                  select 1 from pilot.shadow_evidence_claims c
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
+                     and c.conversation_id in (select conversation_id from held_sessions))
+                or exists (
+                  select 1 from pilot.shadow_message_citations c
+                    join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
+                     and m.conversation_id in (select conversation_id from held_sessions)))) as held_items,
+       (select count(*)::int from pilot.shadow_message_citations c
+          join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+         where c.evidence_id = any($1::uuid[])
+           and m.conversation_id in (select conversation_id from held_sessions)) as held_message_citations`,
+    [citingItemIds],
+  )).rows[0] ?? {};
+  const held = {
+    items: Number(heldRow.held_items ?? 0),
+    message_citations: Number(heldRow.held_message_citations ?? 0),
+  };
+
+  // Why detach and not re-point: the CHECK
   // pilot_shadow_evidence_items_library_scope_check lets an item cite only its
-  // own (asking) organization or __platform__. What happens to them is decided
-  // on these counts (OD-2026-10-08-009 D22), so the plan groups them by asking
-  // organization and says whether every asking account is an active member of
-  // the target. Counts only: no account id leaves the database.
+  // own (asking) organization or __platform__. The plan groups the citing
+  // items by asking organization and says whether every asking account is an
+  // active member of the target (the counts the detach decision was made on,
+  // OD-2026-10-08-009 D22). Counts only: no account id leaves the database.
   // "Active in target" is what sign-in would honour: an active membership of
   // the target AND an account that is active and not deleted (auth.ts,
   // deletedAccountSignIn.ts). A de-identified asker (anon_<uuid>, set by the
@@ -319,7 +437,15 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
       all_asking_accounts_active_in_target: askingAccounts > 0 && inTarget === askingAccounts,
     };
   });
-  const evidenceItems = evidenceByAskingOrganization.reduce((sum, group) => sum + group.items, 0);
+  const detaching = citingItems.length + messageCitations.length;
+  const citingEvidence = {
+    items: citingItems.length,
+    message_citations: messageCitations.length,
+    bundles: new Set(citingItems.map((row) => row.bundle_id)).size,
+    answers: new Set(messageCitations.map((row) => row.assistant_message_id)).size,
+    held,
+    by_asking_organization: evidenceByAskingOrganization,
+  };
 
   const submissions = (await client.query(
     `select organization_id, submission_id, source_id, document_id
@@ -415,10 +541,13 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
     .map((row) => ({ chunk_id: row.chunk_id, source_id: row.source_id, document_id: row.document_id }));
   if (openChunks.length > 0) blockers.push({ code: 'CLOSURE_BROKEN', chunks: openChunks });
 
-  if (evidenceItems > 0) {
+  if (held.items > 0 || held.message_citations > 0) {
     blockers.push({
-      code: 'EVIDENCE_ITEMS_CITE_ROWS', count: evidenceItems, by_asking_organization: evidenceByAskingOrganization,
+      code: 'DETACH_WOULD_BREAK_HOLD', held_items: held.items, held_message_citations: held.message_citations,
     });
+  }
+  if (detaching > maxDetachRows) {
+    blockers.push({ code: 'DETACH_RADIUS_EXCEEDED', detaching, max: maxDetachRows });
   }
   if (submissions.length > 0) blockers.push({ code: 'RESEARCH_SUBMISSIONS_REFERENCE_ROWS', submissions });
 
@@ -479,15 +608,38 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
       chunks: chunkIds,
       citationChecks: citationChecks.map((row) => row.check_id),
       retractionChecks: retractionChecks.map((row) => row.retraction_check_id),
+      evidenceItems: citingItemIds,
+      messageCitations: messageCitations.map(citationKey),
     },
     counts,
     total,
     blockers,
     stateTally,
-    citingEvidence: { items: evidenceItems, by_asking_organization: evidenceByAskingOrganization },
+    citingEvidence,
+    // The audit record of what is detached. Ids, cited ids and excerpt hashes
+    // only; never printed by a dry run, which reports citingEvidence counts.
+    detach: {
+      evidence_items: citingItems.map((row) => ({
+        evidence_id: row.evidence_id,
+        bundle_id: row.bundle_id,
+        asking_organization_id: row.organization_id,
+        source_id: row.source_id,
+        document_id: row.document_id,
+        chunk_id: row.chunk_id,
+        library_organization_id: row.library_organization_id,
+        ordinal: Number(row.ordinal),
+        excerpt_sha256: row.excerpt_sha256,
+      })),
+      message_citations: messageCitations.map((row) => ({
+        assistant_message_id: row.assistant_message_id,
+        evidence_id: row.evidence_id,
+        bundle_id: row.bundle_id,
+        ordinal: Number(row.ordinal),
+      })),
+    },
     report: {
       state_tally: stateTally,
-      citing_evidence: { items: evidenceItems, by_asking_organization: evidenceByAskingOrganization },
+      citing_evidence: citingEvidence,
       state_note: 'The move changes which organization owns these rows, not their review state. '
         + 'ready = passes the review and index filters retrieval applies (embeddings not checked); '
         + 'not_ready rows stay out of retrieval after the move until they are reviewed.',
@@ -532,7 +684,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, lock }) {
  * Returns one of:
  *   { status: 'refused', reason, ... }           nothing written
  *   { status: 'dry-run', plan, blockers, ... }  nothing written
- *   { status: 'applied', plan, moved, after }    committed
+ *   { status: 'applied', plan, moved, detached, after } committed
  * and throws (after rolling back) on an unexpected database error.
  */
 export async function movePolicyShelf(client, options, { log = defaultLog } = {}) {
@@ -543,6 +695,7 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
   }
 
   const { fromOrganizationId: from, toOrganizationId: to, sourceType, maxRows, expectFingerprint } = options;
+  const maxDetachRows = options.maxDetachRows ?? DEFAULT_MAX_DETACH_ROWS;
   // validateMoveOptions already refuses a non-boolean; this keeps the write
   // path from ever branching on mere truthiness.
   const apply = options.apply === true;
@@ -571,7 +724,7 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
     if (missing.length > 0) return await refuseInside('ORGANIZATION_NOT_FOUND', { missing });
 
     const before = await countOrganizations(client, [from, to]);
-    const plan = await buildPlan(client, { from, to, sourceType, maxRows, lock: apply });
+    const plan = await buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows, lock: apply });
 
     log('plan', {
       mode: apply ? 'apply' : 'dry-run',
@@ -627,6 +780,42 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
       return await refuseInside('PLAN_BLOCKED', { blockers: plan.blockers });
     }
 
+    // Detach first: the answers' citations of the citing items, then the items.
+    // Each delete is scoped to the planned keys and must remove exactly as many
+    // rows as the plan; a citation the plan did not see would make the item
+    // delete fail on its foreign key, which rolls the whole run back.
+    const detached = { message_citations: 0, evidence_items: 0 };
+    if (plan.ids.messageCitations.length > 0) {
+      const result = await client.query(
+        `delete from pilot.shadow_message_citations mc
+          using unnest($1::uuid[], $2::uuid[]) as k(assistant_message_id, evidence_id)
+          where mc.assistant_message_id = k.assistant_message_id and mc.evidence_id = k.evidence_id
+         returning mc.evidence_id`,
+        [plan.detach.message_citations.map((row) => row.assistant_message_id),
+          plan.detach.message_citations.map((row) => row.evidence_id)],
+      );
+      detached.message_citations = result.rowCount ?? result.rows?.length ?? 0;
+      if (detached.message_citations !== plan.ids.messageCitations.length) {
+        return await refuseInside('PLAN_DETACH_COUNT_MISMATCH', {
+          table: 'message_citations', planned: plan.ids.messageCitations.length, deleted: detached.message_citations,
+        });
+      }
+    }
+    if (plan.ids.evidenceItems.length > 0) {
+      const result = await client.query(
+        `delete from pilot.shadow_evidence_items
+          where evidence_id = any($1::uuid[])
+         returning evidence_id`,
+        [plan.ids.evidenceItems],
+      );
+      detached.evidence_items = result.rowCount ?? result.rows?.length ?? 0;
+      if (detached.evidence_items !== plan.ids.evidenceItems.length) {
+        return await refuseInside('PLAN_DETACH_COUNT_MISMATCH', {
+          table: 'evidence_items', planned: plan.ids.evidenceItems.length, deleted: detached.evidence_items,
+        });
+      }
+    }
+
     // Each update is scoped to the planned ids AND the from-organization, so a
     // row that changed hands since the plan is not touched -- and is caught by
     // the count comparison below.
@@ -678,8 +867,13 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
               on d.document_id = c.document_id and d.organization_id = c.organization_id
             join pilot.shadow_library_sources s
               on s.source_id = c.source_id and s.organization_id = c.organization_id
-           where c.organization_id = $2 and c.chunk_id = any($5::text[])) as chunks_in_to_with_local_document_and_source`,
-      [from, to, plan.ids.sources, plan.ids.documents, plan.ids.chunks],
+           where c.organization_id = $2 and c.chunk_id = any($5::text[])) as chunks_in_to_with_local_document_and_source,
+         (select count(*)::int from pilot.shadow_evidence_items
+           where source_id = any($3::text[]) or document_id = any($4::text[])
+              or chunk_id = any($5::text[])) as evidence_items_citing_moved_rows,
+         (select count(*)::int from pilot.shadow_message_citations
+           where evidence_id = any($6::uuid[])) as message_citations_of_detached_items`,
+      [from, to, plan.ids.sources, plan.ids.documents, plan.ids.chunks, plan.ids.evidenceItems],
     )).rows[0] ?? {};
     const after = await countOrganizations(client, [from, to]);
 
@@ -696,6 +890,8 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
     expectEqual('documents_in_to_with_local_source', verify.documents_in_to_with_local_source, plan.counts.documents);
     expectEqual('chunks_in_to_with_local_document_and_source',
       verify.chunks_in_to_with_local_document_and_source, plan.counts.chunks);
+    expectEqual('evidence_items_citing_moved_rows', verify.evidence_items_citing_moved_rows, 0);
+    expectEqual('message_citations_of_detached_items', verify.message_citations_of_detached_items, 0);
     for (const key of COUNT_KEYS) {
       expectEqual(`${from}.${key}`, after[from]?.[key], (before[from]?.[key] ?? 0) - plan.counts[key]);
       expectEqual(`${to}.${key}`, after[to]?.[key], (before[to]?.[key] ?? 0) + plan.counts[key]);
@@ -712,6 +908,10 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
         source_type: sourceType,
         plan_fingerprint: plan.fingerprint,
         moved,
+        detached_counts: detached,
+        // Every detached row: ids, cited ids and excerpt hashes. No account
+        // id, no text. The only record of them once this commits.
+        detached: plan.detach,
         before,
         after,
       })],
@@ -720,8 +920,10 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
     await client.query('commit');
     open = false;
 
-    log('completed', { from_organization: from, to_organization: to, plan_fingerprint: plan.fingerprint, moved, before, after });
-    return { status: 'applied', plan_fingerprint: plan.fingerprint, moved, before, after, plan };
+    log('completed', {
+      from_organization: from, to_organization: to, plan_fingerprint: plan.fingerprint, moved, detached, before, after,
+    });
+    return { status: 'applied', plan_fingerprint: plan.fingerprint, moved, detached, before, after, plan };
   } catch (error) {
     if (open) await client.query('rollback').catch(() => {});
     throw error;
