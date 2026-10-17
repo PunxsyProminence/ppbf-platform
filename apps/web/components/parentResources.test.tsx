@@ -45,15 +45,30 @@ test('reads the child’s resources; an app page opens in the app, an external o
   const [guide, policy] = within(screen.getByRole('list', { name: 'Resources' })).getAllByRole('listitem');
   expect(guide!.textContent).toContain('Guide');
   expect(guide!.textContent).toContain('What to drink around training.');
-  const read = within(guide!).getByRole('link', { name: 'Read the guide' });
+  const read = within(guide!).getByRole('link', { name: 'Read the guide: Hydration for young boxers' });
   expect(read).toHaveAttribute('href', '/help');
   expect(read).not.toHaveAttribute('target');
 
-  const open = within(policy!).getByRole('link', { name: /Read the policy/ });
+  const open = within(policy!).getByRole('link', { name: 'Read the policy: Junior sparring policy (opens in a new tab)' });
   expect(open).toHaveAttribute('href', 'https://example.org/policy.pdf');
   expect(open).toHaveAttribute('target', '_blank');
   expect(open).toHaveAttribute('rel', 'noopener noreferrer');
-  expect(open.textContent).toContain('opens in a new tab');
+});
+
+test('a checklist and a video each carry their own action, named with the title', async () => {
+  await renderWith(jsonResponse({
+    ok: true,
+    items: [
+      { ...INTERNAL, resource_id: 'r3', title: 'Fight-night bag', resource_type: 'checklist', destination: '/parent/safety' },
+      { ...EXTERNAL, resource_id: 'r4', title: 'Hand wrapping', resource_type: 'video', destination: 'https://example.org/wrap' },
+    ],
+  }));
+
+  const [checklist, video] = within(screen.getByRole('list', { name: 'Resources' })).getAllByRole('listitem');
+  expect(checklist!.textContent).toContain('Checklist');
+  expect(within(checklist!).getByRole('link', { name: 'Open the checklist: Fight-night bag' })).toHaveAttribute('href', '/parent/safety');
+  expect(video!.textContent).toContain('Video');
+  expect(within(video!).getByRole('link', { name: 'Watch the video: Hand wrapping (opens in a new tab)' })).toHaveAttribute('href', 'https://example.org/wrap');
 });
 
 test('nothing published says so', async () => {

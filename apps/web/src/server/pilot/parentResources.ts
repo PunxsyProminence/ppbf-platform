@@ -50,6 +50,10 @@ export function parentMayOpenPath(destination: string): boolean {
   } catch {
     return false;
   }
+  // The path a browser opens must be exactly the path written; that already
+  // keeps every other host out ('//elsewhere/help' never equals the path it
+  // opens). The origin test stays as a second guard on a boundary that sends
+  // families to pages: no input found reaches it, so no test can fail on it.
   if (opened.origin !== 'http://app.invalid' || opened.pathname !== written) return false;
   const door = doorForPath(opened.pathname);
   return door !== null && (door.roles === OPEN || door.roles.includes('parent'));

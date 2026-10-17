@@ -81,10 +81,12 @@ const COACH = 'acct-pr-coach';
 const OTHER_COACH = 'acct-pr-other-coach';
 const GUARDIAN = 'acct-pr-guardian';
 const GUARDIAN_LAPSED = 'acct-pr-guardian-lapsed';
+const GUARDIAN_ENDED = 'acct-pr-guardian-ended';
 const GUARDIAN_ADULT = 'acct-pr-guardian-adult';
 const GUARDIAN_X = 'acct-pr-guardian-x';
 const MEMBER = 'ATH-PR-MEMBER';
 const LAPSED = 'ATH-PR-LAPSED';
+const ENDED = 'ATH-PR-ENDED';
 const ADULT = 'ATH-PR-ADULT';
 const JUNIOR = 'junior-boxing';
 const FITNESS = 'fitness';
@@ -111,6 +113,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [OTHER_COACH, 'coach', OTHER_ORG_ID],
     [GUARDIAN, 'parent', ORG_ID],
     [GUARDIAN_LAPSED, 'parent', ORG_ID],
+    [GUARDIAN_ENDED, 'parent', ORG_ID],
     [GUARDIAN_ADULT, 'parent', ORG_ID],
     [GUARDIAN_X, 'parent', OTHER_ORG_ID],
   ] as const) {
@@ -121,6 +124,7 @@ async function freshDatabase(name: string): Promise<Client> {
   for (const [org, athleteId, dob] of [
     [ORG_ID, MEMBER, '2012-03-04'],
     [ORG_ID, LAPSED, '2012-03-04'],
+    [ORG_ID, ENDED, '2012-03-04'],
     [ORG_ID, ADULT, '2000-01-01'],
     [OTHER_ORG_ID, MEMBER, '2012-03-04'],
   ] as const) {
@@ -134,6 +138,7 @@ async function freshDatabase(name: string): Promise<Client> {
   for (const [account, parentId, org, athleteId] of [
     [GUARDIAN, 'P-1', ORG_ID, MEMBER],
     [GUARDIAN_LAPSED, 'P-2', ORG_ID, LAPSED],
+    [GUARDIAN_ENDED, 'P-4', ORG_ID, ENDED],
     [GUARDIAN_ADULT, 'P-3', ORG_ID, ADULT],
     [GUARDIAN_X, 'P-X', OTHER_ORG_ID, MEMBER],
   ] as const) {
@@ -150,16 +155,20 @@ async function freshDatabase(name: string): Promise<Client> {
       [ORG_ID, programId, programName, status, COACH],
     );
   }
-  for (const [membershipId, athleteId, programName, status] of [
+  for (const [org, membershipId, athleteId, programName, status] of [
     // Names as typed on the membership: matched to the program by canonical name.
-    ['M-1', MEMBER, '  junior boxing ', 'active'],
-    ['M-2', MEMBER, 'Old Program', 'active'],
-    ['M-3', LAPSED, 'Junior Boxing', 'lapsed'],
+    [ORG_ID, 'M-1', MEMBER, '  junior boxing ', 'active'],
+    [ORG_ID, 'M-2', MEMBER, 'Old Program', 'active'],
+    [ORG_ID, 'M-3', LAPSED, 'Junior Boxing', 'lapsed'],
+    [ORG_ID, 'M-4', ENDED, 'Junior Boxing', 'ended'],
+    // The same athlete id, active in the OTHER gym under a name gym A also
+    // uses for a program: it opens nothing in gym A.
+    [OTHER_ORG_ID, 'M-X1', MEMBER, 'Fitness', 'active'],
   ] as const) {
     await client.query(
       `insert into pilot.program_memberships (organization_id, membership_id, athlete_id, program_name, status, started_on, created_by_account_id)
        values ($1, $2, $3, $4, $5, '2026-09-01', $6)`,
-      [ORG_ID, membershipId, athleteId, programName, status, COACH],
+      [org, membershipId, athleteId, programName, status, org === ORG_ID ? COACH : OTHER_COACH],
     );
   }
   for (const [org, title, program, state, destination, publishedAt] of [...[
@@ -270,6 +279,18 @@ describe('parent resources, the family read (#1593, PH-11)', () => {
   test("a lapsed member's family reads only every family's resources", async () => {
     const items = await resources.listResourcesForGuardian(ORG_ID, GUARDIAN_LAPSED, LAPSED);
     expect(items.map((item) => item.title)).toEqual(['Everyone: hydration guide', 'Parent page link']);
+  });
+
+  test("an ended member's family reads only every family's resources", async () => {
+    const items = await resources.listResourcesForGuardian(ORG_ID, GUARDIAN_ENDED, ENDED);
+    expect(items.map((item) => item.title)).toEqual(['Everyone: hydration guide', 'Parent page link']);
+  });
+
+  test("a membership in another gym does not open gym A's program of the same name", async () => {
+    // MEMBER is active in the other gym's "Fitness", and in no gym-A Fitness.
+    const titles = (await resources.listResourcesForGuardian(ORG_ID, GUARDIAN, MEMBER)).map((item) => item.title);
+    expect(titles).not.toContain('Fitness: home circuit');
+    expect(titles).toContain('Junior: sparring policy');
   });
 
   test('drafts, archived resources, an archived program, other programs and a staff page never show', async () => {

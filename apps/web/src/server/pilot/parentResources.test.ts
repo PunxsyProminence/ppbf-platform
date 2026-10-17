@@ -24,6 +24,13 @@ describe('parentMayOpenPath', () => {
     '/dashboard/../admin',
     '/dashboard/%2e%2e/admin',
     '/parent/./../admin',
+    // These land on a parent page, but not on the one written: left out all
+    // the same, so the written door is the one judged.
+    '/admin/../parent/safety',
+    '/admin/%2E%2E/help',
+    // Another host, on a parent path: never the path written.
+    '//elsewhere.example/parent/safety',
+    'https://elsewhere.example/help',
   ])('%s is left out', (path) => {
     expect(parentMayOpenPath(path)).toBe(false);
   });

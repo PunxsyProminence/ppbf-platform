@@ -78,14 +78,18 @@ export default function ParentResources({ athleteId }: Readonly<{ athleteId: str
           <p className="t-body font-semibold">{resource.title}</p>
           <p className="t-muted mt-[var(--s2)]">{TYPE_LABEL[resource.resource_type]}</p>
           <p className="t-body mt-[var(--s2)]">{resource.summary}</p>
+          {/* The accessible name carries the title, so a list of "Read the
+              guide" links is told apart by ear; an external one also says
+              it opens a new tab (the name replaces the visible words). */}
           {resource.destination_kind === 'internal' ? (
-            <Link href={resource.destination} className="btn mt-[var(--s3)] inline-block">
+            <Link href={resource.destination} className="btn mt-[var(--s3)] inline-block"
+              aria-label={`${ACTION_LABEL[resource.resource_type]}: ${resource.title}`}>
               {ACTION_LABEL[resource.resource_type]}
             </Link>
           ) : (
-            <a href={resource.destination} target="_blank" rel="noopener noreferrer" className="btn mt-[var(--s3)] inline-block">
+            <a href={resource.destination} target="_blank" rel="noopener noreferrer" className="btn mt-[var(--s3)] inline-block"
+              aria-label={`${ACTION_LABEL[resource.resource_type]}: ${resource.title} (opens in a new tab)`}>
               {ACTION_LABEL[resource.resource_type]}
-              <span className="sr-only"> (opens in a new tab)</span>
             </a>
           )}
         </li>
