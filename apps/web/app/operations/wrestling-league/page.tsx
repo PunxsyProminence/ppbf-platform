@@ -532,7 +532,7 @@ export default function WrestlingLeagueManagementPage() {
                                 <label className="t-label" htmlFor="roster-athlete">Add athlete</label>
                                 <select id="roster-athlete" className="select" value={pickedAthleteId}
                                   onChange={(e) => setRosterAthleteId(e.target.value)}>
-                                  <option value="">Select an athlete…</option>
+                                  <option value="">Choose an athlete</option>
                                   {pickableAthletes.map((athlete) => (
                                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                                   ))}
