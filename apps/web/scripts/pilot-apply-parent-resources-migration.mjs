@@ -76,9 +76,13 @@ const READINESS_QUERY = `
              and d.def like '%''draft''%' and d.def like '%''published''%' and d.def like '%''archived''%')
            or (c.conname = 'pilot_parent_resources_published_check'
              and d.def like '%''draft''%' and d.def like '%published_at IS NULL%' and d.def like '%published_at IS NOT NULL%')
+           -- The writer roles exactly (Q-E): every quoted word in the check, and nothing more, so a
+           -- same-named check left by an earlier table that also admits 'athlete' does not pass.
            or (c.conname in ('pilot_parent_resources_created_by_role_check', 'pilot_parent_resources_updated_by_role_check')
-             and d.def like '%''coach''%' and d.def like '%''organization_admin''%' and d.def like '%''admin''%'
-             and d.def not like '%''parent''%')
+             and (
+               select array_agg(distinct m[1] order by m[1])
+                 from regexp_matches(d.def, '''([a-z_]+)''', 'g') as m
+             ) = array['admin', 'coach', 'organization_admin'])
          )
     ) = 8 as checks_ready,
     exists (

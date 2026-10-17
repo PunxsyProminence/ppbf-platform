@@ -101,10 +101,12 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
             ($4, 'coach', $5, 'microsoft'), ($6, 'coach', $5, 'microsoft')`,
     [COACH, ADMIN, ORG, OTHER_COACH, THIRD_ORG, VISITING_COACH],
   );
-  // A coach whose home gym is the other one, but who also coaches here.
+  // Authority comes from an active seat in the gym, as sign-in grants it (auth.ts): each home
+  // account holds its home seat; a coach whose home gym is the other one also coaches here.
   await client.query(
-    `insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')`,
-    [VISITING_COACH, ORG],
+    `insert into pilot.organization_memberships (account_id, organization_id, role)
+     values ($1, $5, 'coach'), ($2, $5, 'organization_admin'), ($3, $6, 'coach'), ($4, $5, 'coach')`,
+    [COACH, ADMIN, OTHER_COACH, VISITING_COACH, ORG, THIRD_ORG],
   );
   for (const [org, programId, name] of [[ORG, PROGRAM, 'Junior Boxing'], [OTHER_ORG, OTHER_PROGRAM, 'Other Gym Program']] as const) {
     await client.query(
@@ -315,6 +317,9 @@ describe('parent resources migration (PH-10)', () => {
 
       const { rows: [{ resource_id: id }] } = await resource(client);
       await client.query(`update pilot.parent_resources set state = 'published', published_at = '2026-10-15T12:00:00Z', ${EDITOR()} where resource_id = $1::uuid`, [id]);
+      // The time is the database's: what the writer sent is replaced by now().
+      const first = await client.query('select published_at from pilot.parent_resources where resource_id = $1::uuid', [id]);
+      expect(first.rows[0].published_at.toISOString()).not.toBe('2026-10-15T12:00:00.000Z');
       await client.query(`update pilot.parent_resources set state = 'archived', ${EDITOR(ADMIN)} where resource_id = $1::uuid`, [id]);
       await client.query(`update pilot.parent_resources set state = 'published', ${EDITOR()} where resource_id = $1::uuid`, [id]);
       await expect(
@@ -325,13 +330,13 @@ describe('parent resources migration (PH-10)', () => {
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_published_kept' });
       const row = await client.query('select state, published_at from pilot.parent_resources where resource_id = $1::uuid', [id]);
       expect(row.rows[0].state).toBe('published');
-      expect(row.rows[0].published_at.toISOString()).toBe('2026-10-15T12:00:00.000Z');
+      expect(row.rows[0].published_at.toISOString()).toBe(first.rows[0].published_at.toISOString());
     } finally {
       await client.end();
     }
   });
 
-  test("an author or editor holds that role in this gym: a home-gym account or a member, never another gym's", async () => {
+  test("an author or editor holds that role in this gym through an active seat, never another gym's", async () => {
     const client = await freshDatabase('pres_gym_writer');
     try {
       await expect(resource(client, { creator: OTHER_COACH })).rejects.toMatchObject({
@@ -352,6 +357,84 @@ describe('parent resources migration (PH-10)', () => {
       await expect(resource(client, { creator: VISITING_COACH })).rejects.toMatchObject({
         code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym',
       });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a writer needs an active seat on a live account; the home role alone is not one', async () => {
+    const client = await freshDatabase('pres_seat');
+    try {
+      const HOME_ONLY = 'acct-pres-home-only';
+      await client.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`, [HOME_ONLY, ORG]);
+      const refused = { code: '23514', constraint: 'pilot_parent_resources_writer_of_this_gym' };
+      await expect(resource(client, { creator: HOME_ONLY })).rejects.toMatchObject(refused);
+
+      await resource(client);
+      await client.query('update pilot.accounts set active_flag = false where account_id = $1', [COACH]);
+      await expect(resource(client)).rejects.toMatchObject(refused);
+      await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [COACH]);
+      await expect(resource(client)).rejects.toMatchObject(refused);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a resource is born unedited, with the times the database gives it', async () => {
+    const client = await freshDatabase('pres_born');
+    try {
+      await expect(client.query(
+        `insert into pilot.parent_resources (organization_id, title, summary, resource_type, destination_kind, destination,
+                                             created_by_account_id, created_by_role, updated_by_account_id, updated_by_role)
+         values ($1, 'T', 'S', 'guide', 'internal', '/help', $2, 'coach', $2, 'coach')`,
+        [ORG, COACH],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_born_unedited' });
+      await client.query(
+        `insert into pilot.parent_resources (organization_id, title, summary, resource_type, destination_kind, destination,
+                                             state, published_at, created_by_account_id, created_by_role, created_at, updated_at)
+         values ($1, 'T', 'S', 'guide', 'internal', '/help', 'published', '2020-01-01', $2, 'coach', '2020-01-01', '2020-01-01')`,
+        [ORG, COACH],
+      );
+      const row = await client.query(
+        `select created_at > now() - interval '5 minutes' as created_now, updated_at > now() - interval '5 minutes' as updated_now,
+                published_at > now() - interval '5 minutes' as published_now
+           from pilot.parent_resources`,
+      );
+      expect(row.rows[0]).toEqual({ created_now: true, updated_now: true, published_now: true });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an update from inside another trigger may only detach a writer', async () => {
+    const client = await freshDatabase('pres_depth');
+    try {
+      await resource(client);
+      await client.query(`
+        create function pilot.test_rewrite_parent_resource() returns trigger language plpgsql as $f$
+        begin
+          update pilot.parent_resources set state = 'published', published_at = now() where organization_id = new.organization_id;
+          return new;
+        end;
+        $f$`);
+      await client.query(`create trigger trg_test_rewrite after update on pilot.organizations
+                          for each row execute function pilot.test_rewrite_parent_resource()`);
+      await expect(client.query(`update pilot.organizations set organization_name = 'Renamed' where organization_id = $1`, [ORG]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_parent_resources_cascade_detaches_only' });
+      const row = await client.query('select state from pilot.parent_resources');
+      expect(row.rows[0].state).toBe('draft');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a same-named writer-role check that admits more roles than Q-E', async () => {
+    const client = await freshDatabase('pres_wide_roles');
+    try {
+      await client.query('alter table pilot.parent_resources drop constraint pilot_parent_resources_created_by_role_check');
+      await client.query(`alter table pilot.parent_resources add constraint pilot_parent_resources_created_by_role_check
+                            check (created_by_role in ('coach', 'organization_admin', 'admin', 'volunteer'))`);
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('PARENT_RESOURCES_NOT_READY: checks_ready');
     } finally {
       await client.end();
     }

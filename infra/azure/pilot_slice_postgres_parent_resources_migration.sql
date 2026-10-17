@@ -29,18 +29,30 @@
 --
 -- WHO PUBLISHES: coaches and organization admins (PH-10 Q1 default A), of
 -- THIS gym: the author, and every editor, must hold the role they are written
--- with in the resource's gym (an organization membership, or the account's
--- home gym). A resource is born with its author named (the column is nullable only for
--- the account-removal set null); the writer is kept and never changes by hand; a change by hand must carry an
--- editor (the application sets it to whoever makes that change). When the
--- writer's account is removed the resource stays with no writer (set null).
+-- with in the resource's gym: an ACTIVE organization membership with that
+-- role, on an account that is active and not deleted -- the same seat sign-in
+-- grants authority from (auth.ts, "THE ROLE COMES FROM THE MEMBERSHIP"); the
+-- account's home role alone is not enough. A resource is born with its author
+-- named (the column is nullable only for the account-removal set null) and
+-- unedited (no updated_by_*); the writer is kept and never changes by hand; a
+-- change by hand must carry an editor (the application sets it to whoever
+-- makes that change). When the writer's account is removed the resource stays
+-- with no writer (set null).
+--
+-- THE DATABASE KEEPS THE TIMES: created_at, and published_at when it is first
+-- set, are stamped now() here, whatever the writer sent.
+--
+-- A CASCADE ONLY DETACHES. An UPDATE that arrives from inside another trigger
+-- (an account going sets its writer columns to null) may only null those
+-- writer columns; any other change from inside a trigger is refused.
 --
 -- NOTHING IS HARD-DELETED. A direct DELETE is refused; one that arrives as a
 -- cascade (the gym going) runs from inside another trigger, so
 -- pg_trigger_depth() is above 1 and it goes through. Each refusal is a 23514
 -- with its own constraint name.
 --
--- DEPENDS ON pilot.organizations, pilot.accounts, pilot.programs.
+-- DEPENDS ON pilot.organizations, pilot.accounts, pilot.organization_memberships,
+-- pilot.programs.
 -- Idempotent: if-not-exists throughout, the trigger function is create-or-
 -- replace, and the trigger is dropped-and-created by name. No drops of any
 -- table or data, no backfill. No begin;/commit; here on purpose, matching this
@@ -141,12 +153,10 @@ begin
     -- is left to the role check, which names itself.
     if new.created_by_role in ('coach', 'organization_admin', 'admin') and not exists (
       select 1 from pilot.organization_memberships om
+        join pilot.accounts a on a.account_id = om.account_id
        where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
          and om.active_flag and om.role = new.created_by_role
-      union all
-      select 1 from pilot.accounts a
-       where a.account_id = new.created_by_account_id and a.organization_id = new.organization_id
-         and a.role = new.created_by_role
+         and a.active_flag and a.deleted_at is null
     ) then
       raise exception 'PARENT_RESOURCE_WRITER_OF_THIS_GYM'
         using errcode = '23514', constraint = 'pilot_parent_resources_writer_of_this_gym';
@@ -156,13 +166,35 @@ begin
       raise exception 'PARENT_RESOURCE_PUBLISHED_ONLY_BY_PUBLISHING'
         using errcode = '23514', constraint = 'pilot_parent_resources_published_on_publish';
     end if;
+    -- Born unedited: the first editor is whoever first changes it.
+    if new.updated_by_account_id is not null or new.updated_by_role is not null then
+      raise exception 'PARENT_RESOURCE_IS_BORN_UNEDITED'
+        using errcode = '23514', constraint = 'pilot_parent_resources_born_unedited';
+    end if;
+    new.created_at := now();
+    new.updated_at := now();
+    if new.published_at is not null then
+      new.published_at := now();
+    end if;
     return new;
   end if;
 
-  -- UPDATE. A cascade (an account going sets its writer columns to null) runs
-  -- from inside the foreign key's own trigger, so it is let through as is.
+  -- UPDATE from inside another trigger: only the account-removal set null of
+  -- a writer column passes; nothing else changes that way.
   if pg_trigger_depth() > 1 then
-    return new;
+    if (new.organization_id, new.resource_id, new.title, new.summary, new.resource_type, new.destination_kind,
+        new.destination, new.program_id, new.state, new.published_at, new.created_by_role, new.updated_by_role,
+        new.created_at, new.updated_at)
+       is not distinct from
+       (old.organization_id, old.resource_id, old.title, old.summary, old.resource_type, old.destination_kind,
+        old.destination, old.program_id, old.state, old.published_at, old.created_by_role, old.updated_by_role,
+        old.created_at, old.updated_at)
+       and (new.created_by_account_id is not distinct from old.created_by_account_id or new.created_by_account_id is null)
+       and (new.updated_by_account_id is not distinct from old.updated_by_account_id or new.updated_by_account_id is null) then
+      return new;
+    end if;
+    raise exception 'PARENT_RESOURCE_CASCADE_ONLY_DETACHES'
+      using errcode = '23514', constraint = 'pilot_parent_resources_cascade_detaches_only';
   end if;
 
   if new.organization_id is distinct from old.organization_id
@@ -195,17 +227,19 @@ begin
   end if;
   if new.updated_by_role in ('coach', 'organization_admin', 'admin') and not exists (
     select 1 from pilot.organization_memberships om
+      join pilot.accounts a on a.account_id = om.account_id
      where om.account_id = new.updated_by_account_id and om.organization_id = new.organization_id
        and om.active_flag and om.role = new.updated_by_role
-    union all
-    select 1 from pilot.accounts a
-     where a.account_id = new.updated_by_account_id and a.organization_id = new.organization_id
-       and a.role = new.updated_by_role
+       and a.active_flag and a.deleted_at is null
   ) then
     raise exception 'PARENT_RESOURCE_WRITER_OF_THIS_GYM'
       using errcode = '23514', constraint = 'pilot_parent_resources_writer_of_this_gym';
   end if;
 
+  -- The first publication time is the database's.
+  if old.published_at is null and new.published_at is not null then
+    new.published_at := now();
+  end if;
   new.updated_at := now();
   return new;
 end;
