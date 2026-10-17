@@ -486,7 +486,7 @@ test.describe('Athlete journey', () => {
 
     await page.goto('/athlete/development-blocks');
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Your Plan' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'My Development Plan' })).toBeVisible();
     await expect(page.getByText('Winter technical block')).toBeVisible();
     await expect(page.getByText('Stop backing straight up when the pressure comes.')).toBeVisible();
 

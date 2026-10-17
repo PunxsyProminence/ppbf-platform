@@ -376,7 +376,7 @@ export default function CoachDevelopmentPage() {
     >
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <p className="t-eyebrow">Coach Development</p>
+          <p className="t-eyebrow">Coaching Growth</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Your Coaching Growth</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             What you are trying to get better at, in your own words, and the development work you

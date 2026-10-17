@@ -47,7 +47,22 @@ describe('the ruled words', () => {
     expect(offenders).toEqual([]);
   });
 
+  test("the coach's multi-week plan is a Development Plan, not a block, wherever it is named", () => {
+    const PLAN_SCREENS = [
+      'app/coach/development-blocks/page.tsx',
+      'app/athlete/development-blocks/page.tsx',
+      'app/parent/development-blocks/page.tsx',
+    ];
+    for (const file of PLAN_SCREENS) {
+      const source = withoutComments(read(file));
+      expect(source).not.toMatch(/development blocks?/i);
+      expect(source).not.toMatch(/'Save block'|>\s*Blocks on record\s*<|New block\{/);
+    }
+  });
+
   test('staff screens name the Training Hold, not a pause', () => {
+    expect(withoutComments(read('app/coach/sports-medicine/page.tsx'))).not.toMatch(/pause or narrow training/);
+    expect(withoutComments(read('app/coach/injuries/page.tsx'))).not.toMatch(/does not pause training/);
     const STAFF = ['components/CoachWorkspace.tsx', 'app/schedule/page.tsx', 'app/coach/progression-intelligence/page.tsx'];
     for (const file of STAFF) {
       const source = withoutComments(read(file));

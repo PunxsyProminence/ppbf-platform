@@ -657,7 +657,7 @@ test.describe('Coach journey', () => {
     await page.getByLabel('Training emphasis').fill('Guard recovery off the jab.');
     await page.getByLabel('Starts on').fill('2026-09-01');
     await page.getByLabel('Ends on').fill('2026-10-13');
-    await page.getByRole('button', { name: 'Save block' }).click();
+    await page.getByRole('button', { name: 'Save plan' }).click();
 
     // Filed against the athlete the coach chose, attributed by the server.
     await expect.poll(() => written).toHaveLength(1);
@@ -1003,7 +1003,7 @@ test.describe('Coach journey', () => {
     // The panels load when a coach opens them; opening is what a coach does.
     await page.getByRole('button', { name: 'Sessions' }).first().click();
 
-    await expect(page.getByText('Sessions that worked this block')).toBeVisible();
+    await expect(page.getByText('Sessions that worked this plan')).toBeVisible();
     // The run's own words about itself, carried through rather than summarised.
     await expect(page.getByText('What worked: Guard held up in round three.')).toBeVisible();
     await expect(page.getByText('Cut the last round short.')).toBeVisible();

@@ -4302,7 +4302,7 @@ export default function CoachWorkspace() {
           {activeTab === 'development' && (
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
-                title="Coach Development"
+                title="Your Coaching Growth"
                 description="Your personal coaching growth path. Track certifications, skills, and professional development."
                 usage={[
                   'Review your current coaching level',
@@ -4422,7 +4422,7 @@ export default function CoachWorkspace() {
                     did, in their own words, and shows up in the list below
                     like any other. */}
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-eyebrow">Your Development Work</h3>
+                  <h3 className="t-eyebrow">Your Growth Work</h3>
 
                   {developmentState === 'loading' && (
                     <p className="t-muted">Loading your development record...</p>

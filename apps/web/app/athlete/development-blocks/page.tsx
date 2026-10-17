@@ -79,7 +79,7 @@ export default function AthleteDevelopmentBlocksPage() {
             blocks={blocks}
             state={state}
             subjectLabel="your plan"
-            emptyMessage="Your coach has not written a development block for you yet. That is normal — blocks are written when a coach is planning a stretch of weeks, not for every session."
+            emptyMessage="Your coach has not written a development plan for you yet. That is normal — plans are written when a coach is planning a stretch of weeks, not for every session."
           />
         </section>
       </div>
