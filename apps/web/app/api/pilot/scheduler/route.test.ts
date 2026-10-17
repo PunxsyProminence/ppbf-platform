@@ -2490,3 +2490,67 @@ describe('cancel_class', () => {
     });
   });
 });
+
+/* Lane L31 P6 (Overwatch Q4): an admin is not a coach. A class an admin
+   schedules names the coach who runs it, an active coach of the gym; a coach
+   schedules the classes they run themselves. */
+describe('create_class names the coach who runs it', () => {
+  const mockCreateClass = createSchedulerClass as jest.Mock;
+  const mockAssertActiveCoach = assertActiveCoachAccount as jest.Mock;
+  const CLASS = {
+    action: 'create_class',
+    title: 'Evening boxing',
+    start_at: '2026-07-15T18:00',
+    end_at: '2026-07-15T19:30',
+    location: 'Main Floor',
+    capacity: 20,
+  };
+
+  beforeEach(() => {
+    mockCreateClass.mockReset();
+    mockAssertActiveCoach.mockReset();
+    mockAssertActiveCoach.mockResolvedValue(undefined);
+  });
+
+  test.each(['organization_admin', 'admin'])('a %s names an active coach, who becomes the class coach', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, { accountId: 'acct-admin' }));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: ' acct-jane ' }));
+    expect(response.status).toBe(200);
+    expect(mockAssertActiveCoach).toHaveBeenCalledWith('org-1', 'acct-jane', 'coach_account_id');
+    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({
+      coach_account_id: 'acct-jane',
+      scheduled_by_account_id: 'acct-admin',
+    });
+  });
+
+  test('an admin who names no coach is told to, and nothing is created', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin' }));
+    const response = await POST(jsonRequest(CLASS));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'coach_account_id must name the coach who runs this class' });
+    expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+
+  test('an admin naming someone who is not an active coach of the gym is refused, and nothing is created', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin' }));
+    mockAssertActiveCoach.mockRejectedValueOnce(new Error('Missing coach_account_id: must be an active coach account in this organization'));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-staff' }));
+    expect(response.status).toBe(400);
+    expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+
+  test('a coach runs the class they schedule, as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest(CLASS));
+    expect(response.status).toBe(200);
+    expect(mockAssertActiveCoach).not.toHaveBeenCalled();
+    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({ coach_account_id: 'acct-coach-1' });
+  });
+
+  test('a coach cannot schedule a class for another coach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-2' }));
+    expect(response.status).toBe(403);
+    expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+});
