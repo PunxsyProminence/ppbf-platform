@@ -67,6 +67,8 @@ test('the parent guide names the live task feed and lists the Parent Hub section
   expect(parent).not.toMatch(/feed yet: [^.]*parent observations/);
   expect(parent).toMatch(/feed yet: resources/);
   expect(parent).toMatch(/Family goals are on the Family Goals tab/);
+  // PH-06 Q-2 A: a goal the gym sets is read-only to the family.
+  expect(parent).toMatch(/goals the gym sets show there too, and only the gym can change them/);
   expect(parent).not.toMatch(/feed yet: [^.]*family goals/);
   // FC-05: the coaches read observations (F-073).
   expect(parent).toMatch(/Observations tab, and the coaches can read them/);

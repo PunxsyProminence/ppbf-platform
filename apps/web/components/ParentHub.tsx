@@ -1559,9 +1559,10 @@ export default function ParentHub() {
           {/* FAMILY GOALS */}
           {activeTab === 'family-goals' && (
             <div className="space-y-6 panel-settle">
+              {/* PROPOSED copy: the gym-set goal clause (PH-06 Q-2 A). */}
               <HelpPanel
                 title="Family Goals"
-                description="Goals your family sets to support your child. Each says what the family will do; it shows Done with the date it was ticked, or In progress."
+                description="Goals your family sets to support your child. Each says what the family will do; it shows Done with the date it was ticked, or In progress. Goals the gym sets show here too; only the gym can change them."
                 usage={[
                   'Add a goal: what you are aiming for and what the family will do',
                   'Tick Done when it is done; untick it if it was ticked by mistake',

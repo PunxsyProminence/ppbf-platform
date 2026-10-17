@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import ParentHub from './ParentHub';
@@ -106,6 +106,12 @@ describe('family goals on the parent hub', () => {
 
     expect(screen.queryByText(/no backend feed for family goals/)).toBeNull();
     expect(screen.getByText('Goal for ath_1')).toBeInTheDocument();
+    // Progress is Done or In progress with the date: no bar, no percentage
+    // anywhere on the tab (the old placeholder drew both).
+    const panel = screen.getByRole('list', { name: 'Family goals' }).closest('.panel-settle') as HTMLElement | null;
+    expect(panel).not.toBeNull();
+    expect(panel!.textContent).not.toMatch(/%/);
+    expect(within(panel!).queryByRole('progressbar')).toBeNull();
     // A goal half-typed for one child is not left in the box for the sibling.
     fireEvent.change(screen.getByLabelText('Goal'), { target: { value: 'Half-typed for the first child' } });
 

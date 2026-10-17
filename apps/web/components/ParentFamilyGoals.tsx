@@ -39,18 +39,30 @@ interface Draft {
 }
 
 const EMPTY: Draft = { title: '', support: '', target: '' };
+// A goal needs both what it aims for and what the family will do.
+const incomplete = (draft: Draft) => !draft.title.trim() || !draft.support.trim();
 const URL_PATH = '/api/pilot/parent/family-goals';
 
+// PROPOSED copy: what a write that never reached the gym says.
+const NOT_SAVED = 'The goal was not saved.';
+
 async function send(method: 'POST' | 'PATCH', body: Record<string, unknown>) {
-  const response = await fetch(`${apiBase()}${URL_PATH}`, {
-    method,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase()}${URL_PATH}`, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // A dropped network rejects with the browser's own words ("Failed to
+    // fetch"); the family sees ours instead.
+    throw new Error(NOT_SAVED);
+  }
   const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; item?: FamilyGoalItem | null; error?: string };
   if (!response.ok || payload.ok !== true) {
-    throw new Error(payload.error || 'The goal was not saved.');
+    throw new Error(payload.error || NOT_SAVED);
   }
   return payload.item ?? null;
 }
@@ -121,7 +133,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
       });
       return true;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The goal was not saved.');
+      setNotice(error instanceof Error ? error.message : NOT_SAVED);
       return false;
     } finally {
       writing.current = false;
@@ -131,6 +143,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
+    if (incomplete(draft)) return;
     const saved = await run('add', () => send('POST', {
       athlete_id: athleteId, title: draft.title, support_action: draft.support, target_date: draft.target || null,
     }));
@@ -139,7 +152,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
 
   async function saveEdit(event: React.FormEvent) {
     event.preventDefault();
-    if (!editing) return;
+    if (!editing || incomplete(editing.draft)) return;
     const { goalId, draft: edit } = editing;
     const saved = await run(goalId, () => send('PATCH', {
       goal_id: goalId, action: 'edit', title: edit.title, support_action: edit.support, target_date: edit.target || null,
@@ -166,8 +179,11 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
                   <GoalFields draft={editing.draft} idPrefix={`edit-${goal.goal_id}`}
                     onChange={(next) => setEditing({ goalId: goal.goal_id, draft: next })} />
                   <div className="flex gap-[var(--s2)]">
-                    <button type="submit" className="btn" disabled={busy !== null}>Save</button>
-                    <button type="button" className="btn btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
+                    <button type="submit" className="btn"
+                      disabled={busy !== null || incomplete(editing.draft)}>
+                      Save
+                    </button>
+                    <button type="button" className="btn btn--ghost" disabled={busy !== null} onClick={() => setEditing(null)}>Cancel</button>
                   </div>
                 </form>
               ) : (
@@ -189,6 +205,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
                         <input
                           type="checkbox"
                           className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+                          aria-label={`Done: ${goal.title}`}
                           checked={goal.state === 'completed'}
                           disabled={busy !== null}
                           onChange={(event) => void run(goal.goal_id,
@@ -196,11 +213,14 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
                         />
                         <span className="t-body">Done</span>
                       </label>
-                      <button type="button" className="btn btn--ghost" disabled={busy !== null}
+                      {/* One edit at a time: another goal's Edit would drop the open draft. */}
+                      <button type="button" className="btn btn--ghost" disabled={busy !== null || editing !== null}
+                        aria-label={`Edit: ${goal.title}`}
                         onClick={() => setEditing({ goalId: goal.goal_id, draft: { title: goal.title, support: goal.support_action, target: goal.target_date ?? '' } })}>
                         Edit
                       </button>
                       <button type="button" className="btn btn--ghost" disabled={busy !== null}
+                        aria-label={`Retire: ${goal.title}`}
                         onClick={() => void run(goal.goal_id, () => send('PATCH', { goal_id: goal.goal_id, action: 'retire' }), goal.goal_id)}>
                         Retire
                       </button>
@@ -219,7 +239,7 @@ export default function ParentFamilyGoals({ athleteId }: Readonly<{ athleteId: s
         <form onSubmit={(event) => void add(event)} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]" aria-label="Add a family goal">
           <h4 className="t-label">Add a family goal</h4>
           <GoalFields draft={draft} onChange={setDraft} idPrefix="new-goal" />
-          <button type="submit" className="btn" disabled={busy !== null || !draft.title.trim() || !draft.support.trim()}>
+          <button type="submit" className="btn" disabled={busy !== null || incomplete(draft)}>
             Add goal
           </button>
         </form>
