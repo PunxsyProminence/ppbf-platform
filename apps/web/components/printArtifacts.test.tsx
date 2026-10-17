@@ -87,13 +87,14 @@ function stubFetch(options: {
   completedSessions?: number;
   athleteId?: string | null;
   milestonesFail?: boolean;
+  role?: string;
 }) {
   const mock = jest.fn(async (url: unknown) => {
     const href = String(url);
     if (href.includes('/api/pilot/auth/session')) {
       return {
         ok: true,
-        json: async () => ({ authenticated: true, athlete_id: options.athleteId ?? 'ath-1', role: 'athlete' }),
+        json: async () => ({ authenticated: true, athlete_id: options.athleteId ?? 'ath-1', role: options.role ?? 'athlete' }),
       } as Response;
     }
     if (href.includes('/api/pilot/profile/card')) {
@@ -320,6 +321,49 @@ describe('the print room', () => {
  * rather than after every one -- the last being the classic way a two-page
  * print becomes a three-page print with a blank at the end.
  */
+describe('whose paper: the child id never rides in the address (#1596 item 2b)', () => {
+  const cardUrls = (mock: jest.Mock) =>
+    mock.mock.calls.map((call) => String(call[0])).filter((href) => href.includes('/api/pilot/profile/card'));
+
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('a print opened in a new tab (empty tab storage) still prints the child chosen last', async () => {
+    window.history.replaceState({}, '', '/print');
+    window.localStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    const { mock } = await renderRoom({ role: 'parent', athleteId: null });
+
+    expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-kid')]);
+  });
+
+  it('a guardian prints the child they chose on the hub, with nothing in the address', async () => {
+    window.history.replaceState({}, '', '/print');
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    const { mock } = await renderRoom({ role: 'parent', athleteId: null });
+
+    expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-kid')]);
+  });
+
+  it('a child left in the tab is ignored for anyone signed in as other than a parent', async () => {
+    window.history.replaceState({}, '', '/print');
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    const { mock } = await renderRoom({ role: 'athlete', athleteId: 'ath-1' });
+
+    expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-1')]);
+  });
+
+  it('an explicit ?athlete_id= still wins (staff links)', async () => {
+    window.history.replaceState({}, '', '/print?athlete_id=ath-staff-pick');
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    const { mock } = await renderRoom({ role: 'parent' });
+
+    expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-staff-pick')]);
+  });
+});
+
 describe('the sheet fits the page', () => {
   const css = readFileSync(GLOBALS, 'utf8');
   const printBlock = css.slice(css.lastIndexOf('@media print'));

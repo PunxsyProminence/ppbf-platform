@@ -19,6 +19,7 @@ import SentToYourAthlete from './SentToYourAthlete';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import { rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
@@ -219,6 +220,12 @@ export default function ParentHub() {
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
+  // The child on screen is the one other pages mean (print; #1596 item 2b):
+  // kept in this tab whenever the selection changes, so a link opened in any
+  // way -- clicked, middle-clicked, from the building map -- prints this child.
+  useEffect(() => {
+    rememberChosenChild(activeChildId);
+  }, [activeChildId]);
 
   const [familyGoals] = useState<FamilyGoal[]>([]);
 
@@ -1317,13 +1324,16 @@ export default function ParentHub() {
 
               {/* The paper version. Scoped to the child currently selected, and
                   the print route re-checks the guardian link server-side before
-                  it renders anything -- a link is not an authorisation. */}
+                  it renders anything -- a link is not an authorisation. The
+                  child goes over in this tab's storage, not in the address
+                  (#1596 item 2b; src/lib/chosenChild.ts). */}
               {activeChildId && (
                 <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                   <p className="t-label">For the fridge</p>
                   <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                     <Link
-                      href={`/print?athlete_id=${encodeURIComponent(activeChildId)}`}
+                      href="/print"
+                      onClick={() => rememberChosenChild(activeChildId)}
                       className="btn btn--ghost"
                     >
                       Print their card and certificate
