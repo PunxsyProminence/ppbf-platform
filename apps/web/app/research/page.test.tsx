@@ -1131,6 +1131,82 @@ describe('closing on a submission reviewed Responsive (OD-2026-10-08-005 A-Q13)'
     expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
   });
 
+  test('a pick on one row is not carried to the next, and a string id from the list is sent back as it came', async () => {
+    // The list route hands ids back as pg returns a bigint: a string.
+    const second = { ...SECOND_REQUIREMENT, research_requirement_id: '4108' };
+    const { resolves } = lifecycleFetch({ requirements: [REQUIREMENT, second] });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Does footwork drill order matter?');
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Mark Resolved' })[0]);
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Resolved' }));
+    });
+    const resolve = screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement;
+    expect(resolve.disabled).toBe(true);
+    expect((screen.getByRole('radio', { name: 'None' }) as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    await act(async () => {
+      fireEvent.click(resolve);
+    });
+    expect(resolves).toEqual([expect.objectContaining({ research_requirement_id: '4108', closing_submission_id: 'sub-yes' })]);
+  });
+
+  test('a pick that is no longer Responsive on reload leaves the close', async () => {
+    let reads = 0;
+    const base = mockFetch({ curator: true, role: 'coach' });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/research-submissions?research_requirement_id=')) {
+        reads += 1;
+        const items = reads === 1 ? SUBMISSIONS : SUBMISSIONS.map((s) => ({ ...s, applicability_state: 'not_responsive' }));
+        return { ok: true, json: async () => ({ items }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(reads).toBe(2);
+    expect(screen.queryByRole('group', { name: 'Close with a submission reviewed Responsive' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('attaching a source re-reads a submitted-sources list already shown', async () => {
+    const { submissionReads } = lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(submissionReads).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
+    });
+    expect(submissionReads).toHaveLength(2);
+  });
+
   test('the Submission Review door is shown to a curator and not to a coach', async () => {
     lifecycleFetch({ role: 'organization_admin' });
     let view: ReturnType<typeof render> | undefined;

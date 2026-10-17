@@ -239,7 +239,15 @@ export default function ResearchIntakePage() {
       );
       if (!response.ok) throw new Error('unread');
       const payload = (await response.json()) as { items?: RequirementSubmission[] };
-      setSubmissionsFor((current) => ({ ...current, [requirementId]: payload.items ?? [] }));
+      const items = payload.items ?? [];
+      setSubmissionsFor((current) => ({ ...current, [requirementId]: items }));
+      // A pick that is no longer Responsive leaves the close, so Resolve is
+      // never enabled by a choice the panel no longer shows.
+      if (closingIdRef.current === requirementId) {
+        setClosingSubmissionId((picked) => (
+          items.some((item) => item.submission_id === picked && item.applicability_state === 'responsive') ? picked : ''
+        ));
+      }
     } catch {
       setSubmissionsFor((current) => ({ ...current, [requirementId]: 'unread' }));
     }
@@ -490,6 +498,8 @@ export default function ResearchIntakePage() {
       setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
       setAnswerMessage({ forId: requirementId, text: 'Source submitted. It answers nothing until evidence review says so.' });
       await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
+      // A list already shown would otherwise miss the source just attached.
+      if (submissionsFor[requirementId] !== undefined) await loadSubmissions(requirementId);
     } catch (error) {
       setAnswerMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to submit the source.' });
     } finally {

@@ -8,7 +8,8 @@
 // all. research_requirement_id is a bigint, which node-postgres hands back as a
 // string, so a batch keyed by the raw column and looked up by number found
 // nothing and every open requirement read "needs evidence" whatever had been
-// submitted or reviewed.
+// submitted or reviewed. The same string id made /shadow's "file as research"
+// report a failure after the row was written (the create case below).
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
@@ -75,6 +76,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let submissionsGet: (request: NextRequest) => Promise<Response>;
+let requirementsPost: (request: NextRequest) => Promise<Response>;
 
 // One requirement per rung, each with the submissions that put it there.
 type Rung = 'needs_evidence' | 'sources_submitted' | 'evidence_under_review' | 'partially_answered' | 'resolved';
@@ -204,6 +206,8 @@ beforeAll(async () => {
 
   const submissions = await import('@/app/api/pilot/shadow/research-submissions/route');
   submissionsGet = submissions.GET;
+  const requirementsRoute = await import('@/app/api/pilot/shadow/research-requirements/route');
+  requirementsPost = requirementsRoute.POST;
 });
 
 afterAll(async () => {
@@ -238,6 +242,39 @@ describe('the research answer-state ladder reads the stored submissions (#345)',
     expect(body.answer_states).toEqual(Object.fromEntries(
       CASES.map((testCase) => [String(idByKey.get(testCase.key)), testCase.expected]),
     ));
+  });
+
+  // The first stage of the lifecycle, as /shadow's "file as research" sends
+  // it: that page accepts the answer only when the id is a number
+  // (app/shadow/page.tsx, typeof check), so a string id read as a failed
+  // filing although the row was written.
+  test('filing a requirement answers with its id as a number', async () => {
+    mockRequirePrincipal.mockResolvedValue(admin());
+    const response = await requirementsPost(new NextRequest('http://localhost/api/pilot/shadow/research-requirements', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        source_event_name: 'shadow_unanswered_question',
+        source_entity_type: 'shadow_question',
+        source_entity_id: 'q-rl-1',
+        research_requirement: 'Is a 3-minute round too long at age 11?',
+        knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
+        source_status: 'weak',
+        source_confidence_tier: 'INSUFFICIENT',
+        source_verification_state: 'unverified',
+        metadata: { asked_in: 'shadow' },
+      }),
+    }));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { research_requirement_id: unknown };
+    expect(typeof body.research_requirement_id).toBe('number');
+    const stored = await db.query<{ id: string }>(
+      `select research_requirement_id::text as id from pilot.shadow_research_requirements
+        where organization_id = $1 and source_entity_id = 'q-rl-1'`,
+      [ORG],
+    );
+    expect(body.research_requirement_id).toBe(Number(stored.rows[0].id));
   });
 
   test.each(CASES.map((testCase) => [testCase.key, testCase.expected] as const))(
