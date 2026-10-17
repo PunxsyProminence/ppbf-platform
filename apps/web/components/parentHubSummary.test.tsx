@@ -389,6 +389,9 @@ describe('the paper version (#1596 item 2b)', () => {
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
     await selectChild('First Child');
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_1');
+  });
+});
+
 // The roster maps a missing name to 'Unknown' for the selector. The digest
 // must not read "Marked by a coach or by Unknown"; it says "your child".
 describe('the digest when a child’s name did not load', () => {
