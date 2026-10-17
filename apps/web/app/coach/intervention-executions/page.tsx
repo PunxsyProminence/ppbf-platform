@@ -370,7 +370,7 @@ export default function InterventionExecutionsPage() {
                 </select>
               </div>
               <div className="field">
-                <label className="t-label" htmlFor="exec-protocol">Protocol (its intended exposure becomes the frozen plan)</label>
+                <label className="t-label" htmlFor="exec-protocol">Protocol</label>
                 <select id="exec-protocol" className="select" value={protocolId}
                   onChange={(e) => setProtocolId(e.target.value)}>
                   <option value="">Select a protocol…</option>
@@ -414,7 +414,7 @@ export default function InterventionExecutionsPage() {
                         {row.protocol_title ?? row.protocol_id} (v{row.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {row.athlete_name ?? 'Athlete (name not loaded)'} · {formatGymDateShort(row.created_at) ?? row.created_at}
+                        {row.athlete_name ?? row.athlete_id} · {formatGymDateShort(row.created_at) ?? row.created_at}
                         {row.version > 1 ? ` · corrected (v${row.version})` : ''}
                       </span>
                       {row.session_run_id && (

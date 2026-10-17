@@ -76,7 +76,8 @@ describe('readiness is never colour alone (UXB-29, Law 3)', () => {
 describe('builder words are gone from coach screens (UXB-31)', () => {
   test.each([
     ['components/SessionScriptLiveDelivery.tsx', /frozen plan|Pinned at version/],
-    ['components/CoachWorkspace.tsx', /Elapsed \(server clock\)|SHADOW read models|\} RED, \{/],
+    ['components/CoachWorkspace.tsx', /Elapsed \(server clock\)|SHADOW read models|\} RED, \{|Unable to load SHADOW \$\{failed\}/],
+    ['app/coach/intervention-executions/page.tsx', /frozen plan/],
     ['app/coach/video-analysis/page.tsx', /\$\{p\.model_deployment\}/],
     ['app/teach-shadow/page.tsx', /Reading the corpus/],
   ])('%s', (file, builder) => {

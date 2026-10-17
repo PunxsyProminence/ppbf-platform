@@ -2044,7 +2044,9 @@ export default function CoachWorkspace() {
 
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
-          setShadowReadError(`Unable to load SHADOW ${failed}.`);
+          // The parts in words, not the projection names (UXB-31).
+          const failedWords = failed.replace('review projection', 'review queue').replace('observation projection', 'notes');
+          setShadowReadError(`SHADOW's ${failedWords} could not be loaded.`);
         } else {
           setShadowReadError('');
         }
@@ -3271,7 +3273,7 @@ export default function CoachWorkspace() {
                   {readinessTrackingAvailable ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} to adjust the plan, {yellowReadinessCount} to check in with first{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} not tracked — not tracked is not clear` : ''}</p>
+                      <p className="t-muted">{redReadinessCount} to adjust the plan, {yellowReadinessCount} to check in with{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} not tracked (not tracked is not clear)` : ''}</p>
                       {/* The score's own caveat, shown WITH the count rather
                           than in a help panel a coach may never open. The rule
                           that already governs assessment results -- a value is
@@ -3658,7 +3660,7 @@ export default function CoachWorkspace() {
                           {/* The safety column, kept as its own block on the far
                               side of the row. Identity on the left, state on the
                               right, and nothing personal painted onto either. */}
-                          <span className="flex flex-none items-center gap-2">
+                          <span className="flex flex-none flex-wrap items-center justify-end gap-2">
                             <span
                               aria-hidden="true"
                               className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}

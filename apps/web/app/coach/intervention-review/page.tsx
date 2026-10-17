@@ -327,7 +327,7 @@ export default function InterventionReviewPage() {
                         {execution.protocol_title ?? execution.protocol_id} (v{execution.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {execution.athlete_name ?? 'Athlete (name not loaded)'} · {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
+                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
                       </span>
                     </div>
 
