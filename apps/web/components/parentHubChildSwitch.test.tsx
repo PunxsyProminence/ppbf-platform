@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import ParentHub from './ParentHub';
@@ -596,15 +596,19 @@ describe('Report a Barrier (#95/#96)', () => {
     installFetch(undefined, undefined, async () => answer);
     await openParentFloor();
 
-    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Something.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
-    expect((await screen.findByRole('status')).textContent).toBe("Sent to your child's coach.");
+    // Scoped to the barrier card: a status or alert elsewhere on the hub must
+    // neither break nor satisfy this.
+    const card = within(screen.getByText('Report a Barrier').closest('div') as HTMLElement);
+
+    fireEvent.change(card.getByLabelText("What's going on"), { target: { value: 'Something.' } });
+    fireEvent.click(card.getByRole('button', { name: 'Send to Coach' }));
+    expect((await card.findByRole('status')).textContent).toBe("Sent to your child's coach.");
 
     answer = jsonResponse({ error: 'Forbidden' }, false);
-    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Again.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
-    expect((await screen.findByRole('alert')).textContent).toBe('Forbidden');
-    expect(screen.queryByRole('status')).toBeNull();
+    fireEvent.change(card.getByLabelText("What's going on"), { target: { value: 'Again.' } });
+    fireEvent.click(card.getByRole('button', { name: 'Send to Coach' }));
+    expect((await card.findByRole('alert')).textContent).toBe('Forbidden');
+    expect(card.queryByRole('status')).toBeNull();
   });
 });
 

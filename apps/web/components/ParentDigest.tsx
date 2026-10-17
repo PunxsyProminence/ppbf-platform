@@ -172,6 +172,14 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
 
   const possessive = childName ? `${childName}’s` : 'Your child’s';
 
+  // UXB-13: one "Check again" for a whole failed read and for either half
+  // failing on its own; it re-runs the same two reads.
+  const checkAgain = (
+    <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setReadNonce((value) => value + 1)}>
+      Check again
+    </button>
+  );
+
   /* This heading read "since you last looked", and nothing anywhere backs
      that claim. Neither fetch above sends a since/after cursor -- both ask
      for the latest N every time -- and a search of apps/web and infra for
@@ -221,9 +229,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
             <p className="alert-msg">
               The corner could not be read just now. Nothing is wrong with the record — try again in a moment.
             </p>
-            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setReadNonce((value) => value + 1)}>
-              Check again
-            </button>
+            {checkAgain}
           </div>
         </div>
       )}
@@ -236,9 +242,12 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
           <div>
             <h4 className="t-label">What the coach said</h4>
             {recognitionFailed ? (
-              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
-                The coach’s words could not be loaded just now.
-              </p>
+              <>
+                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
+                  The coach’s words could not be loaded just now.
+                </p>
+                {checkAgain}
+              </>
             ) : recognitions.length === 0 ? (
               <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
                 Nothing written up yet. When a coach taps out a recognition, their words land here, signed.
@@ -269,9 +278,12 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
               Marked by a coach or by {childName ?? 'your child'}
             </p>
             {milestoneFailed ? (
-              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
-                Milestones could not be loaded just now.
-              </p>
+              <>
+                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
+                  Milestones could not be loaded just now.
+                </p>
+                {checkAgain}
+              </>
             ) : milestones.length === 0 ? (
               <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
                 No milestones sealed yet. They arrive with the work, at the pace the work happens.

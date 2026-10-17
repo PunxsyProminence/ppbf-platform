@@ -1227,7 +1227,13 @@ export default function ParentHub() {
                   the guardian who never sees the room, and the first thing
                   they should meet is the coach's own words, not a button
                   grid. */}
-              <ParentDigest athleteId={activeChildId || null} childName={activeChild?.name ?? null} />
+              {/* The roster maps a missing name to 'Unknown' for the selector;
+                  the digest gets null instead, so its lines read "your child"
+                  rather than "Marked by a coach or by Unknown". */}
+              <ParentDigest
+                athleteId={activeChildId || null}
+                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
+              />
 
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Quick Actions</h3>

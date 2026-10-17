@@ -219,6 +219,69 @@ describe('the parent digest', () => {
     expect(screen.queryByText(/No milestones sealed yet/)).toBeNull();
   });
 
+  // UXB-13: a half that failed on its own has the same Check again, and it
+  // re-runs the same two reads.
+  it('offers Check again when only the milestones read fails, and that re-reads', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (url.includes('/achievements/milestones') && !answering) return jsonResponse({}, false);
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText('Milestones could not be loaded just now.')).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/No milestones sealed yet/)).toBeTruthy();
+    expect(screen.queryByText(/Milestones could not be loaded/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  it('offers Check again when only the coach’s words fail, and that re-reads', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) {
+        return answering ? jsonResponse({ ok: true, items: [] }) : jsonResponse({}, false);
+      }
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText(/coach’s words could not be loaded/)).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/Nothing written up yet/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  it('says "your child" in the milestone label when no name is given', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName={null} />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by your child')).toBeTruthy();
+  });
+
   // F-063: a recognition with a kind and no typed note printed only its
   // signature ("COACH COACH, OCT 11") with no words above it. The line now says
   // the kind's family sentence, and the day is the gym's day: saved 02:52 UTC on
