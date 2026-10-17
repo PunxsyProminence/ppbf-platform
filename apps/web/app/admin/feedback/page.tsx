@@ -171,7 +171,7 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
             }}
             className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save Triage'}
+            {isSaving ? 'Saving…' : 'Save Triage'}
           </button>
         </div>
       ) : null}

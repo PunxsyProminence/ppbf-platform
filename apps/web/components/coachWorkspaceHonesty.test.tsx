@@ -1549,7 +1549,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     // One RED, zero YELLOW; ath_3 has no fresh reading and is counted as
     // unknown rather than silently folded into "no alerts".
-    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.getByText(/1 to adjust the plan, 0 to check in with first, 1 not tracked — not tracked is not clear/)).toBeTruthy();
     expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   });
 
@@ -1581,7 +1581,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
       }),
     });
 
-    expect(screen.getByText(/0 RED, 0 YELLOW, 3 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.getByText(/0 to adjust the plan, 0 to check in with first, 3 not tracked — not tracked is not clear/)).toBeTruthy();
     // Not deleted, not hidden: still on screen, as something written down.
     expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
     expect(screen.getByText(/written down, not measured/i)).toBeTruthy();
@@ -1684,7 +1684,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     // The tile is live (one GREEN reading, two athletes without one), so the
     // caveat's absence is a real decision rather than the tile being empty.
-    expect(screen.getByText(/0 RED, 0 YELLOW, 2 unknown/)).toBeTruthy();
+    expect(screen.getByText(/0 to adjust the plan, 0 to check in with first, 2 not tracked/)).toBeTruthy();
     expect(screen.queryByText(/entered by staff during intake review/i)).toBeNull();
   });
 

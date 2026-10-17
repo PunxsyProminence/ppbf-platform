@@ -190,7 +190,7 @@ export default function FilmStudyCapturePage() {
               <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
                 Which athlete is this of
                 <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
-                  <option value="">Choose an athlete…</option>
+                  <option value="">Choose an athlete</option>
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                   ))}

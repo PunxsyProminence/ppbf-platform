@@ -343,7 +343,7 @@ function GearCatalogueConsole() {
             onClick={() => { void save(); }}
             className="mt-4 min-h-[44px] w-full border-2 border-[var(--black)] bg-[color:var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save item'}
+            {isSaving ? 'Saving…' : 'Save item'}
           </button>
 
           {saveError ? (
