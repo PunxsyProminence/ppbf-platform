@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 /*
  * TEACH SHADOW: the home.
@@ -426,6 +427,7 @@ export default function TeachShadowHomePage() {
             <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
               Teaching Shadow to see boxing
             </h1>
+            <ClusterNav cluster="film" />
             <p className="t-body mt-[var(--s3)] max-w-3xl">
               Shadow learns what a punch looks like the same way a boxer learns to throw one: you find the thing it
               has seen least of, film more of it, label what happened, and check what the corpus now holds. Nothing

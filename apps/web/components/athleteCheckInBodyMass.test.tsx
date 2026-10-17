@@ -38,7 +38,7 @@ async function renderPanel() {
 
 async function submit() {
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /check in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save how i feel/i }));
   });
 }
 
@@ -83,7 +83,7 @@ function savedRecord() {
 test.each([
   [true, false, 'Body mass saved: 152.4 lb.'],
   [false, false, 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.'],
-  [false, true, 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'],
+  [false, true, 'How you feel today is saved, but your body mass could not be saved. Tell a coach your weight.'],
 ])('after saving (stored: %s, failed: %s) the athlete is told what happened to the weight', async (saved, failed, sentence) => {
   installFetch(saved, failed);
   const { rerender } = render(
@@ -182,7 +182,7 @@ test('two presses of Check in in the same tick send one check-in (#1529)', async
   global.fetch = fetchMock as unknown as typeof fetch;
   await renderPanel();
 
-  const button = screen.getByRole('button', { name: /check in/i });
+  const button = screen.getByRole('button', { name: /save how i feel/i });
   await act(async () => {
     fireEvent.click(button);
     fireEvent.click(button);
@@ -203,7 +203,7 @@ test('the check-in day reads as a date, in the confirmation and in the recent li
     <AthleteCheckInPanel today={record as never} recent={[record, earlier] as never} loading={false} loadError={null} onSaved={() => undefined} />,
   );
 
-  expect(screen.getByText(/You checked in on Oct 12, 2026\./)).toBeTruthy();
+  expect(screen.getByText(/You said how you feel on Oct 12, 2026\./)).toBeTruthy();
   expect(screen.getAllByText('Oct 11, 2026').length).toBeGreaterThan(0);
   expect(screen.queryByText(/2026-10-1/)).toBeNull();
 });

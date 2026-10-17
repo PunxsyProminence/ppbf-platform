@@ -6,6 +6,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ContactCapPanel from '@/components/ContactCapPanel';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
+import ClusterNav from '@/components/ClusterNav';
 
 // Sparring caps (map item 15): the limits a coach sets for each athlete's
 // sparring -- the highest contact stage, and the most hard or open sparring
@@ -66,6 +67,7 @@ export default function SparringCapsPage() {
           <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
             Sparring Caps
           </h1>
+          <ClusterNav cluster="sparring" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             The limits you set for each athlete&apos;s sparring: the highest contact stage, and the most hard or open
             sparring sessions in any 7 days. The app never picks a limit, and a cap never blocks sparring — the coach

@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { SaveNote, withoutKey, type SaveState } from './AthleteAchievements';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
 
 /**
@@ -50,12 +51,14 @@ export interface PersonalGoalBoardProps {
   athleteId: string | null;
   /** Family surfaces read but never write. */
   readOnly?: boolean;
+  /** Told after a goal is added or marked reached, so a count elsewhere (Active Goals) reads again. */
+  onChanged?: () => void;
 }
 
 const TITLE_MAX = 160;
 const WHY_MAX = 240;
 
-export default function PersonalGoalBoard({ athleteId, readOnly = false }: PersonalGoalBoardProps) {
+export default function PersonalGoalBoard({ athleteId, readOnly = false, onChanged }: PersonalGoalBoardProps) {
   const [goals, setGoals] = useState<PersonalGoalItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -139,7 +142,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        setMessage(payload.error || 'That did not save. Try it again.');
+        setMessage(payload.error || 'That did not save. Try again.');
         return;
       }
       setOwnWords('');
@@ -147,16 +150,23 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       setTargetDate('');
       setMessage('On the board.');
       await load();
+      onChanged?.();
     } catch {
-      setMessage('That did not save. Try it again.');
+      setMessage('That did not save. Try again.');
     } finally {
       setSaving(false);
     }
-  }, [athleteId, ownWords, why, targetDate, saving, load]);
+  }, [athleteId, ownWords, why, targetDate, saving, load, onChanged]);
+
+  // One mark per press (UXB-19), as AthleteAchievements does (#1529): a second
+  // tap before the first is answered must not send a second write.
+  const reachingRef = useRef<Set<string>>(new Set());
 
   const markReached = useCallback(async (goalId: string) => {
     if (!athleteId || readOnly) return;
     const key = `${athleteId}:${goalId}`;
+    if (reachingRef.current.has(key)) return;
+    reachingRef.current.add(key);
     setReachSave((now) => ({ ...now, [key]: 'saving' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/goals/personal`, {
@@ -168,6 +178,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       if (response.ok) {
         await load();
         setReachSave((now) => withoutKey(now, key));
+        onChanged?.();
       } else {
         setReachSave((now) => ({ ...now, [key]: 'failed' }));
       }
@@ -175,8 +186,10 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       // The goal stays open, which is the truth until the server says otherwise,
       // and its card says the press was not kept.
       setReachSave((now) => ({ ...now, [key]: 'failed' }));
+    } finally {
+      reachingRef.current.delete(key);
     }
-  }, [athleteId, readOnly, load]);
+  }, [athleteId, readOnly, load, onChanged]);
 
   if (!athleteId) {
     return null;
@@ -257,9 +270,14 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       )}
 
       {failed && (
-        <p className="tcard-sub mt-[var(--s4)]">
-          These did not load. That is a connection problem — nothing you wrote has gone anywhere.
-        </p>
+        <div className="mt-[var(--s4)] space-y-[var(--s3)]">
+          <p className="tcard-sub" role="alert">
+            These did not load. That is a connection problem — nothing you wrote has gone anywhere.
+          </p>
+          <button type="button" onClick={() => void load()} className="btn btn--kiosk">
+            Try again
+          </button>
+        </div>
       )}
 
       {loaded && !failed && goals.length === 0 && (
@@ -295,7 +313,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
                   <button
                     type="button"
                     onClick={() => void markReached(goal.goal_id)}
-                    className="btn btn--kiosk mt-[var(--s3)]"
+                    disabled={reachSave[`${athleteId}:${goal.goal_id}`] === 'saving'}
+                    className="btn btn--kiosk mt-[var(--s3)] disabled:opacity-60"
                   >
                     I did it
                   </button>
@@ -341,6 +360,6 @@ function formatDay(raw: string): string {
   const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return raw;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(match[2]) - 1] ?? match[2]} ${Number(match[3])} ${match[1]}`;
+  // One date form across the app (UXB-30): "Oct 16, 2026".
+  return formatCalendarDay(ymd);
 }
