@@ -331,7 +331,7 @@ function CoachCohorts() {
                       disabled={saving || levelKey === ''}
                       className="btn disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {saving ? 'Saving...' : 'Save level'}
+                      {saving ? 'Saving…' : 'Save level'}
                     </button>
                   </div>
                   {saveError && (

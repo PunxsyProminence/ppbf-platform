@@ -8,6 +8,7 @@ import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
@@ -726,7 +727,7 @@ export default function SchedulerPage() {
               {/* Role is identity, not a safety claim, so it wears patina brass
                   rather than any rung of the status ladder (Laws 1 and 2). */}
               <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
-                Role: {role || 'loading'}
+                Role: {role ? roleWords(role) : 'loading'}
               </span>
               {roleCanOverrideAttendance(role) ? (
                 <Link href="/admin/attendance" className="btn btn--ghost btn--tap">

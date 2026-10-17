@@ -1301,7 +1301,7 @@ export default function CoachDevelopmentBlocksPage() {
               </div>
 
               <button type="submit" disabled={submitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
-                {submitting ? 'Saving...' : 'Save block'}
+                {submitting ? 'Saving…' : 'Save block'}
               </button>
             </form>
 
@@ -1931,7 +1931,7 @@ export default function CoachDevelopmentBlocksPage() {
                             disabled={editBusy}
                             className="btn disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {editBusy ? 'Saving...' : 'Save changes'}
+                            {editBusy ? 'Saving…' : 'Save changes'}
                           </button>
                           <button type="button" onClick={() => setEditingId(null)} className="btn btn--ghost">
                             Cancel
@@ -2081,7 +2081,7 @@ export default function CoachDevelopmentBlocksPage() {
                                 disabled={objectiveBusy}
                                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {objectiveBusy ? 'Saving...' : 'Add objective'}
+                                {objectiveBusy ? 'Saving…' : 'Add objective'}
                               </button>
                             </form>
                           )}

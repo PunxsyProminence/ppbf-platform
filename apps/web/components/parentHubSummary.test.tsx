@@ -95,6 +95,7 @@ type MilestoneHandler = (athleteId: string, init?: RequestInit) => Promise<Respo
 function installFetch(options: {
   scheduler?: () => Promise<Response>;
   milestones?: MilestoneHandler;
+  roster?: Array<{ athlete_id: string; full_name?: string }>;
 } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
@@ -102,7 +103,7 @@ function installFetch(options: {
     if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({
-        items: [
+        items: options.roster ?? [
           { athlete_id: 'ath_1', full_name: 'First Child' },
           { athlete_id: 'ath_2', full_name: 'Second Child' },
         ],
@@ -388,5 +389,20 @@ describe('the paper version (#1596 item 2b)', () => {
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
     await selectChild('First Child');
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_1');
+  });
+});
+
+// The roster maps a missing name to 'Unknown' for the selector. The digest
+// must not read "Marked by a coach or by Unknown"; it says "your child".
+describe('the digest when a child’s name did not load', () => {
+  test('the digest says "your child", never "Unknown"', async () => {
+    installFetch({ roster: [{ athlete_id: 'ath_1' }] });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by your child')).toBeInTheDocument();
+    expect(screen.queryByText(/Marked by a coach or by Unknown/)).toBeNull();
+    expect(screen.getByText('Your child’s corner, as it stands')).toBeInTheDocument();
   });
 });
