@@ -1341,7 +1341,7 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
     await waitFor(() => expect(screen.queryByText(/Forbidden: coach not assigned to athlete/i)).not.toBeNull());
     // The item's own local status must not be optimistically flipped on a
     // refused request -- it is still exactly what the server last said.
-    expect(screen.queryByText('Status: pending_review')).not.toBeNull();
+    expect(screen.queryByText('Status: waiting for review')).not.toBeNull();
     expect(reviewActionCalls(fetchMock)).toHaveLength(1);
   });
 

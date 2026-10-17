@@ -1,0 +1,90 @@
+/**
+ * What a person reads when the server says no (UXB-09).
+ *
+ * Coaches on the floor were reading "The server refused: ROUND_TIMER_PAUSED",
+ * "HTTP 409" and "Record failed (500)": a stored code or a status number is
+ * not something a coach between rounds can act on. Every refusal on a floor
+ * screen goes through here, so a code becomes words and a number never shows.
+ *
+ * - A known code gets its sentence.
+ * - A sentence the server wrote for people is kept: many routes answer
+ *   "That athlete is not on your roster", and those words are the point.
+ * - Anything that reads as a code (no spaces, or a trailing "(SOME_CODE)"),
+ *   and any reply with no usable words, falls back to plain words.
+ *
+ * All wording here is PROPOSED (lane U3, UXB-L4).
+ */
+
+/** The fallback when nothing better is known. PROPOSED. */
+export const NOTHING_CHANGED = 'That did not go through. Nothing was changed. Try again.';
+
+const SIGN_IN_EXPIRED = 'Your sign-in has expired. Sign in again, then try again.';
+const NOT_ALLOWED = 'Your account cannot do this here.';
+
+/** Session and round-timer codes a coach meets on the live screen. PROPOSED. */
+export const SESSION_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  SESSION_RUN_NOT_LIVE: 'This session has already ended, so nothing was changed.',
+  SESSION_RUN_NOT_FOUND: 'This session could not be found for your account, so nothing was changed.',
+  SESSION_RUN_ALREADY_LIVE: 'You already have a session running. Finish it before starting another.',
+  SESSION_RUN_ATHLETE_NOT_PERMITTED: 'Your account cannot record that athlete here. Nothing was changed.',
+  SESSION_RUN_BLOCK_NOT_IN_SCRIPT: 'That block is not part of this session\'s plan, so the session stayed where it was.',
+  SESSION_RUN_HAS_NO_SCRIPT: 'This session has no plan, so there are no blocks to move between.',
+  SESSION_RUN_STATE_INVALID: 'The session changed on another screen. Nothing was changed here; check it and try again.',
+  SESSION_RUN_SHOW_ON_WALL_NOT_READY: 'Showing this session on the wall is not ready yet. Nothing was changed.',
+  SESSION_RUN_NOT_ON_TV: 'Switch "Show on TV" on for your session first, then send it.',
+  ROUND_TIMER_RUNNING: 'The rounds are already running.',
+  ROUND_TIMER_PAUSED: 'The rounds are paused. Press Resume to carry on.',
+  ROUND_TIMER_ENDED: 'Those rounds have ended. Set up the rounds again to start a new set.',
+  ROUND_TIMER_NOT_SET: 'Set up the rounds first, then start them.',
+};
+
+/** True when the text reads as a stored code rather than words for a person. */
+export function looksLikeCode(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed === '') return true;
+  // SOME_CODE, some_code, someCode, HTTP 409, 409: nothing a person can act on.
+  if (!/\s/.test(trimmed)) return true;
+  if (/^HTTP\s*\d{3}$/i.test(trimmed)) return true;
+  return false;
+}
+
+/** Server text that is never words for a person: a code prefix ("SOME_CODE: ..."),
+ *  a raw server error, or a database/parse message. */
+const BUILDER_TEXT = /^[A-Z][A-Z0-9_]{2,}:|^internal server error|\bpilot\.|\bsql\b|\bECONN|unexpected token|\bJSON\b/i;
+
+/** Drops a trailing "(SOME_CODE)" or "(409)" a server sentence carries for its logs. */
+function withoutTrailingCode(text: string): string {
+  return text.replace(/\s*\((?:[A-Z][A-Z0-9_]{2,}|\d{3})\)\s*\.?\s*$/, '').trim();
+}
+
+export interface RefusalInput {
+  /** The reply's `error` (or `code`) field, whatever its type. */
+  readonly error?: unknown;
+  /** The HTTP status, used only to pick words, never shown. */
+  readonly status?: number;
+}
+
+/**
+ * Words for a refused request. `known` maps this screen's codes to sentences;
+ * `fallback` replaces the shared NOTHING_CHANGED where a screen has a better
+ * sentence of its own.
+ */
+export function refusalWords(
+  input: RefusalInput,
+  known: Readonly<Record<string, string>> = SESSION_REFUSAL_WORDS,
+  fallback: string = NOTHING_CHANGED,
+): string {
+  const raw = typeof input.error === 'string' ? input.error.trim() : '';
+  if (raw !== '' && Object.prototype.hasOwnProperty.call(known, raw)) return known[raw];
+  if (raw !== '' && Object.prototype.hasOwnProperty.call(SESSION_REFUSAL_WORDS, raw)) return SESSION_REFUSAL_WORDS[raw];
+  // The shared access layer answers "Unauthorized..." and "Forbidden: coach not
+  // assigned to athlete": builder words, whatever the status says.
+  if (input.status === 401 || /^unauthori[sz]ed\b/i.test(raw)) return SIGN_IN_EXPIRED;
+  if (/^forbidden\b/i.test(raw)) return NOT_ALLOWED;
+  if (raw !== '' && !looksLikeCode(raw) && !BUILDER_TEXT.test(raw)) {
+    const sentence = withoutTrailingCode(raw);
+    if (sentence !== '' && !looksLikeCode(sentence)) return sentence;
+  }
+  if (input.status === 403) return NOT_ALLOWED;
+  return fallback;
+}

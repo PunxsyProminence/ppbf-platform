@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
@@ -122,7 +123,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Review failed (${response.status})`);
+        throw new Error(refusalWords({ error: err.error, status: response.status }, {}, 'The review was not saved. Try again.'));
       }
       setMode('idle');
       setReason('');
@@ -435,7 +436,7 @@ export default function AttemptLogPage() {
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Record failed (${response.status})`);
+        throw new Error(refusalWords({ error: err.error, status: response.status }, {}, 'The attempt was not recorded. Try again.'));
       }
       setForm((f) => ({ ...f, target_value: '', achieved_value: '', note: '' }));
       await reloadAttempts(athleteId);
