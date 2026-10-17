@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { NOT_SURE, refusalWords } from '@/src/lib/serverRefusalWords';
 import BackHome from '@/components/BackHome';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
@@ -61,6 +62,61 @@ const PROGRAM_BADGE: Record<string, { className: string; glyph: string }> = {
   archived: { className: 'badge badge--filed', glyph: '▣' },
 };
 
+type EnrollForm = { athlete_id: string; program_name: string; started_on: string; scholarship_percent: number };
+const EMPTY_FORM: EnrollForm = { athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 };
+
+// The enrollment route's own refusals, in words an office admin can act on
+// (route.ts POST). The duplicate-active sentence is already words and passes
+// through. PROPOSED (lane L41).
+const ENROLL_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  'Missing athlete_id.': 'Choose an athlete.',
+  'Missing program_name.': 'Choose a program.',
+  'started_on must be YYYY-MM-DD.': 'Choose a start date.',
+  'Not found': "That athlete is not on this gym's roster.",
+};
+// PROPOSED (lane L41).
+const ROW_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  'Not found': 'That membership could not be found.',
+};
+
+/** A save counts as confirmed only when the reply carries the row that was asked for. */
+function isSavedRow(item: unknown, sent: EnrollForm): item is MembershipRow {
+  if (!item || typeof item !== 'object') return false;
+  const row = item as Partial<MembershipRow>;
+  return typeof row.membership_id === 'string' && row.membership_id !== ''
+    && row.athlete_id === sent.athlete_id
+    && row.program_name === sent.program_name.trim()
+    && row.status === 'active';
+}
+
+/** Words for a write the server answered with an error: a 4xx changed nothing; anything else may have. */
+async function writeFailureWords(response: Response, known: Readonly<Record<string, string>>): Promise<string> {
+  const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
+  if (response.status >= 400 && response.status < 500) {
+    return `Not saved. ${refusalWords({ error: payload.error, status: response.status }, known, 'Try again.')}`;
+  }
+  return NOT_SURE;
+}
+
+// The athlete list feeds every athlete picker on this page. A failed read is
+// not an empty roster, so each picker says which one it is.
+function RosterNotice({ state, empty, onCheckAgain }: {
+  state: 'loading' | 'loaded' | 'failed';
+  empty: boolean;
+  onCheckAgain: () => void;
+}) {
+  if (state === 'loading') return <p className="working mt-[var(--s2)]">Loading the athlete list…</p>;
+  if (state === 'failed') {
+    return (
+      <div className="mt-[var(--s2)] flex items-center gap-[var(--s2)]" role="status">
+        <p className="t-body">Couldn&apos;t load the athlete list.</p>
+        <button type="button" className="btn--lever" onClick={onCheckAgain}>Check again</button>
+      </div>
+    );
+  }
+  return empty ? <p className="t-body mt-[var(--s2)]">No athletes on this gym&apos;s roster yet.</p> : null;
+}
+
 export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -71,14 +127,22 @@ export default function MembershipsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 });
+  const [form, setForm] = useState<EnrollForm>(EMPTY_FORM);
+  const [roster, setRoster] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [rosterAttempt, setRosterAttempt] = useState(0);
+  // What a write is known to have done when that is not plain failure: saved
+  // but the list did not refresh, or not known yet. `recheck` is what Check
+  // again does: re-read the list, or re-read it to settle an unconfirmed save.
+  const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; text: string; recheck: 'list' | 'save' | null } | null>(null);
+  const [pendingSave, setPendingSave] = useState<EnrollForm | null>(null);
+  const [checking, setChecking] = useState(false);
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [programsLoad, setProgramsLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [showNewProgram, setShowNewProgram] = useState(false);
   const [newProgramName, setNewProgramName] = useState('');
   const [catalogProgramName, setCatalogProgramName] = useState('');
 
-  const reload = useCallback(async (signal?: AbortSignal) => {
+  const reload = useCallback(async (signal?: AbortSignal): Promise<MembershipRow[]> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
         method: 'GET',
@@ -87,8 +151,10 @@ export default function MembershipsPage() {
       });
       if (!response.ok) throw new Error('Unable to load memberships.');
       const payload = (await response.json()) as { items?: MembershipRow[] };
-      setItems(payload.items ?? []);
+      const rows = payload.items ?? [];
+      setItems(rows);
       setListRead(true);
+      return rows;
     } catch (error) {
       // A failed re-read after a write leaves the list stale: rows on screen
       // stay, but an empty list is no longer a record of none.
@@ -102,13 +168,11 @@ export default function MembershipsPage() {
     void (async () => {
       try {
         await reload(controller.signal);
-        setErrorMessage(null);
-        setLoading(false);
-      } catch (error) {
-        // An aborted load is the page unmounting, not a failure to report.
-        if (controller.signal.aborted) return;
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load memberships.');
-        setLoading(false);
+      } catch {
+        // The list block says it could not load; an aborted load is the page
+        // unmounting, not a failure to report.
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
     return () => controller.abort();
@@ -122,16 +186,23 @@ export default function MembershipsPage() {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('Unable to load athletes.');
         const payload = (await response.json()) as { items?: AthleteOption[] };
         if (controller.signal.aborted) return;
         setAthletes(payload.items ?? []);
+        setRoster('loaded');
       } catch {
-        // Silent: the picker degrades to empty; the list still renders.
+        if (controller.signal.aborted) return;
+        setRoster('failed');
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [rosterAttempt]);
+
+  const checkRosterAgain = () => {
+    setRoster('loading');
+    setRosterAttempt((attempt) => attempt + 1);
+  };
 
   const reloadPrograms = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
@@ -235,49 +306,129 @@ export default function MembershipsPage() {
     }
   };
 
+  /** Re-reads the list; true when it came back. A "didn't refresh" notice clears once it does. */
+  const recheckList = async (): Promise<boolean> => {
+    try {
+      await reload();
+      setNotice((current) => (current?.recheck === 'list' ? null : current));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const patch = async (membershipId: string, body: Record<string, unknown>) => {
     setBusyId(membershipId);
+    setErrorMessage(null);
+    setNotice(null);
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ membership_id: membershipId, ...body }),
-      });
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Update failed (${response.status})`);
+      let response: Response | null = null;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ membership_id: membershipId, ...body }),
+        });
+      } catch {
+        // No answer: the change may or may not have landed.
       }
-      await reload();
-      setErrorMessage(null);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to update the membership.');
+      if (response && response.status >= 400 && response.status < 500) {
+        setErrorMessage(await writeFailureWords(response, ROW_REFUSAL_WORDS));
+        return;
+      }
+      if (response?.ok) {
+        // The change is saved; a failed refresh is only a stale list.
+        if (!(await recheckList())) setNotice({ tone: 'warning', text: "Saved. The list didn't refresh.", recheck: 'list' });
+        return;
+      }
+      // A 5xx or no answer: re-read so the rows on screen are what the server holds.
+      setErrorMessage(NOT_SURE);
+      if (!(await recheckList())) setNotice({ tone: 'warning', text: "The list didn't refresh.", recheck: 'list' });
     } finally {
       setBusyId(null);
     }
   };
 
-  const handleCreate = async () => {
-    setBusyId('new');
+  /** Settles a save whose answer was lost by saying what the list now shows. */
+  const settleSave = async (sent: EnrollForm) => {
+    const program = sent.program_name.trim();
+    const pickedName = athletes.find((athlete) => athlete.athlete_id === sent.athlete_id)?.full_name ?? 'this athlete';
+    let rows: MembershipRow[];
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Create failed (${response.status})`);
+      rows = await reload();
+    } catch {
+      // The form keeps what was typed until the list can be read.
+      setPendingSave(sent);
+      setNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before saving again.', recheck: 'save' });
+      return;
+    }
+    setPendingSave(null);
+    const shown = rows.find((row) => row.athlete_id === sent.athlete_id && row.program_name === program && row.status === 'active');
+    if (!shown) {
+      setNotice(null);
+      setErrorMessage(`Not saved: the list does not show ${pickedName} active in ${program}. Save again when ready.`);
+      return;
+    }
+    setErrorMessage(null);
+    setNotice({ tone: 'success', text: `The list now shows ${shown.athlete_name} active in ${shown.program_name}. No need to save again.`, recheck: null });
+    // A form retyped for another enrollment while this one was unsettled stays.
+    if (JSON.stringify(form) !== JSON.stringify(sent)) return;
+    setShowForm(false);
+    setForm(EMPTY_FORM);
+  };
+
+  const handleCreate = async () => {
+    const sent = form;
+    setBusyId('new');
+    setErrorMessage(null);
+    setNotice(null);
+    setPendingSave(null);
+    try {
+      let response: Response | null = null;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sent),
+        });
+      } catch {
+        // No answer at all: settled below by reading the list.
       }
-      setShowForm(false);
-      setForm({ athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 });
-      await reload();
-      setErrorMessage(null);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to create the membership.');
+      if (response && response.status >= 400 && response.status < 500) {
+        // Refused before writing: nothing saved, and the form keeps what was typed.
+        setErrorMessage(await writeFailureWords(response, ENROLL_REFUSAL_WORDS));
+        return;
+      }
+      const payload = response?.ok ? ((await response.json().catch(() => null)) as { item?: unknown } | null) : null;
+      if (payload && isSavedRow(payload.item, sent)) {
+        // Confirmed: from here nothing may report the save as failed or lose
+        // the row. The reply is the list's own row shape, so it stands in
+        // until a refresh lands.
+        const saved = payload.item;
+        setItems((current) => [...current.filter((row) => row.membership_id !== saved.membership_id), saved]);
+        setShowForm(false);
+        setForm(EMPTY_FORM);
+        if (!(await recheckList())) {
+          setNotice({ tone: 'warning', text: `Saved: ${saved.athlete_name} in ${saved.program_name}. The list didn't refresh.`, recheck: 'list' });
+        }
+        return;
+      }
+      // A 5xx, no answer, or a reply that does not show the row: not known yet.
+      await settleSave(sent);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const checkAgain = async () => {
+    setChecking(true);
+    try {
+      if (notice?.recheck === 'save' && pendingSave) await settleSave(pendingSave);
+      else await recheckList();
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -305,6 +456,22 @@ export default function MembershipsPage() {
             </div>
           )}
 
+          {notice && (
+            <div className={`alert alert--${notice.tone}`} role="status">
+              <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : '▲'}</span>
+              <div className="alert-body">
+                <p className="alert-msg">{notice.text}</p>
+                {notice.recheck && (
+                  <div className="alert-action">
+                    <button type="button" className="btn btn--ghost" disabled={checking} onClick={() => void checkAgain()}>
+                      Check again
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="mb-[var(--s4)]">
             <button type="button" className="btn" onClick={() => setShowForm((current) => !current)}>
               {showForm ? 'Close form' : 'Enroll athlete'}
@@ -327,6 +494,7 @@ export default function MembershipsPage() {
                       <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                     ))}
                   </select>
+                  <RosterNotice state={roster} empty={athletes.length === 0} onCheckAgain={checkRosterAgain} />
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="program-name">Program</label>
@@ -384,8 +552,10 @@ export default function MembershipsPage() {
           ) : !listRead && items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
-                <div className="empty-title">Memberships could not be read</div>
-                <p className="empty-msg mx-auto">This is not a record of none. Reload the page to try again.</p>
+                <div className="empty-title">Couldn&apos;t load memberships.</div>
+                <button type="button" className="btn btn--ghost mt-[var(--s3)]" disabled={checking} onClick={() => void checkAgain()}>
+                  Check again
+                </button>
               </div>
             </div>
           ) : items.length === 0 ? (

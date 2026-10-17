@@ -7,7 +7,7 @@
 // PATCHes the one-act contract, and a duplicate active enrollment surfaces
 // the server's message. The page states the no-billing boundary.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import MembershipsPage from './page';
 
@@ -65,11 +65,13 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ items }) } as Response;
     }
     if (url.includes('/admin/memberships') && init?.method === 'POST') {
-      options.capture?.posts.push(JSON.parse(String(init.body)));
+      const sent = JSON.parse(String(init.body)) as { athlete_id: string; program_name: string; started_on: string; scholarship_percent: number };
+      options.capture?.posts.push(sent);
       if (options.postStatus) {
         return { ok: false, status: options.postStatus, json: async () => ({ error: options.postError }) } as Response;
       }
-      return { ok: true, json: async () => ({ item: {} }) } as Response;
+      // The route answers with the saved row (route.ts POST).
+      return { ok: true, json: async () => ({ item: { ...MEMBERSHIP, ...sent, membership_id: 'mem-new', athlete_name: 'Casey Stone' } }) } as Response;
     }
     if (url.includes('/admin/memberships') && init?.method === 'PATCH') {
       options.capture?.patches.push(JSON.parse(String(init.body)));
@@ -273,7 +275,7 @@ test('a failed memberships read says so, never "No memberships on record"', asyn
     render(<MembershipsPage />);
   });
 
-  expect(await screen.findByText('Memberships could not be read')).toBeTruthy();
+  expect(await screen.findByText("Couldn't load memberships.")).toBeTruthy();
   expect(screen.queryByText('No memberships on record')).toBeNull();
 });
 
@@ -290,4 +292,193 @@ test('a failed programs read says so, never "No programs on record. Create the f
 
   expect(await screen.findByText('Programs could not be read')).toBeTruthy();
   expect(screen.queryByText('No programs on record')).toBeNull();
+});
+
+// Lane L41 (pilot audit 2026-10-17, item 3): the athlete list says loading,
+// failed or empty; a save says Saved, Not saved or what the list shows -- and
+// the form keeps what was typed until one of those is known. Each case fails
+// on main.
+describe('truthful roster and save states', () => {
+  type Reply = { status: number; body?: unknown } | 'network';
+  const CASEY_ROW = { ...MEMBERSHIP, membership_id: 'mem-2', athlete_id: 'ath-2', athlete_name: 'Casey Stone', scholarship_percent: 0 };
+  const PROGRAMS = { items: [{ program_id: 'prog-1', program_name: 'Youth Boxing', status: 'active', active_member_count: 1 }] };
+
+  /** Each queue answers in order; its last reply repeats. */
+  function scriptedFetch(script: { roster?: Reply[]; list?: Reply[]; post?: Reply; patch?: Reply }) {
+    const roster = script.roster ?? [{ status: 200, body: { items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] } }];
+    const list = script.list ?? [{ status: 200, body: { items: [MEMBERSHIP] } }];
+    const next = (queue: Reply[]) => (queue.length > 1 ? queue.shift()! : queue[0]);
+    const answer = (reply: Reply): Response => {
+      if (reply === 'network') throw new TypeError('Failed to fetch');
+      return { ok: reply.status >= 200 && reply.status < 300, status: reply.status, json: async () => reply.body ?? {} } as Response;
+    };
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return answer(next(roster));
+      if (url.includes('/admin/programs')) return answer({ status: 200, body: PROGRAMS });
+      if (url.includes('/admin/memberships') && init?.method === 'POST') return answer(script.post ?? { status: 200, body: { item: CASEY_ROW } });
+      if (url.includes('/admin/memberships') && init?.method === 'PATCH') return answer(script.patch ?? { status: 200, body: { item: MEMBERSHIP } });
+      if (url.includes('/admin/memberships')) return answer(next(list));
+      return answer({ status: 200, body: { items: [] } });
+    }) as unknown as typeof fetch;
+  }
+
+  async function renderPage() {
+    await act(async () => {
+      render(<MembershipsPage />);
+    });
+  }
+
+  async function fillAndSave() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+      fireEvent.change(screen.getByLabelText('Program'), { target: { value: 'Youth Boxing' } });
+      fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-09-01' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save membership' }));
+    });
+  }
+
+  const athleteField = () => screen.getByLabelText('Athlete').closest('.field') as HTMLElement;
+
+  test('a failed athlete list says so under the picker, and Check again fills it', async () => {
+    global.fetch = scriptedFetch({ roster: [{ status: 500 }, { status: 200, body: { items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] } }] });
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+    });
+
+    expect(within(athleteField()).getByText("Couldn't load the athlete list.")).toBeTruthy();
+    expect(screen.queryByText("No athletes on this gym's roster yet.")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(athleteField()).getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(within(athleteField()).queryByText("Couldn't load the athlete list.")).toBeNull();
+    expect(within(athleteField()).getByRole('option', { name: 'Casey Stone' })).toBeTruthy();
+  });
+
+  test('an empty athlete list says the roster is empty, not that it failed', async () => {
+    global.fetch = scriptedFetch({ roster: [{ status: 200, body: { items: [] } }] });
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enroll athlete' }));
+    });
+
+    expect(within(athleteField()).getByText("No athletes on this gym's roster yet.")).toBeTruthy();
+    expect(screen.queryByText("Couldn't load the athlete list.")).toBeNull();
+  });
+
+  test('a confirmed save whose list refresh fails says Saved, keeps the row, and Check again refreshes', async () => {
+    global.fetch = scriptedFetch({
+      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }, { status: 200, body: { items: [MEMBERSHIP, CASEY_ROW] } }],
+    });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText("Saved: Casey Stone in Youth Boxing. The list didn't refresh.")).toBeTruthy();
+    expect(screen.queryByText('Failed')).toBeNull();
+    expect(screen.getByRole('cell', { name: 'Casey Stone' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save membership' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(screen.queryByText(/The list didn't refresh/)).toBeNull();
+    expect(screen.getByRole('cell', { name: 'Casey Stone' })).toBeTruthy();
+  });
+
+  test('a 200 whose reply does not carry the row is not taken as saved: the list decides, and the form stays', async () => {
+    global.fetch = scriptedFetch({ post: { status: 200, body: { item: {} } } });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText('Not saved: the list does not show Casey Stone active in Youth Boxing. Save again when ready.')).toBeTruthy();
+    expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-2');
+    expect((screen.getByLabelText('Start date') as HTMLInputElement).value).toBe('2026-09-01');
+  });
+
+  test('a 500 on save re-reads the list and says what it shows', async () => {
+    global.fetch = scriptedFetch({
+      post: { status: 500 },
+      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 200, body: { items: [MEMBERSHIP, CASEY_ROW] } }],
+    });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText('The list now shows Casey Stone active in Youth Boxing. No need to save again.')).toBeTruthy();
+    expect(screen.queryByText('Failed')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save membership' })).toBeNull();
+  });
+
+  test('a lost reply with the row absent from the list says Not saved and keeps the form', async () => {
+    global.fetch = scriptedFetch({ post: 'network' });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText('Not saved: the list does not show Casey Stone active in Youth Boxing. Save again when ready.')).toBeTruthy();
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull();
+    expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-2');
+  });
+
+  test('a lost reply with an unreadable list says not sure, keeps the form, and Check again settles it', async () => {
+    global.fetch = scriptedFetch({
+      post: { status: 502 },
+      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }, { status: 200, body: { items: [MEMBERSHIP, CASEY_ROW] } }],
+    });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText('Not sure it was saved, and the list could not be read. Check before saving again.')).toBeTruthy();
+    expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-2');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(screen.getByText('The list now shows Casey Stone active in Youth Boxing. No need to save again.')).toBeTruthy();
+    expect(screen.queryByText(/Not sure it was saved/)).toBeNull();
+  });
+
+  test('a refused save says Not saved in words and keeps the form', async () => {
+    global.fetch = scriptedFetch({ post: { status: 400, body: { error: 'Missing athlete_id.' } } });
+    await renderPage();
+    await fillAndSave();
+
+    expect(screen.getByText('Not saved. Choose an athlete.')).toBeTruthy();
+    expect(screen.queryByText(/athlete_id/)).toBeNull();
+    expect((screen.getByLabelText('Start date') as HTMLInputElement).value).toBe('2026-09-01');
+  });
+
+  test('a saved row change whose refresh fails says Saved, not Failed', async () => {
+    global.fetch = scriptedFetch({ list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }] });
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark lapsed' }));
+    });
+
+    expect(screen.getByText("Saved. The list didn't refresh.")).toBeTruthy();
+    expect(screen.queryByText('Failed')).toBeNull();
+    expect(screen.queryByText('Unable to load memberships.')).toBeNull();
+  });
+
+  test('a failed memberships read offers Check again, which loads the list', async () => {
+    global.fetch = scriptedFetch({ list: [{ status: 500 }, { status: 200, body: { items: [MEMBERSHIP] } }] });
+    await renderPage();
+
+    expect(screen.getByText("Couldn't load memberships.")).toBeTruthy();
+    expect(screen.queryByText(/Reload the page/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(screen.getByRole('cell', { name: 'Jordan Little' })).toBeTruthy();
+  });
 });
