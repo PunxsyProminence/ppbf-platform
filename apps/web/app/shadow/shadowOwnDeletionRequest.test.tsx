@@ -187,7 +187,7 @@ describe('filing one', () => {
       fireEvent.click(screen.getByRole('button', { name: ASK }));
     });
 
-    expect(screen.getByText(/To remove one chat now, use Delete beside it above/)).not.toBeNull();
+    expect(screen.getByText(/To remove one chat now, use Delete beside it in the list below/)).not.toBeNull();
   });
 
   it('says what is NOT affected', async () => {
