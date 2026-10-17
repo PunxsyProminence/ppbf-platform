@@ -103,7 +103,6 @@ export const ROLE_DESTINATION: Record<string, string> = {
    future run with a database can point these specs at them directly. */
 export const SERVER_GUARDED_ROUTES = [
   '/athlete/dashboard',
-  '/guardian/dashboard',
   '/director/dashboard',
 ] as const;
 

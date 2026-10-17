@@ -14,6 +14,7 @@ import {
   type DatedIssuedWorkout,
   type IssuedWorkoutStepView,
 } from '@/src/lib/issuedWorkouts';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 // A rabbit hole renders as a paper note carrying the gym's own vocabulary
 // lesson for a term on the card. Parent surfaces sit on the warm canvas
@@ -247,7 +248,11 @@ export default function ParentProgressionVisibilityPage() {
         const items = payload.items ?? [];
         if (controller.signal.aborted) return;
         setChildren(items);
-        setActiveChildId(items.length > 0 ? items[0].athlete_id : null);
+        // The child chosen in the hub, when it is one of this guardian's own
+        // (src/lib/chosenChild.ts); otherwise the first. The server still
+        // checks the link on every read.
+        const chosen = readChosenChild();
+        setActiveChildId(items.find((item) => item.athlete_id === chosen)?.athlete_id ?? items[0]?.athlete_id ?? null);
         setErrorMessage(null);
       } catch (error) {
         // Cancelled on unmount: nothing to say and nothing to write. A real
@@ -413,7 +418,11 @@ export default function ParentProgressionVisibilityPage() {
                   type="button"
                   className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
                   aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => setActiveChildId(child.athlete_id)}
+                  onClick={() => {
+                    setActiveChildId(child.athlete_id);
+                    // A switch here is the child the next family page opens on.
+                    rememberChosenChild(child.athlete_id);
+                  }}
                 >
                   {child.full_name || 'Unknown'}
                 </button>
