@@ -334,6 +334,33 @@ describe('New until this guardian opens it (FC-08)', () => {
     expect(newTileValue()).toBe('2');
   });
 
+  test('an open recorded before the reads answer keeps its New when the answer already includes it', async () => {
+    let answerReads: (response: Response) => void = () => undefined;
+    installFetch({ readsGet: () => new Promise<Response>((resolve) => { answerReads = resolve; }) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+
+    // UNOPENED is opened this visit, and its POST commits before the reads
+    // query takes its snapshot, so the answer names it as already opened.
+    await act(async () => {
+      showMessage(UNOPENED.note_id, 1);
+    });
+    await act(async () => {
+      answerReads(jsonResponse({
+        ok: true,
+        items: [
+          { note_id: OPENED.note_id, first_read_at: '2026-10-12T12:00:00.000Z' },
+          { note_id: UNOPENED.note_id, first_read_at: '2026-10-17T12:00:00.000Z' },
+        ],
+      }));
+    });
+
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('0');
+  });
+
   test('an open recorded before the reads answer stays opened when the answer lands without it', async () => {
     let answerReads: (response: Response) => void = () => undefined;
     installFetch({ readsGet: () => new Promise<Response>((resolve) => { answerReads = resolve; }) });

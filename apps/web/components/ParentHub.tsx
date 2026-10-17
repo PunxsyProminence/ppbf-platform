@@ -300,6 +300,10 @@ export default function ParentHub() {
   // screen is opened at once (FC-05), and a badge that went with it would be
   // gone before anyone read it. The tile counts live (ownReadIds).
   const [openedAtLoad, setOpenedAtLoad] = useState<Set<string>>(() => new Set());
+  // Opens this visit recorded: kept out of the at-load snapshot, so an open
+  // that commits before the reads answer is taken does not cost the message
+  // its visit-long "New".
+  const openedThisVisitRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     void (async () => {
       try {
@@ -314,7 +318,7 @@ export default function ParentHub() {
           .filter((noteId): noteId is string => typeof noteId === 'string');
         // Merged, not replaced: an open recorded before this answered stays.
         setOwnReadIds((held) => new Set([...held, ...fetched]));
-        setOpenedAtLoad(new Set(fetched));
+        setOpenedAtLoad(new Set(fetched.filter((noteId) => !openedThisVisitRef.current.has(noteId))));
         setOwnReadsLoaded(true);
       } catch {
         // ownReadsLoaded stays false: no "New", and the tile is Unavailable.
@@ -360,6 +364,7 @@ export default function ParentHub() {
               return;
             }
             // Opened: its "New" comes off now, not on the next reload (FC-08).
+            openedThisVisitRef.current.add(noteId);
             setOwnReadIds((held) => new Set(held).add(noteId));
           })
           .catch(() => {
