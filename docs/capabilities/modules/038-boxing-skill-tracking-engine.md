@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DRAFT" until 2026-10-16. Coach rates 12 boxing skill families 1-5 (skillFamilies.ts) via coach/assessments/route.ts POST kind=skill_ratings -> recordSkillRatings; page coach/assessments/page.tsx; athlete reads technical progression at athlete/skill-progression/route.ts. Module has no slice text, so this reads its name; j... |
+| Status note | Was "DRAFT" until 2026-10-16. Coach rates 12 boxing skill families 1-5 (skillFamilies.ts) via coach/assessments/route.ts POST kind=skill_ratings -> recordSkillRatings; page coach/assessments/page.tsx; athlete reads technical progression at athlete/skill-progression/route.ts. Module has no slice text, so this reads its name; judgment call. |
 | Code | `apps/web/app/api/pilot/coach/assessments/route.ts`, `apps/web/app/coach/assessments/page.tsx`, `apps/web/src/server/pilot/assessmentResults.ts`, `apps/web/src/server/pilot/skillFamilies.ts`, `apps/web/app/api/pilot/athlete/skill-progression/route.ts` |
 | Tests | `apps/web/app/api/pilot/coach/assessments/route.test.ts`, `apps/web/app/coach/assessments/page.test.tsx`, `apps/web/src/server/pilot/assessmentResults.pg.test.ts` |
 | Active | false |

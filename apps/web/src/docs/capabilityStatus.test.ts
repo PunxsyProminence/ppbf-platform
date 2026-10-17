@@ -91,6 +91,9 @@ describe('capability status check', () => {
     ['a test file in the Code row', moduleText('**MAPPED**', tick(ROUTE_TEST), 'none'), /cites a test file/],
     ['a non-test file in the Tests row', moduleText('**MAPPED**', tick(SERVER), tick(ROUTE)), /not a test file/],
     ['a Code row without a Tests row', moduleText('**MAPPED**', tick(SERVER), 'none').replace(/^\| Tests .*$/m, ''), /not the other/],
+    ['two Status rows (a contradictory DONE and DRAFT)', moduleText('**DONE**', tick(ROUTE), tick(ROUTE_TEST)).replace('| Code |', '| Status | **DRAFT** |\n| Code |'), /more than one Status row/],
+    ['two Code rows', moduleText('**MAPPED**', tick(SERVER), 'none').replace('| Tests |', `| Code | ${tick(ROUTE)} |\n| Tests |`), /more than one Code row/],
+    ['two Tests rows', moduleText('**DONE**', tick(ROUTE), tick(ROUTE_TEST)) + `| Tests | none |\n`, /more than one Tests row/],
   ])('%s fails, naming the module', (_label, text, message) => {
     const result = withPlanted('999-planted.md', text);
     expect(result.status).toBe(1);

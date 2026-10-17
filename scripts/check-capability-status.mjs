@@ -53,9 +53,20 @@ const ENTRY_POINT = /(^|\/)(route\.ts|page\.tsx)$/;
 // Floor only guards against reading nothing (201 module files on 2026-10-16).
 const MIN_MODULES = 200;
 
+function rowPattern(name, flags) {
+  return new RegExp(`^\\|\\s*${name}\\s*\\|\\s*(.*?)\\s*\\|\\s*$`, flags);
+}
+
 function row(text, name) {
-  const match = new RegExp(`^\\|\\s*${name}\\s*\\|\\s*(.*?)\\s*\\|\\s*$`, 'm').exec(text);
+  const match = rowPattern(name, 'm').exec(text);
   return match ? match[1] : null;
+}
+
+// A merge or a hand edit can leave two Status rows; reading only the first
+// would pass a module that shows two contradictory statuses.
+const SINGLE_ROWS = ['Status', 'Status note', 'Code', 'Tests'];
+function rowCount(text, name) {
+  return [...text.matchAll(rowPattern(name, 'gm'))].length;
 }
 
 function paths(cell) {
@@ -82,6 +93,12 @@ for (const file of files) {
   const codeCell = row(text, 'Code');
   const testsCell = row(text, 'Tests');
   const fail = (message) => errors.push(`${file}: ${message}`);
+
+  const repeated = SINGLE_ROWS.filter((name) => rowCount(text, name) > 1);
+  if (repeated.length > 0) {
+    fail(`has more than one ${repeated.join(', ')} row; each may appear once`);
+    continue;
+  }
 
   if (codeCell === null && testsCell === null) {
     legacy.push(file);
