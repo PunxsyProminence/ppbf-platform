@@ -13,6 +13,7 @@ import {
   clearOrganizationProfileCache,
   DEVELOPMENT_PROFILE,
   getOperatingOrganizationProfile,
+  getOperatingOrganizationProfileOrNull,
   getOrganizationProfile,
   OPERATING_ORGANIZATION_ID,
   OrganizationProfileUnavailableError,
@@ -105,6 +106,48 @@ test('a read that hangs gives up instead of holding the page', async () => {
   await expect(getOrganizationProfile('punxsy_prominence', { production: false, timeoutMs: 20 })).resolves.toBe(DEVELOPMENT_PROFILE);
 });
 
+test('a failed or empty read is held for 20 seconds: no page waits on a query the last one just failed', async () => {
+  let clock = 0;
+  const now = () => clock;
+  mockQueryOne.mockResolvedValue(null);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, now })).rejects.toBeInstanceOf(OrganizationProfileUnavailableError);
+  mockQueryOne.mockResolvedValue(PPBF_ROW);
+  clock += 19_999;
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, now })).rejects.toBeInstanceOf(OrganizationProfileUnavailableError);
+  expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  clock += 2;
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, now })).resolves.toEqual(PPBF_PROFILE);
+  expect(mockQueryOne).toHaveBeenCalledTimes(2);
+});
+
+test('a read that outlasts its caller stays shared until the query settles, and is not started twice', async () => {
+  let release: (row: typeof PPBF_ROW) => void = () => undefined;
+  mockQueryOne.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+  let clock = 0;
+  const now = () => clock;
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, timeoutMs: 10, now })).rejects.toBeInstanceOf(OrganizationProfileUnavailableError);
+  // Past the hold, while the first query is still running: no second query starts.
+  clock += 30_000;
+  const second = getOrganizationProfile('punxsy_prominence', { production: true, timeoutMs: 1_000, now });
+  release(PPBF_ROW);
+  await expect(second).resolves.toEqual(PPBF_PROFILE);
+  expect(mockQueryOne).toHaveBeenCalledTimes(1);
+});
+
+test('the OrNull read answers null for an unreadable profile, and still throws anything else', async () => {
+  mockQueryOne.mockResolvedValue(null);
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: 'production' });
+  try {
+    await expect(getOperatingOrganizationProfileOrNull()).resolves.toBeNull();
+    clearOrganizationProfileCache();
+    mockQueryOne.mockResolvedValue(PPBF_ROW);
+    await expect(getOperatingOrganizationProfileOrNull()).resolves.toEqual(PPBF_PROFILE);
+  } finally {
+    Object.assign(process.env, { NODE_ENV: previous });
+  }
+});
+
 test('concurrent callers on a cold cache share one read', async () => {
   let release: (row: typeof PPBF_ROW) => void = () => undefined;
   mockQueryOne.mockReturnValue(new Promise((resolve) => { release = resolve; }));
@@ -126,18 +169,22 @@ test('production with no row, or no database, refuses with a named error', async
 });
 
 test('outside production, no row or no database gives the development profile, which is not PPBF', async () => {
+  let clock = 0;
+  const now = () => clock;
   mockQueryOne.mockResolvedValue(null);
-  await expect(getOrganizationProfile('ppbf-offline-demo', { production: false })).resolves.toBe(DEVELOPMENT_PROFILE);
+  await expect(getOrganizationProfile('ppbf-offline-demo', { production: false, now })).resolves.toBe(DEVELOPMENT_PROFILE);
   mockQueryOne.mockRejectedValue(new Error('MISSING_ENV:AZURE_POSTGRES_CONNECTION_STRING'));
-  await expect(getOrganizationProfile('punxsy_prominence', { production: false })).resolves.toBe(DEVELOPMENT_PROFILE);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, now })).resolves.toBe(DEVELOPMENT_PROFILE);
 
   const text = JSON.stringify(DEVELOPMENT_PROFILE);
   for (const trace of [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /Jefferson/i, /99-2073622/, /Big Run/i, /Neale/i]) {
     expect(text).not.toMatch(trace);
   }
-  // The development profile is never cached as if it were the gym's row.
+  // The development profile is never cached as if it were the gym's row: once the hold is over,
+  // the stored row is read and served.
+  clock += 20_001;
   mockQueryOne.mockResolvedValue(PPBF_ROW);
-  await expect(getOrganizationProfile('punxsy_prominence', { production: false })).resolves.toEqual(PPBF_PROFILE);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, now })).resolves.toEqual(PPBF_PROFILE);
 });
 
 test('the development profile still satisfies the stored rules a page depends on', () => {

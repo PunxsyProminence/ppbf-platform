@@ -49,5 +49,7 @@ export interface OrganizationProfile {
 
 /** "<street>, <city>, <region> <postal code>" */
 export function physicalAddressLine(profile: OrganizationProfile): string {
-  return `${profile.physical.street}, ${profile.physical.city}, ${profile.physical.region} ${profile.physical.postalCode}`;
+  // Only the parts the profile gives: a street with no city prints as the street, not "9 Kiln Road, ,  ".
+  const regionLine = [profile.physical.region, profile.physical.postalCode].filter(Boolean).join(' ');
+  return [profile.physical.street, profile.physical.city, regionLine].filter(Boolean).join(', ');
 }

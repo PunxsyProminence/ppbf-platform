@@ -68,6 +68,13 @@ export function useGymPrintIdentity(): { name: string; address: string } | null 
   return { name: gym.brand, address: gym.physical.street ? physicalAddressLine(gym) : '' };
 }
 
+/** "<name>, Registered Office: <address>", or the name alone, or nothing without a profile. */
+export function GymRegisteredOfficeLine({ className }: { readonly className?: string }) {
+  const gym = useGymPrintIdentity();
+  if (!gym) return null;
+  return <footer className={className}>{gym.address ? `${gym.name}, Registered Office: ${gym.address}` : gym.name}</footer>;
+}
+
 export default function PrintSheet({ eyebrow, title, footNote, children, className = '' }: PrintSheetProps) {
   const gym = useGymPrintIdentity();
   return (

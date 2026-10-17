@@ -6,7 +6,6 @@ import React, { useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
-// The gym's identity, from its one profile (#1469, N9-01B).
 
 /**
  * THE WALL OF NAMES.

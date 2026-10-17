@@ -8,10 +8,9 @@
 
 import { issueMagicLink, type MagicLinkAccount, type MagicLinkDependencies } from '@/src/server/pilot/magicLink';
 import { composeShadowSystemPrompt, shadowIdentityLine, SHADOW_SYSTEM_PROMPT } from '@/src/server/pilot/shadowChat';
-import { SECOND_GYM_PROFILE } from '@/src/testing/organizationProfileFixtures';
+import { PPBF_TRACES, SECOND_GYM_PROFILE } from '@/src/testing/organizationProfileFixtures';
 import type { OrganizationProfile } from './organizationProfile';
 
-const PPBF_TRACES = [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /Neale/i];
 
 function expectNoPpbfTrace(text: string) {
   for (const trace of PPBF_TRACES) expect(text).not.toMatch(trace);
