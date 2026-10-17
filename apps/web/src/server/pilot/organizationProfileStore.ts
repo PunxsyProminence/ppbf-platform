@@ -190,10 +190,16 @@ async function readRow(organizationId: string): Promise<OrganizationProfile | nu
 
 export async function getOrganizationProfile(
   organizationId: string,
-  options: { now?: () => number; production?: boolean; timeoutMs?: number } = {},
+  options: { now?: () => number; production?: boolean; timeoutMs?: number; databaseConfigured?: boolean } = {},
 ): Promise<OrganizationProfile> {
   const now = options.now ?? Date.now;
   const production = options.production ?? process.env.NODE_ENV === 'production';
+  // Outside production with no database configured at all (the e2e dev server, a fresh
+  // checkout), go straight to the development profile. Asking the database layer would log
+  // a missing-environment error on every render, which the dev server replays in the
+  // browser as an error.
+  const databaseConfigured = options.databaseConfigured ?? Boolean(process.env.AZURE_POSTGRES_CONNECTION_STRING?.trim());
+  if (!production && !databaseConfigured) return DEVELOPMENT_PROFILE;
   const timeoutMs = options.timeoutMs ?? READ_TIMEOUT_MS;
   const cached = cache.get(organizationId);
   if (cached) {

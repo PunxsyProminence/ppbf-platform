@@ -50,7 +50,14 @@ beforeEach(() => {
 
 test('the operating gym is punxsy_prominence, named once (OD-2026-09-28-007)', async () => {
   mockQueryOne.mockResolvedValue(PPBF_ROW);
-  await getOperatingOrganizationProfile();
+  const previous = process.env.AZURE_POSTGRES_CONNECTION_STRING;
+  process.env.AZURE_POSTGRES_CONNECTION_STRING = 'postgres://configured-for-this-test';
+  try {
+    await getOperatingOrganizationProfile();
+  } finally {
+    if (previous === undefined) delete process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    else process.env.AZURE_POSTGRES_CONNECTION_STRING = previous;
+  }
   expect(OPERATING_ORGANIZATION_ID).toBe('punxsy_prominence');
   expect(mockQueryOne).toHaveBeenCalledWith(expect.stringContaining('from pilot.organization_profiles p'), ['punxsy_prominence']);
 });
@@ -103,7 +110,7 @@ test('a read that hangs gives up instead of holding the page', async () => {
     OrganizationProfileUnavailableError,
   );
   clearOrganizationProfileCache();
-  await expect(getOrganizationProfile('punxsy_prominence', { production: false, timeoutMs: 20 })).resolves.toBe(DEVELOPMENT_PROFILE);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, databaseConfigured: true, timeoutMs: 20 })).resolves.toBe(DEVELOPMENT_PROFILE);
 });
 
 test('a failed or empty read is held for 20 seconds: no page waits on a query the last one just failed', async () => {
@@ -172,9 +179,9 @@ test('outside production, no row or no database gives the development profile, w
   let clock = 0;
   const now = () => clock;
   mockQueryOne.mockResolvedValue(null);
-  await expect(getOrganizationProfile('ppbf-offline-demo', { production: false, now })).resolves.toBe(DEVELOPMENT_PROFILE);
+  await expect(getOrganizationProfile('ppbf-offline-demo', { production: false, databaseConfigured: true, now })).resolves.toBe(DEVELOPMENT_PROFILE);
   mockQueryOne.mockRejectedValue(new Error('MISSING_ENV:AZURE_POSTGRES_CONNECTION_STRING'));
-  await expect(getOrganizationProfile('punxsy_prominence', { production: false, now })).resolves.toBe(DEVELOPMENT_PROFILE);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, databaseConfigured: true, now })).resolves.toBe(DEVELOPMENT_PROFILE);
 
   const text = JSON.stringify(DEVELOPMENT_PROFILE);
   for (const trace of [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /Jefferson/i, /99-2073622/, /Big Run/i, /Neale/i]) {
@@ -184,7 +191,16 @@ test('outside production, no row or no database gives the development profile, w
   // the stored row is read and served.
   clock += 20_001;
   mockQueryOne.mockResolvedValue(PPBF_ROW);
-  await expect(getOrganizationProfile('punxsy_prominence', { production: false, now })).resolves.toEqual(PPBF_PROFILE);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, databaseConfigured: true, now })).resolves.toEqual(PPBF_PROFILE);
+});
+
+test('outside production with no database configured, the database layer is not asked at all', async () => {
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, databaseConfigured: false })).resolves.toBe(DEVELOPMENT_PROFILE);
+  expect(mockQueryOne).not.toHaveBeenCalled();
+  // Production always asks: there is no development profile there.
+  mockQueryOne.mockResolvedValue(PPBF_ROW);
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, databaseConfigured: false })).resolves.toEqual(PPBF_PROFILE);
+  expect(mockQueryOne).toHaveBeenCalledTimes(1);
 });
 
 test('the development profile still satisfies the stored rules a page depends on', () => {

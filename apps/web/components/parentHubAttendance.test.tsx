@@ -55,6 +55,8 @@ const CLASSES = [
 function installFetch(scheduler: () => Promise<Response>): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1', role: 'parent' });
     }

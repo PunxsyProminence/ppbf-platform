@@ -205,6 +205,42 @@ describe('writes stay Microsoft-only', () => {
 });
 
 describe('POST', () => {
+  /* Lane L31: a role change is made only when the page confirms the role it
+     is changing from; the refusal names that role back. */
+  test('an unconfirmed role change answers 409 with the current role, and no audit row', async () => {
+    const { RoleChangeUnconfirmedError } = jest.requireActual('@/src/server/pilot/staffProvisioning');
+    mockProvision.mockRejectedValue(new RoleChangeUnconfirmedError('coach@example.com', 'coach', 'volunteer'));
+
+    const response = await POST(jsonRequest('POST', { login_email: 'coach@example.com', role: 'volunteer' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual({
+      error: expect.stringContaining('coach@example.com is a coach in this organization'),
+      code: 'ROLE_CHANGE_UNCONFIRMED',
+      current_role: 'coach',
+    });
+    expect(mockProvision).toHaveBeenCalledWith(expect.objectContaining({ roleChangeConfirmedFrom: null }));
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the confirmation the page sends reaches provisioning', async () => {
+    mockProvision.mockResolvedValue({
+      accountId: 'coach-1',
+      organizationId: 'org-1',
+      role: 'volunteer',
+      loginEmail: 'coach@example.com',
+      created: false,
+    } as never);
+
+    const response = await POST(
+      jsonRequest('POST', { login_email: 'coach@example.com', role: 'volunteer', confirm_role_change_from: 'coach' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockProvision).toHaveBeenCalledWith(expect.objectContaining({ role: 'volunteer', roleChangeConfirmedFrom: 'coach' }));
+  });
+
   test('refuses a parent invite that names no athlete, and provisions nothing', async () => {
     const response = await POST(
       jsonRequest('POST', { login_email: 'dana@example.com', role: 'parent' }),
