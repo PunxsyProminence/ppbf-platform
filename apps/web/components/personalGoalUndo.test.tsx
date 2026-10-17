@@ -9,6 +9,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import PersonalGoalBoard from './PersonalGoalBoard';
+import { resetAchievementCeremonyMemory } from './achievementCeremony';
 
 function json(body: unknown, ok = true, status = ok ? 200 : 500): Response {
   return { ok, status, json: async () => body } as unknown as Response;
@@ -20,6 +21,54 @@ function goal(reachedAt: string | null) {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  jest.useRealTimers();
+  resetAchievementCeremonyMemory();
+  window.localStorage.clear();
+});
+
+const UNDO = { name: /^Undo "Run a mile"$/ };
+
+test('a mark made here and then undone does not keep saying "You did."', async () => {
+  let reachedAt: string | null = null;
+  global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body)) as { undo?: boolean };
+      reachedAt = body.undo ? null : new Date().toISOString();
+      return json({ ok: true });
+    }
+    return json({ items: [goal(reachedAt)] });
+  }) as unknown as typeof fetch;
+  render(<PersonalGoalBoard athleteId="ath_1" />);
+
+  const did = await screen.findByRole('button', { name: 'I did it' });
+  await act(async () => {
+    fireEvent.click(did);
+  });
+  const undo = await screen.findByRole('button', UNDO);
+  await act(async () => {
+    fireEvent.click(undo);
+  });
+
+  await screen.findByRole('button', { name: 'I did it' });
+  expect(screen.queryByText(/You did\./)).toBeNull();
+});
+
+test('the Undo line goes away once ten minutes have passed', async () => {
+  jest.useFakeTimers({ now: new Date('2026-10-17T20:00:00.000Z') });
+  global.fetch = jest.fn(async () => json({ items: [goal('2026-10-17T19:59:00.000Z')] })) as unknown as typeof fetch;
+  render(<PersonalGoalBoard athleteId="ath_1" />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByRole('button', UNDO)).toBeTruthy();
+
+  await act(async () => {
+    jest.advanceTimersByTime(10 * 60_000);
+  });
+  expect(screen.queryByRole('button', UNDO)).toBeNull();
 });
 
 test('a fresh mark offers Undo, and Undo sends the athlete\'s own undo', async () => {
@@ -37,7 +86,7 @@ test('a fresh mark offers Undo, and Undo sends the athlete\'s own undo', async (
   const onChanged = jest.fn();
   render(<PersonalGoalBoard athleteId="ath_1" onChanged={onChanged} />);
 
-  const undo = await screen.findByRole('button', { name: 'Undo' });
+  const undo = await screen.findByRole('button', UNDO);
   await act(async () => {
     fireEvent.click(undo);
   });
@@ -45,7 +94,7 @@ test('a fresh mark offers Undo, and Undo sends the athlete\'s own undo', async (
   expect(patches).toEqual([{ athlete_id: 'ath_1', goal_id: 'g1', undo: true }]);
   // Back on the working list, with I did it again.
   expect(await screen.findByRole('button', { name: 'I did it' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.queryByRole('button', UNDO)).toBeNull();
   expect(onChanged).toHaveBeenCalled();
 });
 
@@ -54,7 +103,7 @@ test('a mark older than ten minutes offers no Undo', async () => {
   render(<PersonalGoalBoard athleteId="ath_1" />);
 
   await screen.findByText('Done');
-  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.queryByRole('button', UNDO)).toBeNull();
 });
 
 test('a family reader is offered no Undo', async () => {
@@ -62,7 +111,7 @@ test('a family reader is offered no Undo', async () => {
   render(<PersonalGoalBoard athleteId="ath_1" readOnly />);
 
   await screen.findByText('Done');
-  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.queryByRole('button', UNDO)).toBeNull();
 });
 
 test('when the server says the window has closed, the board says so and the mark stands', async () => {
@@ -71,7 +120,7 @@ test('when the server says the window has closed, the board says so and the mark
     : json({ items: [goal(new Date(Date.now() - 9 * 60_000).toISOString())] }))) as unknown as typeof fetch;
   render(<PersonalGoalBoard athleteId="ath_1" />);
 
-  const undo = await screen.findByRole('button', { name: 'Undo' });
+  const undo = await screen.findByRole('button', UNDO);
   await act(async () => {
     fireEvent.click(undo);
   });
@@ -93,7 +142,7 @@ test('two Undo presses before the first is answered send one', async () => {
   }) as unknown as typeof fetch;
   render(<PersonalGoalBoard athleteId="ath_1" />);
 
-  const undo = await screen.findByRole('button', { name: 'Undo' });
+  const undo = await screen.findByRole('button', UNDO);
   act(() => {
     undo.click();
     undo.click();

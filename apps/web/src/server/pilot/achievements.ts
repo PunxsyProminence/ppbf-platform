@@ -12,6 +12,7 @@ import {
 import { deriveCoachDisplayName, deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
 
 import { query, queryOne } from './db';
+import type { PoolClient } from 'pg';
 import { accountDeletedSql } from './deletedAccountSignIn';
 
 /**
@@ -168,8 +169,9 @@ export async function listPersonalGoals(
  * call returns the row unchanged rather than moving the date, so a double-tap
  * on a gym tablet cannot rewrite the day somebody got there.
  *
- * There is no un-reach. A goal somebody set for themselves and got to is not
- * something the platform takes back.
+ * The only un-reach is the athlete's own, for ten minutes, to take back a slip
+ * (undoPersonalGoalReached, below). A goal somebody set for themselves and got
+ * to is not otherwise something the platform takes back.
  *
  * `athleteId` IS THE AUTHORIZATION, NOT A FILTER. The caller has already
  * decided this athlete is one the actor may act for; naming it in the WHERE
@@ -249,9 +251,14 @@ export async function undoPersonalGoalReached(
   goalId: string,
   athleteId: string,
   now: Date = new Date(),
+  /** The caller's transaction, so the reversal and its audit event commit together. */
+  client?: PoolClient,
 ): Promise<UndonePersonalGoal | null> {
   const cutoff = new Date(now.getTime() - PERSONAL_GOAL_UNDO_WINDOW_MS).toISOString();
-  const rows = await query<UndonePersonalGoal>(
+  const run = async (text: string, params: unknown[]): Promise<UndonePersonalGoal[]> => (
+    client ? (await client.query(text, params)).rows as UndonePersonalGoal[] : query<UndonePersonalGoal>(text, params)
+  );
+  const rows = await run(
     `with prior as (
        select goal_id, reached_at
        from pilot.goals

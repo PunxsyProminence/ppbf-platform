@@ -7638,7 +7638,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped.",
+    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped. With undo: true (UXB Q1 B, lane U3 L5b) it takes back the athlete's own own-words mark within 10 minutes: undoPersonalGoalReached keys owner, window (server clock) and goal_kind into one statement, sets reached_at back to null (no delete), and writes its audit event in the same transaction; anything else answers 409 PERSONAL_GOAL_UNDO_CLOSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

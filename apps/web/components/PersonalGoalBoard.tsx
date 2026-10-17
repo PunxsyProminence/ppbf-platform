@@ -61,7 +61,11 @@ const UNDO_WINDOW_MS = 10 * 60 * 1000;
 const WHY_MAX = 240;
 
 export default function PersonalGoalBoard({ athleteId, readOnly = false, onChanged }: PersonalGoalBoardProps) {
-  const [goals, setGoals] = useState<PersonalGoalItem[]>([]);
+  const [loadedGoals, setGoals] = useState<PersonalGoalItem[]>([]);
+  // Whose goals those are. On a shared kiosk a failed read for the next athlete
+  // must not leave the previous athlete's goals (and their Undo) on screen.
+  const [goalsFor, setGoalsFor] = useState<string | null>(null);
+  const goals = useMemo(() => (goalsFor === athleteId ? loadedGoals : []), [goalsFor, athleteId, loadedGoals]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -79,6 +83,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [undoFailed, setUndoFailed] = useState<Readonly<Record<string, string>>>({});
   const undoingRef = useRef<Set<string>>(new Set());
+  const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!athleteId) return;
@@ -90,6 +95,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
       if (!response.ok) throw new Error('unavailable');
       const body = (await response.json()) as { items?: PersonalGoalItem[] };
       setGoals(body.items ?? []);
+      setGoalsFor(athleteId);
       setFailed(false);
       setLoaded(true);
     } catch {
@@ -122,8 +128,10 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
     onCross: ring,
   });
 
+  // Only a goal that is still reached: after an Undo the ceremony keeps its
+  // record (it never shrinks), but the board must not keep saying "You did."
   const pressedGoal = pressed
-    ? goals.find((goal) => `goal:${goal.goal_id}` === pressed) ?? null
+    ? goals.find((goal) => `goal:${goal.goal_id}` === pressed && goal.reached_at !== null) ?? null
     : null;
 
   const create = useCallback(async () => {
@@ -209,6 +217,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
     const key = `${athleteId}:${goalId}`;
     if (undoingRef.current.has(key)) return;
     undoingRef.current.add(key);
+    setUndoing(new Set(undoingRef.current));
     setUndoFailed((now) => {
       const { [key]: _cleared, ...rest } = now;
       return rest;
@@ -224,16 +233,19 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
         await load();
         onChanged?.();
       } else {
-        // 409: past the window, as the server counts it. PROPOSED wording.
+        // 409: past the window, as the server counts it, or already undone
+        // elsewhere: read again so the board shows what is stored. PROPOSED wording.
         setUndoFailed((now) => ({
           ...now,
           [key]: response.status === 409 ? 'That can no longer be undone.' : 'That did not undo. Try again.',
         }));
+        if (response.status === 409) await load();
       }
     } catch {
       setUndoFailed((now) => ({ ...now, [key]: 'That did not undo. Try again.' }));
     } finally {
       undoingRef.current.delete(key);
+      setUndoing(new Set(undoingRef.current));
     }
   }, [athleteId, readOnly, load, onChanged]);
 
@@ -394,9 +406,11 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
                     <button
                       type="button"
                       onClick={() => void undoReached(goal.goal_id)}
-                      className="btn btn--ghost min-h-[var(--tap)]"
+                      disabled={undoing.has(`${athleteId}:${goal.goal_id}`)}
+                      aria-label={`Undo "${goal.title}"`}
+                      className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-60"
                     >
-                      Undo
+                      {undoing.has(`${athleteId}:${goal.goal_id}`) ? 'Undoing…' : 'Undo'}
                     </button>
                   </p>
                 )}
