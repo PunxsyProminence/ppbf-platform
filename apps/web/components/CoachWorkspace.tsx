@@ -853,7 +853,14 @@ interface TodaySessionNote {
  */
 type SessionNoteRead =
   | { readonly status: 'loading'; readonly athleteId: string }
-  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: TodaySessionNote | null }
+  | {
+    readonly status: 'loaded';
+    readonly athleteId: string;
+    readonly today: TodaySessionNote | null;
+    /* A coach's run is under way for this athlete on the gym's day (F-067).
+       Read only when `today` is null; false when the server does not say. */
+    readonly sessionRunning: boolean;
+  }
   | { readonly status: 'unavailable'; readonly athleteId: string };
 
 /* The subsection's sentences, named once so the component and its tests agree
@@ -879,6 +886,10 @@ const SESSION_NOTE_LOADING = 'Loading today’s session note...';
    the first says nobody has begun a session, the second that a session is
    under way and carries no message. */
 const SESSION_NOTE_NO_SESSION_TODAY = 'No session started today.';
+/* No session row of the athlete's own, but a coach's run is live in the gym
+   with this athlete in it (or nobody marked yet): "No session started today"
+   would be false on the floor (F-067). */
+const SESSION_NOTE_RUN_NO_NOTE = 'A session is running today. No session note written for this athlete yet.';
 const SESSION_NOTE_NONE_WRITTEN = 'No session note written today.';
 const SESSION_NOTE_READ_FAILED =
   'Today’s session note could not be loaded. This is not a statement that no note was written -- try again.';
@@ -935,6 +946,14 @@ function parseSessionNote(value: unknown): TodaySessionNote | null | 'unreadable
    The ladder shifts down one rung and keeps three distinct, ordered steps:
    cleared / monitor / restricted. No token is invented and none is added --
    all three already exist and already carry this order. */
+/* The band in readinessBoard's own words, beside the dot (UXB-29). PROPOSED. */
+function readinessWords(readiness: Athlete['readiness']): string {
+  if (readiness === 'GREEN') return 'Train as planned';
+  if (readiness === 'YELLOW') return 'Check in first';
+  if (readiness === 'RED') return 'Adjust the plan';
+  return 'Not tracked';
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--monitor)]';
@@ -2036,14 +2055,16 @@ export default function CoachWorkspace() {
 
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
-          setShadowReadError(`Unable to load SHADOW ${failed}.`);
+          // The parts in words, not the projection names (UXB-31).
+          const failedWords = failed.replace('review projection', 'review queue').replace('observation projection', 'notes');
+          setShadowReadError(`SHADOW's ${failedWords} could not be loaded.`);
         } else {
           setShadowReadError('');
         }
       } catch (error) {
         setShadowQueueUnavailable(true);
         setShadowObservationsUnavailable(true);
-        setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
+        setShadowReadError(error instanceof Error ? error.message : 'SHADOW\'s notes could not be loaded.');
       }
   }, []);
 
@@ -2402,7 +2423,10 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('session note response unreadable');
       }
-      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed });
+      // Only an explicit true says a run is under way; a body without it is
+      // read as before, so an older server keeps the older sentence.
+      const sessionRunning = parsed === null && (payload as { session_running?: unknown }).session_running === true;
+      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed, sessionRunning });
     } catch (error) {
       if (superseded()) {
         return;
@@ -3263,7 +3287,7 @@ export default function CoachWorkspace() {
                   {readinessTrackingAvailable ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
+                      <p className="t-muted">{redReadinessCount} to adjust the plan, {yellowReadinessCount} to check in with{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} not tracked (not tracked is not clear)` : ''}</p>
                       {/* The score's own caveat, shown WITH the count rather
                           than in a help panel a coach may never open. The rule
                           that already governs assessment results -- a value is
@@ -3405,7 +3429,7 @@ export default function CoachWorkspace() {
                         <p className="t-body font-semibold">{formatGymDateTimeShort(liveRun.started_at) ?? liveRun.started_at}</p>
                       </div>
                       <div>
-                        <p className="t-label mb-[var(--s2)] block">Elapsed (server clock)</p>
+                        <p className="t-label mb-[var(--s2)] block">Time so far</p>
                         <p className="t-data text-[length:var(--t-sm)]">{formatElapsed(liveRun.elapsed_seconds)}</p>
                       </div>
                       <div>
@@ -3650,11 +3674,12 @@ export default function CoachWorkspace() {
                           {/* The safety column, kept as its own block on the far
                               side of the row. Identity on the left, state on the
                               right, and nothing personal painted onto either. */}
-                          <span className="flex flex-none items-center gap-2">
+                          <span className="flex flex-none flex-wrap items-center justify-end gap-2">
                             <span
+                              aria-hidden="true"
                               className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
-                              title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
                             ></span>
+                            <span className="t-label">{readinessWords(athlete.readiness)}</span>
                             {/* TODAY'S MARK, and the three readings it can
                                 carry are worded so they cannot be confused.
                                 A mark that exists shows as itself. 'No mark
@@ -4027,7 +4052,9 @@ export default function CoachWorkspace() {
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today === null && (
-                        <p className="t-muted">{SESSION_NOTE_NO_SESSION_TODAY}</p>
+                        <p className="t-muted">
+                          {sessionNoteShown.sessionRunning ? SESSION_NOTE_RUN_NO_NOTE : SESSION_NOTE_NO_SESSION_TODAY}
+                        </p>
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today !== null && (
@@ -4802,7 +4829,7 @@ export default function CoachWorkspace() {
                     disabled={athletesLoading}
                     className="select"
                   >
-                    <option value="">Select an athlete</option>
+                    <option value="">Choose an athlete</option>
                     {athletes.map((athlete) => (
                       <option key={athlete.id} value={athlete.id}>
                         {athlete.name}
@@ -4934,7 +4961,7 @@ export default function CoachWorkspace() {
                   disabled={reviewSubmitting}
                   className="btn disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {reviewSubmitting ? 'Saving...' : 'Save Coach Review'}
+                  {reviewSubmitting ? 'Saving…' : 'Save Coach Review'}
                 </button>
                 {reviewSyncMessage ? <p className="t-data text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>

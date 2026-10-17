@@ -482,7 +482,7 @@ export default function MembershipsPage() {
                   <label className="t-label" htmlFor="membership-athlete">Athlete</label>
                   <select id="membership-athlete" className="select" value={form.athlete_id}
                     onChange={(e) => setForm((f) => ({ ...f, athlete_id: e.target.value }))}>
-                    <option value="">Select an athlete…</option>
+                    <option value="">Choose an athlete</option>
                     {athletes.map((athlete) => (
                       <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                     ))}

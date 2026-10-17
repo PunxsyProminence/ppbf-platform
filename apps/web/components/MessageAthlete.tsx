@@ -21,7 +21,8 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * this athlete, newest first (GET /api/pilot/coach/athlete-messages), read
  * when the form opens and again after each send -- so a coach whose
  * confirmation was lost (a switch mid-send) sees the message landed instead of
- * sending it twice, and the gym can see what was written to a child.
+ * sending it twice, and the gym can see what was written to a child. A read
+ * that did not answer says so, never "nothing sent", and has Check again.
  */
 interface SentMessage {
   note_id: string;
@@ -136,9 +137,23 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
       {sent.state === 'loading' ? (
         <p className="t-muted">Loading what was sent…</p>
       ) : sent.state === 'failed' ? (
-        <p role="alert" className="t-body">
-          What was sent to this athlete could not be loaded. This is not a statement that nothing was sent.
-        </p>
+        <div className="space-y-[var(--s2)]">
+          <p role="alert" className="t-body">
+            What was sent to this athlete could not be loaded. This is not a statement that nothing was sent.
+          </p>
+          {/* Check again (PROPOSED copy): the same read as on open, through the
+              same effect, so its abort and athlete guard still hold. */}
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => {
+              setSent({ state: 'loading' });
+              setSentReads((count) => count + 1);
+            }}
+          >
+            Check again
+          </button>
+        </div>
       ) : sent.items.length === 0 ? (
         <p className="t-muted">Nothing has been sent to this athlete yet.</p>
       ) : (

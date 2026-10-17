@@ -431,7 +431,7 @@ export default function SessionScriptLiveDelivery({
           </h2>
           {!isPlain && (
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">
-              Pinned at version {run.script_version} when this session started.
+              This session follows the plan as it was when the session started (version {run.script_version}).
             </p>
           )}
           {!isPlain && detail && detail.version !== run.script_version && (
@@ -655,14 +655,14 @@ export default function SessionScriptLiveDelivery({
                     onChange={(event) => { setLogAthleteId(event.target.value); setLogProtocolId(''); }}
                     disabled={logAthletesState === 'loading'}
                   >
-                    <option value="">Select an athlete...</option>
+                    <option value="">Choose an athlete</option>
                     {logAthletes.map((athlete) => (
                       <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                     ))}
                   </select>
                 </label>
                 <label className="field">
-                  <span className="t-label">Protocol (its intended exposure becomes the frozen plan)</span>
+                  <span className="t-label">Protocol</span>
                   <select
                     className="select"
                     value={logProtocolId}

@@ -163,13 +163,14 @@ describe('/admin/athletes', () => {
     render(<AthleteRecordsPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
-    fireEvent.click(screen.getByRole('button', { name: /deactivate athlete/i }));
+    // Not "Deactivate": on People that word switches a sign-in off (UXB-26).
+    fireEvent.click(screen.getByRole('button', { name: /mark as left the gym/i }));
 
     // The confirm step exists so a mis-tap on a gym tablet does not offboard a
     // child; nothing is sent until it is answered.
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/athletes/update'))).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: /yes, save it/i }));
+    fireEvent.click(screen.getByRole('button', { name: /yes, mark as left/i }));
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/athletes/update'))).toBe(true);

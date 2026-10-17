@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 
 // Intervention protocols (module 026 slice 1): the durable record of what
 // we INTENDED to do about a problem -- the hypothesis, the intervention as
@@ -325,7 +326,7 @@ export default function InterventionProtocolsPage() {
                       )}
                       <span className="t-body font-semibold text-[color:var(--bone-100)]">{protocol.title}</span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {protocol.created_at.slice(0, 10)}
+                        v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {formatGymDateShort(protocol.created_at) ?? protocol.created_at}
                       </span>
                       {protocol.status === 'active' && (
                         <>
