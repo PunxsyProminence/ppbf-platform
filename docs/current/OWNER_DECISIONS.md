@@ -164,6 +164,84 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-006 -- The gym-admin live check: "A: Now", not the recommended "B: After Release 29 (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12522, 2026-10-17T18:42:48.381Z; answered at line 12530, 2026-10-17T18:46:22.324Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Admin login".** Overwatch, as written: "OFFICIAL: The gym-admin (ppbf@) screens have never been checked live: no window was ever signed in as the gym admin. Sign the gym admin in on the in-app browser's live tab (the same tab is waiting for the test coach) now, or wait until Release 29 is live? PLAIN: I can't type passwords; you sign in, then a lane runs the admin and coach checks. Doing it after Release 29 tests the version the gym will actually use." Options as written: "B: After Release 29 (Recommended)": "One sign-in session for admin + coach, run the per-role checks on the version the gym will use."; "A: Now": "Sign in now; the check runs on Release 28 and again after Release 29." Jason: *"A: Now"*
+
+**Ruling:** the gym admin is signed in on the in-app browser's live tab now, and the admin and coach checks run on Release 28 and again after Release 29. He enters the sign-in; overwatch does not type passwords. Option B was the recommended one and was not chosen.
+
+**Acted on:** Overwatch opened the live sign-in page in the in-app browser tab "seed" (line 12534, 2026-10-17T18:46:34.859Z). The sign-in itself and the checks were not observed by this records pass.
+
+**Status:** ruled; whether the check has run was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-005 -- What the athlete home's "Active Goals" number counts (UXB-18): "A: Count both (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Goal count".** Overwatch, as written: "OFFICIAL: What the athlete home's "Active Goals" number counts (UX audit UXB-18): (A) own-words and SMART goals; (B) SMART goals only. PLAIN: the number should match the Goals tab, and A does that. Lane U3 built A." Options as written: "A: Count both (Recommended)": "Matches the Goals tab."; "B: SMART only": "Own-words goals not counted." Jason: *"A: Count both (Recommended)"*
+
+**Ruling:** the "Active Goals" number on the athlete home counts own-words and SMART goals, so it matches the Goals tab. Option B (SMART only) was not chosen.
+
+**Note:** It confirms the call overwatch had already made in lane U3's brief (UXB Q2, transcript line 9903).
+
+**Acted on:** The card says lane U3 built A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-004 -- What a guardian of an under-18 athlete sees about programs and support (PH-13): "A: Standing, yes/none, dates (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Parent view".** Overwatch, as written: "OFFICIAL: What a guardian of an under-18 athlete sees about programs and support on the Parent Hub (PH-13): (A) each program's standing with dates; scholarship shown only as "yes" or "none recorded"; recorded supports with dates; no percentages, no staff notes; (B) the same plus the scholarship percentage; (C) don't show these to guardians. PLAIN: a parent sees their own child's memberships and whether help was given, without money details or staff notes. Lane L29 is building A." Options as written: "A: Standing, yes/none, dates (Recommended)": "No percentages, no notes."; "B: Also show the percent": "Adds the scholarship percentage."; "C: Hide from guardians": "Guardians don't see program or support status." Jason: *"A: Standing, yes/none, dates (Recommended)"*
+
+**Ruling:** a guardian of an under-18 athlete sees, on the Parent Hub, each program's standing with its dates, the scholarship only as "yes" or "none recorded", and recorded supports with their dates; no percentages and no staff notes. Options B (also show the percent) and C (hide from guardians) were not chosen.
+
+**Note:** It settles lane L29's question Q-D, which overwatch had answered A in its GO to L29 (transcript line 9708) before putting it to him.
+
+**Acted on:** The card says lane L29 is building A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-003 -- Athlete "I did it" on a goal or milestone (UXB-19): "A: One tap + Undo (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "I did it".** Overwatch, as written: "OFFICIAL: Athlete "I did it" on a goal or milestone (UX audit UXB-19): (A) one tap plus a short Undo (10 minutes, the athlete's own marks only); (B) an armed second press; (C) one tap with no undo (today). PLAIN: today a glove brushing the button marks it done for good. A lets the kid who slipped take it back; B makes every kid tap twice. Lane U3 is set to build A." Options as written: "A: One tap + Undo (Recommended)": "10-minute undo of their own mark; never touches a coach's mark; history kept."; "B: Press twice": "First press arms, second press marks it."; "C: Leave as is": "One tap, no undo." Jason: *"A: One tap + Undo (Recommended)"*
+
+**Ruling:** one tap marks it done, with a short Undo: 10 minutes, the athlete's own marks only, never a coach's mark, history kept. Options B (press twice) and C (leave as is) were not chosen.
+
+**Note:** It confirms the call overwatch had already made in lane U3's brief (UXB Q1, transcript line 9903), which is not his ruling and is not recorded separately.
+
+**Acted on:** The card says lane U3 is set to build A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-002 -- Policy-shelf move: "A: Detach + narrow hold (Recommended)"; SUPERSEDES OD-2026-10-08-009 D22
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Policy move".** Overwatch, as written: "OFFICIAL: Policy-shelf move to the gym, in production. Your recorded plan D22 ("Re-point citations, then move") proved impossible; the tool that was built detaches citations, then moves. Production has 2 hidden evidence rows from 1 flagged, not-deleted person, and the strict safeguarding hold blocks the move (DETACH_WOULD_BREAK_HOLD). PLAIN: A moves the gym's policies now; the flagged person's chat and safety record stay untouched, and only 2 link rows nobody sees are removed and logged by id. B leaves the policies where they are until that person is no longer flagged." Options as written: "A: Detach + narrow hold (Recommended)": "Replace D22 with detach-then-move. The hold covers flagged chats of deleted people and any evidence actually shown in a flagged chat; the 2 rows are detached and logged, and the policies move."; "B: Keep the strict hold": "Nothing moves until the person is no longer flagged." Jason: *"A: Detach + narrow hold (Recommended)"*
+
+**Ruling:** the policy shelf moves to the gym by detach-then-move, replacing D22's re-point-then-move (OD-2026-10-08-009). The safeguarding hold that blocks a detach covers flagged chats of deleted people and evidence actually shown in a flagged chat; the 2 production evidence rows from the 1 flagged, not-deleted person are detached and logged, and the policies move. Option B (keep the strict hold) was not chosen.
+
+**Note:** This entry replaces D22 of OD-2026-10-08-009 (*"Re-point citations, then move (Recommended)"*); the card states that the re-point proved impossible.
+
+**Acted on:** Overwatch offered lane L37 ("Narrow the policy-shelf hold to Jason's ruling", lane brief at line 12556, chip at line 12557) to change the hold check in the move tool. Not built at the time of writing.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
 ## OD-2026-10-17-001 -- UX coherence cards: "A: Use these words (Recommended)"; "A: Rename + I'm here on Today (Recommended)"; "A: Cross-link now (Recommended)"; "B: Keep one", corrected to "Im Ment A"
 
 **Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 9921, 2026-10-17T01:14:03.456Z; answered at line 9922, 2026-10-17T15:01:17.651Z; his typed correction queued at line 9926, 2026-10-17T15:01:35.108Z). Read by script (records pass, lane L36, 2026-10-17). The button picks and his typed words are quoted exactly; the questions and options are quoted as overwatch wrote them. The findings behind the card are in the UX coherence audit, `Documents\PPBF-overwatch\audit\UX-COHERENCE-A-STRUCTURE-2026-10-16.md`. New; edits no earlier entry.
@@ -1442,6 +1520,8 @@ Question (log, short): "Build all" scope: people-facing features only, or every 
 12. D24: the visual lane proposes plate rules; Jason approves.
 
 **Not ruled here:** whether the re-homed parent test login counts as a test login (D16); thresholds inside the engine-unlock proposals (D21).
+
+**Status (2026-10-17):** D22 is superseded by OD-2026-10-17-002 (detach-then-move with a narrowed hold); the rest of this entry stands.
 
 ---
 
