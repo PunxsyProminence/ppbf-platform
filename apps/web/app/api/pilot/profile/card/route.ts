@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
     const card = buildFightCard(
       {
         accountId: identity.accountId,
+        athleteId: identity.athleteId,
         fullName: subjectName,
         ringName,
         corner: profile.corner,
@@ -97,6 +98,7 @@ export async function GET(request: NextRequest) {
         memberSince: identity.memberSince,
         photoAvailable: portrait.show === 'photo',
         viewerRole: principal.role,
+        viewerAccountId: principal.accountId,
       },
       now,
     );
