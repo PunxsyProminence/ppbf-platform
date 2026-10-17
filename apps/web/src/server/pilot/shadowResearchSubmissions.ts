@@ -218,17 +218,21 @@ export async function getAnswerStates(
   const result = new Map<number, AnswerState>();
   if (requirements.length === 0) return result;
 
-  const rows = await query<Pick<ResearchSubmissionRow, 'research_requirement_id' | 'applicability_state'>>(
+  const rows = await query<{ research_requirement_id: string | number; applicability_state: ApplicabilityState }>(
     `select research_requirement_id, applicability_state
      from pilot.shadow_research_submissions
      where organization_id = $1 and research_requirement_id = any($2::bigint[])`,
     [organizationId, requirements.map((r) => r.research_requirement_id)],
   );
 
+  // research_requirement_id is a bigint, which node-postgres returns as a
+  // string. Keyed raw, no number lookup below ever matched and every open
+  // requirement read 'needs_evidence' (researchLadder.pg.test.ts).
   const byRequirement = new Map<number, { applicability_state: ApplicabilityState }[]>();
   for (const row of rows) {
-    if (!byRequirement.has(row.research_requirement_id)) byRequirement.set(row.research_requirement_id, []);
-    byRequirement.get(row.research_requirement_id)!.push({ applicability_state: row.applicability_state });
+    const requirementId = Number(row.research_requirement_id);
+    if (!byRequirement.has(requirementId)) byRequirement.set(requirementId, []);
+    byRequirement.get(requirementId)!.push({ applicability_state: row.applicability_state });
   }
 
   for (const requirement of requirements) {

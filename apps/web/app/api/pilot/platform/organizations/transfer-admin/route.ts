@@ -3,12 +3,22 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { transferOrganizationAdmin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ValidationError } from '@/src/server/pilot/errors';
 import type { PilotRole } from '@/src/server/pilot/contracts';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-const DEMOTE_ROLES: PilotRole[] = ['coach', 'athlete', 'parent', 'volunteer', 'staff', 'admin'];
+/* What the outgoing admin may become (lane L31, gap check (b) step 6):
+   - not 'admin': it is the legacy spelling of organization_admin
+     (isOrganizationAdminRole), so a "transfer" to it left two admins;
+   - not 'athlete': an athlete signs in with a PIN against a roster record, and
+     a demoted admin has neither;
+   - not 'parent': a guardian account must name the athlete it is for
+     (requireGuardianLinkForParentInvite), and this route names none.
+   The staff roles remain, the same three an organization admin can deactivate
+   (OD-2026-10-07-009). */
+const DEMOTE_ROLES: PilotRole[] = ['coach', 'staff', 'volunteer'];
 
 function isSupportedDemoteRole(role: string): role is Exclude<PilotRole, 'platform_owner' | 'organization_admin'> {
   return DEMOTE_ROLES.includes(role as PilotRole);
@@ -16,7 +26,8 @@ function isSupportedDemoteRole(role: string): role is Exclude<PilotRole, 'platfo
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    // Platform work signs in with Microsoft, as the platform staff route does.
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, ['platform_owner']);
 
     const body = (await request.json()) as {
@@ -37,6 +48,12 @@ export async function POST(request: NextRequest) {
 
     if (!isSupportedDemoteRole(demoteRole)) {
       throw new Error('Unsupported demote_role');
+    }
+
+    // Handing the seat to the account that holds it promoted and then demoted
+    // the same row, leaving the gym with no admin (lane L31 review).
+    if (fromAccountId === toAccountId) {
+      throw new ValidationError('from_account_id and to_account_id must be different accounts');
     }
 
     await transferOrganizationAdmin(fromAccountId, toAccountId, organizationId, demoteRole);

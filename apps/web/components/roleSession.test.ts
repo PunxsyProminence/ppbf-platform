@@ -4,6 +4,7 @@ import {
   clearRoleSession,
   createPersistentRoleSession,
   getPilotRoleDestination,
+  getRoleSessionSnapshot,
   isRoleSessionAllowed,
   loadAuthoritativeRoleSession,
   mapPilotRoleToClubRole,
@@ -124,6 +125,37 @@ describe('roleSession in-memory cache (no localStorage writes)', () => {
 
     expect(storage.getItem(ROLE_SESSION_KEY)).toBeNull();
     expect(storage.getItem('ppbf-club-role')).toBeNull();
+  });
+
+  test("logging out forgets a guardian's chosen child (#1596 item 2b)", () => {
+    const storage = new MemoryStorage();
+    const tabStorage = new MemoryStorage();
+    installWindow(storage);
+    (window as unknown as { sessionStorage: Storage }).sessionStorage = tabStorage;
+    tabStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+
+    storage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+
+    clearRoleSession();
+
+    expect(tabStorage.getItem('ppbf.parent.chosenChild')).toBeNull();
+    expect(storage.getItem('ppbf.parent.chosenChild')).toBeNull();
+  });
+
+  test("the role cache running out does not forget a guardian's chosen child: they may still be signed in", () => {
+    const storage = new MemoryStorage();
+    const tabStorage = new MemoryStorage();
+    installWindow(storage);
+    (window as unknown as { sessionStorage: Storage }).sessionStorage = tabStorage;
+    tabStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    createPersistentRoleSession('parent');
+
+    jest.spyOn(Date, 'now').mockReturnValue(1_000 + ROLE_SESSION_TTL_MS + 1);
+
+    expect(readRoleSession()).toBeNull();
+    expect(getRoleSessionSnapshot()).toBeNull();
+    expect(tabStorage.getItem('ppbf.parent.chosenChild')).toBe('ath-kid');
   });
 
   test('logging out purges residual legacy localStorage keys', () => {
