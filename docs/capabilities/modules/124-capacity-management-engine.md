@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 slice promotion) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. create_class validates capacity 1-200 (scheduler/route.ts); registerForClassTransactionally (schedulerDb.ts) waitlists when registered count >= capacity. |
+| Code | `apps/web/app/api/pilot/scheduler/route.ts`, `apps/web/src/server/pilot/schedulerDb.ts`, `apps/web/app/schedule/page.tsx` |
+| Tests | `apps/web/app/api/pilot/scheduler/route.test.ts`, `apps/web/src/server/pilot/schedulerDb.test.ts` |
 | Vertical slice | per-class seat cap + waitlist enforcement inside the scheduler; a broader capacity console is future work |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -42,3 +45,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — POST class-creation validates capacity (1-200); role-gated writes; registration path checks capacity/waitlist. Missing: Real capacity-enforcement and waitlisting exists for class scheduling with role gates and org isolation, but this is a narrow per-class seat cap embed. Evidence: apps/web/app/api/pilot/scheduler/route.ts; apps/web/src/server/pilot/schedulerDb.ts. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/app/api/pilot/scheduler/route.ts; apps/web/src/server/pilot/schedulerDb.ts. Test: apps/web/app/api/pilot/scheduler/route.test.ts exercises class capacity and registration/waitlist behavior |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 slice promotion)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

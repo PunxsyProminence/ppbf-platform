@@ -124,9 +124,11 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner'>, PlainHelp> = {
     anchor: 'admin-guide',
     topics: [
       // app/help/page.tsx: /admin admits the gym admin and the platform owner only (admin/page.tsx).
-      { title: 'Admin Hub', text: 'The Admin Hub is where the gym administrator manages the gym. Open it from the link at the top of this page.' },
+      // Lane U2: the gym admin's home is the Gym Office (/admin/people, Jason 2026-10-17).
+      { title: 'Gym Office', text: 'The Gym Office is your home page: people and sign-ins. Every back link returns there.' },
+      { title: 'Capabilities', text: 'Capabilities is the record of what this gym can do. Open it from the link at the top of this page.' },
       // app/operations/page.tsx:228 allowedRoles OPERATIONS_ROLES (gym admin and platform owner).
-      { title: 'Mission Control', text: 'Mission Control is the launcher for the gym administrator and the platform owner.' },
+      { title: 'Operations', text: 'Operations is the administration page for the gym administrator and the platform owner.' },
       // app/api/pilot/shadow/chat/route.ts:563 admits organization_admin.
       { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },
     ],

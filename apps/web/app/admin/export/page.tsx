@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { ROSTER_EXPORT_COLUMNS } from '@/app/api/pilot/admin/export/roster/csv';
+import BackHome from '@/components/BackHome';
 
 /**
  * The screen where a gym takes its own roster out of the platform.
@@ -187,9 +187,7 @@ export default function RosterExportPage() {
           </section>
 
           <div className="mt-[var(--s6)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

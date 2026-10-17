@@ -380,10 +380,10 @@ describe('lane N4-02: the refusal sends each visitor to their own home (#1430 le
     return [...container.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
   }
 
-  test('an organization admin is offered the admin dashboard', () => {
+  test('an organization admin is offered the Gym Office, their home (lane U2)', () => {
     expect(refusalHrefs({ role: 'organization_admin', authProvider: 'microsoft' })).toEqual([
       ['Sign In With Microsoft', '/login'],
-      ['Go To Admin Dashboard', '/admin'],
+      ['Back to Gym Office', '/admin/people'],
     ]);
   });
 

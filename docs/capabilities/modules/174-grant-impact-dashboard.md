@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **MAPPED** |
+| Status note | Was "DRAFT" until 2026-10-16. admin/grants page lists the grant-obligation ledger (deadlines, overdue) from grant-obligations/route.ts; no impact/outcome metrics, so partial. |
+| Code | `apps/web/app/admin/grants/page.tsx`, `apps/web/app/api/pilot/admin/grant-obligations/route.ts`, `apps/web/src/server/pilot/grantObligations.ts` |
+| Tests | `apps/web/app/admin/grants/page.test.tsx`, `apps/web/app/api/pilot/admin/grant-obligations/route.test.ts`, `apps/web/src/server/pilot/grantObligations.pg.test.ts` |
 | Active | false |
 | Promotion required | true |
 | Category | Dashboards / Reporting (`dashboardsReporting`) |
@@ -38,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — admin/grants page: internal grant-obligation ledger (deadlines, funders, status workflow), no athlete/impact d. Missing: A real, tested, role-gated, org-scoped grant-obligation tracker exists, but it is explicitly documented (in-code) as only the internal deadline/delive. Evidence: apps/web/app/admin/grants/page.tsx; apps/web/app/api/pilot/admin/grant-obligations/route.ts. Status stays DRAFT. |
+| 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

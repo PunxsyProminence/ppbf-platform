@@ -17,6 +17,8 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * Read from GET /api/pilot/coach/family-notes (staff only; the server leaves
  * out which guardian ticked it). A failed read says so; it is never shown as
  * "nothing posted". `refreshKey` changes after a post, so the new note appears.
+ * Each failed read has Check again, which re-runs that read only: a reload
+ * would throw away every unsent draft on the page (UXB-05).
  *
  * FAMILY REPLIES (FC-03): under each note, what the family wrote back, oldest
  * first, with the guardian's name and the time (gym time). Read from GET
@@ -94,6 +96,8 @@ export default function FamilyNotesPosted({
   // Only the newest read lands: switching athletes while a read is slow must
   // not leave one child's notes under another's name.
   const seq = useRef(0);
+  // Bumped by Check again on the notes: the same reads, nothing else on the page.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -130,7 +134,28 @@ export default function FamilyNotesPosted({
         if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
     })();
-  }, [athleteId, refreshKey]);
+  }, [athleteId, refreshKey, attempt]);
+
+  /* Check again on the replies or the opens: that one read, again, landing
+     only on the notes it was asked for. */
+  function recheckReplies() {
+    const mine = seq.current;
+    const forAthlete = athleteId;
+    setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, replies: 'loading' } : held));
+    void readReplies(forAthlete).then((replies) => {
+      if (mine !== seq.current) return;
+      setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, replies } : held));
+    });
+  }
+  function recheckOpened() {
+    const mine = seq.current;
+    const forAthlete = athleteId;
+    setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, opened: 'loading' } : held));
+    void readOpened(forAthlete).then((opened) => {
+      if (mine !== seq.current) return;
+      setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, opened } : held));
+    });
+  }
 
   if (!athleteId) return null;
   // What is on screen belongs to the athlete selected now, or it reads as
@@ -143,17 +168,25 @@ export default function FamilyNotesPosted({
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what was posted…</p>
       ) : shown.state === 'failed' ? (
-        <p role="alert" className="t-body mt-[var(--s2)]">
-          Posted notes could not be loaded. This is not a statement that nothing was posted. Reload to retry.
-        </p>
+        <div role="alert" className="mt-[var(--s2)]">
+          <p className="t-body">Posted notes could not be loaded. This is not a statement that nothing was posted.</p>
+          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setAttempt((n) => n + 1)}>
+            Check again
+          </button>
+        </div>
       ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">Nothing has been posted to this family yet.</p>
       ) : (
         <>
         {shown.replies === null ? (
-          <p role="alert" className="t-body mt-[var(--s2)]">
-            The family&apos;s replies could not be loaded. This is not a statement that nobody replied. Reload to retry.
-          </p>
+          <div role="alert" className="mt-[var(--s2)]">
+            <p className="t-body">
+              The family&apos;s replies could not be loaded. This is not a statement that nobody replied.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={recheckReplies}>
+              Check again
+            </button>
+          </div>
         ) : shown.replies === 'loading' ? (
           <p className="t-muted mt-[var(--s2)]">Loading the family&apos;s replies…</p>
         ) : null}
@@ -164,9 +197,14 @@ export default function FamilyNotesPosted({
           </p>
         ) : null}
         {shown.opened === null ? (
-          <p role="alert" className="t-body mt-[var(--s2)]">
-            Whether the family opened these could not be loaded. This is not a statement that they did not. Reload to retry.
-          </p>
+          <div role="alert" className="mt-[var(--s2)]">
+            <p className="t-body">
+              Whether the family opened these could not be loaded. This is not a statement that they did not.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={recheckOpened}>
+              Check again
+            </button>
+          </div>
         ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {
