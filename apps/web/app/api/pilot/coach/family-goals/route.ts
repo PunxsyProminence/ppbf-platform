@@ -16,9 +16,11 @@
 // another's; for a PATCH it is applied to the goal's athlete in familyGoals.ts.
 // The gym and the writer come from the session, never the body. No account
 // ids or emails are returned (OD-2026-10-06-025). Nothing is sent.
+// The database's seat check (PH-05) refusing the writer is a 403, not a 500.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { ForbiddenError } from '@/src/server/pilot/errors';
 import {
   createStaffFamilyGoal,
   listFamilyGoalsForStaff,
@@ -28,6 +30,19 @@ import {
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
+
+// The caller's staff seat in this gym is not active now (switched off, or the
+// account closed after sign-in): the database refused the writer.
+function seatRefusal(error: unknown): unknown {
+  if (
+    error && typeof error === 'object'
+    && (error as { code?: unknown }).code === '23514'
+    && (error as { constraint?: unknown }).constraint === 'pilot_family_goals_writer_of_this_gym'
+  ) {
+    return new ForbiddenError('Forbidden: your staff seat in this gym is not active.');
+  }
+  return error;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -64,7 +79,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ ok: true, item });
   } catch (error) {
-    return jsonError(error);
+    return jsonError(seatRefusal(error));
   }
 }
 
@@ -98,6 +113,6 @@ export async function PATCH(request: NextRequest) {
     const item = await updateStaffFamilyGoal({ actor: principal, goalId, change });
     return NextResponse.json({ ok: true, item });
   } catch (error) {
-    return jsonError(error);
+    return jsonError(seatRefusal(error));
   }
 }
