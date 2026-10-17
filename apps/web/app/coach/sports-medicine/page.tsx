@@ -8,6 +8,7 @@ import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalSt
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import PastTrainingHolds from '@/components/PastTrainingHolds';
+import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
@@ -880,15 +881,17 @@ export default function SportsMedicinePage() {
                                   }
                                 />
                               </div>
-                              <button
-                                type="button"
+                              {/* One press used to lift it; the first press now arms (UXB-03). */}
+                              <ArmedButton
                                 className="btn btn--ghost"
-                                disabled={busy}
-                                aria-busy={busy}
-                                onClick={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
+                                armKey={row.hold.hold_id}
+                                busy={busy}
+                                busyLabel="Lifting…"
+                                armedLabel={`Press again: lift ${row.full_name}’s hold`}
+                                onConfirm={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
                               >
-                                {busy ? 'Lifting…' : 'Lift this hold'}
-                              </button>
+                                Lift this hold
+                              </ArmedButton>
                             </div>
                           ) : null}
                         </div>
