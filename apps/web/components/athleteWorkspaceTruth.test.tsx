@@ -93,7 +93,7 @@ async function checkInAt(instant: string): Promise<Record<string, unknown>> {
   jest.useFakeTimers({ now: new Date(instant), advanceTimers: true });
   await renderWorkspace();
   const before = posted('/api/pilot/sessions').length;
-  fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
   await waitFor(() => expect(posted('/api/pilot/sessions')).toHaveLength(before + 1));
   return posted('/api/pilot/sessions')[before].body;
 }

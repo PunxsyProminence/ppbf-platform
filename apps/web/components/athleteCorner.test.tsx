@@ -65,32 +65,32 @@ describe('check-in says only what the session read said', () => {
   test('no open session: not checked in, and Start check-in calls the workspace handler', () => {
     const p = props();
     render(<AthleteCorner {...p} />);
-    expect(checkIn().getByText('You have not checked in today.')).toBeTruthy();
-    fireEvent.click(checkIn().getByRole('button', { name: 'Start check-in' }));
+    expect(checkIn().getByText('Training has not started today.')).toBeTruthy();
+    fireEvent.click(checkIn().getByRole('button', { name: 'Start training' }));
     expect(p.onCheckIn).toHaveBeenCalledTimes(1);
   });
 
   test('an open session: checked in, with its time, and no second check-in offered', () => {
     render(<AthleteCorner {...props({ checkedInAt: '4:05 PM' })} />);
-    expect(checkIn().getByText('Checked in 4:05 PM.')).toBeTruthy();
-    expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    expect(checkIn().getByText('Training started 4:05 PM.')).toBeTruthy();
+    expect(checkIn().queryByRole('button', { name: 'Start training' })).toBeNull();
   });
 
   test('a read still in flight is said as checking -- never as checked in, never as not', () => {
     render(<AthleteCorner {...props({ sessionState: 'loading' })} />);
     const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
-    expect(panel.textContent).toContain('Checking whether you are checked in...');
-    expect(panel.textContent).not.toMatch(/Checked in |not checked in/i);
-    expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    expect(panel.textContent).toContain('Checking whether your training has started...');
+    expect(panel.textContent).not.toMatch(/Training started |Training has not started|Training not started/i);
+    expect(checkIn().queryByRole('button', { name: 'Start training' })).toBeNull();
   });
 
   test('a failed read is said as a failure, offers a retry of the same read, and no check-in', () => {
     const p = props({ sessionState: 'unavailable' });
     render(<AthleteCorner {...p} />);
     const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
-    expect(within(panel).getByRole('alert').textContent).toContain('Could not tell whether you are checked in');
-    expect(panel.textContent).not.toMatch(/Checked in |not checked in/i);
-    expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    expect(within(panel).getByRole('alert').textContent).toContain('Could not tell whether your training has started');
+    expect(panel.textContent).not.toMatch(/Training started |Training has not started|Training not started/i);
+    expect(checkIn().queryByRole('button', { name: 'Start training' })).toBeNull();
     fireEvent.click(checkIn().getByRole('button', { name: 'Try again' }));
     expect(p.onRetrySession).toHaveBeenCalledTimes(1);
   });
@@ -98,12 +98,12 @@ describe('check-in says only what the session read said', () => {
   test('an athlete who is not signed in as one is told so, and offered no check-in', () => {
     render(<AthleteCorner {...props({ identityState: 'unavailable', sessionState: 'loading' })} />);
     expect(checkIn().getByText(/needs an athlete sign-in/)).toBeTruthy();
-    expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+    expect(checkIn().queryByRole('button', { name: 'Start training' })).toBeNull();
   });
 
   test('a check-in in progress says so and cannot be pressed twice', () => {
     render(<AthleteCorner {...props({ checkingIn: true })} />);
-    const button = checkIn().getByRole('button', { name: 'Checking in...' }) as HTMLButtonElement;
+    const button = checkIn().getByRole('button', { name: 'Starting...' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
   });
 });
@@ -164,14 +164,14 @@ test('says nothing about clearance', () => {
 test('after a check-out today, the corner says checked out -- not "not checked in" -- and offers a fresh check-in', () => {
   render(<AthleteCorner {...props({ checkedOutToday: true })} />);
   const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
-  expect(panel.textContent).toContain('Checked out today.');
-  expect(panel.textContent).not.toContain('You have not checked in today.');
-  expect(checkIn().getByRole('button', { name: 'Start check-in' })).toBeTruthy();
+  expect(panel.textContent).toContain('Training ended today.');
+  expect(panel.textContent).not.toContain('Training has not started today.');
+  expect(checkIn().getByRole('button', { name: 'Start training' })).toBeTruthy();
 });
 
 test('a check-in that failed is said in the corner, where the tap was', () => {
   render(<AthleteCorner {...props({ checkInFailed: true })} />);
-  expect(checkIn().getByRole('alert').textContent).toContain('That check-in did not save');
+  expect(checkIn().getByRole('alert').textContent).toContain('Training did not start');
 });
 
 test('the training-hold notice sits right after the pain report, never ahead of it', () => {

@@ -47,6 +47,7 @@ import {
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
+import AthleteImHere from './AthleteImHere';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -112,7 +113,7 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     id: 'today',
     label: 'Today',
     tabs: [
-      { id: 'bio-checkin', label: 'Wellness' },
+      { id: 'bio-checkin', label: 'How I feel today' },
       { id: 'my-dashboard', label: 'Dashboard' },
       { id: 'athlete-floor', label: 'Floor' },
     ],
@@ -399,8 +400,8 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
 // What a stored check-in tells the athlete, by whether today's wellness is
 // already recorded. Named so the wellness line can be swapped for the floor
 // line once wellness lands (F-042).
-const CHECKED_IN_WELLNESS_NEXT = 'You are checked in. Do your wellness check next -- it opens your floor.';
-const CHECKED_IN_FLOOR_OPEN = "You are checked in. Your coach's work is on your floor.";
+const CHECKED_IN_WELLNESS_NEXT = 'Training started. Say how you feel today next -- it opens your floor.';
+const CHECKED_IN_FLOOR_OPEN = "Training started. Your coach's work is on your floor.";
 
 const DRILL_WITHDRAWN = "This drill is no longer in your gym's library.";
 
@@ -1674,7 +1675,7 @@ export default function AthleteWorkspace() {
          whether this person checked in, and a floor locked on an unknown is
          the failure mode the gate is written to avoid. */
       setCheckInLoading(false);
-      setCheckInLoadError('This account is not linked to an athlete record, so there is no check-in to show.');
+      setCheckInLoadError('This account is not linked to an athlete record, so there is nothing saved to show.');
       return;
     }
 
@@ -1685,7 +1686,7 @@ export default function AthleteWorkspace() {
         method: 'GET',
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Your check-in did not load.');
+      if (!response.ok) throw new Error('How you feel today did not load.');
 
       const data = (await response.json()) as {
         today?: AthleteCheckInRecord | null;
@@ -1694,7 +1695,7 @@ export default function AthleteWorkspace() {
       setTodayCheckIn(data.today ?? null);
       setRecentCheckIns(data.recent ?? []);
     } catch (error) {
-      setCheckInLoadError(error instanceof Error ? error.message : 'Your check-in did not load.');
+      setCheckInLoadError(error instanceof Error ? error.message : 'How you feel today did not load.');
     } finally {
       setCheckInLoading(false);
     }
@@ -2146,8 +2147,8 @@ export default function AthleteWorkspace() {
     // floor. The Floor is now the work a coach assigned (A-FIN-04), so the only
     // thing this writes is the session.
     if (!backendAthleteId) {
-      setBackendSyncMessage("That check-in did not take -- you are not signed in, so nothing was saved. "
-        + "There is no session to check out of, so tell a coach you are here.");
+      setBackendSyncMessage("Training did not start -- you are not signed in, so nothing was saved. "
+        + "There is no training to end, so tell a coach you are here.");
       setCheckInFailed(true);
       return;
     }
@@ -2230,14 +2231,14 @@ export default function AthleteWorkspace() {
         // this it still showed yesterday's card until the next page load.
         void loadTrainingCard();
       } else {
-        const payload = (await sessionResponse.json().catch(() => ({ error: 'That check-in did not take.' }))) as { error?: string };
-        setBackendSyncMessage(`${payload.error || 'That check-in did not take.'} `
-          + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
+        const payload = (await sessionResponse.json().catch(() => ({ error: 'Training did not start.' }))) as { error?: string };
+        setBackendSyncMessage(`${payload.error || 'Training did not start.'} `
+          + "Nothing was saved, so there is no training to end. Tell a coach you are here.");
         setCheckInFailed(true);
       }
     } catch (error) {
-      setBackendSyncMessage(`${error instanceof Error ? error.message : 'That check-in did not take.'} `
-        + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
+      setBackendSyncMessage(`${error instanceof Error ? error.message : 'Training did not start.'} `
+        + "Nothing was saved, so there is no training to end. Tell a coach you are here.");
       setCheckInFailed(true);
     } finally {
       checkingInRef.current = false;
@@ -2360,8 +2361,8 @@ export default function AthleteWorkspace() {
       // try again instead of watching the screen empty itself.
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
       setBackendSyncMessage(
-        `That did not take and you are still checked in${detail} `
-        + "Hit Check Out again, and tell a coach anything they need to know.",
+        `That did not take and your training is still going${detail} `
+        + "Press End Training again, and tell a coach anything they need to know.",
       );
     } finally {
       checkingOutRef.current = false;
@@ -2669,16 +2670,16 @@ export default function AthleteWorkspace() {
      counted (F-050). So when the wellness check is on record and no session is
      open, the line says both facts. */
   const railCheckInLine = checkInTime
-    ? `Checked in ${checkInTime}`
+    ? `Training started ${checkInTime}`
     : storedSessionLoad !== 'loaded'
       ? null
       : checkedOutToday
-        ? (checkedOutAt ? `Checked out ${checkedOutAt}` : 'Checked out today')
+        ? (checkedOutAt ? `Training ended ${checkedOutAt}` : 'Training ended today')
         : checkInLoading || checkInLoadError !== null
           ? null
           : todayCheckIn
-            ? "Today's wellness is recorded. No session started yet."
-            : 'Not checked in yet';
+            ? "How you feel today is saved. Training not started yet."
+            : 'Training not started yet';
 
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');
@@ -2842,6 +2843,11 @@ export default function AthleteWorkspace() {
           )}
         </div>
 
+        {/* Attendance where the athlete already is (lane U2, audit UX-A A-4;
+            Jason 2026-10-17, "A: Rename + I'm here on Today"): one "I'm here"
+            for today's class on every Today tab. */}
+        {activeGroup === 'today' && <AthleteImHere athleteId={backendAthleteId} />}
+
         {/* TAB CONTENT */}
         <div className="space-y-6">
           {/* MY DASHBOARD */}
@@ -2881,9 +2887,9 @@ export default function AthleteWorkspace() {
                   holds Wellness. */}
               <HelpPanel
                 title="My Dashboard"
-                description="Your daily command center. Check in, see assigned work, report pain, and monitor your progress toward goals."
+                description="Your daily command center. Start training, see assigned work, report pain, and monitor your progress toward goals."
                 usage={[
-                  'Check in to open your session',
+                  'Start training to open your session',
                   'See how much work your coach has assigned you',
                   'Monitor active SMART goals',
                   'Note any pain or injury concerns'
@@ -2894,7 +2900,7 @@ export default function AthleteWorkspace() {
                    record that does not exist. */
                 mistakes={[
                   'Not reporting pain to your coach',
-                  'Skipping the check-in process'
+                  'Skipping How I feel today'
                 ]}
               />
 
@@ -3029,11 +3035,11 @@ export default function AthleteWorkspace() {
                     Sign in again, and tell a coach you are on the floor.
                   </p>
                 ) : storedSessionLoad === 'loading' ? (
-                  <span className="working">Checking whether you are still checked in...</span>
+                  <span className="working">Checking whether your training is still going...</span>
                 ) : storedSessionLoad === 'unavailable' ? (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                      Your sessions could not be read, so nobody can tell right now whether you are already checked in.
+                      Your sessions could not be read, so nobody can tell right now whether your training has already started.
                       That is a problem reaching the app, not a sign that you have no session open.
                     </p>
                     <button
@@ -3152,7 +3158,7 @@ export default function AthleteWorkspace() {
                       </div>
                       {answeredEffort === null ? (
                         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not answered — you can skip this. Checking out without it records no effort.
+                          Not answered — you can skip this. Ending training without it records no effort.
                         </p>
                       ) : (
                         <button
@@ -3199,12 +3205,12 @@ export default function AthleteWorkspace() {
                       disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
-                      {isCheckingOut ? 'Checking out...' : 'Check Out'}
+                      {isCheckingOut ? 'Ending...' : 'End Training'}
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-[var(--s4)]">
-                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">You are not checked in right now.</p>
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Your training has not started.</p>
                     {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
                         readiness slider used to be the only pre-session input.
                         Optional and empty until the athlete writes in it.
@@ -3229,7 +3235,7 @@ export default function AthleteWorkspace() {
                         className="textarea input--kiosk h-[89px]"
                       />
                       <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                        Optional. You can leave it empty. Nobody sees this until you check in and press Share with coach.
+                        Optional. You can leave it empty. Nobody sees this until you start training and press Share with coach.
                       </p>
                     </div>
                     <button
@@ -3238,7 +3244,7 @@ export default function AthleteWorkspace() {
                       disabled={isCheckingIn}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
-                      {isCheckingIn ? 'Checking in...' : 'Check In'}
+                      {isCheckingIn ? 'Starting...' : 'Start Training'}
                     </button>
                   </div>
                 )}
@@ -3275,9 +3281,9 @@ export default function AthleteWorkspace() {
           {activeTab === 'athlete-floor' && floorLockedPendingCheckIn && (
             <div className="space-y-6 panel-settle">
               <div className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
-                <h3 className="t-label">Check in first</h3>
+                <h3 className="t-label">How I feel today, first</h3>
                 <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                  Your work for today opens once you have checked in. It takes a few
+                  Your work for today opens once you have said how you feel. It takes a few
                   seconds, and every question is optional.
                 </p>
                 <button
@@ -3285,7 +3291,7 @@ export default function AthleteWorkspace() {
                   onClick={() => setActiveTab('bio-checkin')}
                   className="btn btn--kiosk"
                 >
-                  Go to check in
+                  Go to How I feel today
                 </button>
                 <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
                   Everything else stays open — goals, drills, messages, and telling a
@@ -4066,7 +4072,7 @@ export default function AthleteWorkspace() {
                     own log, not something SHADOW noticed: they are left off, and
                     the state is said in words (F-005). */}
                 {!shadowObservationError && observationsForAthlete(shadowObservations).length === 0 ? (
-                  <p className="t-muted mt-[var(--s3)]">SHADOW has not noticed anything yet. Keep training and checking in.</p>
+                  <p className="t-muted mt-[var(--s3)]">SHADOW has not noticed anything yet. Keep training and saying how you feel.</p>
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                   {observationsForAthlete(shadowObservations).slice(0, 6).map((item) => (
