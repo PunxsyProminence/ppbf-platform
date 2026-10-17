@@ -2113,7 +2113,7 @@ export default function CoachWorkspace() {
       if (!response.ok || !payload.ok || !payload.escalation) {
         setEscalationAckErrors((prev) => ({
           ...prev,
-          [escalationId]: payload.error || 'The escalation could not be acknowledged.',
+          [escalationId]: refusalWords({ error: payload.error }, {}, 'The escalation could not be acknowledged. Try again.'),
         }));
         return;
       }
@@ -2150,7 +2150,7 @@ export default function CoachWorkspace() {
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; status?: string; error?: string };
 
       if (!response.ok || !payload.ok) {
-        setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: payload.error || 'Action failed.' }));
+        setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: refusalWords({ error: payload.error, status: response.status }) }));
         return;
       }
 
@@ -2213,7 +2213,7 @@ export default function CoachWorkspace() {
            one of those is true. */
         setNicknameClearErrors((prev) => ({
           ...prev,
-          [athleteId]: payload.error || 'The ring name was not cleared. Ask an organization admin.',
+          [athleteId]: refusalWords({ error: payload.error }, {}, 'The ring name was not cleared. Ask an organization admin.'),
         }));
         return;
       }
@@ -2453,7 +2453,7 @@ export default function CoachWorkspace() {
         if (reviewAthleteRef.current !== athleteId) {
           return;
         }
-        setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
+        setReviewSessionsError(refusalWords({ error: payload.error }, {}, 'Sessions could not be loaded.'));
         setReviewSessionsState('unavailable');
         return;
       }
@@ -2600,7 +2600,7 @@ export default function CoachWorkspace() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({ error: 'Coach review was not saved.' }))) as { error?: string };
-        setReviewSyncMessage(payload.error || 'Coach review was not saved.');
+        setReviewSyncMessage(refusalWords({ error: payload.error }, {}, 'Coach review was not saved.'));
         return;
       }
 

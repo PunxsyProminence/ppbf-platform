@@ -1175,7 +1175,7 @@ describe('coach review session picker', () => {
     ).toHaveLength(0);
   });
 
-  test('the server\'s refusal for an athlete outside this coach\'s scope is shown verbatim, not as an empty list', async () => {
+  test('the server\'s refusal for an athlete outside this coach\'s scope is shown in words, not as an empty list', async () => {
     await renderWorkspace({
       athletesList: twoAthletes,
       sessionsList: () =>
@@ -1185,7 +1185,9 @@ describe('coach review session picker', () => {
     openTab('Athlete Reviews');
     await pickReviewAthlete('ath_2');
 
-    expect(screen.queryByText(/Forbidden: coach not assigned to athlete/)).not.toBeNull();
+    // Its reason in words, never the access layer's "Forbidden:" (UXB-09).
+    expect(screen.queryByText(/Your account cannot do this here\. Coach not assigned to athlete\./)).not.toBeNull();
+    expect(screen.queryByText(/Forbidden/)).toBeNull();
     expect(screen.queryByText(/Sessions may exist that are not listed here/)).not.toBeNull();
     // The refusal must not be dressed as "this athlete has no sessions".
     expect(screen.queryByText(/No sessions are recorded for this athlete yet/)).toBeNull();
@@ -1338,7 +1340,8 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
 
-    await waitFor(() => expect(screen.queryByText(/Forbidden: coach not assigned to athlete/i)).not.toBeNull());
+    // The refusal is words, with its reason, never the access layer's "Forbidden:" (UXB-09).
+    await waitFor(() => expect(screen.queryByText('Your account cannot do this here. Coach not assigned to athlete.')).not.toBeNull());
     // The item's own local status must not be optimistically flipped on a
     // refused request -- it is still exactly what the server last said.
     expect(screen.queryByText('Status: waiting for review')).not.toBeNull();

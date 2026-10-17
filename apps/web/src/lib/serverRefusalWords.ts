@@ -15,8 +15,13 @@
  * All wording here is PROPOSED (lane U3, UXB-L4).
  */
 
-/** The fallback when nothing better is known. PROPOSED. */
+/** The fallback for a request the server refused before writing (a 4xx). PROPOSED. */
 export const NOTHING_CHANGED = 'That did not go through. Nothing was changed. Try again.';
+
+/** The fallback when the server failed or its answer is unknown (5xx, no status,
+ *  an unreadable reply): the write may or may not have landed, so this states
+ *  nothing about it. PROPOSED. */
+export const NOT_SURE = 'That did not go through. Check what the screen shows before trying again.';
 
 const SIGN_IN_EXPIRED = 'Your sign-in has expired. Sign in again, then try again.';
 const NOT_ALLOWED = 'Your account cannot do this here.';
@@ -29,8 +34,6 @@ export const SESSION_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   SESSION_RUN_ATHLETE_NOT_PERMITTED: 'Your account cannot record that athlete here. Nothing was changed.',
   SESSION_RUN_BLOCK_NOT_IN_SCRIPT: 'That block is not part of this session\'s plan, so the session stayed where it was.',
   SESSION_RUN_HAS_NO_SCRIPT: 'This session has no plan, so there are no blocks to move between.',
-  SESSION_RUN_STATE_INVALID: 'The session changed on another screen. Nothing was changed here; check it and try again.',
-  SESSION_RUN_SHOW_ON_WALL_NOT_READY: 'Showing this session on the wall is not ready yet. Nothing was changed.',
   SESSION_RUN_NOT_ON_TV: 'Switch "Show on TV" on for your session first, then send it.',
   ROUND_TIMER_RUNNING: 'The rounds are already running.',
   ROUND_TIMER_PAUSED: 'The rounds are paused. Press Resume to carry on.',
@@ -44,13 +47,22 @@ export function looksLikeCode(text: string): boolean {
   if (trimmed === '') return true;
   // SOME_CODE, some_code, someCode, HTTP 409, 409: nothing a person can act on.
   if (!/\s/.test(trimmed)) return true;
+  // A field name inside a sentence ("Missing athlete_id", "max_hard_open_... must be").
+  if (/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/.test(trimmed)) return true;
   if (/^HTTP\s*\d{3}$/i.test(trimmed)) return true;
   return false;
 }
 
-/** Server text that is never words for a person: a code prefix ("SOME_CODE: ..."),
- *  a raw server error, or a database/parse message. */
-const BUILDER_TEXT = /^[A-Z][A-Z0-9_]{2,}:|^internal server error|\bpilot\.|\bsql\b|\bECONN|unexpected token|\bJSON\b/i;
+/** Server text that is never words for a person: a code prefix ("UNEXPECTED_FIELD: x",
+ *  "action:expected ..."), a raw server error, or a database/parse message. A
+ *  sentence that merely starts "Unsupported: ..." is kept. */
+const CODE_PREFIX = /^(?:[A-Z][A-Z0-9_]{2,}:|[A-Za-z_]+:\S)/;
+const BUILDER_TEXT = /^internal server error|\bpilot\.|\bsql\b|\bECONN|unexpected token|\bJSON\b/i;
+
+function sentenceCase(text: string): string {
+  const trimmed = text.trim().replace(/\.$/, '');
+  return trimmed === '' ? trimmed : `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}.`;
+}
 
 /** Drops a trailing "(SOME_CODE)" or "(409)" a server sentence carries for its logs. */
 function withoutTrailingCode(text: string): string {
@@ -80,11 +92,21 @@ export function refusalWords(
   // The shared access layer answers "Unauthorized..." and "Forbidden: coach not
   // assigned to athlete": builder words, whatever the status says.
   if (input.status === 401 || /^unauthori[sz]ed\b/i.test(raw)) return SIGN_IN_EXPIRED;
-  if (/^forbidden\b/i.test(raw)) return NOT_ALLOWED;
-  if (raw !== '' && !looksLikeCode(raw) && !BUILDER_TEXT.test(raw)) {
+  if (/^forbidden\b/i.test(raw)) {
+    // "Forbidden: only an organization admin can lift a hold an admin placed"
+    // carries the reason a coach needs; keep it when it reads as words.
+    const reason = raw.replace(/^forbidden\s*:?\s*/i, '');
+    if (reason !== '' && !looksLikeCode(reason) && !CODE_PREFIX.test(reason) && !BUILDER_TEXT.test(reason)) {
+      return `${NOT_ALLOWED} ${sentenceCase(withoutTrailingCode(reason))}`;
+    }
+    return NOT_ALLOWED;
+  }
+  if (raw !== '' && !looksLikeCode(raw) && !CODE_PREFIX.test(raw) && !BUILDER_TEXT.test(raw)) {
     const sentence = withoutTrailingCode(raw);
     if (sentence !== '' && !looksLikeCode(sentence)) return sentence;
   }
   if (input.status === 403) return NOT_ALLOWED;
-  return fallback;
+  if (fallback !== NOTHING_CHANGED) return fallback;
+  // Only a refusal (4xx) is known to have changed nothing.
+  return typeof input.status === 'number' && input.status >= 400 && input.status < 500 ? NOTHING_CHANGED : NOT_SURE;
 }

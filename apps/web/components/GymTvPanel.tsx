@@ -54,7 +54,7 @@ interface GymTvPanelProps {
 
 type ListState = 'closed' | 'loading' | 'loaded' | 'unavailable';
 
-/** Server refusal codes this panel names in plain words. Anything else is shown as the code. */
+/** Server refusal codes this panel names in plain words. Anything else becomes plain words too (UXB-09). */
 const REFUSALS: Record<string, string> = {
   TV_IN_USE: 'This TV is in use by another coach. Ask them, or pick another TV.',
   TV_NOT_PAIRED: 'This TV is not paired yet. Type its code on the TV first.',
