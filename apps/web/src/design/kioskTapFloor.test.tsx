@@ -131,6 +131,8 @@ const FLOOR_ROUTES = [
 describe('gym-floor pages carry the kiosk surface', () => {
   it.each(FLOOR_ROUTES)('/%s has a layout that marks its page as kiosk', (route) => {
     const layoutPath = path.resolve(__dirname, '../../app', route, 'layout.tsx');
+    // The page must still live here, or the layout guards an empty folder.
+    expect(existsSync(path.resolve(__dirname, '../../app', route, 'page.tsx')) ? route : `${route}: no page.tsx`).toBe(route);
     expect(existsSync(layoutPath) ? route : `${route}: no layout.tsx`).toBe(route);
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
