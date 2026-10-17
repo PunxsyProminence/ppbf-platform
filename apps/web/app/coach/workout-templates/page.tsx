@@ -11,6 +11,7 @@ import type {
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
 } from '@/src/server/pilot/workoutTemplates';
+import ClusterNav from '@/components/ClusterNav';
 
 // Browse over pilot.workout_templates, the first UI consumer of
 // GET /api/pilot/workout-templates. The TEMPLATES are read-only by design --
@@ -687,6 +688,7 @@ function CoachWorkoutTemplates() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The reusable session shapes behind the plans: what a session of each type looks like,
             block by block. Open one to issue it to an athlete, or to make a session script from
