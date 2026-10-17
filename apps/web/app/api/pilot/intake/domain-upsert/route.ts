@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActiveParentAccount, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { withTransaction } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertShadowAuthority,
@@ -253,13 +254,26 @@ export async function POST(request: NextRequest) { // NOSONAR
           recordedByAccountId: principal.accountId,
         }, client);
       } else if (entityType === 'coach_note') {
+        const noteType = asString(payload.note_type, 'coach_observation');
+        const noteText = asString(payload.note_text);
+        // A message to the athlete (FC-06) is read on their Dashboard and, for
+        // an athlete under 18, by their guardians -- so an empty one or a
+        // wall of text is refused here rather than delivered. 4000 is the
+        // limit parent/observations already holds a guardian's note to.
+        if (noteType === 'athlete_message') {
+          const words = noteText.trim();
+          if (!words || words.length > 4000) {
+            // PROPOSED copy
+            throw new ValidationError('A message to the athlete needs some text, up to 4000 characters.');
+          }
+        }
         entityId = await createCoachObservation({
           organizationId: principal.organizationId,
           athleteId,
           coachAccountId: principal.accountId,
           authorRole: principal.role,
-          noteType: asString(payload.note_type, 'coach_observation'),
-          noteText: asString(payload.note_text),
+          noteType,
+          noteText,
         }, client);
       } else if (guardianLink) {
         const { parentId, guardianAccountId } = guardianLink;
