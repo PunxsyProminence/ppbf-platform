@@ -127,7 +127,7 @@ test('the pickers offer the server\'s own lists: athletes by name, active coache
   const athleteOptions = Array.from((screen.getByLabelText('Athlete') as HTMLSelectElement).options)
     .map((option) => ({ value: option.value, label: option.textContent }));
   expect(athleteOptions).toEqual([
-    { value: '', label: 'Select an athlete' },
+    { value: '', label: 'Choose an athlete' },
     { value: 'ath-1', label: 'Sample Athlete One' },
     { value: 'ath-2', label: 'Sample Athlete Two' },
   ]);

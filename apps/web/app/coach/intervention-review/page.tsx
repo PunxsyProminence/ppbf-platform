@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDate } from '@/src/lib/gymTime';
+import { formatGymDate, formatGymDateShort } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 // Intervention review (module 026 slice 3): the whole loop on one page --
 // DECISION -> PLANNED -> ACTUAL -> WHAT HAPPENED -> WHAT WE LEARNED.
@@ -293,6 +294,7 @@ export default function InterventionReviewPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>What We Learned</h1>
+            <ClusterNav cluster="interventions" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               The whole loop, one athlete at a time: what was decided, what we planned, what we
               actually did, what the evidence says happened, and what it taught us. Three separate
@@ -327,7 +329,7 @@ export default function InterventionReviewPage() {
                         {execution.protocol_title ?? execution.protocol_id} (v{execution.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {execution.created_at.slice(0, 10)}
+                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
                       </span>
                     </div>
 

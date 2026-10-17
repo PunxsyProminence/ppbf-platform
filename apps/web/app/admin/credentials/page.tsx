@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 // Admin verification queue for staff credentials. This is also where
 // "alerts" live -- there is no cron in this codebase (trainingHolds.ts's
@@ -38,7 +39,8 @@ function addMonths(dateStr: string, months: number): string {
   return result.toISOString().slice(0, 10);
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+// The gym's day: the UTC day is tomorrow after 8 PM gym time (UXB-30).
+const today = () => gymDayIso(new Date()) ?? new Date().toISOString().slice(0, 10);
 
 export default function AdminCredentialsPage() {
   const [items, setItems] = useState<QueueRow[]>([]);

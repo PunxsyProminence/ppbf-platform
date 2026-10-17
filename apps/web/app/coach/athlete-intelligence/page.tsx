@@ -11,6 +11,7 @@ import type {
   FormulaOutputEntry,
   IntelligenceSourceAvailability,
 } from '@/src/server/pilot/athleteIntelligence';
+import ClusterNav from '@/components/ClusterNav';
 
 // THE SCREEN THAT READS WHAT THE ENGINE COMPUTES.
 //
@@ -257,6 +258,7 @@ export default function AthleteIntelligencePage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Athlete Intelligence</h1>
+            <ClusterNav cluster="who-needs-me" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               The latest computed value of every formula output for one athlete, with what
               qualifies it — validation, confidence, completeness and the weakest source
@@ -279,7 +281,7 @@ export default function AthleteIntelligencePage() {
             <label className="t-label" htmlFor="intelligence-athlete">Athlete</label>
             <select id="intelligence-athlete" className="select" value={athleteId}
               onChange={(e) => { setLoading(e.target.value !== ''); setAthleteId(e.target.value); }}>
-              <option value="">Select an athlete…</option>
+              <option value="">Choose an athlete</option>
               {athletes.map((athlete) => (
                 <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
               ))}
