@@ -82,6 +82,37 @@ function formatDueDate(value: string): string {
   return formatGymDay(value) ?? value;
 }
 
+/* One child's membership, scholarship and community-support standing, as
+   /api/pilot/parent/support-status sends it (PH-13). */
+interface SupportStatus {
+  memberships: Array<{ program_name: string; status: 'active' | 'lapsed' | 'ended'; started_on: string; ended_on: string | null }>;
+  scholarship: 'yes' | 'none_recorded';
+  supports: Array<{ support_kind: string; provided_on: string }>;
+}
+
+/** The payload, or null when it is not the shape the route sends. */
+function readSupportStatus(payload: unknown): SupportStatus | null {
+  const value = payload as Partial<SupportStatus> | null;
+  if (!value || !Array.isArray(value.memberships) || !Array.isArray(value.supports)) return null;
+  if (value.scholarship !== 'yes' && value.scholarship !== 'none_recorded') return null;
+  const memberships = value.memberships.filter((row) =>
+    typeof row?.program_name === 'string' && typeof row.started_on === 'string'
+    && (row.status === 'active' || row.status === 'lapsed' || row.status === 'ended'));
+  const supports = value.supports.filter((row) =>
+    typeof row?.support_kind === 'string' && typeof row.provided_on === 'string');
+  if (memberships.length !== value.memberships.length || supports.length !== value.supports.length) return null;
+  return { memberships, scholarship: value.scholarship, supports };
+}
+
+/** "Youth Boxing: Active since October 1, 2026", from one membership row. */
+function membershipLine(row: SupportStatus['memberships'][number]): string {
+  if (row.status === 'active') return `${row.program_name}: Active since ${formatDueDate(row.started_on)}`;
+  if (row.status === 'lapsed') return `${row.program_name}: Lapsed (started ${formatDueDate(row.started_on)})`;
+  return row.ended_on
+    ? `${row.program_name}: Ended ${formatDueDate(row.ended_on)}`
+    : `${row.program_name}: Ended`;
+}
+
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
@@ -868,6 +899,45 @@ export default function ParentHub() {
     return () => controller.abort();
   }, [activeChildId]);
   const shownProgress = childProgress?.athleteId === activeChildId ? childProgress : null;
+
+  /* MEMBERSHIP, SCHOLARSHIP AND COMMUNITY SUPPORT (PH-13), from
+     /api/pilot/parent/support-status, which checks the guardian link to this
+     child on the request. Each program's standing with its dates; scholarship
+     is yes or none recorded, never a percent; recorded supports with their
+     dates (Q-D A). Keyed by athlete and aborted on a switch, like
+     childProgress. A read that did not answer is 'failed' (Unavailable),
+     never an empty list (none recorded). */
+  const [childSupport, setChildSupport] = useState<
+    | { athleteId: string; state: 'loaded'; status: SupportStatus }
+    | { athleteId: string; state: 'failed' }
+    | null
+  >(null);
+  useEffect(() => {
+    if (!activeChildId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/parent/support-status?athlete_id=${encodeURIComponent(activeChildId)}`,
+          { method: 'GET', credentials: 'include', signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        const payload = response.ok ? await response.json().catch(() => null) : null;
+        if (controller.signal.aborted) return;
+        const status = readSupportStatus(payload);
+        setChildSupport(status
+          ? { athleteId: activeChildId, state: 'loaded', status }
+          : { athleteId: activeChildId, state: 'failed' });
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+        setChildSupport({ athleteId: activeChildId, state: 'failed' });
+      }
+    })();
+    return () => controller.abort();
+  }, [activeChildId]);
+  const shownSupport = childSupport?.athleteId === activeChildId && childSupport.state === 'loaded'
+    ? childSupport.status
+    : null;
   const progressText = shownProgress?.state === 'loaded'
     ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} logged`
     : 'Unavailable';
@@ -1382,23 +1452,43 @@ export default function ParentHub() {
                           <p className="t-body font-semibold">Unavailable</p>
                         )}
                       </div>
-                      {/* Membership/scholarship/community-service status has no
-                          backing column anywhere in the schema -- these used to
-                          be hardcoded to the same "supported" values for every
-                          family regardless of their actual status, which is a
-                          real billing-adjacent misstatement, not a placeholder.
-                          Show unavailable honestly until a real field exists. */}
                       <div>
                         <p className="t-label mb-[var(--s2)]">Membership Status</p>
-                        <p className="t-muted">Unavailable - not yet tracked</p>
+                        {!shownSupport ? (
+                          <p className="t-body font-semibold">Unavailable</p>
+                        ) : shownSupport.memberships.length === 0 ? (
+                          <p className="t-muted">No membership recorded</p>
+                        ) : (
+                          shownSupport.memberships.map((row, index) => (
+                            <p key={`${row.program_name}-${row.started_on}-${index}`} className="t-body font-semibold">
+                              {membershipLine(row)}
+                            </p>
+                          ))
+                        )}
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Scholarship Status</p>
-                        <p className="t-muted">Unavailable - not yet tracked</p>
+                        {!shownSupport ? (
+                          <p className="t-body font-semibold">Unavailable</p>
+                        ) : shownSupport.scholarship === 'yes' ? (
+                          <p className="t-body font-semibold">Scholarship: yes</p>
+                        ) : (
+                          <p className="t-muted">No scholarship recorded</p>
+                        )}
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Community Service Support Status</p>
-                        <p className="t-muted">Unavailable - not yet tracked</p>
+                        {!shownSupport ? (
+                          <p className="t-body font-semibold">Unavailable</p>
+                        ) : shownSupport.supports.length === 0 ? (
+                          <p className="t-muted">No support recorded</p>
+                        ) : (
+                          shownSupport.supports.map((row, index) => (
+                            <p key={`${row.provided_on}-${index}`} className="t-body font-semibold">
+                              {`${row.support_kind} · ${formatDueDate(row.provided_on)}`}
+                            </p>
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>

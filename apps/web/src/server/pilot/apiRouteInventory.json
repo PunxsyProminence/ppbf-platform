@@ -8984,6 +8984,33 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/support-status/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/support-status",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on athlete_id (getSupportStatusForGuardian)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads one linked under-18 child's membership standing per program with its dates, scholarship as yes/none_recorded (percent reduced to a boolean in SQL), and live family support records with their dates (PH-13, Q-D A). Never scholarship_percent, scholarship_note, notes or any staff id. Another family's child, an 18+ child, a deleted child or another gym's child is the same 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/passbook/gaps/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/passbook/gaps",
