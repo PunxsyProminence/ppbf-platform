@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import RefusalStamp from '@/components/RefusalStamp';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /**
  * The screen over DELETE /api/pilot/admin/data-deletion.
@@ -507,9 +507,7 @@ function DataDeletionScreen() {
         </section>
 
         <div className="mt-[var(--s6)]">
-          <Link href="/operations" className="btn btn--ghost">
-            Back to Mission Control
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>

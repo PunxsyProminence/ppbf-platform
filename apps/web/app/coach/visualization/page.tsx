@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { buildGuidedSession } from '@/src/lib/visualization/guidedSession';
 import {
@@ -9,6 +8,7 @@ import {
   PF001_RING_CUTTER,
   VISUALIZATION_CONTENT_SOURCE,
 } from '@/src/lib/visualization/pf001Scenario';
+import BackHome from '@/components/BackHome';
 
 /**
  * VIZ-1: one coach-guided scripted shadowboxing visualization exposure.
@@ -494,9 +494,7 @@ export default function CoachVisualizationPage() {
           </aside>
 
           <p className="mt-[var(--s5)]">
-            <Link className="btn btn--ghost" href="/coach/environment/intake-router">
-              Back to Coach Workspace
-            </Link>
+            <BackHome />
           </p>
         </div>
       </main>

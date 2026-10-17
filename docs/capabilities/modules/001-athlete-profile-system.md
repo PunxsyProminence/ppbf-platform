@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. GET /api/pilot/passbook (route.ts) builds the read model via getAthletePassbook (passbook.ts); coach pages /coach/passbook and /coach/passbook-gaps reach it. |
+| Code | `apps/web/app/api/pilot/passbook/route.ts`, `apps/web/app/api/pilot/passbook/gaps/route.ts`, `apps/web/src/server/pilot/passbook.ts`, `apps/web/app/coach/passbook/page.tsx`, `apps/web/app/coach/passbook-gaps/page.tsx` |
+| Tests | `apps/web/app/api/pilot/passbook/route.test.ts`, `apps/web/app/api/pilot/passbook/gaps/route.test.ts`, `apps/web/src/server/pilot/passbook.test.ts` |
 | Vertical slice | athlete Passbook read model (identity, attendance, sessions, readiness, goals, observations, progression gaps) plus coach open-gap queue |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -89,3 +92,4 @@ which refuses parents.
 | 2026-08-04 | Codex | Added issue #156 Passbook read-model and API-only slice; governance remains inactive. |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/passbook.ts; apps/web/app/api/pilot/passbook/route.ts; apps/web/app/api/pilot/passbook/gaps/route.ts. Test: apps/web/app/api/pilot/passbook/route.test.ts pins 403 for board and unlinked parent, and 200 with observations+gaps for |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

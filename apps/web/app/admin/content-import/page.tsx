@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from 'react';
-import Link from 'next/link';
 
 import RefusalStamp from '@/components/RefusalStamp';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import type { PlanUnitView, PlanView } from '@/src/server/pilot/contentImport/upload';
+import BackHome from '@/components/BackHome';
 
 /**
  * The screen over POST /api/pilot/admin/content-import (IMP-12; R1 "for
@@ -589,9 +589,7 @@ function ContentImportScreen() {
         ) : null}
 
         <div className="mt-[var(--s6)]">
-          <Link href="/operations" className="btn btn--ghost">
-            Back to Mission Control
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>

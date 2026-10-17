@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
@@ -57,6 +57,15 @@ const STAFF_ROUTES = [
   'app/api/pilot/session-scripts/runs/route.ts',
 ];
 
+// The session-note read (F-067): sessionNotes.ts defines isSessionRunningForAthleteToday, a yes/no
+// of whether this athlete is in a live run (or nobody is marked in it), and the staff-only
+// session-note route is its one caller. Listed apart from STAFF_ROUTES because the route gates on
+// its own SESSION_NOTE_READ_ROLES, pinned below to the same three staff roles.
+const SESSION_NOTE_READERS = [
+  'app/api/pilot/coach/athlete-session-note/route.ts',
+  'src/server/pilot/sessionNotes.ts',
+];
+
 // The modules that define the reads and writers. privacyTiers.ts names them to forbid them on public surfaces.
 const DEFINING_MODULES = [
   'src/server/pilot/privacyTiers.ts',
@@ -65,9 +74,13 @@ const DEFINING_MODULES = [
   'src/server/pilot/sessionStaffNotes.ts',
 ];
 
-// The only files whose own text names either table.
+// The only files whose own text names either table. sessionNotes.ts asks one
+// yes/no of session_run_athletes for the staff-only session-note route
+// (isSessionRunningForAthleteToday, F-067): is this athlete in a live run, or
+// is nobody marked in it. It returns no name, no run and no mark.
 const TABLE_FILES = [
   'src/server/pilot/privacyTiers.ts',
+  'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
@@ -81,14 +94,23 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(routes.length).toBeGreaterThan(100);
     expect(ALL_SOURCE.length).toBeGreaterThan(routes.length + 200);
     const all = ALL_SOURCE.map(relative);
-    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES]) {
+    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS]) {
       expect(all).toContain(file);
     }
   });
 
-  it('exactly the three staff routes and the defining modules reach them, anywhere in the app', () => {
+  it('exactly the three staff routes, the defining modules and the session-note read reach them, anywhere in the app', () => {
     expect(ALL_SOURCE.filter((file) => REACHES.test(source(file))).map(relative).sort())
-      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES].sort());
+      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS].sort());
+  });
+
+  it('the session-note route admits only coach, organization admin and the legacy admin name', () => {
+    const text = source(path.join(WEB_DIR, SESSION_NOTE_READERS[0]));
+    const handlers = Array.from(text.matchAll(HANDLER)).length;
+    expect(handlers).toBe(1);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.SESSION_NOTE_READ_ROLES\]\s*\)/g))).toHaveLength(1);
+    expect(text).toMatch(/const SESSION_NOTE_READ_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
   });
 
   it('no route, page, component or other module names either table in its own text', () => {

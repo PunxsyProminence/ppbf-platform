@@ -8,6 +8,8 @@ import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 
 import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
+import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 /** Some of this digest's instants arrive as Postgres text ("2026-08-20
  *  00:00:00+00"), which not every browser parses. Written as ISO first. */
@@ -122,6 +124,7 @@ export default function CoachIntelligencePage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>The Morning Read</h1>
+            <ClusterNav cluster="who-needs-me" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Seven reads of your own athletes&rsquo; records, most urgent first.
               Every item is a stored fact plus a stated threshold — no scores, no predictions.
@@ -259,7 +262,7 @@ export default function CoachIntelligencePage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

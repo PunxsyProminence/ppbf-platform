@@ -96,20 +96,20 @@ function CoachReviewNote({ item }: { item: AthleteAttemptRecord }) {
   if (!state) return null;
   if (state === 'confirmed') {
     return (
-      <p className="t-muted text-[length:var(--t-xs)]" role="status">Coach confirmed this attempt.</p>
+      <p className="t-muted" role="status">Coach confirmed this attempt.</p>
     );
   }
   if (state === 'corrected') {
     const target = item.corrected_target_value;
     return (
-      <p className="t-muted text-[length:var(--t-xs)]" role="status">
+      <p className="t-muted" role="status">
         Coach correction: {item.corrected_achieved_value}{target !== null && target !== undefined ? ` / ${target}` : ''} {metricUnit(item.metric_kind)} · {resultLabel(item.corrected_made ?? null)}
         {item.review_reason ? ` — ${item.review_reason}` : ''}
       </p>
     );
   }
   return (
-    <p className="alert-title text-[length:var(--t-xs)]" role="status">
+    <p className="alert-title" role="status">
       Coach disputed this attempt{item.review_reason ? ` — ${item.review_reason}` : ''}
     </p>
   );
@@ -314,7 +314,12 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
         <h4 className="t-label">Your attempts</h4>
         {loading && <p className="t-muted text-[length:var(--t-sm)]">Loading your attempts…</p>}
         {loadError && !loading && (
-          <p className="alert-title" role="alert">{loadError}</p>
+          <div className="space-y-[var(--s3)]">
+            <p className="alert-title" role="alert">{loadError}</p>
+            <button type="button" onClick={() => void load()} className="btn btn--ghost min-h-[var(--tap)]">
+              Try again
+            </button>
+          </div>
         )}
         {!loading && !loadError && athleteId && items.length === 0 && (
           <p className="t-muted">No attempts recorded yet</p>

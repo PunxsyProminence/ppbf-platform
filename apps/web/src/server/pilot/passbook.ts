@@ -153,8 +153,9 @@ export const PASSBOOK_GUARDIAN_NOTE_TYPES: readonly string[] = [
  * coach + organization_admin + admin, then assertActorCanAccessAthlete per
  * athlete -- the same per-athlete gate the passbook route runs);
  * parent_message and behavior_standard are what these accounts wrote; the
- * intake types come out of the review they performed. Excluding them would
- * hide a coach's own record from the coach without protecting anybody.
+ * intake types come out of the review they performed; athlete_message (FC-06)
+ * staff already read through /api/pilot/coach/athlete-messages. Excluding them
+ * would hide a coach's own record from the coach without protecting anybody.
  *
  * floor_observation is deliberately absent: it appears only as a fixture
  * payload in app/api/pilot/intake/domain-upsert/route.test.ts, no product
@@ -167,6 +168,7 @@ export const PASSBOOK_STAFF_NOTE_TYPES: readonly string[] = [
   'onboarding_observation',
   'behavior_standard',
   'parent_message',
+  'athlete_message',
   'home_barrier',
   'transportation_barrier',
 ];

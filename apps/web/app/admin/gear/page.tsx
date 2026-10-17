@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 /**
  * The gym's equipment catalogue: what it paid, what it charges, what is on sale.
@@ -196,12 +197,7 @@ function GearCatalogueConsole() {
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
-          >
-            Back to admin
-          </Link>
+          <BackHome className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]" />
           <Link
             href="/admin/gear/vendors"
             className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
@@ -347,7 +343,7 @@ function GearCatalogueConsole() {
             onClick={() => { void save(); }}
             className="mt-4 min-h-[44px] w-full border-2 border-[var(--black)] bg-[color:var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save item'}
+            {isSaving ? 'Saving…' : 'Save item'}
           </button>
 
           {saveError ? (

@@ -440,6 +440,23 @@ describe('parent resources migration (PH-10)', () => {
     }
   });
 
+  // The same three quoted roles, widened by an OR: the guard skips its seat check for a role
+  // outside its list, so either check would admit a writer the gym never gave a staff seat.
+  test.each([
+    ['pilot_parent_resources_created_by_role_check', 'created_by_role', ''],
+    ['pilot_parent_resources_updated_by_role_check', 'updated_by_role', 'updated_by_role is null or '],
+  ] as const)('the runner refuses a same-named %s that names the Q-E roles but admits more', async (name, column, nullPart) => {
+    const client = await freshDatabase(`pres_or_${column}`);
+    try {
+      await client.query(`alter table pilot.parent_resources drop constraint ${name}`);
+      await client.query(`alter table pilot.parent_resources add constraint ${name}
+                            check (${nullPart}${column} in ('coach', 'organization_admin', 'admin') or ${column} = current_user)`);
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('PARENT_RESOURCES_NOT_READY: checks_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
   test("a program is this gym's own, and a program with resources is not deleted out from under them", async () => {
     const client = await freshDatabase('pres_program');
     try {

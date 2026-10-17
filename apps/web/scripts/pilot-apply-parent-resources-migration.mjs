@@ -76,13 +76,16 @@ const READINESS_QUERY = `
              and d.def like '%''draft''%' and d.def like '%''published''%' and d.def like '%''archived''%')
            or (c.conname = 'pilot_parent_resources_published_check'
              and d.def like '%''draft''%' and d.def like '%published_at IS NULL%' and d.def like '%published_at IS NOT NULL%')
-           -- The writer roles exactly (Q-E): every quoted word in the check, and nothing more, so a
-           -- same-named check left by an earlier table that also admits 'athlete' does not pass.
-           or (c.conname in ('pilot_parent_resources_created_by_role_check', 'pilot_parent_resources_updated_by_role_check')
-             and (
-               select array_agg(distinct m[1] order by m[1])
-                 from regexp_matches(d.def, '''([a-z_]+)''', 'g') as m
-             ) = array['admin', 'coach', 'organization_admin'])
+           -- The writer roles exactly (Q-E): the whole predicate as PostgreSQL prints this migration's
+           -- own check (runs of whitespace collapsed). Matching only the quoted words passed a
+           -- same-named check with the same three roles plus "or created_by_role = current_user", and
+           -- the guard does not vouch for a role outside its list; one admitting 'athlete' fails too.
+           or (c.conname = 'pilot_parent_resources_created_by_role_check'
+             and regexp_replace(d.def, '[[:space:]]+', ' ', 'g')
+               = 'CHECK ((created_by_role = ANY (ARRAY[''coach''::text, ''organization_admin''::text, ''admin''::text])))')
+           or (c.conname = 'pilot_parent_resources_updated_by_role_check'
+             and regexp_replace(d.def, '[[:space:]]+', ' ', 'g')
+               = 'CHECK (((updated_by_role IS NULL) OR (updated_by_role = ANY (ARRAY[''coach''::text, ''organization_admin''::text, ''admin''::text]))))')
          )
     ) = 8 as checks_ready,
     exists (
