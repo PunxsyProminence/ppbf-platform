@@ -4,8 +4,10 @@ import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
 import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { OrganizationProfileProvider } from "@/components/OrganizationProfileProvider";
 import {
   getOperatingOrganizationProfile,
+  getOperatingOrganizationProfileOrNull,
   OrganizationProfileUnavailableError,
 } from "@/src/server/pilot/organizationProfileStore";
 
@@ -51,10 +53,12 @@ export async function generateMetadata(): Promise<Metadata> {
   try {
     gym = await getOperatingOrganizationProfile();
   } catch (error) {
-    /* Every page sits under this layout, sign-in included. If the profile
-       cannot be read (production, no row, no database, nothing cached), the
-       pages that state the gym's facts refuse on their own; the rest keep
-       working under a plain title that carries none of them. */
+    // Every page sits under this layout, sign-in included. If the profile
+    // cannot be read (production, no row, no database, nothing cached), the
+    // pages that state the gym's facts refuse on their own; the rest keep
+    // working under a plain title that carries none of them. (Line comments:
+    // fontTokenScope.test.ts strips block comments with a pattern that a
+    // block comment opening a brace-delimited block would carry too far.)
     if (error instanceof OrganizationProfileUnavailableError) {
       return { title: { default: "Platform", template: "%s" } };
     }
@@ -70,11 +74,14 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The gym's profile for every browser component under this layout (print
+  // sheets, the interest form, the wall, the names board, photo captions).
+  const gym = await getOperatingOrganizationProfileOrNull();
   return (
     /* THE FONT VARIABLES BELONG ON <html>, NOT ON <body>, AND THE DIFFERENCE
        WAS NOT COSMETIC. globals.css declares --font-stencil, --font-body,
@@ -104,8 +111,10 @@ export default function RootLayout({
               component, and the PLATES section of design-system/ppbf.css for
               the cascade half. */}
           <PlateVariantGround>
-            <GlobalRoleHeader />
-            {children}
+            <OrganizationProfileProvider profile={gym}>
+              <GlobalRoleHeader />
+              {children}
+            </OrganizationProfileProvider>
           </PlateVariantGround>
         </ThemeProvider>
       </body>

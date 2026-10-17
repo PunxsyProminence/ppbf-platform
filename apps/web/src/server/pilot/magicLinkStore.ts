@@ -5,6 +5,7 @@ import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { graphTokenProvider } from './managedIdentityToken';
 import { sendPlainTextMail } from './graphMailer';
+import { getOperatingOrganizationProfileOrNull } from './organizationProfileStore';
 import {
   magicLinkOrigin,
   validateTokenForRedemption,
@@ -103,6 +104,8 @@ export function magicLinkDependencies(): MagicLinkDependencies {
     now: () => new Date(),
     createToken: createOpaqueToken,
     appOrigin: appOrigin(),
+    // The operating gym's name for the email (lane L31; OD-2026-09-28-007).
+    gymProfile: getOperatingOrganizationProfileOrNull,
   };
 }
 

@@ -199,3 +199,18 @@ export async function getOrganizationProfile(
 export function getOperatingOrganizationProfile(): Promise<OrganizationProfile> {
   return getOrganizationProfile(OPERATING_ORGANIZATION_ID);
 }
+
+/**
+ * The same, or null when it cannot be read. For the surfaces that must keep
+ * working without it -- every page's layout, the sign-in email, SHADOW -- which
+ * then leave the gym's name out rather than invent one. Any other failure
+ * still throws.
+ */
+export async function getOperatingOrganizationProfileOrNull(): Promise<OrganizationProfile | null> {
+  try {
+    return await getOperatingOrganizationProfile();
+  } catch (error) {
+    if (error instanceof OrganizationProfileUnavailableError) return null;
+    throw error;
+  }
+}

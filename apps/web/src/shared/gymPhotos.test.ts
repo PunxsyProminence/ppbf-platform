@@ -4,11 +4,12 @@ import path from 'node:path';
 import {
   GYM_PHOTO_BASE_PATH,
   GYM_PHOTO_SLOTS,
-  GYM_STAFF_CARDS,
+  gymStaffCards,
   filledGymPhotoSlots,
   gymPhotoSlotsFor,
   gymPhotoSrc,
 } from './gymPhotos';
+import { PPBF_PROFILE } from '@/src/testing/organizationProfileFixtures';
 
 /**
  * The manifest is the whole safety story for the gym's photography, so it is
@@ -33,7 +34,7 @@ describe('the gym photo manifest', () => {
     }
     // Staff cards are different: a drawn stand-in for a named real person
     // would be an invention, so they stay empty until a real photograph lands.
-    expect(GYM_STAFF_CARDS.every((person) => person.photo === null)).toBe(true);
+    expect(gymStaffCards(PPBF_PROFILE).every((person) => person.photo === null)).toBe(true);
   });
 
   it('backs every named illustration with a real file in public/gym', () => {
@@ -53,7 +54,7 @@ describe('the gym photo manifest', () => {
       expect(slot.title.trim().length).toBeGreaterThan(0);
       expect(slot.caption.trim().length).toBeGreaterThan(0);
     }
-    for (const person of GYM_STAFF_CARDS) {
+    for (const person of gymStaffCards(PPBF_PROFILE)) {
       expect(person.alt.trim().length).toBeGreaterThan(0);
     }
   });
