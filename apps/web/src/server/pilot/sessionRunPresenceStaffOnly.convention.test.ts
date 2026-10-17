@@ -65,9 +65,13 @@ const DEFINING_MODULES = [
   'src/server/pilot/sessionStaffNotes.ts',
 ];
 
-// The only files whose own text names either table.
+// The only files whose own text names either table. sessionNotes.ts asks one
+// yes/no of session_run_athletes for the staff-only session-note route
+// (isSessionRunningForAthleteToday, F-067): is this athlete in a live run, or
+// is nobody marked in it. It returns no name, no run and no mark.
 const TABLE_FILES = [
   'src/server/pilot/privacyTiers.ts',
+  'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
