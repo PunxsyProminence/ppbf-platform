@@ -96,8 +96,8 @@ describe('the coaching-request coach picker (#1536)', () => {
     const options = Array.from((picker as HTMLSelectElement).options).map((option) => option.textContent);
     expect(options).toEqual([
       'Select a coach',
-      'Coach Jane Doe (jane.doe@gym.example)',
-      'Coach Sam Ruiz (sam_ruiz2@gym.example)',
+      'Coach Jane Doe',
+      'Coach Sam Ruiz',
     ]);
 
     fireEvent.change(picker, { target: { value: 'acct-jane' } });

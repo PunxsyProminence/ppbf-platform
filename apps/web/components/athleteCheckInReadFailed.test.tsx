@@ -26,8 +26,8 @@ test('a failed read says so with Try again, which reads it again, and keeps the 
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   expect(onRetry).toHaveBeenCalledTimes(1);
   // The form is still there to use.
-  expect(screen.getByRole('heading', { name: 'Check in' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /check in/i })).toBeEnabled();
+  expect(screen.getByRole('heading', { name: 'How I feel today' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /save how i feel/i })).toBeEnabled();
 });
 
 function Harness() {
@@ -65,10 +65,10 @@ test('already checked in earlier: the athlete is told what they just entered was
 
   fireEvent.change(screen.getByLabelText('How many hours did you sleep?'), { target: { value: '5' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /check in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save how i feel/i }));
   });
 
-  expect(screen.getByRole('heading', { name: 'Already checked in today' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Saved for today' })).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('what you just entered was not saved');
   // The morning's answers, not the ones just typed (5 hours).
   expect(screen.getByText('Note: from this morning')).toBeInTheDocument();
@@ -81,9 +81,9 @@ test('a first check-in today says nothing about earlier answers', async () => {
   answering(false);
   render(<Harness />);
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /check in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save how i feel/i }));
   });
-  expect(screen.getByRole('heading', { name: 'Already checked in today' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Saved for today' })).toBeInTheDocument();
   expect(screen.queryByText(/was not saved/)).toBeNull();
 });
 
@@ -100,7 +100,7 @@ test('with the form kept, a check-in can still be sent and the stored one is sho
   );
 
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /check in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save how i feel/i }));
   });
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ check_in_id: 'ci-1' }));
@@ -118,5 +118,5 @@ test('nothing to read (no athlete record, no retry given) is still a plain state
   );
   expect(screen.getByText(/not linked to an athlete record/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
-  expect(screen.queryByRole('heading', { name: 'Check in' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Save how I feel' })).toBeNull();
 });
