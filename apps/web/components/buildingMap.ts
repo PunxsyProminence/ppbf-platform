@@ -369,7 +369,7 @@ export const BUILDING: readonly Door[] = [
      are coaches and organization admins (PH-10 Q1 A, Q-E A). */
   { href: '/coach/parent-resources', label: 'Parent Resources', room: 'office', roles: ['coach', 'admin'],
     keywords: 'parent family families resources guides checklists videos policies publish',
-    hint: 'Add, publish and archive the guides and links families see.' },
+    hint: 'Add, edit, publish and archive resources for families.' },
 
   // ----------------------------------------------------------------- floor --
   /* "Wall of Names", not "Name Sync": the page's own header calls it the Wall

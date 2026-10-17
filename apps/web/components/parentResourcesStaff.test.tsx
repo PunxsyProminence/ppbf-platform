@@ -5,8 +5,9 @@
 // The staff Parent Resources panel (PH-11b): the list in every state, add,
 // edit, publish and archive against /api/pilot/coach/parent-resources, each
 // change carrying the version it was made from; a refusal in the server's
-// words; an unclear answer that may have saved; a failed read that is never
-// "none"; one write at a time; blank fields refused.
+// words, or "not saved" when it gives none; an unclear answer that may have
+// saved; a failed read that is never "none"; one write and one edit form at a
+// time; busy buttons named for what they are doing; blank fields refused.
 
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
@@ -48,6 +49,9 @@ async function renderWith(...writes: Handler[]) {
 const sentBodies = (fetchMock: jest.Mock) =>
   fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method).map((c) => JSON.parse(String((c[1] as RequestInit).body)));
 
+// The notice is announced by moving focus to it, so it is not also an alert.
+const notice = () => document.getElementById('parent-resources-notice');
+
 function row(title: string) {
   return screen.getByRole('heading', { name: title }).closest('li') as HTMLElement;
 }
@@ -69,7 +73,7 @@ test('lists every resource with type, state, audience, gym-time date, who change
   expect(draft.textContent).not.toContain('Parents cannot open');
   const published = row('Sparring policy');
   // 03:30 UTC on the 2nd is still the 1st in the gym's time zone.
-  expect(published.textContent).toContain('Policy · Published · Juniors · Published October 1, 2026 · Last changed by Coach Ben');
+  expect(published.textContent).toContain('Policy · Published · Juniors · First published October 1, 2026 · Last changed by Coach Ben');
   expect(published.textContent).toContain('Parents cannot open this link.');
   expect(published.textContent).toContain('Its program is archived.');
   expect(within(draft).getByRole('button', { name: 'Publish Hydration guide' })).toBeInTheDocument();
@@ -115,15 +119,26 @@ test('every family is sent as null, and a draft is the default', async () => {
   expect(sentBodies(fetchMock)[0]).toMatchObject({ program_id: null, publish: false });
 });
 
-test('blank fields are refused without a request, including on Enter', async () => {
+test('a writer the server could not name reads as the gym office, not "Your coach"', async () => {
+  const unnamed = { ...LISTED, items: [{ ...DRAFT, written_by: 'Your coach' }, { ...PUBLISHED, edited_by: 'Your coach' }] };
+  global.fetch = jest.fn(async () => jsonResponse(unnamed)) as unknown as typeof fetch;
+  await act(async () => {
+    render(<ParentResourcesStaff />);
+  });
+  expect(row('Hydration guide').textContent).toContain('Last changed by Gym office');
+  expect(row('Sparring policy').textContent).toContain('Last changed by Gym office');
+  expect(screen.queryByText(/Your coach/)).toBeNull();
+});
+
+test('blank fields are refused without a request', async () => {
   const fetchMock = await renderWith();
   const form = fillAdd({ title: 'Only a title', summary: '   ' });
   await act(async () => {
-    fireEvent.keyDown(within(form).getByLabelText('Title'), { key: 'Enter' });
     fireEvent.submit(form);
   });
   expect(sentBodies(fetchMock)).toEqual([]);
-  expect(screen.getByRole('alert')).toHaveTextContent('Fill in the title, the summary and the link.');
+  expect(notice()).toHaveTextContent('Fill in the title, the summary and the link.');
+  expect(notice()).toHaveFocus();
 });
 
 test('edits a resource, sending the version it was read at, and focus returns to it', async () => {
@@ -144,6 +159,44 @@ test('edits a resource, sending the version it was read at, and focus returns to
   expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
 });
 
+test('a microsecond version is sent exactly as read, and a second edit sends the version the server returned', async () => {
+  const READ_AT = '2026-10-05T15:00:00.123456Z';
+  const SAVED_AT = '2026-10-05T15:04:07.654321Z';
+  const listed = { ...LISTED, items: [{ ...DRAFT, updated_at: READ_AT }] };
+  const writes: Handler[] = [
+    () => jsonResponse({ ok: true, item: { ...DRAFT, title: 'Hydration, part one', updated_at: SAVED_AT } }),
+    () => jsonResponse({ ok: true, item: { ...DRAFT, title: 'Hydration, part two', updated_at: '2026-10-05T15:09:00.000001Z' } }),
+  ];
+  const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => (init?.method ? writes.shift()!(init) : jsonResponse(listed)));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  await act(async () => {
+    render(<ParentResourcesStaff />);
+  });
+  const editTo = async (from: string, to: string) => {
+    fireEvent.click(screen.getByRole('button', { name: `Edit ${from}` }));
+    const form = screen.getByRole('form', { name: `Edit ${from}` });
+    fireEvent.change(within(form).getByLabelText('Title'), { target: { value: to } });
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+  };
+  await editTo('Hydration guide', 'Hydration, part one');
+  await editTo('Hydration, part one', 'Hydration, part two');
+  expect(sentBodies(fetchMock).map((b) => [b.title, b.updated_at])).toEqual([
+    ['Hydration, part one', READ_AT],
+    ['Hydration, part two', SAVED_AT],
+  ]);
+});
+
+test('while one edit form is open, no other resource offers Edit', async () => {
+  await renderWith();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Hydration guide' }));
+  expect(screen.getByRole('form', { name: 'Edit Hydration guide' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Edit Sparring policy' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel editing Hydration guide' }));
+  expect(screen.getByRole('button', { name: 'Edit Sparring policy' })).toBeInTheDocument();
+});
+
 test('publishes and archives with the item’s own version', async () => {
   const fetchMock = await renderWith(
     () => jsonResponse({ ok: true, item: { ...DRAFT, state: 'published', published_at: '2026-10-05T15:00:00Z', updated_at: 'v5' } }),
@@ -152,7 +205,7 @@ test('publishes and archives with the item’s own version', async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publish Hydration guide' }));
   });
-  expect(row('Hydration guide').textContent).toContain('Published · Every family · Published October 5, 2026');
+  expect(row('Hydration guide').textContent).toContain('Published · Every family · First published October 5, 2026');
   expect(screen.getByRole('heading', { name: 'Hydration guide' })).toHaveFocus();
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive Sparring policy' }));
@@ -172,6 +225,8 @@ test('a refusal shows the server’s own words and focuses them', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publish Hydration guide' }));
   });
   expect(screen.getByText('Parents cannot open that page in the app. Change the link before publishing.')).toHaveFocus();
+  // Focus announces it; a live region as well would read it twice.
+  expect(screen.queryByRole('alert')).toBeNull();
   expect(row('Hydration guide').textContent).toContain('Draft');
   expect(screen.queryByRole('button', { name: 'Reload the list' })).toBeNull();
 });
@@ -181,12 +236,25 @@ test('a 409 shows the server’s words and offers to read the list again', async
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive Sparring policy' }));
   });
-  expect(screen.getByRole('alert')).toHaveTextContent('Someone else changed this resource. Reload to see their version.');
+  expect(notice()).toHaveTextContent('Someone else changed this resource. Reload to see their version.');
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reload the list' }));
   });
   expect(fetchMock.mock.calls.filter((c) => !(c[1] as RequestInit | undefined)?.method)).toHaveLength(2);
-  expect(screen.queryByRole('alert')).toBeNull();
+  expect(notice()).toBeNull();
+});
+
+test.each([
+  ['a 400', 400, false],
+  ['a 409', 409, true],
+])('%s with no words of its own says it was not saved, not that it may have been', async (_label, status, reload) => {
+  await renderWith(() => jsonResponse({}, status));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Sparring policy' }));
+  });
+  expect(notice()).toHaveTextContent(/^That was not saved\.$/);
+  expect(notice()).toHaveFocus();
+  expect(screen.queryByRole('button', { name: 'Reload the list' }) !== null).toBe(reload);
 });
 
 test.each([
@@ -197,14 +265,17 @@ test.each([
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive Sparring policy' }));
   });
-  expect(screen.getByRole('alert')).toHaveTextContent('may not have been saved. Reload the page to check.');
+  expect(notice()).toHaveTextContent('may not have been saved. Reload the page to check.');
   expect(screen.queryByText(/boom/)).toBeNull();
   expect(screen.getByRole('button', { name: 'Reload the list' })).toBeInTheDocument();
 });
 
-test('a second tap while a write is in flight sends nothing', async () => {
+test('a second tap while a write is in flight sends nothing; once it lands, the next tap sends', async () => {
   let release: (r: Response) => void = () => {};
-  const fetchMock = await renderWith(() => new Promise<Response>((resolve) => { release = resolve; }));
+  const fetchMock = await renderWith(
+    () => new Promise<Response>((resolve) => { release = resolve; }),
+    () => jsonResponse({ ok: true, item: { ...PUBLISHED, state: 'archived', updated_at: 'v8' } }),
+  );
   const publish = screen.getByRole('button', { name: 'Publish Hydration guide' });
   await act(async () => {
     fireEvent.click(publish);
@@ -215,5 +286,34 @@ test('a second tap while a write is in flight sends nothing', async () => {
   await act(async () => {
     release(jsonResponse({ ok: true, item: { ...DRAFT, state: 'published', updated_at: 'v7' } }));
   });
-  expect(sentBodies(fetchMock)).toHaveLength(1);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Sparring policy' }));
+  });
+  expect(sentBodies(fetchMock)).toEqual([
+    { resource_id: 'r1', updated_at: 'v1', action: 'publish' },
+    { resource_id: 'r2', updated_at: 'v2', action: 'archive' },
+  ]);
+});
+
+const never = () => new Promise<Response>(() => {});
+
+test.each([
+  ['Publish Hydration guide', 'Publishing… Hydration guide'],
+  ['Archive Sparring policy', 'Archiving… Sparring policy'],
+])('while busy, "%s" is named "%s"', async (idle, working) => {
+  await renderWith(never);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: idle }));
+  });
+  expect(screen.getByRole('button', { name: working })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: idle })).toBeNull();
+});
+
+test('while saving, the save button is named "Saving… <title>"', async () => {
+  await renderWith(never);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Hydration guide' }));
+  await act(async () => {
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit Hydration guide' }));
+  });
+  expect(screen.getByRole('button', { name: 'Saving… Hydration guide' })).toBeDisabled();
 });

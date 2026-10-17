@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDate } from '@/src/lib/gymTime';
+import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 
 /* PARENT RESOURCES, the staff side (PH-11b): every resource of the gym in any
    state, an add form, and Edit / Publish / Archive on each, against
@@ -11,9 +12,10 @@ import { formatGymDate } from '@/src/lib/gymTime';
 
    The server decides: who may write (coaches and organization admins), whether
    parents can open an internal link (PH-11 Q-A A), and which programs a
-   resource may name. A refusal (4xx) is shown in the server's words; no
-   answer, or a 5xx, may still have been saved, so it says to reload and check.
-   A read that did not answer is never shown as "no resources".
+   resource may name. A refusal (4xx) is shown in the server's words, or as
+   not saved when it gives none; no answer, or a 5xx, may still have been
+   saved, so it says to reload and check. A read that did not answer is never
+   shown as "no resources".
 
    Every change names the version it was made from (updated_at, as read); a
    resource someone else changed since is refused (409) and the list can be
@@ -49,6 +51,11 @@ const STATE_LABEL: Record<StaffResourceItem['state'], string> = { draft: 'Draft'
 const EMPTY: Fields = { title: '', summary: '', resource_type: 'guide', destination: '', program_id: '' };
 const BLANK = 'Fill in the title, the summary and the link.';
 const UNKNOWN = 'The server did not answer clearly, so this may not have been saved. Reload the page to check.';
+const REFUSED = 'That was not saved.';
+// The server names a coach it cannot name with the family-facing floor; staff read it as the office.
+const COACH_FLOOR = deriveCoachDisplayName(null);
+const STAFF_FLOOR = 'Gym office';
+const staffName = (name: string) => (name === COACH_FLOOR ? STAFF_FLOOR : name);
 
 type ReadState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: StaffResourceItem[]; programs: Program[] };
 
@@ -165,8 +172,9 @@ export default function ParentResourcesStaff() {
         focusOn(`parent-resource-${item.resource_id}`);
         return item;
       }
-      if (response.status >= 400 && response.status < 500 && typeof payload?.error === 'string') fail(payload.error, response.status === 409);
-      else fail(UNKNOWN, true);
+      if (response.status >= 400 && response.status < 500) {
+        fail(typeof payload?.error === 'string' && payload.error.trim() ? payload.error : REFUSED, response.status === 409);
+      } else fail(UNKNOWN, true);
       return null;
     } catch {
       fail(UNKNOWN, true);
@@ -204,8 +212,9 @@ export default function ParentResourcesStaff() {
 
   return (
     <div className="space-y-[var(--s5)]">
+      {/* Announced once: focus moves to it, so it is not also a live region. */}
       {notice ? (
-        <div role="alert" className="space-y-[var(--s2)]">
+        <div className="space-y-[var(--s2)]">
           <p id="parent-resources-notice" tabIndex={-1} className="t-body">{notice.text}</p>
           {notice.reload ? <button type="button" className="btn btn--ghost btn--tap" onClick={reload}>Reload the list</button> : null}
         </div>
@@ -239,7 +248,7 @@ export default function ParentResourcesStaff() {
                 <h3 id={`parent-resource-${item.resource_id}`} tabIndex={-1} className="t-body font-semibold">{item.title}</h3>
                 <p className="t-muted mt-[var(--s2)]">
                   {TYPE_LABEL[item.resource_type]} · {STATE_LABEL[item.state]} · {item.program_id ? item.program_name ?? 'One program' : 'Every family'}
-                  {published ? ` · Published ${published}` : ''} · Last changed by {item.edited_by ?? item.written_by}
+                  {published ? ` · First published ${published}` : ''} · Last changed by {staffName(item.edited_by ?? item.written_by)}
                 </p>
                 {item.parents_cannot_open ? <p className="t-body mt-[var(--s2)]">Parents cannot open this link.</p> : null}
                 {item.program_archived ? <p className="t-body mt-[var(--s2)]">Its program is archived.</p> : null}
@@ -248,7 +257,8 @@ export default function ParentResourcesStaff() {
                     <FieldInputs id={`parent-resource-edit-${item.resource_id}`} value={editing.fields}
                       onChange={(fields) => setEditing((e) => e && { ...e, fields })} programs={programs} />
                     <div className="flex flex-wrap gap-[var(--s2)]">
-                      <button type="submit" className="btn btn--tap" disabled={busy !== null} aria-label={`Save changes to ${item.title}`}>
+                      <button type="submit" className="btn btn--tap" disabled={busy !== null}
+                        aria-label={busy === `edit-${item.resource_id}` ? `Saving… ${item.title}` : `Save changes to ${item.title}`}>
                         {busy === `edit-${item.resource_id}` ? 'Saving…' : 'Save changes'}
                       </button>
                       <button type="button" className="btn btn--ghost btn--tap" aria-label={`Cancel editing ${item.title}`}
@@ -257,18 +267,23 @@ export default function ParentResourcesStaff() {
                   </form>
                 ) : (
                   <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
-                    <button type="button" className="btn btn--ghost btn--tap" disabled={busy !== null} aria-label={`Edit ${item.title}`}
-                      onClick={() => { setEditing({ id: item.resource_id, updatedAt: item.updated_at, fields: fieldsOf(item) }); focusOn(`parent-resource-edit-${item.resource_id}-title`); }}>
-                      Edit
-                    </button>
+                    {/* One edit at a time: opening another would drop this one's changes. */}
+                    {editing === null ? (
+                      <button type="button" className="btn btn--ghost btn--tap" disabled={busy !== null} aria-label={`Edit ${item.title}`}
+                        onClick={() => { setEditing({ id: item.resource_id, updatedAt: item.updated_at, fields: fieldsOf(item) }); focusOn(`parent-resource-edit-${item.resource_id}-title`); }}>
+                        Edit
+                      </button>
+                    ) : null}
                     {item.state !== 'published' ? (
-                      <button type="button" className="btn btn--tap" disabled={busy !== null} aria-label={`Publish ${item.title}`}
+                      <button type="button" className="btn btn--tap" disabled={busy !== null}
+                        aria-label={busy === `publish-${item.resource_id}` ? `Publishing… ${item.title}` : `Publish ${item.title}`}
                         onClick={() => void send(`publish-${item.resource_id}`, 'PATCH', { resource_id: item.resource_id, updated_at: item.updated_at, action: 'publish' })}>
                         {busy === `publish-${item.resource_id}` ? 'Publishing…' : 'Publish'}
                       </button>
                     ) : null}
                     {item.state !== 'archived' ? (
-                      <button type="button" className="btn btn--ghost btn--tap" disabled={busy !== null} aria-label={`Archive ${item.title}`}
+                      <button type="button" className="btn btn--ghost btn--tap" disabled={busy !== null}
+                        aria-label={busy === `archive-${item.resource_id}` ? `Archiving… ${item.title}` : `Archive ${item.title}`}
                         onClick={() => void send(`archive-${item.resource_id}`, 'PATCH', { resource_id: item.resource_id, updated_at: item.updated_at, action: 'archive' })}>
                         {busy === `archive-${item.resource_id}` ? 'Archiving…' : 'Archive'}
                       </button>

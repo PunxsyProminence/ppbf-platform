@@ -17,7 +17,7 @@ export default function CoachParentResourcesPage() {
             <p className="t-eyebrow">Coach</p>
             <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Parent Resources</h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Guides, checklists, videos and policies for families: for every family or one program. Families see a resource once it is published.
+              Each resource is a guide, checklist, video or policy for families. Once published, it shows on the Parent Hub of every family, or of children active in its program, as long as parents can open its link.
             </p>
           </header>
           <ParentResourcesStaff />
