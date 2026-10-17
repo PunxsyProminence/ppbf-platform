@@ -23,7 +23,9 @@ import { formatGymDate, formatGymDay } from '@/src/lib/gymTime';
 
    A write the server refused (4xx) shows the server's words. A 5xx or a
    network failure does not say "not saved": the write may have landed, and a
-   coach who believes it did not would Add it twice. A 404 on a change means
+   coach who believes it did not would Add it twice. Check again re-reads the
+   list in place, so the coach sees whether it landed; any typed text stays.
+   A failed read has the same Check again. A 404 on a change means
    the goal is no longer there to change (retired elsewhere), so it leaves the
    list. After a write, focus goes where the coach's next step is. */
 
@@ -53,7 +55,7 @@ const EMPTY: Draft = { title: '', support: '', target: '' };
 const URL_PATH = '/api/pilot/coach/family-goals';
 // PROPOSED copy
 const NOT_SAVED = 'The goal was not saved.';
-const UNSURE = 'The goal may not have been saved. Reload to check.';
+const UNSURE = 'The goal may not have been saved.';
 const GONE = 'That goal is no longer on the list.';
 
 // refused: the server said no (4xx), nothing was written. unsure: no answer or
@@ -112,9 +114,12 @@ export default function FamilyGoalsForStaff({ athleteId }: Readonly<{ athleteId:
   const [editing, setEditing] = useState<{ goalId: string; draft: Draft } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Bumped by Check again: the read below runs again for the same athlete.
+  const [check, setCheck] = useState(0);
   // The guard itself: state set by one click is not seen by a second click in
   // the same tick, a ref is.
   const writing = useRef(false);
+  const checking = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
   // Where focus goes once that element is on screen and enabled.
   const pendingFocus = useRef<Focus | null>(null);
@@ -140,15 +145,38 @@ export default function FamilyGoalsForStaff({ athleteId }: Readonly<{ athleteId:
         });
         const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; items?: unknown };
         if (controller.signal.aborted) return;
-        setRead(response.ok && payload.ok === true && Array.isArray(payload.items)
-          ? { state: 'loaded', athleteId, items: payload.items as StaffFamilyGoal[] }
-          : { state: 'failed', athleteId });
+        if (response.ok && payload.ok === true && Array.isArray(payload.items)) {
+          const items = payload.items as StaffFamilyGoal[];
+          setRead({ state: 'loaded', athleteId, items });
+          // The list now answers "was it saved?"; an edit whose goal is gone closes.
+          setNotice((current) => (current === UNSURE ? null : current));
+          setEditing((current) => (current && !items.some((goal) => goal.goal_id === current.goalId) ? null : current));
+        } else {
+          setRead({ state: 'failed', athleteId });
+        }
       } catch {
         if (!controller.signal.aborted) setRead({ state: 'failed', athleteId });
+      } finally {
+        if (!controller.signal.aborted && checking.current) {
+          checking.current = false;
+          writing.current = false;
+          setBusy(null);
+        }
       }
     })();
     return () => controller.abort();
-  }, [athleteId]);
+  }, [athleteId, check]);
+
+  // Check again: the same read, in place. It holds the writes while it
+  // runs, so a write's answer and the re-read cannot cross.
+  function checkAgain() {
+    if (writing.current) return;
+    writing.current = true;
+    checking.current = true;
+    setBusy('check');
+    setRead((current) => (current.state === 'failed' ? { state: 'loading' } : current));
+    setCheck((count) => count + 1);
+  }
 
   // One write at a time; the answer replaces (or, for a retire or a goal that
   // is gone, removes) that goal. `after` runs with the answer in the same
@@ -236,11 +264,20 @@ export default function FamilyGoalsForStaff({ athleteId }: Readonly<{ athleteId:
       {/* PROPOSED copy: heading, loading, failed and empty lines. */}
       <h3 className="t-label" tabIndex={-1} data-focus="heading">Family goals</h3>
       {notice && <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{notice}</p>}
+      {/* PROPOSED copy: "Check again" and "Checking…". */}
+      {notice === UNSURE && shown.state === 'loaded' && (
+        <button type="button" className="btn btn--ghost" disabled={busy !== null} onClick={checkAgain}>
+          {busy === 'check' ? 'Checking…' : 'Check again'}
+        </button>
+      )}
 
       {shown.state === 'loading' ? (
         <p className="t-muted">Loading family goals…</p>
       ) : shown.state === 'failed' ? (
-        <p role="alert" className="t-body">Family goals could not be loaded. This is not a statement that there are none.</p>
+        <div className="space-y-[var(--s2)]">
+          <p role="alert" className="t-body">Family goals could not be loaded. This is not a statement that there are none.</p>
+          <button type="button" className="btn btn--ghost" disabled={busy !== null} onClick={checkAgain}>Check again</button>
+        </div>
       ) : shown.items.length === 0 ? (
         <p className="t-muted">No family goals for this athlete yet.</p>
       ) : (
