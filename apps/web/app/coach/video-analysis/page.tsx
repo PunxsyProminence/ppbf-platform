@@ -1248,7 +1248,7 @@ export default function CoachVideoAnalysisPage() {
         <div className="flex flex-wrap gap-[var(--s3)]">
           <BackHome />
           <OperationsLink className="btn btn--ghost">
-            Mission Control
+            Operations
           </OperationsLink>
         </div>
       </div>

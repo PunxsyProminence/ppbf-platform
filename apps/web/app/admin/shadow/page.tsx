@@ -2350,7 +2350,7 @@ export default function AdminShadowConsolePage() {
                 href="/admin"
                 className="btn btn--ghost flex-1"
               >
-                Admin Hub
+                Capabilities
               </Link>
             )}
             <Link

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
+import BackHome from '@/components/BackHome';
 
 
 type FeedbackKind = 'success' | 'error' | 'info';
@@ -210,9 +211,7 @@ export default function SetupWizard() {
             <Link href="/login" className="btn">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="btn btn--ghost">
-              Go To Admin Dashboard
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>
@@ -446,12 +445,10 @@ export default function SetupWizard() {
             </div>
 
             <div className="flex flex-col gap-[var(--s3)] sm:flex-row">
-              <Link href="/admin/people" className="btn flex-1">
-                Manage People
-              </Link>
-              <Link href="/admin" className="btn btn--ghost flex-1">
-                Admin Dashboard
-              </Link>
+              {/* The gym's own admin manages its people; the platform owner's
+                  way on is Omega (lane U2, audit UX-A A-6: both old links
+                  opened a "set per gym" notice). */}
+              <BackHome className="btn flex-1" />
             </div>
           </section>
         )}

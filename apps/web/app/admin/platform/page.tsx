@@ -6,8 +6,7 @@ import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
-import { getRoleRoute } from '@/components/roleRoutes';
-import { mapPilotRoleToClubRole } from '@/components/roleSession';
+import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 
@@ -600,15 +599,16 @@ export default function PlatformConsole() {
   }
 
   if (!hasPlatformAccess) {
-    // The way back from this refusal is the visitor's own home: /admin for a
-    // gym admin, their workspace for any other signed-in role. A signed-out
-    // visitor, or a platform owner not signed in with Microsoft, has no home
-    // to go to here; Sign In is their way forward.
-    const workspaceHref = getRoleRoute(mapPilotRoleToClubRole(sessionRole));
+    // The way back from this refusal is the visitor's own home, the same one
+    // sign-in gives (lane U2): the Gym Office for a gym admin, their workspace
+    // for any other signed-in role. A signed-out visitor, or a platform owner
+    // not signed in with Microsoft (whose home is this page), has no home to
+    // go to here; Sign In is their way forward.
+    const homeHref = sessionRole === 'platform_owner' ? null : getPilotRoleDestination(sessionRole);
     const wayBack = isOrganizationAdminSessionRole(sessionRole)
-      ? { href: '/admin', label: 'Go To Admin Dashboard' }
-      : workspaceHref !== '/login'
-        ? { href: workspaceHref, label: 'Go To My Workspace' }
+      ? { href: '/admin/people', label: 'Back to Gym Office' }
+      : homeHref
+        ? { href: homeHref, label: 'Go To My Workspace' }
         : null;
     return (
       <main className="room room--office room--lit-center grid min-h-screen place-items-center px-[var(--s5)]">

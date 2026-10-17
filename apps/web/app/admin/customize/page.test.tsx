@@ -18,6 +18,7 @@ import { act, render, screen } from '@testing-library/react';
 
 import CustomizePage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -94,12 +95,15 @@ function gymPhotoCalls(): unknown[][] {
 // shows its own notice without first sending a request it knows is refused.
 test('a platform owner gets the notice and no gym-photos request', async () => {
   mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  // The shared back link (lane U2) reads the cached role session.
+  createPersistentRoleSession('platform_owner');
 
   render(<CustomizePage />);
 
   await screen.findByText(/ADMINS ONLY/);
   expect(gymPhotoCalls()).toHaveLength(0);
-  expect(screen.getByRole('link', { name: 'Back to the office' }).getAttribute('href')).toBe('/admin/platform');
+  expect(screen.getByRole('link', { name: 'Back to Omega' }).getAttribute('href')).toBe('/admin/platform');
+  clearRoleSession();
 });
 
 test('nothing is asked while the session is still being read', async () => {

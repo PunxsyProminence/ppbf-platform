@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { apiBase } from '@/lib/apiBase';
 import { usePilotSession } from '@/components/usePilotSession';
+import BackHome from '@/components/BackHome';
 
 interface CountMetric {
   status: 'available' | 'unavailable' | 'insufficient_data';
@@ -90,9 +91,7 @@ export default function PlatformOverview() {
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
-          <Link href="/admin" className="btn btn--ghost">
-            Go To Admin Dashboard
-          </Link>
+          <BackHome />
         </div>
       </main>
     );
