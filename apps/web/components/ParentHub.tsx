@@ -295,6 +295,11 @@ export default function ParentHub() {
      Messages tab lists every child's messages whichever child is selected. */
   const [ownReadIds, setOwnReadIds] = useState<Set<string>>(() => new Set());
   const [ownReadsLoaded, setOwnReadsLoaded] = useState(false);
+  // What this guardian had opened when the hub loaded. The card's "New" is
+  // decided from this, so it stays on for this visit -- a message half on
+  // screen is opened at once (FC-05), and a badge that went with it would be
+  // gone before anyone read it. The tile counts live (ownReadIds).
+  const [openedAtLoad, setOpenedAtLoad] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     void (async () => {
       try {
@@ -309,6 +314,7 @@ export default function ParentHub() {
           .filter((noteId): noteId is string => typeof noteId === 'string');
         // Merged, not replaced: an open recorded before this answered stays.
         setOwnReadIds((held) => new Set([...held, ...fetched]));
+        setOpenedAtLoad(new Set(fetched));
         setOwnReadsLoaded(true);
       } catch {
         // ownReadsLoaded stays false: no "New", and the tile is Unavailable.
@@ -316,6 +322,7 @@ export default function ParentHub() {
     })();
   }, []);
   const isNewToMe = (message: ParentMessage) => ownReadsLoaded && !ownReadIds.has(message.note_id);
+  const wasNewThisVisit = (message: ParentMessage) => ownReadsLoaded && !openedAtLoad.has(message.note_id);
 
   /* OPENING A MESSAGE (#1542, FC-05). A coach's message counts as opened when
      at least half of it is on screen on the Messages tab (FC-05 Q-1 default
@@ -1717,9 +1724,13 @@ export default function ParentHub() {
                         <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
                           <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
                           <span className="flex items-center gap-[var(--s2)]">
-                            {/* PROPOSED copy (FC-08): "New" until this guardian opens it.
-                                Administrative, not a safety state, hence --filed. */}
-                            {isNewToMe(message) && <span className="badge badge--filed">New</span>}
+                            {/* PROPOSED copy (FC-08): "New" on a message this guardian had
+                                not opened when the hub loaded; it stays for the visit.
+                                Administrative, not a safety state, hence --filed, with
+                                its glyph (Law 3). */}
+                            {wasNewThisVisit(message) && (
+                              <span className="badge badge--filed"><i aria-hidden="true">◉</i><span>New</span></span>
+                            )}
                             <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
                           </span>
                         </div>

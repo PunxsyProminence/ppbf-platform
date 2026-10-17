@@ -372,4 +372,11 @@ describe("a guardian's own opens (listOwnMessageReads, FC-08)", () => {
     expect((await reads.listOwnMessageReads(OTHER_ORG_ID, GUARDIAN_OTHER_GYM)).map((row) => row.note_id)).toEqual([OTHER_GYM_MESSAGE]);
     expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_UNLINKED)).toEqual([]);
   });
+
+  test("a deleted child's opens drop out of the list", async () => {
+    await read(GUARDIAN_A, MESSAGE);
+    expect((await reads.listOwnMessageReads(ORG_ID, GUARDIAN_A)).map((row) => row.note_id)).toEqual([MESSAGE]);
+    await activeClient!.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG_ID, ATHLETE]);
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_A)).toEqual([]);
+  });
 });

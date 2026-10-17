@@ -303,7 +303,7 @@ describe('New until this guardian opens it (FC-08)', () => {
     expect(screen.queryByText('New')).toBeNull();
   });
 
-  test('once the open is recorded, New comes off and the tile drops, without a reload', async () => {
+  test('once the open is recorded the tile drops at once, and New stays on that card for this visit', async () => {
     installFetch();
     await renderHub();
     await openTab('Messages');
@@ -315,9 +315,9 @@ describe('New until this guardian opens it (FC-08)', () => {
       showMessage(OPENED.note_id, 1);
     });
 
-    await waitFor(() => expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull());
+    await waitFor(() => expect(newTileValue()).toBe('1'));
+    expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('1');
   });
 
   test('a failed open keeps New on', async () => {
@@ -348,7 +348,10 @@ describe('New until this guardian opens it (FC-08)', () => {
       answerReads(jsonResponse({ ok: true, items: [{ note_id: OPENED.note_id, first_read_at: '2026-10-12T12:00:00.000Z' }] }));
     });
 
-    expect(screen.queryByText('New')).toBeNull();
+    // OPENED was opened before this visit: no New. UNOPENED was new when the hub
+    // loaded and was opened during this visit: New stays on it; the tile counts 0.
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
     expect(newTileValue()).toBe('0');
   });
 
