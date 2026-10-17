@@ -51,10 +51,12 @@ export async function generateMetadata(): Promise<Metadata> {
   try {
     gym = await getOperatingOrganizationProfile();
   } catch (error) {
-    /* Every page sits under this layout, sign-in included. If the profile
-       cannot be read (production, no row, no database, nothing cached), the
-       pages that state the gym's facts refuse on their own; the rest keep
-       working under a plain title that carries none of them. */
+    // Every page sits under this layout, sign-in included. If the profile
+    // cannot be read (production, no row, no database, nothing cached), the
+    // pages that state the gym's facts refuse on their own; the rest keep
+    // working under a plain title that carries none of them. (Line comments:
+    // fontTokenScope.test.ts strips block comments with a pattern that a
+    // block comment opening a brace-delimited block would carry too far.)
     if (error instanceof OrganizationProfileUnavailableError) {
       return { title: { default: "Platform", template: "%s" } };
     }
