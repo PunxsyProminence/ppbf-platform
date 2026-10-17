@@ -222,7 +222,8 @@ export default function AdminCustomizePage() {
         </h2>
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
           The names, website, contact details and addresses the homepage, the privacy page, print sheets, the wall
-          and the sign-in email use. A line left empty is left off those pages.
+          and the sign-in email use. Leave a line empty and the privacy page and print sheets leave it off; the
+          homepage still has a place for every line.
         </p>
         <div className="mt-[var(--s4)]">
           <GymProfileForm />

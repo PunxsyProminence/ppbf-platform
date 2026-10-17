@@ -65,13 +65,18 @@ export function validateProfileInput(raw: unknown): StoredProfileInput {
       throw new ValidationError(`${field} must be text`);
     }
     const text = typeof value === 'string' ? value.trim() : '';
+    if (text.includes('\u0000')) throw new ValidationError(`${field} cannot contain a NUL character`);
     if (REQUIRED.includes(field) && !text) throw new ValidationError(`${field} is required`);
     if (text.length > limit) throw new ValidationError(`${field} must be ${limit} characters or fewer`);
     input[field] = text;
   }
-  if (!WEBSITE.test(input.website_url)) {
+  // The pattern is the table's own; the parser is what every page builds the site address with,
+  // so a value it cannot parse (https://www.example.123) would take every page down.
+  const parsed = URL.canParse(input.website_url) ? new URL(input.website_url) : null;
+  if (!WEBSITE.test(input.website_url) || !parsed || parsed.origin.toLowerCase() !== input.website_url.toLowerCase()) {
     throw new ValidationError('website_url must be an https address with no path, like https://www.example.org');
   }
+  input.website_url = parsed.origin;
   if (!DOMAIN.test(input.domain)) {
     throw new ValidationError('domain must be a bare host name, like example.org');
   }
@@ -94,7 +99,15 @@ export async function saveOrganizationProfile(
 ): Promise<StoredProfileInput> {
   const input = validateProfileInput(raw);
   const fields = PROFILE_FIELDS.map(([field]) => field);
+  let changed: ProfileField[] = [];
   await withTransaction(async (client: PoolClient) => {
+    const before = (
+      await client.query<StoredProfileInput>(
+        `select ${fields.join(', ')} from pilot.organization_profiles where organization_id = $1 for update`,
+        [organizationId],
+      )
+    ).rows[0];
+    changed = fields.filter((field) => !before || before[field] !== input[field]);
     await client.query(
       `insert into pilot.organization_profiles (organization_id, ${fields.join(', ')})
        values ($1, ${fields.map((_, index) => `$${index + 2}`).join(', ')})
@@ -111,7 +124,9 @@ export async function saveOrganizationProfile(
         organization_id: organizationId,
         entity_type: 'organization_profile',
         entity_id: organizationId,
-        details: { action: 'organization_profile_saved', profile: input },
+        // Which fields changed, not their values: the audit trail keeps no copy of the profile
+        // (the head coach's name among it) for the retention purge to chase.
+        details: { action: 'organization_profile_saved', changed_fields: changed },
       },
       client,
     );

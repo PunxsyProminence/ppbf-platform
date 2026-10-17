@@ -148,6 +148,20 @@ test('the OrNull read answers null for an unreadable profile, and still throws a
   }
 });
 
+test('a read begun before a save cannot put the old row back afterwards (lane L31 P3)', async () => {
+  const { forgetOrganizationProfile } = jest.requireActual('./organizationProfileStore') as typeof import('./organizationProfileStore');
+  let release: (row: typeof PPBF_ROW) => void = () => undefined;
+  mockQueryOne.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+  const before = getOrganizationProfile('punxsy_prominence', { production: true });
+  forgetOrganizationProfile('punxsy_prominence');
+  release(PPBF_ROW);
+  await before;
+  // The old read landed after the save: it is not cached, so the next read asks again.
+  mockQueryOne.mockResolvedValueOnce({ ...PPBF_ROW, contact_email: 'office@example.org' });
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true })).resolves.toMatchObject({ email: 'office@example.org' });
+  expect(mockQueryOne).toHaveBeenCalledTimes(2);
+});
+
 test('concurrent callers on a cold cache share one read', async () => {
   let release: (row: typeof PPBF_ROW) => void = () => undefined;
   mockQueryOne.mockReturnValue(new Promise((resolve) => { release = resolve; }));

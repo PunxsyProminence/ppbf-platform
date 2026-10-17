@@ -18,6 +18,7 @@ jest.mock('@/src/server/pilot/organizationProfileWrite', () => ({
   saveOrganizationProfile: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/staffProvisioning', () => ({ getOrganizationName: jest.fn() }));
+jest.mock('@/src/server/pilot/organizationProfileStore', () => ({ OPERATING_ORGANIZATION_ID: 'punxsy_prominence' }));
 
 const mockPrincipal = jest.mocked(requireMicrosoftAuthenticatedPrincipal);
 const mockRead = jest.mocked(readStoredProfileInput);
@@ -51,8 +52,15 @@ test.each(['organization_admin', 'admin'])('a %s reads its own gym profile and l
     organization_id: 'gym-1',
     legal_name: 'Ridgeway Lantern Boxing and Fitness',
     profile: { brand: 'Ridgeway' },
+    public_pages: false,
   });
   expect(mockRead).toHaveBeenCalledWith('gym-1');
+});
+
+test('the operating gym is told its profile is the one the public pages show', async () => {
+  mockPrincipal.mockResolvedValue({ accountId: 'admin-1', organizationId: 'punxsy_prominence', role: 'organization_admin' } as never);
+  expect((await (await GET(request('GET'))).json()).public_pages).toBe(true);
+  expect((await (await POST(request('POST', { profile: { brand: 'X' } }))).json()).public_pages).toBe(true);
 });
 
 test('a save goes to the session gym, with the actor named, whatever gym the body names', async () => {

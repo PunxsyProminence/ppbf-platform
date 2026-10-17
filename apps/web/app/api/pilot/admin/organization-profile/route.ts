@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import { getOrganizationName } from '@/src/server/pilot/staffProvisioning';
+import { OPERATING_ORGANIZATION_ID } from '@/src/server/pilot/organizationProfileStore';
 import { readStoredProfileInput, saveOrganizationProfile } from '@/src/server/pilot/organizationProfileWrite';
 
 export const runtime = 'nodejs';
@@ -29,7 +30,14 @@ export async function GET(request: NextRequest) {
       readStoredProfileInput(principal.organizationId),
       getOrganizationName(principal.organizationId),
     ]);
-    return NextResponse.json({ ok: true, organization_id: principal.organizationId, legal_name: legalName, profile });
+    return NextResponse.json({
+      ok: true,
+      organization_id: principal.organizationId,
+      legal_name: legalName,
+      profile,
+      // The public pages, print sheets, wall and sign-in email name the operating gym (OD-2026-09-28-007).
+      public_pages: principal.organizationId === OPERATING_ORGANIZATION_ID,
+    });
   } catch (error) {
     return jsonError(error);
   }
@@ -43,7 +51,12 @@ export async function POST(request: NextRequest) {
       accountId: principal.accountId,
       role: principal.role,
     });
-    return NextResponse.json({ ok: true, organization_id: principal.organizationId, profile });
+    return NextResponse.json({
+      ok: true,
+      organization_id: principal.organizationId,
+      profile,
+      public_pages: principal.organizationId === OPERATING_ORGANIZATION_ID,
+    });
   } catch (error) {
     return jsonError(error);
   }

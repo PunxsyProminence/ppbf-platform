@@ -66,9 +66,26 @@ const GROUPS: ReadonlyArray<{ title: string; fields: ReadonlyArray<[Field, strin
 ];
 
 const EMPTY = Object.fromEntries(GROUPS.flatMap((group) => group.fields.map(([field]) => [field, '']))) as Profile;
+const LABELS = Object.fromEntries(GROUPS.flatMap((group) => group.fields.map(([field, label]) => [field, label]))) as Record<Field, string>;
+
+/** The server names fields by their stored names; the screen names them as its labels do. */
+function inLabels(message: string): string {
+  return (Object.keys(LABELS) as Field[]).reduce(
+    (text, field) => text.replace(new RegExp(`\\b${field}\\b`, 'g'), `"${LABELS[field]}"`),
+    message,
+  );
+}
+
+/** What a save changes, said truthfully (PROPOSED wording). */
+function reachSentence(publicPages: boolean, gymName: string): string {
+  return publicPages
+    ? `Saves ${gymName}'s profile. The homepage, the privacy page, print sheets, the wall and the sign-in email show it on their next load, within a minute; a wall or sheet already open shows it once reloaded.`
+    : `Saves ${gymName}'s profile. The public pages, print sheets, wall and sign-in email name the platform's operating gym, not this one, so they do not change.`;
+}
 
 export default function GymProfileForm() {
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable' | 'sign_in'>('loading');
+  const [publicPages, setPublicPages] = useState(false);
   const [legalName, setLegalName] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile>(EMPTY);
   const [armed, setArmed] = useState(false);
@@ -80,10 +97,19 @@ export default function GymProfileForm() {
     (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/admin/organization-profile`, { credentials: 'include' });
+        if (response.status === 401 || response.status === 403) {
+          if (!cancelled) setState('sign_in');
+          return;
+        }
         if (!response.ok) throw new Error(`status ${response.status}`);
-        const data = (await response.json()) as { legal_name?: string | null; profile?: Partial<Profile> | null };
+        const data = (await response.json()) as {
+          legal_name?: string | null;
+          profile?: Partial<Profile> | null;
+          public_pages?: boolean;
+        };
         if (cancelled) return;
         setLegalName(data.legal_name ?? null);
+        setPublicPages(data.public_pages === true);
         setProfile({ ...EMPTY, ...(data.profile ?? {}) });
         setState('ready');
       } catch {
@@ -113,9 +139,14 @@ export default function GymProfileForm() {
         body: JSON.stringify({ profile }),
       });
       const data = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; profile?: Profile };
-      if (!response.ok || !data.ok) throw new Error(data.error || 'The profile was not saved.');
+      if (!response.ok || !data.ok) throw new Error(inLabels(data.error || 'The profile was not saved.'));
       if (data.profile) setProfile({ ...EMPTY, ...data.profile });
-      setNotice({ tone: 'ok', text: 'Saved. The public pages, print sheets, wall and sign-in email use it within a minute.' });
+      setNotice({
+        tone: 'ok',
+        text: publicPages
+          ? 'Saved. Pages show it on their next load, within a minute; a wall or sheet already open shows it once reloaded.'
+          : 'Saved for this gym. The public pages name the platform’s operating gym, so they do not change.',
+      });
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'The profile was not saved.' });
     } finally {
@@ -126,6 +157,7 @@ export default function GymProfileForm() {
 
   if (state === 'loading') return <p className="t-muted">Reading the gym profile...</p>;
   if (state === 'unavailable') return <p className="t-muted">The gym profile could not be read just now.</p>;
+  if (state === 'sign_in') return <p className="t-muted">Sign in again with Microsoft to edit the gym profile.</p>;
 
   const gymName = profile.brand.trim() || 'the gym';
   return (
@@ -151,6 +183,7 @@ export default function GymProfileForm() {
                   name={field}
                   value={profile[field]}
                   placeholder={placeholder}
+                  disabled={busy}
                   onChange={(event) => edit(field, event.target.value)}
                 />
               </label>
@@ -165,10 +198,7 @@ export default function GymProfileForm() {
 
       {armed ? (
         <div className="space-y-[var(--s2)]">
-          <p className="t-body">
-            Saves {gymName}&apos;s profile. Every page that names the gym shows it within a minute: the homepage, the
-            privacy page, print sheets, the wall and the sign-in email.
-          </p>
+          <p className="t-body">{reachSentence(publicPages, gymName)}</p>
           <div className="flex flex-wrap gap-[var(--s2)]">
             <button type="button" className="btn" disabled={busy} onClick={() => void save()}>
               {busy ? 'Saving...' : `Save ${gymName}'s Profile`}

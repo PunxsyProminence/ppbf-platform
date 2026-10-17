@@ -32,7 +32,10 @@ const STORED = {
   head_coach_name: 'Morgan Hale',
 };
 
-function installFetch(onPost: (body: Record<string, unknown>) => { status: number; body: unknown } = (body) => ({ status: 200, body: { ok: true, profile: body.profile } })) {
+function installFetch(
+  onPost: (body: Record<string, unknown>) => { status: number; body: unknown } = (body) => ({ status: 200, body: { ok: true, profile: body.profile } }),
+  publicPages = true,
+) {
   const posts: Record<string, unknown>[] = [];
   global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
@@ -41,7 +44,7 @@ function installFetch(onPost: (body: Record<string, unknown>) => { status: numbe
       const answer = onPost(body);
       return { ok: answer.status < 400, status: answer.status, json: async () => answer.body } as Response;
     }
-    return { ok: true, status: 200, json: async () => ({ ok: true, legal_name: 'Ridgeway Lantern Boxing and Fitness', profile: STORED }) } as Response;
+    return { ok: true, status: 200, json: async () => ({ ok: true, legal_name: 'Ridgeway Lantern Boxing and Fitness', profile: STORED, public_pages: publicPages }) } as Response;
   }) as unknown as typeof fetch;
   return posts;
 }
@@ -69,7 +72,7 @@ test('the first press names the gym and sends nothing; the second saves the whol
 
   fireEvent.click(screen.getByRole('button', { name: 'Save Gym Profile' }));
   expect(posts).toEqual([]);
-  expect(screen.getByText(/Saves Ridgeway Lantern Boxing & Fitness's profile\. Every page that names the gym shows it within a minute/)).toBeTruthy();
+  expect(screen.getByText(/Saves Ridgeway Lantern Boxing & Fitness's profile\. The homepage, the privacy page, print sheets, the wall and the sign-in email show it on their next load, within a minute; a wall or sheet already open shows it once reloaded\./)).toBeTruthy();
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: "Save Ridgeway Lantern Boxing & Fitness's Profile" }));
@@ -97,8 +100,42 @@ test('a refusal is shown in the server’s words, and nothing claims it saved', 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Save Ridgeway/ }));
   });
-  expect(await screen.findByText('domain is required')).toBeTruthy();
+  // In the screen's own words for the field.
+  expect(await screen.findByText('"Domain" is required')).toBeTruthy();
   expect(screen.queryByText(/^Saved\./)).toBeNull();
+});
+
+test('a gym that is not the operating gym is told the public pages do not change', async () => {
+  installFetch(undefined, false);
+  await mount();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Gym Profile' }));
+  expect(screen.getByText(/name the platform's operating gym, not this one, so they do not change\./)).toBeTruthy();
+  expect(screen.queryByText(/within a minute/)).toBeNull();
+});
+
+test('the fields are locked while a save is on its way', async () => {
+  let finish: (value: Response) => void = () => undefined;
+  installFetch();
+  const loaded = global.fetch as jest.Mock;
+  global.fetch = jest.fn((url: string, init?: RequestInit) =>
+    init?.method === 'POST' ? new Promise<Response>((resolve) => { finish = resolve; }) : loaded(url, init),
+  ) as unknown as typeof fetch;
+  await mount();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Gym Profile' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Save Ridgeway/ }));
+  expect((screen.getByLabelText('Contact email') as HTMLInputElement).disabled).toBe(true);
+  await act(async () => {
+    finish({ ok: true, status: 200, json: async () => ({ ok: true, profile: STORED }) } as Response);
+  });
+  expect((screen.getByLabelText('Contact email') as HTMLInputElement).disabled).toBe(false);
+});
+
+test('a refused read asks for a Microsoft sign-in, not a later try', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 403, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+  await act(async () => {
+    render(<GymProfileForm />);
+  });
+  expect(await screen.findByText('Sign in again with Microsoft to edit the gym profile.')).toBeTruthy();
 });
 
 test('a profile that cannot be read says so, with no form to save', async () => {
