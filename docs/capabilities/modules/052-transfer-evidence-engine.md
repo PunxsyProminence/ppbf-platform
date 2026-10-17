@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **MAPPED** |
-| Status note | Was "DRAFT" until 2026-10-16. Partial only: the transfer-check read (route.ts GET, falseProgress.ts classifyTransfer) returns controlled-vs-live make/miss counts per metric as transfer evidence for a coach; it is the same code recorded under module 053, and no separate evidence store or engine exists (intervention_evidence_li... |
+| Status note | Was "DRAFT" until 2026-10-16. Partial only: the transfer-check read (route.ts GET, falseProgress.ts classifyTransfer) returns controlled-vs-live make/miss counts per metric as transfer evidence for a coach; it is the same code recorded under module 053, and no separate evidence store or engine exists (intervention_evidence_links 'transfer' role in infra/azure/pilot_slice_postgres_intervention_evidence_migration.sql belongs to module 026). |
 | Code | `apps/web/app/api/pilot/coach/transfer-check/route.ts`, `apps/web/src/server/pilot/falseProgress.ts` |
 | Tests | `apps/web/app/api/pilot/coach/transfer-check/route.test.ts`, `apps/web/src/server/pilot/falseProgress.test.ts` |
 | Active | false |

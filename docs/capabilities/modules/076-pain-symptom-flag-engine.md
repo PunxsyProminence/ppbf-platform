@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped)" until 2026-10-16. An athlete pain report (kind pain_report, severity 1-10) raises a near miss and a coach alert via alertCoachToPainReport (painReportAlert.ts, called at shadow/formulas/observations/route.ts); coaches read them at GET coach/pain-reports. It is an alert to a human, never an auto-hold. No separate '... |
+| Status note | Was "DONE (slice shipped)" until 2026-10-16. An athlete pain report (kind pain_report, severity 1-10) raises a near miss and a coach alert via alertCoachToPainReport (painReportAlert.ts, called at shadow/formulas/observations/route.ts); coaches read them at GET coach/pain-reports. It is an alert to a human, never an auto-hold. No separate 'gate recommendation' step found, so the slice text is only partly literal. |
 | Code | `apps/web/app/api/pilot/coach/pain-reports/route.ts`, `apps/web/src/server/pilot/formulas/painReportAlert.ts`, `apps/web/app/api/pilot/shadow/formulas/observations/route.ts` |
 | Tests | `apps/web/app/api/pilot/coach/pain-reports/route.test.ts`, `apps/web/src/server/pilot/formulas/painReportAlert.test.ts` |
 | Active | false |
