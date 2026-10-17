@@ -293,6 +293,49 @@ export default function ParentHub() {
     })();
   }, []);
 
+  /* NEW TO THIS GUARDIAN (#1542, FC-08). A message is "New" until this
+     guardian has opened it (FC-05's rule below). Their own opens are read once,
+     on their own (GET /api/pilot/parent/message-reads; never a co-guardian's),
+     and each open the observer records here is added as it lands. Until that
+     read has answered -- or when it failed -- no card says "New" and the tile
+     is Unavailable: "all new" and "nothing new" are both claims nobody checked.
+     Keyed by note id, so the child selected does not enter into it: the
+     Messages tab lists every child's messages whichever child is selected. */
+  const [ownReadIds, setOwnReadIds] = useState<Set<string>>(() => new Set());
+  const [ownReadsLoaded, setOwnReadsLoaded] = useState(false);
+  // What this guardian had opened when the hub loaded. The card's "New" is
+  // decided from this, so it stays on for this visit -- a message half on
+  // screen is opened at once (FC-05), and a badge that went with it would be
+  // gone before anyone read it. The tile counts live (ownReadIds).
+  const [openedAtLoad, setOpenedAtLoad] = useState<Set<string>>(() => new Set());
+  // Opens this visit recorded: kept out of the at-load snapshot, so an open
+  // that commits before the reads answer is taken does not cost the message
+  // its visit-long "New".
+  const openedThisVisitRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/message-reads`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => null)) as { items?: unknown } | null;
+        if (!response.ok || !Array.isArray(payload?.items)) return;
+        const fetched = (payload.items as Array<{ note_id?: unknown }>)
+          .map((item) => item.note_id)
+          .filter((noteId): noteId is string => typeof noteId === 'string');
+        // Merged, not replaced: an open recorded before this answered stays.
+        setOwnReadIds((held) => new Set([...held, ...fetched]));
+        setOpenedAtLoad(new Set(fetched.filter((noteId) => !openedThisVisitRef.current.has(noteId))));
+        setOwnReadsLoaded(true);
+      } catch {
+        // ownReadsLoaded stays false: no "New", and the tile is Unavailable.
+      }
+    })();
+  }, []);
+  const isNewToMe = (message: ParentMessage) => ownReadsLoaded && !ownReadIds.has(message.note_id);
+  const wasNewThisVisit = (message: ParentMessage) => ownReadsLoaded && !openedAtLoad.has(message.note_id);
+
   /* OPENING A MESSAGE (#1542, FC-05). A coach's message counts as opened when
      at least half of it is on screen on the Messages tab (FC-05 Q-1 default
      A) -- not when the inbox is fetched, which the hub does on load for its
@@ -324,7 +367,13 @@ export default function ParentHub() {
           body: JSON.stringify({ note_id: noteId }),
         })
           .then((response) => {
-            if (!response.ok) readsSentRef.current.delete(noteId);
+            if (!response.ok) {
+              readsSentRef.current.delete(noteId);
+              return;
+            }
+            // Opened: its "New" comes off now, not on the next reload (FC-08).
+            openedThisVisitRef.current.add(noteId);
+            setOwnReadIds((held) => new Set(held).add(noteId));
           })
           .catch(() => {
             readsSentRef.current.delete(noteId);
@@ -1108,7 +1157,7 @@ export default function ParentHub() {
         </div>
 
         {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
-            selected child's; Home Tasks and Messages count across every
+            selected child's; Home Tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
             answered, never 0: a derived 0 would tell a parent "nothing is
             scheduled" or "nothing is due", which nobody verified. */}
@@ -1117,7 +1166,7 @@ export default function ParentHub() {
           tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded ? messages.length : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
         />
 
         {/* CHILD SELECTOR */}
@@ -1690,7 +1739,16 @@ export default function ParentHub() {
                       <div data-read-note={message.note_id}>
                         <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
                           <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
-                          <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                          <span className="flex items-center gap-[var(--s2)]">
+                            {/* PROPOSED copy (FC-08): "New" on a message this guardian had
+                                not opened when the hub loaded; it stays for the visit.
+                                Administrative, not a safety state, hence --filed, with
+                                its glyph (Law 3). */}
+                            {wasNewThisVisit(message) && (
+                              <span className="badge badge--filed"><i aria-hidden="true">◉</i><span>New</span></span>
+                            )}
+                            <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                          </span>
                         </div>
                         <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       </div>
