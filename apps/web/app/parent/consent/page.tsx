@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDate } from '@/lib/gymTime';
 
 // The caller's own rows carry full detail; a co-guardian's row carries
 // status only (owner ruling 2026-10-05).
@@ -17,6 +18,8 @@ type GuardianConsentRow =
     }
   | { you: false; status: 'granted' | 'photo_only' | 'declined' | 'withdrawn' | 'not_on_file' };
 
+type OwnConsentRow = Extract<GuardianConsentRow, { you: true }>;
+
 interface AthleteConsent {
   athlete_id: string;
   athlete_name: string | null;
@@ -26,16 +29,33 @@ interface AthleteConsent {
   per_guardian: GuardianConsentRow[];
 }
 
-// A guardian deciding consent must know WHICH child they are acting on --
-// the raw athlete_id is the fallback for a data gap, never the first choice.
-function childLabel(item: Pick<AthleteConsent, 'athlete_id' | 'athlete_name'>): string {
-  return item.athlete_name ?? item.athlete_id;
+// A guardian deciding consent must know WHICH child they are acting on. A
+// missing name says so; the athlete id is never shown to a family (UXB-12).
+// Wording PROPOSED.
+function childLabel(item: Pick<AthleteConsent, 'athlete_name'>): string {
+  return item.athlete_name ?? 'Your child (name not loaded)';
 }
+
+// The same child inside the withdraw confirmation sentence.
+function childInSentence(item: Pick<AthleteConsent, 'athlete_name'>): string {
+  return item.athlete_name ?? 'your child';
+}
+
+/* What this guardian signed, and on which gym day, from the row the route
+   already sends (UXB-22). A part the row does not carry is left out rather
+   than guessed. Wording PROPOSED. */
+function signedSummary(row: OwnConsentRow): string {
+  const date = formatGymDate(row.signed_at);
+  const scope = row.covers_video === true ? 'photos and video' : row.covers_video === false ? 'photos only' : null;
+  return `You signed${date ? ` ${date}` : ''}${scope ? `: ${scope}` : ''}`;
+}
+
+type ActionMessage = { text: string; tone: 'done' | 'failed' };
 
 export default function GuardianMediaConsentPage() {
   const [items, setItems] = useState<AthleteConsent[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [actionMessage, setActionMessage] = useState('');
+  const [actionMessage, setActionMessage] = useState<ActionMessage | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [videoByAthlete, setVideoByAthlete] = useState<Record<string, boolean>>({});
 
@@ -58,6 +78,14 @@ export default function GuardianMediaConsentPage() {
     void (async () => {
       await load();
     })();
+  }, [load]);
+
+  // "Check again" re-runs the same read; the page reads Loading until it
+  // answers, never the failure it is retrying (UXB-13).
+  const checkAgain = useCallback(() => {
+    setItems(null);
+    setErrorMessage('');
+    void load();
   }, [load]);
 
   async function decide(athleteId: string, decision: 'grant' | 'withdraw', childName: string) {
@@ -92,10 +120,13 @@ export default function GuardianMediaConsentPage() {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(payload.error || 'Unable to record your decision.');
       }
-      setActionMessage(decision === 'grant' ? 'Consent granted.' : 'Consent withdrawn.');
+      setActionMessage({ text: decision === 'grant' ? 'Consent granted.' : 'Consent withdrawn.', tone: 'done' });
       await load();
     } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : 'Unable to record your decision.');
+      setActionMessage({
+        text: error instanceof Error ? error.message : 'Unable to record your decision.',
+        tone: 'failed',
+      });
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);
@@ -128,8 +159,15 @@ export default function GuardianMediaConsentPage() {
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
-            {actionMessage ? (
-              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p>
+            {/* A refused decision reads as an alert, a recorded one as a
+                status line (UXB-23), as ParentObservations does. */}
+            {actionMessage?.tone === 'failed' ? (
+              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+                <span className="alert-icon">✕</span>
+                <span className="alert-msg">{actionMessage.text}</span>
+              </p>
+            ) : actionMessage ? (
+              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage.text}</p>
             ) : null}
           </header>
 
@@ -142,7 +180,9 @@ export default function GuardianMediaConsentPage() {
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">✕</div>
               <div className="empty-title">Consent status could not be loaded</div>
-              <div className="empty-msg">Reload to retry.</div>
+              <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
+                Check again
+              </button>
             </div>
           ) : items.length === 0 ? (
             <div className="empty mt-[var(--s5)]">
@@ -153,7 +193,7 @@ export default function GuardianMediaConsentPage() {
           ) : (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               {items.map((item) => {
-                const myRow = item.per_guardian.find((g) => g.you);
+                const myRow = item.per_guardian.find((g): g is OwnConsentRow => g.you);
                 // Normalised the same way the server now compares it
                 // (guardianConsent.ts, owner decision 2026-08-28). The route
                 // passes the raw stored string through, so without this a
@@ -177,6 +217,9 @@ export default function GuardianMediaConsentPage() {
                         This child has {item.guardian_count} guardians. {item.missing_guardian_count} still need to
                         consent before anything can be published.
                       </p>
+                    ) : null}
+                    {currentlySigned && myRow ? (
+                      <p className="t-body mt-[var(--s2)]">{signedSummary(myRow)}</p>
                     ) : null}
                     {!currentlySigned ? (
                       <div className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
@@ -258,7 +301,7 @@ export default function GuardianMediaConsentPage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'grant', childLabel(item))}
+                          onClick={() => void decide(item.athlete_id, 'grant', childInSentence(item))}
                           className="btn btn--kiosk disabled:opacity-50"
                         >
                           Grant Consent
@@ -267,7 +310,7 @@ export default function GuardianMediaConsentPage() {
                         <button
                           type="button"
                           disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'withdraw', childLabel(item))}
+                          onClick={() => void decide(item.athlete_id, 'withdraw', childInSentence(item))}
                           className="btn btn--kiosk disabled:opacity-50"
                         >
                           Withdraw Consent

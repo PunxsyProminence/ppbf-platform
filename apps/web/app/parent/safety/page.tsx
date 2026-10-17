@@ -236,6 +236,14 @@ export default function GuardianSafetyPage() {
     })();
   }, [load]);
 
+  // "Check again" re-runs the same read; the page reads Loading until it
+  // answers, never the failure it is retrying (UXB-13).
+  const checkAgain = useCallback(() => {
+    setItems(null);
+    setErrorMessage('');
+    void load();
+  }, [load]);
+
   const isLoading = items === null;
 
   return (
@@ -291,7 +299,9 @@ export default function GuardianSafetyPage() {
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">✕</div>
               <div className="empty-title">Safety status could not be loaded</div>
-              <div className="empty-msg">Reload to retry.</div>
+              <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
+                Check again
+              </button>
             </div>
           ) : items.length === 0 ? (
             <div className="empty mt-[var(--s5)]">
@@ -306,7 +316,9 @@ export default function GuardianSafetyPage() {
                   key={item.athlete_id}
                   className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
                 >
-                  <p className="t-eyebrow">{item.athlete_name ?? item.athlete_id}</p>
+                  {/* A missing name says so; the athlete id is never shown to a
+                      family (UXB-12). Wording PROPOSED. */}
+                  <p className="t-eyebrow">{item.athlete_name ?? 'Your child (name not loaded)'}</p>
 
                   {item.hold ? (
                     <div className="mt-[var(--s3)] space-y-[var(--s2)]">

@@ -187,12 +187,102 @@ test('a child is named, not numbered, and the withdraw confirmation names them t
   expect(message).toMatch(/retracted from distribution immediately/);
 });
 
-test('a missing name falls back to the athlete id rather than a blank card', async () => {
-  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: NEEDS_CONSENT })) as unknown as typeof fetch;
+// UXB-12: a missing name says so; the athlete id is never shown to a family,
+// on the card or in the withdraw confirmation.
+test('a missing name reads "Your child (name not loaded)", never the athlete id', async () => {
+  window.confirm = jest.fn().mockReturnValue(false);
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ALREADY_SIGNED })) as unknown as typeof fetch;
 
   render(<GuardianMediaConsentPage />);
 
-  await screen.findByText('ath-1');
+  await screen.findByText('Your child (name not loaded)');
+  expect(screen.queryByText(/ath-1/)).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Withdraw Consent' }));
+
+  await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+  const message = (window.confirm as jest.Mock).mock.calls[0][0] as string;
+  expect(message).not.toContain('ath-1');
+  expect(message).toContain('your child');
+});
+
+// UXB-22: a guardian can see what they signed, and on which gym day. 02:00 UTC
+// on August 1 is still July 31 at the gym.
+test('a signed consent says when it was signed and that it covers photos and video', async () => {
+  const signed = [{ ...ALREADY_SIGNED[0], per_guardian: [{ ...ALREADY_SIGNED[0].per_guardian[0], signed_at: '2026-08-01T02:00:00Z' }] }];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: signed })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  expect(await screen.findByText('You signed July 31, 2026: photos and video')).toBeInTheDocument();
+});
+
+test('a signed photos-only consent says photos only', async () => {
+  const photosOnly = [{ ...ALREADY_SIGNED[0], per_guardian: [{ ...ALREADY_SIGNED[0].per_guardian[0], covers_video: false }] }];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: photosOnly })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  expect(await screen.findByText(/^You signed .+: photos only$/)).toBeInTheDocument();
+  expect(screen.queryByText(/photos and video/)).toBeNull();
+});
+
+// UXB-23: a refused decision and a recorded one do not look the same.
+test('a decision the server refuses reads as an alert, not a status line', async () => {
+  const fetchMock = jest.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === 'POST'
+      ? jsonResponse({ error: 'Unable to record your decision.' }, false)
+      : jsonResponse({ ok: true, items: NEEDS_CONSENT }),
+  );
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent needed');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Consent' }));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Unable to record your decision.');
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('a recorded decision reads as a status line, not an alert', async () => {
+  const fetchMock = jest.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === 'POST' ? jsonResponse({ ok: true }) : jsonResponse({ ok: true, items: NEEDS_CONSENT }),
+  );
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent needed');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Consent' }));
+
+  expect(await screen.findByRole('status')).toHaveTextContent('Consent granted.');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+// UXB-13: a failed read offers Check again, which re-reads; while it does,
+// the page reads Loading, not the failure.
+test('a failed load offers Check again, which reads Loading and then the answer', async () => {
+  let answer: (value: Response) => void = () => undefined;
+  const fetchMock = jest
+    .fn()
+    .mockResolvedValueOnce(jsonResponse({ error: 'Database unavailable' }, false))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent status could not be loaded');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(screen.queryByText('Consent status could not be loaded')).toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  answer(jsonResponse({ ok: true, items: NEEDS_CONSENT }));
+  expect(await screen.findByText('Consent needed')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 /**
