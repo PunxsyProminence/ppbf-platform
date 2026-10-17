@@ -9,6 +9,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import BackHome from '@/components/BackHome';
+import ArmedButton from '@/components/ArmedButton';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -205,10 +206,41 @@ function roleCanResolveCoachingRequests(role: SchedulerRole | null): boolean {
   return role === 'admin' || role === 'organization_admin';
 }
 
+/* A role in words for the header (UXB-31), never the stored code. PROPOSED. */
+const SCHEDULER_ROLE_WORDS: Readonly<Record<string, string>> = {
+  athlete: 'an athlete',
+  parent: 'a parent',
+  coach: 'a coach',
+  organization_admin: 'the gym admin',
+  admin: 'an admin',
+  volunteer: 'a volunteer',
+  staff: 'staff',
+};
+
+/* A training hold's stored category in words (UXB-11). PROPOSED; the same
+   words Sports Medicine's picker uses. */
+const HOLD_REASON_WORDS: Readonly<Record<string, string>> = {
+  medical: 'medical',
+  fatigue: 'fatigue',
+  behavioral: 'behavior',
+  administrative: 'paperwork or admin',
+  other: 'other',
+};
+
 /** The admin's coach picker: active coaches of this gym only, the set
  *  review_coaching_request's assertActiveCoachAccount accepts. */
 function coachOptionsFrom(members: unknown): CoachOption[] {
   if (!Array.isArray(members)) return [];
+  const options = coachOptionRows(members);
+  // Two coaches whose names read the same are numbered, never told apart by
+  // their sign-in address (OD-2026-10-06-025).
+  return options.map((option) => {
+    const same = options.filter((other) => other.label === option.label);
+    return same.length > 1 ? { ...option, label: `${option.label} (${same.indexOf(option) + 1} of ${same.length})` } : option;
+  });
+}
+
+function coachOptionRows(members: unknown[]): CoachOption[] {
   return members.flatMap((raw): CoachOption[] => {
     const member = raw as { account_id?: unknown; login_email?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown };
     if (
@@ -221,7 +253,8 @@ function coachOptionsFrom(members: unknown): CoachOption[] {
       return [];
     }
     const login = typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : member.account_id;
-    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})`, login }];
+    // Names only, never the sign-in address (OD-2026-10-06-025, "Show coach name, hide ID").
+    return [{ account_id: member.account_id, label: deriveCoachDisplayName(login), login }];
   });
 }
 
@@ -298,7 +331,7 @@ export default function SchedulerPage() {
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const athlete of athletes) {
-      map.set(athlete.athlete_id, athlete.full_name ?? athlete.athlete_id);
+      map.set(athlete.athlete_id, athlete.full_name?.trim() || 'Athlete (name not loaded)');
     }
     return map;
   }, [athletes]);
@@ -307,14 +340,16 @@ export default function SchedulerPage() {
   // closure so this loader keeps a stable identity: depending on the current
   // selection would re-run the whole fetch, and blank the page behind
   // "Loading scheduler...", every time a dropdown changes.
-  const loadSchedulerState = useCallback(async () => {
-    setLoading(true);
-    showError('');
+  // `quiet`: re-read after an action without replacing the page with
+  // "Loading scheduler…", so the scroll position and the open form stay (UXB-16).
+  const loadSchedulerState = useCallback(async (options?: { quiet?: boolean }) => {
+    if (!options?.quiet) setLoading(true);
+    if (!options?.quiet) showError('');
     let schedulerRead = false;
 
     try {
       const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
-      const auth = (await authRes.json()) as { authenticated?: boolean; role?: SchedulerRole; athlete_id?: string | null };
+      const auth = (await authRes.json().catch(() => ({}))) as { authenticated?: boolean; role?: SchedulerRole; athlete_id?: string | null };
       if (!authRes.ok || !auth.authenticated || !auth.role) {
         throw new Error('Authentication required');
       }
@@ -323,9 +358,9 @@ export default function SchedulerPage() {
       setAthleteId(auth.athlete_id ?? '');
 
       const schedulerRes = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
-      const scheduler = (await schedulerRes.json()) as SchedulerResponse & { error?: string };
-      if (!schedulerRes.ok || !scheduler.ok) {
-        throw new Error(scheduler.error || 'Failed to load scheduler state');
+      const scheduler = (await schedulerRes.json().catch(() => null)) as (SchedulerResponse & { error?: string }) | null;
+      if (!schedulerRes.ok || !scheduler?.ok) {
+        throw new Error(scheduler?.error || 'The schedule could not be loaded just now.');
       }
 
       setClasses(scheduler.classes || []);
@@ -359,9 +394,9 @@ export default function SchedulerPage() {
 
       if (auth.role === 'parent' || auth.role === 'coach' || auth.role === 'admin' || auth.role === 'organization_admin') {
         const athletesRes = await fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' });
-        const athletesPayload = (await athletesRes.json()) as { items?: AthleteRow[]; error?: string };
+        const athletesPayload = (await athletesRes.json().catch(() => ({}))) as { items?: AthleteRow[]; error?: string };
         if (!athletesRes.ok) {
-          throw new Error(athletesPayload.error || 'Failed to load athletes');
+          throw new Error(athletesPayload.error || 'The athlete list could not be loaded just now.');
         }
         const rows = athletesPayload.items || [];
         setAthletes(rows);
@@ -389,7 +424,10 @@ export default function SchedulerPage() {
       }
     } catch (error) {
       if (!schedulerRead) setSchedulerFailed(true);
-      showError(error instanceof Error ? error.message : 'Failed to load scheduler state');
+      // A TypeError is the browser's own network failure text ("Failed to fetch").
+      showError(error instanceof Error && !(error instanceof TypeError) && error.message
+        ? error.message
+        : 'The schedule could not be reached. Check the connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -400,7 +438,7 @@ export default function SchedulerPage() {
     loadSchedulerState().catch((err) => console.error('Failed to load scheduler state:', err));
   }, [loadSchedulerState]);
 
-  async function runAction(payload: Record<string, unknown>, successMessage: string) {
+  async function runAction(payload: Record<string, unknown>, successMessage: string, onDone?: () => void) {
     // Guards every scheduler action (register, cover, create, request,
     // check-in, review) against double-submit -- a second click before the
     // first request resolves used to be able to reach the server as two
@@ -424,7 +462,7 @@ export default function SchedulerPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         membership_flags?: MembershipFlag[];
@@ -436,7 +474,7 @@ export default function SchedulerPage() {
         recorded?: boolean;
       };
       if (!response.ok || !result.ok) {
-        showError(result.error || 'Action failed', holdRefusalDetailFrom(result));
+        showError(result.error || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
         return;
       }
 
@@ -474,9 +512,13 @@ export default function SchedulerPage() {
       } else {
         setActionMessage(message);
       }
-      await loadSchedulerState();
+      // A sent form is cleared, so a second tap does not make a duplicate (UXB-16).
+      onDone?.();
+      await loadSchedulerState({ quiet: true });
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Action failed');
+      showError(error instanceof Error && !(error instanceof TypeError) && error.message
+        ? error.message
+        : 'That did not go through. Check the schedule before trying again.');
     } finally {
       setActionInFlight(false);
     }
@@ -563,11 +605,11 @@ export default function SchedulerPage() {
      parent or staff it is the athlete selected in the picker above, which
      the button used to leave unnamed: a coach's tap on a class row
      registered whoever that picker happened to show. The button now says
-     who, as the picker does: the name, or the id when there is no name. */
+     who, as the picker does: the name, or words when there is no name (UXB-12). */
   const registerTarget = athletes.find((item) => item.athlete_id === targetAthlete);
   const registerTargetName = role === 'athlete' || !targetAthlete
     ? null
-    : registerTarget?.full_name?.trim() || targetAthlete;
+    : registerTarget?.full_name?.trim() || 'Athlete (name not loaded)';
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
@@ -690,18 +732,18 @@ export default function SchedulerPage() {
       <main data-surface="kiosk" className="ge-scheduler room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-7xl space-y-[var(--s5)]">
           <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
-            <p className="t-eyebrow">Unified Scheduler</p>
+            <p className="t-eyebrow">Schedule</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
               Class Registration and Attendance
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-[80ch]">
-              Members register for classes, request individual coaching, coaches schedule and cover classes, parents review, and attendance supports coach/admin override.
+              Members register for classes and ask for individual coaching; coaches schedule and cover classes and take the register; parents review.
             </p>
             <div className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
               {/* Role is identity, not a safety claim, so it wears patina brass
                   rather than any rung of the status ladder (Laws 1 and 2). */}
               <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
-                Role: {role || 'loading'}
+                {role ? `Signed in as ${SCHEDULER_ROLE_WORDS[role] ?? 'a member'}` : 'Signing in…'}
               </span>
               {roleCanOverrideAttendance(role) ? (
                 <Link href="/admin/attendance" className="btn btn--ghost btn--tap">
@@ -724,9 +766,11 @@ export default function SchedulerPage() {
               exists to prevent. (Red itself is not reserved,
               OD-2026-09-29-001.) Success keeps the cleared rung. */}
           {errorMessage ? (
-            <div className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[rgba(192,90,30,0.10)] p-[var(--s4)]" role="alert">
-              <span className="badge badge--restricted"><i>▲</i>Failed</span>
-              <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+              <p className="alert-title">Not done</p>
+              <p className="alert-msg">{errorMessage}</p>
               {errorDetail ? (
                 <>
                   <p className="t-body mt-[var(--s3)]">Why: {errorDetail.explanation}</p>
@@ -735,12 +779,16 @@ export default function SchedulerPage() {
                   </p>
                 </>
               ) : null}
+              </div>
             </div>
           ) : null}
           {actionMessage ? (
-            <div className="rounded-[var(--r-md)] border-2 border-[color:var(--cleared)] bg-[rgba(63,125,78,0.10)] p-[var(--s4)]" role="status">
-              <span className="badge badge--cleared"><i>✓</i>Done</span>
-              <p className="t-body mt-[var(--s3)]">{actionMessage}</p>
+            <div className="alert alert--success" role="status">
+              <span className="alert-icon" aria-hidden="true">✓</span>
+              <div className="alert-body">
+                <p className="alert-title">Done</p>
+                <p className="alert-msg">{actionMessage}</p>
+              </div>
             </div>
           ) : null}
 
@@ -753,7 +801,12 @@ export default function SchedulerPage() {
               <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Class Schedule</h2>
                 {schedulerFailed ? (
-                  <p className="t-muted mt-[var(--s3)]">The schedule could not be loaded just now.</p>
+                  <div className="mt-[var(--s3)] space-y-[var(--s3)]">
+                    <p className="t-muted">The schedule could not be loaded just now.</p>
+                    <button type="button" onClick={() => void loadSchedulerState()} className="btn btn--ghost">
+                      Check again
+                    </button>
+                  </div>
                 ) : classes.length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">No classes scheduled yet.</p>
                 ) : (
@@ -814,12 +867,15 @@ export default function SchedulerPage() {
                         value={newClassLocation}
                         onChange={(e) => setNewClassLocation(e.target.value)}
                         placeholder="Location"
+                        aria-label="Location"
                         className="input"
                       />
                       <input
                         type="number"
                         min={1}
                         max={200}
+                        aria-label="Places in the class"
+                        placeholder="Places"
                         value={newClassCapacity}
                         onChange={(e) => setNewClassCapacity(Number.parseInt(e.target.value, 10) || 16)}
                         className="input"
@@ -869,6 +925,13 @@ export default function SchedulerPage() {
                             ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
                           },
                           'Class scheduled successfully.',
+                          () => {
+                            setNewClassTitle('');
+                            setNewClassStartAt('');
+                            setNewClassEndAt('');
+                            setNewClassLocation('');
+                            setNewClassCapacity(16);
+                          },
                         )
                       }
                       disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
@@ -890,7 +953,7 @@ export default function SchedulerPage() {
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
-                          {item.full_name || item.athlete_id}
+                          {item.full_name?.trim() || 'Athlete (name not loaded)'}
                         </option>
                       ))}
                     </select>
@@ -930,6 +993,10 @@ export default function SchedulerPage() {
                           goals: coachingGoals,
                         },
                         'Coaching request submitted.',
+                        () => {
+                          setCoachingGoals('');
+                          setCoachingPreferredAt('');
+                        },
                       );
                     }}
                     disabled={actionInFlight}
@@ -985,14 +1052,14 @@ export default function SchedulerPage() {
                       <optgroup label="Registered for this class">
                         {athletes.filter((item) => registeredForSelectedClass.has(item.athlete_id)).map((item) => (
                           <option key={item.athlete_id} value={item.athlete_id}>
-                            {item.full_name || item.athlete_id}
+                            {item.full_name?.trim() || 'Athlete (name not loaded)'}
                           </option>
                         ))}
                       </optgroup>
                       <optgroup label="Walk-in (marks present only)">
                         {athletes.filter((item) => !registeredForSelectedClass.has(item.athlete_id)).map((item) => (
                           <option key={item.athlete_id} value={item.athlete_id}>
-                            {item.full_name || item.athlete_id}
+                            {item.full_name?.trim() || 'Athlete (name not loaded)'}
                           </option>
                         ))}
                       </optgroup>
@@ -1006,7 +1073,7 @@ export default function SchedulerPage() {
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
-                          {item.full_name || item.athlete_id}
+                          {item.full_name?.trim() || 'Athlete (name not loaded)'}
                         </option>
                       ))}
                     </select>
@@ -1016,7 +1083,8 @@ export default function SchedulerPage() {
                     <select
                       value={attendanceStatus}
                       onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
-                      className="input"
+                      aria-label="Mark as"
+                      className="select"
                     >
                       <option value="present">Present</option>
                       <option value="absent">Absent</option>
@@ -1074,7 +1142,7 @@ export default function SchedulerPage() {
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">
                         {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete
-                        {shownCheckInHold.details_withheld ? '.' : ` (${shownCheckInHold.reason_category}).`}
+                        {shownCheckInHold.details_withheld ? '.' : ` (${HOLD_REASON_WORDS[shownCheckInHold.reason_category] ?? 'reason on file'}).`}
                         {' '}The check-in was NOT blocked.
                       </p>
                       {shownCheckInHold.details_withheld ? (
@@ -1213,13 +1281,16 @@ export default function SchedulerPage() {
                                 );
                               }}
                               disabled={actionInFlight}
-                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="btn disabled:opacity-50"
                             >
                               Approve &amp; Assign
                             </button>
-                            <button
-                              type="button"
-                              onClick={() =>
+                            <ArmedButton
+                              armKey={item.request_id}
+                              armedLabel="Press again: decline"
+                              busy={actionInFlight}
+                              disabled={actionInFlight}
+                              onConfirm={() =>
                                 void runAction(
                                   {
                                     action: 'review_coaching_request',
@@ -1229,11 +1300,10 @@ export default function SchedulerPage() {
                                   'Coaching request declined.',
                                 )
                               }
-                              disabled={actionInFlight}
-                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="btn btn--ghost disabled:opacity-50"
                             >
                               Decline
-                            </button>
+                            </ArmedButton>
                           </div>
                         </div>
                       ) : null}

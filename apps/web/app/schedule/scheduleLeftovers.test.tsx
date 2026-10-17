@@ -153,7 +153,9 @@ test('Register names an athlete with no name by the id the picker shows', async 
     ? json({ items: [{ athlete_id: 'athlete-9', full_name: '  ' }] })
     : base(input))) as unknown as typeof fetch;
   await renderPage();
-  expect(screen.getByRole('button', { name: 'Register athlete-9' })).toBeInTheDocument();
+  // Words, never the id (UXB-12).
+  expect(screen.getByRole('button', { name: 'Register Athlete (name not loaded)' })).toBeInTheDocument();
+  expect(screen.queryByText(/athlete-9/)).toBeNull();
 });
 
 test('an athlete registering themselves still reads plain Register', async () => {
