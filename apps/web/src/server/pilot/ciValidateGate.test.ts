@@ -82,6 +82,7 @@ describe('the validate gate passes exactly the runs where everything needed pass
     const { status, output } = runGate(needs(outputs, results));
 
     expect(output).not.toContain('FAIL');
+    expect(output.trim().split('\n').pop()).toBe('validate: GREEN');
     expect(status).toBe(0);
   });
 
@@ -98,6 +99,7 @@ describe('the validate gate passes exactly the runs where everything needed pass
     const { status, output } = runGate(needs(outputs, results));
 
     expect(output).toContain(`FAIL ${reason}`);
+    expect(output.trim().split('\n').pop()).toBe('validate: RED');
     expect(status).toBe(1);
   });
 
@@ -159,7 +161,45 @@ describe('ci.yml is wired to the gate', () => {
     expect(needed![1].split(',').map((name) => name.trim()).sort()).toEqual([...others].sort());
     expect(validate!.header).toMatch(/\n {4}if: always\(\)\n/);
     expect(validate!.body).toContain('NEEDS: ${{ toJSON(needs) }}');
-    expect(validate!.body).toMatch(/\n {8}run: node scripts\/ci-validate-gate\.mjs\n/);
+    // The exit status survives the pipe, and a run with no verdict line is red.
+    expect(validate!.body).toContain('set -euo pipefail');
+    expect(validate!.body).toMatch(/\n {10}node scripts\/ci-validate-gate\.mjs \| tee "\$RUNNER_TEMP\/validate-gate\.txt"\n/);
+    expect(validate!.body).toMatch(/\n {10}grep -qx 'validate: GREEN' "\$RUNNER_TEMP\/validate-gate\.txt"\n/);
+  });
+
+  it('leaves no other pull-request workflow a job that could answer to `validate`', () => {
+    // Branch protection matches the required check by name. Since the split,
+    // ci.yml's `validate` appears only once every part has finished, so a
+    // green job of the same name elsewhere -- research-bridge-ci.yml's was one,
+    // done in ~40 s on any package.json PR -- could satisfy it first.
+    const dir = path.dirname(workflowPath);
+    const clashes = fs
+      .readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && file !== 'ci.yml')
+      .filter((file) => {
+        const text = fs.readFileSync(path.join(dir, file), 'utf8');
+        const on = text.slice(text.search(/^on:/m), text.search(/^jobs:/m));
+        if (!/\n {2}pull_request(_target)?:/.test(on)) return false;
+        return /^ {2}validate:\s*$/m.test(text) || /^ {4}name:\s*['"]?validate['"]?\s*$/m.test(text);
+      });
+
+    expect(clashes).toEqual([]);
+  });
+
+  it('gives every E2E step the flag of the suite it runs', () => {
+    // The e2e job starts on any journey flag; inside it each suite must still
+    // wait for its own, or one journey's diff runs (or skips) another's suite.
+    const steps = jobs.get('e2e')!.body.split(/\n {6}- name: /).slice(1);
+    const suites = steps
+      .map((step) => ({ step, script: /run: npm --workspace web run test:e2e:([a-z-]+)\s*\n/.exec(step) }))
+      .filter((entry) => entry.script);
+    expect(suites.length).toBe(E2E_FLAGS.length);
+
+    for (const { step, script } of suites) {
+      const flag = `${script![1].replace(/-/g, '_')}_e2e`;
+      expect(E2E_FLAGS).toContain(flag);
+      expect(step).toMatch(new RegExp(`\\n {8}if: needs\\.classify\\.outputs\\.${flag} == 'true'\\n`));
+    }
   });
 
   it('gives every other job but classify a rule in the gate', () => {

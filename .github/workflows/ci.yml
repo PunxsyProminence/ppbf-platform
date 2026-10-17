@@ -795,7 +795,13 @@ jobs:
         with:
           node-version: 22
 
+      # pipefail keeps the gate's exit status; the grep refuses a run that
+      # printed no verdict, so the script exiting 0 without judging is red.
       - name: Every part this diff needs passed
+        shell: bash
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: node scripts/ci-validate-gate.mjs
+        run: |
+          set -euo pipefail
+          node scripts/ci-validate-gate.mjs | tee "$RUNNER_TEMP/validate-gate.txt"
+          grep -qx 'validate: GREEN' "$RUNNER_TEMP/validate-gate.txt"

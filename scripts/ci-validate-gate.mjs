@@ -111,6 +111,9 @@ if (isMainModule) {
     needs = undefined;
   }
   const { ok, lines } = judge(needs);
+  // The last line is the verdict, and ci.yml's step requires it: a run that
+  // printed nothing -- this block never reached -- must not read as green.
+  lines.push(ok ? 'validate: GREEN' : 'validate: RED');
   console.log(lines.join('\n'));
   if (process.env.GITHUB_STEP_SUMMARY) {
     fs.appendFileSync(
