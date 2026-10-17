@@ -1329,5 +1329,18 @@ describe("/research as #345's three workflows", () => {
     expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
     expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('a failed projection read is said on Needs Evidence too, not only inside Intake Cards', async () => {
+    failProjection(async () => ({ ok: false, json: async () => ({}) }) as Response);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    expect((await screen.findByRole('alert')).textContent).toContain('Projection Unavailable');
   });
 });

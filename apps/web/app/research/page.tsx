@@ -772,15 +772,32 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
+        {/* Above the tabs, as before them: a failed projection read is said
+            whichever tab is open. */}
+        {errorMessage ? (
+          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
+            <span className="badge badge--locked">
+              <i>✕</i>Projection Unavailable
+            </span>
+            <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+          </section>
+        ) : null}
+
         <div
           role="tablist"
           aria-label="Research workflows"
           className="flex flex-wrap gap-[var(--s2)]"
           onKeyDown={(event) => {
-            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
             const at = visibleTabs.findIndex((item) => item.key === shownTab);
-            const step = event.key === 'ArrowRight' ? 1 : visibleTabs.length - 1;
-            const next = visibleTabs[(at + step) % visibleTabs.length];
+            const target: Record<string, number> = {
+              ArrowRight: (at + 1) % visibleTabs.length,
+              ArrowLeft: (at + visibleTabs.length - 1) % visibleTabs.length,
+              Home: 0,
+              End: visibleTabs.length - 1,
+            };
+            if (!(event.key in target)) return;
+            event.preventDefault();
+            const next = visibleTabs[target[event.key]];
             setTab(next.key);
             document.getElementById(`research-tab-${next.key}`)?.focus();
           }}
@@ -811,15 +828,6 @@ export default function ResearchIntakePage() {
           hidden={shownTab !== 'intake'}
           className="space-y-[var(--s5)]"
         >
-        {errorMessage ? (
-          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Projection Unavailable
-            </span>
-            <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
-          </section>
-        ) : null}
-
         {!errorMessage && projectionLoading ? (
           <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             {/* .working pins --brass-300 (tuned for leather, ~1.2:1 on paper).
