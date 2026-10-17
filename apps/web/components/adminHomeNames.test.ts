@@ -39,6 +39,7 @@ describe('one admin home, one name per hub', () => {
     ['/admin/people', 'app/admin/people/page.tsx', 'Gym Office'],
     ['/admin', 'app/admin/page.tsx', 'Capabilities'],
     ['/operations', 'app/operations/page.tsx', 'Operations'],
+    ['/admin/platform', 'app/admin/platform/page.tsx', 'Omega'],
   ])('%s: the door label is the page title, %s', (href, file, title) => {
     expect(door(href)?.label).toBe(title);
     expect(read(file)).toMatch(new RegExp(`<h1[^>]*>${title}</h1>`));

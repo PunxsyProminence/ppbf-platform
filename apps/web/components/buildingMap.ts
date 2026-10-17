@@ -279,7 +279,7 @@ export const BUILDING: readonly Door[] = [
      nothing without it, so OPEN advertised an /admin/* door to every role --
      athlete and parent included -- that all but one of them bounce off. That is
      the exact failure this file's header says `roles` exists to prevent. */
-  { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
   { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
     keywords: 'system routes jobs workflows inventory status',

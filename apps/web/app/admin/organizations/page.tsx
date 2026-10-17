@@ -211,7 +211,9 @@ export default function SetupWizard() {
             <Link href="/login" className="btn">
               Sign In With Microsoft
             </Link>
-            <BackHome />
+            {/* A platform owner not signed in with Microsoft is refused at
+                Omega too: Sign In is their way forward, not a second refusal. */}
+            {sessionRole !== 'platform_owner' && <BackHome />}
           </div>
         </div>
       </main>
