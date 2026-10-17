@@ -489,7 +489,6 @@ export default function AttendanceDashboardPage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Attendance</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | ROLLS UP pilot.scheduler_attendance</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every mark comes from a real check-in recorded on the <Link href="/schedule" className="underline">Schedule</Link> page.
               An athlete with no rows here has never been checked in for a class, not a 0% attendance rate --

@@ -279,7 +279,7 @@ export default function AthleteIntelligencePage() {
             <label className="t-label" htmlFor="intelligence-athlete">Athlete</label>
             <select id="intelligence-athlete" className="select" value={athleteId}
               onChange={(e) => { setLoading(e.target.value !== ''); setAthleteId(e.target.value); }}>
-              <option value="">Select an athlete…</option>
+              <option value="">Choose an athlete</option>
               {athletes.map((athlete) => (
                 <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
               ))}

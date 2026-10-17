@@ -255,7 +255,7 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
               {!blocker && (
                 <button type="button" className="btn" disabled={busy} onClick={() => void review(p, 'adopt')}
                   aria-label={`Adopt the proposal from ${day(p.created_at)} against ${versionOf(p.based_on_drill_id)}`}>
-                  {busyId === p.proposal_id ? 'Saving...' : 'Adopt'}
+                  {busyId === p.proposal_id ? 'Saving…' : 'Adopt'}
                 </button>
               )}
               <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void review(p, 'decline')}

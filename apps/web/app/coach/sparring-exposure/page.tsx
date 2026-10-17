@@ -453,7 +453,7 @@ export default function CoachSparringExposurePage() {
                 onChange={(event) => set({ note: event.target.value })} className="input" />
             </div>
             <button type="submit" disabled={!ready || saving} className="btn disabled:cursor-not-allowed disabled:opacity-60">
-              {saving ? 'Saving...' : 'Save segment'}
+              {saving ? 'Saving…' : 'Save segment'}
             </button>
             {message && (
               <p role={message.kind === 'error' ? 'alert' : 'status'}

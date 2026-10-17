@@ -1221,7 +1221,7 @@ describe('reference lifecycle', () => {
     // still saving.
     await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(2));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(within(detail).getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(within(detail).getByRole('button', { name: 'Saving…' })).toBeDisabled();
 
     await act(async () => {
       answerReread(jsonResponse({ drills: [reference], lifecycle: { [reference.drill_id]: operationalAt(OPERATIONAL_HEAD) } }));
@@ -2015,7 +2015,7 @@ describe('Back after the opening card is gone', () => {
 describe('while an action is running', () => {
   const otherReference = { ...reference, drill_id: 'reference-2', name: 'Other reference drill' };
   const otherOperational = { ...promoted, drill_id: 'authored-3', reference_drill_id: 'reference-2', name: 'Other promoted drill' };
-  const ACTION_NAMES = ['Promote', 'Retire', 'Restore', 'Saving...', 'Promoting...'];
+  const ACTION_NAMES = ['Promote', 'Retire', 'Restore', 'Saving…', 'Promoting...'];
 
   /** The Add a drill form -- every field and its button -- is never part of the lock. */
   function expectAddDrillFormUsable() {
