@@ -17,7 +17,7 @@ can check that.
 Result column. Claude changes a module file's ManualVerification to
 `SIGNED_OFF` only when Jason says so for that module.
 
-**How many: 48.** The 47 DONE modules that had no ManualVerification row on
+**How many: 53** (2026-10-16: 038, 087, 140, 158 and 159 added when they became DONE; 135 is no longer DONE, so 52 are DONE modules). **On 2026-09-29: 48.** The 47 DONE modules that had no ManualVerification row on
 2026-09-29, plus module 084, marked DONE the same day (Jason's "11A"). The
 earlier figure, 36, is the count in `docs/current/SIGN_OFF_GUIDE.md`, which
 only covers modules the 2026-08-03 CSV marked `PENDING_SIGN_OFF`. The other 11:
@@ -36,11 +36,13 @@ account named is one the page lets in (the `allowedRoles` on the page's
 real SHADOW library. A Tell Us test (198) sits in the safeguarding queue until
 an org admin closes it.
 
-**Nothing to try yet (Jason's call: build a screen, or accept API-only).** 027,
-042 and 135 have no screen. 128's page loads but nothing can add an entry.
+**Nothing to try yet (Jason's call: build a screen, or accept API-only).** 042
+and 159 have no screen; 027 has one since this list was written, and 135 is no
+longer DONE. 128's page loads but nothing can add an entry.
 Parts of 001, 116, 133 and 170 are API-only; the row says which part.
 
-**The older guide.** `docs/current/SIGN_OFF_GUIDE.md` (2026-08-18) covers 36 of
+**The older guide.** `docs/current/SIGN_OFF_GUIDE.md` (2026-08-18; archived
+2026-10-16 to `docs/archive/2026-10-16/current/SIGN_OFF_GUIDE.md`) covers 36 of
 these. Some of its lines are out of date: holds are now placed and lifted on
 `/coach/sports-medicine` (045, 082), and punch, weight and confidence results
 now show on `/coach/athlete-intelligence` (039, 104, 131). Where the two
@@ -54,7 +56,8 @@ disagree, this file is the later check.
 | 006 | Training Assignment System | `/coach/progression-intelligence` | Coach | Pick an athlete, open a gap, press "Assign drill", fill it in. Expect it under "Assigned Drills"; the athlete then sees it on `/athlete/dashboard`. The module file names no screen; this is the only assignment write path found. | |
 | 011 | Goal Management System | `/athlete/dashboard`, "SMART Goals" | Athlete | Press "+ New SMART Goal", pick a category, save, then set its progress. Expect the category and progress still there after a reload. The module file names no screen. | |
 | 026 | Intervention Tracking Engine | `/coach/intervention-protocols`, `/coach/intervention-executions`, `/coach/intervention-review` | Coach | File a protocol, start an execution from it and close it with what actually happened, then review the outcome. Expect planned and actual side by side and no score or percentage field. If a page cannot load, its tables may not be in production yet (module file, 2026-08-16; not re-checked). | |
-| 027 | Testing / Retest Engine | No screen | - | Nothing to try: no page calls the retest queue (`/api/pilot/data-collection-requests`). | |
+| 027 | Testing / Retest Engine | `/coach/assessments`, "Open test and rating requests" | Coach | Pick an athlete. Expect their open test and rating requests, or "No open test or rating requests for this athlete." (Screen found 2026-10-16; the 2026-09-29 check said no page called the queue.) | |
+| 038 | Boxing Skill Tracking Engine | `/coach/assessments`, "Skill ratings" | Coach | Pick a test athlete, rate some skill families 1-5, press Save ratings. Expect the ratings saved for that athlete. (DONE since 2026-10-16.) | |
 | 039 | Punch Quality / Volume Engine | `/athlete/dashboard/sparring`, then `/coach/athlete-intelligence` | Athlete, then Coach | Log a session with punches thrown, landed and absorbed. Expect "Saved to your training record." Then, as coach, pick that athlete and expect accuracy and connect-differential results. | |
 | 042 | Round Performance Engine | No screen | - | Nothing to try: the round formulas need round-by-round output and no form in the app records it. | |
 | 043 | Contact / Sparring Restriction Engine | `/athlete/dashboard/sparring`, then `/coach/decision-loop` | Athlete (no medical clearance on file), then Coach | Log a session with contact above None. Expect "Saved. There is no current medical clearance on file for this athlete, so your coach has been asked to look at it." Then expect it under "Near-Misses" for that athlete. | |
@@ -64,6 +67,7 @@ disagree, this file is the later check.
 | 076 | Pain / Symptom Flag Engine | `/athlete/dashboard`, "Pain/Soreness Report", then `/coach/environment/intake-router` | Athlete, then Coach | File a pain report. Expect it under "Athlete Pain Reports" in the coach's workspace, and no hold placed by itself. | |
 | 082 | Stop / Hold / Regress Engine | `/coach/sports-medicine`, then `/athlete/dashboard` and `/schedule` | Coach, then Athlete | Place an "All training" hold on a test athlete. As that athlete, expect a hold banner on the dashboard and "Register" on `/schedule` refused with the hold's explanation. Only "All training" and "No contact" can be placed. | |
 | 084 | Guardian Safety Report Engine | `/parent/safety` | Guardian | Open it as the parent of a test athlete who has a hold. Expect "Safety Status" for each linked child: the hold and gate standing in the words the child sees; no coach reason text; and a "Waivers" list (General, Medical release, Photo & media, Travel), each marked Signed, Declined, Withdrawn or Missing, or Unknown for a value the page does not recognise. Photo & media should match the "Photo & Video Consent" page: Signed only when that page says "Consent on file". Production's waiver rows are all of type `program_consent` (OD-2026-09-29-002 item 8a), which the route does not read, so expect Missing on all four unless the test athlete has waivers of these types. | |
+| 087 | Guardian Observation Engine | `/parent/dashboard`, "Write down what you notice", then `/coach/decision-loop`, "From the family" | Guardian, then Coach | As the guardian, write an observation about the child. As that child's coach, pick the athlete and expect it under "From the family". (DONE since 2026-10-16.) | |
 | 090 | Family Communication Engine | `/coach/decision-loop`, "Message Home", then `/parent/dashboard` | Coach, then Guardian | Send a message home. Expect "Sent to the family." Then expect it on the guardian's dashboard. One-way: no replies. | |
 | 095 | Home Barrier Reporting System | `/parent/dashboard`, "Report a Barrier", then `/coach/environment/intake-router` | Guardian, then Coach | Choose Home, describe it, press "Send to Coach". Expect it under "Family Barrier Reports" for that athlete's coach only. | |
 | 096 | Transportation / Attendance Barrier Tracker | Same as 095 | Guardian, then Coach | As 095 with Type "Transportation". Expect it in the same list. | |
@@ -83,13 +87,16 @@ disagree, this file is the later check.
 | 131 | Confidence Score Engine | `/coach/athlete-intelligence` | Coach | After row 039, open that athlete. Expect each result line to show "Validation ... · confidence ...". | |
 | 133 | Source Reliability Engine | `/research/chat` | Coach | Ask SHADOW a question. Expect each cited source to show "(tier N)". Setting a tier has no screen (API only). | |
 | 134 | Duplicate Detection Engine | `/admin/data-quality` | Org admin | Open it. Expect "Duplicate Guardians": guardian records sharing an email, with the email masked and children hidden from a guardian listed first. Report only; there is no merge button. | |
-| 135 | Uncertainty Tagging Engine | No screen | - | Nothing to try: no route or page uses it. | |
+| 135 | Uncertainty Tagging Engine | Not DONE since 2026-10-16 | - | Nothing to try: its status is MAPPED (the code is tested but no route or page uses it). | |
 | 136 | Version / Source Status Engine | `/evidence` | Org admin | Open it. Expect each pending source to show its status beside its publisher and type. | |
 | 139 | Approval Gate Engine | `/evidence` | Org admin | Press "Approve + verify" on a pending source you want in the library, or "Reject" on one you do not. Expect its status to change. | |
+| 140 | App Governance Layer | `/admin`, "Capability Library" | Org admin | Open it. Expect the gym's capability registry to load; edit one capability and save, then reload and expect the change kept. (DONE since 2026-10-16.) | |
 | 141 | Human Approval System | `/evidence` | Org admin | Same action as 139. Expect the pending list one shorter. | |
 | 142 | Role Permission System | `/admin/people` | Org admin, then Coach | As org admin, expect the staff list. As coach, open `/admin/people` and expect to be sent back to the coach's own page. | |
 | 144 | Change Log System | `/audit` | Org admin | After placing a test hold, open it. Expect recent events from the database, including that hold. | |
 | 145 | File Status / Promotion System | `/coach/video-publications`, then `/admin/video-compliance` | Coach, then Org admin | Create a publication from a released video and submit it; as org admin, Approve it; as coach, publish it. Expect draft, then pending review, then published. | |
+| 158 | Progression Review Assistant | `/coach/progression-intelligence`, "Suggested Gaps" | Coach | Pick an athlete. Expect rule-based suggested gaps, each with "Confirm as gap"; confirming one moves it to "Progression Gaps". (DONE since 2026-10-16.) | |
+| 159 | Source Audit Assistant | No screen | - | Nothing to try: the citation-check and retraction-check routes have no page that calls them (API only). (DONE since 2026-10-16.) | |
 | 169 | Readiness Dashboard | `/coach/environment/intake-router` | Coach | Open it. Expect roster dots coloured only for athletes with a readiness score entered by staff in the last 24 hours; the rest stay unknown, never red or zero. Scores come from staff intake review, not an athlete check-in (`READINESS_PROVENANCE_FACTS.md`). | |
 | 170 | Safety Dashboard | `/admin/safety-flags` | Coach or Org admin | Open it. Expect open flags worst first with severity counts, or an empty list; resolving one refuses an empty note. No screen raises a flag (API only), so the list may be empty. | |
 | 171 | Progression Dashboard | `/coach/progression-intelligence` | Coach | Pick an athlete. Expect "Suggested Gaps", "Progression Gaps" and "Assigned Drills" with completions, for your own athletes only. | |
