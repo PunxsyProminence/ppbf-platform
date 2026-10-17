@@ -1,63 +1,48 @@
-/**
- * @jest-environment jsdom
- */
+import fs from 'node:fs';
+import path from 'node:path';
 
-// The /guardian page renders no data of its own -- it is a description of the
-// family side. These pin the two honesty properties that description needs:
-// a working signpost to the real surface, and no link circling back to itself.
+import { permanentRedirect } from 'next/navigation';
 
-import type { ReactNode } from 'react';
-import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import GuardianPage from './page';
+import GuardianDashboardPage from './dashboard/page';
 
-import GuardianPortalPage from './page';
-
-jest.mock('@/components/RoleStandaloneView', () => ({
-  __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => children,
+jest.mock('next/navigation', () => ({
+  permanentRedirect: jest.fn(() => {
+    throw new Error('NEXT_REDIRECT');
+  }),
 }));
 
-jest.mock('@/components/ShadowChatButton', () => ({
-  __esModule: true,
-  default: () => null,
-}));
+beforeEach(() => jest.mocked(permanentRedirect).mockClear());
 
-jest.mock('next/link', () => ({
-  __esModule: true,
-  default: ({ children, href, className }: { readonly children: ReactNode; readonly href: string; readonly className?: string }) => (
-    <a href={href} className={className}>{children}</a>
-  ),
-}));
-
-test('signposts the Family Dashboard as the working surface', () => {
-  render(<GuardianPortalPage />);
-
-  const cta = screen.getByRole('link', { name: 'Open your Family Dashboard' });
-  expect(cta).toHaveAttribute('href', '/parent/dashboard');
-  // The description says where the data actually is, instead of implying this
-  // page shows it.
-  expect(screen.getByText(/The place you actually see your child/)).toBeInTheDocument();
+test('/guardian forwards permanently to the Parent Hub', () => {
+  expect(() => GuardianPage()).toThrow('NEXT_REDIRECT');
+  expect(permanentRedirect).toHaveBeenCalledWith('/parent/dashboard');
 });
 
-test('quick links reach the consent and safety pages, named as those pages name themselves', () => {
-  render(<GuardianPortalPage />);
-
-  expect(screen.getByRole('link', { name: 'Photo & Video Consent' })).toHaveAttribute('href', '/parent/consent');
-  expect(screen.getByRole('link', { name: 'Safety Status' })).toHaveAttribute('href', '/parent/safety');
+test('/guardian/dashboard forwards permanently to the Parent Hub', () => {
+  expect(() => GuardianDashboardPage()).toThrow('NEXT_REDIRECT');
+  expect(permanentRedirect).toHaveBeenCalledWith('/parent/dashboard');
 });
 
-test('no link on this page circles back to /guardian itself', () => {
-  render(<GuardianPortalPage />);
-
-  const selfLinks = screen
-    .getAllByRole('link')
-    .filter((link) => link.getAttribute('href') === '/guardian');
-  expect(selfLinks).toHaveLength(0);
-});
-
-test('the explainer section names the dashboard as where those surfaces live', () => {
-  render(<GuardianPortalPage />);
-
-  expect(screen.getByText('What the Family Dashboard Covers')).toBeInTheDocument();
-  expect(screen.queryByText('What You Can See Here')).not.toBeInTheDocument();
+// A redirect is not a destination: nothing in the app should still send a
+// parent through it. Walks app/ and components/ source (tests excluded) for a
+// literal '/guardian' or '/guardian/...' path.
+test('no page or component links /guardian', () => {
+  const root = path.resolve(__dirname, '../..');
+  const hits: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.(tsx?|jsx?)$/.test(entry.name) && !/\.test\.|\.spec\./.test(entry.name)) {
+        if (/['"`]\/guardian(?:\/[^'"`]*)?['"`]/.test(fs.readFileSync(full, 'utf8'))) {
+          hits.push(path.relative(root, full));
+        }
+      }
+    }
+  };
+  walk(path.join(root, 'app'));
+  walk(path.join(root, 'components'));
+  expect(hits).toEqual([]);
 });

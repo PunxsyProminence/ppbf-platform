@@ -1892,6 +1892,26 @@ export default function ParentHub() {
                   </Link>
                 </>
               )}
+
+              {/* The coach's multi-week plan and the mental-skills log, for the
+                  child on screen: those pages open on the child chosen here
+                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental skills
+                </Link>
+              </div>
             </div>
           )}
 

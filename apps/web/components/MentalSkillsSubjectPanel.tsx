@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import MentalSkillsView, {
   type LoadState,
@@ -50,11 +50,15 @@ export default function MentalSkillsSubjectPanel({
   pickerLabel,
   noneText,
   rosterErrorText,
+  initialSubject,
 }: {
   readonly loaders: SubjectLoaders;
   readonly pickerLabel: string;
   readonly noneText: string;
   readonly rosterErrorText: string;
+  /** Asked once the list arrives; opens on that athlete only when they are in
+   *  it. Without it, or for anyone else, nothing is picked. */
+  readonly initialSubject?: () => string | null;
 }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [rosterState, setRosterState] = useState<LoadState>('loading');
@@ -65,14 +69,21 @@ export default function MentalSkillsSubjectPanel({
   const [goalsState, setGoalsState] = useState<LoadState>('loading');
   const subjectRef = useRef('');
 
+  const openInitial = useEffectEvent((items: Person[]) => {
+    const wanted = initialSubject?.();
+    if (wanted && items.some((person) => person.athlete_id === wanted)) select(wanted);
+  });
+
   useEffect(() => {
     let live = true;
     void (async () => {
       try {
         const payload = await getJson<{ items?: Person[] }>(loaders.rosterPath);
         if (!live) return;
-        setPeople(payload.items ?? []);
+        const items = payload.items ?? [];
+        setPeople(items);
         setRosterState('loaded');
+        openInitial(items);
       } catch {
         if (!live) return;
         setPeople([]);
