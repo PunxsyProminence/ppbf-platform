@@ -219,7 +219,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
     undoingRef.current.add(key);
     setUndoing(new Set(undoingRef.current));
     setUndoFailed((now) => {
-      const { [key]: _cleared, ...rest } = now;
+      const rest = { ...now };
+      delete rest[key];
       return rest;
     });
     try {

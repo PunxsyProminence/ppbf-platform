@@ -163,7 +163,8 @@ export async function PATCH(request: NextRequest) {
         }, client);
         return reversed;
       });
-      const { undone_reached_at: _undoneAt, ...goal } = undone;
+      const goal: Partial<typeof undone> = { ...undone };
+      delete goal.undone_reached_at;
       return NextResponse.json({ ok: true, goal });
     }
 
