@@ -27,6 +27,7 @@ import ShadowChatButton from './ShadowChatButton';
 import { observationsForAthlete, reviewStateLine } from './shadowObservationsForAthlete';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
+import FromYourCoach from './FromYourCoach';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { allTrackIds, trackManifests, type TrackID } from './trackAssignments';
 import { cx } from './uiStyles';
@@ -2846,6 +2847,10 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
+              {/* What the athlete's coaches wrote to them (#1542, FC-06): first
+                  on the Dashboard, so a message is not below the fold. */}
+              <FromYourCoach />
+
               {/* The before/after frame from the Phase 2 roadmap, built from
                   the record rather than photographs -- see ThenAndNow.tsx for
                   why photographs cannot do this here. Renders nothing until
