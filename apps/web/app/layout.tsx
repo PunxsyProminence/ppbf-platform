@@ -4,6 +4,7 @@ import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
 import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { getOperatingOrganizationProfile } from "@/src/server/pilot/organizationProfileStore";
 
 /* Golden-era pass: every face is now served from files in this repo — no
    Google Fonts fetch at build time or run time. That matches the design
@@ -33,15 +34,26 @@ const geistMono = localFont({
 /* metadataBase: without it Next resolves og:image and twitter:image against
    localhost:3000, which is what production served until now. www is the
    public homepage (Jason, 2026-10-03: "Www.punxsyprominence.org is the public
-   page that will be the home page"). */
-export const metadata: Metadata = {
-  metadataBase: new URL("https://www.punxsyprominence.org"),
-  title: {
-    default: "PPBF Platform",
-    template: "%s | PPBF Platform",
-  },
-  description: "Punxsy Prominence Boxing and Fitness ecosystem platform.",
-};
+   page that will be the home page"). The address, the short name in the title
+   and the legal name all come from the gym's stored profile (lane L31,
+   #1469); the website is a required https origin there, so `new URL` holds. */
+/* RENDERED PER REQUEST. The metadata reads the stored profile, and the image
+   build has no database to read it from, so nothing under this layout is
+   prerendered at build time. The read is cached in-process for 60 seconds
+   (organizationProfileStore.ts). */
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const gym = await getOperatingOrganizationProfile();
+  return {
+    metadataBase: new URL(gym.url),
+    title: {
+      default: `${gym.shortName} Platform`,
+      template: `%s | ${gym.shortName} Platform`,
+    },
+    description: `${gym.legalName} ecosystem platform.`,
+  };
+}
 
 export default function RootLayout({
   children,

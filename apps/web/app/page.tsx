@@ -5,26 +5,26 @@ import PhotoSlot from "@/components/PhotoSlot";
 import PublicInterestForm from "@/components/PublicInterestForm";
 import { programInterestLabels } from "@/components/publicInterestOptions";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
-import { currentOrganizationProfile, physicalAddressLine } from "@/src/shared/organizationProfile";
+import { getOperatingOrganizationProfile } from "@/src/server/pilot/organizationProfileStore";
+import { physicalAddressLine, type OrganizationProfile } from "@/src/shared/organizationProfile";
 
-/* The registry facts, stated once -- in src/shared/organizationProfile.ts
-   since #1469 (N9-01), which carries their sources. The visible page and the
+/* The registry facts, stated once -- in the gym's stored profile
+   (pilot.organization_profiles, lane L31 #1469; seeded from the constant
+   #1469's N9-01 made, which carries their sources). The visible page and the
    JSON-LD both read from it so they cannot drift, and page.test.tsx checks
    each one against the rendered text. Founder -- Jason, 2026-10-03 (he is
    the incorporator on the PA Articles). */
-const org = currentOrganizationProfile();
+export async function generateMetadata(): Promise<Metadata> {
+  const org = await getOperatingOrganizationProfile();
+  return {
+    title: org.brand,
+    description:
+      `${org.legalName} is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in ${org.serviceArea}. Youth participate at no charge.`,
+    alternates: { canonical: `${org.url}/` },
+  };
+}
 
-const physicalAddress = physicalAddressLine(org);
-const domainStatement = `${org.domain} is the official website and application of ${org.legalName}.`;
-
-export const metadata: Metadata = {
-  title: org.brand,
-  description:
-    `${org.legalName} is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in ${org.serviceArea}. Youth participate at no charge.`,
-  alternates: { canonical: `${org.url}/` },
-};
-
-const structuredData = {
+const structuredDataFor = (org: OrganizationProfile) => ({
   "@context": "https://schema.org",
   "@type": "NGO",
   name: org.brand,
@@ -51,10 +51,10 @@ const structuredData = {
   },
   founder: {
     "@type": "Person",
-    name: "Jason Neale",
+    name: org.headCoachName,
     jobTitle: "Head Coach/Governor",
   },
-};
+});
 
 const approach = [
   {
@@ -151,7 +151,7 @@ const programCards = [
 
 /* Moved from /public. The cost answer carries Jason's figure (adults $20 a
    month, 2026-10-03), replacing the old "Adults, ask us". */
-const faqItems = [
+const faqItemsFor = (org: OrganizationProfile) => [
   {
     question: "Do I have to fight anybody?",
     answer:
@@ -188,7 +188,7 @@ const faqItems = [
   {
     question: "Who is actually coaching my kid?",
     answer:
-      `Jason Neale is head coach. ${org.shortName} is a veteran-led, IRS-recognized 501(c)(3) nonprofit. Ask to meet whoever would be working with your kid before you commit to anything.`,
+      `${org.headCoachName} is head coach. ${org.shortName} is a veteran-led, IRS-recognized 501(c)(3) nonprofit. Ask to meet whoever would be working with your kid before you commit to anything.`,
   },
   {
     question: "I want to help. What is useful?",
@@ -201,7 +201,12 @@ const faqItems = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const org = await getOperatingOrganizationProfile();
+  const physicalAddress = physicalAddressLine(org);
+  const domainStatement = `${org.domain} is the official website and application of ${org.legalName}.`;
+  const structuredData = structuredDataFor(org);
+  const faqItems = faqItemsFor(org);
   return (
     <>
       <script
@@ -575,7 +580,7 @@ export default function HomePage() {
                 <dt className="t-label">
                   Head Coach / Governor
                 </dt>
-                <dd className="t-data mt-[var(--s2)]">Jason Neale</dd>
+                <dd className="t-data mt-[var(--s2)]">{org.headCoachName}</dd>
               </div>
               <div className="md:col-span-2">
                 <dt className="t-label">
