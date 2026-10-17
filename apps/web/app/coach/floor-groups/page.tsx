@@ -7,6 +7,7 @@ import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 // Today's floor (modules 121 + 123): the room split for the people who
 // actually showed up. Groups may carry a station (a circuit) or not (small
@@ -194,6 +195,7 @@ export default function FloorGroupsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Today&rsquo;s Floor</h1>
+            <ClusterNav cluster="planning" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               The room split for whoever showed up. Add groups with stations for a circuit, or
               without for small groups — both are real days. A placement is about this session

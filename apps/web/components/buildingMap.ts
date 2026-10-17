@@ -480,7 +480,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'The template catalog a session is built from — browse and read, assignment stays in the plan.' },
   { href: '/coach/intelligence', label: 'The Morning Read', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intelligence digest morning read stalled gaps readiness attendance unreviewed holds',
-    hint: 'Five deterministic reads of your athletes\u2019 records, by urgency. No scores, no predictions.' },
+    hint: 'Seven deterministic reads of your athletes\u2019 records, by urgency. No scores, no predictions.' },
   { href: '/coach/attempt-log', label: 'Attempt Log', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'attempts reps time distance load failures misses edge',
     hint: 'Every attempt, made or missed \u2014 the misses are the point. No comparisons.' },
