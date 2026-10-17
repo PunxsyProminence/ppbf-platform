@@ -86,7 +86,11 @@ const isSeedLoaderPath = (file) =>
    that no longer exists. */
 export const PG_SUITE_DEPENDENCIES = [
   'apps/web/app/board/boardWorkspaceConfig.ts',
+  // parentResources.ts (PH-11) checks internal links against the building map.
+  'apps/web/components/buildingMap.ts',
   'apps/web/components/drills/drillDetailView.ts',
+  'apps/web/components/operationsAccess.ts',
+  'apps/web/components/roleRoutes.ts',
   'apps/web/lib/calendarDay.ts',
   'apps/web/lib/feedbackWording.ts',
   'apps/web/src/lib/drillAdoptionReadiness.ts',
