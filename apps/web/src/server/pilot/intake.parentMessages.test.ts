@@ -33,13 +33,13 @@ describe('listParentMessages', () => {
 
   test('returns sender_role from the joined account, never a resolved name', async () => {
     mockQuery.mockResolvedValueOnce([
-      { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
+      { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
     ]);
 
     const result = await listParentMessages('org-1', ['ath-1']);
 
     expect(result).toEqual([
-      { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
+      { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
     ]);
   });
 
@@ -50,5 +50,14 @@ describe('listParentMessages', () => {
 
     const [sql] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain('order by co.created_at desc');
+  });
+
+  test('F-120: selects the author account id so the route can name the sender', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await listParentMessages('org-1', ['ath-1']);
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('co.coach_account_id as sender_account_id');
   });
 });

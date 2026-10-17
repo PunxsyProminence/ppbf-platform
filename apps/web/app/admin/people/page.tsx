@@ -451,14 +451,16 @@ function PeopleConsoleContent() {
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
-
+  // The athlete's roster name for a login row, else the login id (F-110).
   /* A person by name in this page's lines and labels, never by account id
      (UXB-12). An athlete is named from the roster; an adult by the address
      they sign in with, the only name this page holds for them. PROPOSED
      fallback wording. */
   const personLabel = (accountId: string): string => {
     const member = members.find((item) => item.account_id === accountId);
-    if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name ?? 'Athlete (name not loaded)';
+    // A roster that could not be read leaves the athlete's login id: on an
+    // account action it is the only thing that tells two athletes apart (F-110, #1693).
+    if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name?.trim() || member.account_id;
     return member?.login_email || 'Account with no sign-in address';
   };
 
@@ -1460,6 +1462,8 @@ function PeopleConsoleContent() {
                             {isPinAthlete && (codeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
+                                  {/* Named as the office knows them: the roster's name for
+                                      the athlete record this login holds, else the login id. */}
                                   {member.has_pin
                                     ? `Issues ${personLabel(member.account_id)} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
                                     : `Issues ${personLabel(member.account_id)} a new one-time activation code now. The code issued before stops working.`}

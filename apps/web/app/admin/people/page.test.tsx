@@ -524,11 +524,38 @@ describe('sign-in status labels follow the credential policy', () => {
     }) as never;
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
-    // ath-3 is not on the fixture roster: words, not the account id (UXB-12).
-    expect(screen.getByText('Issues Athlete (name not loaded) a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
-    expect(screen.queryByText(/ath-new/)).toBeNull();
+    // ath-3 is not on the roster this page read, so the login id stands in for the name (F-110).
+    expect(screen.getByText('Issues ath-new a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
     expect(screen.queryByText(/Their PIN stops working/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Keep The Current Code' })).toBeTruthy();
+  });
+
+  test('an athlete awaiting activation is named from the roster too, and the code still takes two presses', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [{ account_id: 'ajohnson', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', active_flag: false, has_pin: false, membership_active: false }],
+      roster: ROSTER,
+      onActivationReset: (body) => { bodies.push(body); return { ok: true, activation_code: 'WXYZ-2345-6789', expires_at: '2026-08-26T00:00:00Z' }; },
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+
+    expect(screen.getByText('Issues Alex Johnson a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bodies).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Issue The New Code' }));
+    await waitFor(() => expect(bodies).toEqual([{ account_id: 'ajohnson' }]));
+  });
+
+  test('a roster that could not be read leaves the login id in the armed sentence', async () => {
+    global.fetch = fetchMock({
+      members: [{ account_id: 'sriv', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-2', active_flag: true, has_pin: true, membership_active: true }],
+      rosterOk: false,
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+    expect(screen.getByText(/^Issues sriv a new one-time activation code now\. Their PIN stops working/)).toBeTruthy();
   });
 });
 
