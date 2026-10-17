@@ -55,7 +55,7 @@ describe('the ruled words', () => {
     ];
     for (const file of PLAN_SCREENS) {
       const source = withoutComments(read(file));
-      expect(source).not.toMatch(/development blocks?/i);
+      expect(source).not.toMatch(/\bdevelopment blocks?\b/i);
       expect(source).not.toMatch(/'Save block'|>\s*Blocks on record\s*<|New block\{/);
     }
   });
