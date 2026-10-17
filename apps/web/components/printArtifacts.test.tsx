@@ -327,7 +327,16 @@ describe('whose paper: the child id never rides in the address (#1596 item 2b)',
 
   afterEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     window.history.replaceState({}, '', '/');
+  });
+
+  it('a print opened in a new tab (empty tab storage) still prints the child chosen last', async () => {
+    window.history.replaceState({}, '', '/print');
+    window.localStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+    const { mock } = await renderRoom({ role: 'parent', athleteId: null });
+
+    expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-kid')]);
   });
 
   it('a guardian prints the child they chose on the hub, with nothing in the address', async () => {

@@ -153,7 +153,7 @@ function computeRoleSessionSnapshot(): RoleSession | null {
 export function readRoleSession(): RoleSession | null {
   const session = computeRoleSessionSnapshot();
   if (!session && cachedRoleSessionValue) {
-    clearRoleSession();
+    dropExpiredRoleCache();
   }
   return session;
 }
@@ -176,16 +176,26 @@ export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown)
 export function getRoleSessionSnapshot(): RoleSession | null {
   const session = computeRoleSessionSnapshot();
   if (!session && cachedRoleSessionValue) {
-    clearRoleSession();
+    dropExpiredRoleCache();
   }
   return session;
+}
+
+// The client's role cache ran out (it lives 8 hours; the server's session can
+// outlive it). The person may still be signed in, so only the cache goes.
+function dropExpiredRoleCache() {
+  cachedRoleSessionValue = null;
+  purgeLegacyRoleSessionStorage();
+
+  notifyRoleSessionChange();
 }
 
 export function clearRoleSession() {
   cachedRoleSessionValue = null;
   purgeLegacyRoleSessionStorage();
-  // A guardian's chosen child (the print hand-off, #1596 item 2b) is not left
-  // for whoever signs in next on this tab.
+  // Signing out, or the server refusing the session: a guardian's chosen
+  // child (the print hand-off, #1596 item 2b) is not left for whoever signs
+  // in next on this device.
   forgetChosenChild();
 
   notifyRoleSessionChange();

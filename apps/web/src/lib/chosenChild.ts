@@ -8,42 +8,66 @@
  * does; this is about the address a person sees, copies and keeps.)
  * A parent's session names no single child (a family can have several), so
  * the page cannot take it from the session either. The hub writes the chosen
- * child here, for this browser tab only (sessionStorage: gone when the tab
- * closes, never sent to the server), and the next page reads it.
+ * child here and the next page reads it: this tab's sessionStorage first (two
+ * tabs can hold two different children), and localStorage behind it, so a
+ * link opened in a NEW tab -- which starts with empty sessionStorage -- still
+ * finds the child chosen last. Neither is sent to the server.
  *
  * The value is never trusted. Every page that reads it sends it to the server,
  * which re-runs the guardian check before answering -- this only says which of
  * the guardian's own children they meant. A read on a page signed in as
  * someone else is ignored by its caller (see PrintRoom), and storage that is
- * blocked or full is treated as nothing chosen. Signing out forgets it
- * (roleSession.clearRoleSession), so the next person on a shared tablet does
- * not inherit it. The hub writes it whenever the selected child changes, not
+ * blocked or full is treated as nothing chosen. Signing out, or the server
+ * refusing the session, forgets it (roleSession.clearRoleSession), so the
+ * next person on a shared tablet does not inherit it; the client's role cache
+ * merely running out does not. The hub writes it whenever the selected child changes, not
  * only on a click, so a link opened any way prints the child on screen.
  */
 
 const KEY = 'ppbf.parent.chosenChild';
 
+function storages(): Storage[] {
+  const found: Storage[] = [];
+  for (const pick of [() => window.sessionStorage, () => window.localStorage]) {
+    try {
+      const storage = pick();
+      if (storage) found.push(storage);
+    } catch {
+      // That storage is blocked: the other may still work.
+    }
+  }
+  return found;
+}
+
 export function rememberChosenChild(athleteId: string | null | undefined): void {
-  try {
-    if (athleteId) window.sessionStorage.setItem(KEY, athleteId);
-  } catch {
-    // Storage blocked: the next page falls back to its own default.
+  if (!athleteId) return;
+  for (const storage of storages()) {
+    try {
+      storage.setItem(KEY, athleteId);
+    } catch {
+      // Full or blocked: the next page falls back to its own default.
+    }
   }
 }
 
 export function forgetChosenChild(): void {
-  try {
-    window.sessionStorage.removeItem(KEY);
-  } catch {
-    // Storage blocked: nothing was kept.
+  for (const storage of storages()) {
+    try {
+      storage.removeItem(KEY);
+    } catch {
+      // Blocked: nothing was kept there.
+    }
   }
 }
 
 export function readChosenChild(): string | null {
-  try {
-    const value = window.sessionStorage.getItem(KEY);
-    return value && value.trim() ? value.trim() : null;
-  } catch {
-    return null;
+  for (const storage of storages()) {
+    try {
+      const value = storage.getItem(KEY);
+      if (value && value.trim()) return value.trim();
+    } catch {
+      // Blocked: try the next one.
+    }
   }
+  return null;
 }
