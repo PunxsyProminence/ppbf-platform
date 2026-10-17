@@ -5,6 +5,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { listParentMessages } from '@/src/server/pilot/intake';
+import { getStaffAuthorName } from '@/src/server/pilot/achievements';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -32,10 +33,17 @@ jest.mock('@/src/server/pilot/intake', () => ({
   listParentMessages: jest.fn(),
 }));
 
+// The author's name is resolved by the shared staff-name helper; mocked here
+// so these tests assert what reaches a guardian, not how a name is derived.
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getStaffAuthorName: jest.fn(),
+}));
+
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockGetAthleteById = jest.mocked(getAthleteById);
 const mockListParentMessages = jest.mocked(listParentMessages);
+const mockGetStaffAuthorName = jest.mocked(getStaffAuthorName);
 
 function principal(overrides: Record<string, unknown> = {}) {
   return {
@@ -58,12 +66,13 @@ beforeEach(() => {
   mockGuardianAthleteIds.mockResolvedValue(['ath-1']);
   mockGetAthleteById.mockResolvedValue({ athlete_id: 'ath-1', full_name: 'Jordan T.' } as never);
   mockListParentMessages.mockResolvedValue([]);
+  mockGetStaffAuthorName.mockImplementation(async (_org, _account, role) => (role === 'coach' ? 'Coach Rivera' : 'Dana Office'));
 });
 
 test('returns messages scoped to the guardian\'s own children, with the athlete name attached', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockListParentMessages.mockResolvedValueOnce([
-    { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
+    { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z' },
   ]);
 
   const response = await get();
@@ -77,7 +86,7 @@ test('returns messages scoped to the guardian\'s own children, with the athlete 
   // `task` here is the correct response to it failing; loosening it to
   // toMatchObject would not be. null because this message carries no task.
   expect(payload.items).toEqual([
-    { note_id: 'note-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', sender_role: 'coach', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z', task: null },
+    { note_id: 'note-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', sender_role: 'coach', sender_name: 'Coach Rivera', note_text: 'Great week!', created_at: '2026-08-07T00:00:00.000Z', task: null },
   ]);
 });
 
@@ -85,7 +94,7 @@ test('an athlete lookup miss falls back to a null name rather than throwing', as
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGetAthleteById.mockResolvedValueOnce(null);
   mockListParentMessages.mockResolvedValueOnce([
-    { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', note_text: 'Hi.', created_at: '2026-08-07T00:00:00.000Z' },
+    { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Hi.', created_at: '2026-08-07T00:00:00.000Z' },
   ]);
 
   const response = await get();
@@ -115,4 +124,26 @@ test('no children on the account returns an empty list, not an error', async () 
   expect(response.status).toBe(200);
   const payload = await response.json();
   expect(payload.items).toEqual([]);
+});
+
+test('F-120: each card names who sent it, an admin is not called Coach, and no author id reaches the guardian', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockListParentMessages.mockResolvedValueOnce([
+    { note_id: 'note-1', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Bring gloves.', created_at: '2026-08-08T00:00:00.000Z' },
+    { note_id: 'note-2', athlete_id: 'ath-1', sender_role: 'organization_admin', sender_account_id: 'admin-acct-1', note_text: 'Form due.', created_at: '2026-08-07T00:00:00.000Z' },
+    { note_id: 'note-3', athlete_id: 'ath-1', sender_role: 'coach', sender_account_id: 'coach-acct-1', note_text: 'Good work.', created_at: '2026-08-06T00:00:00.000Z' },
+  ]);
+
+  const response = await get();
+  const payload = await response.json();
+
+  expect(payload.items.map((item: { sender_name: string }) => item.sender_name)).toEqual(['Coach Rivera', 'Dana Office', 'Coach Rivera']);
+  // One lookup per author, with the role the message was written in.
+  expect(mockGetStaffAuthorName).toHaveBeenCalledTimes(2);
+  expect(mockGetStaffAuthorName).toHaveBeenCalledWith('org-1', 'coach-acct-1', 'coach');
+  expect(mockGetStaffAuthorName).toHaveBeenCalledWith('org-1', 'admin-acct-1', 'organization_admin');
+  const text = JSON.stringify(payload);
+  expect(text).not.toContain('coach-acct-1');
+  expect(text).not.toContain('admin-acct-1');
+  expect(text).not.toContain('sender_account_id');
 });

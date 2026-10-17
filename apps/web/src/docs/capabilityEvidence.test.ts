@@ -57,8 +57,8 @@ import path from 'node:path';
  * the comparison was measuring against a file nobody keeps current, and it
  * was the stated reason modules 084 and 094 were left DRAFT on 2026-09-28
  * (their audit logs). Jason's answer "11A" (OD-2026-09-29-002): remove it,
- * keep the checks that DONE modules cite code. The index file itself is left
- * in place as history.
+ * keep the checks that DONE modules cite code. The index file is kept as
+ * history, since 2026-10-16 under docs/archive/2026-10-16/capabilities/.
  *
  * WHAT IT DELIBERATELY DOES NOT DO. It does not decide whether a capability
  * WORKS. A cited file existing is not a working feature, and this guard never
