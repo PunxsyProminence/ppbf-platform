@@ -448,7 +448,9 @@ describe('Safety & Consent card on the parent hub', () => {
     expect(screen.queryByText('Taking a short break.')).toBeNull();
   });
 
-  test('a failed safety read leaves the rest of the hub working, card falls back to plain links', async () => {
+  // UXB-24: a failed read used to print the same neutral prompt as a read that
+  // answered with nothing to flag. It now says the check did not answer.
+  test('a failed safety read leaves the rest of the hub working and says the check did not answer', async () => {
     installFetch(undefined, async () => {
       throw new Error('safety summary offline');
     });
@@ -458,6 +460,29 @@ describe('Safety & Consent card on the parent hub', () => {
 
     expect(screen.getByRole('link', { name: 'View Safety Status' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+    expect(screen.getByText("Couldn't check right now. Use View Safety Status to see it.")).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+  });
+
+  test('a refused safety read says the check did not answer, not the all-quiet prompt', async () => {
+    installFetch(undefined, async () => jsonResponse({ error: 'nope' }, false));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText("Couldn't check right now. Use View Safety Status to see it.")).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+  });
+
+  test('a safety read still in flight reads as checking, not as nothing to report', async () => {
+    installFetch(undefined, () => new Promise<Response>(() => {}));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText('Checking safety status')).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+    expect(screen.queryByText(/Couldn.t check right now/)).toBeNull();
   });
 });
 
@@ -564,6 +589,23 @@ describe('Report a Barrier (#95/#96)', () => {
     await screen.findByText('Forbidden');
     expect(screen.queryByText("Sent to your child's coach.")).toBeNull();
   });
+
+  // UXB-23: success and failure used to share one unmarked line.
+  test('a sent report is a status line and a failed one is an alert', async () => {
+    let answer = jsonResponse({ ok: true, note_id: 'note-1' });
+    installFetch(undefined, undefined, async () => answer);
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Something.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+    expect((await screen.findByRole('status')).textContent).toBe("Sent to your child's coach.");
+
+    answer = jsonResponse({ error: 'Forbidden' }, false);
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Again.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Forbidden');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });
 
 // Capability #90, read side: the Messages tab previously showed hardcoded
@@ -641,6 +683,17 @@ describe('Messages tab (#90)', () => {
 
     expect(screen.queryByText('No messages yet.')).toBeNull();
     expect(screen.getByText(/This is not an empty inbox\./i)).toBeDefined();
+  });
+
+  // UXB-13: a read still in flight used to print "Unavailable - your messages
+  // have not loaded", which claims a failure nobody has observed.
+  test('a messages read still in flight reads as loading, not as unavailable or empty', async () => {
+    installFetch(undefined, undefined, undefined, () => new Promise<Response>(() => {}));
+    await openMessages();
+
+    expect(screen.getByText('Reading your messages')).toBeDefined();
+    expect(screen.queryByText(/your messages have not loaded/i)).toBeNull();
+    expect(screen.queryByText('No messages yet.')).toBeNull();
   });
 
   // A refusal is a failed read too: the effect returns early on !response.ok

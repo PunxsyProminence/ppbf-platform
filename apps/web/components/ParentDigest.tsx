@@ -93,6 +93,8 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
   const [recognitions, setRecognitions] = useState<RecognitionItem[]>([]);
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
   const [sessionCount, setSessionCount] = useState<number | null>(null);
+  // UXB-13: "Check again" re-runs the same read below; bumping this is all it does.
+  const [readNonce, setReadNonce] = useState(0);
 
   useEffect(() => {
     if (!athleteId) {
@@ -166,7 +168,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
     return () => {
       cancelled = true;
     };
-  }, [athleteId]);
+  }, [athleteId, readNonce]);
 
   const possessive = childName ? `${childName}’s` : 'Your child’s';
 
@@ -219,6 +221,9 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
             <p className="alert-msg">
               The corner could not be read just now. Nothing is wrong with the record — try again in a moment.
             </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setReadNonce((value) => value + 1)}>
+              Check again
+            </button>
           </div>
         </div>
       )}
@@ -256,6 +261,13 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
           {/* What was reached. */}
           <div>
             <h4 className="t-label">Reached</h4>
+            {/* UXB-25: this list is the milestones someone marked, which is
+                not the hub's "milestones earned" count (that one also counts
+                the ones a session total reaches). awarded_by_role is 'coach'
+                or 'self' (the athlete's own "Did it"), so the label names both. */}
+            <p className="mt-[var(--s1)] text-[length:var(--t-sm)] text-[color:var(--card-ink-muted)]">
+              Marked by a coach or by {childName ?? 'your child'}
+            </p>
             {milestoneFailed ? (
               <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
                 Milestones could not be loaded just now.

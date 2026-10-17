@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ParentDigest from './ParentDigest';
 
@@ -146,6 +146,47 @@ describe('the parent digest', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByText(/could not be read/)).toBeTruthy();
     expect(screen.queryByText(/Nothing written up yet/)).toBeNull();
+  });
+
+  // UXB-13: "try again in a moment" had nothing to press.
+  it('offers Check again on a failed read, and that re-reads the corner', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (!answering) return jsonResponse({}, false);
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/Nothing written up yet/)).toBeTruthy();
+    expect(screen.queryByText(/could not be read/)).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  // UXB-25: the hub's "milestones earned" also counts ones a session total
+  // reaches; this list is only the ones somebody marked, and says so. Not
+  // "Awarded by a coach": an athlete's own "Did it" is stored here as 'self'.
+  it('labels the milestone list as the marked ones', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 13, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by Alex')).toBeTruthy();
+    expect(screen.getByText(/No milestones sealed yet/)).toBeTruthy();
   });
 
   it('says which half could not be read when only one read fails, instead of faking it empty', async () => {
