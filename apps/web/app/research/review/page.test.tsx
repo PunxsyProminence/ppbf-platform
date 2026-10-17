@@ -341,11 +341,21 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
     resolve?: { ok: boolean; status?: number; body?: Record<string, unknown> };
   } = {}) {
     const resolves: Array<Record<string, unknown>> = [];
+    // Resolves once the page has read the session, so an absence asserted
+    // after it is about the role and verdict, not a role still loading.
+    let sessionRead: () => void = () => {};
+    const sessionAnswered = new Promise<void>((resolve) => { sessionRead = resolve; });
     const base = mockFetch({ submissionsByRequirement: { 7: [options.submission ?? RESPONSIVE] } });
     const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/pilot/auth/session')) {
-        return { ok: true, json: async () => ({ authenticated: true, role: options.role ?? 'organization_admin', auth_provider: 'microsoft' }) } as Response;
+        return {
+          ok: true,
+          json: async () => {
+            setTimeout(sessionRead, 0);
+            return { authenticated: true, role: options.role ?? 'organization_admin', auth_provider: 'microsoft' };
+          },
+        } as Response;
       }
       if (url.includes('/research-requirements') && init?.method === 'POST') {
         resolves.push(JSON.parse(String(init.body)));
@@ -353,12 +363,20 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
         return { ok: reply.ok, status: reply.status ?? 200, json: async () => reply.body ?? { ok: true } } as Response;
       }
       if (url.includes('/library/sources')) {
-        return { ok: true, json: async () => ({ sources: [{ ...LIBRARY_SOURCE, ...(options.source ?? {}) }] }) } as Response;
+        // The route's own wire shape: { ok, items }.
+        return { ok: true, json: async () => ({ ok: true, items: [{ ...LIBRARY_SOURCE, ...(options.source ?? {}) }] }) } as Response;
       }
       return base(input, init);
     });
     global.fetch = fetchMock as unknown as typeof fetch;
-    return resolves;
+    return { resolves, sessionAnswered };
+  }
+
+  async function renderDesk() {
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
   }
 
   test.each([
@@ -379,12 +397,13 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
     await act(async () => {
       render(<ResearchSubmissionReviewPage />);
     });
-    await screen.findByText('Is RPE reliable at age 12?');
+    // The title comes from the same sources read, so it has answered.
+    await screen.findByText('RPE reliability in adolescents (peer_reviewed)');
     expect(screen.queryByText(/Evidence review:/)).toBeNull();
   });
 
   test('an organization admin closes the requirement on a Responsive submission, and it leaves the queue', async () => {
-    const resolves = installDesk();
+    const { resolves } = installDesk();
     await act(async () => {
       render(<ResearchSubmissionReviewPage />);
     });
@@ -418,21 +437,21 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
   test.each(['unreviewed', 'partially_responsive', 'not_responsive', 'duplicate'])(
     'a %s submission offers no close',
     async (state) => {
-      installDesk({ submission: { ...RESPONSIVE, applicability_state: state } });
+      const { sessionAnswered } = installDesk({ submission: { ...RESPONSIVE, applicability_state: state } });
+      await renderDesk();
       await act(async () => {
-        render(<ResearchSubmissionReviewPage />);
+        await sessionAnswered;
       });
-      await screen.findByText('Is RPE reliable at age 12?');
       expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
     },
   );
 
   test('marking a submission Responsive offers the close right away', async () => {
-    installDesk({ submission: SUBMISSION });
+    const { sessionAnswered } = installDesk({ submission: SUBMISSION });
+    await renderDesk();
     await act(async () => {
-      render(<ResearchSubmissionReviewPage />);
+      await sessionAnswered;
     });
-    await screen.findByText('Is RPE reliable at age 12?');
     expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Mark Responsive' }));
@@ -441,11 +460,33 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
   });
 
   test('the platform owner, who closes no gym requirement, is offered no close', async () => {
-    installDesk({ role: 'platform_owner' });
+    const { sessionAnswered } = installDesk({ role: 'platform_owner' });
+    await renderDesk();
+    await act(async () => {
+      await sessionAnswered;
+    });
+    expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+  });
+
+  test('while a close is in flight the verdict buttons wait', async () => {
+    let answer: (value: Response) => void = () => {};
+    installDesk();
+    const base = global.fetch;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => (
+      String(input).includes('/research-requirements') && init?.method === 'POST'
+        ? new Promise<Response>((resolve) => { answer = resolve; })
+        : base(input, init)
+    )) as unknown as typeof fetch;
     await act(async () => {
       render(<ResearchSubmissionReviewPage />);
     });
-    await screen.findByText('Is RPE reliable at age 12?');
-    expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close requirement with this submission' }));
+    });
+    expect((screen.getByRole('button', { name: 'Mark Not Responsive' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      answer({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response);
+    });
+    expect(await screen.findByText('Closed on a Responsive submission: Is RPE reliable at age 12?')).toBeInTheDocument();
   });
 });

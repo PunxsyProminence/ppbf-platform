@@ -256,7 +256,9 @@ afterAll(async () => {
   });
 });
 
-// One item, walked in order: each test takes the next step.
+// One item, walked in order: each test takes the next step and relies on the
+// ones before it, so run the file whole (a -t filter or an early failure
+// leaves the later steps without their item).
 describe('one research item from gap to resolved (#345, #1467)', () => {
   let requirementId: number;
   let partialSubmissionId: string;

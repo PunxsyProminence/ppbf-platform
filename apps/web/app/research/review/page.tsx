@@ -420,7 +420,9 @@ export default function ResearchSubmissionReviewPage() {
                             <button
                               key={verdict}
                               type="button"
-                              disabled={busy}
+                              // Not while a close is in flight: a verdict changed under it
+                              // would land on a requirement that has just left the queue.
+                              disabled={busy || closingSubmissionId !== null}
                               onClick={() => void handleReview(submission.submission_id, requirement.research_requirement_id, verdict)}
                               className={`${verdict === submission.applicability_state ? 'btn' : 'btn btn--ghost'} disabled:cursor-not-allowed disabled:opacity-60`}
                             >
