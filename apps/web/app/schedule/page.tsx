@@ -229,6 +229,9 @@ export default function SchedulerPage() {
   const [role, setRole] = useState<SchedulerRole | null>(null);
   const [athleteId, setAthleteId] = useState<string>('');
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
+  // An athlete reads no roster (F-117): only their own record, so their own
+  // rows carry their name and every other id stays as it is.
+  const [ownAthlete, setOwnAthlete] = useState<AthleteRow | null>(null);
 
   const [classes, setClasses] = useState<SchedulerClass[]>([]);
   const [registrations, setRegistrations] = useState<SchedulerRegistration[]>([]);
@@ -297,11 +300,11 @@ export default function SchedulerPage() {
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const athlete of athletes) {
+    for (const athlete of ownAthlete ? [...athletes, ownAthlete] : athletes) {
       map.set(athlete.athlete_id, athlete.full_name ?? athlete.athlete_id);
     }
     return map;
-  }, [athletes]);
+  }, [athletes, ownAthlete]);
 
   // Default selections are applied functionally rather than read out of a
   // closure so this loader keeps a stable identity: depending on the current
@@ -371,6 +374,28 @@ export default function SchedulerPage() {
         }
       } else {
         setAthletes([]);
+      }
+
+      if (auth.role === 'athlete' && auth.athlete_id) {
+        // Its own try: a record that cannot be read leaves the roster code
+        // on the athlete's rows, and the rest of the page as it is.
+        const ownId = auth.athlete_id;
+        try {
+          const ownRes = await fetch(`${apiBase()}/api/pilot/athletes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ athlete_id: ownId }),
+          });
+          const own = (await ownRes.json()) as { found?: boolean; athlete?: { full_name?: unknown } };
+          const fullName = typeof own.athlete?.full_name === 'string' ? own.athlete.full_name.trim() : '';
+          // Keyed on the caller's own id, never on what came back.
+          setOwnAthlete(ownRes.ok && own.found && fullName ? { athlete_id: ownId, full_name: fullName } : null);
+        } catch {
+          setOwnAthlete(null);
+        }
+      } else {
+        setOwnAthlete(null);
       }
 
       if (roleCanResolveCoachingRequests(auth.role)) {
@@ -1162,7 +1187,7 @@ export default function SchedulerPage() {
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
                       </p>
-                      <p className="text-[color:var(--bone-400)]">{item.goals}</p>
+                      <p className="text-[color:var(--bone-400)]">Goals: <span>{item.goals}</span></p>
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">

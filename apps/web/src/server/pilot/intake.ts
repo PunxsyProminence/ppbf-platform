@@ -973,6 +973,9 @@ export interface ParentMessageRow {
   note_id: string;
   athlete_id: string;
   sender_role: string;
+  // Who wrote it, for the route to name them (F-120). Server-only: the parent
+  // route turns it into a display name and never sends the id on.
+  sender_account_id: string;
   note_text: string;
   created_at: string;
 }
@@ -989,16 +992,16 @@ export interface ParentMessageRow {
  * so a guardian's message feed can never surface a behavior note or a
  * barrier report filed under the same table.
  *
- * `sender_role` (via a join to pilot.accounts, never a resolved display
- * name -- accounts has no name column for staff) matches ParentHub's own
- * prior placeholder copy, "From Coach" -- a family reads who sent it by
- * role, the same way the mock data this replaces always displayed it.
+ * `sender_role` comes from a join to pilot.accounts. `sender_account_id` is
+ * the author, which the parent route resolves to a display name with
+ * getStaffAuthorName (F-120: the card said only "From Coach") and does not
+ * pass on. Names are resolved there, not here, so this stays one query.
  */
 export async function listParentMessages(organizationId: string, athleteIds: string[]): Promise<ParentMessageRow[]> {
   if (athleteIds.length === 0) return [];
 
   const rows = await query<ParentMessageRow>(
-    `select co.note_id, co.athlete_id, a.role as sender_role, co.note_text, co.created_at::text
+    `select co.note_id, co.athlete_id, a.role as sender_role, co.coach_account_id as sender_account_id, co.note_text, co.created_at::text
      from pilot.coach_observations co
      join pilot.accounts a on a.account_id = co.coach_account_id
      where co.organization_id = $1

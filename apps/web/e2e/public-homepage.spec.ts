@@ -357,7 +357,7 @@ test.describe('Public homepage', () => {
 
     // An unauthenticated visitor must never see protected page content, whether
     // the client-side auth gate is still resolving or has already redirected.
-    await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
   });
 });
