@@ -672,7 +672,7 @@ describe('detaching citing evidence', () => {
     expect(bundlesAt).toBeGreaterThan(-1);
     expect(bundlesAt).toBeLessThan(queueAt);
     expect(queueAt).toBeLessThan(sessionsAt);
-    // Athletes before accounts, the order a deletion takes them in.
+    // Athletes, then accounts, both before the count.
     expect(sessionsAt).toBeLessThan(athletesAt);
     expect(athletesAt).toBeLessThan(accountsAt);
     expect(accountsAt).toBeLessThan(countAt);

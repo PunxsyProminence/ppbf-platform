@@ -329,10 +329,11 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   //     the athlete the chat is about is deleted, or subject_deleted_at is set
   //     (the deletion of the person the chat names).
   // An item is held when:
-  //   (a) its asker is flagged and deleted (the purge keeps that whole
-  //       account, bundles included), or its bundle is claimed or cited in a
-  //       flagged chat of a deleted person, as the trigger reads a chat's
-  //       evidence (shadow_rows_follow_account); or
+  //   (a) its asker is flagged and deleted (every citing item of theirs; for
+  //       a guardian the purge keeps that whole account two years), or its
+  //       bundle is claimed or cited in a flagged chat of a deleted person,
+  //       as the trigger reads a chat's evidence (shadow_rows_follow_account);
+  //       or
   //   (b) the item itself is cited by an answer in a flagged chat, whoever's.
   // A citation is held when it is in a flagged chat. Everything else is
   // detached, including evidence of a flagged person who is not deleted; the
@@ -366,8 +367,10 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
         order by s.conversation_id for share`,
       [citingBundleIds],
     );
-    // Athletes before accounts: the order dataDeletion.ts and the purge take
-    // them in, so a concurrent deletion waits rather than deadlocks.
+    // No lock order avoids every deletion path (an athlete's deletion takes
+    // the athlete then the account, a guardian's the account then the
+    // athletes). A deletion at the same moment can deadlock with this run;
+    // Postgres then aborts one side, and neither writes anything partial.
     await client.query(
       `select 1 from pilot.athletes t
         where (t.organization_id, t.athlete_id) in (
