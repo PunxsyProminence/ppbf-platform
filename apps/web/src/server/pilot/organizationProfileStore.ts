@@ -137,6 +137,7 @@ export function clearOrganizationProfileCache(): void {
 export function forgetOrganizationProfile(organizationId: string): void {
   cache.delete(organizationId);
   inFlight.delete(organizationId);
+  failedAt.delete(organizationId);
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
