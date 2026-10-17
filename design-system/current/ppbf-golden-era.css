@@ -5686,3 +5686,43 @@
     var(--shadow-contact);
   text-shadow: none;
 }
+
+/* A pictogram roundel: a struck brass ring on the dark field, the drawing in
+   polished brass. Sized by font-size, so a strip tile and the NOW line share it. */
+.ge-wallboard .ge-pictogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 2px solid var(--brass-600);
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 35% 30%, rgb(var(--brass-300-rgb) / .14), transparent 60%),
+    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .92), rgb(var(--frame-field-rgb) / .92));
+  color: var(--brass-200);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .25), 0 1px 0 rgba(0, 0, 0, .6);
+}
+
+/* One block of the plan on the strip. The current one is lit and the ones
+   behind it dimmed: brightness, not hue, and the page says both in words too
+   (the NOW panel names the block and its number; aria-current marks it). */
+.ge-wallboard .ge-strip-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s3) var(--s2);
+  border: 1px solid rgb(var(--brass-600-rgb) / .45);
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, .22);
+}
+.ge-wallboard .ge-strip-tile[data-state="now"] {
+  border-color: var(--brass-300);
+  background-color: rgb(var(--brass-500-rgb) / .16);
+  box-shadow: 0 0 0 2px rgb(var(--brass-300-rgb) / .35), 0 0 18px rgb(var(--brass-300-rgb) / .22);
+}
+.ge-wallboard .ge-strip-tile[data-state="done"] {
+  opacity: .45;
+}

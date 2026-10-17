@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
+import { BlockKindIcon, blockKindWord } from './blockKindIcons';
 import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
@@ -111,7 +112,16 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
  * refused by the server; wallDisplay.test.tsx pins that.
  */
 interface PairedResponse {
-  session?: { run_id?: string; timer?: RoundTimerView | null } | null;
+  /** The shown live run (gymTvs.ts GYM_TV_SESSION_FIELDS); only the fields pickLiveSession names are read. */
+  session?: {
+    run_id?: string;
+    timer?: RoundTimerView | null;
+    script_name?: unknown;
+    is_paused?: unknown;
+    blocks?: unknown;
+    current_block?: unknown;
+    next_block?: unknown;
+  } | null;
   board?: WallBoard | null;
   board_status?: 'ok' | 'unavailable';
   /**
@@ -169,17 +179,93 @@ export interface WallRoundTimer {
   view: RoundTimerView;
 }
 
+/** One block of the shown session, as the TV may show it (gymTvs.ts GYM_TV_BLOCK_FIELDS, minus the scale). */
+export interface WallSessionBlock {
+  block_id: string;
+  block_order: number;
+  block_label: string;
+  block_kind: string;
+  drill_name: string | null;
+  start_offset_min: number;
+  end_offset_min: number;
+}
+
+/**
+ * THE SHOWN LIVE SESSION (lane L39 PR 2; the workout walk-through, OD-2026-10-06-014 Q1). The paired
+ * read has carried the plan's blocks, where the coach is in it and whether the run is paused since
+ * S2b; this screen used only its round timer until now. Only a session the coach has put on this TV
+ * arrives at all (Show on TV, then send to a TV), and only on the paired read.
+ *
+ * Built field by field from the names below, never by spreading the payload, so a field added to
+ * the server's allowlist later still has to be added here before it can reach the room.
+ */
+export interface WallLiveSession {
+  run_id: string;
+  script_name: string;
+  is_paused: boolean;
+  blocks: WallSessionBlock[];
+  current_block_id: string | null;
+  next_block_id: string | null;
+  /** Plan time left in the current block at the read: the plan's clock, not the coach's (gymTvs.ts). */
+  scheduled_seconds_left: number | null;
+}
+
+function pickBlock(raw: unknown): WallSessionBlock | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const block = raw as Record<string, unknown>;
+  if (typeof block.block_id !== 'string' || typeof block.block_label !== 'string' || typeof block.block_kind !== 'string') {
+    return null;
+  }
+  const order = Number(block.block_order);
+  const start = Number(block.start_offset_min);
+  const end = Number(block.end_offset_min);
+  if (![order, start, end].every(Number.isFinite)) return null;
+  return {
+    block_id: block.block_id,
+    block_order: order,
+    block_label: block.block_label,
+    block_kind: block.block_kind,
+    drill_name: typeof block.drill_name === 'string' && block.drill_name.trim() !== '' ? block.drill_name : null,
+    start_offset_min: start,
+    end_offset_min: end,
+  };
+}
+
+/** The live session from a paired read, or null when there is none or it has no blocks to show. */
+export function pickLiveSession(session: PairedResponse['session']): WallLiveSession | null {
+  if (!session || typeof session.run_id !== 'string' || !Array.isArray(session.blocks)) return null;
+  const blocks = session.blocks
+    .map(pickBlock)
+    .filter((block): block is WallSessionBlock => block !== null)
+    .sort((a, b) => a.block_order - b.block_order);
+  if (blocks.length === 0) return null;
+  const current = pickBlock(session.current_block);
+  const next = pickBlock(session.next_block);
+  const left = current ? Number((session.current_block as Record<string, unknown>).seconds_to_scheduled_end) : NaN;
+  return {
+    run_id: session.run_id,
+    script_name: typeof session.script_name === 'string' ? session.script_name : '',
+    is_paused: session.is_paused === true,
+    blocks,
+    current_block_id: current && blocks.some((b) => b.block_id === current.block_id) ? current.block_id : null,
+    next_block_id: next && blocks.some((b) => b.block_id === next.block_id) ? next.block_id : null,
+    scheduled_seconds_left: Number.isFinite(left) ? Math.max(0, Math.floor(left)) : null,
+  };
+}
+
 /**
  * Thrown by readBoard when the paired read worked but its board did not (the server's best-effort
- * miss). The round timer in that same answer is good and is kept: a coach's Pause must still reach
- * the wall while the board is having trouble.
+ * miss). The round timer and the session in that same answer are good and are kept: a coach's
+ * Pause or Next must still reach the wall while the board is having trouble.
  */
 export class BoardMissError extends Error {
   readonly timer: WallRoundTimer | null;
-  constructor(timer: WallRoundTimer | null) {
+  readonly live: WallLiveSession | null;
+  constructor(timer: WallRoundTimer | null, live: WallLiveSession | null = null) {
     super('unavailable');
     this.name = 'BoardMissError';
     this.timer = timer;
+    this.live = live;
   }
 }
 
@@ -228,6 +314,7 @@ export async function readBoard(base: string): Promise<{
   board: WallBoard;
   paired: boolean;
   timer: WallRoundTimer | null;
+  live: WallLiveSession | null;
   quotes: LibraryQuote[] | null;
 }> {
   const paired = await fetch(`${base}/api/pilot/tv/session`, {
@@ -243,11 +330,13 @@ export async function readBoard(base: string): Promise<{
     // read worked, the board read did not. The last board stays up, dated.
     const session = payload.session;
     const timer = session?.timer && session.run_id ? { runId: session.run_id, view: session.timer } : null;
-    if (!payload.board) throw new BoardMissError(timer);
+    const live = pickLiveSession(session);
+    if (!payload.board) throw new BoardMissError(timer, live);
     return {
       board: payload.board,
       paired: true,
       timer,
+      live,
       quotes: Array.isArray(payload.quotes) ? payload.quotes : null,
     };
   }
@@ -274,7 +363,7 @@ export async function readBoard(base: string): Promise<{
   }
   if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
   // The public board carries no quotes (OD-2026-10-07-008): an unpaired wall says the gym's own lines.
-  return { board: publicToBoard(payload.board), paired: false, timer: null, quotes: [] };
+  return { board: publicToBoard(payload.board), paired: false, timer: null, live: null, quotes: [] };
 }
 
 export default function WallDisplay() {
@@ -300,6 +389,8 @@ export default function WallDisplay() {
   const rung = useRef<Set<string>>(new Set());
   // Bumped for each new set of rounds on a run, so a second set rings its own bells.
   const setEpoch = useRef(0);
+  // The shown live session from the last paired read that carried one, and when it was read.
+  const [live, setLive] = useState<(WallLiveSession & { readAt: number }) | null>(null);
 
   /* The clock is read from the browser, not from the payload and not from the
      server. The television is in the room; its clock is the gym's clock, and it
@@ -332,18 +423,20 @@ export default function WallDisplay() {
     // later one is tracked -- so the orphan keeps firing and the wall quietly
     // doubles its request rate every time the TV wakes up.
     let inFlight = false;
-    // A round timer is set and not ended: poll fast (WALL_ROUND_POLL_MS).
+    // A round timer is set and not ended, or a session is on this TV: poll fast (WALL_ROUND_POLL_MS),
+    // so a coach's Next or Pause reaches the room within one short poll.
     let roundsLive = false;
 
     async function poll(): Promise<void> {
       if (inFlight) return;
       inFlight = true;
       try {
-        const { board: next, paired: isPaired, timer: nextTimer, quotes: library } = await readBoard(apiBase());
+        const { board: next, paired: isPaired, timer: nextTimer, live: nextLive, quotes: library } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
-        roundsLive = roundsAreLive(nextTimer);
+        roundsLive = roundsAreLive(nextTimer) || nextLive !== null;
+        setLive(nextLive ? { ...nextLive, readAt: Date.now() } : null);
         setBoard(next);
         if (library !== null) quotesRef.current = library;
         const source = sayingSource(quotesRef.current, 'anywhere');
@@ -361,8 +454,9 @@ export default function WallDisplay() {
         // except for the people on it, once the server has said this screen
         // is not paired (withoutPeople).
         if (error instanceof BoardMissError) {
-          roundsLive = roundsAreLive(error.timer);
+          roundsLive = roundsAreLive(error.timer) || error.live !== null;
           setRoundTimer(error.timer ? { ...error.timer, readAt: Date.now() } : null);
+          setLive(error.live ? { ...error.live, readAt: Date.now() } : null);
         }
         if (!(error instanceof BoardMissError)) {
           // The read itself failed: no fresh timer, so back off as for any outage.
@@ -370,6 +464,7 @@ export default function WallDisplay() {
         }
         if (error instanceof UnpairedReadError) {
           setRoundTimer(null);
+          setLive(null);
           setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
           quotesRef.current = [];
@@ -426,6 +521,9 @@ export default function WallDisplay() {
     roundTimer && now !== null && now - roundTimer.readAt < WALL_ABANDON_MS
       ? advanceRoundTimer(roundTimer.view, Math.floor((now - roundTimer.readAt) / 1000))
       : null;
+  // The session strip says where the coach IS, so it goes as soon as its reading is as old as a
+  // stale board: a "now" from five minutes ago is not now.
+  const liveShown = live && now !== null && now - live.readAt < WALL_STALE_MS ? live : null;
 
   // The round bell and knock (WO-N1-04), through the app's one sound engine: silent unless the
   // TV's sound is on (the switch below arms it). Each sound has keys per set, round and event, and
@@ -464,7 +562,7 @@ export default function WallDisplay() {
       />
 
       {showLive ? (
-        <LiveBoard board={board} zone={zone} daily={daily} />
+        <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} />
       ) : (
         <StandingBoard health={health} />
       )}
@@ -729,14 +827,40 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
 
 /* ----------------------------------------------------------- live board --- */
 
-function LiveBoard({ board, zone, daily }: { board: WallBoard; zone?: string; daily: DailySaying | null }) {
+function LiveBoard({
+  board,
+  zone,
+  daily,
+  live,
+  now,
+}: {
+  board: WallBoard;
+  zone?: string;
+  daily: DailySaying | null;
+  live: (WallLiveSession & { readAt: number }) | null;
+  now: number | null;
+}) {
   return (
     <>
       {/* The golden section, not a half. --split-major / --split-minor are the
-          system's own 61.8 / 38.2 tokens (Law 8). */}
+          system's own 61.8 / 38.2 tokens (Law 8). While a session is on this TV
+          the walk-through takes the major side and the names shrink to the
+          minor one (the gym TV plan, Q4 A); today's classes come back after. */}
       <main className="grid min-h-0 flex-1 grid-cols-[var(--split-major)_var(--split-minor)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
-        <OnTheFloor board={board} />
-        <Today sessions={board.sessions} zone={zone} />
+        {live ? (
+          <>
+            <SessionNow live={live} now={now} />
+            <div className="flex min-h-0 flex-col gap-[var(--s5)]">
+              <SessionNext live={live} />
+              <OnTheFloor board={board} compact />
+            </div>
+          </>
+        ) : (
+          <>
+            <OnTheFloor board={board} />
+            <Today sessions={board.sessions} zone={zone} />
+          </>
+        )}
       </main>
       <Marquee board={board} daily={daily} />
     </>
@@ -755,11 +879,11 @@ export function floorDensity(shown: number): 'roomy' | 'dense' | 'packed' {
   return 'packed';
 }
 
-function OnTheFloor({ board }: { board: WallBoard }) {
+function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: boolean }) {
   const overflow = board.on_floor_total - board.on_floor.length;
 
   return (
-    <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="On the floor">
+    <section className="wall-panel ge-frame flex min-h-0 flex-1 flex-col" aria-label="On the floor">
       <h2 className="wall-heading">
         <span className="wall-heading-cap ge-enamel">On the floor</span>
         {board.on_floor_total > 0 && <span className="wall-count">{board.on_floor_total}</span>}
@@ -778,7 +902,7 @@ function OnTheFloor({ board }: { board: WallBoard }) {
         // Density steps the names down the φ ladder as the room fills, so a
         // busy class does not overflow the panel and get silently clipped. See
         // the [data-density] rules in globals.css.
-        <ul className="wall-floor-list min-h-0" data-density={floorDensity(board.on_floor.length)}>
+        <ul className="wall-floor-list min-h-0" data-density={compact ? 'session' : floorDensity(board.on_floor.length)}>
           {board.on_floor.map((person) => (
             <li key={person.key} className="wall-name text-6xl">
               {person.name}
@@ -786,6 +910,120 @@ function OnTheFloor({ board }: { board: WallBoard }) {
           ))}
           {overflow > 0 && <li className="wall-more text-4xl">+{overflow} more</li>}
         </ul>
+      )}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------- session on TV --- */
+
+/** How many blocks the strip shows at once: a plan can run to sixty, a TV row cannot. */
+export const SESSION_STRIP_MAX = 7;
+
+/**
+ * Which blocks the strip shows: the one before the current block, the current one, and what comes
+ * after, slid back at the end of the plan so the row stays full. Before the coach reaches a block,
+ * the first ones.
+ */
+export function stripWindow(blocks: readonly WallSessionBlock[], currentId: string | null): WallSessionBlock[] {
+  const at = blocks.findIndex((block) => block.block_id === currentId);
+  const start = Math.max(0, Math.min(at - 1, blocks.length - SESSION_STRIP_MAX));
+  return blocks.slice(start, start + SESSION_STRIP_MAX);
+}
+
+function minutesClock(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${minutes}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+function KindMark({ kind }: { kind: string }) {
+  const word = blockKindWord(kind);
+  if (!word) return null;
+  return (
+    <span className="wall-kind">
+      <span className="wall-kind-roundel ge-pictogram">
+        <BlockKindIcon kind={kind} />
+      </span>
+      <span className="wall-kind-word">{word}</span>
+    </span>
+  );
+}
+
+/** NOW: the block the coach is on, its drill, plan time left, PAUSED; and the strip of blocks. */
+function SessionNow({ live, now }: { live: WallLiveSession & { readAt: number }; now: number | null }) {
+  const current = live.blocks.find((block) => block.block_id === live.current_block_id) ?? null;
+  const elapsed = now === null || live.is_paused ? 0 : Math.max(0, Math.floor((now - live.readAt) / 1000));
+  const left = live.scheduled_seconds_left === null ? null : Math.max(0, live.scheduled_seconds_left - elapsed);
+  const currentOrder = current?.block_order ?? -Infinity;
+  const at = live.blocks.findIndex((block) => block.block_id === live.current_block_id);
+
+  return (
+    <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="Now">
+      <h2 className="wall-heading">
+        <span className="wall-heading-cap ge-enamel">Now</span>
+        {live.is_paused && <span className="wall-heading-cap ge-enamel">Paused</span>}
+        {at >= 0 && <span className="wall-session-place">Block {at + 1} of {live.blocks.length}</span>}
+      </h2>
+      {current ? (
+        <div className="wall-now min-h-0">
+          <div className="wall-now-row">
+            <KindMark kind={current.block_kind} />
+            {left !== null && (
+              <p className="wall-now-left">
+                <span className="wall-now-time">{minutesClock(left)}</span>
+                <span className="wall-now-unit">scheduled</span>
+              </p>
+            )}
+          </div>
+          <p className="wall-now-label">{current.block_label}</p>
+          {current.drill_name && current.drill_name !== current.block_label && (
+            <p className="wall-now-drill">{current.drill_name}</p>
+          )}
+        </div>
+      ) : (
+        <p className="wall-now-label">{live.script_name}</p>
+      )}
+      <ol className="wall-strip" aria-label="Today's session">
+        {stripWindow(live.blocks, live.current_block_id).map((block) => {
+          const state = block.block_id === live.current_block_id ? 'now' : block.block_order < currentOrder ? 'done' : 'next';
+          return (
+            <li
+              key={block.block_id}
+              className="wall-strip-tile ge-strip-tile"
+              data-state={state}
+              aria-current={state === 'now' ? 'step' : undefined}
+            >
+              <span className="wall-strip-number ge-enamel">{block.block_order}</span>
+              <span className="wall-strip-icon ge-pictogram">
+                <BlockKindIcon kind={block.block_kind} />
+              </span>
+              <span className="wall-strip-word">{blockKindWord(block.block_kind) ?? block.block_label}</span>
+              <span className="wall-strip-min">
+                {block.start_offset_min}–{block.end_offset_min} min
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** NEXT UP: the block after this one, as the plan has it. */
+function SessionNext({ live }: { live: WallLiveSession }) {
+  const next = live.blocks.find((block) => block.block_id === live.next_block_id) ?? null;
+  return (
+    <section className="wall-panel ge-frame flex shrink-0 flex-col" aria-label="Next up">
+      <h2 className="wall-heading">
+        <span className="wall-heading-cap ge-enamel">Next up</span>
+      </h2>
+      {next ? (
+        <>
+          <KindMark kind={next.block_kind} />
+          <p className="wall-next-label">{next.block_label}</p>
+        </>
+      ) : (
+        <p className="wall-quiet text-4xl">Last block.</p>
       )}
     </section>
   );
