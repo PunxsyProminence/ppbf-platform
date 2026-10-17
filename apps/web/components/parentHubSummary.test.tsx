@@ -362,13 +362,14 @@ describe('what the overview no longer says, and what it still does', () => {
     expect(screen.queryByText(/hidden until backend-authoritative feeds/)).toBeNull();
   });
 
-  test('membership, scholarship and community-service rows are unchanged (Q2 = B for this PR)', async () => {
+  test('membership, scholarship and community-service rows are still there (their values: parentHubSupportStatus.test.tsx, PH-13)', async () => {
     installFetch();
     await renderHub();
     const text = statusPanelText();
     expect(text).toContain('Membership Status');
     expect(text).toContain('Scholarship Status');
     expect(text).toContain('Community Service Support Status');
+    expect(text).not.toContain('not yet tracked');
   });
 });
 
