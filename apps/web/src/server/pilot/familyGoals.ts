@@ -49,6 +49,14 @@ const ISO_UTC = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 const NOT_YOURS = 'Not found: that goal is not one you can change.';
 const NOT_YOUR_CHILD = 'Not found: that child is not on your page.';
 
+// The staff roles (Q-E A): the one list every staff check and query is built from.
+const STAFF_ROLES = ['coach', 'organization_admin', 'admin'] as const;
+type StaffRole = (typeof STAFF_ROLES)[number];
+
+function isStaffRole(role: string): role is StaffRole {
+  return (STAFF_ROLES as readonly string[]).includes(role);
+}
+
 export interface FamilyGoalForGuardian {
   goal_id: string;
   title: string;
@@ -128,9 +136,9 @@ export async function listFamilyGoalsForGuardian(
     `${SELECT_GOAL}
       where g.organization_id = $1 and g.athlete_id = $2 and g.retired_at is null
         and ((g.created_by_role = 'parent' and g.created_by_account_id = $3)
-             or g.created_by_role in ('coach', 'organization_admin', 'admin'))
+             or g.created_by_role = any($4::text[]))
       order by g.created_at desc, g.goal_id`,
-    [organizationId, athleteId, accountId],
+    [organizationId, athleteId, accountId, [...STAFF_ROLES]],
   );
   return rows.map((row) => present(row, accountId));
 }
@@ -239,14 +247,6 @@ export async function updateFamilyGoal(input: {
 // ---------------------------------------------------------------------------
 // The staff side (PH-06b).
 
-const STAFF_ROLES = ['coach', 'organization_admin', 'admin'] as const;
-type StaffRole = (typeof STAFF_ROLES)[number];
-const STAFF_ROLES_SQL = `('coach', 'organization_admin', 'admin')`;
-
-function isStaffRole(role: string): role is StaffRole {
-  return (STAFF_ROLES as readonly string[]).includes(role);
-}
-
 export interface FamilyGoalForStaff {
   goal_id: string;
   title: string;
@@ -334,20 +334,22 @@ export async function updateStaffFamilyGoal(input: {
   const goal = await queryOne<{ athlete_id: string }>(
     `select athlete_id from pilot.family_goals
       where organization_id = $1 and goal_id = $2::uuid and retired_at is null
-        and created_by_role in ${STAFF_ROLES_SQL}`,
-    [organizationId, input.goalId],
+        and created_by_role = any($3::text[])`,
+    [organizationId, input.goalId, [...STAFF_ROLES]],
   );
   if (!goal) throw new NotFoundError(NOT_YOURS);
   await assertActorCanAccessAthlete(input.actor, goal.athlete_id);
 
-  const { set, values } = changeClause(input.change, 5);
+  const { set, values } = changeClause(input.change, 6);
+  // The check repeated in the write: a goal retired between the check and
+  // here is the same 404, not a refused write.
   const written = await queryOne<{ goal_id: string }>(
     `update pilot.family_goals
         set ${set}, updated_by_account_id = $3, updated_by_role = $4
       where organization_id = $1 and goal_id = $2::uuid and retired_at is null
-        and created_by_role in ${STAFF_ROLES_SQL}
+        and created_by_role = any($5::text[])
       returning goal_id::text as goal_id`,
-    [organizationId, input.goalId, input.actor.accountId, role, ...values],
+    [organizationId, input.goalId, input.actor.accountId, role, [...STAFF_ROLES], ...values],
   );
   if (!written) throw new NotFoundError(NOT_YOURS);
   return input.change.kind === 'retire' ? null : readForStaff(organizationId, input.goalId);

@@ -27,15 +27,20 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 // current test opened. Declared before the import so jest's mock
 // hoisting sees it.
 let activeClient: Client | null = null;
+// Runs before each module query, so a test can change the database between a
+// check and its write (the race test). Cleared after every test.
+let beforeQuery: ((text: string) => Promise<void>) | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
+    await beforeQuery?.(text);
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
   queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
+    await beforeQuery?.(text);
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
@@ -79,6 +84,7 @@ const ORG_ID = 'org-fgs';
 const OTHER_ORG_ID = 'org-fgs-other';
 const COACH = 'acct-fgs-coach';
 const ADMIN = 'acct-fgs-admin';
+const LEGACY_ADMIN = 'acct-fgs-legacy-admin';
 const OTHER_COACH = 'acct-fgs-other-coach';
 const GUARDIAN_A = 'acct-fgs-guardian-a';
 const GUARDIAN_B = 'acct-fgs-guardian-b';
@@ -92,6 +98,7 @@ let access: typeof import('./access');
 type Actor = { accountId: string; role: 'coach' | 'organization_admin' | 'admin' | 'parent'; organizationId: string; athleteId: null };
 const coach: Actor = { accountId: COACH, role: 'coach', organizationId: ORG_ID, athleteId: null };
 const admin: Actor = { accountId: ADMIN, role: 'organization_admin', organizationId: ORG_ID, athleteId: null };
+const legacyAdmin: Actor = { accountId: LEGACY_ADMIN, role: 'admin', organizationId: ORG_ID, athleteId: null };
 const otherCoach: Actor = { accountId: OTHER_COACH, role: 'coach', organizationId: OTHER_ORG_ID, athleteId: null };
 
 async function freshDatabase(name: string): Promise<Client> {
@@ -111,6 +118,7 @@ async function freshDatabase(name: string): Promise<Client> {
   for (const [accountId, role, org, login] of [
     [COACH, 'coach', ORG_ID, 'pat.smith@ppbf.test'],
     [ADMIN, 'organization_admin', ORG_ID, 'office@ppbf.test'],
+    [LEGACY_ADMIN, 'admin', ORG_ID, 'lee.legacy@ppbf.test'],
     [OTHER_COACH, 'coach', OTHER_ORG_ID, 'sam.jones@other.test'],
     [GUARDIAN_A, 'parent', ORG_ID, 'a@family.test'],
     [GUARDIAN_B, 'parent', ORG_ID, 'b@family.test'],
@@ -216,6 +224,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  beforeQuery = null;
   await activeClient?.end();
   activeClient = null;
 });
@@ -237,6 +246,11 @@ async function stored(goalId: string) {
        from pilot.family_goals where goal_id = $1::uuid`,
     [goalId],
   );
+  return result.rows[0];
+}
+
+async function wholeRow(goalId: string) {
+  const result = await activeClient!.query(`select * from pilot.family_goals where goal_id = $1::uuid`, [goalId]);
   return result.rows[0];
 }
 
@@ -359,5 +373,77 @@ describe('family goals for staff (PH-06b)', () => {
     await expect(goals.updateStaffFamilyGoal({ actor: coach, goalId: 'not-a-uuid', change: { kind: 'retire' } })).rejects.toThrow(/^Not found/);
     const count = await activeClient!.query(`select count(*)::int as n from pilot.family_goals`);
     expect(count.rows[0].n).toBe(0);
+  });
+
+  test('a coach changes a goal an organization admin wrote and one a legacy admin wrote; the family sees both', async () => {
+    const fromOffice = await staffGoal(admin, 'Bring the signed waiver');
+    // Written straight into the table, so only the staff-role list in the
+    // queries decides whether a legacy admin's goal is a staff goal.
+    const { rows: [{ goal_id: fromLegacy }] } = await activeClient!.query(
+      `insert into pilot.family_goals (organization_id, athlete_id, title, support_action, created_by_account_id, created_by_role)
+       values ($1, $2, 'Bring the medical form', 'Sign page two.', $3, 'admin') returning goal_id::text as goal_id`,
+      [ORG_ID, ATHLETE, LEGACY_ADMIN],
+    );
+
+    for (const goalId of [fromOffice.goal_id, fromLegacy]) {
+      const ticked = await goals.updateStaffFamilyGoal({ actor: coach, goalId, change: { kind: 'done', done: true } });
+      expect(ticked).toMatchObject({ state: 'completed', mine_to_change: true });
+      expect(await stored(goalId)).toMatchObject({ state: 'completed', updated_by_account_id: COACH, updated_by_role: 'coach' });
+    }
+    expect((await goals.listFamilyGoalsForGuardian(ORG_ID, GUARDIAN_A, ATHLETE)).map(({ title, mine }) => ({ title, mine }))).toEqual([
+      { title: 'Bring the medical form', mine: false },
+      { title: 'Bring the signed waiver', mine: false },
+    ]);
+  });
+
+  test('a legacy admin with an active seat creates, ticks and lists a goal, named as staff', async () => {
+    const created = await staffGoal(legacyAdmin, 'Bring the medical form');
+    expect(created).toMatchObject({ set_by: 'Admin Lee Legacy', mine_to_change: true, state: 'active' });
+
+    const ticked = await goals.updateStaffFamilyGoal({ actor: legacyAdmin, goalId: created.goal_id, change: { kind: 'done', done: true } });
+    expect(ticked?.state).toBe('completed');
+    expect(await stored(created.goal_id)).toMatchObject({ updated_by_account_id: LEGACY_ADMIN, updated_by_role: 'admin' });
+
+    await access.assertActorCanAccessAthlete(legacyAdmin, ATHLETE);
+    expect((await goals.listFamilyGoalsForStaff(ORG_ID, ATHLETE)).map(({ title, set_by, state }) => ({ title, set_by, state }))).toEqual([
+      { title: 'Bring the medical form', set_by: 'Admin Lee Legacy', state: 'completed' },
+    ]);
+  });
+
+  test('a goal retired between the check and the write is the same 404, and the write changes nothing', async () => {
+    const created = await staffGoal(coach, 'Shadowbox at home');
+    let retiredRow: unknown = null;
+    beforeQuery = async (text) => {
+      if (retiredRow || !/^\s*update pilot\.family_goals/.test(text)) return;
+      // Another staff member retires it after this change's check has passed.
+      await activeClient!.query(
+        `update pilot.family_goals set retired_at = now(), updated_by_account_id = $2, updated_by_role = 'organization_admin'
+          where goal_id = $1::uuid`,
+        [created.goal_id, ADMIN],
+      );
+      retiredRow = await wholeRow(created.goal_id);
+    };
+
+    await expect(goals.updateStaffFamilyGoal({ actor: coach, goalId: created.goal_id, change: { kind: 'done', done: true } }))
+      .rejects.toThrow(/^Not found/);
+    expect(retiredRow).toMatchObject({ state: 'active', updated_by_account_id: ADMIN });
+    expect(await wholeRow(created.goal_id)).toEqual(retiredRow);
+  });
+
+  test('staff: ticking twice keeps the first done time; an edit without a date keeps it, one with a date sets it', async () => {
+    const created = await staffGoal(coach, 'Shadowbox at home');
+    const done = await goals.updateStaffFamilyGoal({ actor: coach, goalId: created.goal_id, change: { kind: 'done', done: true } });
+    expect(done?.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const again = await goals.updateStaffFamilyGoal({ actor: admin, goalId: created.goal_id, change: { kind: 'done', done: true } });
+    expect(again?.completed_at).toBe(done?.completed_at);
+
+    const dated = await goals.updateStaffFamilyGoal({
+      actor: coach, goalId: created.goal_id, change: { kind: 'edit', title: 'Shadowbox three rounds', supportAction: 'Time the rounds.', targetDate: '2026-12-15' },
+    });
+    expect(dated).toMatchObject({ title: 'Shadowbox three rounds', target_date: '2026-12-15' });
+    const kept = await goals.updateStaffFamilyGoal({
+      actor: coach, goalId: created.goal_id, change: { kind: 'edit', title: 'Shadowbox four rounds', supportAction: 'Time the rounds.' },
+    });
+    expect(kept).toMatchObject({ title: 'Shadowbox four rounds', target_date: '2026-12-15' });
   });
 });

@@ -36,8 +36,10 @@ const mockList = listFamilyGoalsForStaff as jest.Mock;
 const mockCreate = createStaffFamilyGoal as jest.Mock;
 const mockUpdate = updateStaffFamilyGoal as jest.Mock;
 
-afterEach(() => {
-  jest.clearAllMocks();
+// Reset, not clear: a mocked rejection or value set in one test must not
+// reach the next.
+beforeEach(() => {
+  jest.resetAllMocks();
 });
 
 function principal(role: string): PilotPrincipal {
@@ -186,10 +188,68 @@ describe('PATCH /api/pilot/coach/family-goals', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  test('an athlete_id in the body is ignored: the goal finds its own athlete', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockUpdate.mockResolvedValue(GOAL);
+
+    const response = await PATCH(bodyRequest('PATCH', { goal_id: GOAL.goal_id, action: 'done', athlete_id: 'ath-other' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalledWith(expect.anything(), 'ath-other');
+    expect(mockUpdate).toHaveBeenCalledWith({
+      actor: expect.objectContaining({ accountId: 'acct-1', organizationId: 'org-1', role: 'coach' }),
+      goalId: GOAL.goal_id,
+      change: { kind: 'done', done: true },
+    });
+  });
+
   test('an unknown action and a missing goal_id are 400s', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     expect((await PATCH(bodyRequest('PATCH', { goal_id: GOAL.goal_id, action: 'delete' }))).status).toBe(400);
     expect((await PATCH(bodyRequest('PATCH', { action: 'done' }))).status).toBe(400);
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("the database refusing the writer's seat (PH-05)", () => {
+  // The shape pg gives the guard's raise: SQLSTATE 23514 on the named constraint.
+  function seatRefused() {
+    return Object.assign(new Error('FAMILY_GOAL_WRITER_OF_THIS_GYM'), {
+      code: '23514', constraint: 'pilot_family_goals_writer_of_this_gym',
+    });
+  }
+
+  test('a staff create the database refuses is a 403, not a 500', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAccess.mockResolvedValue(undefined);
+    mockCreate.mockRejectedValue(seatRefused());
+
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', title: 'x', support_action: 'y' }));
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toMatch(/^Forbidden/);
+  });
+
+  test('a staff change the database refuses is a 403, not a 500', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+    mockUpdate.mockRejectedValue(seatRefused());
+
+    const response = await PATCH(bodyRequest('PATCH', { goal_id: GOAL.goal_id, action: 'done' }));
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toMatch(/^Forbidden/);
+  });
+
+  test('another check violation is still an opaque 500', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockUpdate.mockRejectedValue(Object.assign(new Error('FAMILY_GOAL_RETIREMENT_IS_FINAL'), {
+      code: '23514', constraint: 'pilot_family_goals_retired_kept',
+    }));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await PATCH(bodyRequest('PATCH', { goal_id: GOAL.goal_id, action: 'done' }));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
   });
 });
