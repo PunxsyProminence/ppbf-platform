@@ -348,7 +348,9 @@ describe('filing a correction', () => {
     await openCorrection();
 
     expect(await screen.findByText(/Session ended early, timer kept running/)).not.toBeNull();
-    expect(screen.getByText(/admin-2/)).not.toBeNull();
+    // Who filed it is named, never by account id (UXB-12); this fixture has no name source.
+    expect(screen.getByText(/Person \(name not loaded\) \(organization_admin\)/)).not.toBeNull();
+    expect(screen.queryByText(/admin-2/)).toBeNull();
   });
 });
 
