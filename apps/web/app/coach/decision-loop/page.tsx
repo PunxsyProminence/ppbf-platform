@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
@@ -12,6 +11,7 @@ import ArmedButton from '@/components/ArmedButton';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
+import BackHome from '@/components/BackHome';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 /* What the gates act on, as the route reports it beside the stored row: the
@@ -1875,9 +1875,7 @@ export default function DecisionLoopReviewPage() {
           )}
 
           <div className="mt-[var(--s6)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">
-              Back to Coach Workspace
-            </Link>
+            <BackHome />
           </div>
 
         {/* The four words, at the foot of the page — the same foot the

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import CoachMentorshipPairing from '@/components/CoachMentorshipPairing';
@@ -9,6 +8,7 @@ import CoachRecognitionPad, { type RosterAthlete } from '@/components/CoachRecog
 import RoleSessionGate from '@/components/RoleSessionGate';
 import SentRecognitions from '@/components/SentRecognitions';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 /**
  * THE ROOM WHERE A COACH SAYS SOMETHING GOOD.
@@ -71,9 +71,7 @@ function CoachRecognitionRoom() {
             they had done well. This is that, and it is built to be used with taped hands in the
             forty seconds you actually have.
           </p>
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)]">
-            Back to Coach Workspace
-          </Link>
+          <BackHome className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)]" />
         </header>
 
         <div className="mt-[var(--s6)] space-y-[var(--s6)]">

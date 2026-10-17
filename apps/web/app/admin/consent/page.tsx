@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
+import BackHome from '@/components/BackHome';
 
 /**
  * Recording that a guardian signed.
@@ -300,9 +301,7 @@ function ConsentConsole() {
                 secondary control that landed on the paper below is a
                 .btn--lever instead -- ppbf.css documents ghost-on-light as
                 grey-on-grey. */}
-            <Link href="/admin" className="btn btn--ghost">
-              Back to admin
-            </Link>
+            <BackHome className="btn btn--ghost" />
           </p>
         </header>
 
