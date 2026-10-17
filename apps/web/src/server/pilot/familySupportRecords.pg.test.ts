@@ -96,6 +96,12 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
      values ($1, 'coach', $4, 'microsoft'), ($2, 'organization_admin', $4, 'microsoft'), ($3, 'admin', $4, 'microsoft')`,
     [COACH, ADMIN, OTHER_ADMIN, ORG],
   );
+  // Authority comes from an active seat in the gym, as sign-in grants it (auth.ts).
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role)
+     values ($1, $4, 'coach'), ($2, $4, 'organization_admin'), ($3, $4, 'admin')`,
+    [COACH, ADMIN, OTHER_ADMIN, ORG],
+  );
   for (const [org, athleteId] of [[ORG, ATHLETE], [ORG, OTHER_ATHLETE], [OTHER_ORG, OTHER_ONLY]] as const) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -257,6 +263,10 @@ describe('family support records migration (PH-12)', () => {
         `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ('acct-sup-x-admin', 'organization_admin', $1, 'microsoft')`,
         [OTHER_ORG],
       );
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role) values ('acct-sup-x-admin', $1, 'organization_admin')`,
+        [OTHER_ORG],
+      );
       await expect(record(client, { recorder: 'acct-sup-x-admin' })).rejects.toMatchObject({
         code: '23514', constraint: 'pilot_family_support_records_writer_of_this_gym',
       });
@@ -277,6 +287,51 @@ describe('family support records migration (PH-12)', () => {
         [ORG],
       );
       await client.query('update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid', [id, 'acct-sup-x-admin']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a recorder or retirer needs an active seat on a live account; the home role alone is not one', async () => {
+    const client = await freshDatabase('fsup_seat');
+    try {
+      const HOME_ONLY = 'acct-sup-home-only';
+      await client.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'organization_admin', $2, 'microsoft')`, [HOME_ONLY, ORG]);
+      const refused = { code: '23514', constraint: 'pilot_family_support_records_writer_of_this_gym' };
+      await expect(record(client, { recorder: HOME_ONLY })).rejects.toMatchObject(refused);
+
+      const { rows: [{ record_id: id }] } = await record(client);
+      await client.query('update pilot.organization_memberships set active_flag = false where account_id = $1', [ADMIN]);
+      await expect(record(client)).rejects.toMatchObject(refused);
+      await expect(client.query('update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid', [id, ADMIN]))
+        .rejects.toMatchObject(refused);
+      await client.query('update pilot.organization_memberships set active_flag = true where account_id = $1', [ADMIN]);
+      await client.query('update pilot.accounts set active_flag = false where account_id = $1', [ADMIN]);
+      await expect(record(client)).rejects.toMatchObject(refused);
+      await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [ADMIN]);
+      await expect(record(client)).rejects.toMatchObject(refused);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an update from inside another trigger may only detach a recorder', async () => {
+    const client = await freshDatabase('fsup_depth');
+    try {
+      await record(client);
+      await client.query(`
+        create function pilot.test_rewrite_support_record() returns trigger language plpgsql as $f$
+        begin
+          update pilot.family_support_records set support_kind = 'Rewritten' where organization_id = new.organization_id;
+          return new;
+        end;
+        $f$`);
+      await client.query(`create trigger trg_test_rewrite after update on pilot.organizations
+                          for each row execute function pilot.test_rewrite_support_record()`);
+      await expect(client.query(`update pilot.organizations set organization_name = 'Renamed' where organization_id = $1`, [ORG]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_support_records_cascade_detaches_only' });
+      const row = await client.query('select support_kind from pilot.family_support_records');
+      expect(row.rows[0].support_kind).toBe('Transportation to the October 12 tournament');
     } finally {
       await client.end();
     }

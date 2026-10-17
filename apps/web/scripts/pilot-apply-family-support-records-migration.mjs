@@ -66,9 +66,12 @@ const READINESS_QUERY = `
          and (
            (c.conname = 'pilot_family_support_records_kind_check'
              and d.def like '%char_length(btrim(support_kind))%' and d.def like '%200%')
+           -- The recorder roles exactly (Q-E): every quoted word in the check, and nothing more.
            or (c.conname = 'pilot_family_support_records_role_check'
-             and d.def like '%''organization_admin''%' and d.def like '%''admin''%'
-             and d.def not like '%''coach''%' and d.def not like '%''parent''%')
+             and (
+               select array_agg(distinct m[1] order by m[1])
+                 from regexp_matches(d.def, '''([a-z_]+)''', 'g') as m
+             ) = array['admin', 'organization_admin'])
          )
     ) = 2 as checks_ready,
     exists (
