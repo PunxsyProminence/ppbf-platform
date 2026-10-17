@@ -21,12 +21,15 @@ name: move-policy-shelf
 # APPLY PERMANENTLY DELETES SHADOW EVIDENCE. Evidence items that cite a moving
 # row cannot follow it (a CHECK keeps an item citing only its own organization
 # or __platform__), so apply first deletes those items and the chat-answer
-# citations of them, then moves (OD-2026-10-08-009 D22; overwatch ruled
-# "detach, then move"). The answers keep their text and lose their Sources
-# list. The deleted rows survive only as ids, cited ids and excerpt hashes in
-# the run's pilot.audit_events row. The dry run reports how many
-# (citing_evidence). Evidence under the safeguarding hold is never deleted:
-# DETACH_WOULD_BREAK_HOLD refuses the apply.
+# citations of them, then moves (OD-2026-10-17-002, "A: Detach + narrow hold
+# (Recommended)", replacing OD-2026-10-08-009 D22). The answers keep their
+# text and lose their Sources list. The deleted rows survive only as ids,
+# cited ids and excerpt hashes in the run's pilot.audit_events row. The dry
+# run reports how many (citing_evidence). Evidence under the safeguarding
+# hold -- flagged chats of deleted people, and evidence actually shown in a
+# flagged chat -- is never deleted: DETACH_WOULD_BREAK_HOLD refuses the apply.
+# Evidence a flag touches outside that hold is deleted with the rest and
+# counted (citing_evidence.flagged_detached).
 #
 # Apply moves only the plan that was reviewed: it needs expected_fingerprint
 # set to the plan_fingerprint a dry run of the same target printed, and it
@@ -257,9 +260,12 @@ jobs:
             echo '**Apply permanently deletes SHADOW evidence.** The SHADOW evidence items'
             echo 'that cite the moving rows, and the chat-answer citations of them, are'
             echo 'deleted before the move. The dry run log line `library.policy_move.dry-run`'
-            echo 'counts them in `citing_evidence` (`items`, `message_citations`, `held`).'
-            echo 'The answers keep their text but lose their'
+            echo 'counts them in `citing_evidence` (`items`, `message_citations`, `held`,'
+            echo '`flagged_detached`). The answers keep their text but lose their'
             echo 'Sources list. The deleted rows survive only as ids, cited ids and excerpt'
-            echo 'hashes in the audit row. Evidence under the safeguarding hold is never'
-            echo 'deleted: `DETACH_WOULD_BREAK_HOLD` refuses the apply.'
+            echo 'hashes in the audit row. Evidence under the safeguarding hold (flagged'
+            echo 'chats of deleted people, and evidence actually shown in a flagged chat;'
+            echo 'OD-2026-10-17-002) is never deleted: `DETACH_WOULD_BREAK_HOLD` refuses the'
+            echo 'apply. `flagged_detached` counts evidence a flag touches that the hold'
+            echo 'does not cover: it is deleted with the rest.'
           } >> "$GITHUB_STEP_SUMMARY"
