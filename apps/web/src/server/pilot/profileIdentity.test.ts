@@ -324,6 +324,23 @@ describe('the card', () => {
       },
     );
 
+    it('a family viewer whose only name is their account id is given the floor, not the id', () => {
+      // profileDb.staffDisplayName returns the account id when a login has no
+      // usable email stem -- for a parent, an email-shaped id.
+      const card = buildFightCard(
+        { ...base, accountId: PARENT, fullName: PARENT, viewerAccountId: PARENT, viewerRole: 'parent' },
+        now,
+      );
+      expect(card.displayName).toBe('Gym member');
+      expect(card.initials).toBe('GM');
+      expect(JSON.stringify(card)).not.toContain('@');
+    });
+
+    it('a staff viewer is shown the name as before, even when it is the id', () => {
+      const card = buildFightCard({ ...base, accountId: 'acct-coach-7f3a', fullName: 'acct-coach-7f3a' }, now);
+      expect(card.displayName).toBe('acct-coach-7f3a');
+    });
+
     it('a staff viewer on a staff card is addressed by account id, as before', () => {
       expect(cardSubjectQuery({
         accountId: 'acct-coach-7f3a', athleteId: null, viewerAccountId: 'acct-admin', viewerRole: 'organization_admin',

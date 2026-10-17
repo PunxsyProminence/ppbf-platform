@@ -154,9 +154,12 @@ describe('GET /api/pilot/profile/card/photo: refusals, all the same 404', () => 
     expect(mockReach).toHaveBeenCalledTimes(1);
   });
 
-  test('an unlinked child: refused by relationship none alone', async () => {
+  test('an unlinked child: refused by the relationship', async () => {
     as('parent', 'acct-other-parent');
     // The reach check admits (its default here); the relationship is none.
+    // Two layers refuse 'none' -- the route's own check and decidePortrait,
+    // which never admits it -- so it is the relationship, not either layer
+    // alone, that this pins (mutation M2 in the PR body).
     await expectHidden(await GET(request('?athlete_id=ath-1')));
     expect(mockReach).toHaveBeenCalledTimes(1);
     expect(mockRelationship).toHaveBeenCalledTimes(1);

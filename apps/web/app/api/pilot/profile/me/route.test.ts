@@ -91,6 +91,20 @@ describe('GET /api/pilot/profile/me: the member\'s own account id (F-119)', () =
     expect(raw).not.toContain('@');
   });
 
+  test('a parent with no usable login email: their own card names no id', async () => {
+    // staffDisplayName's fallback, as the real read returns it: the id itself.
+    const PARENT = 'dana.vance@example.test';
+    mockPrincipal.mockResolvedValue({ accountId: PARENT, role: 'parent', organizationId: ORG, athleteId: null } as never);
+    mockIdentity.mockResolvedValue({
+      accountId: PARENT, fullName: PARENT, athleteId: null, dob: null, coachAccountId: null, memberSince: null,
+    } as never);
+
+    const raw = await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/me'))).text();
+
+    expect(JSON.parse(raw).card.displayName).toBe('Gym member');
+    expect(raw).not.toContain('@');
+  });
+
   test('a coach\'s own card keeps the account id, as before', async () => {
     mockPrincipal.mockResolvedValue({ accountId: COACH, role: 'coach', organizationId: ORG, athleteId: null } as never);
 

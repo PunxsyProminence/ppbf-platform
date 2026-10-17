@@ -83,8 +83,10 @@ export function portraitUrl(base: string, accountId: string): string {
  * already holds and gates the subject, and for the coach line the coach, on
  * every fetch. Undefined when the card has no path: the plate.
  */
-export function cardPhotoUrl(base: string, path: string | null): string | undefined {
-  return path === null ? undefined : `${base}${path}`;
+export function cardPhotoUrl(base: string, path: string | null | undefined): string | undefined {
+  // Loose on purpose: a payload from a server older than the field has no
+  // path at all, and that is the plate too, not a request for ".../undefined".
+  return path ? `${base}${path}` : undefined;
 }
 
 /**

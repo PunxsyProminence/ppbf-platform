@@ -49,6 +49,9 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
     >
       <div className="flex flex-wrap items-start gap-[var(--s5)]">
         <ProfilePortrait
+          /* Keyed on the address, like the coach line below: a failed load on
+             one child's face must not hold the next child's on the plate. */
+          key={card.portraitPath ?? ''}
           accountId={null}
           src={cardPhotoUrl(apiBase(), card.portraitPath)}
           initials={card.initials}

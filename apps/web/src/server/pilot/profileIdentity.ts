@@ -374,14 +374,22 @@ export function cardSubjectQuery(
   return `?account_id=${encodeURIComponent(input.accountId)}`;
 }
 
+/**
+ * The name a family is shown when the only name the platform has is the
+ * account id itself (profileDb.staffDisplayName's fallback for a login with no
+ * usable email stem). A parent's id is email-shaped (F-119). PROPOSED copy.
+ */
+export const FAMILY_NAME_FLOOR = 'Gym member';
+
 export function buildFightCard(input: FightCardInput, now: Date): FightCard {
   const family = isFamilyViewer(input.viewerRole);
   const coachName = input.coachName;
   const query = cardSubjectQuery(input);
+  const displayName = family && input.fullName === input.accountId ? FAMILY_NAME_FLOOR : input.fullName;
   return {
     accountId: family ? null : input.accountId,
-    displayName: input.fullName,
-    initials: initialsFor(input.fullName),
+    displayName,
+    initials: initialsFor(displayName),
     ringName: input.ringName,
     corner: input.corner,
     cornerLabel: CORNER_LABEL[input.corner],
