@@ -14,10 +14,12 @@
 -- display forms that the name of record does not carry: the public brand
 -- ("&"), the short name and the running-text name.
 --
--- Columns are `not null default ''`: an empty value means "not given", and the
--- screens leave that line out. Every column has a length limit. Only the three
--- display names must be non-blank. The reserved platform organization never
--- has a profile.
+-- Required: the three display names (non-blank), the website address (an
+-- https origin: the site metadata, canonical links, robots and sitemap are
+-- built from it with `new URL`, so a bare or broken value would break every
+-- page) and the domain. Every other column is `not null default ''`: an empty
+-- value means "not given", and the screens leave that line out. Every column
+-- has a length limit. The reserved platform organization never has a profile.
 --
 -- No account column: who changed a profile goes in the audit trail
 -- (pilot.audit_events), written by the module that edits it, so this table
@@ -25,7 +27,9 @@
 --
 -- SEED. One row, for the operating organization (punxsy_prominence, by ruling:
 -- OD-2026-09-28-007; Overwatch GO, Q5). Its values are the code constant's,
--- copied exactly, with their sources as that file records them. The
+-- copied exactly, with their sources as that file records them; the head
+-- coach's name is the homepage's (app/page.tsx, and the staff card in
+-- src/shared/gymPhotos.ts), which the constant does not carry. The
 -- insert is `on conflict do nothing`, so a re-run (including the
 -- apply-migrations `all` sweep) never overwrites what the gym has since
 -- edited. If the organization does not exist in an environment, nothing is
@@ -40,9 +44,9 @@ create table if not exists pilot.organization_profiles (
   brand text not null,
   short_name text not null,
   common_name text not null,
+  website_url text not null,
+  domain text not null,
   ein text not null default '',
-  website_url text not null default '',
-  domain text not null default '',
   contact_email text not null default '',
   donations_email text not null default '',
   grants_email text not null default '',
@@ -67,9 +71,12 @@ create table if not exists pilot.organization_profiles (
     btrim(brand) <> '' and btrim(short_name) <> '' and btrim(common_name) <> ''
     and char_length(brand) <= 200 and char_length(short_name) <= 40 and char_length(common_name) <= 200
   ),
+  constraint pilot_organization_profiles_web_check check (
+    website_url ~* '^https://[a-z0-9-]+(\.[a-z0-9-]+)+$' and char_length(website_url) <= 200
+    and domain ~* '^[a-z0-9-]+(\.[a-z0-9-]+)+$' and char_length(domain) <= 200
+  ),
   constraint pilot_organization_profiles_lengths_check check (
     char_length(ein) <= 20
-    and char_length(website_url) <= 200 and char_length(domain) <= 200
     and char_length(contact_email) <= 254 and char_length(donations_email) <= 254 and char_length(grants_email) <= 254
     and char_length(established) <= 20 and char_length(town) <= 100
     and char_length(service_area) <= 300 and char_length(service_area_short) <= 300
@@ -80,7 +87,7 @@ create table if not exists pilot.organization_profiles (
 );
 
 insert into pilot.organization_profiles (
-  organization_id, brand, short_name, common_name, ein, website_url, domain,
+  organization_id, brand, short_name, common_name, website_url, domain, ein,
   contact_email, donations_email, grants_email, established, town,
   service_area, service_area_short,
   physical_street, physical_city, physical_region, physical_postal_code,
@@ -90,9 +97,9 @@ select o.organization_id,
        'Punxsy Prominence Boxing & Fitness',
        'PPBF',
        'Punxsy Prominence',
-       '99-2073622',
        'https://www.punxsyprominence.org',
        'punxsyprominence.org',
+       '99-2073622',
        'admin@punxsyprominence.org',
        'treasurer@punxsyprominence.org',
        'grants@punxsyprominence.org',

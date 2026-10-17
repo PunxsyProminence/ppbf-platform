@@ -46,6 +46,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
+let listMigrationFiles: (infraDir?: string) => Promise<string[]>;
 let applyRunner: Apply;
 let migrationSql: string;
 
@@ -70,8 +71,7 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** The whole schema in the `all` order, which includes this migration (run before any gym exists). */
-async function freshDatabase(name: string): Promise<Client> {
+async function emptyDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name} with (force)`);
@@ -79,7 +79,27 @@ async function freshDatabase(name: string): Promise<Client> {
   await admin.end();
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
+  return client;
+}
+
+/** The whole schema in the `all` order, which includes this migration (run before any gym exists). */
+async function freshDatabase(name: string): Promise<Client> {
+  const client = await emptyDatabase(name);
   await applyFullSchema(client, { infraDir: INFRA_DIR });
+  return client;
+}
+
+/** The schema exactly as it stands just before this migration: the base and every migration ahead of it. */
+async function databaseBeforeThisMigration(name: string): Promise<Client> {
+  const client = await emptyDatabase(name);
+  await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  const files = await listMigrationFiles(INFRA_DIR);
+  expect(files).toContain(MIGRATION_FILE);
+  for (const file of files.filter((candidate) => candidate !== MIGRATION_FILE)) {
+    await client.query('BEGIN');
+    await client.query(await fs.readFile(path.join(INFRA_DIR, file), 'utf8'));
+    await client.query('COMMIT');
+  }
   return client;
 }
 
@@ -91,7 +111,14 @@ async function addOrganization(client: Client, organizationId: string, name = or
 }
 
 function insertProfile(client: Client, organizationId: string, values: Record<string, string> = {}) {
-  const row = { brand: 'Other Gym & Co', short_name: 'OG', common_name: 'Other Gym', ...values };
+  const row = {
+    brand: 'Other Gym & Co',
+    short_name: 'OG',
+    common_name: 'Other Gym',
+    website_url: 'https://other-gym.example.org',
+    domain: 'other-gym.example.org',
+    ...values,
+  };
   const columns = Object.keys(row);
   return client.query(
     `insert into pilot.organization_profiles (organization_id, ${columns.join(', ')})
@@ -153,6 +180,7 @@ beforeAll(async () => {
 
   const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   applyFullSchema = fullSchema.applyFullSchema as typeof applyFullSchema;
+  listMigrationFiles = fullSchema.listMigrationFiles as typeof listMigrationFiles;
   applyRunner = (await nativeDynamicImport(pathToFileURL(RUNNER_PATH).href)).applyMigrationTransaction as Apply;
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 });
@@ -298,7 +326,7 @@ describe('organization profiles migration (#1469)', () => {
     }
   });
 
-  test('the three display names are required; every field has a length limit; optional fields start empty', async () => {
+  test('the display names, website and domain are required; every field has a length limit; optional fields start empty', async () => {
     const client = await freshDatabase('orgprof_rules');
     try {
       await addOrganization(client, OTHER_ORG);
@@ -312,8 +340,34 @@ describe('organization profiles migration (#1469)', () => {
         code: '23514',
         constraint: 'pilot_organization_profiles_names_check',
       });
+      // The website is an https origin (it is fed to `new URL` for every page's metadata), and the
+      // domain a bare host name.
+      for (const website of ['', 'punxsyprominence.org', 'http://www.example.org', 'https://www.example.org/', 'https://', 'https://exa mple.org']) {
+        await expect(insertProfile(client, OTHER_ORG, { website_url: website })).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'pilot_organization_profiles_web_check',
+        });
+      }
+      for (const domain of ['', 'localhost', 'https://example.org', 'example.org/x']) {
+        await expect(insertProfile(client, OTHER_ORG, { domain })).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'pilot_organization_profiles_web_check',
+        });
+      }
+      await expect(insertProfile(client, OTHER_ORG, { website_url: `https://${'a'.repeat(190)}.org` })).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'pilot_organization_profiles_web_check',
+      });
+      // A required field left out is refused, not defaulted.
+      await expect(
+        client.query(
+          `insert into pilot.organization_profiles (organization_id, brand, short_name, common_name, domain)
+           values ($1, 'B', 'S', 'C', 'example.org')`,
+          [OTHER_ORG],
+        ),
+      ).rejects.toMatchObject({ code: '23502' });
       for (const [column, limit] of [
-        ['ein', 20], ['website_url', 200], ['domain', 200], ['contact_email', 254],
+        ['ein', 20], ['contact_email', 254],
         ['donations_email', 254], ['grants_email', 254], ['established', 20], ['town', 100],
         ['service_area', 300], ['service_area_short', 300], ['physical_street', 200],
         ['physical_city', 100], ['physical_region', 50], ['physical_postal_code', 20],
@@ -327,7 +381,7 @@ describe('organization profiles migration (#1469)', () => {
 
       await insertProfile(client, OTHER_ORG);
       const row = (await client.query('select * from pilot.organization_profiles')).rows[0];
-      for (const column of ['ein', 'website_url', 'contact_email', 'mailing_address', 'head_coach_name']) {
+      for (const column of ['ein', 'contact_email', 'mailing_address', 'head_coach_name']) {
         expect(row[column]).toBe('');
       }
     } finally {
@@ -336,10 +390,12 @@ describe('organization profiles migration (#1469)', () => {
   });
 
   test('the migration is additive: nothing else in the schema or the gym rows changes', async () => {
-    const client = await freshDatabase('orgprof_additive');
+    // Built WITHOUT this migration (not built with it and the table dropped), so a side effect on
+    // another object -- an index, a trigger, a comment -- would show in the comparison.
+    const client = await databaseBeforeThisMigration('orgprof_additive');
     try {
       await addOrganization(client, OPERATING_ORG, 'Punxsy Prominence Boxing and Fitness');
-      await client.query('drop table pilot.organization_profiles');
+      expect((await client.query(`select to_regclass('pilot.organization_profiles') as rel`)).rows[0].rel).toBeNull();
       const schemaBefore = await schemaSnapshot(client);
       const organizationsBefore = await client.query('select * from pilot.organizations order by organization_id');
 
@@ -387,6 +443,12 @@ describe('the runner refuses a database that does not hold every rule', () => {
         'created_at timestamptz not null default now(), updated_by_account_id text references pilot.accounts (account_id),',
       ),
     },
+    { name: 'the website check dropped', key: 'web_check_ready', mutate: replaceOnce("website_url ~* '^https://[a-z0-9-]+(\\.[a-z0-9-]+)+$' and ", '') },
+    { name: 'the domain allowed blank', key: 'web_check_ready', mutate: replaceOnce("and domain ~* '^[a-z0-9-]+(\\.[a-z0-9-]+)+$' ", '') },
+    { name: 'a required field given a default', key: 'defaults_ready', mutate: replaceOnce('website_url text not null,', "website_url text not null default 'https://x.org',") },
+    { name: 'a timestamp default changed', key: 'defaults_ready', mutate: replaceOnce('updated_at timestamptz not null default now()', 'updated_at timestamptz not null default clock_timestamp()') },
+    { name: 'the gym key made deferrable', key: 'organization_fk_ready', mutate: replaceOnce('on delete cascade', 'on delete cascade deferrable') },
+    { name: 'the primary key left off', key: 'primary_key_ready', mutate: replaceOnce('constraint pilot_organization_profiles_pkey primary key (organization_id),', '') },
     { name: 'the seed removed', key: 'seed_ready', mutate: replaceOnce(/insert into pilot\.organization_profiles \([\s\S]*?on conflict do nothing;/, 'select 1;') },
   ];
 

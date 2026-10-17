@@ -40,9 +40,11 @@ function check(name, definition) {
   )`;
 }
 
-const TEXT_COLUMNS = [
-  'brand', 'short_name', 'common_name', 'ein', 'website_url', 'domain',
-  'contact_email', 'donations_email', 'grants_email', 'established', 'town',
+// Required: no default, so an insert that leaves one out is refused rather than given a value.
+const REQUIRED_COLUMNS = ['brand', 'short_name', 'common_name', 'website_url', 'domain'];
+// Optional: default '' (so "not given" is one value, never null or absent).
+const OPTIONAL_COLUMNS = [
+  'ein', 'contact_email', 'donations_email', 'grants_email', 'established', 'town',
   'service_area', 'service_area_short',
   'physical_street', 'physical_city', 'physical_region', 'physical_postal_code',
   'mailing_address', 'head_coach_name',
@@ -60,19 +62,22 @@ const READINESS_QUERY = `
        where a.attrelid = ${PROFILES} and a.attnum > 0 and not a.attisdropped
     ) = ${textArray([
       'organization_id text not null',
-      ...TEXT_COLUMNS.map((column) => `${column} text not null`),
+      ...[...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS].map((column) => `${column} text not null`),
       'created_at timestamp with time zone not null',
       'updated_at timestamp with time zone not null',
     ])} as columns_ready,
-    -- The optional fields default to '' (so "not given" is one value, never null or absent).
+    -- Every default, column by column: '' on each optional field, now() on the two timestamps,
+    -- and none on the key or the required fields.
     (
-      select count(*)
+      select array_agg(a.attname || '=' || pg_get_expr(d.adbin, d.adrelid) order by a.attnum)
         from pg_attribute a
         join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
        where a.attrelid = ${PROFILES} and not a.attisdropped
-         and a.attname = any (${textArray(TEXT_COLUMNS.slice(3))})
-         and pg_get_expr(d.adbin, d.adrelid) = '''''::text'
-    ) = ${TEXT_COLUMNS.length - 3} as defaults_ready,
+    ) = ${textArray([
+      ...OPTIONAL_COLUMNS.map((column) => `${column}=''::text`),
+      'created_at=now()',
+      'updated_at=now()',
+    ])} as defaults_ready,
     exists (
       select 1 from pg_constraint c
        where c.conrelid = ${PROFILES} and c.conname = 'pilot_organization_profiles_pkey' and c.contype = 'p'
@@ -81,7 +86,8 @@ const READINESS_QUERY = `
     exists (
       -- Exactly organization_id -> organizations.organization_id, validated, cascading.
       select 1 from pg_constraint c
-       where c.conrelid = ${PROFILES} and c.contype = 'f' and c.convalidated
+       where c.conrelid = ${PROFILES} and c.conname = 'pilot_organization_profiles_org_fk'
+         and c.contype = 'f' and c.convalidated and not c.condeferrable
          and c.confrelid = to_regclass('pilot.organizations') and c.confdeltype = 'c'
          and ${keyColumns('c.conkey', 'c.conrelid')} = ${textArray(['organization_id'])}
          and ${keyColumns('c.confkey', 'c.confrelid')} = ${textArray(['organization_id'])}
@@ -93,8 +99,11 @@ const READINESS_QUERY = `
     ${check('pilot_organization_profiles_names_check',
       "CHECK (((btrim(brand) <> ''::text) AND (btrim(short_name) <> ''::text) AND (btrim(common_name) <> ''::text)"
       + ' AND (char_length(brand) <= 200) AND (char_length(short_name) <= 40) AND (char_length(common_name) <= 200)))')} as names_check_ready,
+    ${check('pilot_organization_profiles_web_check',
+      "CHECK (((website_url ~* '^https://[a-z0-9-]+(\\.[a-z0-9-]+)+$'::text) AND (char_length(website_url) <= 200)"
+      + " AND (domain ~* '^[a-z0-9-]+(\\.[a-z0-9-]+)+$'::text) AND (char_length(domain) <= 200)))")} as web_check_ready,
     ${check('pilot_organization_profiles_lengths_check',
-      'CHECK (((char_length(ein) <= 20) AND (char_length(website_url) <= 200) AND (char_length(domain) <= 200)'
+      'CHECK (((char_length(ein) <= 20)'
       + ' AND (char_length(contact_email) <= 254) AND (char_length(donations_email) <= 254) AND (char_length(grants_email) <= 254)'
       + ' AND (char_length(established) <= 20) AND (char_length(town) <= 100)'
       + ' AND (char_length(service_area) <= 300) AND (char_length(service_area_short) <= 300)'
