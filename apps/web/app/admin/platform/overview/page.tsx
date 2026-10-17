@@ -131,7 +131,7 @@ export default function PlatformOverview() {
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Sessions (30d)</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Coach Reviews (30d)</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">SHADOW Uses (30d)</th>
-                  <th className="t-label px-[var(--s4)] py-[var(--s4)]">Features On</th>
+                  <th className="t-label px-[var(--s4)] py-[var(--s4)]">Marked In Record</th>
                 </tr>
               </thead>
               <tbody>

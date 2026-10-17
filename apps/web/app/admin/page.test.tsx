@@ -119,6 +119,21 @@ describe('the platform owner', () => {
   });
 });
 
+/* Lane L31 (Overwatch Q2 A): no feature reads these switches, so the screen
+   says so instead of promising to turn features on or off. */
+it('the switchboard says it is a record only and promises no feature switching', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'The Switchboard' });
+
+  expect(screen.getByText('Record Only')).toBeTruthy();
+  expect(screen.getByText(/These switches are a record only: no feature reads them, and switching one off does not turn that feature off\./)).toBeTruthy();
+  const page = document.body.textContent ?? '';
+  expect(page).not.toMatch(/Turn platform capabilities on or off/);
+  expect(page).not.toMatch(/Decide what this gym can do/);
+  expect(page).not.toMatch(/let them flip it on or off/);
+});
+
 it('reports a refused capability load and stops saving over the stored registry', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {
@@ -151,8 +166,8 @@ it('a failed gym-capability read shows each row as unknown, never "Disabled"', a
 
   const unread = await screen.findAllByText('Gym admin access could not be read.');
   expect(unread.length).toBeGreaterThan(0);
-  expect(screen.queryByText(/Gym admins can not yet toggle this capability/)).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Disabled' })).toBeNull();
+  expect(screen.queryByText(/Recorded as not marked for gym admins/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Not Marked' })).toBeNull();
   for (const button of screen.getAllByRole('button', { name: 'Unknown' })) {
     expect((button as HTMLButtonElement).disabled).toBe(true);
   }
@@ -171,7 +186,7 @@ it('after a gym-capability read comes back, each row states its access and can b
 
   await renderPage(fetchMock);
 
-  const buttons = await screen.findAllByRole('button', { name: 'Disabled' });
+  const buttons = await screen.findAllByRole('button', { name: 'Not Marked' });
   expect(buttons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   expect(screen.queryByRole('button', { name: 'Unknown' })).toBeNull();
   expect(screen.queryByText('Gym admin access could not be read.')).toBeNull();
@@ -219,7 +234,7 @@ it('a stale save cannot outrun a newer one or speak over its banner', async () =
 
   // Two clicks while the first POST is still out: both must wait, and only
   // the NEWEST combined snapshot may be sent when the lane frees up.
-  const [first, second] = await screen.findAllByRole('button', { name: 'Disabled' });
+  const [first, second] = await screen.findAllByRole('button', { name: 'Not Marked' });
   fireEvent.click(first);
   fireEvent.click(second);
   expect(postCount).toBe(1);
@@ -259,7 +274,7 @@ it('a network error reports an unconfirmed save, never a definite loss', async (
   await renderPage(fetchMock);
   await waitFor(() => expect(posted).toBe(1));
 
-  fireEvent.click((await screen.findAllByRole('button', { name: 'Disabled' }))[0]);
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Not Marked' }))[0]);
 
   await screen.findByText(/Network request failed\. The save was not confirmed -- it may or may not have been stored/);
   expect(screen.queryByText(/will be lost on reload/)).toBeNull();
