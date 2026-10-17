@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import ArmedButton from './ArmedButton';
 import { handOffArrivalAthlete } from './decisionLoopArrival';
 
 /**
@@ -484,18 +485,23 @@ export default function CoachFloorFocus({
                     Open
                   </button>
                 )}
+                {/* Drawn in the slot Open just left, so a double tap on Open
+                    lands here: the first press only arms it (UXB-01). */}
                 {open && currentItem.acknowledge && (
-                  <button
-                    type="button"
+                  <ArmedButton
                     className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
+                    armKey={currentKey ?? ''}
                     disabled={currentItem.acknowledge.disabled}
-                    onClick={() => {
+                    busy={currentItem.acknowledge.busy}
+                    busyLabel="Acknowledging..."
+                    armedLabel={`Press again: acknowledge ${currentItem.title}`}
+                    onConfirm={() => {
                       if (currentKey) setAckedItem({ key: currentKey, title: currentItem.title });
                       currentItem.acknowledge?.onAcknowledge();
                     }}
                   >
-                    {currentItem.acknowledge.busy ? 'Acknowledging...' : 'Acknowledge'}
-                  </button>
+                    Acknowledge
+                  </ArmedButton>
                 )}
                 {open && currentItem.link && (
                   <Link
