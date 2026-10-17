@@ -1473,6 +1473,12 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   PEOPLE
                 </Link>
               )}
+              {/* Lane L31 P5: what is left before the gym's first class. */}
+              {canManagePeople && (
+                <Link href="/admin/setup" className="btn btn--ghost">
+                  GYM SETUP
+                </Link>
+              )}
               {/*
                 Video upload lives on a COACH page, and an organization_admin
                 lands here -- so the only surface that calls
