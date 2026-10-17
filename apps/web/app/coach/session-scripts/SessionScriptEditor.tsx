@@ -248,7 +248,7 @@ export default function SessionScriptEditor({
 
       <div className="flex flex-wrap gap-[var(--s3)]">
         <button type="submit" disabled={busy} className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60">
-          {busy ? 'Saving...' : 'Save plan'}
+          {busy ? 'Saving…' : 'Save plan'}
         </button>
         <button type="button" disabled={busy} onClick={onCancel} className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60">
           Cancel

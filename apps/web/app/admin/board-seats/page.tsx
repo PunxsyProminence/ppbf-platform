@@ -610,7 +610,7 @@ function BoardSeatsConsole() {
               disabled={busy || !canSubmit}
               className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? 'Saving...' : 'Assign Seat'}
+              {busy ? 'Saving…' : 'Assign Seat'}
             </button>
           </form>
         )}
