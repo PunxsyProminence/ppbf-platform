@@ -158,3 +158,12 @@ test("the line after a coaching request's status is labelled as its goals", asyn
   const goalsLine = screen.getByText('Yes').closest('p');
   expect(goalsLine?.textContent).toBe('Goals: Yes');
 });
+
+// F-122 (LIVE-AUDIT 2026-10-17): the schedule header read "Role: athlete".
+test('the schedule names the role in plain words', async () => {
+  install('ok');
+  await renderPage();
+
+  expect(screen.getByText('Role: Athlete')).toBeTruthy();
+  expect(screen.queryByText('Role: athlete')).toBeNull();
+});
