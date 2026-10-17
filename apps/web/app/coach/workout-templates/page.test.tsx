@@ -1654,7 +1654,7 @@ describe('drills no coach of this gym has floor-tested', () => {
 // MAKE A SESSION SCRIPT (lane L1): the page's second write. The control's own
 // answers are in MakeSessionScript.test.tsx; these pin where the page puts it.
 // ---------------------------------------------------------------------------
-describe('make a session script from an open template', () => {
+describe('make a session plan from an open template', () => {
   function templateFetch(items: unknown[]) {
     const posts: Array<Record<string, unknown>> = [];
     mockFetch((url, init) => {
@@ -1679,11 +1679,11 @@ describe('make a session script from an open template', () => {
     render(<CoachWorkoutTemplatesPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Make a session script' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Make a session plan' }));
 
-    expect(await screen.findByText('Made the session script Boxing Fundamentals 60: 1 block.')).toBeInTheDocument();
+    expect(await screen.findByText('Made the session plan Boxing Fundamentals 60: 1 block.')).toBeInTheDocument();
     expect(posts).toEqual([{ template_id: 'wt-1' }]);
-    expect(screen.getByRole('link', { name: 'Open it in Session Scripts' }))
+    expect(screen.getByRole('link', { name: 'Open it in Session Plans' }))
       .toHaveAttribute('href', '/coach/session-scripts?script=scr-9');
   });
 
@@ -1693,7 +1693,7 @@ describe('make a session script from an open template', () => {
     fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
 
     await screen.findByText('This template has no items yet.');
-    expect(screen.queryByRole('button', { name: 'Make a session script' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Make a session plan' })).toBeNull();
   });
 
   it('keeps the other templates closed while a script is being made, so its answer has somewhere to land', async () => {
@@ -1710,7 +1710,7 @@ describe('make a session script from an open template', () => {
     render(<CoachWorkoutTemplatesPage />);
     fireEvent.click((await screen.findAllByRole('button', { name: /open template/i }))[0]);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Make a session script' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Make a session plan' }));
 
     await screen.findByRole('button', { name: 'Making...' });
     for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) {
@@ -1719,15 +1719,15 @@ describe('make a session script from an open template', () => {
     await act(async () => {
       finish?.({ ok: true, status: 201, json: async () => ({ script: { script_id: 'scr-9', name: 'X', blocks: [] } }) } as Response);
     });
-    expect(await screen.findByText(/Made the session script X/)).toBeInTheDocument();
+    expect(await screen.findByText(/Made the session plan X/)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it('says in the header that a session script can be made from a template', async () => {
+  it('says in the header that a session plan can be made from a template', async () => {
     mockFetch(() => jsonResponse({ templates: [] }));
     render(<CoachWorkoutTemplatesPage />);
 
-    expect(await screen.findByText(/or to make a session script from\s+it/i)).toBeInTheDocument();
+    expect(await screen.findByText(/or to make a session plan from\s+it/i)).toBeInTheDocument();
   });
 });
 

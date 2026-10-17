@@ -61,7 +61,7 @@ export default function AthleteDevelopmentBlocksPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Your Plan</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">My Development Plan</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             What your coach is working on with you over the next several weeks, in their words.
             Your guardian can see this too. If something here does not match what you understood,

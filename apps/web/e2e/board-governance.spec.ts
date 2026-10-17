@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function expectLoginRedirect(page: Page, path: string) {
   await page.goto(path);
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 }
 
 test.describe('Board governance surfaces', () => {

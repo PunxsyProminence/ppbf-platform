@@ -107,7 +107,7 @@ interface CoachTab {
 const COACH_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'floor', label: 'Floor' },
-  { id: 'development', label: 'Development' },
+  { id: 'development', label: 'Your Growth' },
   { id: 'goals', label: 'Goals' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'assessments', label: 'Assessments' },
@@ -1383,7 +1383,7 @@ export default function CoachWorkspace() {
         ? `Session in progress, paused at ${formatElapsed(liveRun.elapsed_seconds)}.`
         : `Session in progress -- running ${formatElapsed(liveRun.elapsed_seconds)}.`;
     }
-    return 'No session in progress. Session Scripts is where a live delivery starts.';
+    return 'No session in progress. Session Plans is where a live delivery starts.';
   }, [liveRun, liveRunState]);
 
   // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
@@ -3914,7 +3914,7 @@ export default function CoachWorkspace() {
                     <div role="status" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s3)] space-y-[var(--s2)]">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body font-semibold">
-                        {COACH_HOLD_SCOPE_LABEL[wellnessShown.holdWarning.scope]} is currently paused for this athlete ({wellnessShown.holdWarning.reasonCategory}).
+                        Training Hold on {COACH_HOLD_SCOPE_LABEL[wellnessShown.holdWarning.scope]} for this athlete ({wellnessShown.holdWarning.reasonCategory}).
                       </p>
                       <p className="t-body">{wellnessShown.holdWarning.athleteExplanation}</p>
                       <p className="t-body">
@@ -4253,14 +4253,14 @@ export default function CoachWorkspace() {
                   run state, and nothing here records what was delivered.
                 </p>
                 <p className="t-muted">
-                  Live delivery of an authored session script is real and runs on its own surface: the
+                  Live delivery of an authored session plan is real and runs on its own surface: the
                   server holds the clock, the block cursor, pauses, and the settled record of the night.
                   {liveRunState === 'loaded' && liveRun
                     ? ' You have a session in progress right now.'
                     : ''}
                 </p>
                 <Link href="/coach/session-scripts" className="btn">
-                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Scripts'}
+                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Plans'}
                 </Link>
 
                 <div className="space-y-[var(--s3)]">

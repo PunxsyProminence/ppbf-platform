@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-// Make a session script from an open workout template (lane L1). What these
+// Make a session plan from an open workout template (lane L1). What these
 // pin: one press sends one POST naming only the template; the result on screen
 // is the server's answer and nothing more -- made (201, even when the body
 // cannot be read), not made (a refusal, with its reason), or not known (no
@@ -43,25 +43,25 @@ function mockFetch(handler: () => Response | Promise<Response>) {
 
 const MADE = { script: { script_id: 'scr new/1', name: 'Boxing Fundamentals 60', blocks: [{}, {}, {}] } };
 
-const press = () => fireEvent.click(screen.getByRole('button', { name: 'Make a session script' }));
+const press = () => fireEvent.click(screen.getByRole('button', { name: 'Make a session plan' }));
 
-describe('make a session script', () => {
+describe('make a session plan', () => {
   it('one press posts the template and nothing else, and the result links to the plan that was made', async () => {
     const fetchMock = mockFetch(() => answer(201, MADE));
     render(<MakeSessionScript templateId="wt-1" />);
 
     press();
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Made the session script Boxing Fundamentals 60: 3 blocks.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Made the session plan Boxing Fundamentals 60: 3 blocks.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/pilot/session-scripts');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ template_id: 'wt-1' });
-    expect(screen.getByRole('link', { name: 'Open it in Session Scripts' }))
+    expect(screen.getByRole('link', { name: 'Open it in Session Plans' }))
       .toHaveAttribute('href', '/coach/session-scripts?script=scr%20new%2F1');
     // Made once: the button that would make a second is gone.
-    expect(screen.queryByRole('button', { name: 'Make a session script' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Make a session plan' })).toBeNull();
   });
 
   it('a 201 whose body cannot be read still says a script was made', async () => {
@@ -70,18 +70,18 @@ describe('make a session script', () => {
 
     press();
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/A session script was made, but its details could not be read here/);
-    expect(screen.getByRole('link', { name: 'Open it in Session Scripts' })).toHaveAttribute('href', '/coach/session-scripts');
+    expect(await screen.findByRole('status')).toHaveTextContent(/A session plan was made, but its details could not be read here/);
+    expect(screen.getByRole('link', { name: 'Open it in Session Plans' })).toHaveAttribute('href', '/coach/session-scripts');
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it.each([
-    ['WORKOUT_TEMPLATE_NOT_CURRENT', 409, /no longer in use, so no session script was made/],
-    ['WORKOUT_TEMPLATE_EMPTY', 409, /has no steps, so no session script was made/],
-    ['WORKOUT_TEMPLATE_NOT_FOUND', 404, /could not be found, so no session script was made/],
-    ['SOMETHING_NEW', 422, /The server refused, so no session script was made/],
-    ['Forbidden: role not allowed', 403, /Your account may not make session scripts, so none was made/],
-    ['Unauthorized', 401, /You are signed out, so no session script was made/],
+    ['WORKOUT_TEMPLATE_NOT_CURRENT', 409, /no longer in use, so no session plan was made/],
+    ['WORKOUT_TEMPLATE_EMPTY', 409, /has no steps, so no session plan was made/],
+    ['WORKOUT_TEMPLATE_NOT_FOUND', 404, /could not be found, so no session plan was made/],
+    ['SOMETHING_NEW', 422, /The server refused, so no session plan was made/],
+    ['Forbidden: role not allowed', 403, /Your account may not make session plans, so none was made/],
+    ['Unauthorized', 401, /You are signed out, so no session plan was made/],
   ])('a refusal (%s) says nothing was made and why, and the button stays', async (code, status, sentence) => {
     mockFetch(() => answer(status, { error: code }));
     render(<MakeSessionScript templateId="wt-1" />);
@@ -90,7 +90,7 @@ describe('make a session script', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
     expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Make a session script' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Make a session plan' })).not.toBeDisabled();
   });
 
   it('no answer, a server fault, or a 4xx that is not the app\'s is "not known": it never says nothing was made', async () => {
@@ -110,9 +110,9 @@ describe('make a session script', () => {
       press();
 
       const alert = await screen.findByRole('alert');
-      expect(alert).toHaveTextContent(/it is not known whether the session script was made/);
-      expect(alert).not.toHaveTextContent(/no session script was made/i);
-      expect(screen.getByRole('link', { name: 'Session Scripts' })).toHaveAttribute('href', '/coach/session-scripts');
+      expect(alert).toHaveTextContent(/it is not known whether the session plan was made/);
+      expect(alert).not.toHaveTextContent(/no session plan was made/i);
+      expect(screen.getByRole('link', { name: 'Session Plans' })).toHaveAttribute('href', '/coach/session-scripts');
       view.unmount();
     }
   });

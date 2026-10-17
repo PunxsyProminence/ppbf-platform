@@ -558,7 +558,7 @@ test.describe('Coach journey', () => {
           bar itself must still be there, which is the half that catches a
           removal that took its neighbours with it. */
     await expect(page.getByRole('link', { name: 'Operations' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
 
     /* 3. NOT IN THE CATALOG, however plainly a coach asks for it. The door
           carried `roles: OPEN`, and the catalog searches labels, keywords and
@@ -650,7 +650,7 @@ test.describe('Coach journey', () => {
 
     await page.goto('/coach/development-blocks');
 
-    await expect(page.getByRole('heading', { level: 1, name: 'The Next Several Weeks' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Development Plans' })).toBeVisible();
 
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
     await page.getByLabel('Title').fill('Winter technical block');
@@ -702,7 +702,7 @@ test.describe('Coach journey', () => {
      `flex-grow`, so on a narrow viewport the route ate the row and the NAME
      was squeezed to nothing. Measured on a Pixel 7 before the fix, at a 393px
      row: "The Work" and "Progression Intelligence" 0px wide, "Community
-     Service" 2px, "Intervention Protocols" 10px, "Session Scripts" 54px wide
+     Service" 2px, "Intervention Protocols" 10px, "Session Plans" 54px wide
      by 199px tall -- a title shredded one letter per line, overflowing a box
      of no width. Playwright reported those titles `hidden`, which is how this
      was found at all.
@@ -722,7 +722,7 @@ test.describe('Coach journey', () => {
   test('every catalog row gives its title a real column, at any viewport', async ({ page }) => {
     await installPilotApi(page, { session: { role: 'coach' } });
     await page.goto('/coach/environment/intake-router');
-    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
 
     await page.keyboard.press('Meta+k');
     const catalog = page.getByRole('dialog');

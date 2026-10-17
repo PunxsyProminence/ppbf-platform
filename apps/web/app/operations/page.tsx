@@ -58,9 +58,9 @@ const developmentLab = [
 ];
 
 const utilityLinks = [
-  { label: 'The Bell', href: '/login' },
+  { label: 'Sign-in page', href: '/login' },
   { label: 'Notices & Motivation', href: '/notices' },
-  { label: 'Entry Point', href: '/dashboard' },
+  { label: 'Home', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
 ];
 
@@ -110,7 +110,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'SHADOW Monitoring', lab: true, state: 'EXISTS', href: '/shadow', notes: 'The SHADOW consoles read the live record. The record itself is kept in the after-hours room rather than at this desk. Which of the recorded facts deserves an alarm remains a human decision, and nothing claims more than what is written down.' },
   { name: 'AI Video Analysis', state: 'PARTIAL', href: '/coach/video-analysis', record: 'BACKLOG-video-skill-scoring · 2026-08-15', notes: 'Upload, release, and playback are real and kept on file, and a released video can go to Film Study for a person to watch and write up. Film Study is the analysis path. Scoring a clip skill by skill is parked for a later phase by owner decision: part built on purpose, not by neglect.' },
   { name: 'Video Review Intelligence', state: 'EXISTS', href: '/admin/video-review', notes: 'The organization admin\u2019s desk for a clip the content scan has held back: watch it, then approve or block. Whether the clip is also appropriate, consented to, and private on audio is a separate read with a desk of its own.' },
-  { name: 'Session Script Delivery', state: 'EXISTS', href: '/coach/session-scripts', record: 'pilot.session_script_runs', notes: 'Browsing a script, running it on the floor against a clock the server owns, and the settled history afterwards are all kept on file.' },
+  { name: 'Session Plan Delivery', state: 'EXISTS', href: '/coach/session-scripts', record: 'pilot.session_script_runs', notes: 'Browsing a script, running it on the floor against a clock the server owns, and the settled history afterwards are all kept on file.' },
   { name: 'Safety Compliance Center', state: 'EXISTS', href: '/admin/compliance-center', record: 'pilot.compliance_violations', notes: 'A register of violations that can be acknowledged, escalated, resolved, or dismissed. One organization at a time, and every step is written to the audit record.' },
   { name: 'Coach Coverage', state: 'EXISTS', href: '/admin/coach-coverage', record: 'pilot.coach_coverage', notes: 'Temporary access to an athlete record for a covering coach, with a date it runs out and a revoke that takes effect at once.' },
   { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'A versioned drill library kept on file.' },

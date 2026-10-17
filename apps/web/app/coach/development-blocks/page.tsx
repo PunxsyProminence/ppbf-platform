@@ -1126,15 +1126,15 @@ export default function CoachDevelopmentBlocksPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">The Next Several Weeks</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Development Plans</h1>
           <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            A development block is what you intend for one athlete over a window you choose, in your own
+            A development plan is what you intend for one athlete over a window you choose, in your own
             words. The platform stores it and reads it back. It does not score it, grade it, or move it
             along on its own.
           </p>
           <Link href="/coach/session-scripts" className="btn btn--ghost mt-[var(--s4)]">
-            Session Scripts
+            Session Plans
           </Link>
         </header>
 

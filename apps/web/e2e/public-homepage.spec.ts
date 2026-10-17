@@ -142,13 +142,13 @@ test.describe('Public homepage', () => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Log In' }).first().click();
     await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   });
 
   test('login route still exposes Microsoft and PIN sign-in options', async ({ page }) => {
     const response = await page.goto('/login');
     expect(response?.ok()).toBeTruthy();
-    await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 
     // This asserted on one exact sentence of lede copy, which then got
     // rewritten, so the test failed for a reason that had nothing to do with
@@ -220,7 +220,7 @@ test.describe('Public homepage', () => {
     for (const shape of shapes) {
       await page.setViewportSize({ width: shape.width, height: shape.height });
       await page.goto('/login');
-      await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
       await expect(page.getByText(notice)).toBeVisible();
 
       const audit = await page.evaluate(() => {
