@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
         ? buildFightCard(
           {
             accountId: identity.accountId,
+            athleteId: identity.athleteId,
             fullName: identity.fullName,
             ringName: profile.nicknameClearedAt ? null : profile.nickname,
             corner: profile.corner,
@@ -81,6 +82,7 @@ export async function GET(request: NextRequest) {
               && profile.photoReviewState !== 'blocked'
               && profile.photoReviewState !== 'removed',
             viewerRole: principal.role,
+            viewerAccountId: principal.accountId,
           },
           now,
         )
