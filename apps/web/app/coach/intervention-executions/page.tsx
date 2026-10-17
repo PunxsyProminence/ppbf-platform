@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
 import { formatGymDateShort } from '@/src/lib/gymTime';
+import ClusterNav from '@/components/ClusterNav';
 
 // Intervention executions (module 026 slice 2): what was ACTUALLY
 // delivered against a protocol. The planned column is a snapshot from the
@@ -339,6 +340,7 @@ export default function InterventionExecutionsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>The Work</h1>
+            <ClusterNav cluster="interventions" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               What actually got delivered against each protocol. The plan is frozen when work
               starts; what happened is recorded beside it — deviations named, stops explained,
