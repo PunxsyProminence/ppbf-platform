@@ -322,7 +322,7 @@ export default function CoachAssessmentsPage() {
           )}
           {rosterState === 'loaded' && athletes.length === 0 && (
             <p className="t-body text-[color:var(--bone-300)]">
-              You are not the coach of record for any athlete and hold no active coverage.
+              There are no active athletes in your gym yet.
             </p>
           )}
           {dataState === 'loading' && <p className="t-body">Loading…</p>}

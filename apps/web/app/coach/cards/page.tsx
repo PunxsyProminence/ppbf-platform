@@ -660,7 +660,7 @@ export default function CoachCardsPage() {
             )}
             {report.skipped.length > 0 && (
               <div className="mt-[var(--s3)]">
-                <p className="t-label">Skipped — not on your roster or coverage</p>
+                <p className="t-label">Skipped — not open to you</p>
                 <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                   {report.skipped.map((entry) => (
                     <li key={entry.athlete_id} className="t-body text-[length:var(--t-sm)]">{entry.athlete_name}</li>

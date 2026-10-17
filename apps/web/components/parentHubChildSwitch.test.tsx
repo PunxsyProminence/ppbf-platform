@@ -379,13 +379,64 @@ describe('authored announcements on the parent hub', () => {
     expect(screen.queryByText('Gym closed Monday for the holiday.')).not.toBeNull();
   });
 
+  // FC-07 (#1542, Q-1 A): announcements are a section of their own, labelled
+  // as posted for every family; the Messages tab holds only what was written
+  // to this family, and neither shows the other's items.
+  test('a gym announcement is labelled for every family and kept out of the Messages tab', async () => {
+    installFetch(
+      async () => jsonResponse({ ok: true, announcements: [announcement()] }),
+      undefined,
+      undefined,
+      async () => jsonResponse({
+        ok: true,
+        items: [{ note_id: 'msg-1', athlete_id: 'ath_1', athlete_name: 'First Child', note_text: 'Bring a mouthguard Thursday.', created_at: '2026-07-30T12:00:00.000Z', sender_role: 'coach', task: null }],
+      }),
+    );
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    const notices = screen.getByRole('region', { name: 'Gym announcements' });
+    expect(notices.textContent).toContain('Posted for every family at the gym, not a message to you.');
+    expect(notices.textContent).toContain('Gym closed Monday for the holiday.');
+    expect(notices.textContent).not.toContain('Bring a mouthguard Thursday.');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    });
+    expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
+    expect(screen.getByText(/What the coaches and gym staff wrote to your family about your child\. You can reply under a message\. Gym announcements for every family are at the top of the hub\./)).toBeTruthy();
+    expect(screen.getAllByText('Bring a mouthguard Thursday.')).toHaveLength(1);
+    expect(screen.getAllByText('Gym closed Monday for the holiday.')).toHaveLength(1);
+    expect(notices.contains(screen.getByText('Bring a mouthguard Thursday.'))).toBe(false);
+    // The help, opened, says what a guardian can actually do here.
+    await act(async () => {
+      fireEvent.click(screen.getByText('HELP: Messages from the coaches'));
+    });
+    expect(screen.getByText('Reply under a message to answer the gym')).toBeTruthy();
+    expect(screen.getByText('Tick a to-do as Done when it is done')).toBeTruthy();
+    expect(screen.queryByText('Ask questions about training')).toBeNull();
+  });
+
+  test('the overview button opens the Messages tab by its new name', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'View Messages from the Coaches' }));
+    });
+    expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
+  });
+
   test('nothing live leaves no heading and no empty box behind', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
     });
 
-    expect(screen.queryByText('Gym Notices')).toBeNull();
+    expect(screen.queryByText('Gym announcements')).toBeNull();
     expect(screen.queryByText('From the Gym')).toBeNull();
   });
 
@@ -397,7 +448,7 @@ describe('authored announcements on the parent hub', () => {
       render(<ParentHub />);
     });
 
-    expect(screen.queryByText('Gym Notices')).toBeNull();
+    expect(screen.queryByText('Gym announcements')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
   });
 });

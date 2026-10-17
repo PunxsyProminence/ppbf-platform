@@ -112,7 +112,7 @@ test('a refused tag (athlete not theirs) shows a plain message', async () => {
   await screen.findByText('No athletes tagged on this clip yet.');
   fireEvent.change(screen.getByLabelText('Athlete to tag'), { target: { value: 'ath-2' } });
   fireEvent.click(screen.getByText('Tag athlete'));
-  expect(await screen.findByText(/You can tag only athletes you coach/)).toBeTruthy();
+  expect(await screen.findByText(/You can tag only athletes of your own gym/)).toBeTruthy();
   expect(screen.queryByText(/Forbidden/)).toBeNull();
 });
 

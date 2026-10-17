@@ -45,6 +45,7 @@ type SchedulerClass = {
 type CoachOption = {
   account_id: string;
   label: string;
+  login: string;
 };
 
 type SchedulerRegistration = {
@@ -66,6 +67,17 @@ type SchedulerCoachingRequest = {
   assigned_coach_account_id?: string | null;
   created_at: string;
 };
+
+/* A request nobody answered before its preferred time read "pending" for
+   months (F-043). It is still pending in the data and staff can still resolve
+   it; the line just says the time has gone. Wording PROPOSED. */
+function coachingRequestStatusText(item: SchedulerCoachingRequest, nowMs: number): string {
+  const preferredMs = Date.parse(item.preferred_at);
+  if (item.status === 'pending' && Number.isFinite(preferredMs) && preferredMs < nowMs) {
+    return 'not answered, and the preferred time has passed';
+  }
+  return item.status;
+}
 
 type MembershipFlag = {
   membership_id: string;
@@ -136,9 +148,10 @@ type CheckInHoldWarning = {
   reason_category: string;
   athlete_explanation: string;
   lift_condition_text: string;
-  // The coach marked an athlete on their class register whom they do not
-  // otherwise coach: the route says the athlete is held and at what scope,
-  // and keeps the reason and the lift condition with the athlete's own coach.
+  // The route withholds the reason and the lift condition for an athlete
+  // beyond the marker's reach -- since issue #1480, for a coach, only an
+  // athlete who is not live in their gym -- and still says the athlete is
+  // held and at what scope.
   details_withheld: boolean;
 };
 
@@ -208,7 +221,7 @@ function coachOptionsFrom(members: unknown): CoachOption[] {
       return [];
     }
     const login = typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : member.account_id;
-    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})` }];
+    return [{ account_id: member.account_id, label: `${deriveCoachDisplayName(login)} (${login})`, login }];
   });
 }
 
@@ -270,6 +283,14 @@ export default function SchedulerPage() {
   // The moment the page opened: what "today" and "has this class ended" are
   // measured from (#1524). Read once, so a render never asks the clock.
   const [nowMs] = useState(() => Date.now());
+  // Cancel Class goes once the class starts (#1595), so the page that stays
+  // open across a start needs a clock that moves. Ticked in an effect, not
+  // read in render. The stale coaching-request line reads it too (F-043).
+  const [cancelClockMs, setCancelClockMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCancelClockMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -458,9 +479,15 @@ export default function SchedulerPage() {
     }
   }
 
+  // The class a register is marked for: the selected class unless it is
+  // cancelled, which the picker no longer offers (#1596). With none, the
+  // picker reads unchosen and no group claims a cancelled class's athletes.
+  const markClassId = classes.some((item) => item.class_id === selectedClassId && item.status !== 'cancelled')
+    ? selectedClassId
+    : '';
   const registeredForSelectedClass = new Set(
     registrations
-      .filter((row) => row.class_id === selectedClassId && row.status === 'registered')
+      .filter((row) => row.class_id === markClassId && row.status === 'registered')
       .map((row) => row.athlete_id),
   );
 
@@ -478,6 +505,17 @@ export default function SchedulerPage() {
   const today = gymDayIso(nowMs);
   // Nobody marks a register for a cancelled class (#1536); the route refuses it.
   const selectedClassCancelled = selectedClass?.status === 'cancelled';
+  // A family with no class at all today has nothing to check in to; the card
+  // says so in one sentence instead of offering pickers with no button (#1596).
+  // Only when the schedule was read: a failed read says nothing about today.
+  const familyHasClassToday = Boolean(
+    today && classes.some((item) => item.status !== 'cancelled' && gymDayIso(item.start_at) === today),
+  );
+  const noClassToday = isFamily && !schedulerFailed && !familyHasClassToday;
+  // The picker offers only classes that are not cancelled; a selection that is
+  // not among them shows as unchosen rather than as a class it is not.
+  const pickerClasses = classes.filter((item) => item.status !== 'cancelled');
+  const pickerHasSelection = markClassId !== '';
   const familyCanCheckIn = Boolean(
     selectedClass
       && !selectedClassCancelled
@@ -507,13 +545,37 @@ export default function SchedulerPage() {
     const endsMs = Date.parse(item.end_at);
     return item.status !== 'cancelled' && !(Number.isFinite(endsMs) && endsMs < nowMs);
   };
+  /* Nobody cancels a class once it has started (#1595). The server's
+     can_cancel says so at load; this takes the button off a class that starts
+     while the page is open (within the clock's 15-second tick). A press after
+     the start is refused by the server. */
+  const notYetStarted = (item: SchedulerClass) => {
+    const startsMs = Date.parse(item.start_at);
+    return Number.isFinite(startsMs) && startsMs > cancelClockMs;
+  };
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
-  // The admin reads coaches by name (#1536, Q3); a coach keeps the stored
-  // value until a coach-readable name source exists.
-  const coachNames = new Map(coachOptions.map((option) => [option.account_id, option.label]));
-  const staffName = (accountId: string) => coachNames.get(accountId) ?? accountId;
+  /* WHO REGISTER REGISTERS (#1596). For an athlete it is themselves. For a
+     parent or staff it is the athlete selected in the picker above, which
+     the button used to leave unnamed: a coach's tap on a class row
+     registered whoever that picker happened to show. The button now says
+     who, as the picker does: the name, or the id when there is no name. */
+  const registerTarget = athletes.find((item) => item.athlete_id === targetAthlete);
+  const registerTargetName = role === 'athlete' || !targetAthlete
+    ? null
+    : registerTarget?.full_name?.trim() || targetAthlete;
+  // A class row names its coach, never the login (#1596; OD-2026-10-06-025
+  // "Show coach name, hide ID"). The name is derived as the server derives a
+  // coach's signature (coachDisplayName.ts): from the login on the admin's
+  // staff list when there is one, otherwise from the stored account id when it
+  // is an email-shaped login. Any other id is not turned into a name: the row
+  // says the name is not available, as the athletes page does (F-058).
+  const coachLogins = new Map(coachOptions.map((option) => [option.account_id, option.login]));
+  const staffName = (accountId: string) => {
+    const login = coachLogins.get(accountId) || (accountId.includes('@') ? accountId : '');
+    return login ? deriveCoachDisplayName(login) : 'coach name not available';
+  };
 
   /* One class row, in the upcoming list or under Past and cancelled (#1536).
      A cancelled class offers nothing; Cancel Class shows where the server
@@ -554,7 +616,7 @@ export default function SchedulerPage() {
             disabled={actionInFlight}
             className="btn disabled:opacity-60 disabled:grayscale"
           >
-            Register
+            {registerTargetName ? `Register ${registerTargetName}` : 'Register'}
           </button>
         ) : null}
         {roleCanManageClasses(role) && classIsUpcoming(item) ? (
@@ -567,7 +629,7 @@ export default function SchedulerPage() {
             Cover Class
           </button>
         ) : null}
-        {item.can_cancel ? (
+        {item.can_cancel && notYetStarted(item) ? (
           <button
             type="button"
             onClick={() => {
@@ -849,20 +911,31 @@ export default function SchedulerPage() {
               <section className="grid gap-4 lg:grid-cols-2">
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
+                  {noClassToday ? (
+                    <p className="t-body">There is no class today to check in to.</p>
+                  ) : null}
+                  {noClassToday ? null : (
                   <select
-                    value={selectedClassId}
+                    aria-label="Class"
+                    value={pickerHasSelection ? selectedClassId : ''}
                     onChange={(e) => {
                       setSelectedClassId(e.target.value);
                       setCheckInHold(null);
                     }}
                     className="input"
                   >
-                    {classes.map((item) => (
+                    {pickerHasSelection ? null : (
+                      <option value="">{pickerClasses.length > 0 ? 'Choose a class' : 'No class to mark'}</option>
+                    )}
+                    {/* A cancelled class is not offered (#1596): nobody marks a
+                        register for it, and the route refuses it. */}
+                    {pickerClasses.map((item) => (
                       <option key={item.class_id} value={item.class_id}>
-                        {item.title} ({formatGymDateNumeric(item.start_at)}){item.status === 'cancelled' ? ' (cancelled)' : ''}
+                        {item.title} ({formatGymDateNumeric(item.start_at)})
                       </option>
                     ))}
                   </select>
+                  )}
 
                   {/* The class register (OD-2026-10-07-008 ruling 4): the coach,
                       cover or scheduler marks everyone registered to the
@@ -870,7 +943,7 @@ export default function SchedulerPage() {
                       present as a walk-in. The groups say which is which before
                       the tap, not after a refusal. A parent's list is their own
                       children and stays flat. */}
-                  {roleCanOverrideAttendance(role) && athletes.length > 0 ? (
+                  {roleCanOverrideAttendance(role) && athletes.length > 0 && markClassId ? (
                     <select
                       aria-label="Athlete to mark"
                       value={selectedAthleteId}
@@ -892,7 +965,7 @@ export default function SchedulerPage() {
                         ))}
                       </optgroup>
                     </select>
-                  ) : role === 'parent' && athletes.length > 0 ? (
+                  ) : role === 'parent' && athletes.length > 0 && !noClassToday ? (
                     <select
                       aria-label="Athlete to mark"
                       value={selectedAthleteId}
@@ -907,7 +980,7 @@ export default function SchedulerPage() {
                     </select>
                   ) : null}
 
-                  {!isFamily ? (
+                  {!isFamily && markClassId ? (
                     <select
                       value={attendanceStatus}
                       onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
@@ -925,7 +998,7 @@ export default function SchedulerPage() {
                       already uses .textarea correctly a few dozen lines above;
                       @layer base does not floor a textarea, so the tap height
                       is stated here. */}
-                  {!isFamily ? (
+                  {!isFamily && markClassId ? (
                     <textarea
                       value={attendanceNote}
                       onChange={(e) => setAttendanceNote(e.target.value)}
@@ -934,7 +1007,7 @@ export default function SchedulerPage() {
                     />
                   ) : null}
 
-                  {(!isFamily && !selectedClassCancelled) || familyCanCheckIn ? (
+                  {(!isFamily && markClassId) || familyCanCheckIn ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -974,7 +1047,7 @@ export default function SchedulerPage() {
                       </p>
                       {shownCheckInHold.details_withheld ? (
                         <p className="t-body mt-[var(--s3)]">
-                          The reason and what lifts it are with this athlete&apos;s own coach.
+                          The reason and what lifts it are not shown to you here.
                         </p>
                       ) : (
                         <>
@@ -1052,7 +1125,7 @@ export default function SchedulerPage() {
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
                       <p className="text-[color:var(--bone-300)]">
-                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}
+                        Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
@@ -1061,7 +1134,7 @@ export default function SchedulerPage() {
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">
-                            Coach to assign (their coach of record, or a coach holding active coverage)
+                            Coach to assign (any coach of the gym)
                           </label>
                           {/* Picked by name from the gym's active coaches, never
                               typed as an id (#1536). No free-text fallback: a

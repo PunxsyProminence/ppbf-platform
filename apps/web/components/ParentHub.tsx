@@ -1061,11 +1061,16 @@ export default function ParentHub() {
         {/* This hub asks for its own surface. 'parent_hub' draws what an
             author addressed to guardians, and the read includes 'everywhere'
             by definition, so gym-wide items still arrive; items placed on the
-            athlete or coach workspace still do not. */}
+            athlete or coach workspace still do not.
+            Labelled as posted for every family, so a guardian never takes it
+            for a message written to them; those are on the Messages tab
+            (#1542, FC-07; Q-1 A: announcements stay out of the message
+            history). */}
         <AnnouncementBanner
           placement="parent_hub"
           kind="notice"
-          heading="Gym Notices"
+          heading="Gym announcements"
+          note="Posted for every family at the gym, not a message to you."
           className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
 
@@ -1236,7 +1241,7 @@ export default function ParentHub() {
                     onClick={() => setActiveTab('messages')}
                     className="btn btn--ghost w-full"
                   >
-                    View Coach Messages
+                    View Messages from the Coaches
                   </button>
                   <button
                     type="button"
@@ -1608,20 +1613,25 @@ export default function ParentHub() {
           {activeTab === 'messages' && (
             <div className="space-y-6 panel-settle">
               <HelpPanel
-                title="Coach Messages"
-                description="Receive updates and messages from coaches about your child's progress."
+                title="Messages from the coaches"
+                description="Each message here was written by a coach or the gym's staff to your family, about your child. Gym-wide announcements are not messages; they sit at the top of the hub."
                 usage={[
-                  'Check regularly for coach updates',
-                  'Respond to coach requests promptly',
-                  'Ask questions about training',
-                  'Share relevant home observations'
+                  'Read each message the coaches wrote to your family',
+                  'Reply under a message to answer the gym',
+                  'Tick a to-do as Done when it is done',
+                  'Share what you see at home on the Observations tab'
                 ]}
                 mistakes={[
-                  'Ignoring coach messages',
-                  'Delayed responses to urgent matters',
-                  'Not sharing important information'
+                  'Looking here for gym-wide announcements (they are at the top of the hub)',
+                  'Leaving a to-do unticked after it is done'
                 ]}
               />
+
+              {/* What this tab holds, always on screen (FC-07): only what was
+                  written to this family; gym announcements are not here. */}
+              <p className="t-body">
+                What the coaches and gym staff wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub.
+              </p>
 
               {/* A read that did not answer is not an empty inbox.
                   `messagesLoaded` stays false when /api/pilot/parent/messages

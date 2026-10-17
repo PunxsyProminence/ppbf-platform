@@ -7,6 +7,13 @@ import { query, sanitizedSqlState } from '@/src/server/pilot/db';
 import { isUuid, requirePrincipal, jsonError } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { fileUnansweredShadowQuestion, mayFileUnansweredQuestion } from '@/src/server/pilot/shadowResearchFiling';
+import {
+  detectShadowDisclosure,
+  fileShadowDisclosureEscalation,
+  isCriticalShadowDisclosure,
+  markShadowDisclosure,
+  SHADOW_DISCLOSURE_CLASSIFICATION,
+} from '@/src/server/pilot/shadowDisclosure';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   validateShadowRequest,
@@ -527,6 +534,8 @@ function resolveSessionType(input: {
 type ShadowChatExit = {
   /** Writes this request's request-risk review row, once. Never throws. */
   writeRequestRiskReview: (() => Promise<void>) | null;
+  /** Files an athlete's SHADOW disclosure escalation (shadowDisclosure.ts). */
+  fileDisclosureEscalation: (() => Promise<unknown>) | null;
 };
 
 // THE REQUEST-RISK REVIEW ROW IS WRITTEN HERE, AT THE EXIT, for every path
@@ -542,13 +551,23 @@ type ShadowChatExit = {
 // decided, a response that says "not signed in", "not allowed" or "not found"
 // leaves no safety row behind it.
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
-  const atExit: ShadowChatExit = { writeRequestRiskReview: null };
+  const atExit: ShadowChatExit = { writeRequestRiskReview: null, fileDisclosureEscalation: null };
   const response = await handleShadowChat(request, atExit);
   if (atExit.writeRequestRiskReview && ![401, 403, 404].includes(response.status)) {
     try {
       await atExit.writeRequestRiskReview();
     } catch {
       console.error('SHADOW human-review queue write failed');
+    }
+  }
+  // Every outcome swallowed and nothing in the response depends on it, as for
+  // athleteVoice: a response difference only disclosures could produce would
+  // tell whoever is beside the child that the words were caught.
+  if (atExit.fileDisclosureEscalation && ![401, 403, 404].includes(response.status)) {
+    try {
+      await atExit.fileDisclosureEscalation();
+    } catch {
+      console.error('SHADOW disclosure escalation write failed');
     }
   }
   return response;
@@ -696,7 +715,15 @@ async function handleShadowChat(
     // high-risk handoff even when it also fails an authorization check. A 403
     // that pre-empts "chest pain" answers the wrong question about the wrong
     // thing. The refusal below therefore defers to it.
-    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+    //
+    // An athlete's disclosure (F-076) is marked high-risk here when the
+    // validator did not mark it: the admin review row becomes owed and the
+    // words stay out of the research feed. The answer is unchanged -- see
+    // shadowDisclosure.ts.
+    const shadowDisclosure = detectShadowDisclosure(message, userRole);
+    const baseRequestValidation = validateShadowRequest(message, userRole, organizationId);
+    const requestValidation = markShadowDisclosure(baseRequestValidation, shadowDisclosure);
+    const disclosureMarked = requestValidation !== baseRequestValidation;
 
     // -----------------------------------------------------------------
     // THE HUMAN-REVIEW WRITES.
@@ -783,8 +810,13 @@ async function handleShadowChat(
       return { result: 'failed', error: lastError };
     };
 
+    // A disclosure the Tell us box would file 'critical' (crisis, harm,
+    // grooming) takes the critical review allowance (Overwatch, 2026-10-15):
+    // routine rows in the hour cannot stop its row being written. The owner's
+    // three an hour is unchanged.
     const reviewIsCritical = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-      .includes(requestValidation.classification ?? '');
+      .includes(requestValidation.classification ?? '')
+      || isCriticalShadowDisclosure(shadowDisclosure);
     const reviewSeverity = reviewIsCritical ? ('critical' as const) : ('high' as const);
 
     // THE REQUEST-RISK ROW: DECIDED HERE, WRITTEN ONCE WHEN THE REQUEST ENDS.
@@ -854,7 +886,9 @@ async function handleShadowChat(
       withheld: false,
       outcome: { result: 'not_attempted' },
       conversationId: requestedConversationId,
-      category: requestValidation.topic ?? 'safety_boundary',
+      category: requestValidation.classification === SHADOW_DISCLOSURE_CLASSIFICATION
+        ? SHADOW_DISCLOSURE_CLASSIFICATION
+        : (requestValidation.topic ?? 'safety_boundary'),
       metadata: {
         sessionType,
         athleteScoped: Boolean(athleteId),
@@ -963,6 +997,18 @@ async function handleShadowChat(
     // not owe is owed from here; not before.
     if (requestRiskState.awaitingAuthorization) {
       requestRiskState.owed = true;
+    }
+    // The disclosure escalation is owed from the same point: authenticated,
+    // authorized and inside the chat limits, which bound how many one account
+    // can file. It is filed at the exit so it can carry the conversation the
+    // exchange was stored in.
+    if (shadowDisclosure) {
+      atExit.fileDisclosureEscalation = () => fileShadowDisclosureEscalation({
+        organizationId,
+        athleteId: principal.athleteId,
+        conversationId: requestRiskState.conversationId ?? null,
+        disclosure: shadowDisclosure,
+      });
     }
 
 
@@ -1713,7 +1759,7 @@ async function handleShadowChat(
     // human review, handed off, or touched by a filter must not be copied into the
     // coaches' research feed (OD-2026-10-07-009 ruling 4). Each fact below is a
     // separate guard in mayFileUnansweredQuestion.
-    const researchFilingAllowed = mayFileUnansweredQuestion({
+    const researchFilingFacts = {
       state,
       requiresHumanReview: persistedRequiresHumanReview,
       hasHandoff: Boolean(persistedHandoff),
@@ -1725,8 +1771,22 @@ async function handleShadowChat(
       requestFlagged: Boolean(requestValidation.classification)
         || (Boolean(requestValidation.topic) && requestValidation.topic !== 'none'),
       requestRiskOwed: requestRiskState.owed,
+    };
+    const researchFilingAllowed = mayFileUnansweredQuestion(researchFilingFacts);
+    const researchNoticeApplies = unsupportedAnswer && !libraryEmpty && !evidenceBundle.retrievalDegraded;
+    // A disclosure (F-076) is never filed as research, but the athlete is told
+    // what main would have told them: "Passed to the gym administrator." is
+    // true, because the escalation and the admin review row are that hand-off,
+    // and a note that vanished only for disclosures would tell whoever is
+    // beside the child that the words were caught.
+    const mainWouldHaveFiled = disclosureMarked && mayFileUnansweredQuestion({
+      ...researchFilingFacts,
+      requestHighRisk: baseRequestValidation.highRisk === true,
+      requestFlagged: Boolean(baseRequestValidation.classification)
+        || (Boolean(baseRequestValidation.topic) && baseRequestValidation.topic !== 'none'),
+      requestRiskOwed: false,
     });
-    const researchFiled = researchFilingAllowed && unsupportedAnswer && !libraryEmpty && !evidenceBundle.retrievalDegraded
+    const researchFiled = researchFilingAllowed && researchNoticeApplies
       ? await fileUnansweredShadowQuestion({
         organizationId,
         accountId: userId,
@@ -1735,7 +1795,7 @@ async function handleShadowChat(
         athleteId: athleteId || null,
         askerAthleteId: principal.athleteId ?? null,
       })
-      : false;
+      : mainWouldHaveFiled && researchNoticeApplies;
 
     return NextResponse.json({
       success: state === 'ok' || state === 'queued',

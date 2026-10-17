@@ -95,6 +95,15 @@ test('no live run: no TV switch is offered', async () => {
   expect(screen.queryByText('NOT ON THE TV')).toBeNull();
 });
 
+// F-060: the TV has shown sessions since Release 21; the switch alone puts
+// nothing on it, the coach sends the run from Gym TVs.
+test('the line under the switch says how the session reaches a TV, not that TVs cannot show it', async () => {
+  await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
+
+  expect(screen.getByText('Switching this on lets you send the session to a gym TV from Gym TVs below.')).toBeTruthy();
+  expect(screen.queryByText(/does not show sessions yet/)).toBeNull();
+});
+
 test('a live run starts off the TV and the switch sends show:true, then shows the server state', async () => {
   const fetchMock = await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
 

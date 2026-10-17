@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
-import { getCoachDisplayName } from './achievements';
+import { getStaffAuthorName, STAFF_AUTHOR_NAME_FLOOR } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
@@ -58,7 +58,7 @@ export interface AthleteCapacityNoteRow {
   note: string;
   author_account_id: string;
   author_role: CapacityNoteRole;
-  /** The author's display name (getCoachDisplayName); callers show this, never the account id. */
+  /** The author's display name (getStaffAuthorName, by author_role); callers show this, never the account id. */
   author_name: string;
   created_at: string;
   /**
@@ -151,15 +151,20 @@ async function assertNoteAccess(actor: ActorIdentity, athleteId: string): Promis
   throw new ForbiddenError('This account may not read or write capacity notes for this athlete.', 'CAPACITY_NOTE_NOT_PERMITTED');
 }
 
-async function withAuthorNames<Row extends { author_account_id: string }>(
+async function withAuthorNames<Row extends { author_account_id: string; author_role: string }>(
   organizationId: string,
   rows: Row[],
 ): Promise<(Row & { author_name: string })[]> {
+  // Keyed by role too: an admin's note is not signed "Coach" (F-058). A role
+  // has no colon, so the key is unambiguous.
+  const keyOf = (row: Row) => `${row.author_role}:${row.author_account_id}`;
   const names = new Map<string, string>();
-  for (const id of new Set(rows.map((row) => row.author_account_id))) {
-    names.set(id, await getCoachDisplayName(organizationId, id));
+  for (const row of rows) {
+    if (!names.has(keyOf(row))) {
+      names.set(keyOf(row), await getStaffAuthorName(organizationId, row.author_account_id, row.author_role));
+    }
   }
-  return rows.map((row) => ({ ...row, author_name: names.get(row.author_account_id) ?? 'Your coach' }));
+  return rows.map((row) => ({ ...row, author_name: names.get(keyOf(row)) ?? STAFF_AUTHOR_NAME_FLOOR }));
 }
 
 /**

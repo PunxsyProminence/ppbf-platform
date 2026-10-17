@@ -6,6 +6,7 @@ import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
   editSessionScript,
+  markSessionScriptReviewed,
   setSessionScriptRetired,
 } from '@/src/server/pilot/sessionScriptAuthoring';
 import { getSessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
@@ -32,6 +33,7 @@ jest.mock('@/src/server/pilot/sessionScriptAuthoring', () => {
     createSessionScriptFromTemplate: jest.fn(),
     editSessionScript: jest.fn(),
     setSessionScriptRetired: jest.fn(),
+    markSessionScriptReviewed: jest.fn(),
   };
 });
 
@@ -44,6 +46,7 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCreate = createSessionScriptFromTemplate as jest.Mock;
 const mockEdit = editSessionScript as jest.Mock;
 const mockRetire = setSessionScriptRetired as jest.Mock;
+const mockReview = markSessionScriptReviewed as jest.Mock;
 const mockDetail = getSessionScriptWithDetail as jest.Mock;
 
 // Every PilotRole (contracts.ts), as a record so a role added to the union
@@ -336,5 +339,80 @@ describe('PATCH /api/pilot/session-scripts with `retired`', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_CHANGED' });
+  });
+});
+
+describe('PATCH /api/pilot/session-scripts with `reviewed` (F-092)', () => {
+  beforeEach(() => {
+    mockReview.mockResolvedValue({ outcome: 'reviewed', script_id: 'scr-1', version: 1 });
+  });
+
+  it.each(ROLES)('%s: marking a plan reviewed is admitted only for a coach or an organization admin', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    const response = await patch({ ...EDIT, reviewed: true });
+
+    if (MAY_AUTHOR[role]) {
+      expect(response.status).toBe(200);
+      expect(mockReview).toHaveBeenCalledTimes(1);
+    } else {
+      expect(response.status).toBe(403);
+      expect(mockReview).not.toHaveBeenCalled();
+      expect(mockDetail).not.toHaveBeenCalled();
+    }
+  });
+
+  it("marks in the principal's gym, as the principal, in the state the screen read, and calls nothing else", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach-7', organizationId: 'org-9' }));
+
+    const response = await patch({ ...EDIT, reviewed: true });
+
+    expect(mockReview).toHaveBeenCalledWith({
+      organizationId: 'org-9',
+      actorAccountId: 'coach-7',
+      actorRole: 'coach',
+      scriptId: 'scr-1',
+      expectedUpdatedAt: READ_AT,
+    });
+    expect(mockEdit).not.toHaveBeenCalled();
+    expect(mockRetire).not.toHaveBeenCalled();
+    expect(mockDetail).toHaveBeenCalledWith('org-9', 'scr-1');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ outcome: 'reviewed', script: STORED });
+  });
+
+  it('is its own request, and only `true`: a review is not taken back', async () => {
+    for (const body of [
+      { ...EDIT, reviewed: false },
+      { ...EDIT, reviewed: 'yes' },
+      { ...EDIT, reviewed: null },
+      { ...EDIT, reviewed: true, name: 'Renamed' },
+      { ...EDIT, reviewed: true, blocks: [BLOCK] },
+      { ...EDIT, reviewed: true, retired: false },
+    ]) {
+      const response = await patch(body);
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'reviewed' });
+    }
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockRetire).not.toHaveBeenCalled();
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it('requires the state the screen read', async () => {
+    const response = await patch({ script_id: 'scr-1', reviewed: true });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'expected_updated_at' });
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  it('answers a retired plan with 409 and its code', async () => {
+    mockReview.mockRejectedValue(new SessionScriptAuthoringError('SESSION_SCRIPT_RETIRED', 409));
+
+    const response = await patch({ ...EDIT, reviewed: true });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_SCRIPT_RETIRED' });
   });
 });

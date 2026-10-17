@@ -57,7 +57,7 @@ function useAthleteRead<T>(path: string, athleteId: string, attempt: number): Re
   return read;
 }
 
-const NO_ACCESS = 'You don’t have access to this athlete’s records. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
+const NO_ACCESS = 'You don’t have access to this athlete’s records. They are shown to the coaches and organization admins of the athlete’s own gym.';
 const READ_FAILED = 'This could not be loaded. That is not a statement that nothing is recorded -- try again in a minute.';
 
 function ReadState({ read, onRetry, label }: { read: Read<unknown>; onRetry: () => void; label: string }) {

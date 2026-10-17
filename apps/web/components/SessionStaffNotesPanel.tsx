@@ -23,6 +23,16 @@ import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime'
 // Authorization is the route's: this panel sends the form and shows what the
 // server answers. A read that did not land is shown as unknown, never as "no
 // notes".
+//
+// ON A SESSION OR ON A RUN. The same notes, the same route, either on the
+// athlete's own session (sessionId) or on the athlete in a session a coach ran
+// (runId, audit finding F-067), where the server takes a note only for an
+// athlete marked present in that run. Exactly one of the two is given.
+//
+// A WRITE IS REPORTED AS THE SERVER ANSWERED IT. A yes (2xx) is a yes. The
+// route's own refusals (400, 401, 403, 404, 409, 422) say the note was not
+// saved. Anything else, or no answer, says it is not known, and the list is
+// read again so the coach can see.
 
 interface NoteRow {
   note_id: string;
@@ -50,7 +60,21 @@ function isNoteRow(value: unknown): value is NoteRow {
 
 const ROUTE = '/api/pilot/coach/session-staff-notes';
 
-export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessionId: string; athleteId: string }) {
+// The route's own refusals: the server said no and wrote nothing.
+const REFUSAL_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+
+type Subject = { sessionId: string; runId?: undefined } | { runId: string; sessionId?: undefined };
+
+export default function SessionStaffNotesPanel(
+  props: Subject & {
+    athleteId: string;
+    /** The closed button's words, when "on this session" is not enough (several athletes on one screen). */
+    buttonLabel?: string;
+  },
+) {
+  const { athleteId, buttonLabel } = props;
+  const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
+  const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState<{ noteId: string; text: string } | null>(null);
@@ -74,7 +98,7 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
     const landed = () => isOpen.current && latestRead.current === ticket;
     try {
       const response = await fetch(
-        `${apiBase()}${ROUTE}?session_id=${encodeURIComponent(sessionId)}&athlete_id=${encodeURIComponent(athleteId)}`,
+        `${apiBase()}${ROUTE}?${subjectKey}=${encodeURIComponent(subjectId)}&athlete_id=${encodeURIComponent(athleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
       const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
@@ -94,7 +118,7 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
       // Unknown is never shown as "no notes".
       if (landed()) setReading({ state: 'unavailable' });
     }
-  }, [athleteId, sessionId]);
+  }, [athleteId, subjectId, subjectKey]);
 
   const toggle = useCallback(() => {
     setEditing(null);
@@ -131,7 +155,15 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
             : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(request.body) }),
         });
         const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
-        if (!response.ok || !payload || payload.ok !== true) {
+        if (!response.ok && !REFUSAL_STATUSES.has(response.status)) {
+          setRefusal({
+            heading: 'NOT KNOWN',
+            text: `It is not known whether the note was ${failed.verb} (${response.status}). Check the list below before trying again.`,
+          });
+          if (isOpen.current) await read();
+          return;
+        }
+        if (!response.ok) {
           setRefusal({
             heading: failed.heading,
             text: typeof payload?.error === 'string' && payload.error
@@ -163,7 +195,7 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
 
   const add = () => write(
     'add',
-    { url: ROUTE, method: 'POST', body: { session_id: sessionId, athlete_id: athleteId, note: draft } },
+    { url: ROUTE, method: 'POST', body: { [subjectKey]: subjectId, athlete_id: athleteId, note: draft } },
     { heading: 'NOT SAVED', verb: 'saved' },
     () => setDraft(''),
   );
@@ -183,7 +215,10 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
   );
 
   const open = reading.state !== 'closed';
-  const panelId = `session-staff-notes-${sessionId}`;
+  // A run holds many athletes, so its panel ids carry the athlete too.
+  const panelId = props.runId !== undefined
+    ? `session-staff-notes-run-${props.runId}-${athleteId}`
+    : `session-staff-notes-${subjectId}`;
 
   return (
     <div className="mt-[var(--s3)]">
@@ -194,7 +229,7 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
         aria-controls={open ? panelId : undefined}
         onClick={toggle}
       >
-        {open ? 'Hide staff notes' : 'Staff notes on this session'}
+        {open ? 'Hide staff notes' : buttonLabel ?? 'Staff notes on this session'}
       </button>
 
       {open ? (

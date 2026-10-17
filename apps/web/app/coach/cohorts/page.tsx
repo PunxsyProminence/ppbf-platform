@@ -169,7 +169,7 @@ function CoachCohorts() {
           evidence_note: levelNote,
         }),
       });
-      if (response.status === 403) throw new Error('You can only set levels for athletes you coach or cover.');
+      if (response.status === 403) throw new Error('You can only set levels for athletes in your gym.');
       if (!response.ok) throw new Error('That level could not be saved.');
       const payload = (await response.json()) as { result?: { changed?: boolean }; report?: Report };
       if (payload.report) setReport(payload.report);

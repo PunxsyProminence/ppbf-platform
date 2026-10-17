@@ -18,7 +18,7 @@ import {
   rightsRefusalMessage,
   type ShadowLibraryRightsStatus,
 } from '@/src/server/pilot/shadowLibraryRights';
-import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
+import { SHADOW_LIBRARY_CURATOR_ROLES, SHADOW_SOURCE_ATTACH_ROLES } from '@/src/server/pilot/shadowRoleSets';
 import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
 export const runtime = 'nodejs';
@@ -76,10 +76,12 @@ function isSourceStatus(value: unknown): value is ShadowLibrarySourceStatus {
 // the driver as a cast error and surface as a 500. Reject it here as a 400.
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+// A coach reads the list to pick a source to attach to a research
+// requirement (A-Q13); registering and editing sources stay curator acts.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    requireRole(principal, [...SHADOW_SOURCE_ATTACH_ROLES]);
 
     const params = new URL(request.url).searchParams;
     const organizationId = resolveLibraryShelf(principal, params.get('shelf'), 'read');

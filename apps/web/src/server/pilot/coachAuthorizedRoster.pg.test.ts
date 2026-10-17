@@ -6,9 +6,9 @@
 // opposite things:
 //
 //   athleteIdsForCoach   the access contract. Membership.
-//   getAthletesForCoach  a DISPLAY projection that returns EVERY athlete in the
-//                        organization, redacting two fields for the ones this
-//                        coach is unrelated to. Names only.
+//   getAthletesForCoach  a DISPLAY projection that returns EVERY live athlete
+//                        of the organization (since issue #1480 PR C with no
+//                        fields redacted). Names only.
 //
 // Both halves already have their own real-database proofs
 // (athleteIdsForCoach.pg.test.ts, coachRosterFieldScope.pg.test.ts,

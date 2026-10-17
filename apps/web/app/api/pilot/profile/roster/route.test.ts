@@ -298,15 +298,39 @@ describe('the role gate is untouched', () => {
     }
   });
 
-  // OD-2026-10-05-024 ruling 2: a coach reads only their own athletes. The
-  // whole-organization roster is an organization admin's.
-  test('a coach asking for the whole organization is refused before any read runs', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal());
+  // Issue #1480 (OD-2026-10-11-007 replaced OD-2026-10-05-024 ruling 2): a
+  // coach reaches every athlete of their own gym, so the whole-organization
+  // roster is open to a coach too -- still this gym only, still live athletes.
+  test('a coach asking for the whole organization gets the live athletes of their own gym', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach-unassigned' }));
 
-    const response = await GET(makeRequest('?scope=organization'));
+    const items = await rosterItems('?scope=organization');
 
-    expect(response.status).toBe(403);
-    expect(mockQuery).not.toHaveBeenCalled();
+    expect(items.map((item) => item.athlete_id)).toEqual(['ATH-ACTIVE']);
+    const athletesCall = mockQuery.mock.calls.find(([sql]) => String(sql).includes('left join pilot.accounts'));
+    expect(athletesCall?.[1]).toEqual(['org-1']);
+  });
+
+  // Issue #1480 C2 (Q5): every coach of the gym is coach_of_subject, so a
+  // child's released portrait reaches a coach who is not the coach of record;
+  // "is_mine" still answers only for the coach of record.
+  test("a coach who is not the coach of record sees a child's released portrait, and is_mine stays false", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach-unassigned' }));
+
+    const [child] = await rosterItems('?scope=organization');
+
+    expect(child.photo_available).toBe(true);
+    expect(child.ring_name).toBe('Sparks');
+    expect(child.is_mine).toBe(false);
+  });
+
+  test("an organization admin still gets the plate for a child's portrait", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+
+    const [child] = await rosterItems('?scope=organization');
+
+    expect(child.photo_available).toBe(false);
+    expect(child.ring_name).toBeNull();
   });
 
   test('a role outside the gate is still refused before any read runs', async () => {

@@ -33,6 +33,11 @@ jest.mock('@/src/server/pilot/coachAthleteRoster', () => ({
   organizationActionableRoster: jest.fn(async () => []),
 }));
 
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  athleteIdsForCoach: jest.fn(async () => ['ath-7']),
+}));
+
 jest.mock('@/src/server/pilot/attendancePrecedence', () => ({
   attendanceOnDay: jest.fn(async () => []),
 }));
@@ -45,11 +50,12 @@ const mockAttendance = attendanceOnDay as jest.Mock;
 afterEach(() => jest.clearAllMocks());
 
 beforeEach(() => {
-  mockCoachRoster.mockResolvedValue([
+  // "My athletes" for this coach would be ath-7 alone; the gym is ath-1, ath-2.
+  mockCoachRoster.mockResolvedValue([{ athlete_id: 'ath-7', full_name: 'Mine Only' }]);
+  mockOrgRoster.mockResolvedValue([
     { athlete_id: 'ath-1', full_name: 'Rosa D.' },
     { athlete_id: 'ath-2', full_name: 'Jordan P.' },
   ]);
-  mockOrgRoster.mockResolvedValue([{ athlete_id: 'ath-9', full_name: 'Whole Gym' }]);
   mockAttendance.mockResolvedValue([]);
 });
 
@@ -69,13 +75,14 @@ const request = (qs = '') =>
   new NextRequest(`http://localhost/api/pilot/coach/attendance-today${qs}`);
 
 describe('the register is scoped by the roster contract, not by the request', () => {
-  test('a coach is asked about exactly the athletes the contract cleared', async () => {
+  test('a coach is asked about every live athlete of their own gym (issue #1480)', async () => {
     mockPrincipal.mockResolvedValue(principal());
 
     const response = await GET(request());
 
     expect(response.status).toBe(200);
-    expect(mockCoachRoster).toHaveBeenCalledWith('org-1', 'acct-coach-a');
+    expect(mockOrgRoster).toHaveBeenCalledWith('org-1');
+    expect(mockCoachRoster).not.toHaveBeenCalled();
     expect(mockAttendance.mock.calls[0][1]).toEqual(['ath-1', 'ath-2']);
   });
 
@@ -98,8 +105,9 @@ describe('the register is scoped by the roster contract, not by the request', ()
     expect(mockAttendance.mock.calls[0][0]).toBe('org-1');
   });
 
-  test('an admin reads the organization roster, and a coach never does', async () => {
+  test('an admin reads the same organization roster a coach does', async () => {
     mockPrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    mockOrgRoster.mockResolvedValue([{ athlete_id: 'ath-9', full_name: 'Whole Gym' }]);
 
     await GET(request());
 
@@ -115,6 +123,7 @@ describe('the register is scoped by the roster contract, not by the request', ()
 
     expect(response.status).toBe(403);
     expect(mockCoachRoster).not.toHaveBeenCalled();
+    expect(mockOrgRoster).not.toHaveBeenCalled();
     expect(mockAttendance).not.toHaveBeenCalled();
   });
 });
@@ -171,6 +180,19 @@ describe('marks are marks, and silence is not one', () => {
     expect(body.covered).toContain('ath-2');
   });
 
+  test("a coach is also told which athletes are their own (`mine`); an admin is not", async () => {
+    // The register covers the whole gym (issue #1480); "Not your athlete" on
+    // the workspace reads the coach's own set from `mine` instead.
+    mockPrincipal.mockResolvedValue(principal());
+    const coachBody = await (await GET(request())).json();
+    expect(coachBody.covered).toEqual(['ath-1', 'ath-2']);
+    expect(coachBody.mine).toEqual(['ath-7']);
+
+    mockPrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    const adminBody = await (await GET(request())).json();
+    expect(adminBody).not.toHaveProperty('mine');
+  });
+
   test('the response names which athletes it covered', async () => {
     mockPrincipal.mockResolvedValue(principal());
     mockAttendance.mockResolvedValue([
@@ -181,7 +203,7 @@ describe('marks are marks, and silence is not one', () => {
 
     /* WITHOUT THIS THE CALLER CANNOT TELL TWO THINGS APART. The workspace
        roster comes from a route that returns every athlete in the
-       organization; this one is scoped by the access contract and is
+       organization; this one is scoped by the access contract, which can be
        narrower. An athlete missing from `marks` is either covered-and-
        unmarked or never asked about, and only `covered` distinguishes them --
        the surface rendered both as "no mark yet" until it existed. */
@@ -204,7 +226,7 @@ describe('marks are marks, and silence is not one', () => {
 
   test('a coach with an empty roster asks the database nothing', async () => {
     mockPrincipal.mockResolvedValue(principal());
-    mockCoachRoster.mockResolvedValue([]);
+    mockOrgRoster.mockResolvedValue([]);
 
     const body = await (await GET(request())).json();
 

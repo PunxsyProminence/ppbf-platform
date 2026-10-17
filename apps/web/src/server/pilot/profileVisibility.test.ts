@@ -271,14 +271,26 @@ describe('resolveRelationship is the cross-family boundary', () => {
     expect(decideRingName(subject(), relationship, NOW)).toBeNull();
   });
 
-  it('gives the coach of record "coach_of_subject" and any other coach "organization_staff"', async () => {
+  // Issue #1480 C2 (Q5, "Any coach all coaches coach all athletes"): every
+  // coach of the athlete's gym is coach_of_subject; the admin stays outside.
+  it('gives every coach of the gym "coach_of_subject" and the organization admin "organization_staff"', async () => {
     await expect(resolveRelationship(
       viewer({ role: 'coach', accountId: 'acct-coach' }), athleteSubject(), 'org-1',
     )).resolves.toBe('coach_of_subject');
 
     await expect(resolveRelationship(
       viewer({ role: 'coach', accountId: 'acct-other-coach' }), athleteSubject(), 'org-1',
+    )).resolves.toBe('coach_of_subject');
+
+    await expect(resolveRelationship(
+      viewer({ role: 'organization_admin', accountId: 'acct-admin' }), athleteSubject(), 'org-1',
     )).resolves.toBe('organization_staff');
+  });
+
+  it("a coach of another gym is nobody to the athlete", async () => {
+    await expect(resolveRelationship(
+      viewer({ role: 'coach', accountId: 'acct-coach', organizationId: 'org-2' }), athleteSubject(), 'org-1',
+    )).resolves.toBe('none');
   });
 
   it('refuses across organizations before it looks anything up', async () => {
