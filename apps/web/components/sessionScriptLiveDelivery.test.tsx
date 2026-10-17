@@ -391,7 +391,9 @@ describe('the Show on TV switch', () => {
     });
 
     expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('SOMETHING_ELSE');
+    // Words, never the stored code (UXB-09).
+    expect(screen.getByRole('alert')).toHaveTextContent('That did not go through. Nothing was changed. Try again.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('SOMETHING_ELSE');
   });
 
   // F-060: the TV has shown sessions since Release 21. The switch alone puts
@@ -452,8 +454,7 @@ describe('block movement always names the target block', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
     });
 
-    expect(screen.getByRole('alert').textContent).toContain('not part of this session\'s script');
-    expect(screen.getByRole('alert').textContent).toContain('SESSION_RUN_BLOCK_NOT_IN_SCRIPT');
+    expect(screen.getByRole('alert').textContent).toBe("That block is not part of this session's plan, so the session stayed where it was.");
     // The cursor stayed where the server left it.
     expect(screen.getAllByRole('listitem')[1].textContent).toContain('Current');
   });

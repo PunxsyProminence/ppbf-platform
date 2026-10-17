@@ -20,7 +20,7 @@ import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import ParentResources from './ParentResources';
 import { apiBase } from '@/lib/apiBase';
-import { rememberChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
@@ -216,6 +216,9 @@ export default function ParentHub() {
   // The child on screen is the one other pages mean (print; #1596 item 2b):
   // kept in this tab whenever the selection changes, so a link opened in any
   // way -- clicked, middle-clicked, from the building map -- prints this child.
+  // Nothing is written until the roster read has made the first selection
+  // (null is a no-op), and that selection starts from the remembered child, so
+  // opening the hub never replaces a pick made on another page.
   useEffect(() => {
     rememberChosenChild(activeChildId);
   }, [activeChildId]);
@@ -750,8 +753,12 @@ export default function ParentHub() {
         setChildren(childList);
         // Functional update so the default selection does not read activeChildId
         // here: depending on it would refetch the whole roster and re-show the
-        // loading spinner every time the parent switches child.
-        setActiveChildId((current) => current || childList[0]?.id || current);
+        // loading spinner every time the parent switches child. The first
+        // selection is the child last chosen on any family page when that child
+        // is one of these (src/lib/chosenChild.ts), otherwise the first child.
+        const chosen = readChosenChild();
+        const opening = childList.find((child) => child.id === chosen)?.id ?? childList[0]?.id;
+        setActiveChildId((current) => current || opening || current);
       } catch (error) {
         // A cancelled roster read is not a failed one -- it says nothing about
         // whether this guardian has children, so it must not empty the list or
@@ -1942,6 +1949,26 @@ export default function ParentHub() {
                   </Link>
                 </>
               )}
+
+              {/* The coach's multi-week plan and the mental-skills log, for the
+                  child on screen: those pages open on the child chosen here
+                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental Skills
+                </Link>
+              </div>
             </div>
           )}
 

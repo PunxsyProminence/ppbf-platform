@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -129,6 +129,34 @@ const REQUIREMENTS_PAGE_SIZE = 50;
 // The submissions route's batch read takes at most this many ids.
 const ANSWER_STATES_BATCH = 200;
 
+/* #345's three workflows as tabs (PROPOSED labels). The choice is a
+   per-viewer convenience kept in this browser only. */
+type ResearchTab = 'needs_evidence' | 'general_research' | 'intake';
+const RESEARCH_TABS: ReadonlyArray<{ key: ResearchTab; label: string }> = [
+  { key: 'needs_evidence', label: 'Needs Evidence' },
+  { key: 'general_research', label: 'General Research' },
+  { key: 'intake', label: 'Intake Cards' },
+];
+const RESEARCH_TAB_STORAGE_KEY = 'ppbf.research.tab';
+
+function isResearchTab(value: unknown): value is ResearchTab {
+  return RESEARCH_TABS.some((tab) => tab.key === value);
+}
+
+function readStoredResearchTab(): ResearchTab {
+  try {
+    const saved = window.localStorage.getItem(RESEARCH_TAB_STORAGE_KEY);
+    return isResearchTab(saved) ? saved : 'needs_evidence';
+  } catch {
+    return 'needs_evidence';
+  }
+}
+
+function subscribeToStorage(onChange: () => void) {
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
+
 // RINT-05b. Approved by Jason in the RINT-05b lane, 2026-10-03.
 const PLATFORM_SHELF_LABEL = 'Platform shelf (every gym reads this)';
 
@@ -147,6 +175,19 @@ export default function ResearchIntakePage() {
   const onPlatformShelf = session.role === 'platform_owner';
   const shelfBody = onPlatformShelf ? { shelf: 'platform' as const } : {};
   const shelfQuery = onPlatformShelf ? '&shelf=platform' : '';
+  // The remembered tab is read the way ThemeProvider reads its theme (an
+  // external store, the server snapshot the default); a pick this visit wins.
+  const storedTab = useSyncExternalStore(subscribeToStorage, readStoredResearchTab, () => 'needs_evidence' as ResearchTab);
+  const [pickedTab, setPickedTab] = useState<ResearchTab | null>(null);
+  const tab = pickedTab ?? storedTab;
+  const setTab = (next: ResearchTab) => {
+    setPickedTab(next);
+    try {
+      window.localStorage.setItem(RESEARCH_TAB_STORAGE_KEY, next);
+    } catch {
+      // Remembering the tab is a convenience only (private window, blocked site data).
+    }
+  };
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
@@ -632,6 +673,12 @@ export default function ResearchIntakePage() {
   const projectionAnswered = !projectionLoading && !errorMessage;
   const shownCount = (value: number) => (projectionAnswered ? String(value) : '--');
 
+  // General Research is the curators' (the sources read answered and the role
+  // curates); everyone else sees the other two tabs.
+  const mayGeneralResearch = curatorSources !== null && mayCurateLibrary(session.role);
+  const visibleTabs = RESEARCH_TABS.filter((item) => item.key !== 'general_research' || mayGeneralResearch);
+  const shownTab: ResearchTab = tab === 'general_research' && !mayGeneralResearch ? 'needs_evidence' : tab;
+
   const stats = [
     { label: 'Mode', value: 'Research Projection' },
     { label: 'Current Stage', value: 'Research Intake' },
@@ -725,6 +772,8 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
+        {/* Above the tabs, as before them: a failed projection read is said
+            whichever tab is open. */}
         {errorMessage ? (
           <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
             <span className="badge badge--locked">
@@ -734,6 +783,51 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
 
+        <div
+          role="tablist"
+          aria-label="Research workflows"
+          className="flex flex-wrap gap-[var(--s2)]"
+          onKeyDown={(event) => {
+            const at = visibleTabs.findIndex((item) => item.key === shownTab);
+            const target: Record<string, number> = {
+              ArrowRight: (at + 1) % visibleTabs.length,
+              ArrowLeft: (at + visibleTabs.length - 1) % visibleTabs.length,
+              Home: 0,
+              End: visibleTabs.length - 1,
+            };
+            if (!(event.key in target)) return;
+            event.preventDefault();
+            const next = visibleTabs[target[event.key]];
+            setTab(next.key);
+            document.getElementById(`research-tab-${next.key}`)?.focus();
+          }}
+        >
+          {visibleTabs.map((item) => (
+            <button
+              key={item.key}
+              id={`research-tab-${item.key}`}
+              type="button"
+              role="tab"
+              aria-selected={shownTab === item.key}
+              aria-controls={`research-panel-${item.key}`}
+              tabIndex={shownTab === item.key ? 0 : -1}
+              onClick={() => setTab(item.key)}
+              className={shownTab === item.key ? 'btn' : 'btn btn--ghost'}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Panels stay mounted and are hidden, so a half-typed draft in one
+            survives a look at another. */}
+        <div
+          role="tabpanel"
+          id="research-panel-intake"
+          aria-labelledby="research-tab-intake"
+          hidden={shownTab !== 'intake'}
+          className="space-y-[var(--s5)]"
+        >
         {!errorMessage && projectionLoading ? (
           <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             {/* .working pins --brass-300 (tuned for leather, ~1.2:1 on paper).
@@ -819,6 +913,15 @@ export default function ResearchIntakePage() {
           </div>
         </section>
 
+        </div>
+
+        <div
+          role="tabpanel"
+          id="research-panel-needs_evidence"
+          aria-labelledby="research-tab-needs_evidence"
+          hidden={shownTab !== 'needs_evidence'}
+          className="space-y-[var(--s5)]"
+        >
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Operational Research Requirements
@@ -1128,7 +1231,16 @@ export default function ResearchIntakePage() {
             </button>
           ) : null}
         </section>
+        </div>
 
+        {mayGeneralResearch ? (
+        <div
+          role="tabpanel"
+          id="research-panel-general_research"
+          aria-labelledby="research-tab-general_research"
+          hidden={shownTab !== 'general_research'}
+          className="space-y-[var(--s5)]"
+        >
         {curatorSources !== null && mayCurateLibrary(session.role) ? (
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
@@ -1239,6 +1351,8 @@ export default function ResearchIntakePage() {
             truncated={curatorSourcesTruncated}
             onSaved={() => void refreshCuratorSources()}
           />
+        ) : null}
+        </div>
         ) : null}
       </div>
       </div>
