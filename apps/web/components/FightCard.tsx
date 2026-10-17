@@ -4,7 +4,7 @@ import Link from 'next/link';
 import React from 'react';
 import ProfilePortrait from './ProfilePortrait';
 import { apiBase } from '@/lib/apiBase';
-import { coachPortraitUrl, type FightCardPayload } from './profileClient';
+import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 
 /**
  * THE FIGHT CARD — a member's bio, printed the way a bout is announced.
@@ -49,7 +49,8 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
     >
       <div className="flex flex-wrap items-start gap-[var(--s5)]">
         <ProfilePortrait
-          accountId={card.accountId}
+          accountId={null}
+          src={cardPhotoUrl(apiBase(), card.portraitPath)}
           initials={card.initials}
           name={card.displayName}
           photoAvailable={card.photoAvailable}
@@ -86,9 +87,9 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
                     /* Keyed on the address: the parent hub reuses this card
                        across a child switch, and a failed load on one child's
                        coach must not hold the next child's on the plate. */
-                    key={card.accountId}
+                    key={card.coachPortraitPath ?? ''}
                     accountId={null}
-                    src={coachPortraitUrl(apiBase(), card.accountId, card.coachName)}
+                    src={cardPhotoUrl(apiBase(), card.coachPortraitPath)}
                     initials={card.coachInitials ?? '—'}
                     name={card.coachName}
                     photoAvailable={card.coachPhotoAvailable}

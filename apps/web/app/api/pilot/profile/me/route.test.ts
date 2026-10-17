@@ -62,3 +62,40 @@ describe('GET /api/pilot/profile/me', () => {
     expect(raw).not.toContain(COACH);
   });
 });
+
+// F-119: a member's own card carries no account id to a family viewer; their
+// portrait is fetched by the card with no query. Staff keep theirs.
+describe('GET /api/pilot/profile/me: the member\'s own account id (F-119)', () => {
+  test('an athlete\'s own card carries no account id of their own', async () => {
+    mockPrincipal.mockResolvedValue({ accountId: ATHLETE, role: 'athlete', organizationId: ORG, athleteId: 'ath-1' } as never);
+
+    const raw = await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/me'))).text();
+    const card = JSON.parse(raw).card;
+
+    expect(card.accountId).toBeNull();
+    expect(card.portraitPath).toBe('/api/pilot/profile/card/photo');
+    expect(card.coachPortraitPath).toBe('/api/pilot/profile/card/coach-photo?coach_name=Coach%20Ray');
+    expect(raw).not.toContain(ATHLETE);
+  });
+
+  test('a parent\'s own card: no email-shaped id anywhere', async () => {
+    const PARENT = 'dana.vance@example.test';
+    mockPrincipal.mockResolvedValue({ accountId: PARENT, role: 'parent', organizationId: ORG, athleteId: null } as never);
+    mockIdentity.mockResolvedValue({
+      accountId: PARENT, fullName: 'Dana Vance', athleteId: null, dob: null, coachAccountId: null, memberSince: null,
+    } as never);
+
+    const raw = await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/me'))).text();
+
+    expect(JSON.parse(raw).card.accountId).toBeNull();
+    expect(raw).not.toContain('@');
+  });
+
+  test('a coach\'s own card keeps the account id, as before', async () => {
+    mockPrincipal.mockResolvedValue({ accountId: COACH, role: 'coach', organizationId: ORG, athleteId: null } as never);
+
+    const card = (await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/me'))).json()).card;
+
+    expect(card.accountId).toBe(COACH);
+  });
+});

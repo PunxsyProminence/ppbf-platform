@@ -16,7 +16,7 @@ import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import SentToYourAthlete from './SentToYourAthlete';
-import type { FightCardPayload } from './profileClient';
+import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
@@ -35,7 +35,7 @@ interface Child {
      resolves the guardian link per athlete before it decides anything (see
      profileVisibility.ts). Another family's child is not in this list at all,
      and would render a plate even if they were. */
-  accountId: string | null;
+  photoPath: string | null;
   initials: string;
   photoAvailable: boolean;
 }
@@ -725,7 +725,7 @@ export default function ParentHub() {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
             track: 'Unavailable',
-            accountId: null,
+            photoPath: null,
             initials: '\u2014',
             photoAvailable: false,
           };
@@ -748,7 +748,7 @@ export default function ParentHub() {
             if (!cardResponse.ok) return;
             const payload = (await cardResponse.json()) as { card?: FightCardPayload };
             if (!payload.card) return;
-            child.accountId = payload.card.accountId;
+            child.photoPath = payload.card.portraitPath;
             child.initials = payload.card.initials;
             child.photoAvailable = payload.card.photoAvailable;
           } catch {
@@ -1228,7 +1228,8 @@ export default function ParentHub() {
                 )}
               >
                 <ProfilePortrait
-                  accountId={child.accountId}
+                  accountId={null}
+                  src={cardPhotoUrl(apiBase(), child.photoPath)}
                   initials={child.initials}
                   name={child.name}
                   photoAvailable={child.photoAvailable}

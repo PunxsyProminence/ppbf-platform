@@ -292,7 +292,8 @@ export function timeAtGym(since: string | Date | null | undefined, now: Date): s
  * has a photograph you may not see" is itself a disclosure about that child.
  */
 export interface FightCard {
-  readonly accountId: string;
+  /** Null for an athlete or parent viewer, always: address the card by its paths. */
+  readonly accountId: string | null;
   readonly displayName: string;
   readonly initials: string;
   readonly ringName: string | null;
@@ -307,10 +308,16 @@ export interface FightCard {
   readonly coachInitials: string | null;
   readonly timeAtGym: string | null;
   readonly photoAvailable: boolean;
+  /** The card subject's portrait, relative to the API base. See cardSubjectQuery. */
+  readonly portraitPath: string | null;
+  /** The coach line's portrait, relative to the API base. Null without a coach. */
+  readonly coachPortraitPath: string | null;
 }
 
 export interface FightCardInput {
   readonly accountId: string;
+  /** The subject's athlete id: the handle a family already holds for a child. */
+  readonly athleteId: string | null;
   readonly fullName: string;
   readonly ringName: string | null;
   readonly corner: CornerChoice;
@@ -322,6 +329,7 @@ export interface FightCardInput {
   readonly photoAvailable: boolean;
   /** Who is looking. Decides whether the coach's account id goes out at all. */
   readonly viewerRole: PilotRole;
+  readonly viewerAccountId: string;
 }
 
 /**
@@ -345,11 +353,33 @@ export function isFamilyViewer(role: PilotRole): boolean {
   return role === 'athlete' || role === 'parent';
 }
 
+/**
+ * THE QUERY THAT NAMES THIS CARD, WITHOUT NAMING AN ACCOUNT TO A FAMILY.
+ *
+ * The card's portraits are fetched by the card (card/photo and card/coach-
+ * photo take the handle /profile/card does), so the handle has to be one this
+ * viewer already holds. A member's own card needs none: no query means "mine".
+ * A child is named by the athlete id the guardian's child switcher already
+ * uses. A family is never handed an account id to put in a URL, and a parent's
+ * own account id is email-shaped (F-119): a card that can only be named by
+ * account id gets no path for a family, and the portrait shows the plate.
+ * Staff keep the account id they had.
+ */
+export function cardSubjectQuery(
+  input: Pick<FightCardInput, 'accountId' | 'athleteId' | 'viewerRole' | 'viewerAccountId'>,
+): string | null {
+  if (input.accountId === input.viewerAccountId) return '';
+  if (input.athleteId) return `?athlete_id=${encodeURIComponent(input.athleteId)}`;
+  if (isFamilyViewer(input.viewerRole)) return null;
+  return `?account_id=${encodeURIComponent(input.accountId)}`;
+}
+
 export function buildFightCard(input: FightCardInput, now: Date): FightCard {
   const family = isFamilyViewer(input.viewerRole);
   const coachName = input.coachName;
+  const query = cardSubjectQuery(input);
   return {
-    accountId: input.accountId,
+    accountId: family ? null : input.accountId,
     displayName: input.fullName,
     initials: initialsFor(input.fullName),
     ringName: input.ringName,
@@ -363,5 +393,11 @@ export function buildFightCard(input: FightCardInput, now: Date): FightCard {
     coachInitials: coachName ? initialsFor(coachName) : null,
     timeAtGym: timeAtGym(input.memberSince, now),
     photoAvailable: input.photoAvailable,
+    portraitPath: query === null ? null : `/api/pilot/profile/card/photo${query}`,
+    // coach_name binds the face to the name the card shows: coach-photo serves
+    // the portrait only while that is still the coach of record's name.
+    coachPortraitPath: query === null || !coachName
+      ? null
+      : `/api/pilot/profile/card/coach-photo${query}${query ? '&' : '?'}coach_name=${encodeURIComponent(coachName)}`,
   };
 }

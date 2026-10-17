@@ -1,6 +1,7 @@
 import type { PilotRole } from './contracts';
 import {
   buildFightCard,
+  cardSubjectQuery,
   CORNER_LABEL,
   initialsFor,
   isNicknameLocked,
@@ -200,6 +201,8 @@ describe('the card', () => {
     memberSince: new Date(now.getTime() - 400 * 86_400_000),
     photoAvailable: false,
     viewerRole: 'coach' as const,
+    athleteId: null,
+    viewerAccountId: 'acct-viewer',
   };
 
   it('is the same object for a fitness member as for a competitor', () => {
@@ -260,6 +263,77 @@ describe('the card', () => {
       expect(card.coachName).toBeNull();
       expect(card.coachAccountId).toBeNull();
       expect(card.coachInitials).toBeNull();
+      expect(card.coachPortraitPath).toBeNull();
+    });
+  });
+
+  /* F-119: a family's card carries no account id at all, its own subject's
+   * included -- a parent's own id is email-shaped -- and the portraits are
+   * addressed by a handle the viewer already holds. */
+  describe('the subject account id and the portrait paths, by viewer', () => {
+    const PARENT = 'dana.vance@example.test';
+    const CHILD = 'acct-child-5';
+    const coached = { ...base, coachName: 'Coach Ray', coachAccountId: 'acct-coach-7f3a' };
+
+    it.each(['athlete', 'parent'] as const)("a %s viewer's OWN card: no id, no query", (role) => {
+      const card = buildFightCard(
+        { ...coached, accountId: PARENT, viewerAccountId: PARENT, viewerRole: role },
+        now,
+      );
+      expect(card.accountId).toBeNull();
+      expect(card.portraitPath).toBe('/api/pilot/profile/card/photo');
+      expect(card.coachPortraitPath).toBe('/api/pilot/profile/card/coach-photo?coach_name=Coach%20Ray');
+      expect(JSON.stringify(card)).not.toContain(PARENT);
+      expect(JSON.stringify(card)).not.toContain('@');
+    });
+
+    it("a parent's view of their child: addressed by the athlete id, never the child's account", () => {
+      const card = buildFightCard(
+        { ...coached, accountId: CHILD, athleteId: 'ath-1', viewerAccountId: PARENT, viewerRole: 'parent' },
+        now,
+      );
+      expect(card.accountId).toBeNull();
+      expect(card.portraitPath).toBe('/api/pilot/profile/card/photo?athlete_id=ath-1');
+      expect(card.coachPortraitPath)
+        .toBe('/api/pilot/profile/card/coach-photo?athlete_id=ath-1&coach_name=Coach%20Ray');
+      expect(JSON.stringify(card)).not.toContain(CHILD);
+      expect(JSON.stringify(card)).not.toContain(PARENT);
+    });
+
+    it('a family viewer on a card only an account id can name gets no path: the plate', () => {
+      const card = buildFightCard(
+        { ...coached, accountId: 'coach@example.test', viewerAccountId: PARENT, viewerRole: 'parent' },
+        now,
+      );
+      expect(card.accountId).toBeNull();
+      expect(card.portraitPath).toBeNull();
+      expect(card.coachPortraitPath).toBeNull();
+      expect(JSON.stringify(card)).not.toContain('@');
+    });
+
+    it.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'board', 'volunteer', 'staff'] as const)(
+      'a %s viewer keeps the account ids it had',
+      (role) => {
+        const card = buildFightCard(
+          { ...coached, accountId: CHILD, athleteId: 'ath-1', viewerAccountId: 'acct-staff', viewerRole: role },
+          now,
+        );
+        expect(card.accountId).toBe(CHILD);
+        expect(card.coachAccountId).toBe('acct-coach-7f3a');
+        expect(card.portraitPath).toBe('/api/pilot/profile/card/photo?athlete_id=ath-1');
+      },
+    );
+
+    it('a staff viewer on a staff card is addressed by account id, as before', () => {
+      expect(cardSubjectQuery({
+        accountId: 'acct-coach-7f3a', athleteId: null, viewerAccountId: 'acct-admin', viewerRole: 'organization_admin',
+      })).toBe('?account_id=acct-coach-7f3a');
+    });
+
+    it('encodes the handle it puts in a URL', () => {
+      expect(cardSubjectQuery({
+        accountId: CHILD, athleteId: 'ath 1&x=y', viewerAccountId: PARENT, viewerRole: 'parent',
+      })).toBe('?athlete_id=ath%201%26x%3Dy');
     });
   });
 });

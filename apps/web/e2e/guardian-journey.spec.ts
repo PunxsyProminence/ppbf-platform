@@ -35,7 +35,10 @@ test.describe('Guardian journey', () => {
         '/api/pilot/profile/card': (url) => ({
           card: {
             athleteId: url.searchParams.get('athlete_id'),
-            accountId: 'acct-rosa',
+            // F-119: a family's card carries no account id; the portrait is
+            // addressed by the card.
+            accountId: null,
+            portraitPath: `/api/pilot/profile/card/photo?athlete_id=${url.searchParams.get('athlete_id')}`,
             initials: 'RD',
             photoAvailable: false,
           },

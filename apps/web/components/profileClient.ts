@@ -18,7 +18,8 @@ export type ProgramChoice =
   | 'unstated';
 
 export interface FightCardPayload {
-  accountId: string;
+  /** Null for an athlete or parent viewer. Use portraitPath, not this. */
+  accountId: string | null;
   displayName: string;
   initials: string;
   ringName: string | null;
@@ -27,12 +28,16 @@ export interface FightCardPayload {
   program: ProgramChoice;
   programLabel: string;
   coachName: string | null;
-  /** Null for an athlete or parent viewer. Use coachPortraitUrl, not this. */
+  /** Null for an athlete or parent viewer. Use coachPortraitPath, not this. */
   coachAccountId: string | null;
   coachPhotoAvailable: boolean;
   coachInitials: string | null;
   timeAtGym: string | null;
   photoAvailable: boolean;
+  /** The card subject's portrait, relative to apiBase(); cardPhotoUrl. */
+  portraitPath: string | null;
+  /** The coach line's portrait, relative to apiBase(); cardPhotoUrl. */
+  coachPortraitPath: string | null;
 }
 
 export interface ProfileSettingsPayload {
@@ -72,15 +77,14 @@ export function portraitUrl(base: string, accountId: string): string {
 }
 
 /**
- * The coach in a card's corner, addressed by the card rather than the coach.
- * A family's card carries no coach account id (OD-2026-10-06-025 ruling 2), so
- * the server finds the coach from the card's own subject and gates both.
+ * A portrait on a fight card, addressed by the card rather than by anybody's
+ * account id. A family's card carries no account id at all (OD-2026-10-06-025
+ * ruling 2; F-119), so the server builds the path from a handle the viewer
+ * already holds and gates the subject, and for the coach line the coach, on
+ * every fetch. Undefined when the card has no path: the plate.
  */
-export function coachPortraitUrl(base: string, cardAccountId: string, coachName: string): string {
-  // coach_name binds the face to the name the card shows: the server serves
-  // the portrait only while that is still the coach of record's name.
-  return `${base}/api/pilot/profile/card/coach-photo?account_id=${encodeURIComponent(cardAccountId)}`
-    + `&coach_name=${encodeURIComponent(coachName)}`;
+export function cardPhotoUrl(base: string, path: string | null): string | undefined {
+  return path === null ? undefined : `${base}${path}`;
 }
 
 /**
