@@ -11,6 +11,7 @@ import { apiBase } from '@/lib/apiBase';
 // rather than restating them keeps a seat this console can assign and a seat
 // the database accepts from drifting apart.
 import { boardSeatConfigs, type BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
+import BackHome from '@/components/BackHome';
 
 /**
  * The roster read carries the appointment and nothing else about the person --
@@ -360,11 +361,7 @@ function BoardSeatsConsole() {
                 )}
               </p>
             </div>
-            {isOrganizationAdminSessionRole(session.role) && (
-              <Link href="/admin" className="btn btn--ghost">
-                Admin Home
-              </Link>
-            )}
+            <BackHome />
           </div>
         </header>
 

@@ -1,12 +1,12 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
+import BackHome from '@/components/BackHome';
 
 /**
  * WHERE THE TWO COACHES DISAGREED. One clip, both readings, side by side.
@@ -408,7 +408,7 @@ function CalibrationReviewTable() {
         )}
 
         <div className="mt-[var(--s6)]">
-          <Link href="/admin" className="btn btn--ghost">Back to the Front Office</Link>
+          <BackHome />
         </div>
       </div>
     </main>

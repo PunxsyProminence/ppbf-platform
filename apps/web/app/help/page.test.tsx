@@ -67,14 +67,15 @@ test('a visitor who is not signed in is redirected and gets none of the help con
 test.each([
   ['organization_admin', true],
   ['admin', true],
-  ['platform_owner', true],
+  // Lane U2 (A-6): the platform owner's desk is Omega, not the per-gym /admin.
+  ['platform_owner', false],
   ['coach', false],
   ['athlete', false],
   ['parent', false],
   ['board', false],
   ['staff', false],
   ['volunteer', false],
-] as const)('a %s is offered the Admin Hub link: %s', async (role, offered) => {
+] as const)('a %s is offered the Capabilities link: %s', async (role, offered) => {
   mockRequirePageRole.mockResolvedValue({ role });
   const { container } = render(await HelpCenterPage());
   const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -83,7 +84,7 @@ test.each([
 
 // F-064: a reader is shown their own role's help, chosen on the server.
 const OTHER_ROLE_MARKERS = [
-  'Coach Workspace Guide', 'Board Workspace Guide', 'Admin Hub Guide', 'Revenue & Funding Guide',
+  'Coach Workspace Guide', 'Board Workspace Guide', 'Capabilities Guide', 'Revenue & Funding Guide',
   'Development Lab Guide', 'Tester Guide', 'Coach Guide', 'Board Guide', 'Admin Guide', 'Revenue Guide', 'Parent Guide', 'Athlete Guide', 'FRONT-END SAFE', 'MIXED LIVE + PLACEHOLDER',
   'owner decision on 2026-08-26', 'PPBF MASTER TUTORIAL',
 ];
@@ -144,4 +145,13 @@ test('the platform owner keeps the whole tutorial', async () => {
   const { container } = render(await HelpCenterPage());
   expect(container.innerHTML).toContain('Tester Guide');
   expect(container.innerHTML).toContain('Development Lab Guide');
+});
+
+// Lane U2 (audit UX-A A-6): the platform owner is pointed at Omega, never at a
+// "set per gym" notice.
+test('a platform_owner is offered Omega', async () => {
+  mockRequirePageRole.mockResolvedValue({ role: 'platform_owner' });
+  const { container } = render(await HelpCenterPage());
+  const omega = [...container.querySelectorAll('a')].find((a) => a.getAttribute('href') === '/admin/platform');
+  expect(omega?.textContent).toBe('Omega');
 });
