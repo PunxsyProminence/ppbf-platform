@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
 // attempt -- made OR failed -- because the failed ones are the point. "One
@@ -554,7 +554,7 @@ export default function AttemptLogPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

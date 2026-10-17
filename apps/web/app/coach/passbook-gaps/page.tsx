@@ -7,7 +7,7 @@ import RefusalStamp from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
 
 // PASSBOOK GAPS -- the first page over `/api/pilot/passbook/gaps`.
 //
@@ -246,9 +246,7 @@ export default function CoachPassbookGapsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <OperationsLink className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]">
-              Back to Operations
-            </OperationsLink>
+            <BackHome className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]" />
           </div>
         </div>
       </main>

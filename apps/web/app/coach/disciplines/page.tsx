@@ -10,6 +10,7 @@ import type {
   DisciplineRow,
   GrapplingExposureRow,
 } from '@/src/server/pilot/multidiscipline';
+import BackHome from '@/components/BackHome';
 
 // The arts the gym runs, and one athlete's grappling exposure history.
 //
@@ -127,6 +128,7 @@ function CoachDisciplines() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Disciplines</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             Boxing and grappling are not scored the same way. Striking exposure is counted in head
             contact; grappling exposure is counted in neck and joint. Nothing on this page adds them
