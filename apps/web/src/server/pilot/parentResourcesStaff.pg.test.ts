@@ -79,6 +79,7 @@ const ORG_ID = 'org-prs';
 const OTHER_ORG_ID = 'org-prs-other';
 const COACH = 'acct-prs-coach';
 const ORG_ADMIN = 'acct-prs-org-admin';
+const LEGACY_ADMIN = 'acct-prs-legacy-admin';
 const ENDED_COACH = 'acct-prs-ended-coach';
 const OTHER_COACH = 'acct-prs-other-coach';
 const GUARDIAN = 'acct-prs-guardian';
@@ -92,6 +93,8 @@ let family: typeof import('./parentResources');
 
 const coach = { organizationId: ORG_ID, accountId: COACH, role: 'coach' };
 const orgAdmin = { organizationId: ORG_ID, accountId: ORG_ADMIN, role: 'organization_admin' };
+const legacyAdmin = { organizationId: ORG_ID, accountId: LEGACY_ADMIN, role: 'admin' };
+const otherCoach = { organizationId: OTHER_ORG_ID, accountId: OTHER_COACH, role: 'coach' };
 
 function fields(overrides: Partial<import('./parentResourcesStaff').ResourceFields> = {}) {
   return { title: 'Hydration guide', summary: 'What to drink before practice.', resource_type: 'guide', destination: '/help', program_id: null, ...overrides };
@@ -114,6 +117,7 @@ async function freshDatabase(name: string): Promise<Client> {
   for (const [accountId, role, org, email, seatActive] of [
     [COACH, 'coach', ORG_ID, 'sam.rivera@example.org', true],
     [ORG_ADMIN, 'organization_admin', ORG_ID, 'pat.lee@example.org', true],
+    [LEGACY_ADMIN, 'admin', ORG_ID, 'jo.legacy@example.org', true],
     [ENDED_COACH, 'coach', ORG_ID, 'kim.ended@example.org', false],
     [OTHER_COACH, 'coach', OTHER_ORG_ID, 'lou.other@example.org', true],
     [GUARDIAN, 'parent', ORG_ID, null, true],
@@ -154,13 +158,44 @@ async function freshDatabase(name: string): Promise<Client> {
   return client;
 }
 
-async function stored(resourceId: string) {
+async function stored(resourceId: string, organizationId = ORG_ID) {
   const result = await activeClient!.query(
-    `select state, published_at, created_by_account_id, created_by_role, updated_by_account_id, updated_by_role
-       from pilot.parent_resources where resource_id = $1::uuid`,
-    [resourceId],
+    `select title, summary, resource_type, destination, program_id, state, published_at, updated_at,
+            created_by_account_id, created_by_role, updated_by_account_id, updated_by_role
+       from pilot.parent_resources where organization_id = $1 and resource_id = $2::uuid`,
+    [organizationId, resourceId],
   );
   return result.rows[0];
+}
+
+type Fields = import('./parentResourcesStaff').ResourceFields;
+type Seat = typeof coach;
+
+// The version a page sends back: updated_at exactly as the staff list hands it out.
+async function versionOf(resourceId: string, organizationId = ORG_ID) {
+  const item = (await staff.listResourcesForStaff(organizationId)).items.find((one) => one.resource_id === resourceId);
+  if (!item) throw new Error(`test bug: ${resourceId} is not listed`);
+  return item.updated_at;
+}
+
+const edit = async (writer: Seat, id: string, input: Partial<Fields>) =>
+  staff.editResource(writer, id, await versionOf(id, writer.organizationId), input);
+const publish = async (writer: Seat, id: string) =>
+  staff.setResourceState(writer, id, 'published', await versionOf(id, writer.organizationId));
+const archive = async (writer: Seat, id: string) =>
+  staff.setResourceState(writer, id, 'archived', await versionOf(id, writer.organizationId));
+
+// A draft put in by hand, as an older version of the app or a changed building
+// map could have left it: the staff checks are not asked.
+async function insertByHand(values: { destination?: string; program_id?: string | null }) {
+  const result = await activeClient!.query(
+    `insert into pilot.parent_resources (organization_id, title, summary, resource_type, destination_kind, destination,
+       program_id, created_by_account_id, created_by_role)
+     values ($1, 'By hand', 'Stored before.', 'guide', 'internal', $2, $3, $4, 'coach')
+     returning resource_id::text as resource_id`,
+    [ORG_ID, values.destination ?? '/help', values.program_id ?? null, COACH],
+  );
+  return result.rows[0].resource_id as string;
 }
 
 const familyTitles = async () => (await family.listResourcesForGuardian(ORG_ID, GUARDIAN, MEMBER)).map((item) => item.title);
@@ -234,40 +269,43 @@ afterEach(async () => {
 });
 
 describe('parent resources, staff publish (PH-11b)', () => {
-  test.each([['coach', coach], ['organization_admin', orgAdmin]] as const)(
+  test.each([['coach', coach], ['organization_admin', orgAdmin], ['admin', legacyAdmin]] as const)(
     'a %s adds a draft, edits it, publishes it and archives it, each change naming its own seat',
     async (role, writer) => {
       const draft = await staff.createResource(writer, fields(), false);
-      expect(draft).toMatchObject({ state: 'draft', published_at: null, edited_by: null, title: 'Hydration guide', parents_cannot_open: false });
+      expect(draft).toMatchObject({ state: 'draft', published_at: null, edited_by: null, title: 'Hydration guide', parents_cannot_open: false, program_archived: false });
+      expect(draft.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
       expect(await stored(draft.resource_id)).toMatchObject({ created_by_account_id: writer.accountId, created_by_role: role, updated_by_account_id: null });
 
-      const edited = await staff.editResource(writer, draft.resource_id, fields({ title: 'Water before practice', program_id: JUNIOR }));
+      const edited = await edit(writer, draft.resource_id, fields({ title: 'Water before practice', program_id: JUNIOR }));
       expect(edited).toMatchObject({ title: 'Water before practice', program_id: JUNIOR, program_name: 'Junior Boxing', state: 'draft' });
       expect(edited.edited_by).toEqual(expect.any(String));
 
-      const published = await staff.setResourceState(writer, draft.resource_id, 'published');
+      const published = await publish(writer, draft.resource_id);
       expect(published.state).toBe('published');
       expect(published.published_at).not.toBeNull();
 
-      const archived = await staff.setResourceState(writer, draft.resource_id, 'archived');
+      const archived = await archive(writer, draft.resource_id);
       expect(archived.state).toBe('archived');
       expect(await stored(draft.resource_id)).toMatchObject({ updated_by_account_id: writer.accountId, updated_by_role: role });
 
-      // Staff names only: no account id leaves.
+      // Staff names only: no account id or email leaves.
       const { items } = await staff.listResourcesForStaff(ORG_ID);
       expect(items.map((item) => item.title)).toEqual(['Water before practice']);
-      expect(JSON.stringify(items)).not.toMatch(/acct-|created_by|updated_by/);
+      expect(JSON.stringify(items)).not.toMatch(/acct-|@|created_by|updated_by/);
     },
   );
 
-  test('the first publication time is stamped by the database and kept through archive and republish', async () => {
+  // The time itself is stamped by the database whatever a writer sends (PH-10's
+  // migration test); this side sends none. What this side owns is that archive
+  // and republish never move it.
+  test('the first publication time is kept through archive and republish', async () => {
     const draft = await staff.createResource(coach, fields(), false);
-    const first = (await staff.setResourceState(coach, draft.resource_id, 'published')).published_at;
+    const first = (await publish(coach, draft.resource_id)).published_at;
     const firstStored = (await stored(draft.resource_id)).published_at;
-    expect(firstStored).toBeInstanceOf(Date);
-    await staff.setResourceState(orgAdmin, draft.resource_id, 'archived');
+    await archive(orgAdmin, draft.resource_id);
     expect((await stored(draft.resource_id)).published_at).toEqual(firstStored);
-    const again = await staff.setResourceState(orgAdmin, draft.resource_id, 'published');
+    const again = await publish(orgAdmin, draft.resource_id);
     expect(again.published_at).toEqual(first);
     expect((await stored(draft.resource_id)).published_at).toEqual(firstStored);
 
@@ -276,23 +314,95 @@ describe('parent resources, staff publish (PH-11b)', () => {
     expect(born.published_at).not.toBeNull();
   });
 
+  test('publishing what is published, or archiving what is archived, writes nothing', async () => {
+    const mine = await staff.createResource(coach, fields(), true);
+    const before = await stored(mine.resource_id);
+    expect(await publish(orgAdmin, mine.resource_id)).toEqual(mine);
+    expect(await stored(mine.resource_id)).toEqual(before);
+
+    const archived = await archive(coach, mine.resource_id);
+    const archivedRow = await stored(mine.resource_id);
+    expect(await archive(orgAdmin, mine.resource_id)).toEqual(archived);
+    expect(await stored(mine.resource_id)).toEqual(archivedRow);
+  });
+
   test('a published resource reaches a linked family, and an archived one does not', async () => {
     const everyone = await staff.createResource(coach, fields({ title: 'For every family' }), true);
     await staff.createResource(orgAdmin, fields({ title: 'For Junior Boxing', program_id: JUNIOR, destination: 'https://usaboxing.org/rules' }), true);
     await staff.createResource(coach, fields({ title: 'Still a draft' }), false);
     expect((await familyTitles()).sort()).toEqual(['For Junior Boxing', 'For every family']);
 
-    await staff.setResourceState(orgAdmin, everyone.resource_id, 'archived');
+    await archive(orgAdmin, everyone.resource_id);
     expect(await familyTitles()).toEqual(['For Junior Boxing']);
+  });
+
+  test("an edit keeps every field it does not send, and an organization admin's edit leaves the coach as writer", async () => {
+    const mine = await staff.createResource(coach, fields({ program_id: JUNIOR, destination: 'https://usaboxing.org/rules', resource_type: 'policy' }), false);
+    const edited = await edit(orgAdmin, mine.resource_id, { title: 'Rules of the ring' });
+    expect(edited).toMatchObject({
+      title: 'Rules of the ring', summary: 'What to drink before practice.', resource_type: 'policy',
+      destination: 'https://usaboxing.org/rules', destination_kind: 'external', program_id: JUNIOR,
+    });
+    expect(await stored(mine.resource_id)).toMatchObject({
+      created_by_account_id: COACH, created_by_role: 'coach', updated_by_account_id: ORG_ADMIN, updated_by_role: 'organization_admin',
+    });
+    // null is every family; left out is kept.
+    expect((await edit(coach, mine.resource_id, { program_id: null })).program_id).toBeNull();
+  });
+
+  test('editing an archived resource keeps it archived', async () => {
+    const mine = await staff.createResource(coach, fields(), false);
+    await archive(coach, mine.resource_id);
+    expect((await edit(orgAdmin, mine.resource_id, { title: 'Still away' })).state).toBe('archived');
+    expect(await stored(mine.resource_id)).toMatchObject({ state: 'archived', published_at: null, title: 'Still away' });
+  });
+
+  test('a change against an older version is a 409 and the newer change is kept', async () => {
+    const mine = await staff.createResource(coach, fields(), false);
+    const seen = mine.updated_at;
+    await staff.editResource(orgAdmin, mine.resource_id, seen, { title: 'First one in' });
+    const after = await stored(mine.resource_id);
+    for (const late of [
+      () => staff.editResource(coach, mine.resource_id, seen, { title: 'Second one in' }),
+      () => staff.setResourceState(coach, mine.resource_id, 'published', seen),
+      () => staff.setResourceState(coach, mine.resource_id, 'archived', seen),
+    ]) {
+      await expect(late()).rejects.toMatchObject({ status: 409, message: staff.STALE_MESSAGE });
+    }
+    expect(await stored(mine.resource_id)).toEqual(after);
+    expect(after).toMatchObject({ title: 'First one in', state: 'draft', updated_by_account_id: ORG_ADMIN });
+    // A version that is not one the list hands out is a 400.
+    for (const version of ['', 'yesterday', '2026-02-31T00:00:00.000000Z']) {
+      await expect(staff.editResource(coach, mine.resource_id, version, { title: 'x' })).rejects.toMatchObject({ status: 400 });
+    }
   });
 
   test("another gym's staff cannot read or touch this gym's resource", async () => {
     const mine = await staff.createResource(coach, fields(), true);
-    const other = { organizationId: OTHER_ORG_ID, accountId: OTHER_COACH, role: 'coach' };
     expect((await staff.listResourcesForStaff(OTHER_ORG_ID)).items).toEqual([]);
-    await expect(staff.editResource(other, mine.resource_id, fields({ title: 'Taken over' }))).rejects.toThrow(/^Not found/);
-    await expect(staff.setResourceState(other, mine.resource_id, 'archived')).rejects.toThrow(/^Not found/);
+    await expect(staff.editResource(otherCoach, mine.resource_id, mine.updated_at, fields({ title: 'Taken over' }))).rejects.toThrow(/^Not found/);
+    await expect(staff.setResourceState(otherCoach, mine.resource_id, 'archived', mine.updated_at)).rejects.toThrow(/^Not found/);
     expect((await stored(mine.resource_id)).state).toBe('published');
+  });
+
+  test("a change reaches only its own gym's row, even where another gym holds the same id at the same version", async () => {
+    // The key is (gym, id), so two gyms can hold one id, and one statement
+    // gives both rows the same updated_at: only the write's gym filter
+    // separates them.
+    const id = '6f1c2b8e-3d4a-4c5b-9e6f-7a8b9c0d1e2f';
+    const twins = await activeClient!.query(
+      `insert into pilot.parent_resources (organization_id, resource_id, title, summary, resource_type, destination_kind, destination,
+         created_by_account_id, created_by_role)
+       values ($1, $5::uuid, 'Ours', 'Ours.', 'guide', 'internal', '/help', $2, 'coach'),
+              ($3, $5::uuid, 'Theirs', 'Theirs.', 'guide', 'internal', '/help', $4, 'coach')
+       returning updated_at`,
+      [ORG_ID, COACH, OTHER_ORG_ID, OTHER_COACH, id],
+    );
+    expect(twins.rows[0].updated_at).toEqual(twins.rows[1].updated_at);
+    expect((await edit(otherCoach, id, { title: 'Theirs, edited' })).title).toBe('Theirs, edited');
+    await archive(otherCoach, id);
+    expect(await stored(id)).toMatchObject({ title: 'Ours', state: 'draft', updated_by_account_id: null });
+    expect(await stored(id, OTHER_ORG_ID)).toMatchObject({ title: 'Theirs, edited', state: 'archived', updated_by_account_id: OTHER_COACH });
   });
 
   test('the database judges the seat: no seat in this gym, an ended seat, or a role not held is a 403', async () => {
@@ -303,9 +413,10 @@ describe('parent resources, staff publish (PH-11b)', () => {
       { organizationId: ORG_ID, accountId: COACH, role: 'organization_admin' },
     ]) {
       await expect(staff.createResource(writer, fields(), true)).rejects.toMatchObject({ status: 403 });
-      await expect(staff.setResourceState(writer, mine.resource_id, 'published')).rejects.toMatchObject({ status: 403 });
+      await expect(publish(writer, mine.resource_id)).rejects.toMatchObject({ status: 403 });
+      await expect(edit(writer, mine.resource_id, { title: 'Not theirs to change' })).rejects.toMatchObject({ status: 403 });
     }
-    expect((await stored(mine.resource_id)).state).toBe('draft');
+    expect(await stored(mine.resource_id)).toMatchObject({ state: 'draft', title: 'Hydration guide', updated_by_account_id: null });
     expect((await staff.listResourcesForStaff(ORG_ID)).items).toHaveLength(1);
   });
 
@@ -314,8 +425,60 @@ describe('parent resources, staff publish (PH-11b)', () => {
       await expect(staff.createResource(coach, fields({ destination }), true)).rejects.toMatchObject({ status: 400 });
     }
     const mine = await staff.createResource(coach, fields({ destination: '/parent/safety' }), false);
-    await expect(staff.editResource(coach, mine.resource_id, fields({ destination: '/admin' }))).rejects.toMatchObject({ status: 400 });
+    await expect(edit(coach, mine.resource_id, { destination: '/admin' })).rejects.toMatchObject({ status: 400 });
     expect((await staff.listResourcesForStaff(ORG_ID)).items.map((item) => item.destination)).toEqual(['/parent/safety']);
+  });
+
+  test('an app link over 2000 characters, or with a space or backslash, is refused in words', async () => {
+    for (const destination of [`/help?q=${'a'.repeat(2000)}`, '/help?q=a b', '/help?q=a\\b']) {
+      await expect(staff.createResource(coach, fields({ destination }), false))
+        .rejects.toMatchObject({ status: 400, message: 'That app link is over 2000 characters or has a space or backslash in it.' });
+    }
+    expect((await staff.listResourcesForStaff(ORG_ID)).items).toEqual([]);
+  });
+
+  test('a stored link parents cannot open is marked, and is not published until it changes', async () => {
+    const id = await insertByHand({ destination: '/admin' });
+    const [item] = (await staff.listResourcesForStaff(ORG_ID)).items;
+    expect(item).toMatchObject({ resource_id: id, parents_cannot_open: true, state: 'draft' });
+    await expect(publish(coach, id)).rejects.toMatchObject({ status: 400 });
+    expect(await stored(id)).toMatchObject({ state: 'draft', published_at: null, updated_by_account_id: null });
+  });
+
+  test('a resource whose program was archived is marked, and is not published until it names an active one or every family', async () => {
+    const id = await insertByHand({ program_id: JUNIOR });
+    const live = await staff.createResource(coach, fields({ title: 'Already out', program_id: JUNIOR }), true);
+    expect((await staff.listResourcesForStaff(ORG_ID)).items.every((one) => !one.program_archived)).toBe(true);
+    await activeClient!.query(`update pilot.programs set status = 'archived' where organization_id = $1 and program_id = $2`, [ORG_ID, JUNIOR]);
+
+    const items = (await staff.listResourcesForStaff(ORG_ID)).items;
+    expect(items.find((one) => one.resource_id === id)).toMatchObject({ program_archived: true, program_id: JUNIOR });
+    await expect(publish(coach, id)).rejects.toMatchObject({ status: 400, message: staff.PROGRAM_ARCHIVED_MESSAGE });
+    expect(await stored(id)).toMatchObject({ state: 'draft', updated_by_account_id: null });
+
+    // A draft may keep it while it is edited; a published one may not.
+    expect((await edit(coach, id, { title: 'Kept program, draft' })).program_id).toBe(JUNIOR);
+    await expect(edit(coach, live.resource_id, { title: 'Kept program, published' }))
+      .rejects.toMatchObject({ status: 400, message: staff.PROGRAM_ARCHIVED_MESSAGE });
+    expect((await stored(live.resource_id)).title).toBe('Already out');
+
+    // Every family instead: it publishes.
+    await edit(coach, id, { program_id: null });
+    expect((await publish(coach, id)).state).toBe('published');
+  });
+
+  test('a malformed resource id is not in this gym: a 404, never a database error', async () => {
+    for (const id of ['-'.repeat(36), 'not-an-id']) {
+      await expect(staff.setResourceState(coach, id, 'published', '2026-10-17T12:00:00.000000Z')).rejects.toMatchObject({ status: 404 });
+      await expect(staff.editResource(coach, id, '2026-10-17T12:00:00.000000Z', { title: 'x' })).rejects.toMatchObject({ status: 404 });
+    }
+  });
+
+  test('a title and summary are counted in characters, as the database counts them', async () => {
+    const title = '\u{1F94A}'.repeat(200);
+    expect((await staff.createResource(coach, fields({ title, summary: '\u{1F94A}'.repeat(1000) }), false)).title).toBe(title);
+    await expect(staff.createResource(coach, fields({ title: '\u{1F94A}'.repeat(201) }), false))
+      .rejects.toMatchObject({ status: 400, message: 'A title is 1 to 200 characters.' });
   });
 
   test("another gym's program, an archived program and an unknown one are refused", async () => {

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
-import { ForbiddenError } from '@/src/server/pilot/errors';
+import { ConflictError, ForbiddenError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   createResource,
@@ -38,6 +38,8 @@ function principal(role = 'coach') {
 const URL = 'http://localhost/api/pilot/coach/parent-resources';
 const ITEM = { resource_id: 'r1', title: 'Hydration' } as never;
 const FIELDS = { title: 'Hydration', summary: 'Drink.', resource_type: 'guide', destination: '/help', program_id: null };
+const VERSION = '2026-10-17T12:00:00.123456Z';
+const WRITER = { organizationId: 'org-1', accountId: 'acct-1', role: 'coach' };
 
 function send(method: 'POST' | 'PATCH', body: unknown) {
   return new NextRequest(URL, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
@@ -96,19 +98,50 @@ describe('/api/pilot/coach/parent-resources (PH-11b)', () => {
   });
 
   test.each([
-    ['edit', () => expect(mockEdit).toHaveBeenCalledWith({ organizationId: 'org-1', accountId: 'acct-1', role: 'coach' }, 'r1', FIELDS)],
-    ['publish', () => expect(mockState).toHaveBeenCalledWith({ organizationId: 'org-1', accountId: 'acct-1', role: 'coach' }, 'r1', 'published')],
-    ['archive', () => expect(mockState).toHaveBeenCalledWith({ organizationId: 'org-1', accountId: 'acct-1', role: 'coach' }, 'r1', 'archived')],
-  ])('PATCH %s makes that change as the caller', async (action, check) => {
+    ['edit', () => expect(mockEdit).toHaveBeenCalledWith(WRITER, 'r1', VERSION, FIELDS)],
+    ['publish', () => expect(mockState).toHaveBeenCalledWith(WRITER, 'r1', 'published', VERSION)],
+    ['archive', () => expect(mockState).toHaveBeenCalledWith(WRITER, 'r1', 'archived', VERSION)],
+  ])('PATCH %s makes that change as the caller, against the version it names', async (action, check) => {
     mockPrincipal.mockResolvedValue(principal());
-    const response = await PATCH(send('PATCH', { ...FIELDS, resource_id: 'r1', action }));
+    const response = await PATCH(send('PATCH', { ...FIELDS, resource_id: 'r1', updated_at: VERSION, action }));
     expect(response.status).toBe(200);
     check();
   });
 
+  test('an edit passes on only the fields it sends; program_id null is every family', async () => {
+    mockPrincipal.mockResolvedValue(principal());
+    await PATCH(send('PATCH', { resource_id: 'r1', updated_at: VERSION, action: 'edit', title: 'Water' }));
+    expect(mockEdit).toHaveBeenLastCalledWith(WRITER, 'r1', VERSION, { title: 'Water' });
+    await PATCH(send('PATCH', { resource_id: 'r1', updated_at: VERSION, action: 'edit', program_id: null }));
+    expect(mockEdit).toHaveBeenLastCalledWith(WRITER, 'r1', VERSION, { program_id: null });
+  });
+
+  test('a change with no version, or an edit field that is not text, is a 400 and changes nothing', async () => {
+    mockPrincipal.mockResolvedValue(principal());
+    for (const body of [
+      { resource_id: 'r1', action: 'publish' },
+      { resource_id: 'r1', action: 'edit', title: 'Water', updated_at: '' },
+      { resource_id: 'r1', action: 'archive', updated_at: 7 },
+      { resource_id: 'r1', action: 'edit', updated_at: VERSION, title: 7 },
+      { resource_id: 'r1', action: 'edit', updated_at: VERSION, program_id: 7 },
+    ]) {
+      expect((await PATCH(send('PATCH', body))).status).toBe(400);
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+    expect(mockState).not.toHaveBeenCalled();
+  });
+
+  test('a change made against an older version reaches the caller as a 409', async () => {
+    mockPrincipal.mockResolvedValue(principal());
+    mockEdit.mockRejectedValue(new ConflictError('Someone else changed this resource. Reload to see their version.'));
+    const response = await PATCH(send('PATCH', { resource_id: 'r1', updated_at: VERSION, action: 'edit', title: 'Water' }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'Someone else changed this resource. Reload to see their version.' });
+  });
+
   test('no resource, an unknown action or delete is a 400 and changes nothing', async () => {
     mockPrincipal.mockResolvedValue(principal());
-    for (const body of [{ action: 'archive' }, { resource_id: 'r1', action: 'delete' }, { resource_id: 'r1' }]) {
+    for (const body of [{ action: 'archive', updated_at: VERSION }, { resource_id: 'r1', action: 'delete', updated_at: VERSION }, { resource_id: 'r1', updated_at: VERSION }]) {
       expect((await PATCH(send('PATCH', body))).status).toBe(400);
     }
     expect(mockEdit).not.toHaveBeenCalled();
@@ -118,7 +151,7 @@ describe('/api/pilot/coach/parent-resources (PH-11b)', () => {
   test("the database's seat refusal reaches the caller as a 403", async () => {
     mockPrincipal.mockResolvedValue(principal());
     mockState.mockRejectedValue(new ForbiddenError('Forbidden: your seat at this gym does not allow writing parent resources.'));
-    const response = await PATCH(send('PATCH', { resource_id: 'r1', action: 'publish' }));
+    const response = await PATCH(send('PATCH', { resource_id: 'r1', updated_at: VERSION, action: 'publish' }));
     expect(response.status).toBe(403);
   });
 });
