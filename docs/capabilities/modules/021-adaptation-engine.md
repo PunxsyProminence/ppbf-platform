@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
-| Status note | Was "DRAFT" until 2026-10-16. No adaptation engine code; training-attempts migration (:10-11) says adaptation is unbuilt. RESEARCH_FIRST per audit log. |
+| Status note | Was "DRAFT" until 2026-10-16. No adaptation engine code; training-attempts migration says adaptation is unbuilt. RESEARCH_FIRST per audit log. |
 | Code | none |
 | Tests | none |
 | Active | false |

@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 5 tracker)" until 2026-10-16. GET /api/pilot/athletes/list returns the org roster (getAthletesByOrganization, entities.ts); /admin/athletes lists, filters and edits gym_status (page.tsx, :423). |
+| Status note | Was "DONE (Wave 5 tracker)" until 2026-10-16. GET /api/pilot/athletes/list returns the org roster (getAthletesByOrganization, entities.ts); /admin/athletes lists, filters and edits gym_status (page.tsx). |
 | Code | `apps/web/app/api/pilot/athletes/list/route.ts`, `apps/web/app/admin/athletes/page.tsx`, `apps/web/app/api/pilot/athletes/update/route.ts`, `apps/web/src/server/pilot/entities.ts`, `apps/web/app/api/pilot/coach/athletes/route.ts` |
 | Tests | `apps/web/app/api/pilot/athletes/list/route.test.ts`, `apps/web/app/admin/athletes/page.test.tsx`, `apps/web/app/api/pilot/athletes/update/route.test.ts` |
 | Active | false |

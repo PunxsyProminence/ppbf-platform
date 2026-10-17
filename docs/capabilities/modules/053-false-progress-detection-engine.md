@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. classifyTransfer (falseProgress.ts) flags strong-in-drills/weak-in-sparring from the attempts ledger; GET transfer-check route (route.ts, role-gated at :27) and a coach page serve it; code self-identifies as module 053. |
+| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. classifyTransfer (falseProgress.ts) flags strong-in-drills/weak-in-sparring from the attempts ledger; GET transfer-check route (route.ts, role-gated) and a coach page serve it; code self-identifies as module 053. |
 | Code | `apps/web/app/api/pilot/coach/transfer-check/route.ts`, `apps/web/app/coach/transfer-check/page.tsx`, `apps/web/src/server/pilot/falseProgress.ts` |
 | Tests | `apps/web/app/api/pilot/coach/transfer-check/route.test.ts`, `apps/web/src/server/pilot/falseProgress.test.ts` |
 | Vertical slice | Deterministic per-metric transfer readout over targeted attempts: controlled contexts (session, drill assignment, assessment) vs live contexts (the four sparring kinds), 60-day window, flags not_transferring / untested_live / transferring / insufficient_evidence with raw counts attached; `/coach/transfer-check` + read-only route. No stored verdicts, no scores, no cross-athlete reads. Future work: competition-result contradiction signals, retention-over-time windows. |

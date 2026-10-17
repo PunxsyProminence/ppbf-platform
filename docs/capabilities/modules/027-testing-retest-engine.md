@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. data-collection-requests/route.ts GET queue, :90 POST, :153 PATCH one-tap capture, DELETE decline, over assessmentProtocols.ts (retest_interval_days :29, listDueAssessments :130, captureDataCollectionRequest :245, declineDataCollectionRequest :266); queue shown on coach/assessments page. |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. data-collection-requests/route.ts GET queue, POST, PATCH one-tap capture, DELETE decline, over assessmentProtocols.ts (retest_interval_days, listDueAssessments, captureDataCollectionRequest, declineDataCollectionRequest); queue shown on coach/assessments page. |
 | Code | `apps/web/app/api/pilot/data-collection-requests/route.ts`, `apps/web/app/coach/assessments/page.tsx`, `apps/web/src/server/pilot/assessmentProtocols.ts` |
 | Tests | `apps/web/app/api/pilot/data-collection-requests/route.test.ts`, `apps/web/src/server/pilot/assessmentProtocols.pg.test.ts`, `apps/web/app/coach/assessments/page.test.tsx` |
 | Vertical slice | protocol retest_interval config + due-assessment queue + one-tap capture/decline API |
