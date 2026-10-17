@@ -219,6 +219,12 @@ export default function ParentHub() {
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
+  // The child on screen is the one other pages mean (print; #1596 item 2b):
+  // kept in this tab whenever the selection changes, so a link opened in any
+  // way -- clicked, middle-clicked, from the building map -- prints this child.
+  useEffect(() => {
+    rememberChosenChild(activeChildId);
+  }, [activeChildId]);
 
   const [familyGoals] = useState<FamilyGoal[]>([]);
 

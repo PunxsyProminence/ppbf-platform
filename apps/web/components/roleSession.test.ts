@@ -126,6 +126,18 @@ describe('roleSession in-memory cache (no localStorage writes)', () => {
     expect(storage.getItem('ppbf-club-role')).toBeNull();
   });
 
+  test("logging out forgets a guardian's chosen child (#1596 item 2b)", () => {
+    const storage = new MemoryStorage();
+    const tabStorage = new MemoryStorage();
+    installWindow(storage);
+    (window as unknown as { sessionStorage: Storage }).sessionStorage = tabStorage;
+    tabStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
+
+    clearRoleSession();
+
+    expect(tabStorage.getItem('ppbf.parent.chosenChild')).toBeNull();
+  });
+
   test('logging out purges residual legacy localStorage keys', () => {
     const storage = new MemoryStorage();
     installWindow(storage);

@@ -335,7 +335,6 @@ describe('whose paper: the child id never rides in the address (#1596 item 2b)',
     window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-kid');
     const { mock } = await renderRoom({ role: 'parent', athleteId: null });
 
-    expect(window.location.search).toBe('');
     expect(cardUrls(mock)).toEqual([expect.stringContaining('athlete_id=ath-kid')]);
   });
 

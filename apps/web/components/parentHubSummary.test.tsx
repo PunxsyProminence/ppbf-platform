@@ -376,9 +376,9 @@ describe('the paper version (#1596 item 2b)', () => {
 
     const link = screen.getByRole('link', { name: 'Print their card and certificate' });
     expect(link.getAttribute('href')).toBe('/print');
-    await act(async () => {
-      fireEvent.click(link);
-    });
+    // Kept on selection, before any click: a middle-click fires no click.
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
+    await selectChild('First Child');
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_1');
   });
 });

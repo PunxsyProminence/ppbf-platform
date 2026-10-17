@@ -1,6 +1,7 @@
 import type { ClubRole } from './roleRoutes';
 import { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
+import { forgetChosenChild } from '@/src/lib/chosenChild';
 
 export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 
@@ -183,6 +184,9 @@ export function getRoleSessionSnapshot(): RoleSession | null {
 export function clearRoleSession() {
   cachedRoleSessionValue = null;
   purgeLegacyRoleSessionStorage();
+  // A guardian's chosen child (the print hand-off, #1596 item 2b) is not left
+  // for whoever signs in next on this tab.
+  forgetChosenChild();
 
   notifyRoleSessionChange();
 }
