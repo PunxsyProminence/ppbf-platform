@@ -75,6 +75,27 @@ function runnableClassifyShell(outputPath: string): string {
     .replace(/\/tmp\/changed-files\.txt/g, outputPath.split(path.sep).join('/'));
 }
 
+/**
+ * ci.yml split into jobs, and each job into its header and steps.
+ *
+ * Since lane L38 the suites run in separate jobs (classify, static, unit, pg,
+ * e2e) whose `if:` reads `needs.classify.outputs.*`, so "which step runs for
+ * this flag" is answered per job: a flag can guard a whole job (pg) or one
+ * step in it (each E2E suite).
+ */
+function workflowJobs(): { name: string; header: string; steps: string[] }[] {
+  const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+  const jobsAt = workflow.indexOf('\njobs:\n');
+  expect(jobsAt).toBeGreaterThan(-1);
+  const parts = workflow.slice(jobsAt + '\njobs:\n'.length).split(/^ {2}([a-z][\w-]*):\n/m);
+  const jobs: { name: string; header: string; steps: string[] }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const [header, ...steps] = parts[i + 1].split(/\n {6}- name: /);
+    jobs.push({ name: parts[i], header, steps });
+  }
+  return jobs;
+}
+
 /** Run the shipped classifier over a file list and return its flags. */
 function classify(files: string[]): Record<string, string> {
   const listFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-cls-')), 'files.txt');
@@ -386,6 +407,34 @@ describe("ci.yml's own shell, on a pull request's merge ref", () => {
     expect(log).not.toContain('first parent');
   });
 
+  it('lists both paths of a moved file, so a move out of a folder still runs its suite', () => {
+    // With git's default rename detection the diff names only the NEW path,
+    // and the coach page below lands where no journey predicate looks.
+    const repo = path.join(dir, 'rename');
+    fs.mkdirSync(repo);
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    const page = 'apps/web/app/coach/cards/page.tsx';
+    fs.mkdirSync(path.join(repo, path.dirname(page)), { recursive: true });
+    fs.writeFileSync(path.join(repo, page), 'export default function Page() { return null; }\n');
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'base');
+    const before = git('rev-parse', 'HEAD');
+    fs.mkdirSync(path.join(repo, 'apps/web/src/lib'), { recursive: true });
+    git('mv', page, 'apps/web/src/lib/movedCardsPage.tsx');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'move it');
+
+    const { files } = changedFilesPerCi(repo, {
+      BASE_SHA: before,
+      HEAD_SHA: git('rev-parse', 'HEAD'),
+      PR_HEAD_SHA: '',
+    });
+
+    expect(files.sort()).toEqual([page, 'apps/web/src/lib/movedCardsPage.tsx']);
+    expect(classify(files).coach_e2e).toBe('true');
+  });
+
   it('is fed the PR head by the workflow, not only by this test', () => {
     // The cases above inject PR_HEAD_SHA themselves. Without this env line
     // every pull request falls back to the old path with no warning at all.
@@ -431,16 +480,12 @@ describe("ci.yml's own shell, on a pull request's merge ref", () => {
 describe('the coach E2E command attends every coach spec on disk', () => {
   /** The npm script `ci.yml` runs for a `coach_e2e` diff, read from the workflow. */
   function coachScriptPerCi(): string {
-    const workflow = fs.readFileSync(
-      path.join(repositoryRoot, '.github/workflows/ci.yml'),
-      'utf8',
-    );
-    // The step that RUNS a coach command, not every step whose condition
-    // mentions the flag: "Install Playwright browsers" is guarded by an OR
-    // across all seven E2E flags and runs no npm script.
-    const guarded = workflow
-      .split(/\n      - name: /)
-      .filter((step) => /steps\.changes\.outputs\.coach_e2e == 'true'/.test(step))
+    // The step that RUNS a coach command, not every place whose condition
+    // mentions the flag: the e2e job's own `if:` is an OR across all seven E2E
+    // flags, and its "Install Playwright browsers" runs no npm script.
+    const guarded = workflowJobs()
+      .flatMap((job) => job.steps)
+      .filter((step) => /needs\.classify\.outputs\.coach_e2e == 'true'/.test(step))
       .filter((step) => /run: npm --workspace web run \S+/.test(step));
     expect(guarded).toHaveLength(1);
 
@@ -632,19 +677,32 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     expect(docs.filter((file) => flags[file].migrations !== false || flags[file].docsOnly !== true)).toEqual([]);
   });
 
-  it('runs the migration suite from the one step that flag guards', () => {
-    const workflow = fs.readFileSync(
-      path.join(repositoryRoot, '.github/workflows/ci.yml'),
-      'utf8',
-    );
-    const guarded = workflow
-      .split(/\n      - name: /)
-      .filter((step) => /steps\.changes\.outputs\.migrations == 'true'/.test(step));
+  it('runs the migration suite from the one job that flag guards, every shard of it', () => {
+    const jobs = workflowJobs();
+    const guarded = jobs.filter((job) => /needs\.classify\.outputs\.migrations == 'true'/.test(job.header));
 
     // A flag nothing reads is the "suite ran" without "the suite traversed the
     // changed path" this file's header describes.
-    expect(guarded).toHaveLength(1);
-    expect(guarded[0]).toMatch(/\n\s+run: npm run test:migrations\s*(\n|$)/);
+    expect(guarded.map((job) => job.name)).toEqual(['pg']);
+    const runs = guarded[0].steps.filter((step) => /run: npm run test:migrations/.test(step));
+    expect(runs).toHaveLength(1);
+    // The total is the matrix's own size, so no edit to the list can leave a
+    // shard -- and its suites -- unrun.
+    expect(runs[0]).toMatch(
+      /\n\s+run: npm run test:migrations -- --shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ strategy\.job-total \}\}\s*(\n|$)/,
+    );
+    const shards = /\n {8}shard: \[([\d, ]+)\]\n/.exec(guarded[0].header);
+    expect(shards).not.toBeNull();
+    const list = shards![1].split(',').map((n) => Number(n.trim()));
+    expect(list).toEqual(list.map((_, i) => i + 1));
+    expect(list.length).toBeGreaterThan(1);
+
+    // Nowhere else: a second, unsharded run would double the suite's time.
+    const elsewhere = jobs
+      .filter((job) => job.name !== 'pg')
+      .flatMap((job) => job.steps)
+      .filter((step) => /run: npm run test:migrations/.test(step));
+    expect(elsewhere).toEqual([]);
   });
 });
 

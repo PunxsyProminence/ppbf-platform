@@ -130,8 +130,10 @@ describe('the nightly gate and the runner resolve the same suites', () => {
 
   it('both places refuse a suspiciously small discovery instead of trusting it', () => {
     // Without this, narrowing either floor to zero would leave every other
-    // assertion here passing while the gate silently guarded nothing.
-    expect(RUNNER_SOURCE).toMatch(/suites\.length < 50/);
+    // assertion here passing while the gate silently guarded nothing. The
+    // runner's floor is on the whole discovery, before --shard narrows it: a
+    // shard is a quarter of the suites by design.
+    expect(RUNNER_SOURCE).toMatch(/discovered\.length < 50/);
 
     const resolveStep = WORKFLOW_SOURCE.slice(
       WORKFLOW_SOURCE.indexOf('node --input-type=module'),
@@ -147,5 +149,77 @@ describe('the nightly gate and the runner resolve the same suites', () => {
     const { scripts } = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
     const missing = discoveredSuites().filter((name) => !scripts[name]);
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * ci.yml's `pg` job runs the suites as `--shard=N/M` matrix jobs (lane L38).
+ * The shards together must be exactly the suite set -- no suite in two, none
+ * in neither -- and no argument must still mean every suite, because every
+ * other caller passes none.
+ */
+describe('the runner\'s --shard option', () => {
+  /** selectShard over the real discovery, evaluated in node (the runner is ESM). */
+  function shard(argv: string[]): { suites?: string[]; error?: string } {
+    const moduleUrl = pathToFileURL(RUNNER).href;
+    const script = `
+      import fs from 'node:fs';
+      import { discoverSuiteScripts, selectShard } from ${JSON.stringify(moduleUrl)};
+      const { scripts } = JSON.parse(fs.readFileSync(${JSON.stringify(PACKAGE_JSON)}, 'utf8'));
+      try {
+        process.stdout.write(JSON.stringify({ suites: selectShard(discoverSuiteScripts(scripts), ${JSON.stringify(argv)}) }));
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ error: error.message }));
+      }
+    `;
+    return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      maxBuffer: 8 * 1024 * 1024,
+    }));
+  }
+
+  it('runs every suite when given no argument', () => {
+    expect(shard([]).suites).toEqual(discoveredSuites());
+  });
+
+  it.each([2, 3, 4, 6])('splits into %i shards that together are every suite exactly once', (total) => {
+    const all = discoveredSuites();
+    const shards = Array.from({ length: total }, (_, i) => shard([`--shard=${i + 1}/${total}`]).suites!);
+
+    expect(shards.every((suites) => suites.length > 0)).toBe(true);
+    const seen = shards.flat();
+    expect(seen.length).toBe(all.length);
+    expect([...seen].sort()).toEqual([...all].sort());
+    // Round-robin: sizes differ by at most one.
+    const sizes = shards.map((suites) => suites.length);
+    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+  });
+
+  it.each([
+    [['--shard', '1/4']],
+    [['--shard=0/4']],
+    [['--shard=5/4']],
+    [['--shard=1/0']],
+    [['--shard=1/4', '--shard=2/4']],
+    [['--shards=1/4']],
+    [['--verbose']],
+  ])('refuses %j rather than running every suite or none', (argv) => {
+    expect(shard(argv).error).toBeDefined();
+  });
+
+  it('exits non-zero from the command line on a bad shard, before any suite starts', () => {
+    let status = 0;
+    let output = '';
+    try {
+      execFileSync(process.execPath, [RUNNER, '--shard=5/4'], { encoding: 'utf8', stdio: 'pipe' });
+    } catch (error) {
+      const failed = error as { status: number; stdout: string; stderr: string };
+      status = failed.status;
+      output = `${failed.stdout}${failed.stderr}`;
+    }
+
+    expect(status).toBe(1);
+    expect(output).toContain('out of range');
+    expect(output).not.toContain('--- [1/');
   });
 });

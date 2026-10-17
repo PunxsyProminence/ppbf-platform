@@ -35,19 +35,45 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  validate:
+  # SIX JOBS, ONE VERDICT (lane L38, 2026-10-17). `validate` used to be a single
+  # job running every gate in series: a run that needed the PostgreSQL suite
+  # took 55-60 min (the suite alone 2235-2853 s), and three runs on 2026-10-17
+  # were cancelled at the then 60-min limit with every suite they ran green --
+  # #1685 (39059770045), #1691 (39062366688), main push 39064008532. A cancel
+  # reads as "never validated". (That limit had been 45 until #1298, at 33-42
+  # min on 2026-10-06.)
+  #
+  # Now `classify` decides what this diff needs, `static`, `unit`, `pg` (four
+  # shards of the PostgreSQL suite) and `e2e` run side by side, and `validate`
+  # -- still the one REQUIRED check, under the same name, which branch
+  # protection, the auto-merge and every lane wait on -- judges them with
+  # scripts/ci-validate-gate.mjs: red on any part that failed, was cancelled,
+  # or was skipped when classify's flags say it had to run.
+  #
+  # Measured over 314 suites on #1685, round-robin over 4 shards gives a
+  # slowest shard of 10.5 min, so the long pole is now `unit` (npm test,
+  # 572 s average over the last 10 runs) plus setup. Every job installs on its
+  # own runner, which costs ~1 min of setup per job; the repository is public,
+  # so standard runners are not billed. If runs start queueing at the account's
+  # concurrent-job cap, fewer shards is the first lever.
+  classify:
     runs-on: ubuntu-latest
-    # 90, not 60: a run that includes the PostgreSQL suite takes 55-60 min on
-    # its own (the suite alone 2235-2853 s, 2026-10-17), and three runs that
-    # day were cancelled at 60 min with every suite they ran green: #1685
-    # (39059770045), #1691 (39062366688) and main push 39064008532. A cancel
-    # reads as "never validated". Only #1685's suite was unneeded -- the stale
-    # base fixed in "Classify changed surface"; that fix does not shorten a run
-    # that really needs the suite, so do not lower this back on its account.
-    # (60, not 45, came from #1298 at 33-42 min on 2026-10-06.)
-    timeout-minutes: 90
+    timeout-minutes: 10
     env:
       CI: true
+    # Strings 'true'/'false', read by every job below through needs.classify
+    # and judged by validate. unclassified_paths stays inside this job.
+    outputs:
+      docs_only: ${{ steps.changes.outputs.docs_only }}
+      migrations: ${{ steps.changes.outputs.migrations }}
+      board_e2e: ${{ steps.changes.outputs.board_e2e }}
+      homepage_e2e: ${{ steps.changes.outputs.homepage_e2e }}
+      coach_e2e: ${{ steps.changes.outputs.coach_e2e }}
+      athlete_e2e: ${{ steps.changes.outputs.athlete_e2e }}
+      guardian_e2e: ${{ steps.changes.outputs.guardian_e2e }}
+      activation_e2e: ${{ steps.changes.outputs.activation_e2e }}
+      admin_narrow_e2e: ${{ steps.changes.outputs.admin_narrow_e2e }}
+      unknown_code: ${{ steps.changes.outputs.unknown_code }}
 
     steps:
       - name: Check out source
@@ -445,7 +471,10 @@ jobs:
           fi
 
           echo "Diffing from $base to $head"
-          git diff --name-only "$base" "$head" > /tmp/changed-files.txt
+          # --no-renames: with rename detection (git's default) a moved file is
+          # listed only at its NEW path, so a move out of a classified folder
+          # dropped that folder's suite. Both paths are listed this way.
+          git diff --name-only --no-renames "$base" "$head" > /tmp/changed-files.txt
 
           echo "Changed files:"
           cat /tmp/changed-files.txt
@@ -519,26 +548,74 @@ jobs:
         run: |
           echo "Documentation-only change: entrypoint contracts passed; dependency, code, database, browser, and build gates are not applicable."
 
+  # Type-check, lint and the production build. The build used to follow the
+  # E2E suites in the same job and first cleared the dev servers' .next/dev
+  # type artefacts (TS1128); no dev server runs on this runner, so that step
+  # is gone with them.
+  static:
+    needs: classify
+    if: needs.classify.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Install locked dependencies
-        if: steps.changes.outputs.docs_only != 'true'
         run: npm ci
 
       - name: Type-check
-        if: steps.changes.outputs.docs_only != 'true'
         run: npm run typecheck
 
       - name: Lint
-        if: steps.changes.outputs.docs_only != 'true'
         run: npm run lint
+
+      - name: Build production application
+        run: npm run build
+
+  # Not sharded: the jest suite-attendance check reads one whole run, and
+  # sharding it needs a change to the web app's jest setup.
+  unit:
+    needs: classify
+    if: needs.classify.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
 
       # `npm test` passes --testPathIgnorePatterns=\.pg\.test\.ts$, so the
       # ~105 embedded-Postgres migration suites are excluded here on purpose --
-      # they do not belong on every pull request. They run in the step below
+      # they do not belong on every pull request. They run in the `pg` job below
       # when the diff touches migration surface, and against merged `main` in
       # .github/workflows/pre-release-migrations.yml before a release operator
       # dispatches apply-migrations.
       - name: Run all fast regression tests
-        if: steps.changes.outputs.docs_only != 'true'
         run: npm test
 
       # The one suite that runs the REAL pdf-parse (RINT-02). pdfjs-dist starts
@@ -547,8 +624,39 @@ jobs:
       # and this step runs them with the flag. Not path-gated: it is one small
       # file and takes seconds.
       - name: Run PDF reader tests (real pdf-parse)
-        if: steps.changes.outputs.docs_only != 'true'
         run: npm --workspace web run test:pdf-text
+
+  # The PostgreSQL suite, split by run-migration-suites.mjs --shard (round-
+  # robin in package.json order). fail-fast stops the other shards at the
+  # first failure, as the serial runner stopped at its first failing suite.
+  # The total comes from the matrix itself, so editing the list cannot leave
+  # a suite unrun.
+  pg:
+    needs: classify
+    if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
 
       # Covers this PR's own diff. It is not a release gate: it never runs for
       # a diff the classifier does not flag, and `test:migrations` is
@@ -556,19 +664,41 @@ jobs:
       # is the gate that runs every suite against merged `main` and reports all
       # failures.
       - name: Run PostgreSQL migration suite
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.migrations == 'true'
-        run: npm run test:migrations
+        run: npm run test:migrations -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  # Every browser suite the diff calls for, one runner, one Chromium install.
+  e2e:
+    needs: classify
+    if: needs.classify.outputs.docs_only != 'true' && (needs.classify.outputs.board_e2e == 'true' || needs.classify.outputs.homepage_e2e == 'true' || needs.classify.outputs.coach_e2e == 'true' || needs.classify.outputs.athlete_e2e == 'true' || needs.classify.outputs.guardian_e2e == 'true' || needs.classify.outputs.activation_e2e == 'true' || needs.classify.outputs.admin_narrow_e2e == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.docs_only != 'true' && (steps.changes.outputs.board_e2e == 'true' || steps.changes.outputs.homepage_e2e == 'true' || steps.changes.outputs.coach_e2e == 'true' || steps.changes.outputs.athlete_e2e == 'true' || steps.changes.outputs.guardian_e2e == 'true' || steps.changes.outputs.activation_e2e == 'true' || steps.changes.outputs.admin_narrow_e2e == 'true')
         run: npx --workspace web playwright install --with-deps chromium
 
       - name: Run board governance E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.board_e2e == 'true'
+        if: needs.classify.outputs.board_e2e == 'true'
         run: npm --workspace web run test:e2e:board
 
       - name: Run public homepage E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.homepage_e2e == 'true'
+        if: needs.classify.outputs.homepage_e2e == 'true'
         run: npm --workspace web run test:e2e:homepage
 
       # The three signed-in journeys. Conditional on the same classifier the
@@ -577,7 +707,7 @@ jobs:
       # network boundary and need no database, so they add no service to this
       # job -- only the Chromium already installed above.
       - name: Run coach journey E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.coach_e2e == 'true'
+        if: needs.classify.outputs.coach_e2e == 'true'
         run: npm --workspace web run test:e2e:coach
 
       # A-FIN-10's ten session-lifecycle proofs need a DATABASE, and the rest of
@@ -598,7 +728,7 @@ jobs:
       # route, and a fixed sleep is either a flake or wasted minutes. Failing to
       # come up is a FAILURE here, never a reason to fall back to skipping.
       - name: Start the offline runtime for the athlete journey
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        if: needs.classify.outputs.athlete_e2e == 'true'
         run: |
           npm --workspace web run offline -- --reset --port 3120 > "$RUNNER_TEMP/offline-runtime.log" 2>&1 &
           for attempt in $(seq 1 180); do
@@ -616,7 +746,7 @@ jobs:
       # a database WAS provided, so the ten proofs must run. If the workspace
       # still does not render, the spec raises instead of skipping.
       - name: Run athlete journey E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        if: needs.classify.outputs.athlete_e2e == 'true'
         env:
           PPBF_E2E_HOST: 127.0.0.1
           PPBF_E2E_PORT: '3120'
@@ -629,29 +759,43 @@ jobs:
       # test result into a red job or a green one. It still prints, so a runtime
       # that refuses to stop is visible rather than silent.
       - name: Stop the offline runtime
-        if: always() && steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        if: always() && needs.classify.outputs.athlete_e2e == 'true'
         continue-on-error: true
         run: npm --workspace web run offline -- stop
 
       - name: Run guardian journey E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.guardian_e2e == 'true'
+        if: needs.classify.outputs.guardian_e2e == 'true'
         run: npm --workspace web run test:e2e:guardian
 
       - name: Run activation journey E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.activation_e2e == 'true'
+        if: needs.classify.outputs.activation_e2e == 'true'
         run: npm --workspace web run test:e2e:activation
 
       - name: Run admin narrow-width E2E
-        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.admin_narrow_e2e == 'true'
+        if: needs.classify.outputs.admin_narrow_e2e == 'true'
         run: npm --workspace web run test:e2e:admin-narrow
 
-      # The E2E suites above each start a Next dev server, which writes
-      # .next/dev/types/validator.ts; tsconfig.json includes that path, so a copy
-      # left truncated by a teardown mid-write fails the build type check (TS1128).
-      - name: Clear dev-server type artefacts before the production build
-        if: steps.changes.outputs.docs_only != 'true'
-        run: rm -rf apps/web/.next/dev apps/web/.next-offline/dev
+  # THE REQUIRED CHECK. Judges the jobs above; runs no suite itself. always(),
+  # because a job whose needs failed or were skipped is otherwise skipped too,
+  # and a skipped required check reads as passing. The gate is red on a part
+  # that failed, was cancelled, or was skipped when classify's flags say it had
+  # to run -- see scripts/ci-validate-gate.mjs.
+  validate:
+    needs: [classify, static, unit, pg, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
 
-      - name: Build production application
-        if: steps.changes.outputs.docs_only != 'true'
-        run: npm run build
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Every part this diff needs passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-validate-gate.mjs
