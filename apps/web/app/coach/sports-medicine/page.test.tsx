@@ -17,6 +17,7 @@
 // from the write's own response.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
@@ -490,7 +491,7 @@ test('lifting an active hold posts the hold id and the board stops showing it', 
   await screen.findByText(/Active Training Hold — sparring/);
 
   fireEvent.change(screen.getByLabelText(/Lift note/), { target: { value: 'Symptom-free week, cleared by the office.' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+  pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
   await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
 
@@ -499,6 +500,20 @@ test('lifting an active hold posts the hold id and the board stops showing it', 
   ]);
   // The place control is back, because this athlete is no longer held.
   expect(screen.getByRole('button', { name: 'Place a training hold' })).toBeTruthy();
+});
+
+test('one press on Lift this hold lifts nothing; it says whose hold the next press lifts (UXB-03)', async () => {
+  const harness = mockWriteFetch({ holdsBefore: [HOLD], holdsAfter: [] });
+
+  render(<SportsMedicinePage />);
+  await screen.findByText(/Active Training Hold — sparring/);
+
+  armOnly(screen.getByRole('button', { name: 'Lift this hold' }));
+  await act(async () => {});
+
+  expect(harness.posted).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Press again: lift Jordan Doe’s hold' })).toBeTruthy();
+  expect(screen.getByText(/Active Training Hold — sparring/)).toBeTruthy();
 });
 
 test('a refused lift keeps the hold on screen — a child stays held until the server says otherwise', async () => {
@@ -516,7 +531,7 @@ test('a refused lift keeps the hold on screen — a child stays held until the s
   render(<SportsMedicinePage />);
   await screen.findByText(/Active Training Hold — sparring/);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+  pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
   await screen.findByText('Hold Not Lifted');
   expect(screen.getByText(/cannot be lifted/)).toBeTruthy();
@@ -941,7 +956,7 @@ describe('what the board says when the re-read after a write does not agree', ()
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
     expect(screen.queryByText(UNREAD)).toBeNull();
@@ -994,7 +1009,7 @@ describe('one row finishing does not release another row that is still out', () 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
 
-    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Lift this hold' }));
     const lifting = (await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Lifting…' })) as HTMLButtonElement;
     expect(lifting.disabled).toBe(true);
 
@@ -1258,7 +1273,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText('Hold Not Lifted');
     expect(screen.getByText(/did not confirm this lift/)).toBeTruthy();
@@ -1276,7 +1291,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
       const { unmount } = render(<SportsMedicinePage />);
       await screen.findByText(/Active Training Hold — sparring/);
-      fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+      pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
       await screen.findByText('Hold Not Lifted');
       expect(screen.getByText(/Active Training Hold — sparring/)).toBeTruthy();
@@ -1290,7 +1305,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
     fireEvent.change(screen.getByLabelText(/Lift note/), { target: { value: 'Symptom-free week.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText('Hold Not Lifted');
     expect((screen.getByLabelText(/Lift note/) as HTMLInputElement).value).toBe('Symptom-free week.');
@@ -1302,7 +1317,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText(/Active Training Hold — all training/);
     expect(screen.getByText('A newer hold.')).toBeTruthy();
@@ -1316,7 +1331,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText(/a different hold is now active for this athlete/);
     expect(screen.getByText('A different hold.')).toBeTruthy();
@@ -1334,7 +1349,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
     expect(harness.holdReads()).toBe(2);
@@ -1350,7 +1365,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText('Not allowed.');
     await waitFor(() => expect((screen.getByRole('button', { name: 'Lift this hold' }) as HTMLButtonElement).disabled).toBe(false));
@@ -1363,7 +1378,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
     expect(screen.queryByText('Hold Not Lifted')).toBeNull();
@@ -1375,7 +1390,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await screen.findByText('Hold Not Lifted');
     expect(screen.getByText(/Active Training Hold — sparring/)).toBeTruthy();
@@ -1386,7 +1401,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 
     render(<SportsMedicinePage />);
     await screen.findByText(/Active Training Hold — sparring/);
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
 
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
     expect(screen.queryByText('Hold Not Lifted')).toBeNull();
@@ -2064,7 +2079,7 @@ describe('one row’s refusal is not erased by another row', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
     await screen.findByText(/Active Training Hold — sparring/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
 
     expect(screen.queryByLabelText(/What this athlete reads/)).toBeNull();
@@ -2120,7 +2135,7 @@ describe('whose refusal is whose, and when it goes', () => {
     boardWithRefusals();
     await refuseJordan();
 
-    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(within(rowOf('Riley Poe')).getByRole('button', { name: 'Lift this hold' }));
     await within(rowOf('Riley Poe')).findByText('Lift refused for Riley.');
 
     expect(within(rowOf('Jordan Doe')).getByText('Refused for ath-1.')).toBeTruthy();
@@ -2148,7 +2163,7 @@ describe('whose refusal is whose, and when it goes', () => {
     render(<SportsMedicinePage />);
     await screen.findByText('Riley Poe');
     const riley = within(rowOf('Riley Poe'));
-    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(riley.getByRole('button', { name: 'Lift this hold' }));
     await riley.findByText('Hold Not Lifted');
 
     let sawItGone = false;
@@ -2156,7 +2171,7 @@ describe('whose refusal is whose, and when it goes', () => {
       if (!within(rowOf('Riley Poe')).queryByText('Hold Not Lifted')) sawItGone = true;
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    pressArmed(riley.getByRole('button', { name: 'Lift this hold' }));
     await riley.findByText('Hold Not Lifted');
     observer.disconnect();
 
@@ -2461,7 +2476,7 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
       fireEvent.click(screen.getByRole('button', { name: 'Past holds' }));
       await screen.findByText('Jordan Doe has no lifted or expired holds.');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+      pressArmed(screen.getByRole('button', { name: 'Lift this hold' }));
       const list = await screen.findByRole('list', { name: 'Past holds for Jordan Doe, newest first' });
       expect(within(list).getByText(HOLD.athlete_explanation)).toBeTruthy();
       expect(within(list).getByText(/Lifted 10\/5\/2026/)).toBeTruthy();

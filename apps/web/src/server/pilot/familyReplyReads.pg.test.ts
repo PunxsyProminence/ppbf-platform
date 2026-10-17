@@ -425,6 +425,22 @@ describe('family reply reads migration (FC-09)', () => {
     }
   });
 
+  test('the runner refuses a role check of that name that names the three staff roles but admits more', async () => {
+    const client = await freshDatabase('frread_role_or');
+    try {
+      // The same three quoted roles, widened by an OR: the guard skips its seat check for a role
+      // outside its list, so this would admit a reader the gym never gave a staff seat.
+      await client.query('alter table pilot.family_reply_reads drop constraint pilot_family_reply_reads_role_check');
+      await client.query(`
+        alter table pilot.family_reply_reads add constraint pilot_family_reply_reads_role_check
+          check (reader_role in ('coach', 'organization_admin', 'admin') or reader_role = current_user)`);
+
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_REPLY_READS_NOT_READY: role_check_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a reply key without the cascade', async () => {
     const client = await freshDatabase('frread_reply_key');
     try {

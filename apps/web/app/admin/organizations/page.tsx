@@ -6,18 +6,10 @@ import Link from 'next/link';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { useFocusOnStepChange } from '@/src/lib/useFocusOnStepChange';
+import BackHome from '@/components/BackHome';
 
 
 type FeedbackKind = 'success' | 'error' | 'info';
-
-const gymCapabilities = [
-  { id: 'attendance', label: 'Check-in & Check-out', description: 'Track who is at the gym and when they arrive/leave.' },
-  { id: 'coach-notes', label: 'Coach Notes', description: 'Let coaches write and save private notes about athlete progress.' },
-  { id: 'progression', label: 'Progress Tracking', description: 'Show gym admins a summary of how athletes are improving.' },
-  { id: 'announcements', label: 'Gym Announcements', description: 'Post messages to all gym members (schedule changes, events, etc.).' },
-  { id: 'sparring', label: 'Sparring & Safety Tools', description: 'Track and manage sparring sessions with safety guidelines.' },
-  { id: 'publication', label: 'Content Publishing', description: 'Allow coaches to share videos, photos, and updates.' },
-];
 
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(`${apiBase()}${path}`, {
@@ -50,9 +42,10 @@ export default function SetupWizard() {
   // Step 2: Provision the gym's first organization admin
   const [adminEmail, setAdminEmail] = useState('');
 
-  // Step 3: Configure Features. Starts empty on purpose -- this is the new
-  // gym's feature set, not the signed-in platform owner's own organization.
-  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
+  /* There is no feature step (lane L31, Overwatch Q2 A: "Nothing on a screen
+     may claim to do what it doesn't"). It saved checkboxes into
+     admin_gym_capability_access, which no feature reads: unticking one
+     turned nothing off. Turning features off per gym is second-gym work. */
 
   // UI State
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
@@ -124,41 +117,12 @@ export default function SetupWizard() {
     return `${email} is now the gym admin. If they are outside your Microsoft tenant, invite them as an Entra guest before they try to sign in.`;
   }
 
-  async function saveCapabilities() {
-    // Only the ids this wizard offers, so nothing outside the checkbox list can
-    // ride along into the new gym's capability set.
-    const capabilityAccess = Object.fromEntries(
-      gymCapabilities.map(({ id }) => [id, gymCapabilityAccess[id] === true]),
-    );
-    const enabledCount = Object.values(capabilityAccess).filter(Boolean).length;
-
-    if (enabledCount === 0) {
-      throw new Error('Please select at least one feature for your gym');
-    }
-
-    // Call backend to persist capability settings. organization_id targets the
-    // gym just created in step 1 -- without it (and without capabilityAccess
-    // matching the route's actual field name/shape) this silently saved an
-    // empty capability set to the platform owner's own organization instead.
-    await postJson('/api/pilot/admin/gym-capabilities', {
-      organization_id: gymId.trim(),
-      capabilityAccess,
-    });
-
-    return `Saved ${enabledCount} feature${enabledCount === 1 ? '' : 's'} for your gym`;
-  }
-
-  const enabledCapabilityCount = gymCapabilities.filter(({ id }) => gymCapabilityAccess[id] === true).length;
-
   // Everything the step sends, as it stands now.
   function targetOf(forStep: number): string {
     if (forStep === 1) {
       return JSON.stringify([gymId.trim(), gymName.trim()]);
     }
-    if (forStep === 2) {
-      return JSON.stringify([gymId.trim(), adminEmail.trim()]);
-    }
-    return JSON.stringify([gymId.trim(), gymCapabilities.map(({ id }) => gymCapabilityAccess[id] === true)]);
+    return JSON.stringify([gymId.trim(), adminEmail.trim()]);
   }
 
   function isArmed(forStep: number): boolean {
@@ -172,10 +136,7 @@ export default function SetupWizard() {
     if (forStep === 1) {
       return `Press again: save ${gym} (${gymId.trim()})`;
     }
-    if (forStep === 2) {
-      return `Press again: make ${adminEmail.trim()} admin of ${gym}`;
-    }
-    return `Press again: turn on ${enabledCapabilityCount} feature${enabledCapabilityCount === 1 ? '' : 's'} for ${gym}; the rest stay off`;
+    return `Press again: make ${adminEmail.trim()} admin of ${gym}`;
   }
 
   // First press arms; the second press of the same button runs the step. The
@@ -188,11 +149,6 @@ export default function SetupWizard() {
         'error',
         `A gym with the id ${taken.organization_id} already exists (${taken.organization_name || taken.organization_id}). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.`,
       );
-      return;
-    }
-    if (forStep === 3 && enabledCapabilityCount === 0) {
-      setArmed(null);
-      showFeedback('error', 'Please select at least one feature for your gym');
       return;
     }
     if (!isArmed(forStep)) {
@@ -255,9 +211,9 @@ export default function SetupWizard() {
             <Link href="/login" className="btn">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="btn btn--ghost">
-              Go To Admin Dashboard
-            </Link>
+            {/* A platform owner not signed in with Microsoft is refused at
+                Omega too: Sign In is their way forward, not a second refusal. */}
+            {sessionRole !== 'platform_owner' && <BackHome />}
           </div>
         </div>
       </main>
@@ -291,14 +247,14 @@ export default function SetupWizard() {
             <p className="t-eyebrow">Setup Wizard</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Get Your Gym Online</h1>
             <p className="t-body">
-              Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.
+              Follow these 2 simple steps to set up your gym in PPBF and start managing athletes.
             </p>
           </div>
         </header>
 
         {/* Progress Indicator */}
         <div className="flex items-center justify-between gap-[var(--s2)]">
-          {[1, 2, 3].map((s) => (
+          {[1, 2].map((s) => (
             <div key={s} className="flex flex-1 items-center gap-[var(--s2)]">
               <div
                 className={`flex h-[34px] w-[34px] items-center justify-center rounded-full border-2 font-bold transition ${
@@ -311,7 +267,7 @@ export default function SetupWizard() {
               >
                 {s < step ? '✓' : s}
               </div>
-              {s < 3 && <div className={`h-[3px] flex-1 rounded-[var(--r-sm)] ${s < step ? 'bg-[var(--brass-700)]' : 'bg-[var(--hide-700)]'}`} />}
+              {s < 2 && <div className={`h-[3px] flex-1 rounded-[var(--r-sm)] ${s < step ? 'bg-[var(--brass-700)]' : 'bg-[var(--hide-700)]'}`} />}
             </div>
           ))}
         </div>
@@ -450,80 +406,24 @@ export default function SetupWizard() {
                   void runAction(createOrganizationAdmin).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 2]);
-                      setStep(3);
+                      setStep(3); // "Complete" state
                     }
                   });
                 })}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Saving...' : isArmed(2) ? armedLabel(2) : 'Add Gym Admin & Continue'}
-              </button>
-            </div>
-          )}
-        </section>
-
-        {/* Step 3: Configure Features */}
-        <section
-          className={`mat-leather rounded-[var(--r-lg)] border p-[var(--s5)] transition ${
-            step === 3 ? 'border-[color:var(--brass-400)]' : 'border-[color:var(--hide-700)] opacity-60'
-          }`}
-        >
-          <div className="flex-1">
-            <h2 id="step-3-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 3: Choose Your Features</h2>
-            <p className="t-body mt-[var(--s3)]">
-              Select which tools your gym wants to use. You can always change these later.
-            </p>
-          </div>
-
-          {step === 3 && (
-            <div className="mt-[var(--s5)] space-y-[var(--s4)]">
-              <div className="space-y-[var(--s3)]">
-                {gymCapabilities.map(({ id, label, description }) => (
-                  <label key={id} className="mat-leather--raised flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:var(--hide-700)] p-[var(--s4)] transition hover:border-[color:var(--brass-700)]">
-                    <input
-                      type="checkbox"
-                      checked={gymCapabilityAccess[id] ?? false}
-                      onChange={(e) =>
-                        setGymCapabilityAccess({
-                          ...gymCapabilityAccess,
-                          [id]: e.target.checked,
-                        })
-                      }
-                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--brass-500)]"
-                    />
-                    <div className="flex-1">
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{label}</p>
-                      <p className="t-muted mt-[var(--s1)]">{description}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={(event) => pressToRun(event, 3, () => {
-                  void runAction(saveCapabilities).then((success) => {
-                    if (success) {
-                      setCompletedSteps([...completedSteps, 3]);
-                      setStep(4); // "Complete" state
-                    }
-                  });
-                })}
-                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isBusy ? 'Saving...' : isArmed(3) ? armedLabel(3) : 'Save & Complete Setup'}
+                {isBusy ? 'Saving...' : isArmed(2) ? armedLabel(2) : 'Add Gym Admin & Finish'}
               </button>
             </div>
           )}
         </section>
 
         {/* Complete State */}
-        {step === 4 && (
+        {step === 3 && (
           <section className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:var(--cleared)] p-[var(--s5)]">
             <div className="space-y-[var(--s4)] text-center">
               <span className="stamp stamp--green stamp--lg">Setup Complete</span>
-              <h2 id="step-4-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Gym Setup Complete!</h2>
+              <h2 id="step-3-heading" tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Gym Setup Complete!</h2>
               <p className="t-body">
                 Your gym is now configured and ready for coaches and athletes to join.
               </p>
@@ -547,12 +447,10 @@ export default function SetupWizard() {
             </div>
 
             <div className="flex flex-col gap-[var(--s3)] sm:flex-row">
-              <Link href="/admin/people" className="btn flex-1">
-                Manage People
-              </Link>
-              <Link href="/admin" className="btn btn--ghost flex-1">
-                Admin Dashboard
-              </Link>
+              {/* The gym's own admin manages its people; the platform owner's
+                  way on is Omega (lane U2, audit UX-A A-6: both old links
+                  opened a "set per gym" notice). */}
+              <BackHome className="btn flex-1" />
             </div>
           </section>
         )}

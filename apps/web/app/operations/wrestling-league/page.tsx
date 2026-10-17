@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
 
 // Wrestling league minimal skeleton (owner decision 2026-08-15: build both
 // competition skeletons deliberately skeletal). Season, event, and roster
@@ -556,9 +556,7 @@ export default function WrestlingLeagueManagementPage() {
           </section>
 
           <div className="mt-[var(--s6)]">
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            <BackHome />
           </div>
         </div>
       </main>

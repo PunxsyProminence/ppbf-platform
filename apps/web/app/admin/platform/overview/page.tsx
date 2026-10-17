@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { apiBase } from '@/lib/apiBase';
 import { usePilotSession } from '@/components/usePilotSession';
+import BackHome from '@/components/BackHome';
 
 interface CountMetric {
   status: 'available' | 'unavailable' | 'insufficient_data';
@@ -90,9 +91,15 @@ export default function PlatformOverview() {
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
-          <Link href="/admin" className="btn btn--ghost">
-            Go To Admin Dashboard
-          </Link>
+          {/* A platform owner not signed in with Microsoft is refused at Omega
+              too, so their way forward is Sign In, not a second refusal. */}
+          {session.role === 'platform_owner' ? (
+            <Link href="/login" className="btn">
+              Sign In With Microsoft
+            </Link>
+          ) : (
+            <BackHome />
+          )}
         </div>
       </main>
     );
@@ -131,7 +138,7 @@ export default function PlatformOverview() {
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Sessions (30d)</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">Coach Reviews (30d)</th>
                   <th className="t-label px-[var(--s4)] py-[var(--s4)]">SHADOW Uses (30d)</th>
-                  <th className="t-label px-[var(--s4)] py-[var(--s4)]">Features On</th>
+                  <th className="t-label px-[var(--s4)] py-[var(--s4)]">Marked In Record</th>
                 </tr>
               </thead>
               <tbody>

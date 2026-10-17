@@ -17,6 +17,8 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * Read from GET /api/pilot/coach/family-notes (staff only; the server leaves
  * out which guardian ticked it). A failed read says so; it is never shown as
  * "nothing posted". `refreshKey` changes after a post, so the new note appears.
+ * Each failed read has Check again, which re-runs that read only: a reload
+ * would throw away every unsent draft on the page (UXB-05).
  *
  * FAMILY REPLIES (FC-03): under each note, what the family wrote back, oldest
  * first, with the guardian's name and the time (gym time). Read from GET
@@ -38,8 +40,9 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * least half of it is on screen here (the FC-05 rule) -- loading the panel is
  * not a read. If the seen read fails, no New is drawn and one muted line says
  * it could not be loaded: the panel never claims every reply is new, or none
- * is. Replies are still recorded as seen. A failed write is not shown and is
- * tried again when the panel next reloads.
+ * is. Replies are still recorded as seen. That line's Check again re-runs the
+ * panel's reads. A failed write is not shown and is tried again when the panel
+ * next reloads.
  */
 export interface FamilyNoteRow {
   note_id: string;
@@ -127,6 +130,8 @@ export default function FamilyNotesPosted({
   // What this staff member had seen when they opened this athlete: a reload
   // after a post keeps it, so New stays for the visit.
   const visitRef = useRef<{ athleteId: string; seen: Set<string> | null }>({ athleteId: '', seen: null });
+  // Bumped by Check again on the notes: the same reads, nothing else on the page.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -175,7 +180,28 @@ export default function FamilyNotesPosted({
         if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
     })();
-  }, [athleteId, refreshKey]);
+  }, [athleteId, refreshKey, attempt]);
+
+  /* Check again on the replies or the opens: that one read, again, landing
+     only on the notes it was asked for. */
+  function recheckReplies() {
+    const mine = seq.current;
+    const forAthlete = athleteId;
+    setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, replies: 'loading' } : held));
+    void readReplies(forAthlete).then((replies) => {
+      if (mine !== seq.current) return;
+      setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, replies } : held));
+    });
+  }
+  function recheckOpened() {
+    const mine = seq.current;
+    const forAthlete = athleteId;
+    setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, opened: 'loading' } : held));
+    void readOpened(forAthlete).then((opened) => {
+      if (mine !== seq.current) return;
+      setRead((held) => (held.state === 'loaded' && held.athleteId === forAthlete ? { ...held, opened } : held));
+    });
+  }
 
   /* SEEING A REPLY (FC-09b). The FC-05 rule from the parent hub: at least half
      of the reply on screen -- or, for a reply taller than the screen, half the
@@ -232,17 +258,25 @@ export default function FamilyNotesPosted({
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what was posted…</p>
       ) : shown.state === 'failed' ? (
-        <p role="alert" className="t-body mt-[var(--s2)]">
-          Posted notes could not be loaded. This is not a statement that nothing was posted. Reload to retry.
-        </p>
+        <div role="alert" className="mt-[var(--s2)]">
+          <p className="t-body">Posted notes could not be loaded. This is not a statement that nothing was posted.</p>
+          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setAttempt((n) => n + 1)}>
+            Check again
+          </button>
+        </div>
       ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">Nothing has been posted to this family yet.</p>
       ) : (
         <>
         {shown.replies === null ? (
-          <p role="alert" className="t-body mt-[var(--s2)]">
-            The family&apos;s replies could not be loaded. This is not a statement that nobody replied. Reload to retry.
-          </p>
+          <div role="alert" className="mt-[var(--s2)]">
+            <p className="t-body">
+              The family&apos;s replies could not be loaded. This is not a statement that nobody replied.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={recheckReplies}>
+              Check again
+            </button>
+          </div>
         ) : shown.replies === 'loading' ? (
           <p className="t-muted mt-[var(--s2)]">Loading the family&apos;s replies…</p>
         ) : null}
@@ -253,15 +287,25 @@ export default function FamilyNotesPosted({
           </p>
         ) : null}
         {shown.opened === null ? (
-          <p role="alert" className="t-body mt-[var(--s2)]">
-            Whether the family opened these could not be loaded. This is not a statement that they did not. Reload to retry.
-          </p>
+          <div role="alert" className="mt-[var(--s2)]">
+            <p className="t-body">
+              Whether the family opened these could not be loaded. This is not a statement that they did not.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={recheckOpened}>
+              Check again
+            </button>
+          </div>
         ) : null}
         {shown.seen === null && Array.isArray(shown.replies) && shown.replies.length > 0 ? (
-          // PROPOSED copy
-          <p className="t-muted mt-[var(--s2)]">
-            Which replies are new to you could not be loaded. This is not a statement that there are none.
-          </p>
+          // PROPOSED copy. Check again re-runs the panel's reads (UXB-05: never Reload).
+          <div className="mt-[var(--s2)]">
+            <p className="t-muted">
+              Which replies are new to you could not be loaded. This is not a statement that there are none.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setAttempt((n) => n + 1)}>
+              Check again
+            </button>
+          </div>
         ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {

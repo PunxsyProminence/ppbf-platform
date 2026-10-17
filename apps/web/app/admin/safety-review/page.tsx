@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
+import BackHome from '@/components/BackHome';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 
@@ -289,9 +290,7 @@ export default function SafetyReviewPage() {
             <Link href="/admin/compliance-center" className="btn btn--ghost">
               Compliance Center
             </Link>
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

@@ -18,8 +18,16 @@ jest.mock('@/components/RoleSessionGate', () => ({
 // The client role. Null (no session) unless a test sets it; 'admin' is how
 // the client carries an organization admin.
 let mockRole: string | null = null;
+// One object per role: the shared back link reads this through
+// useSyncExternalStore, which loops on a snapshot that is new on every read.
+const mockSnapshots = new Map<string, { role: string; expiresAt: number }>();
 jest.mock('@/components/roleSession', () => ({
-  getRoleSessionSnapshot: () => (mockRole ? { role: mockRole, expiresAt: Date.now() + 60_000 } : null),
+  getRoleSessionSnapshot: () => {
+    if (!mockRole) return null;
+    if (!mockSnapshots.has(mockRole)) mockSnapshots.set(mockRole, { role: mockRole, expiresAt: Number.MAX_SAFE_INTEGER });
+    return mockSnapshots.get(mockRole);
+  },
+  subscribeRoleSession: () => () => {},
 }));
 
 const STANDARDS = [

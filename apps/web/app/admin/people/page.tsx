@@ -16,6 +16,7 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 // the server signs coaches, staff, volunteers and parents in by emailed link.
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
+import BackHome from '@/components/BackHome';
 
 interface Member {
   account_id: string;
@@ -207,9 +208,7 @@ function WrongRoleNotice() {
           <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link href="/admin" className="btn btn--ghost">
-            Admin Home
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>
@@ -271,6 +270,20 @@ function PeopleConsoleContent() {
      a colleague out. The server decides who may be switched off; this page
      only offers the control where the server would say yes. */
   const [deactivateArmedId, setDeactivateArmedId] = useState<string | null>(null);
+  /* A NEW ACTIVATION CODE IS THE HEAVY ONE FOR AN ATHLETE (lane L31, gap check
+     (b) step 4): pin-reset nulls their PIN, switches the account off and signs
+     them out everywhere until the new code is redeemed. It sat one tap away,
+     beside the armed Sign Out and Deactivate, so it is armed per row the same
+     way and names what it does before it does it. */
+  const [codeArmedId, setCodeArmedId] = useState<string | null>(null);
+  /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
+     said nothing when the address already belonged to someone in the gym: a
+     coach re-invited as a guardian silently became a guardian. Now a role
+     change is named before it is made, and only a separate confirm button
+     makes it. The server holds the same line (ROLE_CHANGE_UNCONFIRMED), so an
+     account this page did not list, or a role changed since it loaded, is
+     named too. Editing the address or the role takes it back. */
+  const [pendingRoleChange, setPendingRoleChange] = useState<{ email: string; role: string; fromRole: string } | null>(null);
 
   // Add athlete form. account_id and athlete_id are shared by both modes; the
   // rest of the roster fields are only sent when creating a new record.
@@ -438,6 +451,9 @@ function PeopleConsoleContent() {
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
+  // The athlete's roster name for a login row, else the login id (F-110).
+  const athleteNameFor = (member: Member): string =>
+    (member.athlete_id ? rosterById.get(member.athlete_id)?.full_name?.trim() : '') || member.account_id;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -593,8 +609,37 @@ function PeopleConsoleContent() {
         !parentInviteBlockedReason && guardianFullName.trim() && guardianAthleteId && guardianRelationship,
       ));
 
+  // The member this address already belongs to, as the list read it. Only a
+  // hint: the server's answer is what decides (see pendingRoleChange).
+  const inviteExistingMember = (() => {
+    const wanted = inviteEmail.trim().toLowerCase();
+    if (!wanted) return null;
+    return members.find((member) => member.login_email?.trim().toLowerCase() === wanted) ?? null;
+  })();
+  const inviteChangeableRoles = STAFF_ROLES.map((option) => option.value as string);
+  // A role an invite cannot change (gym admin, board, an athlete's PIN login):
+  // say so rather than promise a change the server refuses.
+  const inviteCannotChangeRole = Boolean(
+    inviteExistingMember
+      && inviteExistingMember.role !== inviteRole
+      && (!inviteChangeableRoles.includes(inviteExistingMember.role) || inviteExistingMember.auth_provider === 'ppbf_local'),
+  );
+
   async function inviteStaff(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRoleChange) return;
+    setError('');
+    setNotice('');
+    // Named from the list first, with no request sent.
+    if (inviteExistingMember && inviteExistingMember.role !== inviteRole && !inviteCannotChangeRole) {
+      setPendingRoleChange({ email: inviteEmail.trim(), role: inviteRole, fromRole: inviteExistingMember.role });
+      return;
+    }
+    await submitInvite(null);
+  }
+
+  async function submitInvite(confirmRoleChangeFrom: string | null) {
+    setPendingRoleChange(null);
     setError('');
     setNotice('');
     setBusy(true);
@@ -612,6 +657,7 @@ function PeopleConsoleContent() {
         body: JSON.stringify({
           login_email: email,
           role: inviteRole,
+          ...(confirmRoleChangeFrom ? { confirm_role_change_from: confirmRoleChangeFrom } : {}),
           ...(inviteRole === 'parent'
             ? {
                 guardian: {
@@ -624,7 +670,17 @@ function PeopleConsoleContent() {
         }),
       });
 
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        current_role?: string;
+      };
+      // The server found a role change this page did not know about: name it, send nothing more.
+      if (response.status === 409 && payload.code === 'ROLE_CHANGE_UNCONFIRMED' && payload.current_role) {
+        setPendingRoleChange({ email, role: inviteRole, fromRole: payload.current_role });
+        return;
+      }
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not add that person');
       }
@@ -1006,7 +1062,7 @@ function PeopleConsoleContent() {
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">People</p>
-              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Manage Your Gym</h1>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Office</h1>
               <p className="t-body mt-[var(--s3)]">
                 Add coaches and staff, and create athlete sign-ins.
                 {organizationName && (
@@ -1025,7 +1081,7 @@ function PeopleConsoleContent() {
                 Board Seats
               </Link>
               <Link href="/admin" className="btn btn--ghost">
-                Admin Home
+                Capabilities
               </Link>
             </div>
           </div>
@@ -1389,16 +1445,47 @@ function PeopleConsoleContent() {
 
                         <td>
                           <div className="flex flex-col items-start gap-[var(--s2)]">
-                            {isPinAthlete && (
+                            {isPinAthlete && (codeArmedId === member.account_id ? (
+                              <>
+                                <p className="max-w-[34ch]">
+                                  {/* Named as the office knows them: the roster's name for
+                                      the athlete record this login holds, else the login id. */}
+                                  {member.has_pin
+                                    ? `Issues ${athleteNameFor(member)} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
+                                    : `Issues ${athleteNameFor(member)} a new one-time activation code now. The code issued before stops working.`}
+                                </p>
+                                <div className="flex flex-wrap gap-[var(--s2)]">
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setCodeArmedId(null);
+                                      void handleResetToStartingPin(member.account_id);
+                                    }}
+                                    className="btn btn--danger whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    Issue The New Code
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setCodeArmedId(null)}
+                                    className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    {member.has_pin ? 'Keep Their PIN' : 'Keep The Current Code'}
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void handleResetToStartingPin(member.account_id)}
+                                onClick={() => setCodeArmedId(member.account_id)}
                                 className="btn--lever whitespace-nowrap disabled:opacity-50"
                               >
                                 Issue New Activation Code
                               </button>
-                            )}
+                            ))}
 
                             {/* Offered on EVERY row, not just the PIN athletes.
                                 Until now a staff row had no action at all --
@@ -1542,7 +1629,11 @@ function PeopleConsoleContent() {
                 type="email"
                 required
                 value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
+                onChange={(event) => {
+                  // Any edit takes a named role change back.
+                  setPendingRoleChange(null);
+                  setInviteEmail(event.target.value);
+                }}
                 placeholder="coach@example.com"
                 className="input"
               />
@@ -1571,7 +1662,10 @@ function PeopleConsoleContent() {
                         value={option.value}
                         checked={inviteRole === option.value}
                         disabled={Boolean(blockedReason)}
-                        onChange={() => setInviteRole(option.value)}
+                        onChange={() => {
+                          setPendingRoleChange(null);
+                          setInviteRole(option.value);
+                        }}
                         className="mt-1 accent-[var(--brass-500)]"
                       />
                       <span>
@@ -1664,13 +1758,54 @@ function PeopleConsoleContent() {
               </fieldset>
             )}
 
-            <button
-              type="submit"
-              disabled={busy || !inviteReady}
-              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? 'Adding...' : 'Add To My Gym'}
-            </button>
+            {inviteCannotChangeRole && inviteExistingMember && !pendingRoleChange && (
+              <p className="t-body" role="status">
+                {inviteExistingMember.login_email} is a {roleLabel(inviteExistingMember.role)} here. An invite
+                cannot change that role.
+              </p>
+            )}
+
+            {pendingRoleChange ? (
+              /* The confirm is not the submit button and not in its place: the
+                 sentence takes that spot, so a double-click or a second Enter
+                 lands on text, not on the change. */
+              <>
+                <p className="t-body" role="status">
+                  {pendingRoleChange.email} is a {roleLabel(pendingRoleChange.fromRole)} here. Saving this makes them
+                  a {roleLabel(pendingRoleChange.role)} instead (a person holds one role here) and signs them out;
+                  they sign back in as a {roleLabel(pendingRoleChange.role)}.
+                  {inviteExistingMember && (!inviteExistingMember.active_flag || !inviteExistingMember.membership_active)
+                    ? ' It also turns their sign-in back on.'
+                    : ''}
+                </p>
+                <div className="flex flex-wrap gap-[var(--s2)]">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submitInvite(pendingRoleChange.fromRole)}
+                    className="btn btn--danger whitespace-nowrap disabled:opacity-50"
+                  >
+                    {`Change ${pendingRoleChange.email} To ${roleLabel(pendingRoleChange.role)}`}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setPendingRoleChange(null)}
+                    className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                  >
+                    Keep Their Role
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="submit"
+                disabled={busy || !inviteReady}
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy ? 'Adding...' : 'Add To My Gym'}
+              </button>
+            )}
           </form>
         )}
 

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort, formatGymDateTimeShort, formatGymDayShort, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 interface AttendanceAthleteSummary {
   athlete_id: string;
@@ -621,16 +622,13 @@ export default function AttendanceDashboardPage() {
             <Link href="/schedule" className="btn btn--ghost">
               Go to Schedule (mark attendance)
             </Link>
-            <Link href="/admin/athletes" className="btn btn--ghost">
+            {/* This page admits a coach as well as an admin: Athlete Records
+                shows only to the roles that page admits, and back goes to the
+                reader's own home (lane U2). */}
+            <RoleLink href="/admin/athletes" roles={['admin', 'platform_owner']} className="btn btn--ghost">
               Athlete Records
-            </Link>
-            {/* This page admits a coach as well as an admin, so the hub link
-                had to stop being unconditional here too -- a coach reaching
-                the attendance queue from the corridor would otherwise still
-                be offered a door that only bounces them. */}
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            </RoleLink>
+            <BackHome />
           </div>
         </div>
       </main>

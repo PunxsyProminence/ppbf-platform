@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **MAPPED** |
+| Status note | Was "DRAFT" until 2026-10-16. Drills the coach assigns (reps, duration, frequency per week, due date) show read-only to the guardian in ParentAssignmentList (mounted ParentHub.tsx, /parent/dashboard). No home-specific movement homework engine; guardian cannot log completion. Partial fit. |
+| Code | `apps/web/app/api/pilot/progression/assignments/route.ts`, `apps/web/components/ParentAssignmentList.tsx`, `apps/web/app/parent/dashboard/page.tsx` |
+| Tests | `apps/web/app/api/pilot/progression/assignments/route.test.ts`, `apps/web/components/parentAssignmentList.test.tsx` |
 | Active | false |
 | Promotion required | true |
 | Category | At-Home / Parent / Guardian (`atHomeParentGuardian`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

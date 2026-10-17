@@ -70,6 +70,29 @@ describe('the then-and-now frame', () => {
     expect(screen.getByText(/Coach Neale/)).toBeTruthy();
   });
 
+  it('F-118: draws no empty quote marks when the latest recognition has no words', async () => {
+    installFetch((url) => {
+      if (url.includes('/sessions/list')) {
+        return jsonResponse({ items: [{ date: '2026-01-12', created_at: '2026-01-12T18:00:00Z' }] });
+      }
+      if (url.includes('/achievements/milestones')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({
+        ok: true,
+        items: [{ recognition_id: 'rec-1', coach_display_name: 'Coach Neale', note: '  ', created_at: '2026-08-01T00:00:00Z' }],
+      });
+    });
+
+    let container: HTMLElement = document.body;
+    await act(async () => {
+      ({ container } = render(<ThenAndNow athleteId="ath-1" />));
+    });
+
+    expect(await screen.findByText(/January 12, 2026/)).toBeTruthy();
+    expect(container.textContent).not.toContain('\u201c');
+    expect(container.textContent).not.toContain('\u201d');
+    expect(screen.queryByText(/Coach Neale/)).toBeNull();
+  });
+
   it('says the frame fills itself when there is no history yet', async () => {
     installFetch((url) => {
       if (url.includes('/sessions/list')) return jsonResponse({ items: [] });

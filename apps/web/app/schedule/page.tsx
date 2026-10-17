@@ -7,8 +7,8 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import BackHome from '@/components/BackHome';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -229,6 +229,9 @@ export default function SchedulerPage() {
   const [role, setRole] = useState<SchedulerRole | null>(null);
   const [athleteId, setAthleteId] = useState<string>('');
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
+  // An athlete reads no roster (F-117): only their own record, so their own
+  // rows carry their name and every other id stays as it is.
+  const [ownAthlete, setOwnAthlete] = useState<AthleteRow | null>(null);
 
   const [classes, setClasses] = useState<SchedulerClass[]>([]);
   const [registrations, setRegistrations] = useState<SchedulerRegistration[]>([]);
@@ -264,6 +267,9 @@ export default function SchedulerPage() {
   const [newClassEndAt, setNewClassEndAt] = useState('');
   const [newClassLocation, setNewClassLocation] = useState('');
   const [newClassCapacity, setNewClassCapacity] = useState<number>(16);
+  // The coach who runs a class an admin schedules (lane L31 P6). A coach's own
+  // class is theirs; an admin is not a coach, so the admin names one.
+  const [newClassCoachId, setNewClassCoachId] = useState('');
 
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
@@ -294,11 +300,11 @@ export default function SchedulerPage() {
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const athlete of athletes) {
+    for (const athlete of ownAthlete ? [...athletes, ownAthlete] : athletes) {
       map.set(athlete.athlete_id, athlete.full_name ?? athlete.athlete_id);
     }
     return map;
-  }, [athletes]);
+  }, [athletes, ownAthlete]);
 
   // Default selections are applied functionally rather than read out of a
   // closure so this loader keeps a stable identity: depending on the current
@@ -368,6 +374,28 @@ export default function SchedulerPage() {
         }
       } else {
         setAthletes([]);
+      }
+
+      if (auth.role === 'athlete' && auth.athlete_id) {
+        // Its own try: a record that cannot be read leaves the roster code
+        // on the athlete's rows, and the rest of the page as it is.
+        const ownId = auth.athlete_id;
+        try {
+          const ownRes = await fetch(`${apiBase()}/api/pilot/athletes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ athlete_id: ownId }),
+          });
+          const own = (await ownRes.json()) as { found?: boolean; athlete?: { full_name?: unknown } };
+          const fullName = typeof own.athlete?.full_name === 'string' ? own.athlete.full_name.trim() : '';
+          // Keyed on the caller's own id, never on what came back.
+          setOwnAthlete(ownRes.ok && own.found && fullName ? { athlete_id: ownId, full_name: fullName } : null);
+        } catch {
+          setOwnAthlete(null);
+        }
+      } else {
+        setOwnAthlete(null);
       }
 
       if (roleCanResolveCoachingRequests(auth.role)) {
@@ -705,9 +733,7 @@ export default function SchedulerPage() {
                   Attendance Dashboard
                 </Link>
               ) : null}
-              <OperationsLink className="btn btn--ghost btn--tap">
-                Back to Operations
-              </OperationsLink>
+              <BackHome className="btn btn--ghost btn--tap" />
             </div>
           </header>
 
@@ -824,6 +850,36 @@ export default function SchedulerPage() {
                         className="input"
                       />
                     </div>
+                    {roleCanResolveCoachingRequests(role) ? (
+                      <div>
+                        <label htmlFor="new-class-coach" className="t-label">
+                          Class coach
+                        </label>
+                        {/* Picked by name from the gym's active coaches, the
+                            same list the coaching-request picker reads; never
+                            typed as an id. */}
+                        <select
+                          id="new-class-coach"
+                          value={newClassCoachId}
+                          onChange={(e) => setNewClassCoachId(e.target.value)}
+                          disabled={coachesState !== 'loaded' || coachOptions.length === 0}
+                          className="select"
+                        >
+                          <option value="">
+                            {coachesState === 'loading'
+                              ? 'Loading coaches…'
+                              : coachesState === 'unavailable'
+                                ? 'The coach list could not be loaded'
+                                : coachOptions.length === 0
+                                  ? 'No active coaches in this gym'
+                                  : 'Select the coach who runs it'}
+                          </option>
+                          {coachOptions.map((option) => (
+                            <option key={option.account_id} value={option.account_id}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() =>
@@ -835,11 +891,12 @@ export default function SchedulerPage() {
                             end_at: newClassEndAt,
                             location: newClassLocation,
                             capacity: newClassCapacity,
+                            ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
                           },
                           'Class scheduled successfully.',
                         )
                       }
-                      disabled={actionInFlight}
+                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
                       Schedule Class
@@ -1130,7 +1187,7 @@ export default function SchedulerPage() {
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
                       </p>
-                      <p className="text-[color:var(--bone-400)]">{item.goals}</p>
+                      <p className="text-[color:var(--bone-400)]">Goals: <span>{item.goals}</span></p>
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">

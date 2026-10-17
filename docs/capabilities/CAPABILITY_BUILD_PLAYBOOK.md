@@ -2,7 +2,7 @@
 
 ## Rules
 1. `Active` stays false in every module file (modules/NNN-*.md) until promotion review. PPBF_CAPABILITIES.json is an old draft (OD-2026-09-28-010 item 21); its governance.active also stays false. The approved product list is PRODUCT_CAPABILITIES.json (see README.md).
-2. Tracker Status=DONE means slice shipped in code, not CSV updated.
+2. Status=DONE means slice shipped in code, reachable by a role, and tested. The four statuses and their check: README.md.
 3. Prefer reuse existing tables/APIs over new schema (see issue #156).
 4. One vertical slice per PR: read or write path + role gate + test + short module note.
 5. Board / public never get individual athlete clinical detail.
@@ -11,8 +11,8 @@
 - Code path exists under apps/web (API and/or UI)
 - Role checks via existing auth helpers
 - Org isolation (organization_id) enforced
-- At least one automated test OR documented live smoke steps
-- docs/capabilities/modules/NNN-*.md updated with Status, ManualVerification, slice, audit log (the CSV is history; see README.md)
+- At least one automated test (since 2026-10-16 smoke steps alone do not make DONE; an executable check does)
+- docs/capabilities/modules/NNN-*.md updated with Status, Code, Tests, ManualVerification, slice, audit log; `node scripts/check-capability-status.mjs` passes
 
 ## Priority order (history, 2026-08-03; not the current order)
 

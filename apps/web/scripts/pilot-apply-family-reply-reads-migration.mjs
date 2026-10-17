@@ -17,7 +17,7 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt: the table, its primary key over (gym, reply,
 // reader), its reply foreign key with the cascade, its reader foreign key with the cascade, the
-// role check over exactly the three staff roles, and the guard trigger. Each is looked up by name
+// role check saying exactly the three staff roles, and the guard trigger. Each is looked up by name
 // ON its own table, so a same-named object elsewhere does not pass.
 const READINESS_QUERY = `
   select
@@ -55,16 +55,16 @@ const READINESS_QUERY = `
          and (select a.attname from pg_attribute a where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'account_id'
     ) as reader_fk_cascade,
     exists (
-      -- The check by name, and over exactly the three staff roles (every quoted word in it, and
-      -- nothing more): a pre-existing table whose check of that name admits 'parent' does not pass.
+      -- The check by name, and its whole predicate exactly as PostgreSQL prints this migration's own
+      -- check (runs of whitespace collapsed). Matching only the quoted words passed a pre-existing
+      -- check of that name with the same three roles plus "or reader_role = current_user", and the
+      -- guard does not vouch for a role outside its list; a check that admits 'parent' fails too.
       select 1 from pg_constraint c
        where c.conrelid = to_regclass('pilot.family_reply_reads')
          and c.contype = 'c' and c.convalidated
          and c.conname = 'pilot_family_reply_reads_role_check'
-         and (
-           select array_agg(distinct m[1] order by m[1])
-             from regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''', 'g') as m
-         ) = array['admin', 'coach', 'organization_admin']
+         and regexp_replace(pg_get_constraintdef(c.oid), '[[:space:]]+', ' ', 'g')
+           = 'CHECK ((reader_role = ANY (ARRAY[''coach''::text, ''organization_admin''::text, ''admin''::text])))'
     ) as role_check_ready,
     exists (
       -- BEFORE (bit 2), ROW (bit 1), on INSERT (bit 4), DELETE (bit 8) and UPDATE (bit 16),

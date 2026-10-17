@@ -652,3 +652,107 @@ describe('new replies for this staff member (FC-09b)', () => {
     expect(readPosts(fetchMock)).toEqual(['r2']);
   });
 });
+
+/* UXB-05: EACH FAILED READ HAS CHECK AGAIN, AND THE PAGE NEVER SAYS RELOAD. A
+   reload would throw away every unsent draft on the Decision Loop. */
+describe('Check again, never Reload (UXB-05)', () => {
+  function calls(fetchMock: jest.Mock, part: string) {
+    return fetchMock.mock.calls.filter((c) => String(c[0]).includes(part)).length;
+  }
+
+  test('failed notes: Check again reads them again and shows them', async () => {
+    let fail = true;
+    const fetchMock = byUrl(() => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [OPEN] })));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Posted notes could not be loaded');
+    expect(document.body.textContent).not.toMatch(/reload/i);
+
+    fail = false;
+    await act(async () => {
+      screen.getByRole('button', { name: 'Check again' }).click();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Bring gloves Thursday.')).toBeInTheDocument();
+  });
+
+  test('failed replies: Check again reads the replies only; the notes are not read again', async () => {
+    let fail = true;
+    const reply = { reply_id: 'r1', note_id: 'n1', reply_text: 'Will do.', created_at: '2026-10-12T22:00:00.000Z', author_name: 'Alex Parent' };
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [reply] })),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent("The family's replies could not be loaded");
+    expect(document.body.textContent).not.toMatch(/reload/i);
+    const notesReads = calls(fetchMock, '/family-notes?');
+
+    fail = false;
+    await act(async () => {
+      screen.getByRole('button', { name: 'Check again' }).click();
+    });
+    expect(calls(fetchMock, '/family-notes?')).toBe(notesReads);
+    expect(calls(fetchMock, '/family-message-replies')).toBe(2);
+    expect(screen.getByText('Will do.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('failed opens: Check again reads the opens only', async () => {
+    let fail = true;
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [] }),
+      () => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [{ note_id: 'n1', first_read_at: '2026-10-12T22:00:00.000Z' }] })),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Whether the family opened these could not be loaded');
+    const notesReads = calls(fetchMock, '/family-notes?');
+
+    fail = false;
+    await act(async () => {
+      screen.getByRole('button', { name: 'Check again' }).click();
+    });
+    expect(calls(fetchMock, '/family-notes?')).toBe(notesReads);
+    expect(screen.getByText(/Opened by the family/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('failed seen read (FC-09b): Check again re-runs the reads and draws New', async () => {
+    let fail = true;
+    const reply = { reply_id: 'r1', note_id: 'n1', reply_text: 'Will do.', created_at: '2026-10-12T22:00:00.000Z', author_name: 'Alex Parent' };
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [reply] }),
+      undefined,
+      () => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [] })),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(screen.getByText(/Which replies are new to you could not be loaded/)).toBeInTheDocument();
+    expect(screen.queryByText('New')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/reload/i);
+
+    fail = false;
+    await act(async () => {
+      screen.getByRole('button', { name: 'Check again' }).click();
+    });
+    expect(calls(fetchMock, '/family-reply-reads?')).toBe(2);
+    expect(screen.queryByText(/Which replies are new to you could not be loaded/)).toBeNull();
+    expect(screen.getByText('New')).toBeInTheDocument();
+  });
+});

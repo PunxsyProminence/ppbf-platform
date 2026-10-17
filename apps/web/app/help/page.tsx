@@ -33,8 +33,13 @@ export default async function HelpCenterPage() {
   const principal = await requirePageRole(Object.keys(HELP_READERS) as PilotRole[]);
   // /admin admits the gym admin and the platform owner only (admin/page.tsx);
   // nobody else is offered a door that would turn them away.
-  const mayOpenAdminHub = roleEquals(principal.role, 'organization_admin')
-    || roleEquals(principal.role, 'platform_owner');
+  // The platform owner's desk is Omega: /admin is a "set per gym" notice for
+  // that role (lane U2, audit UX-A A-6).
+  const adminDesk = roleEquals(principal.role, 'organization_admin')
+    ? { href: '/admin', label: 'Capabilities' }
+    : roleEquals(principal.role, 'platform_owner')
+      ? { href: '/admin/platform', label: 'Omega' }
+      : null;
 
   // Choose what this reader may see BEFORE rendering (F-064): another role's
   // sections must never be in the page sent to the browser.
@@ -53,10 +58,10 @@ export default async function HelpCenterPage() {
             <p className="t-eyebrow tracking-[0.35em]">Help Center</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>{plain.heading}</h1>
             <p className="text-base leading-7 text-[color:var(--hide-800)]">{plain.intro}</p>
-            {mayOpenAdminHub && (
+            {adminDesk && (
               <div className="flex flex-wrap gap-3">
-                <OperationsLink className="btn btn--ghost">Mission Control</OperationsLink>
-                <Link href="/admin" className="btn btn--ghost">Admin Hub</Link>
+                <OperationsLink className="btn btn--ghost">Operations</OperationsLink>
+                <Link href={adminDesk.href} className="btn btn--ghost">{adminDesk.label}</Link>
               </div>
             )}
           </header>
@@ -84,11 +89,11 @@ export default async function HelpCenterPage() {
           </p>
           <div className="flex flex-wrap gap-3">
             <OperationsLink className="btn btn--ghost">
-              Mission Control
+              Operations
             </OperationsLink>
-            {mayOpenAdminHub && (
-              <Link href="/admin" className="btn btn--ghost">
-                Admin Hub
+            {adminDesk && (
+              <Link href={adminDesk.href} className="btn btn--ghost">
+                {adminDesk.label}
               </Link>
             )}
             <Link href="/" className="btn btn--ghost">
