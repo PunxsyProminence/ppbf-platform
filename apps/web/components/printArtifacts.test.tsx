@@ -31,6 +31,8 @@ function card(overrides: Partial<FightCardPayload> = {}): FightCardPayload {
     coachInitials: 'JN',
     timeAtGym: '2 years',
     photoAvailable: true,
+    portraitPath: '/api/pilot/profile/card/photo',
+    coachPortraitPath: '/api/pilot/profile/card/coach-photo?coach_name=Jason%20Neale',
     ...overrides,
   };
 }
