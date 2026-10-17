@@ -155,59 +155,6 @@ describe('resources on the parent hub', () => {
   });
 });
 
-// #1593 PH-11: the Resources tab is built, so its "not built yet" stamp is
-// gone (F-019), and it reads the selected child's family resources, per child.
-describe('resources on the parent hub', () => {
-  test("the tab reads the selected child's resources and follows a switch", async () => {
-    const fetchMock = installFetch();
-    await act(async () => {
-      render(<ParentHub />);
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Resources' }));
-    });
-
-    expect(screen.queryByText(/no backend feed for parent resources/)).toBeNull();
-    expect(screen.getByText('Resource for ath_1')).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
-    });
-    expect(screen.queryByText('Resource for ath_1')).toBeNull();
-    expect(screen.getByText('Resource for ath_2')).toBeInTheDocument();
-    const reads = fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/parent/resources'));
-    expect(reads.map((url) => new URL(url, 'http://localhost').searchParams.get('athlete_id'))).toEqual(['ath_1', 'ath_2']);
-  });
-
-  test("a sibling's resources are never shown under the other child while their read is still out", async () => {
-    let releaseSecond: (() => void) | null = null;
-    const fetchMock = installFetch();
-    const answer = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation(async (input: unknown, init?: RequestInit) => {
-      if (String(input).includes('/parent/resources') && String(input).includes('athlete_id=ath_2')) {
-        await new Promise<void>((resolve) => { releaseSecond = resolve; });
-      }
-      return answer(input, init);
-    });
-    await act(async () => {
-      render(<ParentHub />);
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Resources' }));
-    });
-    expect(screen.getByText('Resource for ath_1')).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
-    });
-    expect(screen.queryByText('Resource for ath_1')).toBeNull();
-    await act(async () => {
-      releaseSecond?.();
-    });
-    expect(screen.getByText('Resource for ath_2')).toBeInTheDocument();
-  });
-});
-
 describe('parent hub child selector', () => {
   test('switching child does not refetch the roster or re-show the loading spinner', async () => {
     const fetchMock = installFetch();

@@ -243,8 +243,6 @@
     "test:migrations:family-support-records": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/familySupportRecords.pg.test.ts --testTimeout=180000",
     "test:migrations:family-reply-reads": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/familyReplyReads.pg.test.ts --testTimeout=180000",
     "test:migrations:parent-resources-read": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/parentResourcesRead.pg.test.ts --testTimeout=180000",
-    "test:migrations:parent-resources": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/parentResources.pg.test.ts --testTimeout=180000",
-    "test:migrations:parent-resources-read": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/parentResourcesRead.pg.test.ts --testTimeout=180000",
     "test:migrations:parent-resources-staff": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/parentResourcesStaff.pg.test.ts --testTimeout=180000",
     "test:migrations:session-run-athletes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionRunAthletesMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:gym-setup-status": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/gymSetupStatus.pg.test.ts --testTimeout=180000",
