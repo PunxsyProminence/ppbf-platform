@@ -2,7 +2,7 @@ import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import { NO_ATHLETE_NOTE_PLACEHOLDER } from '../../shared/sessionNoteSemantics';
 
 import { queryOne } from './db';
-import { getTodaySessionNote, isSessionNoteWriter } from './sessionNotes';
+import { getTodaySessionNote, isSessionNoteWriter, isSessionRunningForAthleteToday } from './sessionNotes';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -190,5 +190,48 @@ describe('isSessionNoteWriter', () => {
     ['a coach whose principal somehow carries the athleteId', { role: 'coach', athleteId: 'ath-1' }],
   ])('%s is not', (_label, actor) => {
     expect(isSessionNoteWriter(actor, 'ath-1')).toBe(false);
+  });
+});
+
+// F-067: whether a coach's run is under way for the athlete on the gym's day.
+// The SQL's predicates are exercised against modelled rows in
+// app/api/pilot/coach/athlete-session-note/route.test.ts; these cases pin the
+// day it asks about and what it does with the answer.
+describe('isSessionRunningForAthleteToday', () => {
+  it('asks about the gym-evening day, bound, with the organization and athlete', async () => {
+    mockQueryOne.mockResolvedValue({ running: false });
+    await isSessionRunningForAthleteToday(ORG, ATHLETE, '2026-09-26T00:30:00Z');
+
+    const { sql, params } = lastCall();
+    expect(params).toEqual([ORG, ATHLETE, '2026-09-25']);
+    expect(sql).toContain(`(r.started_at at time zone '${GYM_TIME_ZONE}')::date = $3::date`);
+    expect(sql).not.toMatch(/current_date|now\(\)/i);
+  });
+
+  it('asks only of live runs in this organization, and only of marks that stand', async () => {
+    mockQueryOne.mockResolvedValue({ running: false });
+    await isSessionRunningForAthleteToday(ORG, ATHLETE, '2026-09-25T18:00:00Z');
+
+    const { sql } = lastCall();
+    expect(sql).toContain('from pilot.session_script_runs r');
+    expect(sql).toContain('r.organization_id = $1');
+    expect(sql).toContain("r.run_state = 'in_progress'");
+    expect(sql).toContain('m.athlete_id = $2');
+    expect(sql.match(/m\.removed_at is null/g)).toHaveLength(2);
+    expect(sql).not.toMatch(/^\s*(insert|update|delete)\b/im);
+  });
+
+  it.each([
+    [{ running: true }, true],
+    [{ running: false }, false],
+    [null, false],
+  ])('row %p -> %p', async (row, expected) => {
+    mockQueryOne.mockResolvedValue(row);
+    await expect(isSessionRunningForAthleteToday(ORG, ATHLETE, '2026-09-25T18:00:00Z')).resolves.toBe(expected);
+  });
+
+  it('a failed read fails; it is not "no session"', async () => {
+    mockQueryOne.mockRejectedValue(new Error('connection reset'));
+    await expect(isSessionRunningForAthleteToday(ORG, ATHLETE, '2026-09-25T18:00:00Z')).rejects.toThrow('connection reset');
   });
 });
