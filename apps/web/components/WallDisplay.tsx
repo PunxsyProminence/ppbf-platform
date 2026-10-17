@@ -11,7 +11,6 @@ import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
-// The gym's identity, from its one profile (#1469, N9-01B).
 
 /**
  * THE WALL — the board on the gym's television.

@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
-import { useGymPrintIdentity } from '@/components/PrintSheet';
+import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -152,7 +152,6 @@ interface AuthorizedAthlete {
 }
 
 export default function SparringTelemetryPage() {
-  const gymIdentity = useGymPrintIdentity();
   /* The athlete this log is ABOUT.
      For an athlete it is themselves and cannot be anything else. For staff it
      is whatever they pick, and it starts empty -- there is no sensible default
@@ -619,11 +618,7 @@ export default function SparringTelemetryPage() {
 
       {/* Reuses PrintSheet's gym identity -- same fix as
           coach/environment/passbook-check/page.tsx, same reason. */}
-      {gymIdentity ? (
-        <footer className="t-muted px-[var(--s5)] pb-[var(--s6)]">
-          {gymIdentity.address ? `${gymIdentity.name}, Registered Office: ${gymIdentity.address}` : gymIdentity.name}
-        </footer>
-      ) : null}
+      <GymRegisteredOfficeLine className="t-muted px-[var(--s5)] pb-[var(--s6)]" />
     </RoleStandaloneView>
   );
 }

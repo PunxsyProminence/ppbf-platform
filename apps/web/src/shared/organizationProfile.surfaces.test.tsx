@@ -34,6 +34,7 @@ const mockSecondGym: OrganizationProfile = {
 };
 
 import { OrganizationProfileProvider } from '@/components/OrganizationProfileProvider';
+import { PPBF_TRACES } from '@/src/testing/organizationProfileFixtures';
 
 // Server pages read the stored profile (lane L31); browser components get it from the layout's
 // provider, rendered around them below.
@@ -54,7 +55,6 @@ jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 // PPBF's own identity, in every form the old copies wrote it.
-const PPBF_TRACES = [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /220 N Jefferson/i, /99-2073622/, /Big Run/i, /15767/, /Neale/i, /\bJason\b/];
 
 function expectNoPpbfTrace(text: string) {
   for (const trace of PPBF_TRACES) expect(text).not.toMatch(trace);

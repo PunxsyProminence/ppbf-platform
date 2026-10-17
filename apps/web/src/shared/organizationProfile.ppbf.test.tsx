@@ -115,3 +115,9 @@ test('the wall and the names board name PPBF as they did', async () => {
     global.fetch = realFetch;
   }
 });
+
+test('the sparring page registered-office line reads as it did', async () => {
+  const { GymRegisteredOfficeLine } = await import('@/components/PrintSheet');
+  const { container } = render(withGym(<GymRegisteredOfficeLine className="t-muted" />));
+  expect(container.textContent).toBe('Punxsy Prominence Boxing & Fitness, Registered Office: 220 N Jefferson St, Punxsutawney, PA 15767');
+});
