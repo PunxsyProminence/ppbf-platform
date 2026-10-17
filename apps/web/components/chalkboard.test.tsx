@@ -87,6 +87,24 @@ async function renderBoard(options: Parameters<typeof stubFetch>[0]) {
   return mock;
 }
 
+describe('F-121: the parent hub board says what it is', () => {
+  it('shows a visible Announcements heading on the parent hub, also when the board is blank', async () => {
+    stubFetch({ announcements: [], role: 'parent', authProvider: 'microsoft' });
+    await act(async () => {
+      render(<Chalkboard placement="parent_hub" />);
+    });
+
+    expect(screen.getByRole('heading', { name: 'Announcements' })).toBeTruthy();
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
+  });
+
+  it('leaves the athlete board as it was', async () => {
+    await renderBoard({ announcements: [], role: 'athlete', authProvider: 'ppbf_local' });
+
+    expect(screen.queryByRole('heading', { name: 'Announcements' })).toBeNull();
+  });
+});
+
 describe('picking the line on the board', () => {
   it('takes the newest live motivation for this surface', () => {
     const chosen = pickChalkLine(
