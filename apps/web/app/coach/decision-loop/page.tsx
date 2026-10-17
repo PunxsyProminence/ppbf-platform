@@ -460,7 +460,17 @@ export default function DecisionLoopReviewPage() {
   /* The athlete whose medical status a timed re-read failed to get: for them
      the status is unknown until a read succeeds. See rereadMedicalStatus. */
   const [statusUnreadFor, setStatusUnreadFor] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  /* ONE ERROR LINE PER FORM, UNDER THAT FORM (UXB-15). Every error used to
+     print in one line in the picker header, several panels above the form
+     that failed, so a coach scrolled down to Report Incident could not see
+     that it had not gone in -- and the next thing to happen anywhere on the
+     page replaced it. Keyed by the form (a SubmitKind), 'records' for the
+     athlete's read, or `outcomes:<decision id>` for one decision's outcomes.
+     Each is set and cleared only by its own form or read. */
+  const [errorLines, setErrorLines] = useState<Readonly<Record<string, string>>>({});
+  function setErrorAt(at: string, text: string) {
+    setErrorLines((shown) => ({ ...shown, [at]: text }));
+  }
   /* "Something you submitted for the athlete you were on before did not go
      through." Its own slot, not the error line: every read blanks or
      overwrites the error line, so the next thing that happened under the new
@@ -477,12 +487,17 @@ export default function DecisionLoopReviewPage() {
      that was STARTED AFTER it appeared is confirmed -- which is what
      `beginWrite` hands each handler the means to say. */
   const unconfirmedSeqRef = useRef(0);
-  function beginWrite(): () => void {
+  /* A confirmed write clears its own form's line: an old refusal left under
+     "Incident filed" would make one of the two false. A not-confirmed line
+     goes only if this write was started after it appeared. */
+  function beginWrite(at: SubmitKind): () => void {
     const startedAt = unconfirmedSeqRef.current;
     return () => {
-      if (startedAt === unconfirmedSeqRef.current) {
-        setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? '' : shown));
-      }
+      setErrorLines((shown) =>
+        !shown[at] || (shown[at] === WRITE_NOT_CONFIRMED && startedAt !== unconfirmedSeqRef.current)
+          ? shown
+          : { ...shown, [at]: '' },
+      );
     };
   }
 
@@ -605,6 +620,12 @@ export default function DecisionLoopReviewPage() {
   // "Status set." and the like, under the form that was sent. Emptied with the
   // other confirmation lines on every read and every switch.
   const [doneLines, setDoneLines] = useState<Partial<Record<DoneKind, string>>>({});
+  // The decisions whose outcomes are being read: "Load Outcomes" says so (UXB-38).
+  const [outcomesReading, setOutcomesReading] = useState<ReadonlySet<string>>(new Set());
+  /** The error line, under the form or read it belongs to; nothing anywhere else. */
+  const errorUnder = (at: string) => (errorLines[at] ? (
+    <p role="alert" className="text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorLines[at]}</p>
+  ) : null);
   const isSubmitting = (kind: DoneKind) => submitting.has(`${kind}:${athleteId}`);
   /** Starts a write of `kind` for `forAthleteId`, or says one is already out. */
   function startWrite(kind: DoneKind, forAthleteId: string): boolean {
@@ -638,9 +659,12 @@ export default function DecisionLoopReviewPage() {
         timedOut,
       ]);
       if (response.ok) {
-        const payload = (await Promise.race([response.json(), timedOut])) as { items?: AthleteListItem[] };
-        roster = payload.items ?? [];
-        setAthletes(roster);
+        const payload = (await Promise.race([response.json(), timedOut])) as { items?: unknown };
+        // A 200 without the list is not an empty roster (UXB-38): it fails, and Check again is offered.
+        if (Array.isArray(payload.items)) {
+          roster = payload.items as AthleteListItem[];
+          setAthletes(roster);
+        }
       }
     } catch {
       // Said on the page below the picker.
@@ -666,7 +690,7 @@ export default function DecisionLoopReviewPage() {
     void Promise.resolve().then(loadRoster);
   }, [loadRoster]);
 
-  const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
+  const refreshAll = useCallback(async (targetAthleteId: string) => {
     // A write for athlete A that finishes after the coach moved to B asks to
     // re-read A. B is on screen; A's records do not belong there.
     if (targetAthleteId !== selectedAthleteRef.current) {
@@ -685,7 +709,7 @@ export default function DecisionLoopReviewPage() {
       return;
     }
     setLoading(true);
-    if (!keepErrorLine) setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? shown : ''));
+    setErrorLines((shown) => ({ ...shown, records: '' }));
     try {
       const [statusRes, recsRes, decisionsRes, nearMissesRes] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`, { credentials: 'include' }),
@@ -739,13 +763,10 @@ export default function DecisionLoopReviewPage() {
          write, the old medical status would otherwise still read "Current
          status" under an error line. */
       setReadFor({ athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS });
-      // A line that was deliberately kept up for this read ("the server did
-      // not confirm this ... check before sending it again") is not replaced
-      // by the news that the check itself failed. The four panels already say
-      // they could not be read; the line the coach must not lose is the one
-      // about the write.
+      // Its own line: a not-confirmed line under a form ("check before
+      // sending it again") stays where it is beside this one.
       const readFailure = error instanceof Error ? error.message : 'Failed to load decision loop data.';
-      setErrorMessage((shown) => (keepErrorLine || shown === WRITE_NOT_CONFIRMED ? shown : readFailure));
+      setErrorLines((shown) => ({ ...shown, records: readFailure }));
     } finally {
       if (seq === readSeqRef.current) setLoading(false);
     }
@@ -853,7 +874,7 @@ export default function DecisionLoopReviewPage() {
     setMessageHomeMessage('');
     setDoneLines({});
     setLoading(false);
-    setErrorMessage('');
+    setErrorLines({});
     setPreviousAthleteNotice('');
   }
 
@@ -872,27 +893,27 @@ export default function DecisionLoopReviewPage() {
      server's text is withheld -- it describes A -- but the coach is still
      told that something they did has not gone through: an incident report
      that silently failed is worse than a vague line. */
-  function reportWriteError(forAthleteId: string, error: unknown, fallback: string) {
+  function reportWriteError(forAthleteId: string, error: unknown, fallback: string, at: SubmitKind) {
     if (forAthleteId !== selectedAthleteRef.current) {
       setPreviousAthleteNotice(PREVIOUS_ATHLETE_WRITE_FAILED);
       return;
     }
     const message = error instanceof Error ? error.message : fallback;
-    setErrorMessage(message);
+    setErrorAt(at, message);
     // "Check before sending it again" has to be checkable. A write that was
     // not confirmed may have landed: read the athlete again, keeping this
     // line up, so the status, decisions and near-misses on screen are what
     // the server holds now.
     if (message === WRITE_NOT_CONFIRMED) {
       unconfirmedSeqRef.current += 1;
-      void refreshAll(forAthleteId, true);
+      void refreshAll(forAthleteId);
     }
   }
 
   // Run by the armed Set Status button only (UXB-03); Enter in the form does not send it.
   async function handleSetMedicalStatus() {
     if (!athleteId || !startWrite('medicalStatus', athleteId)) return;
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('medicalStatus');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
         method: 'POST',
@@ -917,7 +938,7 @@ export default function DecisionLoopReviewPage() {
       await refreshAll(athleteId);
       if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, medicalStatus: 'Status set.' }));
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to set medical status.');
+      reportWriteError(athleteId, error, 'Failed to set medical status.', 'medicalStatus');
     } finally {
       markSubmitting('medicalStatus', athleteId, false);
     }
@@ -925,7 +946,7 @@ export default function DecisionLoopReviewPage() {
 
   async function handleDecideRecommendation(recommendationId: string, decision: 'accepted' | 'rejected') {
     if (!athleteId || !startWrite('recommendation', athleteId)) return;
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('recommendation');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/recommendations/decide`, {
         method: 'POST',
@@ -953,7 +974,7 @@ export default function DecisionLoopReviewPage() {
         }));
       }
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to record decision on recommendation.');
+      reportWriteError(athleteId, error, 'Failed to record decision on recommendation.', 'recommendation');
     } finally {
       markSubmitting('recommendation', athleteId, false);
     }
@@ -963,7 +984,7 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !decisionText.trim() || !decisionExpectedOutcome.trim()) return;
     if (!startWrite('decision', athleteId)) return;
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('decision');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decisions`, {
         method: 'POST',
@@ -994,7 +1015,7 @@ export default function DecisionLoopReviewPage() {
       await refreshAll(athleteId);
       if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, decision: 'Decision recorded.' }));
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to record decision.');
+      reportWriteError(athleteId, error, 'Failed to record decision.', 'decision');
     } finally {
       markSubmitting('decision', athleteId, false);
     }
@@ -1004,7 +1025,7 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !nearMissDescription.trim()) return;
     if (!startWrite('nearMiss', athleteId)) return;
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('nearMiss');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/near-misses`, {
         method: 'POST',
@@ -1028,7 +1049,7 @@ export default function DecisionLoopReviewPage() {
       await refreshAll(athleteId);
       if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, nearMiss: 'Near-miss flagged.' }));
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to flag near-miss.');
+      reportWriteError(athleteId, error, 'Failed to flag near-miss.', 'nearMiss');
     } finally {
       markSubmitting('nearMiss', athleteId, false);
     }
@@ -1044,7 +1065,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
     setIncidentFiledMessage('');
     markSubmitting('incident', athleteId, true);
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('incident');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
         method: 'POST',
@@ -1067,7 +1088,7 @@ export default function DecisionLoopReviewPage() {
       writeConfirmed();
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to file incident report.');
+      reportWriteError(athleteId, error, 'Failed to file incident report.', 'incident');
     } finally {
       markSubmitting('incident', athleteId, false);
     }
@@ -1087,7 +1108,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
     setBehaviorNoteMessage('');
     markSubmitting('behaviorNote', athleteId, true);
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('behaviorNote');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -1109,7 +1130,7 @@ export default function DecisionLoopReviewPage() {
       writeConfirmed();
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to log the note.');
+      reportWriteError(athleteId, error, 'Failed to log the note.', 'behaviorNote');
     } finally {
       markSubmitting('behaviorNote', athleteId, false);
     }
@@ -1128,7 +1149,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
     setMessageHomeMessage('');
     markSubmitting('messageHome', athleteId, true);
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('messageHome');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -1164,7 +1185,7 @@ export default function DecisionLoopReviewPage() {
       setMessageHomeMessage(due ? due.text : "Posted to the family's page.");
       setFamilyNotesRefresh((n) => n + 1);
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to post the message.');
+      reportWriteError(athleteId, error, 'Failed to post the message.', 'messageHome');
     } finally {
       markSubmitting('messageHome', athleteId, false);
     }
@@ -1222,6 +1243,7 @@ export default function DecisionLoopReviewPage() {
   }
 
   async function handleLoadOutcomes(decisionId: string) {
+    setOutcomesReading((current) => new Set(current).add(decisionId));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decision-outcomes?decisionId=${encodeURIComponent(decisionId)}`, {
         credentials: 'include',
@@ -1238,16 +1260,23 @@ export default function DecisionLoopReviewPage() {
           ? { ...held, records: { ...held.records, outcomesByDecision: { ...held.records.outcomesByDecision, [decisionId]: outcomes } } }
           : held,
       );
+      setErrorAt(`outcomes:${decisionId}`, '');
     } catch (error) {
       if (athleteId !== selectedAthleteRef.current) return;
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision outcomes.');
+      setErrorAt(`outcomes:${decisionId}`, error instanceof Error ? error.message : 'Failed to load decision outcomes.');
+    } finally {
+      setOutcomesReading((current) => {
+        const next = new Set(current);
+        next.delete(decisionId);
+        return next;
+      });
     }
   }
 
   async function handleEvaluateOutcome(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!outcomeDecisionId || !startWrite('outcome', athleteId)) return;
-    const writeConfirmed = beginWrite();
+    const writeConfirmed = beginWrite('outcome');
     try {
       const observationIds = outcomeObservationIds
         .split(',')
@@ -1276,7 +1305,7 @@ export default function DecisionLoopReviewPage() {
       setDoneLines((shown) => ({ ...shown, outcome: 'Outcome recorded.' }));
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to evaluate decision outcome.');
+      reportWriteError(athleteId, error, 'Failed to evaluate decision outcome.', 'outcome');
     } finally {
       markSubmitting('outcome', athleteId, false);
     }
@@ -1338,12 +1367,29 @@ export default function DecisionLoopReviewPage() {
                 </button>
               </div>
             )}
+            {rosterState === 'loaded' && athletes.length === 0 && (
+              <p className="t-body mt-[var(--s3)]">No athletes on your roster.</p>
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine
                 already made this correction and states the reason -- red is
                 left to mean a child is in danger. */}
-            {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorMessage}</p>}
+            {errorLines.records && (
+              <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorLines.records}</p>
+            )}
+            {/* The athlete's records would not read: the same read again, with
+                every draft on the page kept (UXB-13). */}
+            {athleteId && (loadFailed || statusUnread) && (
+              <button
+                type="button"
+                onClick={() => void refreshAll(athleteId)}
+                disabled={loading}
+                className="btn btn--ghost mt-[var(--s3)]"
+              >
+                {loading ? 'Checking…' : 'Check again'}
+              </button>
+            )}
             {previousAthleteNotice && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{previousAthleteNotice}</p>}
           </section>
 
@@ -1423,6 +1469,7 @@ export default function DecisionLoopReviewPage() {
                     Set Status
                   </ArmedButton>
                   {doneLines.medicalStatus && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.medicalStatus}</p>}
+                  {errorUnder('medicalStatus')}
                 </form>
               </section>
 
@@ -1468,6 +1515,7 @@ export default function DecisionLoopReviewPage() {
                   ))}
                 </div>
                 {doneLines.recommendation && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.recommendation}</p>}
+                {errorUnder('recommendation')}
               </section>
 
               {/* Decisions */}
@@ -1496,10 +1544,12 @@ export default function DecisionLoopReviewPage() {
                       <button
                         type="button"
                         onClick={() => void handleLoadOutcomes(decision.decision_id)}
+                        disabled={outcomesReading.has(decision.decision_id)}
                         className="btn btn--ghost mt-[var(--s3)]"
                       >
-                        Load Outcomes
+                        {outcomesReading.has(decision.decision_id) ? 'Loading outcomes…' : 'Load Outcomes'}
                       </button>
+                      {errorUnder(`outcomes:${decision.decision_id}`)}
                       {outcomesByDecision[decision.decision_id] && (
                         <div className="mt-[var(--s3)] space-y-[var(--s2)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                           {outcomesByDecision[decision.decision_id].length === 0 ? (
@@ -1566,6 +1616,7 @@ export default function DecisionLoopReviewPage() {
                     {isSubmitting('decision') ? 'Recording…' : 'Record Decision'}
                   </button>
                   {doneLines.decision && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.decision}</p>}
+                  {errorUnder('decision')}
                 </form>
               </section>
 
@@ -1633,6 +1684,7 @@ export default function DecisionLoopReviewPage() {
                     {isSubmitting('nearMiss') ? 'Flagging…' : 'Flag Near-Miss'}
                   </button>
                   {doneLines.nearMiss && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.nearMiss}</p>}
+                  {errorUnder('nearMiss')}
                 </form>
               </section>
 
@@ -1681,6 +1733,7 @@ export default function DecisionLoopReviewPage() {
                   <button type="submit" className="btn btn--ghost" disabled={incidentSubmitting}>
                     {incidentSubmitting ? 'Filing…' : 'File Incident Report'}
                   </button>
+                  {errorUnder('incident')}
                 </form>
               </section>
 
@@ -1708,6 +1761,7 @@ export default function DecisionLoopReviewPage() {
                   <button type="submit" className="btn btn--ghost" disabled={behaviorNoteSubmitting}>
                     {behaviorNoteSubmitting ? 'Logging…' : 'Log Note'}
                   </button>
+                  {errorUnder('behaviorNote')}
                 </form>
               </section>
 
@@ -1746,6 +1800,7 @@ export default function DecisionLoopReviewPage() {
                   <button type="submit" className="btn btn--ghost" disabled={messageHomeSubmitting}>
                     {messageHomeSubmitting ? 'Posting…' : 'Post to Family'}
                   </button>
+                  {errorUnder('messageHome')}
                 </form>
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
@@ -1813,6 +1868,7 @@ export default function DecisionLoopReviewPage() {
                     {isSubmitting('outcome') ? 'Recording…' : 'Evaluate Outcome'}
                   </button>
                   {doneLines.outcome && <p role="status" className="t-body text-[color:var(--brass-300)] md:col-span-2">{doneLines.outcome}</p>}
+                  {errorLines.outcome && <div className="md:col-span-2">{errorUnder('outcome')}</div>}
                 </form>
               </section>
             </div>
