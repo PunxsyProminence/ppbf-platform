@@ -55,13 +55,13 @@ const INVITABLE_ROLES = [
   { value: 'board', label: 'Board' },
 ];
 
+// What the outgoing admin becomes: the three staff roles the transfer route
+// accepts (lane L31). 'Admin' left two admins; 'Athlete' and 'Parent' made
+// accounts with no roster record or child to sign in to.
 const DEMOTE_ROLES = [
   { value: 'coach', label: 'Coach' },
-  { value: 'admin', label: 'Admin' },
   { value: 'staff', label: 'Staff' },
   { value: 'volunteer', label: 'Volunteer' },
-  { value: 'parent', label: 'Parent / Guardian' },
-  { value: 'athlete', label: 'Athlete' },
 ];
 
 type ArmedAction = 'invite' | 'athlete' | 'promote' | 'transfer' | 'disable' | 'restore' | 'grant' | 'revoke';

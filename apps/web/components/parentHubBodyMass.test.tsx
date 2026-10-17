@@ -20,6 +20,8 @@ const FLAG = 'Weight down 6.0% in 7 days (132.3 lb → 124.3 lb). Check in with 
 function installFetch(bodyMass: (athleteId: string) => Promise<Response>): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: true, account_id: 'acct_parent_1' });
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({

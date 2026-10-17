@@ -181,6 +181,10 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       return jsonResponse({ ok: true, task: { due_date: sent.due_date, completed_at: null } });
     }
+    // Message the Athlete's "Sent to this athlete" list (#1542, FC-06); empty here.
+    if (key.includes('/api/pilot/coach/athlete-messages')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     throw new Error(`Unexpected fetch: ${key}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -253,6 +257,24 @@ test('a failed log shows the error, not a false success message', async () => {
 
   await screen.findByText('Forbidden');
   expect(screen.queryByText('Note logged.')).toBeNull();
+});
+
+// FC-06: the message box belongs to the athlete it was opened for. Fails if
+// <MessageAthlete> loses key={athleteId} and a draft for one athlete carries
+// over to the next.
+test('a message typed for one athlete is not left in the box after switching to another', async () => {
+  installFetch();
+  render(<DecisionLoopReviewPage />);
+  const picker = await rosterLoaded();
+
+  fireEvent.change(picker, { target: { value: 'ath-a' } });
+  const boxA = await screen.findByLabelText('Message to the athlete');
+  fireEvent.change(boxA, { target: { value: 'For Athlete A only.' } });
+  expect(boxA).toHaveValue('For Athlete A only.');
+
+  fireEvent.change(picker, { target: { value: 'ath-b' } });
+  await waitFor(() => expect(athletePicker().value).toBe('ath-b'));
+  expect(await screen.findByLabelText('Message to the athlete')).toHaveValue('');
 });
 
 // Capability #90, scoped to one-directional send: a coach message to the
