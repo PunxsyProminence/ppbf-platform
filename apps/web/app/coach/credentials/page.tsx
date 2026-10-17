@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
+import BackHome from '@/components/BackHome';
 
 // Self-upload for staff credentials (SafeSport, USA Boxing coach cert,
 // background check, CPR/First Aid, ...). Uploading always lands as
@@ -224,7 +224,7 @@ export default function StaffCredentialsUploadPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

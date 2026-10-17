@@ -155,7 +155,9 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
      now fail for the right reason and read like a deletion, which is exactly
      the confusion this scope test exists to prevent. The control is still
      required to be here; what changed is who it renders for. */
-  const OPERATIONS_RAIL_CONTROL = '<OperationsLink';
+  // The rail's way out is the shared role-aware back link (lane U2): every
+  // role this page admits goes back to its own home, never into the hub.
+  const OPERATIONS_RAIL_CONTROL = '<BackHome';
 
   /** The role gates that decide who sees which of the above. */
   const REAL_ROLE_GATES = [
@@ -197,7 +199,7 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     expect(PAGE).toContain(`href="${href}"`);
   });
 
-  test('the Operations rail control still exists, now role-scoped', () => {
+  test("the rail's way back still exists, now role-aware", () => {
     expect(PAGE).toContain(OPERATIONS_RAIL_CONTROL);
     // And it is NOT a raw link any more: a plain href here would put the hub
     // back in front of every role this page admits.

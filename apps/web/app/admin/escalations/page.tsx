@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
@@ -18,6 +16,8 @@ import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 // sync with the real one.
 import type { SafetyEscalationSourceType } from '@/src/server/pilot/escalationLadder';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
+import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -487,14 +487,12 @@ export default function EscalationsPage() {
           ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/admin/compliance-center" className="btn btn--ghost">
+            {/* Admits a coach as well as an admin: Compliance Center is
+                admin-only, and back goes to the reader's own home (lane U2). */}
+            <RoleLink href="/admin/compliance-center" roles={['admin']} className="btn btn--ghost">
               Compliance Center
-            </Link>
-            {/* Admits a coach as well as an admin -- see the attendance queue,
-                which carried the same unconditional link for the same reason. */}
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            </RoleLink>
+            <BackHome />
           </div>
         </div>
       </main>

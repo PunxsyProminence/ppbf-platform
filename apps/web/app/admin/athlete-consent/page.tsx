@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import Link from 'next/link';
-import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 interface GuardianConsentRow {
   parent_id: string;
@@ -715,17 +715,12 @@ export default function AthleteConsentAuditPage() {
           )}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/admin/video-compliance" className="btn btn--ghost">
+            <RoleLink href="/admin/video-compliance" roles={['admin']} className="btn btn--ghost">
               Video Compliance Review
-            </Link>
-            {/* Not a raw Link any more: this page now admits coach, and a
-                coach opening /operations is bounced by the hub's own gate.
-                OperationsLink renders nothing for a role that would be
-                refused, which is the honest treatment -- a link that leads to
-                a refusal reads as a broken button. */}
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            </RoleLink>
+            {/* This page admits a coach as well as an admin: both links go only
+                where the reader is admitted (lane U2). */}
+            <BackHome />
           </div>
         </div>
       </main>

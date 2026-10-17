@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
 
 // External competition minimal skeleton (owner decision 2026-08-15: build
 // both competition skeletons deliberately skeletal). Competition and entry
@@ -588,9 +588,7 @@ export default function ExternalCompetitionPlatformPage() {
           </section>
 
           <div className="mt-[var(--s6)]">
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            <BackHome />
           </div>
         </div>
       </main>
