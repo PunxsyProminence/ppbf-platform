@@ -365,6 +365,11 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/disciplines', label: 'Disciplines', room: 'office', roles: ['coach', 'admin'],
     keywords: 'discipline boxing grappling exposure neck joint choke participation multidiscipline',
     hint: 'What the gym runs, and one athlete’s grappling exposure history.' },
+  /* Desk work beside cohorts: what the gym publishes to families. The writers
+     are coaches and organization admins (PH-10 Q1 A, Q-E A). */
+  { href: '/coach/parent-resources', label: 'Parent Resources', room: 'office', roles: ['coach', 'admin'],
+    keywords: 'parent family families resources guides checklists videos policies publish',
+    hint: 'Add, edit, publish and archive resources for families.' },
 
   // ----------------------------------------------------------------- floor --
   /* "Wall of Names", not "Name Sync": the page's own header calls it the Wall
