@@ -2547,6 +2547,13 @@ describe('create_class names the coach who runs it', () => {
     expect(mockCreateClass.mock.calls[0][1]).toMatchObject({ coach_account_id: 'acct-coach-1' });
   });
 
+  test('a coach naming themselves is the same as naming no one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-1' }));
+    expect(response.status).toBe(200);
+    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({ coach_account_id: 'acct-coach-1' });
+  });
+
   test('a coach cannot schedule a class for another coach', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
     const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-2' }));
