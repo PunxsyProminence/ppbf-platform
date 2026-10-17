@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 // Intervention protocols (module 026 slice 1): the durable record of what
 // we INTENDED to do about a problem -- the hypothesis, the intervention as
@@ -232,6 +233,7 @@ export default function InterventionProtocolsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Intervention Protocols</h1>
+            <ClusterNav cluster="interventions" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               What we intend to do about a problem, written down before we do it: the hypothesis,
               the intervention as designed, and what would prove it wrong. A protocol is intent,

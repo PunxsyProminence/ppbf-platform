@@ -420,6 +420,12 @@ export default function CoachFloorFocus({
           <h3 className="coach-floor-focus__panel-title">
             {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
           </h3>
+          {/* The full list behind this card (lane U2; Jason 2026-10-17, "A:
+              Cross-link now"): The Morning Read is every read, most urgent
+              first. Copy PROPOSED. */}
+          <p className="coach-floor-focus__label">
+            <Link href="/coach/intelligence" className="underline">Full list: The Morning Read</Link>
+          </p>
 
           {ackLanded && (
             <p className="coach-floor-focus__label" role="status">

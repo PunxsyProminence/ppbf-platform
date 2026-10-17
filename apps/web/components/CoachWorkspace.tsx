@@ -63,6 +63,12 @@ import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
+import { BUILDING } from './buildingMap';
+
+/** The clinic doors the coach home links (lane U2, audit UX-A A-3), in the map's own words. */
+const CLINIC_DOORS = ['/coach/sports-medicine', '/coach/injuries', '/coach/athlete-limits', '/coach/sparring-caps']
+  .map((href) => BUILDING.find((door) => door.href === href))
+  .filter((door): door is NonNullable<typeof door> => door !== undefined);
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -2750,7 +2756,10 @@ export default function CoachWorkspace() {
                 ten tabs, so the one line claiming to say where the coach was
                 was wrong nine times out of ten. Derived from activeTab, so it
                 cannot drift from the tab row below. */}
-            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">{activeTabLabel}</h1>
+            {/* An h2: the page's one h1 is RoleStandaloneView's "Coach
+                Workspace", the name the door and every back link use (lane
+                U2, audit UX-A A-16: the home rendered two h1s). */}
+            <h2 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">{activeTabLabel}</h2>
             <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
               Coach workspace · Live session management
             </p>
@@ -3255,6 +3264,21 @@ export default function CoachWorkspace() {
                   >
                     Browse Workout Templates
                   </Link>
+                </div>
+              </section>
+
+              {/* The clinic, one tap from home (lane U2, audit UX-A A-3):
+                  placing a hold, an injury, a limit or a sparring cap used to
+                  need the corridor and the room name "Clinic". Labels are the
+                  building map's own door labels. */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="coach-home-clinic">
+                <h3 id="coach-home-clinic" className="t-eyebrow">Clinic</h3>
+                <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
+                  {CLINIC_DOORS.map((door) => (
+                    <Link key={door.href} href={door.href} className="btn btn--ghost">
+                      {door.label}
+                    </Link>
+                  ))}
                 </div>
               </section>
 
