@@ -27,6 +27,8 @@ function renderArmed(props: Partial<Parameters<typeof ArmedButton>[0]> = {}) {
       Lift this hold
     </ArmedButton>,
   );
+  // On screen long enough that a press is meant for it.
+  wait(ARM_SETTLE_MS);
   return { onConfirm, ...view };
 }
 
@@ -83,6 +85,7 @@ test('it disarms when what it acts on changes, and does not come back armed', ()
   const { rerender } = render(
     <ArmedButton armKey="ath-1:cleared" armedLabel="Press again" onConfirm={onConfirm}>Set Status</ArmedButton>,
   );
+  wait(ARM_SETTLE_MS);
   fireEvent.click(screen.getByRole('button'));
   rerender(<ArmedButton armKey="ath-1:pending" armedLabel="Press again" onConfirm={onConfirm}>Set Status</ArmedButton>);
   expect(screen.getByRole('button', { name: 'Set Status' })).toBeInTheDocument();
@@ -91,6 +94,44 @@ test('it disarms when what it acts on changes, and does not come back armed', ()
   wait(ARM_SETTLE_MS);
   fireEvent.click(screen.getByRole('button'));
   expect(onConfirm).not.toHaveBeenCalled();
+  // That press armed it afresh; it did not fire on what was armed before.
+  expect(screen.getByRole('button', { name: 'Press again' })).toBeInTheDocument();
+});
+
+test('a press right after it appears does not even arm it: it was meant for what was there before', () => {
+  const onConfirm = jest.fn();
+  render(<ArmedButton armedLabel="Press again: acknowledge Ada" onConfirm={onConfirm}>Acknowledge</ArmedButton>);
+  const button = screen.getByRole('button');
+  fireEvent.click(button);
+  expect(button).toHaveTextContent('Acknowledge');
+  wait(ARM_SETTLE_MS - 1);
+  fireEvent.click(button);
+  expect(button).toHaveTextContent('Acknowledge');
+  expect(onConfirm).not.toHaveBeenCalled();
+});
+
+test('busy and back disarms it, and a stale arm is never one press from firing', () => {
+  const onConfirm = jest.fn();
+  const view = (busy: boolean) => (
+    <ArmedButton busy={busy} armedLabel="Press again" onConfirm={onConfirm}>Lift this hold</ArmedButton>
+  );
+  const { rerender } = render(view(false));
+  wait(ARM_SETTLE_MS);
+  fireEvent.click(screen.getByRole('button'));
+  rerender(view(true));
+  rerender(view(false));
+  wait(ARM_SETTLE_MS);
+  fireEvent.click(screen.getByRole('button'));
+  expect(onConfirm).not.toHaveBeenCalled();
+});
+
+test('a held Enter key is not a second press', () => {
+  renderArmed();
+  const button = screen.getByRole('button');
+  fireEvent.click(button);
+  // A key repeat's default (the click it would make) is cancelled; the first keydown's is not.
+  expect(fireEvent.keyDown(button, { key: 'Enter', repeat: true })).toBe(false);
+  expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
 });
 
 test('while busy it is locked and shows the busy words', () => {

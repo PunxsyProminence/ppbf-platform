@@ -5,7 +5,7 @@
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { pressArmed } from '@/src/testing/pressArmed';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import DecisionLoopReviewPage from './page';
 import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -2849,6 +2849,48 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     held.release(ACK);
     await settle();
     expect(posts()).toHaveLength(1);
+    // And the lock lets go once it has answered.
+    await waitFor(() => expect(button()).toBeEnabled());
+  });
+
+  test.each(SIX)('$name: the lock is this athlete’s, and lets go after a refusal too', async ({ name, route, fill, button, press }) => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    fill?.();
+    // Held by node: while busy its words change ("Setting…").
+    const pressed = button();
+    press(pressed);
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST' && String(c[0]).includes(route))).toBe(true),
+    );
+    expect(pressed).toBeDisabled();
+    // Another athlete's form is not locked by A's write. (B has no
+    // recommendations, so Accept and Reject are not there to look at.)
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    if (name !== 'Accept' && name !== 'Reject') expect(pressed).toBeEnabled();
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
+    await screen.findByText(/ref-for-athlete-a/);
+    // Accept and Reject are drawn again with A's recommendations: a new node, the same words.
+    const back = name === 'Accept' || name === 'Reject' ? button() : pressed;
+    expect(back).toBeDisabled();
+
+    held.release(jsonResponse({ error: 'Refused.' }, false));
+    await waitFor(() => expect(back).toBeEnabled());
+  });
+
+  test('a success line for one athlete is gone when the coach moves to another', async () => {
+    installSwitchFetch();
+    await openAthleteA();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText('Status set.');
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.queryAllByRole('status').filter((line) => /landed|set\.|recorded\.|flagged\.|accepted\.|rejected\./i.test(line.textContent ?? ''))).toHaveLength(0);
   });
 
   test.each(SIX)('$name says it landed, under its own form', async ({ fill, button, press, done }) => {
@@ -2870,7 +2912,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
 
     fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'cleared' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    armOnly(screen.getByRole('button', { name: 'Set Status' }));
     await settle();
 
     expect(posts()).toHaveLength(0);
@@ -2883,7 +2925,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
 
     const button = screen.getByRole('button', { name: 'Set Status' });
-    fireEvent.click(button);
+    armOnly(button);
+    expect(button).toHaveTextContent('Press again: set Athlete A to Pending');
     fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'restricted' } });
     expect(button).toHaveTextContent('Set Status');
 
