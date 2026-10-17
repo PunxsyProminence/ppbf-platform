@@ -12,6 +12,7 @@ import {
   type Milestone,
 } from '@/src/shared/achievementPaths';
 import { apiBase } from '@/lib/apiBase';
+import { readChosenChild } from '@/src/lib/chosenChild';
 import BackHome from './BackHome';
 
 /**
@@ -22,8 +23,12 @@ import BackHome from './BackHome';
  * (the design system's print block hides every button), so what comes out of
  * the printer is two clean sheets with no app chrome on them.
  *
- * WHOSE PAPER. The athlete this prints for is `?athlete_id=` when one is given
- * and the signed-in member otherwise. Nothing here decides whether that is
+ * WHOSE PAPER. The athlete this prints for is `?athlete_id=` when one is given;
+ * otherwise, for a guardian, the child they chose on the parent hub (carried
+ * in this tab's sessionStorage, src/lib/chosenChild.ts, so the child's id is
+ * never in the address: #1596 item 2b); otherwise the signed-in member. A
+ * chosen child left in the tab is ignored for anyone signed in as other than
+ * a parent. Nothing here decides whether that is
  * allowed: /api/pilot/profile/card runs the profile gate and
  * /api/pilot/achievements/milestones runs assertActorCanAccessAthlete, so an
  * athlete id belonging to another family produces a 404 and this page renders
@@ -97,8 +102,8 @@ export default function PrintRoom() {
             signal: controller.signal,
           });
           if (sessionResponse.ok) {
-            const payload = (await sessionResponse.json()) as { athlete_id?: string | null };
-            subject = payload.athlete_id ?? null;
+            const payload = (await sessionResponse.json()) as { athlete_id?: string | null; role?: string };
+            subject = payload.role === 'parent' ? readChosenChild() : (payload.athlete_id ?? null);
           }
         }
 
