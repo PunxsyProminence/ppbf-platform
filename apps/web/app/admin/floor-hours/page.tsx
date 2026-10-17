@@ -89,6 +89,47 @@ export default function AdminFloorHoursPage() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [notice, setNotice] = useState('');
+  // Who each total belongs to, in words (UXB-12): an athlete by roster name,
+  // an adult by the address they sign in with. Read once; a failed read leaves
+  // the words fallback, never an account id.
+  const [personNames, setPersonNames] = useState<ReadonlyMap<string, string>>(new Map());
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const [staffResponse, rosterResponse] = await Promise.all([
+          fetch(`${apiBase()}/api/pilot/admin/staff`, { method: 'GET', credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/admin/athlete-pin-directory`, { method: 'GET', credentials: 'include' }),
+        ]);
+        const staff = (await staffResponse.json().catch(() => ({}))) as { members?: Array<{ account_id?: unknown; login_email?: unknown }> };
+        const roster = (await rosterResponse.json().catch(() => ({}))) as { items?: Array<{ account_id?: unknown; full_name?: unknown }> };
+        const names = new Map<string, string>();
+        if (staffResponse.ok && Array.isArray(staff.members)) {
+          for (const member of staff.members) {
+            if (typeof member.account_id === 'string' && typeof member.login_email === 'string' && member.login_email !== '') {
+              names.set(member.account_id, member.login_email);
+            }
+          }
+        }
+        if (rosterResponse.ok && Array.isArray(roster.items)) {
+          for (const athlete of roster.items) {
+            if (typeof athlete.account_id === 'string' && typeof athlete.full_name === 'string' && athlete.full_name.trim() !== '') {
+              names.set(athlete.account_id, athlete.full_name);
+            }
+          }
+        }
+        if (live) setPersonNames(names);
+      } catch {
+        // Words fallback below.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const personName = (accountId: string): string => personNames.get(accountId) ?? 'Person (name not loaded)';
 
   const loadTotals = useCallback(async () => {
     try {
@@ -286,7 +327,7 @@ export default function AdminFloorHoursPage() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={`${row.person_account_id}-${row.activity_domain}-${row.period_year}-${row.period_quarter}`}>
-                      <td>{row.person_account_id}</td>
+                      <td>{personName(row.person_account_id)}</td>
                       <td>{row.activity_domain}</td>
                       <td>{row.period_year} Q{row.period_quarter}</td>
                       {/* Recorded and adjusted are shown SEPARATELY, never
@@ -301,7 +342,7 @@ export default function AdminFloorHoursPage() {
                       <td>
                         <button
                           type="button"
-                          aria-label={`Open the sessions behind ${row.person_account_id}'s total`}
+                          aria-label={`Open the sessions behind ${personName(row.person_account_id)}'s total`}
                           onClick={() => openPerson(row.person_account_id)}
                           className="btn btn--ghost whitespace-nowrap"
                         >
@@ -318,7 +359,7 @@ export default function AdminFloorHoursPage() {
 
         {selectedPerson && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-            <h2 className="t-eyebrow">Sessions for {selectedPerson}</h2>
+            <h2 className="t-eyebrow">Sessions for {personName(selectedPerson)}</h2>
             {personRows.length > 0 && (
               <p className="t-muted mt-[var(--s2)]">
                 First recorded {formatGymDateNumeric(personRows[0].first_recorded) ?? personRows[0].first_recorded}.

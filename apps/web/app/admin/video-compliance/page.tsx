@@ -293,7 +293,6 @@ export default function VideoCompliancePage() {
             >
               Video Compliance Review
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.video_publications</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every submission waits here before it can be published. Check for appropriate content, that every
               visible athlete is covered by consent, and for privacy-violating audio -- then approve, reject, or

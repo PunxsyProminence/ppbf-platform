@@ -201,7 +201,6 @@ export default function CoachCoveragePage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Coach Coverage</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.coach_coverage</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               A coverage grant lets a covering coach read one athlete&rsquo;s record temporarily -- a sub, a
               guest instructor, a coach filling in on short notice. Grants expire on their own; revoke ends one

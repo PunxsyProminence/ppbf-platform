@@ -84,6 +84,9 @@ export default function EscalationsPage() {
   const [items, setItems] = useState<SafetyEscalation[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<EscalationStatus | 'all'>('open');
   const [errorMessage, setErrorMessage] = useState('');
+  // Athlete names for the Athlete column, from the roster this page's readers
+  // already have (UXB-12): an escalation names a child, never an id.
+  const [athleteNames, setAthleteNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [actionMessage, setActionMessage] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   // The resolution note used to be collected in window.prompt(): a decision
@@ -107,6 +110,27 @@ export default function EscalationsPage() {
   });
 
   const isAdmin = role === 'admin' || role === 'organization_admin';
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        const payload = (await response.json().catch(() => ({}))) as { items?: Array<{ athlete_id?: unknown; full_name?: unknown }> };
+        if (!live || !response.ok || !Array.isArray(payload.items)) return;
+        setAthleteNames(new Map(payload.items.flatMap((row) => (
+          typeof row.athlete_id === 'string' && typeof row.full_name === 'string' && row.full_name.trim() !== ''
+            ? [[row.athlete_id, row.full_name] as [string, string]]
+            : []
+        ))));
+      } catch {
+        // The column falls back to words; the queue itself is unaffected.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const load = useCallback(async (status: EscalationStatus | 'all') => {
     try {
@@ -272,7 +296,6 @@ export default function EscalationsPage() {
             >
               Escalations
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.safety_escalations</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               This platform sends no email or push notification -- a near miss, pain report, or safety-gate flag
               severe enough to escalate lands here, and only here. Nothing auto-resolves; a human closes every row.
@@ -385,7 +408,7 @@ export default function EscalationsPage() {
                           <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{severityText(item)}</span>
                         </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
-                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_id}</td>
+                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{athleteNames.get(item.athlete_id) ?? 'Athlete (name not loaded)'}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">{item.reason}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.created_at)}</td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">

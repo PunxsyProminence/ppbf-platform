@@ -190,6 +190,9 @@ function AthleteRecordsConsoleContent() {
   const [filter, setFilter] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [confirmingStatusChange, setConfirmingStatusChange] = useState(false);
+  // "Correct Record" on another athlete while this one has unsaved corrections
+  // asks first, rather than overwriting the form (UXB-27).
+  const [pendingSwitch, setPendingSwitch] = useState<RosterAthlete | null>(null);
 
   const [draftFullName, setDraftFullName] = useState('');
   const [draftDob, setDraftDob] = useState('');
@@ -412,7 +415,20 @@ function AthleteRecordsConsoleContent() {
     }));
   }, [coachChoices, coachDirectory, coachNameFor]);
 
+  function requestRecord(athlete: RosterAthlete) {
+    if (hasUnsavedEdits && selectedId !== athlete.athlete_id) {
+      setPendingSwitch(athlete);
+      return;
+    }
+    openRecord(athlete);
+  }
+
+  function discardEdits() {
+    if (selected) openRecord(selected);
+  }
+
   function openRecord(athlete: RosterAthlete) {
+    setPendingSwitch(null);
     setSelectedId(athlete.athlete_id);
     setConfirmingStatusChange(false);
     setError('');
@@ -637,19 +653,34 @@ function AthleteRecordsConsoleContent() {
                             <> · attendance {Math.round(attendanceRate * 100)}%</>
                           )}
                         </p>
+                        {/* Left the gym is an office state, not a medical stop:
+                            the administrative rung, not --locked (UXB-10). */}
                         {!athlete.active_flag && (
                           <p className="mt-[var(--s2)]">
-                            <span className="badge badge--locked"><i>✕</i>Inactive</span>
+                            <span className="badge badge--filed"><i>◌</i>Left the gym</span>
                           </p>
                         )}
                       </div>
                       <button
                         type="button"
-                        onClick={() => openRecord(athlete)}
+                        onClick={() => requestRecord(athlete)}
                         className={`shrink-0 ${selectedId === athlete.athlete_id ? 'btn' : 'btn btn--ghost'}`}
                       >
                         {selectedId === athlete.athlete_id ? 'Editing' : 'Correct Record'}
                       </button>
+                      {pendingSwitch?.athlete_id === athlete.athlete_id && selected && (
+                        <div className="w-full space-y-[var(--s2)]" role="alert">
+                          <p className="t-body">Discard changes to {selected.full_name}?</p>
+                          <div className="flex flex-wrap gap-[var(--s2)]">
+                            <button type="button" onClick={() => openRecord(athlete)} className="btn">
+                              Discard and open {athlete.full_name}
+                            </button>
+                            <button type="button" onClick={() => setPendingSwitch(null)} className="btn btn--ghost">
+                              Keep editing
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                     );
                   })}
@@ -870,6 +901,11 @@ function AthleteRecordsConsoleContent() {
               >
                 {busy ? 'Saving...' : hasUnsavedEdits ? 'Save Correction' : 'Nothing To Save'}
               </button>
+              {hasUnsavedEdits && (
+                <button type="button" onClick={discardEdits} disabled={busy} className="btn btn--ghost w-full disabled:opacity-50">
+                  Discard changes
+                </button>
+              )}
             </form>
 
             {/* Lane FU2: what the gym's coaches wrote about this athlete,
@@ -916,7 +952,7 @@ function AthleteRecordsConsoleContent() {
                       onClick={() => void toggleActive()}
                       className="btn flex-1 disabled:opacity-50"
                     >
-                      {busy ? 'Saving...' : 'Yes, Save It'}
+                      {busy ? 'Saving...' : selected.active_flag ? 'Yes, mark as left' : 'Yes, mark as back'}
                     </button>
                     <button
                       type="button"
@@ -934,7 +970,9 @@ function AthleteRecordsConsoleContent() {
                   onClick={() => setConfirmingStatusChange(true)}
                   className="btn btn--ghost w-full"
                 >
-                  {selected.active_flag ? 'Deactivate Athlete' : 'Reactivate Athlete'}
+                  {/* Not "Deactivate": on People that word switches a sign-in off,
+                      and this does not (UXB-26). */}
+                  {selected.active_flag ? 'Mark as left the gym' : 'Mark as back'}
                 </button>
               )}
             </section>

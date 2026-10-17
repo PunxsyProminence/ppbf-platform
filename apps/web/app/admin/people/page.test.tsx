@@ -505,7 +505,9 @@ describe('sign-in status labels follow the credential policy', () => {
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
 
-    expect(screen.getByText(/Issues sriv a new one-time activation code now\. Their PIN stops working and they are signed out on every device until they redeem the new code\./)).toBeTruthy();
+    // Named from the roster, never by the account id (UXB-12).
+    expect(screen.getByText(/Issues Sam Rivera a new one-time activation code now\. Their PIN stops working and they are signed out on every device until they redeem the new code\./)).toBeTruthy();
+    expect(screen.queryByText(/Issues sriv/)).toBeNull();
     expect(bodies).toEqual([]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep Their PIN' }));
@@ -522,7 +524,9 @@ describe('sign-in status labels follow the credential policy', () => {
     }) as never;
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
-    expect(screen.getByText('Issues ath-new a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
+    // ath-3 is not on the fixture roster: words, not the account id (UXB-12).
+    expect(screen.getByText('Issues Athlete (name not loaded) a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
+    expect(screen.queryByText(/ath-new/)).toBeNull();
     expect(screen.queryByText(/Their PIN stops working/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Keep The Current Code' })).toBeTruthy();
   });
@@ -616,7 +620,7 @@ describe('removing a guardian link', () => {
       from_account_id: 'dana@example.com',
       to_email: 'dana.new@example.com',
     });
-    expect(await screen.findByText(/Moved to dana\.new@example\.com\. Nothing was sent.*dana@example\.com is switched off/)).toBeTruthy();
+    expect(await screen.findByText(/Moved to dana\.new@example\.com\. Nothing was sent.*The old sign-in, dana@example\.com, is switched off/)).toBeTruthy();
   });
 
   test('shows the server refusal of a move verbatim', async () => {
@@ -765,8 +769,11 @@ describe('the add-athlete form', () => {
     fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'alex   johnson' } });
 
     // Case and spacing insensitive, so a retyped name still matches.
-    const warning = await screen.findByText(/Alex Johnson is already on your roster as ath-1/i);
+    const warning = await screen.findByText(/Alex Johnson is already on your roster\./i);
     expect(warning).toBeTruthy();
+    // The shared warning style (readable on this ground), and the name only (UXB-07).
+    expect(warning.closest('.alert--warning')).not.toBeNull();
+    expect(warning.textContent).not.toMatch(/ath-1/);
     // A warning, not a wall: two children can share a name.
     expect(warning.textContent).toMatch(/If they are different people who share a name, carry on/i);
   });
