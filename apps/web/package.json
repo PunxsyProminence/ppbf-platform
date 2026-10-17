@@ -435,7 +435,6 @@
     "pilot:apply-parent-resources": "node scripts/pilot-apply-parent-resources-migration.mjs",
     "pilot:apply-family-support-records": "node scripts/pilot-apply-family-support-records-migration.mjs",
     "pilot:apply-family-reply-reads": "node scripts/pilot-apply-family-reply-reads-migration.mjs",
-    "pilot:apply-parent-resources": "node scripts/pilot-apply-parent-resources-migration.mjs",
     "pilot:apply-session-run-athletes": "node scripts/pilot-apply-session-run-athletes-migration.mjs",
     "pilot:apply-organization-profiles": "node scripts/pilot-apply-organization-profiles-migration.mjs",
     "pilot:apply-source-rights": "node scripts/pilot-apply-source-rights-migration.mjs",
