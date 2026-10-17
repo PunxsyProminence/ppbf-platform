@@ -98,21 +98,23 @@ export default function AdminFloorHoursPage() {
     let live = true;
     void (async () => {
       try {
-        const [staffResponse, rosterResponse] = await Promise.all([
+        const [staffRead, rosterRead] = await Promise.allSettled([
           fetch(`${apiBase()}/api/pilot/admin/staff`, { method: 'GET', credentials: 'include' }),
           fetch(`${apiBase()}/api/pilot/admin/athlete-pin-directory`, { method: 'GET', credentials: 'include' }),
         ]);
-        const staff = (await staffResponse.json().catch(() => ({}))) as { members?: Array<{ account_id?: unknown; login_email?: unknown }> };
-        const roster = (await rosterResponse.json().catch(() => ({}))) as { items?: Array<{ account_id?: unknown; full_name?: unknown }> };
+        const staffResponse = staffRead.status === 'fulfilled' ? staffRead.value : null;
+        const rosterResponse = rosterRead.status === 'fulfilled' ? rosterRead.value : null;
+        const staff = (await staffResponse?.json().catch(() => ({})) ?? {}) as { members?: Array<{ account_id?: unknown; login_email?: unknown }> };
+        const roster = (await rosterResponse?.json().catch(() => ({})) ?? {}) as { items?: Array<{ account_id?: unknown; full_name?: unknown }> };
         const names = new Map<string, string>();
-        if (staffResponse.ok && Array.isArray(staff.members)) {
+        if (staffResponse?.ok && Array.isArray(staff.members)) {
           for (const member of staff.members) {
             if (typeof member.account_id === 'string' && typeof member.login_email === 'string' && member.login_email !== '') {
               names.set(member.account_id, member.login_email);
             }
           }
         }
-        if (rosterResponse.ok && Array.isArray(roster.items)) {
+        if (rosterResponse?.ok && Array.isArray(roster.items)) {
           for (const athlete of roster.items) {
             if (typeof athlete.account_id === 'string' && typeof athlete.full_name === 'string' && athlete.full_name.trim() !== '') {
               names.set(athlete.account_id, athlete.full_name);
@@ -424,7 +426,7 @@ export default function AdminFloorHoursPage() {
                                     {trail.map((entry) => (
                                       <li key={entry.adjustment_id} className="t-muted">
                                         {entry.delta_minutes > 0 ? '+' : ''}{entry.delta_minutes} min —{' '}
-                                        &ldquo;{entry.reason}&rdquo; — {entry.adjusted_by_account_id}{' '}
+                                        &ldquo;{entry.reason}&rdquo; — {personName(entry.adjusted_by_account_id)}{' '}
                                         ({entry.adjusted_by_role}),{' '}
                                         {formatGymStamp(entry.adjusted_at) ?? entry.adjusted_at}
                                       </li>

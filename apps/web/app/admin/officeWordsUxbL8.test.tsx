@@ -69,6 +69,37 @@ describe('escalations name the athlete (UXB-12)', () => {
   });
 });
 
+describe('a failed name read on escalations is said once, with a way back', () => {
+  test('rows read "name not loaded", an alert says why, and Check again reads the names again', async () => {
+    let namesFail = true;
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: true, role: 'organization_admin' });
+      if (target.includes('/api/pilot/athletes/list')) {
+        return namesFail ? jsonResponse({ error: 'x' }, false) : jsonResponse({ items: [{ athlete_id: 'ath-77', full_name: 'Jordan Pace' }] });
+      }
+      if (target.includes('/api/pilot/escalations')) {
+        return jsonResponse({
+          escalations: [{
+            escalation_id: 'esc-1', source_type: 'pain_report', athlete_id: 'ath-77', severity: 'high',
+            reason: 'Sore wrist again.', status: 'open', escalated_to_role: 'organization_admin', created_at: '2026-10-10T12:00:00.000Z',
+          }],
+        });
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<EscalationsPage />);
+
+    expect(await screen.findByText(/Athlete names could not be loaded/)).toBeTruthy();
+    expect(screen.getByText('Athlete (name not loaded)')).toBeTruthy();
+    expect(screen.queryByText('ath-77')).toBeNull();
+    namesFail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    expect(await screen.findByText('Jordan Pace')).toBeTruthy();
+  });
+});
+
 describe('floor hours name the person (UXB-12)', () => {
   test('the Person column shows a name, never the account id', async () => {
     global.fetch = jest.fn(async (url: string) => {

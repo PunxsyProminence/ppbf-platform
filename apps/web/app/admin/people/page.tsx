@@ -460,7 +460,7 @@ function PeopleConsoleContent() {
   const personLabel = (accountId: string): string => {
     const member = members.find((item) => item.account_id === accountId);
     if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name ?? 'Athlete (name not loaded)';
-    return member?.login_email || 'That account';
+    return member?.login_email || 'Account with no sign-in address';
   };
 
   /**
@@ -794,7 +794,7 @@ function PeopleConsoleContent() {
       setMoveEmail('');
       setNotice(
         `Moved to ${movedTo}. Nothing was sent to them: tell the family to ask for a sign-in link at that address.`
-        + (payload.old_login_switched_off ? ` The old sign-in, ${oldLogin}, is switched off.` : ''),
+        + (payload.old_login_switched_off ? ` The old sign-in${oldLogin.includes('@') ? `, ${oldLogin},` : ''} is switched off.` : ''),
       );
       await load();
     } catch (moveError) {
@@ -985,7 +985,7 @@ function PeopleConsoleContent() {
       const member = members.find((item) => item.account_id === accountId);
       const nextStep = member?.auth_provider === 'ppbf_local' && member.role === 'athlete'
         ? ' To stop that too, issue a new activation code.'
-        : member && ['coach', 'staff', 'volunteer'].includes(member.role)
+        : member && member.active_flag && ['coach', 'staff', 'volunteer'].includes(member.role)
           ? ' To stop that too, deactivate them.'
           : '';
       setNotice(`${personLabel(accountId)} is signed out on every device. Their sign-in still works — they can sign back in.${nextStep}`);
@@ -1113,7 +1113,7 @@ function PeopleConsoleContent() {
             <div className="frame-in mat-leather p-[var(--s5)]">
               <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                 <div>
-                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Activation code for {createdAthlete.accountId}</h2>
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Activation code for {personLabel(createdAthlete.accountId)}</h2>
                   <p className="t-body mt-[var(--s2)]">
                     Tell them these two things. They will have to choose their own PIN the first time they sign in, and
                     you will never see what they pick.
@@ -1304,7 +1304,7 @@ function PeopleConsoleContent() {
 
                     return (
                       <tr key={member.account_id}>
-                        <td className="font-bold">{member.athlete_id ? personLabel(member.account_id) : (member.login_email || member.account_id)}</td>
+                        <td className="font-bold">{personLabel(member.account_id)}</td>
                         <td>{roleLabel(member.role)}</td>
                         <td>
                           <span
@@ -1942,7 +1942,7 @@ function PeopleConsoleContent() {
                     share birthdays, so a match on both is a question, not proof.
                   */}
                   {duplicateAthlete && (
-                    <div className="alert alert--warning mt-[var(--s2)]" role="alert">
+                    <div className="alert alert--warning mt-[var(--s2)]" role="status">
                       <span className="alert-icon" aria-hidden="true">▲</span>
                       <div className="alert-body">
                         <p className="alert-msg">

@@ -469,6 +469,7 @@ function AthleteRecordsConsoleContent() {
    */
   async function submitRecord(record: RosterAthlete, changes: Partial<RosterAthlete>, successNotice: string) {
     setBusy(true);
+    setPendingSwitch(null);
     setError('');
     setNotice('');
 
@@ -522,7 +523,7 @@ function AthleteRecordsConsoleContent() {
         emergency_contact: draftEmergencyContact.trim(),
         coach_id: draftCoachId,
       },
-      `${draftFullName.trim()} (${selected.athlete_id}) is saved. Their sessions, goals and reviews are untouched.`,
+      `${draftFullName.trim()} is saved. Their sessions, goals and reviews are untouched.`,
     );
   }
 
@@ -534,8 +535,8 @@ function AthleteRecordsConsoleContent() {
       selected,
       { active_flag: !selected.active_flag },
       deactivating
-        ? `${selected.full_name} (${selected.athlete_id}) is marked inactive. Everything on their record is still there.`
-        : `${selected.full_name} (${selected.athlete_id}) is marked active again.`,
+        ? `${selected.full_name} is marked as left the gym. Everything on their record is still there.`
+        : `${selected.full_name} is marked as back.`,
     );
   }
 
@@ -924,8 +925,8 @@ function AthleteRecordsConsoleContent() {
                 </h2>
                 <p className="t-body mt-[var(--s3)]">
                   {selected.active_flag
-                    ? 'Marking them inactive keeps their whole record — every session, goal, review and pain report stays exactly where it is. It can be undone here at any time.'
-                    : 'This record is marked inactive. Marking them active again puts them back on the roster as they were.'}
+                    ? 'Marking them as left keeps their whole record — every session, goal, review and pain report stays exactly where it is. It can be undone here at any time.'
+                    : 'This athlete is marked as left the gym. Marking them as back puts them on the roster as they were.'}
                 </p>
                 <p className="t-body mt-[var(--s3)]">
                   Two things it does not do: it does not switch off their sign-in, and it does not take them off their
@@ -942,8 +943,8 @@ function AthleteRecordsConsoleContent() {
                 <div className="space-y-[var(--s3)]">
                   <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
                     {selected.active_flag
-                      ? `Mark ${selected.full_name} inactive?`
-                      : `Mark ${selected.full_name} active again?`}
+                      ? `Mark ${selected.full_name} as left the gym?`
+                      : `Mark ${selected.full_name} as back?`}
                   </p>
                   <div className="flex flex-wrap gap-[var(--s3)]">
                     <button
