@@ -104,13 +104,15 @@ function readSupportStatus(payload: unknown): SupportStatus | null {
   return { memberships, scholarship: value.scholarship, supports };
 }
 
-/** "Youth Boxing: Active since October 1, 2026", from one membership row. */
+/** "Youth Boxing: Active since October 1, 2026", from one membership row.
+    Every row carries its start date (copy PROPOSED). */
 function membershipLine(row: SupportStatus['memberships'][number]): string {
-  if (row.status === 'active') return `${row.program_name}: Active since ${formatDueDate(row.started_on)}`;
-  if (row.status === 'lapsed') return `${row.program_name}: Lapsed (started ${formatDueDate(row.started_on)})`;
+  const started = formatDueDate(row.started_on);
+  if (row.status === 'active') return `${row.program_name}: Active since ${started}`;
+  if (row.status === 'lapsed') return `${row.program_name}: Lapsed (started ${started})`;
   return row.ended_on
-    ? `${row.program_name}: Ended ${formatDueDate(row.ended_on)}`
-    : `${row.program_name}: Ended`;
+    ? `${row.program_name}: Ended ${formatDueDate(row.ended_on)} (started ${started})`
+    : `${row.program_name}: Ended (started ${started})`;
 }
 
 /** A task is open until the family ticks it. */
@@ -935,9 +937,14 @@ export default function ParentHub() {
     })();
     return () => controller.abort();
   }, [activeChildId]);
-  const shownSupport = childSupport?.athleteId === activeChildId && childSupport.state === 'loaded'
-    ? childSupport.status
-    : null;
+  /* 'loading' until this child's own answer arrives (an answer for another
+     child counts as not arrived); 'failed' only when this child's read did
+     not answer. Loading is neutral, never Unavailable or none recorded. */
+  const shownSupport: SupportStatus | 'loading' | 'failed' = childSupport?.athleteId !== activeChildId
+    ? 'loading'
+    : childSupport.state === 'loaded'
+      ? childSupport.status
+      : 'failed';
   const progressText = shownProgress?.state === 'loaded'
     ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} logged`
     : 'Unavailable';
@@ -1454,7 +1461,9 @@ export default function ParentHub() {
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Membership Status</p>
-                        {!shownSupport ? (
+                        {shownSupport === 'loading' ? (
+                          <p className="t-muted">Loading…</p>
+                        ) : shownSupport === 'failed' ? (
                           <p className="t-body font-semibold">Unavailable</p>
                         ) : shownSupport.memberships.length === 0 ? (
                           <p className="t-muted">No membership recorded</p>
@@ -1468,17 +1477,21 @@ export default function ParentHub() {
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Scholarship Status</p>
-                        {!shownSupport ? (
+                        {shownSupport === 'loading' ? (
+                          <p className="t-muted">Loading…</p>
+                        ) : shownSupport === 'failed' ? (
                           <p className="t-body font-semibold">Unavailable</p>
                         ) : shownSupport.scholarship === 'yes' ? (
                           <p className="t-body font-semibold">Scholarship: yes</p>
                         ) : (
-                          <p className="t-muted">No scholarship recorded</p>
+                          <p className="t-muted">No current scholarship recorded</p>
                         )}
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Community Service Support Status</p>
-                        {!shownSupport ? (
+                        {shownSupport === 'loading' ? (
+                          <p className="t-muted">Loading…</p>
+                        ) : shownSupport === 'failed' ? (
                           <p className="t-body font-semibold">Unavailable</p>
                         ) : shownSupport.supports.length === 0 ? (
                           <p className="t-muted">No support recorded</p>

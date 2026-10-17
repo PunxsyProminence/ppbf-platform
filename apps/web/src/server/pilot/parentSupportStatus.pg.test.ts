@@ -64,6 +64,8 @@ const OFFICE = 'acct-pss-office';
 const OTHER_OFFICE = 'acct-pss-office-b';
 const PARENT = 'acct-pss-parent';
 const OTHER_PARENT = 'acct-pss-parent-b';
+const SECOND_PARENT = 'acct-pss-parent-c'; // a second guardian legitimately linked to CHILD
+const UNLINKED_PARENT = 'acct-pss-parent-d'; // was linked to CHILD; the link is removed
 
 const CHILD = 'ATH-PSS-1'; // linked; active scholarship, a lapsed program, an ended one, supports
 const ZERO = 'ATH-PSS-2'; // linked; memberships at 0 percent only
@@ -74,6 +76,7 @@ const ADULT = 'ATH-PSS-6'; // linked; 18 or older
 const DELETED = 'ATH-PSS-7'; // linked; deleted
 const OTHER_FAMILY = 'ATH-PSS-8'; // linked to another guardian only
 const OTHER_GYM = 'ATH-PSS-9'; // another gym, linked there to the same login
+const ORDERED = 'ATH-PSS-10'; // linked; an ended row started after the active and lapsed ones
 
 const SECRET_PERCENT = 37;
 const SECRET_NOTE = 'Basis: hardship letter on file';
@@ -195,6 +198,8 @@ beforeAll(async () => {
     [OTHER_OFFICE, 'organization_admin', OTHER_ORG],
     [PARENT, 'parent', ORG],
     [OTHER_PARENT, 'parent', ORG],
+    [SECOND_PARENT, 'parent', ORG],
+    [UNLINKED_PARENT, 'parent', ORG],
   ] as const) {
     await client.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
@@ -217,9 +222,12 @@ beforeAll(async () => {
     [ORG, ADULT, '2000-03-04'],
     [ORG, DELETED, '2012-03-04'],
     [ORG, OTHER_FAMILY, '2012-03-04'],
+    [ORG, ORDERED, '2012-03-04'],
     [OTHER_ORG, OTHER_GYM, '2012-03-04'],
-    // The same athlete id in the other gym, so a missing gym predicate would show its rows.
+    // The same athlete ids in the other gym, so a missing gym predicate would show its rows.
     [OTHER_ORG, CHILD, '2012-03-04'],
+    [OTHER_ORG, ZERO, '2012-03-04'],
+    [OTHER_ORG, EMPTY, '2012-03-04'],
   ] as const) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -231,6 +239,8 @@ beforeAll(async () => {
   for (const [org, parentId, accountId] of [
     [ORG, 'parent-pss-1', PARENT],
     [ORG, 'parent-pss-2', OTHER_PARENT],
+    [ORG, 'parent-pss-3', SECOND_PARENT],
+    [ORG, 'parent-pss-4', UNLINKED_PARENT],
     [OTHER_ORG, 'parent-pss-x', PARENT],
   ] as const) {
     await client.query(
@@ -246,7 +256,10 @@ beforeAll(async () => {
     [ORG, 'parent-pss-1', EMPTY],
     [ORG, 'parent-pss-1', ADULT],
     [ORG, 'parent-pss-1', DELETED],
+    [ORG, 'parent-pss-1', ORDERED],
     [ORG, 'parent-pss-2', OTHER_FAMILY],
+    [ORG, 'parent-pss-3', CHILD],
+    [ORG, 'parent-pss-4', CHILD],
     [OTHER_ORG, 'parent-pss-x', OTHER_GYM],
     [OTHER_ORG, 'parent-pss-x', CHILD],
   ] as const) {
@@ -272,13 +285,19 @@ beforeAll(async () => {
   await membership(client, { athleteId: ENDED_ONLY, program: 'Youth Boxing', status: 'ended', startedOn: '2024-01-01', endedOn: '2024-12-31', percent: 50 });
   await membership(client, { athleteId: ENDED_ONLY, program: 'Youth Boxing', status: 'active', startedOn: '2025-01-01', percent: 0 });
   await membership(client, { athleteId: LAPSED, program: 'Youth Boxing', status: 'lapsed', startedOn: '2025-02-01', percent: 25 });
+  // Newest start is the ended one: by start date alone it would come first.
+  await membership(client, { athleteId: ORDERED, program: 'Open Gym', status: 'ended', startedOn: '2025-05-01', endedOn: '2025-06-01' });
+  await membership(client, { athleteId: ORDERED, program: 'Wrestling', status: 'lapsed', startedOn: '2024-01-01' });
+  await membership(client, { athleteId: ORDERED, program: 'Youth Boxing', status: 'active', startedOn: '2023-01-01' });
 
   // Records on every child the guardian may not read, so a refusal is not an empty answer.
   for (const athleteId of [ADULT, DELETED, OTHER_FAMILY]) {
     await membership(client, { athleteId, program: 'Youth Boxing', status: 'active', startedOn: '2025-09-01', percent: 100 });
     await support(client, { athleteId, kind: 'Fee covered', providedOn: '2025-09-02' });
   }
-  for (const athleteId of [OTHER_GYM, CHILD]) {
+  // ZERO and EMPTY hold an active 100% scholarship in the other gym: only a
+  // missing gym predicate on the scholarship read would make them "yes".
+  for (const athleteId of [OTHER_GYM, CHILD, ZERO, EMPTY]) {
     await membership(client, { org: OTHER_ORG, athleteId, program: 'Other Gym Boxing', status: 'active', startedOn: '2025-09-01', percent: 100 });
     await support(client, { org: OTHER_ORG, athleteId, kind: 'Other gym support', providedOn: '2025-09-03' });
   }
@@ -364,6 +383,38 @@ describe("a guardian's view of their child's membership, scholarship and support
   ])('%s is the same 404', async (_label, org, athleteId) => {
     await expect(status.getSupportStatusForGuardian(org, PARENT, athleteId))
       .rejects.toMatchObject({ status: 404, message: status.NOT_YOUR_CHILD });
+  });
+
+  test('live rows come first even when an ended row started after them', async () => {
+    expect((await status.getSupportStatusForGuardian(ORG, PARENT, ORDERED)).memberships).toEqual([
+      { program_name: 'Youth Boxing', status: 'active', started_on: '2023-01-01', ended_on: null },
+      { program_name: 'Wrestling', status: 'lapsed', started_on: '2024-01-01', ended_on: null },
+      { program_name: 'Open Gym', status: 'ended', started_on: '2025-05-01', ended_on: '2025-06-01' },
+    ]);
+  });
+
+  test("another gym's active 100% scholarship for the same athlete id does not count here", async () => {
+    expect((await status.getSupportStatusForGuardian(ORG, PARENT, ZERO)).scholarship).toBe('none_recorded');
+    expect((await status.getSupportStatusForGuardian(ORG, PARENT, EMPTY)).scholarship).toBe('none_recorded');
+  });
+
+  test('a second guardian legitimately linked to the same child reads the same status', async () => {
+    const first = await status.getSupportStatusForGuardian(ORG, PARENT, CHILD);
+    expect(await status.getSupportStatusForGuardian(ORG, SECOND_PARENT, CHILD)).toEqual(first);
+  });
+
+  test('a guardian whose link was removed is the same 404', async () => {
+    // Linked first, so the 404 below is the removal and not a fixture gap.
+    expect((await status.getSupportStatusForGuardian(ORG, UNLINKED_PARENT, CHILD)).scholarship).toBe('yes');
+    await activeClient!.query(
+      `delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+      [ORG, 'parent-pss-4', CHILD],
+    );
+    await expect(status.getSupportStatusForGuardian(ORG, UNLINKED_PARENT, CHILD))
+      .rejects.toMatchObject({ status: 404, message: status.NOT_YOUR_CHILD });
+    // The other guardians' links are untouched.
+    expect((await status.getSupportStatusForGuardian(ORG, PARENT, CHILD)).scholarship).toBe('yes');
+    expect((await status.getSupportStatusForGuardian(ORG, SECOND_PARENT, CHILD)).scholarship).toBe('yes');
   });
 
   test('another guardian cannot read this family\'s child', async () => {

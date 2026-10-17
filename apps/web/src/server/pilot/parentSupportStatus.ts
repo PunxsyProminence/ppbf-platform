@@ -56,13 +56,15 @@ export async function getSupportStatusForGuardian(
   }
 
   // Live programs first (active, then lapsed), then ended; newest start first.
+  // ORDER BY names the table's date columns (pm.), not the to_char text the
+  // select list returns under the same names; membership_id breaks ties.
   const memberships = await query<GuardianMembership>(
-    `select program_name, status, to_char(started_on, 'YYYY-MM-DD') as started_on,
-            to_char(ended_on, 'YYYY-MM-DD') as ended_on
-       from pilot.program_memberships
-      where organization_id = $1 and athlete_id = $2
-      order by case status when 'active' then 0 when 'lapsed' then 1 else 2 end,
-               started_on desc, program_name asc`,
+    `select pm.program_name, pm.status, to_char(pm.started_on, 'YYYY-MM-DD') as started_on,
+            to_char(pm.ended_on, 'YYYY-MM-DD') as ended_on
+       from pilot.program_memberships pm
+      where pm.organization_id = $1 and pm.athlete_id = $2
+      order by case pm.status when 'active' then 0 when 'lapsed' then 1 else 2 end,
+               pm.started_on desc, pm.program_name asc, pm.membership_id asc`,
     [organizationId, athleteId],
   );
 
@@ -78,12 +80,13 @@ export async function getSupportStatusForGuardian(
     [organizationId, athleteId],
   );
 
-  // Live (not retired) records only, the most recent first.
+  // Live (not retired) records only, the most recent first, by the table's
+  // date column (fsr.), not the to_char text; record_id breaks ties.
   const supports = await query<GuardianSupport>(
-    `select support_kind, to_char(provided_on, 'YYYY-MM-DD') as provided_on
-       from pilot.family_support_records
-      where organization_id = $1 and athlete_id = $2 and retired_at is null
-      order by provided_on desc, created_at desc`,
+    `select fsr.support_kind, to_char(fsr.provided_on, 'YYYY-MM-DD') as provided_on
+       from pilot.family_support_records fsr
+      where fsr.organization_id = $1 and fsr.athlete_id = $2 and fsr.retired_at is null
+      order by fsr.provided_on desc, fsr.created_at desc, fsr.record_id asc`,
     [organizationId, athleteId],
   );
 
