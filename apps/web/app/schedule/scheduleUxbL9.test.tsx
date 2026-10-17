@@ -4,8 +4,9 @@
 
 // UXB-L9 (lane U3): the schedule keeps its place after a tap, clears a sent
 // form, reads a broken reply as words, offers Check again, shows coaches by
-// name only, and asks twice before declining a coaching request. Each case
-// fails on main.
+// name only, and asks twice before declining a coaching request. Every case
+// fails on main except "keeps what was typed when the request is refused",
+// which guards that clearing happens on success only.
 
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -39,20 +40,37 @@ const MEMBERS = [
 interface Options {
   role?: Role;
   schedulerBroken?: () => boolean;
+  /** Every scheduler GET after the first stays unanswered: a reload in flight. */
+  reloadHangs?: boolean;
+  /** What a POST answers: ok, a refusal, or a reply that is not JSON. */
+  post?: 'ok' | 'refused' | 'broken';
+  authBroken?: boolean;
 }
+
+const notJson = (): Promise<Response> => Promise.resolve({
+  ok: false, status: 502, json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+} as Response);
 
 function json(payload: unknown, ok = true): Promise<Response> {
   return Promise.resolve({ ok, status: ok ? 200 : 502, json: () => Promise.resolve(payload) } as Response);
 }
 
-function install({ role = 'coach', schedulerBroken }: Options = {}): jest.Mock {
+function install({ role = 'coach', schedulerBroken, reloadHangs, post = 'ok', authBroken }: Options = {}): jest.Mock {
+  let schedulerGets = 0;
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith('/api/pilot/auth/session')) return json({ authenticated: true, role, athlete_id: null });
+    if (url.endsWith('/api/pilot/auth/session')) {
+      return authBroken ? notJson() : json({ authenticated: true, role, athlete_id: null });
+    }
     if (url.endsWith('/api/pilot/athletes/list')) return json({ items: [{ athlete_id: 'athlete-1', full_name: 'My Athlete' }] });
     if (url.endsWith('/api/pilot/admin/staff')) return json({ ok: true, members: MEMBERS });
-    if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') return json({ ok: true });
+    if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') {
+      if (post === 'broken') return notJson();
+      return post === 'refused' ? json({ ok: false, error: 'This class was cancelled.' }, false) : json({ ok: true });
+    }
     if (url.endsWith('/api/pilot/scheduler')) {
+      schedulerGets += 1;
+      if (reloadHangs && schedulerGets > 1) return new Promise<Response>(() => {});
       if (schedulerBroken?.()) {
         // A proxy's HTML error page: not JSON at all.
         return Promise.resolve({ ok: false, status: 502, json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')) } as Response);
@@ -77,7 +95,8 @@ afterEach(() => {
 
 describe('after a tap the page keeps its place and clears what was sent (UXB-16)', () => {
   test('scheduling a class re-reads without "Loading scheduler…" and empties the form', async () => {
-    const fetchMock = install();
+    // The re-read never answers, so a page that blanked for it would still be blank.
+    const fetchMock = install({ reloadHangs: true });
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
 
@@ -97,7 +116,59 @@ describe('after a tap the page keeps its place and clears what was sent (UXB-16)
   });
 });
 
+describe('the coaching request form', () => {
+  test('clears after it is sent (UXB-16)', async () => {
+    install();
+    render(<SchedulerPage />);
+    await screen.findByText('Class Schedule');
+
+    fireEvent.change(screen.getByPlaceholderText('Goals and focus areas'), { target: { value: 'Southpaw footwork' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Request' }));
+    });
+
+    await screen.findByText('Coaching request submitted.');
+    expect((screen.getByPlaceholderText('Goals and focus areas') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('keeps what was typed when the request is refused', async () => {
+    install({ post: 'refused' });
+    render(<SchedulerPage />);
+    await screen.findByText('Class Schedule');
+
+    fireEvent.change(screen.getByPlaceholderText('Goals and focus areas'), { target: { value: 'Southpaw footwork' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Request' }));
+    });
+
+    await screen.findByText('This class was cancelled.');
+    expect((screen.getByPlaceholderText('Goals and focus areas') as HTMLTextAreaElement).value).toBe('Southpaw footwork');
+  });
+});
+
 describe('a broken reply reads as words, with Check again (UXB-09, UXB-13)', () => {
+  test('an action reply that is not JSON is words, never a parse error', async () => {
+    install({ post: 'broken' });
+    render(<SchedulerPage />);
+    await screen.findByText('Class Schedule');
+
+    fireEvent.change(screen.getByPlaceholderText('Goals and focus areas'), { target: { value: 'x' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit Request' }));
+    });
+
+    expect(await screen.findByText('That did not go through. Check the schedule before trying again.')).toBeTruthy();
+    expect(screen.queryByText(/Unexpected token|JSON/)).toBeNull();
+  });
+
+  test('a sign-in check that did not read is not "Authentication required"', async () => {
+    install({ authBroken: true });
+    render(<SchedulerPage />);
+
+    expect(await screen.findByText('Your sign-in could not be checked just now. Try again.')).toBeTruthy();
+    expect(screen.queryByText('Authentication required')).toBeNull();
+  });
+
   test('a proxy error page is "could not be loaded", never a parse error; Check again reads again', async () => {
     let broken = true;
     install({ schedulerBroken: () => broken });

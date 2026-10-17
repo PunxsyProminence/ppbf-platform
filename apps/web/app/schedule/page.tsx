@@ -41,8 +41,8 @@ type SchedulerClass = {
 
 /** One coach the admin can assign a coaching request to (#1536), from
  *  /api/pilot/admin/staff: an active coach of this gym, named the way the
- *  family screens name a coach, with the login beside it so two coaches whose
- *  names come out alike can still be told apart. */
+ *  family screens name a coach. Names only (OD-2026-10-06-025); two that come
+ *  out alike are numbered. */
 type CoachOption = {
   account_id: string;
   label: string;
@@ -349,7 +349,9 @@ export default function SchedulerPage() {
 
     try {
       const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
-      const auth = (await authRes.json().catch(() => ({}))) as { authenticated?: boolean; role?: SchedulerRole; athlete_id?: string | null };
+      const auth = (await authRes.json().catch(() => null)) as { authenticated?: boolean; role?: SchedulerRole; athlete_id?: string | null } | null;
+      // A reply that did not read is not "signed out" (UXB-09).
+      if (!auth) throw new Error('Your sign-in could not be checked just now. Try again.');
       if (!authRes.ok || !auth.authenticated || !auth.role) {
         throw new Error('Authentication required');
       }
@@ -769,8 +771,8 @@ export default function SchedulerPage() {
             <div className="alert alert--warning" role="alert">
               <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
-              <p className="alert-title">Not done</p>
-              <p className="alert-msg">{errorMessage}</p>
+                <p className="alert-title">Not done</p>
+                <p className="alert-msg">{errorMessage}</p>
               {errorDetail ? (
                 <>
                   <p className="t-body mt-[var(--s3)]">Why: {errorDetail.explanation}</p>
@@ -1181,7 +1183,7 @@ export default function SchedulerPage() {
                     {registrations.map((item) => (
                       <div key={item.registration_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Registration: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
+                          Registration: {athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || 'Class (not listed)'}
                         </p>
                         <p className="text-[color:var(--bone-300)]">Status: {item.status} | Parent Reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
                         {roleCanManageParents(role) && !item.parent_reviewed ? (
@@ -1205,7 +1207,7 @@ export default function SchedulerPage() {
                     {attendance.map((item) => (
                       <div key={item.attendance_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
+                          Attendance: {athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || 'Class (not listed)'}
                         </p>
                         <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
@@ -1223,7 +1225,7 @@ export default function SchedulerPage() {
                   ) : coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
-                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
+                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'}</p>
                       <p className="text-[color:var(--bone-300)]">
                         Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
