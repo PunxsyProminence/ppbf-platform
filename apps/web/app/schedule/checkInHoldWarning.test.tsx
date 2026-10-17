@@ -111,7 +111,7 @@ describe('attendance check-in on a held athlete', () => {
     expect(notice).toBeDefined();
     // Beside the action it belongs to, not in a banner somewhere else.
     expect(card).toContainElement(notice as HTMLElement);
-    expect(notice).toHaveTextContent('ALL TRAINING for this athlete (administrative).');
+    expect(notice).toHaveTextContent('Training Hold on ALL TRAINING for this athlete (paperwork or admin).');
     expect(notice).toHaveTextContent('The check-in was NOT blocked.');
     expect(notice).toHaveTextContent('Training is paused while we sort out paperwork.');
     expect(notice).toHaveTextContent('To lift it: Bring the signed waiver.');
