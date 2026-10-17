@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 // The quotes library: the gym's own sayings, motivational lines and boxing
 // quotes, kept per organization. A quote is switched off, never deleted -- what
@@ -285,7 +285,7 @@ export default function QuotesPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            <BackHome />
           </div>
         </div>
       </main>

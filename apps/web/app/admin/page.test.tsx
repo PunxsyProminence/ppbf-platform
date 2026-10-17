@@ -81,7 +81,7 @@ async function renderAsPlatformOwner(fetchMock: jest.Mock) {
   mockUsePilotSession.mockReturnValue(session('platform_owner'));
   global.fetch = fetchMock as unknown as typeof fetch;
   render(<AdminCapabilitiesPage />);
-  await screen.findByRole('heading', { name: 'The Capability Room is set per gym' });
+  await screen.findByRole('heading', { name: 'Capabilities are set per gym' });
 }
 
 // Every read behind this room is refused to the platform owner
@@ -101,7 +101,7 @@ describe('the platform owner', () => {
     expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
     expect(screen.getByRole('link', { name: 'Organization Provisioning' }).getAttribute('href')).toBe('/admin/organizations');
     expect(screen.queryByRole('button', { name: 'Capability Library' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'The Capability Room' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Capabilities' })).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -114,8 +114,8 @@ describe('the platform owner', () => {
     await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/gym-capabilities', 'GET')).toHaveLength(1));
     // The save path the platform owner lost is still the gym admin's.
     await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
-    expect(screen.getByRole('heading', { name: 'The Capability Room' })).toBeTruthy();
-    expect(screen.queryByText('The Capability Room is set per gym')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Capabilities' })).toBeTruthy();
+    expect(screen.queryByText('Capabilities are set per gym')).toBeNull();
   });
 });
 
@@ -790,7 +790,7 @@ describe('Who Trains On What', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/This sign-in cannot read or change them/)).toBeNull();
-    expect(screen.queryByText('The Capability Room is set per gym')).toBeNull();
+    expect(screen.queryByText('Capabilities are set per gym')).toBeNull();
     expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(0);
     expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(0);
   });
@@ -999,7 +999,7 @@ describe('the office writes its own record in its own hand', () => {
     });
     await renderPage(fetchMock);
 
-    await screen.findByRole('heading', { name: 'The Capability Room' });
+    await screen.findByRole('heading', { name: 'Capabilities' });
     expect(screen.queryByText(/authority console/i)).toBeNull();
     expect(screen.getByText('PPBF ADMIN DESK').className).toContain('t-eyebrow');
   });

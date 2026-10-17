@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 // Admin verification queue for staff credentials. This is also where
 // "alerts" live -- there is no cron in this codebase (trainingHolds.ts's
@@ -324,7 +324,7 @@ export default function AdminCredentialsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to the office</Link>
+            <BackHome />
           </div>
         </div>
       </main>
