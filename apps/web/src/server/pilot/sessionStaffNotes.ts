@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
-import { getCoachDisplayName } from './achievements';
+import { getStaffAuthorName, STAFF_AUTHOR_NAME_FLOOR } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { query, queryOne, withTransaction } from './db';
@@ -94,7 +94,7 @@ export interface SessionStaffNoteRow {
 /**
  * A note as a reader sees it: no account id (an id can be an email address);
  * written_by_me says whether the reader may change it, and author_name is the
- * author's display name (getCoachDisplayName), resolved here because the
+ * author's display name (getStaffAuthorName, by author_role), resolved here because the
  * account id never leaves this module.
  */
 export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & {
@@ -269,13 +269,18 @@ export async function listSessionStaffNotes(
 
 /** Rows newest first, as a reader sees them: oldest first, the author by display name, no account id. */
 async function asListed(actor: ActorIdentity, newest: SessionStaffNoteRow[]): Promise<ListedSessionStaffNote[]> {
+  // Keyed by role too: an admin's note is not signed "Coach" (F-058). A role
+  // has no colon, so the key is unambiguous.
+  const keyOf = (row: SessionStaffNoteRow) => `${row.author_role}:${row.author_account_id}`;
   const names = new Map<string, string>();
-  for (const id of new Set(newest.map((row) => row.author_account_id))) {
-    names.set(id, await getCoachDisplayName(actor.organizationId, id));
+  for (const row of newest) {
+    if (!names.has(keyOf(row))) {
+      names.set(keyOf(row), await getStaffAuthorName(actor.organizationId, row.author_account_id, row.author_role));
+    }
   }
   return [...newest].reverse().map(({ author_account_id, ...shown }) => ({
     ...shown,
-    author_name: names.get(author_account_id) ?? 'Your coach',
+    author_name: names.get(keyOf({ ...shown, author_account_id })) ?? STAFF_AUTHOR_NAME_FLOOR,
     written_by_me: author_account_id === actor.accountId,
   }));
 }

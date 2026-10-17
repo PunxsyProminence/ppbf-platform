@@ -181,7 +181,8 @@ describe('the plan editor', () => {
   });
 
   it.each([
-    ['SESSION_SCRIPT_CHANGED', /Another coach saved this plan after you opened it, so nothing of yours was saved and their save is as they left it/],
+    // True whoever saved it: the same coach on another screen as much as another coach (F-078).
+    ['SESSION_SCRIPT_CHANGED', /This plan was saved after you opened it, on another screen or by another coach, so nothing of yours was saved and that save is as it was left/],
     ['SESSION_SCRIPT_SUPERSEDED', /replaced by a newer version, so nothing was saved/],
     ['SESSION_SCRIPT_BLOCK_MINUTES_INVALID', /Nothing was saved\. Each block needs whole minutes.*no later than minute 1440/],
     ['A_CODE_ADDED_LATER', /The server refused, so nothing was saved/],

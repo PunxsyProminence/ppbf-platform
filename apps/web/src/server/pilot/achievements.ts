@@ -270,6 +270,24 @@ export async function getStaffDisplayName(
   return deriveStaffDisplayName(await memberLoginEmail(organizationId, accountId));
 }
 
+/** The floor for a staff note's author who is not a coach and cannot be named (F-058; wording PROPOSED). */
+export const STAFF_AUTHOR_NAME_FLOOR = 'Gym office';
+
+/**
+ * Who wrote a staff note, by the role the note was written in. A coach reads
+ * as getCoachDisplayName does; an organization admin (or the legacy 'admin'
+ * spelling) by name without the "Coach" title, or the office floor. F-058: the
+ * admin's own capacity note was signed "Coach Ppbf".
+ */
+export async function getStaffAuthorName(
+  organizationId: string,
+  accountId: string,
+  authorRole: string,
+): Promise<string> {
+  if (authorRole === 'coach') return getCoachDisplayName(organizationId, accountId);
+  return (await getStaffDisplayName(organizationId, accountId)) ?? STAFF_AUTHOR_NAME_FLOOR;
+}
+
 async function memberLoginEmail(
   organizationId: string,
   accountId: string,

@@ -28,8 +28,8 @@ const STAFF_ROLES = ['coach', 'admin', 'organization_admin'] as const;
 // admin AND to the athletes that particular caller may reach. The role gate
 // alone was not enough: athlete_id is caller-supplied, so any coach in the
 // organization could read any athlete here -- including age_years, derived
-// from the dob that entities.ts deliberately redacts from the same coach's
-// roster. A parent-facing view of their own athlete would need its own route
+// from the athlete's dob. (Since issue #1480 any coach of the athlete's own
+// gym may read it; another gym's athlete is refused.) A parent-facing view of their own athlete would need its own route
 // with a guardian-link check; it is deliberately not bolted on here, because
 // widening this handler is exactly how an athlete-data leak gets introduced.
 export async function GET(request: NextRequest) {

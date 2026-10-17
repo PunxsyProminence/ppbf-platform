@@ -161,7 +161,7 @@ test.describe('Coach journey', () => {
 
     // Nothing is shown until a coach names an athlete -- the loop is per
     // athlete, and this page says so rather than defaulting to somebody.
-    await expect(page.getByText('Select or enter an athlete to review their decision loop.')).toBeVisible();
+    await expect(page.getByText('Select an athlete to review their decision loop.')).toBeVisible();
 
     await page.getByRole('combobox', { name: 'Athlete' }).selectOption(ROSA.athlete_id);
 

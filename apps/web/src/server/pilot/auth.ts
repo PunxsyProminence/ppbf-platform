@@ -15,7 +15,7 @@ import {
   refuseIfLoginDeleted,
   type AccountDeletionFlag,
 } from './deletedAccountSignIn';
-import { writePilotAuditEvent } from './audit';
+import { writePilotAuditEvent, type PilotAuditEvent } from './audit';
 import { PILOT_SESSION_COOKIE } from './env';
 import { MicrosoftIdentityMismatchError, type MicrosoftDirectoryIdentity } from './federatedAuth';
 import { clearMicrosoftIdentityTx } from './microsoftIdentityUnbind';
@@ -1264,9 +1264,20 @@ export async function createAthleteAccountPendingActivation(
   });
 }
 
-export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
+export async function createOrganization(
+  organizationId: string,
+  organizationName: string,
+  createdBy: string,
+  // F-096: the onboarding route creates; it must not rename and reopen a gym
+  // whose id was typed by mistake. The bootstrap route leaves this off on
+  // purpose: re-running it against Root is the platform owner's recovery
+  // path (CL-A19), so for it an existing id is the normal case. `audit` is
+  // written in the same transaction: a gym with no creation row, which a
+  // retry could no longer repair once a taken id is refused, cannot exist.
+  options: { refuseExisting?: boolean; audit?: PilotAuditEvent } = {},
+): Promise<void> {
   // The reserved organization owning the platform evidence baseline is not a
-  // gym, and this is an upsert: a platform_owner POSTing that id would rename
+  // gym, and the bootstrap path is an upsert: a platform_owner POSTing that id would rename
   // the baseline shelf and seed it with the compliance rules and safety gates
   // below, as though it had a floor and members. It is created by its migration
   // and by nothing else.
@@ -1293,20 +1304,47 @@ export async function createOrganization(organizationId: string, organizationNam
   // seeds one organization per operator run, and a gym created here is not
   // that organization.
   await withTransaction(async (client) => {
-    await client.query(
-      `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
-       values ($1, $2, 'active', $3)
-       on conflict (organization_id) do update
-         set organization_name = excluded.organization_name,
-             status = 'active',
-             updated_at = now()`,
-      [organizationId, organizationName, createdBy],
-    );
+    if (options.refuseExisting) {
+      // One statement, so two creates of the same new id cannot both pass a
+      // check and both write.
+      const inserted = await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
+         values ($1, $2, 'active', $3)
+         on conflict (organization_id) do nothing
+         returning organization_id`,
+        [organizationId, organizationName, createdBy],
+      );
+      if (inserted.rows.length === 0) {
+        const existing = await client.query<{ organization_name: string }>(
+          'select organization_name from pilot.organizations where organization_id = $1',
+          [organizationId],
+        );
+        const name = existing.rows[0]?.organization_name;
+        throw new ConflictError(
+          `Conflict: a gym with the id ${organizationId} already exists${name ? ` (${name})` : ''}. Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.`,
+          'ORGANIZATION_ID_TAKEN',
+        );
+      }
+    } else {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
+         values ($1, $2, 'active', $3)
+         on conflict (organization_id) do update
+           set organization_name = excluded.organization_name,
+               status = 'active',
+               updated_at = now()`,
+        [organizationId, organizationName, createdBy],
+      );
+    }
 
     await seedDefaultComplianceRules(organizationId, client);
     await seedDefaultSafetyGates(organizationId, client);
     await seedDefaultDisciplines(organizationId, client);
     await seedDefaultClearanceTypes(organizationId, client);
+
+    if (options.audit) {
+      await writePilotAuditEvent(options.audit, client);
+    }
   });
 }
 

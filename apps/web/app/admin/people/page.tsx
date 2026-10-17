@@ -228,7 +228,8 @@ function PeopleConsoleContent() {
   const [guardianLinksAvailable, setGuardianLinksAvailable] = useState(false);
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [rosterAvailable, setRosterAvailable] = useState(false);
-  const [organizationId, setOrganizationId] = useState('');
+  // The gym's registered name. The organization id is never printed (F-008).
+  const [organizationName, setOrganizationName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -341,6 +342,7 @@ function PeopleConsoleContent() {
         members?: Member[];
         guardian_links?: GuardianLink[];
         organization_id?: string;
+        organization_name?: string | null;
         error?: string;
       };
 
@@ -350,7 +352,7 @@ function PeopleConsoleContent() {
 
       setMembers(membersPayload.members || []);
       setMembersAvailable(true);
-      setOrganizationId(membersPayload.organization_id || '');
+      setOrganizationName(membersPayload.organization_name?.trim() || '');
 
       // Only an actual array counts as an answer. Anything else leaves every
       // parent row reporting that the links are unknown, which is the truth.
@@ -1007,9 +1009,9 @@ function PeopleConsoleContent() {
               <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Manage Your Gym</h1>
               <p className="t-body mt-[var(--s3)]">
                 Add coaches and staff, and create athlete sign-ins.
-                {organizationId && (
+                {organizationName && (
                   <>
-                    {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationId}</span>
+                    {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationName}</span>
                   </>
                 )}
               </p>

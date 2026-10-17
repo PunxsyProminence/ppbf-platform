@@ -21,6 +21,12 @@ jest.mock('next/link', () => ({
 }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+// The finished-sessions list (F-067) has its own route read and its own suite
+// (finishedSessions.test.tsx); here it is a marker, so these tests keep owning every fetch.
+jest.mock('@/components/FinishedSessions', () => ({
+  __esModule: true,
+  default: () => <div data-testid="finished-sessions" />,
+}));
 
 function jsonResponse(body: unknown, ok = true) {
   return { ok, json: async () => body } as Response;
@@ -155,6 +161,19 @@ beforeEach(() => {
 });
 
 describe('coach session scripts page', () => {
+  it("shows the gym's finished sessions while no session is live, and not over a live one (F-067)", async () => {
+    routedFetch({ runsGet: () => jsonResponse({ run: null }) });
+    const { unmount } = render(<CoachSessionScriptsPage />);
+    expect(await screen.findByText('Friday sparring')).toBeInTheDocument();
+    expect(screen.getByTestId('finished-sessions')).toBeInTheDocument();
+    unmount();
+
+    routedFetch({ runsGet: () => jsonResponse({ run: liveRunRow() }) });
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
+    expect(screen.queryByTestId('finished-sessions')).not.toBeInTheDocument();
+  });
+
   it('lists the scripts returned by the route', async () => {
     mockFetch(() => jsonResponse({ scripts: [FRIDAY, TUESDAY] }));
 
@@ -181,6 +200,35 @@ describe('coach session scripts page', () => {
 
     expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
     expect(screen.getByText(/not an empty set of scripts/i)).toBeInTheDocument();
+  });
+
+  it("names each plan's state in words, never as a code (F-078)", async () => {
+    mockFetch(() => jsonResponse({ scripts: [FRIDAY, { ...TUESDAY, authoring_state: 'draft' }, { ...TUESDAY, script_id: 'scr-c', name: 'Coached', authoring_state: 'coach_reviewed' }] }));
+
+    render(<CoachSessionScriptsPage />);
+
+    expect(await screen.findByText('In use')).toBeInTheDocument();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+    expect(screen.getByText('Coach reviewed')).toBeInTheDocument();
+    expect(screen.queryByText(/in_use|coach_reviewed|^draft$/)).not.toBeInTheDocument();
+  });
+
+  it("labels a block's template facts as the template's, and shows an old section code in words (F-078)", async () => {
+    const [first, second] = detail().blocks as Array<Record<string, unknown>>;
+    mockFetch((url) => (url.includes('script_id')
+      ? jsonResponse({ script: detail({ blocks: [
+        { ...first, what_to_say: null, what_to_explain: 'From the template: Warm-up, 3 reps' },
+        { ...second, what_to_say: null, what_to_watch: null, what_to_explain: 'skill_work - 8 reps' },
+      ] }) })
+      : jsonResponse({ scripts: [FRIDAY] })));
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText('Warm-up, 3 reps')).toBeInTheDocument();
+    expect(screen.getByText('From the template:')).toBeInTheDocument();
+    expect(screen.getByText('Skill work, 8 reps')).toBeInTheDocument();
+    expect(screen.queryByText(/skill_work/)).not.toBeInTheDocument();
   });
 
   it('shows block windows as minutes, never as clock times', async () => {
@@ -1094,5 +1142,80 @@ describe('ordinary errors on this page', () => {
     for (const file of ['page.tsx', 'SessionScriptEditor.tsx']) {
       expect(fs.readFileSync(path.join(__dirname, file), 'utf8')).not.toMatch(/var\(--locked/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MARKING A PLAN REVIEWED (F-092). A plan made from a template starts as a
+// draft; a coach marks it reviewed. Draft only: nothing un-marks a review.
+// ---------------------------------------------------------------------------
+describe('marking a plan reviewed', () => {
+  const READ_AT = '2026-10-13T15:00:00.000Z';
+  const stored = (overrides: Record<string, unknown> = {}) => detail({ version: 1, updated_at: READ_AT, ...overrides });
+
+  /** The list and the open plan both read `state`; a successful PATCH moves it on. */
+  function reviewFetch(initial: string, answer?: (body: Record<string, unknown>) => Response) {
+    let state = initial;
+    const patches: Array<Record<string, unknown>> = [];
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        if (answer) return answer(body);
+        state = 'coach_reviewed';
+        return jsonResponse({ outcome: 'reviewed', script: stored({ authoring_state: state, updated_at: '2026-10-13T16:00:00.000Z' }) });
+      }
+      return url.includes('script_id=')
+        ? jsonResponse({ script: stored({ authoring_state: state }) })
+        : jsonResponse({ scripts: [{ ...FRIDAY, authoring_state: state }] });
+    });
+    return { patches };
+  }
+
+  async function openPlan() {
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+    await screen.findByText('Arrival and wraps');
+  }
+
+  it('a draft offers Mark reviewed; pressed, the list reads "Coach reviewed" and the button goes', async () => {
+    const { patches } = reviewFetch('draft');
+    await openPlan();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is marked coach reviewed.');
+    expect(patches).toEqual([{ script_id: 'scr-friday', expected_updated_at: READ_AT, reviewed: true }]);
+    expect(await screen.findByText('Coach reviewed')).toBeInTheDocument();
+    expect(screen.queryByText('Draft')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    // Still open, and the other controls are as they were.
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retire this plan' })).toBeInTheDocument();
+  });
+
+  it.each(['coach_reviewed', 'in_use', 'retired'])('a plan that is %s offers no Mark reviewed', async (state) => {
+    reviewFetch(state);
+    await openPlan();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+  });
+
+  it.each([
+    [409, { error: 'SESSION_SCRIPT_RETIRED' }, /This plan is retired, so it was not marked reviewed\. Bring it back first\./],
+    [409, { error: 'SESSION_SCRIPT_CHANGED' }, /This plan was saved after you opened it, so it was not changed/],
+    [403, { error: 'Forbidden: role not allowed' }, /Your account may not mark session scripts reviewed, so the plan was not changed/],
+  ])('a refusal (%i %j) says so in a plain sentence and leaves the plan open as a draft', async (status, body, sentence) => {
+    reviewFetch('draft', () => ({ ok: false, status, json: async () => body }) as Response);
+    await openPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark reviewed' })).not.toBeDisabled());
   });
 });

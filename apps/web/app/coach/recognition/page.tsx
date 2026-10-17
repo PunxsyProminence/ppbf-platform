@@ -7,6 +7,7 @@ import CoachMentorshipPairing from '@/components/CoachMentorshipPairing';
 import CoachMilestoneMarker from '@/components/CoachMilestoneMarker';
 import CoachRecognitionPad, { type RosterAthlete } from '@/components/CoachRecognitionPad';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import SentRecognitions from '@/components/SentRecognitions';
 import { apiBase } from '@/lib/apiBase';
 
 /**
@@ -23,6 +24,9 @@ import { apiBase } from '@/lib/apiBase';
  */
 function CoachRecognitionRoom() {
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
+  const [rosterState, setRosterState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  // Bumped by each send, so the read-back below shows what was just sent.
+  const [sentCount, setSentCount] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,13 +37,17 @@ function CoachRecognitionRoom() {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) return;
-        const body = (await response.json()) as { items?: RosterAthlete[] };
+        if (!response.ok) throw new Error('unavailable');
+        const body = (await response.json()) as { items?: unknown } | null;
         if (controller.signal.aborted) return;
-        setRoster(body.items ?? []);
+        // A 200 without the list is not an empty gym.
+        if (!body || !Array.isArray(body.items)) throw new Error('unavailable');
+        setRoster(body.items as RosterAthlete[]);
+        setRosterState('ready');
       } catch {
-        /* The pad fetches its own roster too and reports its own failure; this
-           copy exists only so the pairing panel does not need a second one. */
+        if (!controller.signal.aborted) setRosterState('unavailable');
+        /* The pad fetches its own roster too and reports its own failure; the
+           read-back below says this one failed rather than show no athletes. */
       }
     })();
     return () => controller.abort();
@@ -69,7 +77,8 @@ function CoachRecognitionRoom() {
         </header>
 
         <div className="mt-[var(--s6)] space-y-[var(--s6)]">
-          <CoachRecognitionPad />
+          <CoachRecognitionPad onSent={() => setSentCount((count) => count + 1)} />
+          <SentRecognitions roster={roster} rosterState={rosterState} reloadKey={sentCount} />
           <CoachMilestoneMarker roster={roster} />
           <CoachMentorshipPairing roster={roster} />
         </div>

@@ -35,6 +35,8 @@ export interface StoredShadowCitation {
   token: string;
   sourceTitle: string;
   documentName: string;
+  /** The cited passage, when the server sends one (A-Q11). */
+  excerpt?: string;
 }
 
 export interface StoredShadowConversationMessage {
@@ -201,6 +203,7 @@ function parseCitations(value: unknown): StoredShadowCitation[] {
       || typeof entry.token !== 'string'
       || typeof entry.sourceTitle !== 'string'
       || typeof entry.documentName !== 'string'
+      || (entry.excerpt !== undefined && typeof entry.excerpt !== 'string')
     ) {
       throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
     }
@@ -209,6 +212,7 @@ function parseCitations(value: unknown): StoredShadowCitation[] {
       token: entry.token,
       sourceTitle: entry.sourceTitle,
       documentName: entry.documentName,
+      ...(typeof entry.excerpt === 'string' && entry.excerpt ? { excerpt: entry.excerpt } : {}),
     };
   });
 }

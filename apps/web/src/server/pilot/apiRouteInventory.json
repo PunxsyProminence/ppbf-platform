@@ -4745,7 +4745,7 @@
     "id": "app/api/pilot/coach/athletes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athletes",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via coachAuthorizedRoster / organizationActionableRoster",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via organizationActionableRoster",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4757,7 +4757,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Returns roster (athlete_id, full_name). Coach gets coachAuthorizedRoster which uses athleteIdsForCoach (coachAthleteRoster.ts:1,35); org admin gets all actionable athletes.",
+    "notes": "Returns roster (athlete_id, full_name). A coach and an org admin both get every live athlete of their own gym (organizationActionableRoster), the set assertActorCanAccessAthlete admits since issue #1480 (OD-2026-10-11-007).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -4774,7 +4774,7 @@
     "id": "app/api/pilot/coach/attendance-today/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/attendance-today",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via coachAuthorizedRoster / organizationActionableRoster",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); roster via organizationActionableRoster",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4786,13 +4786,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Today's attendance marks for the caller's authorized roster (attendance-today/route.ts GET); coach scoped via athleteIdsForCoach (coachAthleteRoster.ts:35).",
+    "notes": "Today's attendance marks for every live athlete of the caller's own gym (attendance-today/route.ts GET); coach and org admin alike since issue #1480 (OD-2026-10-11-007). A coach is also sent `mine` (athleteIdsForCoach, coach of record UNION live coverage) for the workspace's \"Not your athlete\" marker.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -5011,7 +5012,7 @@
     "id": "app/api/pilot/coach/cards/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/cards",
-    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (athleteIdsForCoach)",
+    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (live athletes of the actor's own gym)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -5023,7 +5024,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards (coachCards.ts:368-403) gives admin all rows and a coach only athleteIdsForCoach plus own-issued filter.",
+    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards gives admin all rows and a coach the cards they issued to any live athlete of their own gym (issue #1480); other roles read nothing.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7301,7 +7302,7 @@
     "id": "app/api/pilot/escalations/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/escalations",
-    "gate": "requirePrincipal + inline role check (route.ts:65-69) + athleteIdsForCoach membership check for coach acknowledge (92-100); resolve and scan_patterns admin-only (113, 150)",
+    "gate": "requirePrincipal + inline role check + accessibleAthleteIds on the escalation's athlete for coach acknowledge; resolve and scan_patterns admin-only",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -7313,13 +7314,13 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "acknowledge (coach or admin), resolve (admin, note required) or scan_patterns (admin) on safety escalations about minors. Coach acknowledge is reach-checked against own escalation list excluding athlete_voice.",
+    "notes": "acknowledge (coach or admin), resolve (admin, note required) or scan_patterns (admin) on safety escalations about minors. Coach acknowledge is reach-checked through accessibleAthleteIds (since issue #1480 any live athlete of the coach's gym), athlete_voice excluded.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "accessibleAthleteIds"
       ],
       "roleLiterals": []
     }
@@ -10549,7 +10550,7 @@
     "id": "app/api/pilot/scheduler/attendance-summary/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/scheduler/attendance-summary",
-    "gate": "requirePrincipal + inline role check (coach / org admin) + athleteIdsForCoach",
+    "gate": "requirePrincipal + inline role check (coach / org admin) + organizationActionableRoster reach for a coach",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -10561,15 +10562,17 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by athleteIdsForCoach (inReach), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. ?report=classes&from=&to= (RP-02, #1542): one row per class occurrence in the period by gym day -- registered, present, absent, excused, unmarked and rate, counts only, no names -- as JSON with totals or format=csv; same roles and coach scope (own classes, athletes in reach).",
+    "notes": "Inline check admits coach, admin, organization_admin; coach rows filtered by inReach (since issue #1480 the live athletes of the coach's own gym), class_id path also requires coach owns/schedules/covers the class. Per-athlete attendance. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes. ?report=classes&from=&to= (RP-02, #1542): one row per class occurrence in the period by gym day -- registered, present, absent, excused, unmarked and rate, counts only, no names -- as JSON with totals or format=csv; same roles and coach scope (own classes, athletes in reach).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10590,15 +10593,17 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside athleteIdsForCoach; no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside the coach's reach (since issue #1480 the live athletes of their own gym); no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "athleteIdsForCoach"
+        "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -10619,15 +10624,13 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside athleteIdsForCoach the hold warning carries scope only and the stored note is kept, a note from them refused. cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside the coach's reach (since issue #1480 any athlete not live in their own gym) the hold warning carries scope only and the stored note is kept, a note from them refused. review_coaching_request: the named coach must reach the athlete through assertActorCanAccessAthlete asked as that coach (any active coach of the gym, #1480 Q2). cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "assertActorCanAccessAthlete",
-        "athleteIdsForCoach",
-        "assertCoachAssignedToAthlete"
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": []
     }
@@ -10728,7 +10731,7 @@
     "id": "app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/session-scripts/runs/[runId]/athletes",
-    "gate": "requirePrincipal + requireRole; athletes filtered in SQL to the live athletes of the caller's own gym (staffPermittedAthleteIds: active staff membership) in sessionRunAthletes.ts listPresentAthletes",
+    "gate": "requirePrincipal + requireRole; athletes filtered in SQL to the live athletes of the caller's own gym (staffPermittedAthletes: active staff membership) in sessionRunAthletes.ts listPresentAthletes; the picker list `gym` is that same set, id and name only (OD-2026-10-11-007)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -10740,7 +10743,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "F-067. The athletes marked present in one session run, by name. Staff only (OD-2026-10-10-003 items 3 and 4); platform_owner refused like every route under runs/. Names only athletes the caller may reach: the ids are the live athletes of the caller's own organization (staffPermittedAthleteIds, for a coach and an organization admin alike: a coach's reach is the whole gym, OD-2026-10-11-007), never from the request, and listPresentAthletes filters on them in SQL with the organization on both tables. Another gym's run id returns nobody. Session detail, not attendance (CT-13).",
+    "notes": "F-067. The athletes marked present in one session run, by name, and (field `gym`) the athletes the caller may mark: the same server-computed set, id and name only, for the live screen's picker. Staff only (OD-2026-10-10-003 items 3 and 4); platform_owner refused like every route under runs/. Names only athletes the caller may reach: the ids are the live athletes of the caller's own organization (staffPermittedAthleteIds, for a coach and an organization admin alike: a coach's reach is the whole gym, OD-2026-10-11-007), never from the request, and listPresentAthletes filters on them in SQL with the organization on both tables. Another gym's run id returns nobody. Session detail, not attendance (CT-13).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12191,11 +12194,12 @@
     "id": "app/api/pilot/shadow/library/sources/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/library/sources",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "gate": "requirePrincipal + requireRole (SHADOW_SOURCE_ATTACH_ROLES)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
-      "platform_owner"
+      "platform_owner",
+      "coach"
     ],
     "athleteData": false,
     "writes": false,
@@ -12203,7 +12207,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "sources/route.ts:61-62 gate; lists library sources for the shelf via resolveLibraryShelf. Reference material, not athlete data.",
+    "notes": "sources/route.ts GET gate; lists library sources for the shelf via resolveLibraryShelf. Reference material, not athlete data (sources carry no subject_id). Coaches read it to pick a source to attach to a research requirement (OD-2026-10-08-005 A-Q13); POST and PATCH stay curator-only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12212,7 +12216,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+        "<[...SHADOW_SOURCE_ATTACH_ROLES]>"
       ]
     }
   },
@@ -12793,28 +12797,30 @@
     "id": "app/api/pilot/shadow/research-submissions/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/research-submissions",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "gate": "requirePrincipal + requireRole (SHADOW_SOURCE_ATTACH_ROLES) + for a coach: no document_id, mayReadRequirement (accessibleAthleteIds)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
-      "platform_owner"
+      "platform_owner",
+      "coach"
     ],
     "athleteData": false,
     "writes": true,
-    "coachReachRule": "n/a",
+    "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "POST/PATCH do not check the target requirement athlete subject, so a curator (incl. platform_owner) can attach sources to an athlete-subject requirement; no athlete data is returned, so low impact.",
+    "looksWrong": "Curators (incl. platform_owner on its own shelf) are not checked against the target requirement's athlete subject, so a curator can attach sources to an athlete-subject requirement; no athlete data is returned, so low impact. A coach is checked (mayReadRequirement).",
     "confidence": "medium",
-    "notes": "research-submissions/route.ts POST: role gate; checks requirement, source, document exist in the org, then createResearchSubmission. Source/document linkage, not athlete records.",
+    "notes": "research-submissions/route.ts POST: role gate; checks requirement, source, document exist in the org; a coach (OD-2026-10-08-005 A-Q13, 'a coach may attach a source') may name no document and only a requirement they may read; then createResearchSubmission, which lands 'unreviewed' (review stays curator-only on PATCH). Source/document linkage, not athlete records.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+        "<[...SHADOW_SOURCE_ATTACH_ROLES]>"
       ]
     }
   },

@@ -327,3 +327,131 @@ describe('re-running it', () => {
     }
   });
 });
+
+describe('creating it again from the onboarding route (F-096)', () => {
+  test('a taken id is refused: nothing renamed, reopened or re-seeded', async () => {
+    // refuseExisting is what POST /api/pilot/platform/organizations passes.
+    // Without it this same call renames the gym and sets it active again --
+    // which is what the bootstrap route still relies on to recover Root.
+    const client = await freshClient();
+    try {
+      await client.query("update pilot.organizations set status = 'inactive' where organization_id = $1", [SEEDED_ORG]);
+      // Seeding is insert-if-missing, so only a removed row can show whether
+      // it ran again.
+      await client.query(
+        "delete from pilot.disciplines where organization_id = $1 and discipline = 'wrestling'",
+        [SEEDED_ORG],
+      );
+
+      await expect(auth.createOrganization(SEEDED_ORG, 'Renamed Gym', CREATOR, { refuseExisting: true }))
+        .rejects.toMatchObject({
+          status: 409,
+          code: 'ORGANIZATION_ID_TAKEN',
+          message: `Conflict: a gym with the id ${SEEDED_ORG} already exists (Seeded Gym). Nothing was changed. For a new gym, choose another id; to add this gym's admin, use the Platform Desk.`,
+        });
+
+      const org = await client.query(
+        'select organization_name, status from pilot.organizations where organization_id = $1',
+        [SEEDED_ORG],
+      );
+      expect(org.rows).toEqual([{ organization_name: 'Seeded Gym', status: 'inactive' }]);
+      const wrestling = await client.query(
+        "select 1 from pilot.disciplines where organization_id = $1 and discipline = 'wrestling'",
+        [SEEDED_ORG],
+      );
+      expect(wrestling.rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a new id is still created and seeded', async () => {
+    const fresh = `${SEEDED_ORG}-f096`;
+    await auth.createOrganization(fresh, 'Fresh Gym', CREATOR, { refuseExisting: true });
+
+    const client = await freshClient();
+    try {
+      const org = await client.query(
+        'select organization_name, status from pilot.organizations where organization_id = $1',
+        [fresh],
+      );
+      expect(org.rows).toEqual([{ organization_name: 'Fresh Gym', status: 'active' }]);
+      const total = await client.query(
+        'select count(*)::int as n from pilot.disciplines where organization_id = $1',
+        [fresh],
+      );
+      expect(total.rows[0].n).toBe(seeds.DEFAULT_DISCIPLINES.length);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('the creation audit row commits with the gym (#1641 review)', () => {
+  test('a gym created with its audit row has both', async () => {
+    const id = `${SEEDED_ORG}-audited`;
+    await auth.createOrganization(id, 'Audited Gym', CREATOR, {
+      refuseExisting: true,
+      audit: {
+        event_type: 'create',
+        actor_account_id: CREATOR,
+        actor_role: 'platform_owner',
+        organization_id: id,
+        entity_type: 'organization',
+        entity_id: id,
+        details: { organization_name: 'Audited Gym' },
+      },
+    });
+
+    const client = await freshClient();
+    try {
+      const audit = await client.query(
+        "select entity_id from pilot.audit_events where organization_id = $1 and event_type = 'create' and entity_type = 'organization'",
+        [id],
+      );
+      expect(audit.rows).toEqual([{ entity_id: id }]);
+      // The audit's SHADOW mirror is written on the same client, so it
+      // commits with the gym too.
+      const mirror = await client.query(
+        'select count(*)::int as n from pilot.shadow_events where organization_id = $1',
+        [id],
+      );
+      expect(mirror.rows[0].n).toBeGreaterThan(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an audit write that fails rolls the gym back, so a retry is not refused', async () => {
+    const id = `${SEEDED_ORG}-audit-fails`;
+    const audit = {
+      // Not in the event_type check constraint: the audit insert fails in the
+      // database, after the gym and its seeds were written in the same
+      // transaction.
+      event_type: 'not_an_event_type' as never,
+      actor_account_id: CREATOR,
+      actor_role: 'platform_owner' as const,
+      organization_id: id,
+      entity_type: 'organization',
+      entity_id: id,
+      details: {},
+    };
+
+    await expect(auth.createOrganization(id, 'Half Gym', CREATOR, { refuseExisting: true, audit }))
+      .rejects.toMatchObject({ code: '23514' });
+
+    const client = await freshClient();
+    try {
+      const org = await client.query('select 1 from pilot.organizations where organization_id = $1', [id]);
+      expect(org.rows).toHaveLength(0);
+      const seeded = await client.query('select 1 from pilot.disciplines where organization_id = $1', [id]);
+      expect(seeded.rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+
+    // The retry the review was about: with the gym rolled back, the same id
+    // is created rather than refused as taken.
+    await expect(auth.createOrganization(id, 'Half Gym', CREATOR, { refuseExisting: true })).resolves.toBeUndefined();
+  });
+});
