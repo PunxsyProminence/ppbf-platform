@@ -567,14 +567,19 @@ function TrackPanel({
                 into a medical, disciplinary or ability fact about anybody. */}
             <span className="sr-only">Ahead of you: </span>
             {isFamily ? milestone.family : milestone.label}
+            {/* A real space, not only the button's margin: without it the page
+                text and a screen reader ran "Wraps your own handsI did it" (F-118). */}
             {onMark && milestone.evidence !== 'coach_marked' && milestone.evidence !== 'session_count' && (
-              <button
-                type="button"
-                onClick={() => onMark(milestone)}
-                className="btn btn--ghost ml-[var(--s3)] min-h-[var(--tap)]"
-              >
-                I did it
-              </button>
+              <>
+                {' '}
+                <button
+                  type="button"
+                  onClick={() => onMark(milestone)}
+                  className="btn btn--ghost ml-[var(--s3)] min-h-[var(--tap)]"
+                >
+                  I did it
+                </button>
+              </>
             )}
             <SaveNote state={saveOf(milestone.key)} />
           </li>
