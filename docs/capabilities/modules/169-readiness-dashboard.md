@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation follow-up) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. readiness-board/route.ts GET (coach/admin) returns freshest-24h readiness per athlete via readinessBoard.ts; CoachWorkspace renders roster dots; header names module 169. |
+| Code | `apps/web/app/api/pilot/coach/readiness-board/route.ts`, `apps/web/src/server/pilot/readinessBoard.ts`, `apps/web/components/CoachWorkspace.tsx` |
+| Tests | `apps/web/app/api/pilot/coach/readiness-board/route.test.ts`, `apps/web/src/server/pilot/readinessBoard.test.ts`, `apps/web/components/coachWorkspaceHonesty.test.tsx` |
 | Vertical slice | per-athlete readiness feed (latest fresh check-in only, 24h window) via GET /api/pilot/coach/readiness-board coloring the CoachWorkspace roster dots and Readiness Alerts tile; unknown stays unknown |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -42,3 +45,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — Blank DRAFT stub, Active=false, no defined intent/tables/roles. Missing: A tested readiness-score formula exists and UI scaffolding to display it exists, but they are not wired together: no API route persists or serves per-. Evidence: docs/capabilities/modules/169-readiness-dashboard.md; apps/web/src/server/pilot/readinessMath.ts. Status stays DRAFT. |
 | 2026-08-15 | wave9-reconciliation | The audit's missing wiring built: readinessBoard.ts (fresh-only, bands GREEN>=7 / YELLOW>=4 / RED below, athletes without a fresh reading OMITTED), coach/admin-gated route on the analytics roster derivation, CoachWorkspace merge with UNKNOWN preserved on absence or feed failure. Tests pin bands, freshness SQL, role refusals, and the no-signal/never-zero-flags tile states. Promoted DRAFT -> DONE. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation follow-up)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

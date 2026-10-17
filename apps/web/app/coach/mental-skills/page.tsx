@@ -4,6 +4,7 @@ import MentalSkillsSubjectPanel, { entriesFrom, getJson, type SubjectLoaders } f
 import type { MentalGoal, MentalSkillsData } from '@/components/MentalSkillsView';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { VISIBILITY_LINES } from '@/src/lib/mentalSkills/content';
+import BackHome from '@/components/BackHome';
 
 /*
  * A coach (or org admin) reading one athlete's mental skills. Read only: staff
@@ -55,6 +56,7 @@ export default function CoachMentalSkillsPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Mental Skills</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{VISIBILITY_LINES.coach}</p>
         </header>
         <MentalSkillsSubjectPanel

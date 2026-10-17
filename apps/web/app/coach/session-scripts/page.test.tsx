@@ -520,7 +520,7 @@ describe('coach session scripts page', () => {
     expect(await screen.findByText('Completed')).toBeInTheDocument();
     expect(screen.getByText('Abandoned')).toBeInTheDocument();
     expect(screen.getByText('Recorded before live delivery tracking')).toBeInTheDocument();
-    expect(screen.getByText('2026-08-12')).toBeInTheDocument();
+    expect(screen.getByText('Aug 12, 2026')).toBeInTheDocument();
     expect(screen.getByText(/6 blocks completed\. 9 athletes present\. Reset protocol used\./)).toBeInTheDocument();
     expect(screen.getByText('Slip line clicked.')).toBeInTheDocument();
     expect(screen.getByText('Storm cleared the room.')).toBeInTheDocument();
@@ -820,7 +820,7 @@ describe('a coach-made plan', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save plan' }));
 
-    await screen.findByRole('button', { name: 'Saving...' });
+    await screen.findByRole('button', { name: 'Saving…' });
     expect(screen.getByRole('button', { name: 'Open plan' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Showing plan' })).toBeDisabled();
     expect(plain).toBeDisabled();

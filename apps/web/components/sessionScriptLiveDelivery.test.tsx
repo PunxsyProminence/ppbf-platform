@@ -208,7 +208,7 @@ describe('live surface renders the real script and run', () => {
     // 125 seconds from the SERVER, formatted -- not computed from started_at.
     expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('2:05');
     expect(screen.getByText('RUNNING')).toBeInTheDocument();
-    expect(screen.getByText(/Pinned at version 3/)).toBeInTheDocument();
+    expect(screen.getByText(/the plan as it was when the session started \(version 3\)/)).toBeInTheDocument();
 
     // The current block is first-class and its authored fields render.
     expect(screen.getByText('Current block')).toBeInTheDocument();
@@ -391,7 +391,9 @@ describe('the Show on TV switch', () => {
     });
 
     expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('SOMETHING_ELSE');
+    // Words, never the stored code (UXB-09).
+    expect(screen.getByRole('alert')).toHaveTextContent('That did not go through. Nothing was changed. Try again.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('SOMETHING_ELSE');
   });
 
   // F-060: the TV has shown sessions since Release 21. The switch alone puts
@@ -452,8 +454,7 @@ describe('block movement always names the target block', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
     });
 
-    expect(screen.getByRole('alert').textContent).toContain('not part of this session\'s script');
-    expect(screen.getByRole('alert').textContent).toContain('SESSION_RUN_BLOCK_NOT_IN_SCRIPT');
+    expect(screen.getByRole('alert').textContent).toBe("That block is not part of this session's plan, so the session stayed where it was.");
     // The cursor stayed where the server left it.
     expect(screen.getAllByRole('listitem')[1].textContent).toContain('Current');
   });
@@ -674,7 +675,7 @@ describe('logging an intervention against this run', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
-    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+    fireEvent.change(screen.getByLabelText('Protocol'), {
       target: { value: 'proto-1' },
     });
 
@@ -716,7 +717,7 @@ describe('logging an intervention against this run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
 
-    const protocolSelect = screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)');
+    const protocolSelect = screen.getByLabelText('Protocol');
     expect(within(protocolSelect).getByText('For Jordan only (v1)')).toBeInTheDocument();
     expect(within(protocolSelect).getByText('Org-wide protocol (v1)')).toBeInTheDocument();
     expect(within(protocolSelect).queryByText('For someone else (v1)')).not.toBeInTheDocument();
@@ -729,7 +730,7 @@ describe('logging an intervention against this run', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
-    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+    fireEvent.change(screen.getByLabelText('Protocol'), {
       target: { value: 'proto-1' },
     });
     await act(async () => {

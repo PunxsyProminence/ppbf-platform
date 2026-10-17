@@ -184,7 +184,10 @@ describe('signing an account out', () => {
     // The receipt repeats the distinction rather than leaving an admin to
     // remember it: this ended the session and left the credential alone.
     expect(notice.textContent).toContain('Their sign-in still works');
-    expect(notice.textContent).toContain('issue a new activation code');
+    // A coach has no activation code: the next step named is the one this page
+    // offers a coach (UXB-37).
+    expect(notice.textContent).toContain('To stop that too, deactivate them.');
+    expect(notice.textContent).not.toContain('activation code');
   });
 
   it('never issues an activation code as a side effect', async () => {

@@ -1,8 +1,8 @@
 /** @jest-environment jsdom */
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import HomePage, { metadata } from './page';
-import { metadata as rootMetadata } from './layout';
+import HomePage, { generateMetadata } from './page';
+import { generateMetadata as generateRootMetadata } from './layout';
 
 jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 jest.mock('./globals.css', () => ({}));
@@ -10,9 +10,15 @@ jest.mock('next/font/local', () => () => ({ variable: '' }));
 jest.mock('@/components/GlobalRoleHeader', () => function GlobalRoleHeader() { return null; });
 jest.mock('@/components/PlateVariantGround', () => function PlateVariantGround({ children }: { children: ReactNode }) { return <>{children}</>; });
 jest.mock('@/components/ThemeProvider', () => ({ ThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</> }));
+// The stored profile as the migration seeds it for the operating gym (lane L31, #1469).
+jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
+  getOperatingOrganizationProfile: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
+  // The real module loads pg, which jsdom cannot; the layout only needs the class to compare with.
+  OrganizationProfileUnavailableError: class OrganizationProfileUnavailableError extends Error {},
+}));
 
-function renderPage() {
-  const { container } = render(<HomePage />);
+async function renderPage() {
+  const { container } = render(await HomePage());
   // Visible text only: the JSON-LD script would otherwise satisfy every
   // parity check by itself.
   const visible = container.cloneNode(true) as HTMLElement;
@@ -32,8 +38,8 @@ const PHYSICAL = '220 N Jefferson St, Punxsutawney, PA 15767';
 const MAILING = 'PO Box 54, Big Run, PA 15715';
 const DOMAIN_STATEMENT = 'punxsyprominence.org is the official website and application of Punxsy Prominence Boxing and Fitness.';
 
-test('legal name, EIN, physical address and domain statement show in the organization section and the footer', () => {
-  const { about, footer } = renderPage();
+test('legal name, EIN, physical address and domain statement show in the organization section and the footer', async () => {
+  const { about, footer } = await renderPage();
   for (const fact of [LEGAL_NAME, EIN, PHYSICAL, DOMAIN_STATEMENT]) {
     expect(about).toContain(fact);
     expect(footer).toContain(fact);
@@ -41,14 +47,14 @@ test('legal name, EIN, physical address and domain statement show in the organiz
   expect(about).toContain(MAILING);
 });
 
-test('the private office address is not published', () => {
-  const { text, ld } = renderPage();
+test('the private office address is not published', async () => {
+  const { text, ld } = await renderPage();
   expect(text).not.toContain('204');
   expect(JSON.stringify(ld)).not.toContain('204');
 });
 
-test('support block links both monitored addresses and offers no payment button', () => {
-  const { container, mailtos } = renderPage();
+test('support block links both monitored addresses and offers no payment button', async () => {
+  const { container, mailtos } = await renderPage();
   expect(mailtos).toEqual(expect.arrayContaining(['mailto:treasurer@punxsyprominence.org', 'mailto:grants@punxsyprominence.org']));
   const support = container.querySelector('#support');
   expect(support?.textContent).toMatch(/Donations/);
@@ -57,8 +63,8 @@ test('support block links both monitored addresses and offers no payment button'
   expect(container.textContent).not.toMatch(/donate now|paypal|zeffy|givebutter|stripe/i);
 });
 
-test('unsupported claims are gone and Jason\'s figures replace them', () => {
-  const { text } = renderPage();
+test('unsupported claims are gone and Jason\'s figures replace them', async () => {
+  const { text } = await renderPage();
   expect(text).not.toContain('500+');
   expect(text).not.toContain('2020');
   expect(text).not.toContain('100%');
@@ -71,8 +77,8 @@ test('unsupported claims are gone and Jason\'s figures replace them', () => {
   expect(text).not.toContain('run on donations');
 });
 
-test('JSON-LD matches the visible facts', () => {
-  const { ld, text, about } = renderPage();
+test('JSON-LD matches the visible facts', async () => {
+  const { ld, text, about } = await renderPage();
   expect(ld['@type']).toBe('NGO');
   expect(ld.legalName).toBe(LEGAL_NAME);
   expect(about).toContain(ld.legalName);
@@ -93,9 +99,28 @@ test('JSON-LD matches the visible facts', () => {
   expect(about).toContain(ld.areaServed.name);
 });
 
-test('canonical and metadataBase use the www address', () => {
+test('canonical and metadataBase use the www address', async () => {
+  const metadata = await generateMetadata();
+  const rootMetadata = await generateRootMetadata();
   expect(metadata.alternates?.canonical).toBe('https://www.punxsyprominence.org/');
   expect(String(rootMetadata.metadataBase)).toBe('https://www.punxsyprominence.org/');
+  expect(rootMetadata.title).toEqual({ default: 'PPBF Platform', template: '%s | PPBF Platform' });
+  expect(rootMetadata.description).toBe('Punxsy Prominence Boxing and Fitness ecosystem platform.');
+});
+
+test('with no readable profile the root layout keeps every page up under a plain title, carrying no gym fact', async () => {
+  const store = jest.requireMock('@/src/server/pilot/organizationProfileStore') as Record<string, unknown>;
+  const OrganizationProfileUnavailableError = store.OrganizationProfileUnavailableError as new (id: string) => Error;
+  const original = store.getOperatingOrganizationProfile;
+  store.getOperatingOrganizationProfile = async () => { throw new OrganizationProfileUnavailableError('punxsy_prominence'); };
+  try {
+    await expect(generateRootMetadata()).resolves.toEqual({ title: { default: 'Platform', template: '%s' } });
+    // Any other failure is not swallowed.
+    store.getOperatingOrganizationProfile = async () => { throw new Error('something else'); };
+    await expect(generateRootMetadata()).rejects.toThrow('something else');
+  } finally {
+    store.getOperatingOrganizationProfile = original;
+  }
 });
 
 test('the share-card alt text claims youth are free, not every family', () => {
@@ -107,31 +132,31 @@ test('the share-card alt text claims youth are free, not every family', () => {
 
 /* One front page (Jason, 2026-10-03): /public's form, programs and FAQ live
    here now, and nothing on them may contradict the facts above. */
-test('the interest form is on the front page, with no consent checkbox', () => {
-  const { container } = renderPage();
+test('the interest form is on the front page, with no consent checkbox', async () => {
+  const { container } = await renderPage();
   const form = container.querySelector('#interest-intake form');
   expect(form).not.toBeNull();
   expect(form?.querySelector('input[type="checkbox"]')).toBeNull();
   expect(form?.querySelector('input[type="email"]')).not.toBeNull();
 });
 
-test('programs and FAQ moved over, and the program intro no longer miscounts them', () => {
-  const { container, text } = renderPage();
+test('programs and FAQ moved over, and the program intro no longer miscounts them', async () => {
+  const { container, text } = await renderPage();
   expect(container.querySelectorAll('#programs article').length).toBe(8);
   expect(text).not.toMatch(/four different reasons/i);
   expect(container.querySelectorAll('#public-faq details').length).toBeGreaterThan(0);
 });
 
-test('the FAQ cost answer carries the adult figure, not "ask us"', () => {
-  const { container } = renderPage();
+test('the FAQ cost answer carries the adult figure, not "ask us"', async () => {
+  const { container } = await renderPage();
   const faq = (container.querySelector('#public-faq')?.textContent ?? '').replace(/\s+/g, ' ');
   expect(faq).toContain('Adults pay $20 a month.');
   expect(faq).toContain('Youth train free.');
   expect(faq).not.toMatch(/adults, ask us/i);
 });
 
-test('no claim on the page contradicts the registry facts', () => {
-  const { text } = renderPage();
+test('no claim on the page contradicts the registry facts', async () => {
+  const { text } = await renderPage();
   expect(text).not.toMatch(/free for all/i);
   expect(text).not.toMatch(/ask us --/i);
   expect(text).toContain('veteran-led');
@@ -139,8 +164,8 @@ test('no claim on the page contradicts the registry facts', () => {
   expect(text).not.toMatch(/tester guide/i);
 });
 
-test('the page does not link to /public, which forwards here', () => {
-  const { container } = renderPage();
+test('the page does not link to /public, which forwards here', async () => {
+  const { container } = await renderPage();
   const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
   expect(hrefs.filter((h) => h === '/public' || h.startsWith('/public#'))).toEqual([]);
 });
@@ -157,8 +182,8 @@ test('the server page reads form labels from a plain module, never from the clie
   expect(options).not.toMatch(/^\s*['"]use client['"]/);
 });
 
-test('the footer links the privacy notice', () => {
-  const { container } = renderPage();
+test('the footer links the privacy notice', async () => {
+  const { container } = await renderPage();
   const footerLinks = Array.from(container.querySelectorAll('footer a')).map((a) => a.getAttribute('href'));
   expect(footerLinks).toContain('/privacy');
 });

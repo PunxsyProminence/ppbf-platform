@@ -116,9 +116,10 @@ export async function POST(request: NextRequest) {
     // one, so the cookie in the browser is now pointing at a dead token.
     // Clearing it makes the client's next step an explicit sign-in with the
     // new PIN rather than a confusing bounce off a revoked session.
+    // No account id in the answer (F-119): the client does not read one, and
+    // a parent's is email-shaped.
     const response = NextResponse.json({
       ok: true,
-      account_id: principal.accountId,
       next_step: 'Sign in again with your new PIN.',
     });
     response.cookies.delete(PILOT_SESSION_COOKIE);

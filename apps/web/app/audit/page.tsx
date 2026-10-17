@@ -89,7 +89,6 @@ function AuditTrace() {
   const stats = [
     { label: 'Current Stage', value: 'Audit Trace' },
     { label: 'Next Stage', value: 'None (last stage)' },
-    { label: 'Source', value: 'pilot.audit_events' },
     { label: 'Events Shown', value: loadState === 'loaded' ? String(events.length) : '--' },
   ];
 

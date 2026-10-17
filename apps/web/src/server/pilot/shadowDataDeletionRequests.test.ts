@@ -303,6 +303,9 @@ describe('what the requester can see about their own request', () => {
 
     expect(item?.status).toBe('pending');
     expect(mockQuery.mock.calls[0][1]).toEqual(['org-a', 'acct-child']);
+    // F-119: the requester's own account id is not sent back to them.
+    expect(item).not.toHaveProperty('accountId');
+    expect(JSON.stringify(item)).not.toContain('acct-child');
   });
 
   it('never tells the requester which member of staff handled it', async () => {

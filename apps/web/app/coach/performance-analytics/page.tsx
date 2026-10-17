@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import ClusterNav from '@/components/ClusterNav';
 
 // Read-only rollup over data the gym already records: session logs and RPE
 // (pilot.sessions), readiness check-ins (pilot.readiness), go-forward
@@ -198,6 +199,7 @@ export default function PerformanceAnalyticsPage() {
         <div className="mb-[var(--s5)]">
           <p className="t-eyebrow">Your floor</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Who to see first</h1>
+          <ClusterNav cluster="who-needs-me" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Session logs, readiness check-ins, training days, and drill work over the window you pick, one card
             per athlete, the ones asking for you at the top. Read-only, and every number comes from records the

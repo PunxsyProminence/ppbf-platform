@@ -144,6 +144,17 @@ describe('rabbit holes on the athlete gap cards', () => {
     }
   });
 
+  test('F-118: the gap card dates the gap in words, in gym time, not 7/30/2026', async () => {
+    global.fetch = mockWithLessons({}) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<AthleteProgressionIntelligencePage />);
+    });
+
+    expect(await screen.findByText('Identified Jul 30, 2026')).toBeTruthy();
+    expect(screen.queryByText(/\d{1,2}\/\d{1,2}\/\d{4}/)).toBeNull();
+  });
+
   test('a term nobody has written about leaves no expander behind', async () => {
     global.fetch = mockWithLessons({}) as unknown as typeof fetch;
 

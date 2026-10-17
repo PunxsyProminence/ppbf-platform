@@ -107,7 +107,15 @@ function mockFetch(options: {
   }) as unknown as typeof fetch;
 }
 
+/* /research is three tabs (#345); a panel not shown is hidden, so a role
+   query reaches it only after its tab is opened. */
+function openTab(name: 'Needs Evidence' | 'General Research' | 'Intake Cards') {
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
 afterEach(() => {
+  // The chosen tab is remembered in this browser; each test starts fresh.
+  window.localStorage.clear();
   mockBypassShell = true;
   mockReplace.mockReset();
   jest.restoreAllMocks();
@@ -181,7 +189,9 @@ test('a curator files the link with provenance and is told review decides, not t
   });
 
   await screen.findByText('Is RPE reliable at age 12?');
+  openTab('General Research');
   expect(screen.getByRole('region', { name: 'Add source text to the Library' })).toBeTruthy();
+  openTab('Needs Evidence');
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
   });
@@ -300,6 +310,7 @@ describe('general research intake', () => {
     });
 
     await screen.findByText('General Research Intake');
+    openTab('General Research');
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Youth safeguarding review' } });
       fireEvent.change(screen.getByLabelText('Classification domain'), { target: { value: 'youth_development_safeguarding' } });
@@ -423,6 +434,7 @@ function failProjection(projection: () => Promise<Response>) {
 }
 
 function summaryTileValues(): string[] {
+  openTab('Intake Cards');
   const heading = screen.getByRole('heading', { name: 'Review State Summary' });
   const section = heading.closest('section');
   if (!section) throw new Error('Review State Summary section is missing');
@@ -571,6 +583,7 @@ describe('the platform shelf', () => {
   }
 
   async function registerOne() {
+    openTab('General Research');
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Hydration position stand' } });
       fireEvent.change(screen.getByLabelText('Classification domain'), {
@@ -969,5 +982,365 @@ describe('the requirements list comes a page at a time (F-025)', () => {
 
     await screen.findByText('Is RPE reliable at age 12?');
     expect(screen.queryByRole('button', { name: 'Load more requirements' })).toBeNull();
+  });
+});
+
+describe('closing on a submission reviewed Responsive (OD-2026-10-08-005 A-Q13)', () => {
+  const SUBMISSIONS = [
+    { submission_id: 'sub-yes', source_id: 'src-1', applicability_state: 'responsive', review_note: 'Answers it for 12-14' },
+    { submission_id: 'sub-wait', source_id: 'src-2', applicability_state: 'unreviewed', review_note: '' },
+    { submission_id: 'sub-no', source_id: 'src-3', applicability_state: 'not_responsive', review_note: '' },
+  ];
+
+  function lifecycleFetch(options: {
+    role?: string;
+    submissions?: Array<Record<string, unknown>> | 'refused';
+    requirements?: Array<Record<string, unknown>>;
+  } = {}) {
+    const resolves: Array<Record<string, unknown>> = [];
+    const submissionReads: string[] = [];
+    const base = mockFetch({ curator: true, role: options.role ?? 'coach', requirements: options.requirements });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/research-requirements') && init?.method === 'POST') {
+        resolves.push(JSON.parse(String(init.body)));
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      }
+      if (url.includes('/research-submissions?research_requirement_id=')) {
+        submissionReads.push(url);
+        if (options.submissions === 'refused') return { ok: false, status: 403, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items: options.submissions ?? SUBMISSIONS, answer_state: 'partially_answered' }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    return { resolves, submissionReads };
+  }
+
+  test('a coach closes on the Responsive submission with no note, and the row says which source answered it', async () => {
+    const { resolves, submissionReads } = lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    expect(submissionReads).toEqual([expect.stringContaining('research_requirement_id=7')]);
+
+    const resolve = screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement;
+    expect(resolve.disabled).toBe(true);
+    // Only the Responsive submission is offered, beside "None".
+    const group = screen.getByRole('group', { name: 'Close with a submission reviewed Responsive' });
+    expect(Array.from(group.querySelectorAll('label')).map((label) => label.textContent)).toEqual([
+      'None', 'RPE reliability in adolescents',
+    ]);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    expect(resolve.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(resolve);
+    });
+
+    expect(resolves).toEqual([{
+      action: 'resolve',
+      research_requirement_id: 7,
+      closing_submission_id: 'sub-yes',
+      metadata: { resolved_from: 'research_page' },
+    }]);
+    expect(await screen.findByText('Answered by: RPE reliability in adolescents')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+  });
+
+  test('a note and a submission are sent together when both are given', async () => {
+    const { resolves } = lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: 'Good for 12-14 only.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    });
+    expect(resolves).toEqual([expect.objectContaining({ closing_note: 'Good for 12-14 only.', closing_submission_id: 'sub-yes' })]);
+  });
+
+  test('with no Responsive submission there is nothing to pick, and a note is still required', async () => {
+    const { resolves } = lifecycleFetch({ submissions: SUBMISSIONS.filter((s) => s.applicability_state !== 'responsive') });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    expect(screen.queryByRole('group', { name: 'Close with a submission reviewed Responsive' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(resolves).toHaveLength(0);
+  });
+
+  test('picking None again takes the submission back out of the close', async () => {
+    const { resolves } = lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'None' }));
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(resolves).toHaveLength(0);
+  });
+
+  test('Submitted sources lists each source with its verdict and review note', async () => {
+    lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Submitted sources' }));
+    });
+    const list = await screen.findByRole('list', { name: 'Submitted sources' });
+    expect(Array.from(list.querySelectorAll('li')).map((item) => item.textContent)).toEqual([
+      'RPE reliability in adolescents — Responsive (Answers it for 12-14)',
+      'src-2 — Unreviewed',
+      'src-3 — Not Responsive',
+    ]);
+  });
+
+  test('a refused submissions read says so instead of "none submitted"', async () => {
+    lifecycleFetch({ submissions: 'refused' });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(await screen.findByText('The submitted sources could not be read.')).toBeTruthy();
+    expect(screen.queryByText('No sources submitted yet.')).toBeNull();
+  });
+
+  test('a row closed on a submission says so before its sources are read', async () => {
+    lifecycleFetch({ requirements: [{ ...REQUIREMENT, status: 'resolved', metadata: { closing_note: null, closing_submission_id: 'sub-yes' } }] });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    expect(await screen.findByText('Closed with a submission reviewed Responsive.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(await screen.findByText('Answered by: RPE reliability in adolescents')).toBeTruthy();
+  });
+
+  test.each(['parent', 'athlete', 'volunteer'])('a %s is offered neither the submitted sources nor a close', async (role) => {
+    lifecycleFetch({ role });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('button', { name: 'Submitted sources' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+  });
+
+  test('a pick on one row is not carried to the next, and a string id from the list is sent back as it came', async () => {
+    // The list route hands ids back as pg returns a bigint: a string.
+    const second = { ...SECOND_REQUIREMENT, research_requirement_id: '4108' };
+    const { resolves } = lifecycleFetch({ requirements: [REQUIREMENT, second] });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Does footwork drill order matter?');
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Mark Resolved' })[0]);
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Resolved' }));
+    });
+    const resolve = screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement;
+    expect(resolve.disabled).toBe(true);
+    expect((screen.getByRole('radio', { name: 'None' }) as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    await act(async () => {
+      fireEvent.click(resolve);
+    });
+    expect(resolves).toEqual([expect.objectContaining({ research_requirement_id: '4108', closing_submission_id: 'sub-yes' })]);
+  });
+
+  test('a pick that is no longer Responsive on reload leaves the close', async () => {
+    let reads = 0;
+    const base = mockFetch({ curator: true, role: 'coach' });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/research-submissions?research_requirement_id=')) {
+        reads += 1;
+        const items = reads === 1 ? SUBMISSIONS : SUBMISSIONS.map((s) => ({ ...s, applicability_state: 'not_responsive' }));
+        return { ok: true, json: async () => ({ items }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Mark Resolved' }));
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'RPE reliability in adolescents' }));
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(reads).toBe(2);
+    expect(screen.queryByRole('group', { name: 'Close with a submission reviewed Responsive' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('attaching a source re-reads a submitted-sources list already shown', async () => {
+    const { submissionReads } = lifecycleFetch();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Submitted sources' }));
+    });
+    expect(submissionReads).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit source' }));
+    });
+    expect(submissionReads).toHaveLength(2);
+  });
+
+  test('the Submission Review door is shown to a curator and not to a coach', async () => {
+    lifecycleFetch({ role: 'organization_admin' });
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<ResearchIntakePage />);
+    });
+    expect((await screen.findByRole('link', { name: 'Submission Review' })).getAttribute('href')).toBe('/research/review');
+    view?.unmount();
+
+    lifecycleFetch({ role: 'coach' });
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('link', { name: 'Submission Review' })).toBeNull();
+  });
+});
+
+describe("/research as #345's three workflows", () => {
+  function panel(id: 'needs_evidence' | 'general_research' | 'intake') {
+    return document.getElementById(`research-panel-${id}`);
+  }
+
+  function tabNames() {
+    return screen.getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')]);
+  }
+
+  async function renderPage(fetchOptions: Parameters<typeof mockFetch>[0]) {
+    global.fetch = mockFetch(fetchOptions);
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
+    return view!;
+  }
+
+  test('a curator sees three tabs and lands on Needs Evidence; the other panels are hidden', async () => {
+    await renderPage({ curator: true });
+    await screen.findByRole('tab', { name: 'General Research' });
+    expect(tabNames()).toEqual([
+      ['Needs Evidence', 'true'], ['General Research', 'false'], ['Intake Cards', 'false'],
+    ]);
+    expect(panel('needs_evidence')?.hidden).toBe(false);
+    expect(panel('general_research')?.hidden).toBe(true);
+    expect(panel('intake')?.hidden).toBe(true);
+    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Review State Summary' })).toBeNull();
+  });
+
+  test('a coach, who curates nothing, gets no General Research tab', async () => {
+    await renderPage({ curator: true, role: 'coach' });
+    expect(tabNames()).toEqual([['Needs Evidence', 'true'], ['Intake Cards', 'false']]);
+    expect(panel('general_research')).toBeNull();
+  });
+
+  test('opening a tab shows its panel only, and the choice is remembered on the next visit', async () => {
+    const view = await renderPage({ curator: false });
+    openTab('Intake Cards');
+    expect(panel('intake')?.hidden).toBe(false);
+    expect(panel('needs_evidence')?.hidden).toBe(true);
+    expect(screen.getByRole('heading', { name: 'Review State Summary' })).toBeTruthy();
+    view.unmount();
+
+    await renderPage({ curator: false });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    expect(panel('intake')?.hidden).toBe(false);
+  });
+
+  test.each([['general_research', 'a tab this viewer does not have'], ['bogus', 'an unknown value']])(
+    'a remembered %s (%s) falls back to Needs Evidence',
+    async (stored) => {
+      window.localStorage.setItem('ppbf.research.tab', stored);
+      await renderPage({ curator: false });
+      expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+      expect(panel('needs_evidence')?.hidden).toBe(false);
+    },
+  );
+
+  test('blocked browser storage leaves the tabs working', async () => {
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    await renderPage({ curator: false });
+    expect(panel('needs_evidence')?.hidden).toBe(false);
+    openTab('Intake Cards');
+    expect(panel('intake')?.hidden).toBe(false);
+  });
+
+  test('a half-typed General Research draft survives a look at another tab', async () => {
+    await renderPage({ curator: true });
+    await screen.findByRole('tab', { name: 'General Research' });
+    openTab('General Research');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Hydration position stand' } });
+    openTab('Needs Evidence');
+    openTab('General Research');
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Hydration position stand');
+  });
+
+  test('the arrow keys move between the tabs this viewer has', async () => {
+    await renderPage({ curator: false });
+    const first = screen.getByRole('tab', { name: 'Needs Evidence' });
+    expect(first.tabIndex).toBe(0);
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Intake Cards' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('a failed projection read is said on Needs Evidence too, not only inside Intake Cards', async () => {
+    failProjection(async () => ({ ok: false, json: async () => ({}) }) as Response);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    expect((await screen.findByRole('alert')).textContent).toContain('Projection Unavailable');
   });
 });

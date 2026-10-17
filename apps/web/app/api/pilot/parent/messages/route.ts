@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { getStaffAuthorName } from '@/src/server/pilot/achievements';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
@@ -55,6 +56,19 @@ export async function GET(request: NextRequest) {
       messages.map((message) => message.note_id),
     );
 
+    /* Who sent it, by name (F-120: every card read only "From Coach"). One
+       lookup per author, keyed by role too, so an admin's message is not
+       signed "Coach" (F-058). The author's account id stays on the server. */
+    const senderKey = (message: { sender_role: string; sender_account_id: string }) =>
+      `${message.sender_role}:${message.sender_account_id}`;
+    const senderNames = new Map<string, string>();
+    for (const message of messages) {
+      const key = senderKey(message);
+      if (!senderNames.has(key)) {
+        senderNames.set(key, await getStaffAuthorName(principal.organizationId, message.sender_account_id, message.sender_role));
+      }
+    }
+
     const items = messages.map((message) => {
       const task = taskState.get(message.note_id) ?? null;
       return {
@@ -62,6 +76,7 @@ export async function GET(request: NextRequest) {
         athlete_id: message.athlete_id,
         athlete_name: nameByAthleteId.get(message.athlete_id) ?? null,
         sender_role: message.sender_role,
+        sender_name: senderNames.get(senderKey(message)) ?? null,
         note_text: message.note_text,
         created_at: message.created_at,
         // null, not omitted: a message with no task is a fact about it, and a

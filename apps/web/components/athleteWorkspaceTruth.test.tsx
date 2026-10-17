@@ -93,7 +93,7 @@ async function checkInAt(instant: string): Promise<Record<string, unknown>> {
   jest.useFakeTimers({ now: new Date(instant), advanceTimers: true });
   await renderWorkspace();
   const before = posted('/api/pilot/sessions').length;
-  fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(posted('/api/pilot/sessions')).toHaveLength(before + 1));
   return posted('/api/pilot/sessions')[before].body;
 }
@@ -146,7 +146,7 @@ describe('ATH-02: a failed identity read is a failed read, not endless loading',
     // The connection comes back; the athlete presses Retry.
     identity = 'ok';
     const readsBefore = identityReads;
-    fireEvent.click(screen.getByRole('button', { name: 'Retry loading goals' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try loading your goals again' }));
 
     await waitFor(() => expect(identityReads).toBeGreaterThan(readsBefore));
     await waitFor(() => expect(calls.some((call) => call.url.includes('/api/pilot/goals/list'))).toBe(true));

@@ -2,17 +2,20 @@
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import PrivacyPage, { metadata } from './page';
+import PrivacyPage, { generateMetadata } from './page';
 
+jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
+  getOperatingOrganizationProfile: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
+}));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 
-function text() {
-  const { container } = render(<PrivacyPage />);
+async function text() {
+  const { container } = render(await PrivacyPage());
   return (container.textContent ?? '').replace(/\s+/g, ' ');
 }
 
-test("states Jason's privacy terms as written", () => {
-  const t = text();
+test("states Jason's privacy terms as written", async () => {
+  const t = await text();
   for (const line of [
     'Punxsy Prominence Boxing and Fitness (EIN 99-2073622) runs this website, punxsyprominence.org.',
     'Only to answer you about our programs. Sending the form is your request for us to contact you.',
@@ -26,13 +29,33 @@ test("states Jason's privacy terms as written", () => {
   }
 });
 
-test('lists every field the interest form actually sends', () => {
-  expect(text()).toContain(
+test('lists every field the interest form actually sends', async () => {
+  expect(await text()).toContain(
     'your name, email, phone number if you give it, who you are, the program you are interested in, how you would like us to contact you, and any message you write',
   );
 });
 
-test('is titled Privacy with its own canonical address', () => {
+test('a fact the gym has not given leaves its line out, and nothing is invented in its place', async () => {
+  const store = jest.requireMock('@/src/server/pilot/organizationProfileStore') as { getOperatingOrganizationProfile: () => Promise<unknown> };
+  const { PPBF_PROFILE } = jest.requireActual('@/src/testing/organizationProfileFixtures');
+  const original = store.getOperatingOrganizationProfile;
+  store.getOperatingOrganizationProfile = async () => ({ ...PPBF_PROFILE, ein: '', email: '', mailing: '' });
+  try {
+    const { container } = render(await PrivacyPage());
+    const t = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(t).toContain('Punxsy Prominence Boxing and Fitness runs this website, punxsyprominence.org.');
+    expect(t).not.toContain('EIN');
+    expect(t).not.toContain('Your choices');
+    expect(t).not.toContain('To see, correct or delete');
+    expect(container.querySelectorAll('a[href^="mailto:"]')).toHaveLength(0);
+    expect(t).toMatch(/Contact\s*Punxsy Prominence Boxing and Fitness\s*Back to the front page/);
+  } finally {
+    store.getOperatingOrganizationProfile = original;
+  }
+});
+
+test('is titled Privacy with its own canonical address', async () => {
+  const metadata = await generateMetadata();
   expect(metadata.title).toBe('Privacy');
   expect(metadata.alternates?.canonical).toBe('https://www.punxsyprominence.org/privacy');
 });

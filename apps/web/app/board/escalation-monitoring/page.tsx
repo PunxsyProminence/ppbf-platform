@@ -5,6 +5,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
 import { formatMeasuredAt, type BoardCountMetric } from '../BoardSummaryPanel';
+import BackHome from '@/components/BackHome';
 
 // The board's only window into the escalation ladder. The API
 // (GET /api/pilot/board/escalation-summary) is count-only and
@@ -117,6 +118,7 @@ function BoardEscalationMonitoringContent() {
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>
             <h1 className="font-display text-[length:var(--t-2xl)] font-black text-[color:var(--bone-100)]">Escalation Ladder</h1>
+            <div className="mt-[var(--s3)]"><BackHome /></div>
             <p className="t-body max-w-[80ch]">
               How many safety escalations are open right now, by severity, across the whole organization. The board
               sees counts only: fewer than {minimumCohortSize} athletes in a bucket and the number is withheld, and

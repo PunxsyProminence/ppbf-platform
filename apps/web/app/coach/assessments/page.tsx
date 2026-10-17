@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /*
  * Jump test and skill ratings for ONE athlete (map items 7-8).
@@ -292,6 +293,7 @@ export default function CoachAssessmentsPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Testing</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Jump Test and Skill Ratings</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record one athlete&apos;s jump and your 1-5 rating for each skill family, and see their own
             history by date. Nothing here is added up, ranked or compared with anyone else.

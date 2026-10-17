@@ -37,9 +37,15 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    # 60, not 45: validate takes 33-42 min (2026-10-06) and #1298's run was
-    # cancelled at 45 min mid-suite -- a cancel reads as "never validated".
-    timeout-minutes: 60
+    # 90, not 60: a run that includes the PostgreSQL suite takes 55-60 min on
+    # its own (the suite alone 2235-2853 s, 2026-10-17), and three runs that
+    # day were cancelled at 60 min with every suite they ran green: #1685
+    # (39059770045), #1691 (39062366688) and main push 39064008532. A cancel
+    # reads as "never validated". Only #1685's suite was unneeded -- the stale
+    # base fixed in "Classify changed surface"; that fix does not shorten a run
+    # that really needs the suite, so do not lower this back on its account.
+    # (60, not 45, came from #1298 at 33-42 min on 2026-10-06.)
+    timeout-minutes: 90
     env:
       CI: true
 
@@ -71,6 +77,12 @@ jobs:
       # docs-only change, and that path skips `npm test`. No node_modules.
       - name: Check owner decision ids are unique
         run: node scripts/check-owner-decision-ids.mjs
+
+      # Also above the docs-only fast path: a capability module file is
+      # documentation, so the PR that changes a module's status skips
+      # `npm test`. One status per module, matching the code. No node_modules.
+      - name: Check capability module status
+        run: node scripts/check-capability-status.mjs
 
       - name: Test CI surface classifier
         shell: bash
@@ -355,11 +367,47 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
           base="$BASE_SHA"
           head="$HEAD_SHA"
+          pr_head="${PR_HEAD_SHA:-}"
+
+          # A PULL REQUEST IS DIFFED FROM THE MAIN IT IS MERGED INTO.
+          #
+          # On a pull_request event HEAD_SHA is GitHub's test merge commit
+          # (refs/pull/N/merge, "Merge <PR head> into <main tip>"): first parent
+          # the CURRENT main tip, second parent the PR head. That merge is what
+          # the job checks out and tests. pull_request.base.sha is not that tip:
+          # it is the base the branch last synced with, and it stays put while
+          # other lanes merge. Diffing from it -- even through the merge base
+          # below, because it is an ancestor of the merge -- hands this PR
+          # every file main gained since the sync.
+          #
+          # Measured on #1685 (run 39059770045): base.sha 4d9dba81 sat 6 main
+          # commits behind the merge's first parent f57f2186. The classifier
+          # read other lanes' files as the PR's own -- among them #1613's
+          # merged migration (.sql, runner, apply-migrations.yml) -- turned
+          # migrations on, and the PostgreSQL suite alone took
+          # 2428 s; the run was cancelled at 60 minutes with every suite green.
+          #
+          # The first parent is the right base: diff(main tip, merge) is
+          # exactly what merging this PR changes on main, and main's own tip
+          # has its own push run. It is a parent of the merge, so the merge-
+          # base step below leaves it unchanged and two dots equal three (the
+          # #842 note still holds). Taken only when the second parent IS the
+          # PR head, so a merge ref of any other shape keeps the old path,
+          # with a warning rather than silently.
+          if [[ -n "$pr_head" ]]; then
+            if [[ "$(git rev-parse --verify --quiet "${head}^2" || true)" == "$pr_head" ]]; then
+              base="$(git rev-parse "${head}^1")"
+              echo "Pull request: diffing from the merge ref's first parent (current main)"
+            else
+              echo "::warning title=CI classifier::HEAD_SHA is not a merge of the PR head; classifying from pull_request.base.sha, which may include other merged work"
+            fi
+          fi
 
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             base="$(git rev-parse "${head}^" 2>/dev/null || git rev-list --max-parents=0 "$head")"
@@ -386,6 +434,8 @@ jobs:
           # On a push to main the two spellings agree, because `before` is an
           # ancestor of `sha` and is therefore its own merge base. This is a
           # correction to the pull-request path and a no-op on the push path.
+          # Since the first-parent base was added above, this step is also a
+          # no-op on a normal pull request; it still guards the warned fallback.
           #
           # The merge base is computed explicitly rather than with `A...B` so
           # that an unrelated-history pair (no merge base, which `...` fails on)

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import ArmedButton from './ArmedButton';
 import { handOffArrivalAthlete } from './decisionLoopArrival';
 
 /**
@@ -420,6 +421,12 @@ export default function CoachFloorFocus({
           <h3 className="coach-floor-focus__panel-title">
             {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
           </h3>
+          {/* The full list behind this card (lane U2; Jason 2026-10-17, "A:
+              Cross-link now"): The Morning Read is every read, most urgent
+              first. Copy PROPOSED. */}
+          <p className="coach-floor-focus__label">
+            <Link href="/coach/intelligence" className="underline">Full list: The Morning Read</Link>
+          </p>
 
           {ackLanded && (
             <p className="coach-floor-focus__label" role="status">
@@ -484,18 +491,24 @@ export default function CoachFloorFocus({
                     Open
                   </button>
                 )}
+                {/* Drawn in the row where Open was. A double tap on Open that
+                    lands here does not even arm it, and an armed one needs a
+                    second, deliberate press (UXB-01). */}
                 {open && currentItem.acknowledge && (
-                  <button
-                    type="button"
+                  <ArmedButton
                     className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
+                    armKey={currentKey ?? ''}
                     disabled={currentItem.acknowledge.disabled}
-                    onClick={() => {
+                    busy={currentItem.acknowledge.busy}
+                    busyLabel="Acknowledging..."
+                    armedLabel={`Press again: acknowledge ${currentItem.title}`}
+                    onConfirm={() => {
                       if (currentKey) setAckedItem({ key: currentKey, title: currentItem.title });
                       currentItem.acknowledge?.onAcknowledge();
                     }}
                   >
-                    {currentItem.acknowledge.busy ? 'Acknowledging...' : 'Acknowledge'}
-                  </button>
+                    Acknowledge
+                  </ArmedButton>
                 )}
                 {open && currentItem.link && (
                   <Link
