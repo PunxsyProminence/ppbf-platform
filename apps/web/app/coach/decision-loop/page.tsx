@@ -7,6 +7,7 @@ import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
 import MessageAthlete from '@/components/MessageAthlete';
+import ArmedButton from '@/components/ArmedButton';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
@@ -407,7 +408,17 @@ const EMPTY_DRAFTS: Drafts = {
   outcomeNotes: '',
 };
 
-type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
+/* The six writes below the first three lock while in flight and say when they
+   landed (UXB-02): a double tap used to write two records to a child's file. */
+type DoneKind = 'medicalStatus' | 'recommendation' | 'decision' | 'nearMiss' | 'outcome';
+type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome' | DoneKind;
+
+const MEDICAL_STATUS_WORDS: Record<MedicalStatusValue, string> = {
+  pending: 'Pending',
+  cleared: 'Cleared',
+  restricted: 'Restricted',
+  not_cleared: 'Not Cleared',
+};
 
 /** A roster read that has not answered by then is treated as failed, so the
     coach is offered Check again rather than a picker that never fills. */
@@ -575,7 +586,12 @@ export default function DecisionLoopReviewPage() {
   /* In flight, per athlete. One flag for the page left athlete B's button
      reading "Filing…" and locked while a report for A was still out. */
   const [submitting, setSubmitting] = useState<ReadonlySet<string>>(new Set());
+  // The same set, readable by a second press that arrives before the render
+  // that disables the button.
+  const inFlightRef = useRef<Set<string>>(new Set());
   function markSubmitting(kind: SubmitKind, forAthleteId: string, on: boolean) {
+    if (on) inFlightRef.current.add(`${kind}:${forAthleteId}`);
+    else inFlightRef.current.delete(`${kind}:${forAthleteId}`);
     setSubmitting((current) => {
       const next = new Set(current);
       if (on) next.add(`${kind}:${forAthleteId}`);
@@ -586,6 +602,18 @@ export default function DecisionLoopReviewPage() {
   const incidentSubmitting = submitting.has(`incident:${athleteId}`);
   const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
   const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
+  // "Status set." and the like, under the form that was sent. Emptied with the
+  // other confirmation lines on every read and every switch.
+  const [doneLines, setDoneLines] = useState<Partial<Record<DoneKind, string>>>({});
+  const isSubmitting = (kind: DoneKind) => submitting.has(`${kind}:${athleteId}`);
+  /** Starts a write of `kind` for `forAthleteId`, or says one is already out. */
+  function startWrite(kind: DoneKind, forAthleteId: string): boolean {
+    if (inFlightRef.current.has(`${kind}:${forAthleteId}`)) return false;
+    markSubmitting(kind, forAthleteId, true);
+    setDoneLines((shown) => ({ ...shown, [kind]: '' }));
+    return true;
+  }
+  const athleteName = athletes.find((athlete) => athlete.athlete_id === athleteId)?.full_name?.trim() || 'this athlete';
 
   /* ARRIVING FROM "Record what you did" (#1474 item 5): the athlete the coach
      came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
@@ -652,6 +680,7 @@ export default function DecisionLoopReviewPage() {
     setIncidentFiledMessage('');
     setBehaviorNoteMessage('');
     setMessageHomeMessage('');
+    setDoneLines({});
     if (!targetAthleteId) {
       return;
     }
@@ -822,6 +851,7 @@ export default function DecisionLoopReviewPage() {
     setIncidentFiledMessage('');
     setBehaviorNoteMessage('');
     setMessageHomeMessage('');
+    setDoneLines({});
     setLoading(false);
     setErrorMessage('');
     setPreviousAthleteNotice('');
@@ -859,9 +889,9 @@ export default function DecisionLoopReviewPage() {
     }
   }
 
-  async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!athleteId) return;
+  // Run by the armed Set Status button only (UXB-03); Enter in the form does not send it.
+  async function handleSetMedicalStatus() {
+    if (!athleteId || !startWrite('medicalStatus', athleteId)) return;
     const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
@@ -885,12 +915,16 @@ export default function DecisionLoopReviewPage() {
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
       await refreshAll(athleteId);
+      if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, medicalStatus: 'Status set.' }));
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to set medical status.');
+    } finally {
+      markSubmitting('medicalStatus', athleteId, false);
     }
   }
 
   async function handleDecideRecommendation(recommendationId: string, decision: 'accepted' | 'rejected') {
+    if (!athleteId || !startWrite('recommendation', athleteId)) return;
     const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/recommendations/decide`, {
@@ -912,14 +946,23 @@ export default function DecisionLoopReviewPage() {
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
       await refreshAll(athleteId);
+      if (athleteId === selectedAthleteRef.current) {
+        setDoneLines((shown) => ({
+          ...shown,
+          recommendation: decision === 'accepted' ? 'Recommendation accepted.' : 'Recommendation rejected.',
+        }));
+      }
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision on recommendation.');
+    } finally {
+      markSubmitting('recommendation', athleteId, false);
     }
   }
 
   async function handleRecordDecision(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !decisionText.trim() || !decisionExpectedOutcome.trim()) return;
+    if (!startWrite('decision', athleteId)) return;
     const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decisions`, {
@@ -949,14 +992,18 @@ export default function DecisionLoopReviewPage() {
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
       await refreshAll(athleteId);
+      if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, decision: 'Decision recorded.' }));
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision.');
+    } finally {
+      markSubmitting('decision', athleteId, false);
     }
   }
 
   async function handleFlagNearMiss(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !nearMissDescription.trim()) return;
+    if (!startWrite('nearMiss', athleteId)) return;
     const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/near-misses`, {
@@ -979,8 +1026,11 @@ export default function DecisionLoopReviewPage() {
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
       await refreshAll(athleteId);
+      if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, nearMiss: 'Near-miss flagged.' }));
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to flag near-miss.');
+    } finally {
+      markSubmitting('nearMiss', athleteId, false);
     }
   }
 
@@ -1196,7 +1246,7 @@ export default function DecisionLoopReviewPage() {
 
   async function handleEvaluateOutcome(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!outcomeDecisionId) return;
+    if (!outcomeDecisionId || !startWrite('outcome', athleteId)) return;
     const writeConfirmed = beginWrite();
     try {
       const observationIds = outcomeObservationIds
@@ -1223,9 +1273,12 @@ export default function DecisionLoopReviewPage() {
       clearSentDrafts(athleteId, { outcomeObservationIds, outcomeNotes });
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
+      setDoneLines((shown) => ({ ...shown, outcome: 'Outcome recorded.' }));
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to evaluate decision outcome.');
+    } finally {
+      markSubmitting('outcome', athleteId, false);
     }
   }
 
@@ -1333,7 +1386,7 @@ export default function DecisionLoopReviewPage() {
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No medical administrative status recorded yet.</p>
                 )}
 
-                <form onSubmit={handleSetMedicalStatus} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
+                <form onSubmit={(event) => event.preventDefault()} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
                   <label className="field block">
                     <span className="t-label">New status</span>
                     <select
@@ -1359,9 +1412,17 @@ export default function DecisionLoopReviewPage() {
                   {/* The one danger-face control on this page: it operates the
                       medical gate itself. Red is not reserved
                       (OD-2026-09-29-001). */}
-                  <button type="submit" className="btn btn--danger">
+                  <ArmedButton
+                    className="btn btn--danger"
+                    armKey={`${athleteId}:${medicalStatusDraft}`}
+                    busy={isSubmitting('medicalStatus')}
+                    busyLabel="Setting…"
+                    armedLabel={`Press again: set ${athleteName} to ${MEDICAL_STATUS_WORDS[medicalStatusDraft]}`}
+                    onConfirm={() => void handleSetMedicalStatus()}
+                  >
                     Set Status
-                  </button>
+                  </ArmedButton>
+                  {doneLines.medicalStatus && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.medicalStatus}</p>}
                 </form>
               </section>
 
@@ -1388,6 +1449,7 @@ export default function DecisionLoopReviewPage() {
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'accepted')}
+                            disabled={isSubmitting('recommendation')}
                             className="btn"
                           >
                             Accept
@@ -1395,6 +1457,7 @@ export default function DecisionLoopReviewPage() {
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'rejected')}
+                            disabled={isSubmitting('recommendation')}
                             className="btn btn--ghost"
                           >
                             Reject
@@ -1404,6 +1467,7 @@ export default function DecisionLoopReviewPage() {
                     </article>
                   ))}
                 </div>
+                {doneLines.recommendation && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.recommendation}</p>}
               </section>
 
               {/* Decisions */}
@@ -1498,9 +1562,10 @@ export default function DecisionLoopReviewPage() {
                           ? medicalStatusOnFileWords(medicalStatus.effective_status, medicalStatus.expires_at)
                           : 'none'}
                   </p>
-                  <button type="submit" className="btn">
-                    Record Decision
+                  <button type="submit" className="btn" disabled={isSubmitting('decision')}>
+                    {isSubmitting('decision') ? 'Recording…' : 'Record Decision'}
                   </button>
+                  {doneLines.decision && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.decision}</p>}
                 </form>
               </section>
 
@@ -1564,9 +1629,10 @@ export default function DecisionLoopReviewPage() {
                       ))}
                     </select>
                   </label>
-                  <button type="submit" className="btn btn--ghost">
-                    Flag Near-Miss
+                  <button type="submit" className="btn btn--ghost" disabled={isSubmitting('nearMiss')}>
+                    {isSubmitting('nearMiss') ? 'Flagging…' : 'Flag Near-Miss'}
                   </button>
+                  {doneLines.nearMiss && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.nearMiss}</p>}
                 </form>
               </section>
 
@@ -1743,9 +1809,10 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
-                  <button type="submit" className="btn w-fit md:col-span-2">
-                    Evaluate Outcome
+                  <button type="submit" className="btn w-fit md:col-span-2" disabled={isSubmitting('outcome')}>
+                    {isSubmitting('outcome') ? 'Recording…' : 'Evaluate Outcome'}
                   </button>
+                  {doneLines.outcome && <p role="status" className="t-body text-[color:var(--brass-300)] md:col-span-2">{doneLines.outcome}</p>}
                 </form>
               </section>
             </div>

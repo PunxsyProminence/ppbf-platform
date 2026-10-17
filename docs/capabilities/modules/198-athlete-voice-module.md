@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. athleteVoice.ts fileAthleteVoiceEscalation files an athlete_voice escalation; called from feedback/submit/route.ts and read via escalations/route.ts (coach scope excludes it). |
+| Code | `apps/web/src/server/pilot/athleteVoice.ts`, `apps/web/app/api/pilot/feedback/submit/route.ts`, `apps/web/app/api/pilot/escalations/route.ts` |
+| Tests | `apps/web/src/server/pilot/athleteVoice.test.ts`, `apps/web/app/api/pilot/feedback/submit/route.test.ts`, `apps/web/app/api/pilot/escalations/route.test.ts` |
 | Vertical slice | fileAthleteVoiceEscalation files a pilot.safety_escalations row with source_type='athlete_voice', pointing at the feedback submission id, or |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -57,3 +60,4 @@ submission is the record.
 | 2026-08-06 | session B (remote) | Implemented on PR #238: athlete_voice source_type, athleteVoice.ts, submit-route wiring, coach-scope exclusion. Status stays DRAFT pending promotion review. |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/athleteVoice.ts; apps/web/app/api/pilot/feedback/submit/route.ts; apps/web/app/api/pilot/escalations/route.ts. Test: apps/web/src/server/pilot/athleteVoice.test.ts (severity triage + scanner cue-vocabulary drift alarm); [the rest of this cell was cut off; rewritten 2026-09-28 by Claude from the test files, stating only what they assert:] that file also asserts a filed escalation contains no word of the submission and is routed to admins, and an unknown account or one with no athlete record files nothing. `apps/web/app/api/pilot/feedback/submit/route.test.ts` asserts an athlete's safeguarding submission files an escalation pointing at the stored row, only after it is stored; a product submission or a non-athlete files nothing; and filing success or failure never changes the reply to the child. `apps/web/app/api/pilot/escalations/route.test.ts` asserts a coach's list always excludes athlete_voice escalations and an admin's never does, and a coach acknowledging an athlete_voice id gets the same answer as a bogus id. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
