@@ -203,17 +203,6 @@ export function requireGuardianLinkForParentInvite(
 }
 
 /**
- * The refusal for naming an existing non-parent login as a guardian during
- * intake (Jason 2026-09-29, R5 "A": intake refuses it).
- *
- * Provisioning re-roles an existing account to whatever role it is given --
- * that is how the invite surfaces change a role on purpose. Intake promotion
- * gives it `parent`, so a guardian email that happened to belong to a coach,
- * a staff member or an admin turned that person's login into a parent login as
- * a side effect of promoting a child's intake form. Intake refuses instead and
- * leaves the account exactly as it was.
- */
-/**
  * An invite that would change an existing account's role, sent without the
  * confirmation that names the role it is changing from (lane L31). The People
  * page names the change before it is made; the server holds the same line, so
@@ -232,6 +221,17 @@ export class RoleChangeUnconfirmedError extends ConflictError {
   }
 }
 
+/**
+ * The refusal for naming an existing non-parent login as a guardian during
+ * intake (Jason 2026-09-29, R5 "A": intake refuses it).
+ *
+ * Provisioning re-roles an existing account to whatever role it is given --
+ * that is how the invite surfaces change a role on purpose. Intake promotion
+ * gives it `parent`, so a guardian email that happened to belong to a coach,
+ * a staff member or an admin turned that person's login into a parent login as
+ * a side effect of promoting a child's intake form. Intake refuses instead and
+ * leaves the account exactly as it was.
+ */
 function existingRoleConflict(
   named: { email: string } | { accountId: string },
   existingRole: PilotRole,
@@ -552,6 +552,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          and acct.organization_id = excluded.organization_id
          and (not $5::boolean or acct.active_flag)
          and (not $6::boolean or acct.role = excluded.role)
+         and (not $7::boolean or acct.role = excluded.role or acct.role = $8::text)
        returning account_id`,
       [
         accountId,
@@ -560,6 +561,10 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
         organizationId,
         params.refuseDeactivatedLogin === true,
         params.refuseRoleChange === true,
+        // The confirmed change holds in the write too, so a role another admin
+        // changed between the read above and here is named, not overwritten.
+        params.roleChangeConfirmedFrom !== undefined,
+        params.roleChangeConfirmedFrom ?? null,
       ],
     );
 
@@ -582,6 +587,13 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       }
       if (params.refuseRoleChange && row.role !== role) {
         throw existingRoleConflict({ email: loginEmail }, row.role, role);
+      }
+      if (
+        params.roleChangeConfirmedFrom !== undefined
+        && row.role !== role
+        && row.role !== params.roleChangeConfirmedFrom
+      ) {
+        throw new RoleChangeUnconfirmedError(loginEmail, row.role, role);
       }
       throw deactivatedGuardianLoginConflict(loginEmail);
     }

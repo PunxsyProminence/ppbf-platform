@@ -367,6 +367,28 @@ describe('takeover and escalation guards', () => {
       ).rejects.toThrow('Forbidden: this account holds a role you cannot assign');
     });
 
+    test('a role changed between the read and the write is named, not overwritten', async () => {
+      stubLookups({ existingByEmail: COACH });
+      currentClient = fakeClient((sql) => {
+        // Another admin made them staff after the read: the conditioned write matches nothing.
+        if (sql.includes('insert into pilot.accounts')) return { rows: [], rowCount: 0 };
+        if (sql.includes('select role')) return { rows: [{ role: 'staff', account_deleted: false }], rowCount: 1 };
+        return undefined;
+      });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'coach@example.com',
+          organizationId: 'org-1',
+          role: 'volunteer',
+          roleChangeConfirmedFrom: 'coach',
+        }),
+      ).rejects.toMatchObject({ code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'staff' });
+      const [upsertSql, upsertParams] = accountUpsertCalls()[0] as [string, unknown[]];
+      expect(upsertSql).toContain('(not $7::boolean or acct.role = excluded.role or acct.role = $8::text)');
+      expect(upsertParams.slice(6)).toEqual([true, 'coach']);
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
     test('callers that do not pass it are unchanged', async () => {
       stubLookups({ existingByEmail: COACH });
       await expect(
@@ -1551,7 +1573,7 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
       expect(sql).toContain('and acct.organization_id = excluded.organization_id');
       expect(sql).toContain('and (not $5::boolean or acct.active_flag)');
       expect(sql).toContain('and (not $6::boolean or acct.role = excluded.role)');
-      expect(params?.slice(4)).toEqual([true, true]);
+      expect(params?.slice(4, 6)).toEqual([true, true]);
     });
 
     test('an invite passes neither intake condition', async () => {
@@ -1559,7 +1581,7 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
 
       await createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' });
 
-      expect(accountUpsertCalls()[0][1]?.slice(4)).toEqual([false, false]);
+      expect(accountUpsertCalls()[0][1]?.slice(4, 6)).toEqual([false, false]);
     });
 
     // The reason is looked up only inside the caller's organization. A login
