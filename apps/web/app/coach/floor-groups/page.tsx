@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
+import BackHome from '@/components/BackHome';
 
 // Today's floor (modules 121 + 123): the room split for the people who
 // actually showed up. Groups may carry a station (a circuit) or not (small
@@ -360,7 +360,7 @@ export default function FloorGroupsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
 
         {/* The four words, at the foot of the page — the same foot the

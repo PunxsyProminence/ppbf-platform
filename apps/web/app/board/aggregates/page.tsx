@@ -5,6 +5,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
 import { formatMeasuredAt, type BoardCountMetric } from '../BoardSummaryPanel';
+import BackHome from '@/components/BackHome';
 
 // Three finished board routes had no reader anywhere in the app: a board seat
 // could only reach volunteer, external-competition and wrestling-league
@@ -348,6 +349,7 @@ function BoardAggregatesContent() {
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>
             <h1 className="font-display text-[length:var(--t-2xl)] font-black text-[color:var(--bone-100)]">Program Aggregates</h1>
+            <div className="mt-[var(--s3)]"><BackHome /></div>
             <p className="t-body max-w-[80ch]">
               Volunteers, external competition and the wrestling league, counted across the whole organization. The
               board is not admitted to any of the three registers themselves; these counts are the whole of what this

@@ -232,8 +232,9 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
 
   test('the real actions still exist', () => {
     expect(PAGE).toContain('Add drill');
-    expect(PAGE).toContain('Back to Coach Workspace');
-    expect(PAGE).toContain('href="/coach/environment/intake-router"');
+    // The back link is the shared role-aware one (lane U2): for a coach it
+    // reads "Back to Coach Workspace" and opens the coach home.
+    expect(PAGE).toContain('<BackHome');
     // Promote, per OD-2026-09-16-001. Named, not merely counted: the control and
     // the endpoint it calls are both pinned, so a restyle cannot drop the action
     // and a stray button cannot stand in for it.
