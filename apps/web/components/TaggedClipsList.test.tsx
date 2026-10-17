@@ -62,7 +62,7 @@ test('choosing an athlete filters by athlete_id', async () => {
 test('a refused athlete filter shows a plain message, not "no clips"', async () => {
   mockFetch({ status: 403, body: { error: 'Forbidden: coach is not assigned to athlete' } });
   render(<TaggedClipsList athletes={ATHLETES} />);
-  expect(await screen.findByText('You can list clips only for athletes you coach.')).toBeTruthy();
+  expect(await screen.findByText('You can list clips only for athletes of your own gym.')).toBeTruthy();
   expect(screen.queryByText('No tagged clips yet.')).toBeNull();
 });
 

@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { setOrganizationStatus } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { PLATFORM_LIBRARY_ORGANIZATION_ID } from '@/src/server/pilot/platformLibraryScope';
 
@@ -102,4 +103,46 @@ test('a missing id or an unknown status is refused before anything is written', 
   await expect(post({ organization_id: 'gym-1', status: 'frozen' }).then((r) => r.status)).resolves.toBe(400);
   expect(mockSetStatus).not.toHaveBeenCalled();
   expect(mockAudit).not.toHaveBeenCalled();
+});
+
+// F-085: the desk could close Root, or the gym the platform owner's own
+// session is scoped to -- which revokes that session and everyone homed there.
+// Both are refused for every standing that signs people out; opening either
+// is still allowed, because that is the way back.
+describe("Root and the caller's own gym cannot be closed from the desk", () => {
+  const targets = [
+    { name: 'Root', id: getPilotDefaultOrganizationId() },
+    // as('platform_owner') above scopes the session to this organization.
+    { name: "the caller's own gym", id: 'platform' },
+  ];
+  const signOutStandings = ['inactive', 'suspended', 'pending'];
+
+  test.each(targets.flatMap((target) => signOutStandings.map((status) => ({ ...target, status }))))(
+    '$name: setting it $status is refused and nothing is written',
+    async ({ id, status }) => {
+      const response = await post({ organization_id: ` ${id} `, status });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: expect.stringContaining('Root and the gym you are signed in to cannot be closed'),
+      });
+      expect(mockSetStatus).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(targets)('$name: opening it is still allowed', async ({ id }) => {
+    const response = await post({ organization_id: id, status: 'active' });
+
+    expect(response.status).toBe(200);
+    expect(mockSetStatus).toHaveBeenCalledWith(id, 'active');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test('another gym still closes', async () => {
+    const response = await post({ organization_id: 'gym-1', status: 'inactive' });
+
+    expect(response.status).toBe(200);
+    expect(mockSetStatus).toHaveBeenCalledWith('gym-1', 'inactive');
+  });
 });

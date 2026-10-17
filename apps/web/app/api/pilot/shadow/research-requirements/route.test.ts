@@ -7,7 +7,10 @@ import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import {
   createShadowResearchRequirement,
   getShadowResearchRequirementById,
+  listNamedAthleteIdsInResearch,
   listShadowResearchRequirements,
+  listShadowResearchRequirementsBatch,
+  namedAthleteIdsOf,
   resolveShadowResearchRequirement,
   submissionClosesRequirement,
   type ShadowResearchRequirementRow,
@@ -37,6 +40,8 @@ jest.mock('@/src/server/pilot/shadowResearch', () => {
     createShadowResearchRequirement: jest.fn(),
     getShadowResearchRequirementById: jest.fn(),
     listShadowResearchRequirements: jest.fn(),
+    listShadowResearchRequirementsBatch: jest.fn(),
+    listNamedAthleteIdsInResearch: jest.fn(),
     resolveShadowResearchRequirement: jest.fn(),
     submissionClosesRequirement: jest.fn(),
   };
@@ -55,6 +60,8 @@ const mockCreate = createShadowResearchRequirement as jest.MockedFunction<typeof
 const mockAssertAthlete = assertActorCanAccessAthlete as jest.MockedFunction<typeof assertActorCanAccessAthlete>;
 const mockAccessibleAthleteIds = accessibleAthleteIds as jest.MockedFunction<typeof accessibleAthleteIds>;
 const mockList = listShadowResearchRequirements as jest.MockedFunction<typeof listShadowResearchRequirements>;
+const mockBatch = listShadowResearchRequirementsBatch as jest.MockedFunction<typeof listShadowResearchRequirementsBatch>;
+const mockNamed = listNamedAthleteIdsInResearch as jest.MockedFunction<typeof listNamedAthleteIdsInResearch>;
 const mockGuardianAthleteIds = guardianAthleteIds as jest.MockedFunction<typeof guardianAthleteIds>;
 const mockGetById = getShadowResearchRequirementById as jest.MockedFunction<typeof getShadowResearchRequirementById>;
 const mockResolve = resolveShadowResearchRequirement as jest.MockedFunction<typeof resolveShadowResearchRequirement>;
@@ -94,6 +101,23 @@ beforeEach(() => {
   mockCreate.mockResolvedValue(101);
   mockAssertAthlete.mockResolvedValue(undefined);
   mockDeletedAmong.mockResolvedValue(new Set());
+  // The list reads in batches; these tests state the gym's rows through
+  // mockList, in list order, and the batch read walks them by position.
+  // Ordering and paging against real rows: researchListPaging.pg.test.ts.
+  mockNamed.mockImplementation(async (organizationId) => Array.from(new Set(
+    (await mockList(organizationId)).flatMap((row) => namedAthleteIdsOf(row)),
+  )));
+  mockBatch.mockImplementation(async (organizationId, { after, limit, visibleTo }) => {
+    // The SQL pre-filter's superset, applied the same way here.
+    const rows = (await mockList(organizationId)).filter((row) => !visibleTo
+      || row.created_by_account_id === visibleTo.accountId
+      || namedAthleteIdsOf(row).some((athleteId) => visibleTo.athleteIds.includes(athleteId)));
+    const start = after === null ? 0 : rows.findIndex((row) => row.research_requirement_id === after.id) + 1;
+    return rows.slice(start, start + limit).map((row) => ({
+      row,
+      key: { createdAt: '2026-08-25 00:00:00+00', id: row.research_requirement_id },
+    }));
+  });
 });
 
 describe('POST /api/pilot/shadow/research-requirements (create)', () => {
@@ -413,9 +437,12 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
     expect(mockList).toHaveBeenCalledWith('org-real');
     expect(mockGuardianAthleteIds).not.toHaveBeenCalled();
+    // The one central gate decides the parent's reach: asked once of every
+    // athlete the gym's research names (the SQL pre-filter), then again by
+    // the route's scope over the rows that survive it.
     expect(mockAccessibleAthleteIds).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'parent', accountId: 'acct-1' }),
-      ['ath-mine', 'ath-other', 'ath-other'],
+      expect.arrayContaining(['ath-mine', 'ath-other']),
     );
     expect(await idsFrom(response)).toEqual([11]);
   });
@@ -1381,5 +1408,104 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
     expect(mockGetById).not.toHaveBeenCalled();
     expect(mockResolve).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET pages the list on the server (F-025)', () => {
+  function row(id: number, subjectId: string | null): ShadowResearchRequirementRow {
+    return {
+      research_requirement_id: id,
+      organization_id: 'org-real',
+      source_event_name: 'MANUAL_RESEARCH_NOTE',
+      source_entity_type: 'manual_note',
+      source_entity_id: `n-${id}`,
+      research_requirement: `Requirement ${id}`,
+      knowledge_gap: 'gap',
+      evidence_label: null,
+      source_status: 'missing',
+      source_confidence_tier: 'INSUFFICIENT',
+      source_verification_state: 'unknown',
+      status: 'open',
+      created_by_account_id: 'acct-admin',
+      created_by_role: 'organization_admin',
+      metadata: subjectId ? { athlete_id: subjectId } : {},
+      created_at: '2026-08-25T00:00:00Z',
+      resolved_at: null,
+      subject_id: subjectId,
+    };
+  }
+
+  async function page(query: string) {
+    const response = await GET(new NextRequest(`http://localhost/api/pilot/shadow/research-requirements${query}`));
+    const body = (await response.json()) as { items?: ShadowResearchRequirementRow[]; next_cursor?: string | null };
+    return { status: response.status, ids: (body.items ?? []).map((item) => item.research_requirement_id), next: body.next_cursor ?? null };
+  }
+
+  test('rows a coach may not reach never count toward a page, across database batches', async () => {
+    // 250 rows about a child the coach does not coach, then three they do.
+    const rows = [
+      ...Array.from({ length: 250 }, (_, index) => row(1000 - index, 'ath-other')),
+      row(3, 'ath-mine'), row(2, 'ath-mine'), row(1, 'ath-mine'),
+    ];
+    mockList.mockResolvedValue(rows);
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockAccessibleAthleteIds.mockImplementation(async (_actor, ids) => new Set(ids.filter((id) => id === 'ath-mine')));
+
+    const first = await page('?limit=2');
+    expect(first.status).toBe(200);
+    expect(first.ids).toEqual([3, 2]);
+    expect(first.next).not.toBeNull();
+
+    const second = await page(`?limit=2&cursor=${encodeURIComponent(first.next ?? '')}`);
+    expect(second.ids).toEqual([1]);
+    expect(second.next).toBeNull();
+  });
+
+  test("a parent's read is narrowed in SQL to their own rows and their children's, so one batch fills the page", async () => {
+    // 250 rows about another family's child, then two about the parent's own.
+    const rows = [
+      ...Array.from({ length: 250 }, (_, index) => row(1000 - index, 'ath-other')),
+      row(2, 'ath-mine'), row(1, 'ath-mine'),
+    ];
+    mockList.mockResolvedValue(rows);
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockAccessibleAthleteIds.mockImplementation(async (_actor, ids) => new Set(ids.filter((id) => id === 'ath-mine')));
+
+    const first = await page('?limit=5');
+    expect(first.ids).toEqual([2, 1]);
+    expect(first.next).toBeNull();
+    // The reach was asked once, of every named athlete, and the read was narrowed by it.
+    expect(mockAccessibleAthleteIds).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), expect.arrayContaining(['ath-mine', 'ath-other']));
+    expect(mockBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatch.mock.calls[0][1].visibleTo).toEqual({ accountId: 'acct-1', athleteIds: ['ath-mine'] });
+  });
+
+  test('research staff read without the pre-filter: the route scope alone decides', async () => {
+    mockList.mockResolvedValue([row(2, null), row(1, null)]);
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    await page('?limit=2');
+    expect(mockBatch.mock.calls[0][1].visibleTo).toBeUndefined();
+    expect(mockNamed).not.toHaveBeenCalled();
+  });
+
+  test('a page that ends exactly at the last readable row says there is nothing more', async () => {
+    mockList.mockResolvedValue([row(2, null), row(1, null)]);
+    const exact = await page('?limit=2');
+    expect(exact.ids).toEqual([2, 1]);
+    expect(exact.next).toBeNull();
+  });
+
+  test('no limit means a page of 50', async () => {
+    mockList.mockResolvedValue(Array.from({ length: 60 }, (_, index) => row(100 - index, null)));
+    const first = await page('');
+    expect(first.ids).toHaveLength(50);
+    expect(first.next).not.toBeNull();
+  });
+
+  test('a malformed limit or cursor is refused before the list is read', async () => {
+    for (const query of ['?limit=0', '?limit=201', '?cursor=%%%', `?cursor=${Buffer.from('2026-02-30 00:00:00+00|1').toString('base64url')}`]) {
+      expect((await page(query)).status).toBe(400);
+    }
+    expect(mockBatch).not.toHaveBeenCalled();
   });
 });

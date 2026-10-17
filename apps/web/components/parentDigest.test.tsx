@@ -178,6 +178,39 @@ describe('the parent digest', () => {
     expect(screen.queryByText(/No milestones sealed yet/)).toBeNull();
   });
 
+  // F-063: a recognition with a kind and no typed note printed only its
+  // signature ("COACH COACH, OCT 11") with no words above it. The line now says
+  // the kind's family sentence, and the day is the gym's day: saved 02:52 UTC on
+  // October 12 is 10:52 PM on October 11 at the gym.
+  it("says the kind's sentence when the coach typed no note, dated by the gym's day", async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) {
+        return jsonResponse({
+          ok: true,
+          items: [
+            {
+              recognition_id: 'rec-kind-only',
+              coach_display_name: 'Coach Neale',
+              kind: 'helped_someone',
+              note: '',
+              created_at: '2026-10-12T02:52:00Z',
+            },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText('Helped somebody in the gym who needed it.')).toBeTruthy();
+    const signature = screen.getByText(/Coach Neale/);
+    expect(signature.textContent).toContain('Oct 11');
+    expect(signature.textContent).not.toContain('Oct 12');
+  });
+
   it('claims nothing about the lists while there is no child to read for', async () => {
     installFetch(() => jsonResponse({ ok: true, items: [] }));
 

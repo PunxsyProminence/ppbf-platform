@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import type { PilotRole } from '@/src/server/pilot/contracts';
-import { ValidationError } from '@/src/server/pilot/errors';
+import { ForbiddenError, ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import { researchSubmissionsForReader } from '@/src/server/pilot/researchFamilyView';
@@ -11,9 +11,11 @@ import {
   mayReadSubjectlessResearchRow,
   subjectAthleteIdOf,
 } from '@/src/server/pilot/shadowResearch';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
 import {
   SHADOW_LIBRARY_CURATOR_ROLES,
   SHADOW_PROJECTION_READ_ROLES,
+  SHADOW_SOURCE_ATTACH_ROLES,
 } from '@/src/server/pilot/shadowRoleSets';
 import {
   createResearchSubmission,
@@ -33,11 +35,13 @@ export const runtime = 'nodejs';
 // The research-lifecycle link record (issue #345, slice 1).
 //
 // Read is projection-wide (same set as the research requirements the
-// submissions hang off). Writing a link and reviewing applicability are
-// CURATOR acts -- the same authority that registers and approves library
-// evidence, because attaching a source to a question is evidence curation,
-// not general submission. When general-research intake (issue #345 workflow
-// 3) arrives, widening the submitter set is its own decision.
+// submissions hang off). Reviewing applicability is a CURATOR act -- the same
+// authority that registers and approves library evidence. Writing a link
+// (attaching an existing source) is open to coaches as well
+// (OD-2026-10-08-005 A-Q13, ruling 6: "a coach may attach a source"): the
+// link lands 'unreviewed' and answers nothing until a curator reviews it, so
+// attaching is never approval. A coach attaches only to a requirement they
+// may read, and attaches a source, not a document.
 //
 // Nothing in this route can resolve a requirement: there is no code path
 // from here to shadow_research_requirements.status.
@@ -180,7 +184,8 @@ async function readJsonObject<T>(request: NextRequest): Promise<T> {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    requireRole(principal, [...SHADOW_SOURCE_ATTACH_ROLES]);
+    const isCurator = SHADOW_LIBRARY_CURATOR_ROLES.some((role) => roleEquals(principal.role, role));
 
     const body = await readJsonObject<{
       research_requirement_id?: number;
@@ -209,9 +214,20 @@ export async function POST(request: NextRequest) {
         ? body.document_id.trim()
         : null;
 
+    // A document can be about one athlete; linking one stays with the
+    // curators, who administer the whole shelf. A coach attaches the source.
+    if (!isCurator && documentId !== null) {
+      throw new ForbiddenError('A coach attaches a source; linking a document stays with the Library curators.');
+    }
+
     // Org isolation: FKs prove existence, not tenancy. "Doesn't exist" and
     // "exists in another organization" collapse into one hidden not-found.
     if ((await getRequirementStatusInOrg(organizationId, requirementId)) === null) {
+      return hiddenNotFound();
+    }
+    // A coach attaches only to a requirement they may read: one about a child
+    // they cannot reach is the same not-found as one that does not exist.
+    if (!isCurator && !(await mayReadRequirement({ ...principal, organizationId }, requirementId, false))) {
       return hiddenNotFound();
     }
     if (!(await sourceExistsInOrg(organizationId, sourceId))) {

@@ -60,6 +60,8 @@ let storedWorkouts: unknown;
  * The client never filters; there is nothing here for it to filter WITH.
  */
 let storedReferenceDrills: Array<Record<string, unknown>> = [];
+/** What POST /api/pilot/shadow/observation-projection answers (F-005). */
+let storedShadowObservations: Array<Record<string, unknown>> = [];
 /** W-D4A: the athlete detail for an opened drill, keyed by reference drill id. */
 let storedReferenceDrillDetails: Record<string, Record<string, unknown>> = {};
 /** W-D4A: make the detail read fail with a server error (not a 404). */
@@ -230,6 +232,7 @@ beforeEach(() => {
   storedAssignments = [];
   storedWorkouts = undefined;
   storedReferenceDrills = [];
+  storedShadowObservations = [];
   storedReferenceDrillDetails = {};
   detailReadFails = false;
   assignmentsFail = false;
@@ -387,7 +390,7 @@ beforeEach(() => {
       return jsonResponse({ drills: storedReferenceDrills });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
-      return jsonResponse({ items: [] });
+      return jsonResponse({ items: storedShadowObservations });
     }
     // BASE-05: the athlete's own attempt log reads the canonical ledger.
     if (url.includes('/api/pilot/training-attempts')) {
@@ -1846,6 +1849,36 @@ describe('reporting progress writes it', () => {
   });
 });
 
+describe('what SHADOW has noticed, as the athlete reads it (F-005)', () => {
+  test('system event names are left off, and the state is said in words, not as a stored value', async () => {
+    storedShadowObservations = [
+      { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+      { id: 'obs-2', source: 'telemetry', label: 'shadow.audit.login', review_state: 'unknown', created_at: '2026-10-11T12:01:00Z' },
+      { id: 'obs-3', source: 'event', label: 'You checked in tired three days running.', review_state: 'pending_review', created_at: '2026-10-11T12:02:00Z' },
+    ];
+    await renderWorkspace();
+    openTab('SHADOW Intel');
+
+    expect(await screen.findByText('You checked in tired three days running.')).toBeTruthy();
+    expect(screen.getByText('Waiting on a coach to look at it.')).toBeTruthy();
+    const page = document.body.textContent ?? '';
+    expect(page).not.toMatch(/SHADOW_AUDIT_LOGIN_ACCOUNT|shadow\.audit\.login/);
+    expect(page).not.toMatch(/Source: (event|telemetry)/);
+    expect(page).not.toMatch(/State: (unknown|pending_review)/);
+  });
+
+  test('a feed holding only system events reads as nothing noticed yet', async () => {
+    storedShadowObservations = [
+      { id: 'obs-1', source: 'event', label: 'SHADOW_AUDIT_LOGIN_ACCOUNT', review_state: 'unknown', created_at: '2026-10-11T12:00:00Z' },
+    ];
+    await renderWorkspace();
+    openTab('SHADOW Intel');
+
+    expect(await screen.findByText('SHADOW has not noticed anything yet. Keep training and checking in.')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('SHADOW_AUDIT_LOGIN_ACCOUNT');
+  });
+});
+
 describe('the workspace nav groups its surfaces instead of listing them flat', () => {
   test('five groups are offered, and a surface inside one is not loose in the top row', async () => {
     await renderWorkspace();
@@ -2856,6 +2889,22 @@ describe('a session check-in goes where the day actually is', () => {
 
     await waitFor(() => expect(openSurface()).toBe('Wellness'));
     expect(screen.getByText('You are checked in. Do your wellness check next -- it opens your floor.')).toBeTruthy();
+  });
+
+  // F-042: the line is about the whole visit, so it stays on every tab. Once
+  // the wellness check is recorded it stopped being true and used to stay.
+  test('once the wellness check is recorded, the line no longer says to do it next', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(openSurface()).toBe('Wellness'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+    await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
+
+    expect(await screen.findByText("You are checked in. Your coach's work is on your floor.")).toBeTruthy();
+    expect(screen.queryByText(/Do your wellness check next/)).toBeNull();
   });
 
   test('refused: the athlete stays where they pressed it, and is told nothing was saved', async () => {
@@ -4447,6 +4496,16 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     expect(postedTo('/api/pilot/sessions/update')[0].body.notes).toBe('Left wrist still sore from Tuesday.');
     expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
+  });
+
+  // F-042: the box's help names the control the test above presses, so the
+  // promise points at something the athlete can actually find.
+  test('the pre-check-in note help names the Share with coach button', async () => {
+    await renderWorkspace();
+
+    const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
+    const help = document.getElementById(box.getAttribute('aria-describedby') ?? '');
+    expect(help?.textContent).toBe('Optional. You can leave it empty. Nobody sees this until you check in and press Share with coach.');
   });
 
   test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {

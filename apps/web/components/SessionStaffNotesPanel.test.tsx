@@ -399,3 +399,83 @@ test('closing the panel drops a read that lands afterwards, and a save that fini
   expect(gets).toHaveLength(1);
   expect(screen.queryByText('No staff notes on this session yet.')).toBeNull();
 });
+
+describe('a note on an athlete in a session run (F-067)', () => {
+  test('reads and writes by run_id, never session_id, and carries the button words it was given', async () => {
+    serve(() => loaded([]));
+    render(<SessionStaffNotesPanel runId="ssrun 1" athleteId="ath-1" buttonLabel="Staff notes on Ada Reyes" />);
+    expect(global.fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+    await screen.findByText('No staff notes on this session yet.');
+
+    expect(gets.map((call) => call.url)).toEqual([`${ROUTE}?run_id=ssrun%201&athlete_id=ath-1`]);
+    fireEvent.change(draftField(), { target: { value: 'Hands dropped in round two.' } });
+    await act(async () => {
+      fireEvent.click(addButton());
+    });
+    expect(writes.map((call) => [call.method, call.body])).toEqual([
+      ['POST', { run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Hands dropped in round two.' }],
+    ]);
+  });
+
+  test('two athletes of one run on one screen get their own fields', async () => {
+    serve(() => loaded([]));
+    render(
+      <>
+        <SessionStaffNotesPanel runId="ssrun_1" athleteId="ath-1" buttonLabel="Staff notes on Ada" />
+        <SessionStaffNotesPanel runId="ssrun_1" athleteId="ath-2" buttonLabel="Staff notes on Ben" />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ben' }));
+    await waitFor(() => expect(screen.getAllByLabelText(/New note/)).toHaveLength(2));
+    const ids = screen.getAllByLabelText(/New note/).map((field) => field.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  test("the server's refusal (409, not marked here) says NOT SAVED with its words; nothing is cleared", async () => {
+    serve(
+      () => loaded([]),
+      () => respond({ error: 'This athlete is not marked present in this session, so a note cannot be added for them here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409),
+    );
+    render(<SessionStaffNotesPanel runId="ssrun_1" athleteId="ath-1" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
+    await screen.findByText('No staff notes on this session yet.');
+    fireEvent.change(draftField(), { target: { value: 'Late note.' } });
+    await act(async () => {
+      fireEvent.click(addButton());
+    });
+    expect(screen.getByRole('alert').textContent).toContain('NOT SAVED');
+    expect(screen.getByRole('alert').textContent).toContain('not marked present in this session');
+    expect(draftField().value).toBe('Late note.');
+  });
+});
+
+describe('a write is reported as the server answered it', () => {
+  test('an error that is not one of the route refusals (500) is NOT KNOWN, and the list is read again', async () => {
+    serve(() => loaded([]), () => respond({ error: 'boom' }, 500));
+    openPanel();
+    await screen.findByText('No staff notes on this session yet.');
+    fireEvent.change(draftField(), { target: { value: 'A note.' } });
+    await act(async () => {
+      fireEvent.click(addButton());
+    });
+    expect(screen.getByRole('alert').textContent).toContain('NOT KNOWN');
+    expect(screen.getByRole('alert').textContent).toContain('It is not known whether the note was saved (500)');
+    expect(screen.getByRole('alert').textContent).not.toContain('NOT SAVED');
+    expect(gets).toHaveLength(2);
+  });
+
+  test('a yes whose body cannot be read is still a yes: the draft clears and the list is read again', async () => {
+    serve(() => loaded([]), () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); } }) as unknown as Response);
+    openPanel();
+    await screen.findByText('No staff notes on this session yet.');
+    fireEvent.change(draftField(), { target: { value: 'A note.' } });
+    await act(async () => {
+      fireEvent.click(addButton());
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(draftField().value).toBe('');
+    expect(gets).toHaveLength(2);
+  });
+});
