@@ -1060,7 +1060,7 @@ function PeopleConsoleContent() {
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">People</p>
-              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Manage Your Gym</h1>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Office</h1>
               <p className="t-body mt-[var(--s3)]">
                 Add coaches and staff, and create athlete sign-ins.
                 {organizationName && (

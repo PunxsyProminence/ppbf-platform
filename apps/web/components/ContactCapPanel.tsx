@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
@@ -173,11 +174,7 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
         });
         const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
         if (!response.ok || !payload || payload.ok !== true) {
-          setRefusal(
-            typeof payload?.error === 'string' && payload.error
-              ? payload.error
-              : `The cap was not saved (${response.status}).`,
-          );
+          setRefusal(refusalWords({ error: payload?.error, status: response.status }, {}, 'The cap was not saved. Try again.'));
           return;
         }
         // The read that follows fills the form from the cap now in force --

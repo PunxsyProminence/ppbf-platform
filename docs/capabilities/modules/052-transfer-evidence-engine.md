@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **MAPPED** |
+| Status note | Was "DRAFT" until 2026-10-16. Partial only: the transfer-check read (route.ts GET, falseProgress.ts classifyTransfer) returns controlled-vs-live make/miss counts per metric as transfer evidence for a coach; it is the same code recorded under module 053, and no separate evidence store or engine exists (intervention_evidence_links 'transfer' role in infra/azure/pilot_slice_postgres_intervention_evidence_migration.sql belongs to module 026). |
+| Code | `apps/web/app/api/pilot/coach/transfer-check/route.ts`, `apps/web/src/server/pilot/falseProgress.ts` |
+| Tests | `apps/web/app/api/pilot/coach/transfer-check/route.test.ts`, `apps/web/src/server/pilot/falseProgress.test.ts` |
 | Active | false |
 | Promotion required | true |
 | Category | Transfer System (`transferSystem`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

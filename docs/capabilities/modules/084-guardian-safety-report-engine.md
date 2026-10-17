@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (slice shipped 2026-08-07; marked DONE 2026-09-29, see audit log) |
+| Status | **DONE** |
+| Status note | Was "DONE (slice shipped 2026-08-07; marked DONE 2026-09-29, see audit log)" until 2026-10-16. Guardian-only GET parent/safety (requireRole parent, route.ts) returns per-child hold, gate standing and waiver status; page /parent/safety renders it (getGuardianGateSummary, safetyGateMatrix.ts). |
+| Code | `apps/web/app/api/pilot/parent/safety/route.ts`, `apps/web/app/parent/safety/page.tsx`, `apps/web/src/server/pilot/safetyGateMatrix.ts` |
+| Tests | `apps/web/app/api/pilot/parent/safety/route.test.ts`, `apps/web/app/parent/safety/page.test.tsx` |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
@@ -80,3 +83,4 @@ absent values read Unknown). Do not mark active until promotion review.
 | 2026-09-29 | Claude (housekeeping round 3) | Status DRAFT -> DONE. The one reason it was left DRAFT, the tracker-disagreement check, was removed on Jason's answer "11A" (OD-2026-09-29-002). Evidence: route `apps/web/app/api/pilot/parent/safety/route.ts` (guardian role only, requireRole at line 107) and page `apps/web/app/parent/safety/page.tsx`; tests `apps/web/app/api/pilot/parent/safety/route.test.ts` and `apps/web/app/parent/safety/page.test.tsx`, 24 tests, all passing 2026-09-29 (`npx jest app/api/pilot/parent/safety app/parent/safety --ci`). ManualVerification PENDING_SIGN_OFF: built, not yet tried by a person (OD-2026-09-29-002, 9a); it moves to SIGNED_OFF only on Jason's word (see docs/capabilities/SIGN_OFF_WALKTHROUGH.md). Active stays false. |
 | 2026-09-29 | Claude (housekeeping round 3) | Implementation notes corrected: they said the page `/parent/safety` gives a guardian the child's waiver statuses. Only the route returns them; no screen shows them (page.tsx:28-33 and :131-178 render the hold and the gates only). Status left DONE: the route and page tests cover what is built. |
 | 2026-09-29 | Claude (parent waivers) | The page now shows the waiver statuses the route returns (OD-2026-09-29-003, Jason: "all recommended", question 4 answer A). Change: `apps/web/app/parent/safety/page.tsx` and its test; and the route now reads photo_media through checkGuardianMediaConsent, because the newest row from anyone let the page read Signed while `/parent/consent` read "Consent needed" and media approval refused (review finding, read in code, not run). Tests: `npx jest app/api/pilot/parent/safety app/parent/safety --ci`, 42 passing 2026-09-29. ManualVerification stays PENDING_SIGN_OFF: not yet seen on a signed-in screen (UNVERIFIED). |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (slice shipped 2026-08-07; marked DONE 2026-09-29, see audit log)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

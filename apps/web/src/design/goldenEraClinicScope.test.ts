@@ -199,7 +199,8 @@ function clinicRules(): Array<[string, string]> {
  */
 function controlLabels(source: string): string[] {
   const labels: string[] = [];
-  for (const tag of ['button', 'Link'] as const) {
+  // ArmedButton is a button: its children are the label it rests on (UXB-L1).
+  for (const tag of ['button', 'Link', 'ArmedButton'] as const) {
     const open = new RegExp(`<${tag}\\b`, 'g');
     for (let found = open.exec(source); found !== null; found = open.exec(source)) {
       /* Where the opening tag ends cannot be "the next >": a JSX handler is

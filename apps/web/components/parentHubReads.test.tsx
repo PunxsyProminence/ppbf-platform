@@ -9,7 +9,7 @@
    change folded in: observations "where the coaches can read it". */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
 
@@ -71,7 +71,9 @@ const MESSAGES = [
 
 type Handler = (init?: RequestInit) => Promise<Response>;
 
-function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; readsPost?: Handler } = {}): jest.Mock {
+function installFetch(
+  options: { repliesGet?: Handler; repliesPost?: Handler; readsGet?: Handler; readsPost?: Handler } = {},
+): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
@@ -90,6 +92,9 @@ function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; re
     if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
     if (url.includes('/api/pilot/parent/safety')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/parent/message-reads')) {
+      if (init?.method !== 'POST') {
+        return options.readsGet ? options.readsGet(init) : jsonResponse({ ok: true, items: [] });
+      }
       if (options.readsPost) return options.readsPost(init);
       const sent = JSON.parse(String(init?.body)) as { note_id: string };
       return jsonResponse({ ok: true, read: { note_id: sent.note_id, first_read_at: '2026-10-13T23:30:00.000Z' } });
@@ -118,7 +123,7 @@ function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; re
 
 function readPosts(fetchMock: jest.Mock): string[] {
   return fetchMock.mock.calls
-    .filter((c) => String(c[0]).includes('/api/pilot/parent/message-reads'))
+    .filter((c) => String(c[0]).includes('/api/pilot/parent/message-reads') && (c[1] as RequestInit).method === 'POST')
     .map((c) => (JSON.parse(String((c[1] as RequestInit).body)) as { note_id: string }).note_id);
 }
 
@@ -255,5 +260,152 @@ describe('parent-facing copy folded into FC-05', () => {
     // The sentence is the help panel's description, shown when the help is opened.
     fireEvent.click(screen.getByRole('button', { name: /HELP: Parent Observations/ }));
     expect(screen.getByText(/saved to your child's record at the gym, where the coaches can read it\./)).toBeInTheDocument();
+  });
+});
+
+/* #1542, FC-08: a message is "New" until this guardian has opened it, read
+   back from their own opens; the summary tile counts the new ones. */
+describe('New until this guardian opens it (FC-08)', () => {
+  const [OPENED, UNOPENED] = [MESSAGES[0]!, MESSAGES[1]!];
+
+  function card(noteId: string): HTMLElement {
+    return document.querySelector<HTMLElement>(`[data-read-note="${noteId}"]`)!;
+  }
+
+  function newTileValue(): string {
+    const label = screen.getAllByText('New messages').find((element) => element.tagName === 'P');
+    return label?.parentElement?.textContent?.replace('New messages', '').trim() ?? '';
+  }
+
+  function readsAnswer(noteIds: string[]): Handler {
+    return async () => jsonResponse({
+      ok: true,
+      items: noteIds.map((noteId) => ({ note_id: noteId, first_read_at: '2026-10-12T12:00:00.000Z' })),
+    });
+  }
+
+  test('an unopened message says New, an opened one does not, and the tile counts the new ones', async () => {
+    installFetch({ readsGet: readsAnswer([OPENED.note_id]) });
+    await renderHub();
+
+    expect(newTileValue()).toBe('1');
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+  });
+
+  test('a failed reads answer: the tile is Unavailable and no card says New', async () => {
+    installFetch({ readsGet: async () => jsonResponse({ ok: false, error: 'boom' }, false) });
+    await renderHub();
+
+    expect(newTileValue()).toBe('Unavailable');
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+    expect(screen.queryByText('New')).toBeNull();
+  });
+
+  test('once the open is recorded the tile drops at once, and New stays on that card for this visit', async () => {
+    installFetch();
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+    expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('2');
+
+    await act(async () => {
+      showMessage(OPENED.note_id, 1);
+    });
+
+    await waitFor(() => expect(newTileValue()).toBe('1'));
+    expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+  });
+
+  test('a failed open keeps New on', async () => {
+    installFetch({ readsPost: async () => jsonResponse({ ok: false, error: 'boom' }, false) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+
+    await act(async () => {
+      showMessage(OPENED.note_id, 1);
+    });
+
+    expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('2');
+  });
+
+  test('an open recorded before the reads answer keeps its New when the answer already includes it', async () => {
+    let answerReads: (response: Response) => void = () => undefined;
+    installFetch({ readsGet: () => new Promise<Response>((resolve) => { answerReads = resolve; }) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+
+    // UNOPENED is opened this visit, and its POST commits before the reads
+    // query takes its snapshot, so the answer names it as already opened.
+    await act(async () => {
+      showMessage(UNOPENED.note_id, 1);
+    });
+    await act(async () => {
+      answerReads(jsonResponse({
+        ok: true,
+        items: [
+          { note_id: OPENED.note_id, first_read_at: '2026-10-12T12:00:00.000Z' },
+          { note_id: UNOPENED.note_id, first_read_at: '2026-10-17T12:00:00.000Z' },
+        ],
+      }));
+    });
+
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('0');
+  });
+
+  test('an open recorded before the reads answer stays opened when the answer lands without it', async () => {
+    let answerReads: (response: Response) => void = () => undefined;
+    installFetch({ readsGet: () => new Promise<Response>((resolve) => { answerReads = resolve; }) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+
+    await act(async () => {
+      showMessage(UNOPENED.note_id, 1);
+    });
+    await act(async () => {
+      answerReads(jsonResponse({ ok: true, items: [{ note_id: OPENED.note_id, first_read_at: '2026-10-12T12:00:00.000Z' }] }));
+    });
+
+    // OPENED was opened before this visit: no New. UNOPENED was new when the hub
+    // loaded and was opened during this visit: New stays on it; the tile counts 0.
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('0');
+  });
+
+  test("switching child moves no New between messages, and a late reads answer marks only the notes it names", async () => {
+    let answerReads: (response: Response) => void = () => undefined;
+    installFetch({ readsGet: () => new Promise<Response>((resolve) => { answerReads = resolve; }) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+    expect(screen.queryByText('New')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    await act(async () => {
+      answerReads(jsonResponse({ ok: true, items: [{ note_id: OPENED.note_id, first_read_at: '2026-10-12T12:00:00.000Z' }] }));
+    });
+
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'First Child' }));
+    });
+    expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+    expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
+    expect(newTileValue()).toBe('1');
   });
 });

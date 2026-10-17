@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /*
  * ONE athlete's Passbook, for staff (work order N7-01).
@@ -156,6 +157,7 @@ export default function CoachPassbookPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Records</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Passbook</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             One athlete&apos;s book: attendance, sessions, readiness, goals, their corner and progression gaps.
           </p>

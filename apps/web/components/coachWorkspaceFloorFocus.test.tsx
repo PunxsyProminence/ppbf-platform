@@ -10,6 +10,7 @@
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { pressArmed } from '@/src/testing/pressArmed';
 
 import CoachWorkspace from './CoachWorkspace';
 
@@ -126,9 +127,9 @@ test('an open escalation is first on the floor, and acknowledging it there sends
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
   expect(fetchMock.mock.calls.length).toBe(before);
 
-  await act(async () => {
-    fireEvent.click(floor().getByRole('button', { name: 'Acknowledge' }));
-  });
+  // Two presses, each its own event: inside one act() the first would not have armed it yet.
+  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  await act(async () => {});
 
   expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
   // Seen, so it leaves the floor's queue; the panel below still lists it.
@@ -354,9 +355,9 @@ test('acknowledging two escalations in a row takes two deliberate taps on two op
   });
 
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
-  await act(async () => {
-    fireEvent.click(floor().getByRole('button', { name: 'Acknowledge' }));
-  });
+  // Two presses, each its own event: inside one act() the first would not have armed it yet.
+  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  await act(async () => {});
   expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
   // The second child's escalation is now in place -- closed, no Acknowledge under the coach's finger.
   expect(floor().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
@@ -364,9 +365,9 @@ test('acknowledging two escalations in a row takes two deliberate taps on two op
   expect(floor().getByText(/Acknowledged: Jordan P\./)).toBeTruthy();
 
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
-  await act(async () => {
-    fireEvent.click(floor().getByRole('button', { name: 'Acknowledge' }));
-  });
+  // Two presses, each its own event: inside one act() the first would not have armed it yet.
+  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  await act(async () => {});
   expect(posted).toEqual([
     { action: 'acknowledge', escalation_id: 'esc_1' },
     { action: 'acknowledge', escalation_id: 'esc_2' },
