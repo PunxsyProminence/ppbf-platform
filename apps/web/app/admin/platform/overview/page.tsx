@@ -91,7 +91,15 @@ export default function PlatformOverview() {
         <div className="mat-leather mx-auto max-w-2xl space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s6)] text-center">
           <p className="t-eyebrow">Access Denied</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Platform Owner Access Required</h1>
-          <BackHome />
+          {/* A platform owner not signed in with Microsoft is refused at Omega
+              too, so their way forward is Sign In, not a second refusal. */}
+          {session.role === 'platform_owner' ? (
+            <Link href="/login" className="btn">
+              Sign In With Microsoft
+            </Link>
+          ) : (
+            <BackHome />
+          )}
         </div>
       </main>
     );

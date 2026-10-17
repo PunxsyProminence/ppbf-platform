@@ -330,3 +330,163 @@ test('an open requirement on a later page of the list still reaches the review q
   await screen.findByText('Is RPE reliable at age 12?');
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('research-requirements?limit=200&cursor=page-2'))).toBe(true);
 });
+
+describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q13)', () => {
+  const RESPONSIVE = { ...SUBMISSION, applicability_state: 'responsive', reviewed_by_account_id: 'acct-2', reviewed_at: '2026-08-11T12:00:00.000Z' };
+
+  function installDesk(options: {
+    role?: string;
+    submission?: Record<string, unknown>;
+    source?: Record<string, unknown>;
+    resolve?: { ok: boolean; status?: number; body?: Record<string, unknown> };
+  } = {}) {
+    const resolves: Array<Record<string, unknown>> = [];
+    // Resolves once the page has read the session, so an absence asserted
+    // after it is about the role and verdict, not a role still loading.
+    let sessionRead: () => void = () => {};
+    const sessionAnswered = new Promise<void>((resolve) => { sessionRead = resolve; });
+    const base = mockFetch({ submissionsByRequirement: { 7: [options.submission ?? RESPONSIVE] } });
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return {
+          ok: true,
+          json: async () => {
+            setTimeout(sessionRead, 0);
+            return { authenticated: true, role: options.role ?? 'organization_admin', auth_provider: 'microsoft' };
+          },
+        } as Response;
+      }
+      if (url.includes('/research-requirements') && init?.method === 'POST') {
+        resolves.push(JSON.parse(String(init.body)));
+        const reply = options.resolve ?? { ok: true };
+        return { ok: reply.ok, status: reply.status ?? 200, json: async () => reply.body ?? { ok: true } } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        // The route's own wire shape: { ok, items }.
+        return { ok: true, json: async () => ({ ok: true, items: [{ ...LIBRARY_SOURCE, ...(options.source ?? {}) }] }) } as Response;
+      }
+      return base(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return { resolves, sessionAnswered };
+  }
+
+  async function renderDesk() {
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
+  }
+
+  test.each([
+    [{ approval_state: 'pending_review', verification_state: 'unverified' }, 'Evidence review: Pending Review · Unverified'],
+    [{ approval_state: 'approved', verification_state: 'verified' }, 'Evidence review: Approved · Verified'],
+    [{ approval_state: 'rejected', verification_state: 'unverified' }, 'Evidence review: Rejected · Unverified'],
+  ])('a submitted source shows its own evidence review state (%o) with a door to /evidence', async (source, text) => {
+    installDesk({ source });
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    const line = await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent === `${text} Open Evidence Review`);
+    expect(line.querySelector('a')?.getAttribute('href')).toBe('/evidence');
+  });
+
+  test('a source read without evidence fields shows no evidence line', async () => {
+    installDesk();
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    // The title comes from the same sources read, so it has answered.
+    await screen.findByText('RPE reliability in adolescents (peer_reviewed)');
+    expect(screen.queryByText(/Evidence review:/)).toBeNull();
+  });
+
+  test('an organization admin closes the requirement on a Responsive submission, and it leaves the queue', async () => {
+    const { resolves } = installDesk();
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close requirement with this submission' }));
+    });
+    expect(resolves).toEqual([{
+      action: 'resolve',
+      research_requirement_id: 7,
+      closing_submission_id: 'sub-1',
+      metadata: { resolved_from: 'research_review_page' },
+    }]);
+    expect(await screen.findByText('Closed on a Responsive submission: Is RPE reliable at age 12?')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Is RPE reliable at age 12?' })).toBeNull();
+  });
+
+  test('a refused close keeps the requirement and shows the reason under the submission', async () => {
+    installDesk({ resolve: { ok: false, status: 409, body: { error: 'closing_submission_id is no longer a submission reviewed responsive on this requirement' } } });
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close requirement with this submission' }));
+    });
+    expect(await screen.findByText('closing_submission_id is no longer a submission reviewed responsive on this requirement')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Is RPE reliable at age 12?' })).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Closed requirements' })).toBeNull();
+  });
+
+  test.each(['unreviewed', 'partially_responsive', 'not_responsive', 'duplicate'])(
+    'a %s submission offers no close',
+    async (state) => {
+      const { sessionAnswered } = installDesk({ submission: { ...RESPONSIVE, applicability_state: state } });
+      await renderDesk();
+      await act(async () => {
+        await sessionAnswered;
+      });
+      expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+    },
+  );
+
+  test('marking a submission Responsive offers the close right away', async () => {
+    const { sessionAnswered } = installDesk({ submission: SUBMISSION });
+    await renderDesk();
+    await act(async () => {
+      await sessionAnswered;
+    });
+    expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Responsive' }));
+    });
+    expect(await screen.findByRole('button', { name: 'Close requirement with this submission' })).toBeInTheDocument();
+  });
+
+  test('the platform owner, who closes no gym requirement, is offered no close', async () => {
+    const { sessionAnswered } = installDesk({ role: 'platform_owner' });
+    await renderDesk();
+    await act(async () => {
+      await sessionAnswered;
+    });
+    expect(screen.queryByRole('button', { name: 'Close requirement with this submission' })).toBeNull();
+  });
+
+  test('while a close is in flight the verdict buttons wait', async () => {
+    let answer: (value: Response) => void = () => {};
+    installDesk();
+    const base = global.fetch;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => (
+      String(input).includes('/research-requirements') && init?.method === 'POST'
+        ? new Promise<Response>((resolve) => { answer = resolve; })
+        : base(input, init)
+    )) as unknown as typeof fetch;
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close requirement with this submission' }));
+    });
+    expect((screen.getByRole('button', { name: 'Mark Not Responsive' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      answer({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response);
+    });
+    expect(await screen.findByText('Closed on a Responsive submission: Is RPE reliable at age 12?')).toBeInTheDocument();
+  });
+});

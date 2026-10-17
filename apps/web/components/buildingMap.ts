@@ -279,7 +279,7 @@ export const BUILDING: readonly Door[] = [
      nothing without it, so OPEN advertised an /admin/* door to every role --
      athlete and parent included -- that all but one of them bounce off. That is
      the exact failure this file's header says `roles` exists to prevent. */
-  { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
   { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
@@ -314,11 +314,8 @@ export const BUILDING: readonly Door[] = [
     keywords: 'announcements bulletins posts alerts' },
   { href: '/chalkboard', label: 'Chalkboard', room: 'office', roles: ['coach', 'admin', 'platform_owner', 'board'],
     keywords: 'announcements boards notices chalk', hint: 'Live board editing — from behind the desk.' },
-  { href: '/guardian', label: 'Guardian Portal', room: 'office', roles: ['parent'],
-    keywords: 'waiver consent minor family guardian renewal',
-    hint: 'Minor records and consent, for the person responsible.' },
   { href: '/parent/dashboard', label: 'Parent Hub', room: 'office', roles: ['parent'],
-    keywords: 'family child progress parent' },
+    keywords: 'family child progress parent guardian' },
   { href: '/parent/consent', label: 'Photo & Video Consent', room: 'office', roles: ['parent'],
     keywords: 'guardian media photo video consent grant withdraw',
     hint: 'Grant or withdraw consent for your child’s photos and videos.' },

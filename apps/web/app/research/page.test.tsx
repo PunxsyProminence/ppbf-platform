@@ -107,7 +107,15 @@ function mockFetch(options: {
   }) as unknown as typeof fetch;
 }
 
+/* /research is three tabs (#345); a panel not shown is hidden, so a role
+   query reaches it only after its tab is opened. */
+function openTab(name: 'Needs Evidence' | 'General Research' | 'Intake Cards') {
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
 afterEach(() => {
+  // The chosen tab is remembered in this browser; each test starts fresh.
+  window.localStorage.clear();
   mockBypassShell = true;
   mockReplace.mockReset();
   jest.restoreAllMocks();
@@ -181,7 +189,9 @@ test('a curator files the link with provenance and is told review decides, not t
   });
 
   await screen.findByText('Is RPE reliable at age 12?');
+  openTab('General Research');
   expect(screen.getByRole('region', { name: 'Add source text to the Library' })).toBeTruthy();
+  openTab('Needs Evidence');
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
   });
@@ -300,6 +310,7 @@ describe('general research intake', () => {
     });
 
     await screen.findByText('General Research Intake');
+    openTab('General Research');
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Youth safeguarding review' } });
       fireEvent.change(screen.getByLabelText('Classification domain'), { target: { value: 'youth_development_safeguarding' } });
@@ -423,6 +434,7 @@ function failProjection(projection: () => Promise<Response>) {
 }
 
 function summaryTileValues(): string[] {
+  openTab('Intake Cards');
   const heading = screen.getByRole('heading', { name: 'Review State Summary' });
   const section = heading.closest('section');
   if (!section) throw new Error('Review State Summary section is missing');
@@ -571,6 +583,7 @@ describe('the platform shelf', () => {
   }
 
   async function registerOne() {
+    openTab('General Research');
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Hydration position stand' } });
       fireEvent.change(screen.getByLabelText('Classification domain'), {
@@ -1222,5 +1235,112 @@ describe('closing on a submission reviewed Responsive (OD-2026-10-08-005 A-Q13)'
     });
     await screen.findByText('Is RPE reliable at age 12?');
     expect(screen.queryByRole('link', { name: 'Submission Review' })).toBeNull();
+  });
+});
+
+describe("/research as #345's three workflows", () => {
+  function panel(id: 'needs_evidence' | 'general_research' | 'intake') {
+    return document.getElementById(`research-panel-${id}`);
+  }
+
+  function tabNames() {
+    return screen.getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')]);
+  }
+
+  async function renderPage(fetchOptions: Parameters<typeof mockFetch>[0]) {
+    global.fetch = mockFetch(fetchOptions);
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<ResearchIntakePage />);
+    });
+    await screen.findByText('Is RPE reliable at age 12?');
+    return view!;
+  }
+
+  test('a curator sees three tabs and lands on Needs Evidence; the other panels are hidden', async () => {
+    await renderPage({ curator: true });
+    await screen.findByRole('tab', { name: 'General Research' });
+    expect(tabNames()).toEqual([
+      ['Needs Evidence', 'true'], ['General Research', 'false'], ['Intake Cards', 'false'],
+    ]);
+    expect(panel('needs_evidence')?.hidden).toBe(false);
+    expect(panel('general_research')?.hidden).toBe(true);
+    expect(panel('intake')?.hidden).toBe(true);
+    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Review State Summary' })).toBeNull();
+  });
+
+  test('a coach, who curates nothing, gets no General Research tab', async () => {
+    await renderPage({ curator: true, role: 'coach' });
+    expect(tabNames()).toEqual([['Needs Evidence', 'true'], ['Intake Cards', 'false']]);
+    expect(panel('general_research')).toBeNull();
+  });
+
+  test('opening a tab shows its panel only, and the choice is remembered on the next visit', async () => {
+    const view = await renderPage({ curator: false });
+    openTab('Intake Cards');
+    expect(panel('intake')?.hidden).toBe(false);
+    expect(panel('needs_evidence')?.hidden).toBe(true);
+    expect(screen.getByRole('heading', { name: 'Review State Summary' })).toBeTruthy();
+    view.unmount();
+
+    await renderPage({ curator: false });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    expect(panel('intake')?.hidden).toBe(false);
+  });
+
+  test.each([['general_research', 'a tab this viewer does not have'], ['bogus', 'an unknown value']])(
+    'a remembered %s (%s) falls back to Needs Evidence',
+    async (stored) => {
+      window.localStorage.setItem('ppbf.research.tab', stored);
+      await renderPage({ curator: false });
+      expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+      expect(panel('needs_evidence')?.hidden).toBe(false);
+    },
+  );
+
+  test('blocked browser storage leaves the tabs working', async () => {
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    await renderPage({ curator: false });
+    expect(panel('needs_evidence')?.hidden).toBe(false);
+    openTab('Intake Cards');
+    expect(panel('intake')?.hidden).toBe(false);
+  });
+
+  test('a half-typed General Research draft survives a look at another tab', async () => {
+    await renderPage({ curator: true });
+    await screen.findByRole('tab', { name: 'General Research' });
+    openTab('General Research');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Hydration position stand' } });
+    openTab('Needs Evidence');
+    openTab('General Research');
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Hydration position stand');
+  });
+
+  test('the arrow keys move between the tabs this viewer has', async () => {
+    await renderPage({ curator: false });
+    const first = screen.getByRole('tab', { name: 'Needs Evidence' });
+    expect(first.tabIndex).toBe(0);
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Intake Cards' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Intake Cards' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('a failed projection read is said on Needs Evidence too, not only inside Intake Cards', async () => {
+    failProjection(async () => ({ ok: false, json: async () => ({}) }) as Response);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    expect(screen.getByRole('tab', { name: 'Needs Evidence' }).getAttribute('aria-selected')).toBe('true');
+    expect((await screen.findByRole('alert')).textContent).toContain('Projection Unavailable');
   });
 });

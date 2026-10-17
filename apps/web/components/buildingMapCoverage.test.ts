@@ -50,10 +50,11 @@ const EXCLUDED: Record<string, string> = {
   '/coach/dashboard': 'redirect to the coach home, as /coach -- every other role home is a /<role>/dashboard',
   '/admin/safety-escalations': 'redirect to /admin/escalations, whose door is the queue itself -- one queue, one door (lane U2, A-13)',
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
+  '/guardian': 'permanent redirect to /parent/dashboard (UX audit A-10: one parent front door) -- the door is the Parent Hub itself',
+  '/guardian/dashboard': 'permanent redirect to /parent/dashboard, as /guardian',
 
   // Reads no data. Door goes in when it is wired to something real.
   '/director/dashboard': 'signpost only: the mock incident center was deleted; this route now just points at /admin/escalations and /admin/safety-review, which already have their own doors',
-  '/guardian/dashboard': 'signpost only: the prototype consent/safety controls that persisted nothing were deleted; this route now just points at /parent/consent and /parent/dashboard, which already have their own doors',
 };
 
 /**

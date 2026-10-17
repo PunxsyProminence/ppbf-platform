@@ -1000,7 +1000,7 @@ function AthleteRabbitHoleLibrary() {
             <article key={lesson.rabbit_hole_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s5)] space-y-[var(--s4)]">
               {/* Provenance before content: who is talking, and on what
                   authority, before the claim itself. */}
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">
+              <p className="t-label">
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
               <h4 className="text-[length:var(--t-md)] font-semibold">{lesson.title}</h4>
@@ -3708,7 +3708,10 @@ export default function AthleteWorkspace() {
               recent={recentCheckIns}
               loading={checkInLoading}
               loadError={checkInLoadError}
+              onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
               onSaved={(row) => {
+                // The server has answered with today's check-in: the failed read is no longer the news.
+                setCheckInLoadError(null);
                 setTodayCheckIn(row);
                 setRecentCheckIns((current) =>
                   current.some((entry) => entry.check_in_id === row.check_in_id)
