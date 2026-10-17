@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **CLAIMED-NO-CODE** |
-| Status note | Was "DONE" until 2026-10-16. No donor-safe language strip/helper exists: grepped donor, donorSafe, strip/redact/sanitize functions across app, src, lib, components, scripts. Hits are unrelated (public-interest "Donor / Sponsor" inquiry type, research text redaction in researchBridgeExport.ts, board aggregate suppression whic... |
+| Status note | Was "DONE" until 2026-10-16. No donor-safe language strip/helper exists: grepped donor, donorSafe, strip/redact/sanitize functions across app, src, lib, components, scripts. Hits are unrelated (public-interest "Donor / Sponsor" inquiry type, research text redaction in researchBridgeExport.ts, board aggregate suppression which is module 147) |
 | Code | none |
 | Tests | none |
 | Active | false |
