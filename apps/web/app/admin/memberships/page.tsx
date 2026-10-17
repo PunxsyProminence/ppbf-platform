@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
 // "Scholarship Tracking"). A scholarship is a stored DISCOUNT on a real
@@ -587,8 +587,10 @@ export default function MembershipsPage() {
                           )}
                         </td>
                         <td className="ledger-id whitespace-nowrap">
-                          since {formatGymDateNumeric(row.started_on)}
-                          {row.ended_on ? ` — ended ${formatGymDateNumeric(row.ended_on)}` : ''}
+                          {/* Plain dates: formatGymDay keeps the calendar day (a date read as
+                              UTC midnight showed the day before at the gym). */}
+                          since {formatGymDay(row.started_on)}
+                          {row.ended_on ? ` — ended ${formatGymDay(row.ended_on)}` : ''}
                         </td>
                         <td>
                           <div className="flex flex-wrap items-center gap-[var(--s2)]">

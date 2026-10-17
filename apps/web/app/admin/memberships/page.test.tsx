@@ -98,6 +98,9 @@ test('enrollments render with the scholarship shown as a discount, and the no-bi
 
   expect(await screen.findByText('Jordan Little')).toBeTruthy();
   expect(screen.getByText('100% scholarship')).toBeTruthy();
+  // A plain start date is its own calendar day at the gym, not the day before.
+  expect(screen.getByText(/since September 1, 2026/)).toBeTruthy();
+  expect(screen.queryByText(/8\/31\/2026|August 31, 2026/)).toBeNull();
   expect(screen.getByText(/No billing happens here/)).toBeTruthy();
   // Lane N4-02: fees are a plan, not a fact (paymentSetup.ts: no charging, no checkout).
   expect(screen.getByText(/fees are planned with the payment lanes, and nothing reads these records for billing yet\./)).toBeTruthy();
