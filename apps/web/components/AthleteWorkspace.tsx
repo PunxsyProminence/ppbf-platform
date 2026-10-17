@@ -1177,6 +1177,9 @@ export default function AthleteWorkspace() {
      are not SMART cards, but "Active Goals" counts them too (UXB-18; Overwatch
      Q2 A: the number matches the Goals tab). */
   const [ownWordsActive, setOwnWordsActive] = useState(0);
+  // Every own-words goal, reached or not: the Goals tab's empty line must not
+  // say "Nothing on the board yet" under a board that lists some (L5a review).
+  const [ownWordsCount, setOwnWordsCount] = useState(0);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
   const [trainingSessions, setTrainingSessions] = useState<TrainingSession[]>([]);
@@ -1440,7 +1443,11 @@ export default function AthleteWorkspace() {
     ? CHECKED_IN_FLOOR_OPEN
     : backendSyncMessage;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length + ownWordsActive;
-  const nextSessionLine = useNextSessionLine(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const nextSessionRead = useNextSessionLine(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const nextSessionLine = athleteIdentityState === 'unavailable'
+    || (athleteIdentityState === 'resolved' && backendAthleteId === null)
+    ? 'Unavailable'
+    : nextSessionRead;
 
   const loadIdentity = useCallback(async () => {
     try {
@@ -1638,6 +1645,7 @@ export default function AthleteWorkspace() {
       }));
       setSmartGoals(goals);
       setOwnWordsActive(ownWordsStillOpen);
+      setOwnWordsCount(allItems.length - items.length);
     } catch (error) {
       setGoalsError(error instanceof Error ? error.message : 'Your goals did not load. Try again.');
     } finally {
@@ -3654,7 +3662,7 @@ export default function AthleteWorkspace() {
                 </div>
               )}
 
-              {!goalsLoading && smartGoals.length === 0 && !goalsError && (
+              {!goalsLoading && smartGoals.length === 0 && ownWordsCount === 0 && !goalsError && (
                 <div className={`${PANEL} text-center`}>
                   <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on the board yet. Put up one goal and we&apos;ll track it.</p>
                 </div>

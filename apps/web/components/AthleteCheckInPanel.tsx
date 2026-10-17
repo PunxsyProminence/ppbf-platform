@@ -225,7 +225,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
         setSaveError(
           typeof payload?.error === 'string'
             ? payload.error
-            : 'Your wellness was not saved. Try again, and tell a coach you are here.',
+            : 'Your wellness was not saved. Try again, or tell a coach.',
         );
         return;
       }
@@ -240,7 +240,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
       }
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {
-      setSaveError('Your wellness was not saved. Try again, and tell a coach you are here.');
+      setSaveError('Your wellness was not saved. Try again, or tell a coach.');
     } finally {
       savingRef.current = false;
       setSaving(false);

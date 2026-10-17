@@ -4,7 +4,9 @@
 
 // UXB-L5a (lane U3): athlete screens tell the truth about a failed read and
 // give a way back, count goals the way the Goals tab shows them, and take one
-// "I did it" per press. Each case here fails on main 6d9910a78.
+// "I did it" per press. Every case but the Active Goals count fails on main
+// 6d9910a78; that one passes there only because main also drew the own-words
+// goal as a duplicate SMART card, and it guards the count once that is gone.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
@@ -85,6 +87,27 @@ describe('the athlete home counts and draws goals the way the Goals tab does (UX
     await screen.findByLabelText('Report progress for Jab speed');
     expect(screen.queryByLabelText('Report progress for Run a mile without stopping')).toBeNull();
   });
+
+  test('with only own-words goals, the Goals tab does not also say "Nothing on the board yet"', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: true, athlete_id: 'ath_test' });
+      if (url.includes('/api/pilot/goals/list')) return jsonResponse({ items: [ownWords] });
+      if (url.includes('/api/pilot/goals/personal')) return jsonResponse({ items: [ownWords] });
+      return jsonResponse({ ok: true, items: [] });
+    }) as unknown as typeof fetch;
+    render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    const goals = screen.queryByRole('button', { name: 'Goals' });
+    if (goals) fireEvent.click(goals);
+
+    await screen.findByText('Run a mile without stopping');
+    await waitFor(() => expect(screen.getByText('Active Goals').parentElement?.textContent).toBe('Active Goals1'));
+    expect(screen.queryByText(/Nothing on the board yet/)).toBeNull();
+  });
 });
 
 describe('"I did it" is one write per press (UXB-19)', () => {
@@ -102,8 +125,12 @@ describe('"I did it" is one write per press (UXB-19)', () => {
 
     render(<PersonalGoalBoard athleteId="ath_1" />);
     const button = await screen.findByRole('button', { name: 'I did it' });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Both presses land before React re-renders, so the button is not yet
+    // disabled for the second: only the in-flight lock can refuse it.
+    act(() => {
+      button.click();
+      button.click();
+    });
 
     await waitFor(() => expect(patches).toHaveLength(1));
     expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -170,6 +197,17 @@ describe('a coach\'s call on an attempt or a drill is not the smallest text on a
 });
 
 describe('Next Session is the athlete\'s own booking, in words (UXB-17)', () => {
+  test('a sign-in that did not resolve says Unavailable, not "Checking..." forever', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: false });
+      return jsonResponse({ ok: true, items: [] });
+    }) as unknown as typeof fetch;
+    render(<AthleteWorkspace />);
+
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    await waitFor(() => expect(within(tile).getByText('Unavailable')).toBeTruthy());
+  });
+
   test('a failed scheduler read says Unavailable, never "Nothing posted yet."', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
