@@ -211,7 +211,9 @@ export default async function HomePage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        // "<" is escaped so no stored value (the gym admin edits them, lane L31 P3) can close
+        // this script element or open a comment inside it.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, '\\u003c') }}
       />
       {/* Law 6, warm ground: the public face of the gym belongs on the family
           side of the two-ground split, not the ink leather the staff consoles

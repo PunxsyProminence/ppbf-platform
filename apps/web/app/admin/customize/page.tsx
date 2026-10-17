@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
+import GymProfileForm from '@/components/GymProfileForm';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 import { GYM_PHOTO_SLOTS, gymPhotoSlotText, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
@@ -212,6 +213,22 @@ export default function AdminCustomizePage() {
           the platform already guards.
         </p>
       </header>
+
+      {/* --------------------------------------------- 0. THE GYM PROFILE -- */}
+      {/* Lane L31 P3: the stored profile every page reads, edited here. */}
+      <section className="mt-[var(--s6)] max-w-[1000px]" aria-labelledby="customize-profile">
+        <h2 id="customize-profile" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+          The gym&apos;s profile
+        </h2>
+        <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
+          The names, website, contact details and addresses the homepage, the privacy page, print sheets, the wall
+          and the sign-in email use. Leave a line empty and the privacy page and print sheets leave it off; the
+          homepage still has a place for every line.
+        </p>
+        <div className="mt-[var(--s4)]">
+          <GymProfileForm />
+        </div>
+      </section>
 
       {/* ------------------------------------------------ 1. PHOTOGRAPHS -- */}
       <section className="mt-[var(--s6)] max-w-[1000px]" aria-labelledby="customize-photos">
