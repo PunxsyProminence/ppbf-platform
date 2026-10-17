@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
@@ -1683,6 +1684,7 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
+                <FamilyGoalsForStaff key={athleteId} athleteId={athleteId} />
               </section>
 
               {/* Decision Outcomes */}

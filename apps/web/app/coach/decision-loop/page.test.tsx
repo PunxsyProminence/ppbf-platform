@@ -175,6 +175,11 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       const handler = overrides.incidents as ((init?: RequestInit) => Response) | undefined;
       return handler ? answer(key, init, handler(init)) : acknowledge(key, init);
     }
+    // The family goals panel (PH-06b) reads the selected athlete's goals.
+    if (key.includes('/api/pilot/coach/family-goals')) {
+      const handler = overrides.familyGoals as ((url: string) => Response) | undefined;
+      return handler ? handler(key) : jsonResponse({ items: [] });
+    }
     if (key.includes('/api/pilot/parent-tasks')) {
       const handler = overrides.parentTasks as ((init?: RequestInit) => Response) | undefined;
       if (handler) return handler(init);
@@ -404,6 +409,35 @@ describe('Message Home (#90)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     await screen.findByText(/but the due date was not confirmed/);
+  });
+});
+
+describe('Family goals (PH-06b)', () => {
+  const goal = (athleteId: string, title: string) => ({
+    goal_id: `g-${athleteId}`, title, support_action: 'At home.', target_date: null,
+    state: 'active', completed_at: null, set_by: 'A guardian', mine_to_change: false,
+  });
+  const familyGoals = (url: string) =>
+    url.includes('athlete_id=ath-1')
+      ? jsonResponse({ items: [goal('ath-1', 'Lights out by nine')] })
+      : jsonResponse({ items: [goal('ath-2', 'Wrap hands at home')] });
+
+  test("the panel reads and shows the selected athlete's family goals, and only theirs after a switch", async () => {
+    const fetchMock = installFetch({ familyGoals });
+    await selectAthlete();
+
+    expect(await screen.findByText('Lights out by nine')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Family goals' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/coach/family-goals?athlete_id=ath-1'))).toBe(true);
+
+    // A draft typed for one athlete is not left in the box for the next (key).
+    const addForm = () => screen.getByRole('form', { name: 'Add a goal for the family' });
+    fireEvent.change(within(addForm()).getByLabelText('Goal'), { target: { value: 'For ath-1 only' } });
+
+    fireEvent.change(athletePicker(), { target: { value: 'ath-2' } });
+    expect(await screen.findByText('Wrap hands at home')).toBeInTheDocument();
+    expect(screen.queryByText('Lights out by nine')).toBeNull();
+    expect(within(addForm()).getByLabelText('Goal')).toHaveValue('');
   });
 });
 
