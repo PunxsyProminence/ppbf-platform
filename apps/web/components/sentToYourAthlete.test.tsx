@@ -43,13 +43,24 @@ test("each copy names the child it was sent to, who wrote it and when", async ()
 });
 
 test('nothing sent yet says so', async () => {
-  global.fetch = jest.fn(async () => jsonResponse({ ok: true, items: [] })) as unknown as typeof fetch;
+  global.fetch = jest.fn(async () => jsonResponse({ ok: true, items: [], in_scope: 1 })) as unknown as typeof fetch;
 
   await act(async () => {
     render(<SentToYourAthlete childNames={{}} />);
   });
 
   expect(screen.getByText('Nothing has been sent to your athlete yet.')).toBeInTheDocument();
+});
+
+test('a guardian with no child in scope (in_scope 0) sees no section, never "nothing sent"', async () => {
+  global.fetch = jest.fn(async () => jsonResponse({ ok: true, items: [], in_scope: 0 })) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<SentToYourAthlete childNames={{}} />);
+  });
+
+  expect(screen.queryByRole('region', { name: 'Sent to your athlete' })).toBeNull();
+  expect(screen.queryByText('Nothing has been sent to your athlete yet.')).toBeNull();
 });
 
 test('a failed read says so, and never that nothing was sent', async () => {

@@ -1141,8 +1141,8 @@ export async function listBarrierReports(
  *   through GET /api/pilot/coach/athlete-messages, and the guardians of an
  *   athlete under 18 read a copy through GET /api/pilot/parent/athlete-messages
  *   (FC-06 Q-2, ruled B). Adding it here would also mean adding it to the
- *   passbook's list in step, and the passbook is not where a message to the
- *   athlete belongs.
+ *   passbook's athlete list in step, and the athlete's passbook is not where
+ *   a message to the athlete belongs (the staff passbook list holds it).
  * - parent: `parent_message` only, byte-for-byte the set `listParentMessages`
  *   already decided for the guardian-facing read. It also closes a case that
  *   set never had to consider: two guardians linked to one athlete, where an

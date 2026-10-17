@@ -121,6 +121,7 @@ export default function MessageAthlete({ athleteId }: Readonly<{ athleteId: stri
           value={text}
           onChange={(event) => setText(event.target.value)}
           className="textarea h-20 resize-y"
+          maxLength={4000}
           disabled={busy}
         />
       </label>

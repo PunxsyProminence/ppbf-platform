@@ -45,9 +45,20 @@ describe('GET /api/pilot/parent/athlete-messages (#1542, FC-06 Q-2 B)', () => {
     const response = await GET(new NextRequest('http://localhost/api/pilot/parent/athlete-messages?athlete_id=ath-other'));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, items: [COPY] });
+    expect(await response.json()).toEqual({ ok: true, items: [COPY], in_scope: 1 });
     expect(mockScope).toHaveBeenCalledWith('org-1', 'parent-1');
     expect(mockList).toHaveBeenCalledWith('org-1', ['ath-1']);
+  });
+
+  test('a guardian with no child in scope (all 18 or over, or none linked) is told so by in_scope 0', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockScope.mockResolvedValue([]);
+    mockList.mockResolvedValue([]);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/parent/athlete-messages'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, items: [], in_scope: 0 });
   });
 
   test.each(['athlete', 'coach', 'organization_admin', 'admin', 'board', 'platform_owner'])('%s is refused and nothing is read', async (role) => {

@@ -7,7 +7,9 @@
 // (guardian access goes dormant at 18) and a deleted record. Staff names only,
 // no account ids (OD-2026-10-06-025). Separate from the parent's own messages
 // (/api/pilot/parent/messages): these are words to the child, shown as
-// "Sent to your athlete".
+// "Sent to your athlete". in_scope is how many children that scope holds, so
+// the page can show nothing at all to a guardian with no child under 18
+// linked, rather than tell them nothing was sent.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { listGuardianCopiesOfAthleteMessages } from '@/src/server/pilot/athleteCoachMessages';
@@ -23,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const athleteIds = await guardianAthleteIds(principal.organizationId, principal.accountId);
     const items = await listGuardianCopiesOfAthleteMessages(principal.organizationId, athleteIds);
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, items, in_scope: athleteIds.length });
   } catch (error) {
     return jsonError(error);
   }

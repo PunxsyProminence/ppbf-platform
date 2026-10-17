@@ -75,6 +75,8 @@ let storedTracks: unknown = [];
 let tracksReadStatus: 'ok' | 'refused' | 'offline' = 'ok';
 let assignmentsFail = false;
 let assignmentsPending = false;
+// "From your coach" (#1542, FC-06): what the coach-messages read returns.
+let storedCoachMessages: Array<Record<string, unknown>> = [];
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
 // hands back a timestamp and a string, and the session validator rejects
@@ -237,6 +239,7 @@ beforeEach(() => {
   detailReadFails = false;
   assignmentsFail = false;
   assignmentsPending = false;
+  storedCoachMessages = [];
   // Checked in by default. The Floor is gated on today's check-in (owner
   // decision 2026-08-28), so a workspace that had NOT checked in would hide
   // the day's work from every test below that is about the floor rather than
@@ -254,9 +257,9 @@ beforeEach(() => {
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
     }
-    // "From your coach" on the Dashboard (#1542, FC-06): no messages here.
+    // "From your coach" on the Dashboard (#1542, FC-06): none unless a test gives some.
     if (url.includes('/api/pilot/athlete/coach-messages')) {
-      return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, items: storedCoachMessages });
     }
     if (url.includes('/api/pilot/athlete/tracks')) {
       if (tracksReadStatus === 'offline') throw new Error('tracks offline');
@@ -493,6 +496,19 @@ describe('one session check-in per press (#1529)', () => {
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
   });
+});
+
+// FC-06: the Dashboard carries what the coach wrote to the athlete. Fails if
+// AthleteWorkspace stops rendering <FromYourCoach />.
+test('the Dashboard shows "From your coach" with a message the coach sent', async () => {
+  storedCoachMessages = [
+    { note_id: 'am-1', note_text: 'Great work on the jab.', created_at: '2026-10-13T22:00:00.000Z', from_name: 'Coach Pat Smith' },
+  ];
+  await renderWorkspace();
+  openTab('Dashboard');
+
+  const section = await screen.findByRole('region', { name: 'From your coach' });
+  expect(await within(section).findByText('Great work on the jab.')).toBeTruthy();
 });
 
 describe('athlete workspace honesty', () => {

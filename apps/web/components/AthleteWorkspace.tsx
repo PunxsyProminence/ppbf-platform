@@ -2847,14 +2847,14 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
-              {/* The before/after frame from the Phase 2 roadmap, built from
-                  the record rather than photographs -- see ThenAndNow.tsx for
-                  why photographs cannot do this here. Renders nothing until
-                  the athlete's identity resolves and history exists. */}
               {/* What the athlete's coaches wrote to them (#1542, FC-06): first
                   on the Dashboard, so a message is not below the fold. */}
               <FromYourCoach />
 
+              {/* The before/after frame from the Phase 2 roadmap, built from
+                  the record rather than photographs -- see ThenAndNow.tsx for
+                  why photographs cannot do this here. Renders nothing until
+                  the athlete's identity resolves and history exists. */}
               <ThenAndNow athleteId={backendAthleteId} />
 
               {/* TODAY moved to MY CORNER at the top of the workspace (above the

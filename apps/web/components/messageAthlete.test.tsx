@@ -136,3 +136,10 @@ test.each([
   expect(screen.getByRole('alert').textContent).toContain(reason);
   expect(screen.getByLabelText('Message to the athlete')).toHaveValue('Keep me.');
 });
+
+test('the box holds the same 4000-character limit the server enforces on an athlete message', async () => {
+  routedFetch();
+  await renderForm();
+
+  expect(screen.getByLabelText('Message to the athlete')).toHaveAttribute('maxLength', '4000');
+});

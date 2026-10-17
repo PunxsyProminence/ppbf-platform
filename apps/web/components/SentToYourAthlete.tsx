@@ -17,7 +17,9 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  *
  * Read from GET /api/pilot/parent/athlete-messages (the guardian's own linked
  * children, resolved by the server on each request). A failed read says so;
- * it is never shown as "nothing sent". The newest ten show first.
+ * it is never shown as "nothing sent". The newest ten show first. A guardian
+ * with no child in scope (in_scope 0: every linked child is 18 or over, or
+ * none is linked) sees no section at all, rather than "nothing has been sent".
  */
 interface GuardianCopy {
   note_id: string;
@@ -27,7 +29,7 @@ interface GuardianCopy {
   from_name: string;
 }
 
-type ReadState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: GuardianCopy[] };
+type ReadState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: GuardianCopy[]; inScope: unknown };
 
 const PAGE_SIZE = 10;
 
@@ -43,10 +45,10 @@ export default function SentToYourAthlete({ childNames }: Readonly<{ childNames:
           credentials: 'include',
           signal: controller.signal,
         });
-        const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+        const payload = (await response.json().catch(() => ({}))) as { items?: unknown; in_scope?: unknown };
         if (controller.signal.aborted) return;
         setRead(response.ok && Array.isArray(payload.items)
-          ? { state: 'loaded', items: payload.items as GuardianCopy[] }
+          ? { state: 'loaded', items: payload.items as GuardianCopy[], inScope: payload.in_scope }
           : { state: 'failed' });
       } catch {
         if (!controller.signal.aborted) setRead({ state: 'failed' });
@@ -54,6 +56,8 @@ export default function SentToYourAthlete({ childNames }: Readonly<{ childNames:
     })();
     return () => controller.abort();
   }, []);
+
+  if (read.state === 'loaded' && read.inScope === 0) return null;
 
   return (
     <section aria-label="Sent to your athlete" className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
