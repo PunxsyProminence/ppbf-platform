@@ -2918,7 +2918,7 @@ export default function CoachWorkspace() {
                     Record What You Did
                   </Link>
                 )}
-                <p className="text-[11px] text-[color:var(--bone-400)]">
+                <p className="t-muted">
                   There is no clear button: a report stays here until it ages out of the window, and the
                   permanent record is the athlete&apos;s near-miss history, which nothing on this screen
                   can remove.

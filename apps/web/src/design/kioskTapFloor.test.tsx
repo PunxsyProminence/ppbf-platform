@@ -2,8 +2,10 @@
  * @jest-environment jsdom
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+
+import type { ReactElement, ReactNode } from 'react';
 
 import { render } from '@testing-library/react';
 
@@ -96,5 +98,48 @@ describe('kiosk tap floor', () => {
     for (const control of ['button', 'select', 'input[type="number"]', 'input[type="text"]']) {
       expect(selector).toContain(control);
     }
+  });
+
+  it('covers inputs with no type, and email fields (UXB-08)', () => {
+    // <input> with no type attribute is a text box but matches no
+    // input[type=...] selector, so live-session fields sat at the browser's
+    // default height. Email is on the 44px list and was missing from this one.
+    const selector = css.slice(css.indexOf('[data-surface="kiosk"]'), css.indexOf('min-height: var(--tap)'));
+
+    expect(selector).toContain('[data-surface="kiosk"] input:not([type])');
+    expect(selector).toContain('[data-surface="kiosk"] input[type="email"]');
+  });
+});
+
+/**
+ * The gym-floor pages a coach or athlete uses standing up, mid-session (UXB-08).
+ * Each must mark its subtree through a route layout, or it keeps the 44px desk
+ * floor. Dropping a layout, or swapping its body for one without the marker,
+ * fails here by name.
+ */
+const FLOOR_ROUTES = [
+  'coach/environment/intake-router', // coach home: CoachWorkspace and Needs You
+  'coach/sports-medicine',
+  'coach/sparring-exposure',
+  'coach/attempt-log',
+  'coach/assessments',
+  'coach/injuries',
+  'shadow',
+  'parent/safety',
+] as const;
+
+describe('gym-floor pages carry the kiosk surface', () => {
+  it.each(FLOOR_ROUTES)('/%s has a layout that marks its page as kiosk', (route) => {
+    const layoutPath = path.resolve(__dirname, '../../app', route, 'layout.tsx');
+    expect(existsSync(layoutPath) ? route : `${route}: no layout.tsx`).toBe(route);
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Layout = (require(layoutPath) as { default: (props: { children: ReactNode }) => ReactElement }).default;
+    const { container } = render(<Layout><button type="button">Open</button></Layout>);
+    const marker = container.querySelector(`[${SURFACE_ATTRIBUTE}="${SURFACE_VALUE}"]`);
+
+    expect(marker).not.toBeNull();
+    expect(marker?.querySelector('button')).not.toBeNull();
+    expect(marker?.className).toContain('contents');
   });
 });

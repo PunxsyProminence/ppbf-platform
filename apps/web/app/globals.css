@@ -332,7 +332,8 @@ input[type="password"],
 input[type="email"],
 input[type="tel"],
 input[type="search"],
-input[type="date"] {
+input[type="date"],
+input:not([type]) {
   min-height: 44px;
 }
 
@@ -352,7 +353,11 @@ input[type="date"] {
    Scoped to /athlete rather than applied globally: 55px everywhere would push
    dense admin tables around for no gain, and the people using those are at a
    desk. /activate is the other gym-floor surface and opts in per control with
-   .btn--kiosk today. */
+   .btn--kiosk today. The coach and SHADOW floor pages carry the same marker
+   through components/KioskSurface.tsx in their route layouts (UXB-08).
+
+   input:not([type]) is listed because an input with no type attribute is a
+   text box, but matches none of the input[type=...] selectors (UXB-08). */
 [data-surface="kiosk"] button,
 [data-surface="kiosk"] [role="button"],
 [data-surface="kiosk"] select,
@@ -361,9 +366,11 @@ input[type="date"] {
 [data-surface="kiosk"] input[type="text"],
 [data-surface="kiosk"] input[type="number"],
 [data-surface="kiosk"] input[type="password"],
+[data-surface="kiosk"] input[type="email"],
 [data-surface="kiosk"] input[type="tel"],
 [data-surface="kiosk"] input[type="search"],
-[data-surface="kiosk"] input[type="date"] {
+[data-surface="kiosk"] input[type="date"],
+[data-surface="kiosk"] input:not([type]) {
   min-height: var(--tap);
 }
 }
