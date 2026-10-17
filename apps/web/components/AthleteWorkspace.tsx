@@ -3708,6 +3708,7 @@ export default function AthleteWorkspace() {
               recent={recentCheckIns}
               loading={checkInLoading}
               loadError={checkInLoadError}
+              onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
               onSaved={(row) => {
                 setTodayCheckIn(row);
                 setRecentCheckIns((current) =>

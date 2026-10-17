@@ -72,6 +72,9 @@ interface Props {
   loading: boolean;
   /** Why the record could not be read, if it could not. */
   loadError: string | null;
+  /** Reads it again. Given only when a read failed that can be tried again;
+      without it, loadError is a fact (no athlete record), not a failure. */
+  onRetry?: () => void;
   onSaved: (row: AthleteCheckInRecord) => void;
 }
 
@@ -156,7 +159,7 @@ function StoredAnswers({ record }: { record: AthleteCheckInRecord }) {
   );
 }
 
-export default function AthleteCheckInPanel({ today, recent, loading, loadError, onSaved }: Props) {
+export default function AthleteCheckInPanel({ today, recent, loading, loadError, onRetry, onSaved }: Props) {
   // Starts EMPTY. A key appears only when the athlete picks a value, and only
   // the keys present here are sent -- this object IS rule 1 above.
   const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>({});
@@ -249,8 +252,28 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
     return <p className="t-data">Loading your check-in…</p>;
   }
 
-  if (loadError) {
-    // Honest absence, never an empty form that would silently double-write.
+  /* A READ THAT FAILED KEEPS THE FORM (UXB-06). This used to replace the
+     whole panel with one line and no way back, and the Floor opens on a
+     Wellness check: the athlete was stuck until someone reloaded. The server
+     keeps one check-in per athlete per day (already_checked_in), so the form
+     cannot make a second record; an athlete who had already checked in gets
+     their stored check-in back when they press it. */
+  const readFailed = loadError && onRetry ? (
+    <div className="alert alert--warning" role="alert">
+      <span className="alert-icon" aria-hidden="true">▲</span>
+      <div className="alert-body">
+        <p className="alert-msg">{loadError}</p>
+        <div className="alert-action">
+          <button type="button" className="btn btn--ghost min-h-[var(--tap)]" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (loadError && !onRetry) {
+    // Nothing to read (no athlete record): said, with no form to send.
     return (
       <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s3)]`}>
         <h3 className="t-label">Check-In</h3>
@@ -276,6 +299,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   if (today) {
     return (
       <div className="space-y-6 panel-settle">
+        {readFailed}
         <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s4)]`}>
           <h3 className="t-label">Already checked in today</h3>
           <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
@@ -309,6 +333,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
 
   return (
     <div className="space-y-6 panel-settle">
+      {readFailed}
       <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s5)]`}>
         <h3 className="t-label">Check in</h3>
         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-300)' }}>
