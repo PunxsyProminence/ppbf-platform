@@ -97,17 +97,17 @@ export default function AthleteCorner({
 
   let checkInLine: string;
   if (identityState === 'unavailable') {
-    checkInLine = 'A check-in needs an athlete sign-in. Sign in again, then check in.';
+    checkInLine = 'Starting training needs an athlete sign-in. Sign in again, then start.';
   } else if (identityState === 'loading' || sessionState === 'loading') {
-    checkInLine = 'Checking whether you are checked in...';
+    checkInLine = 'Checking whether your training has started...';
   } else if (sessionState === 'unavailable') {
-    checkInLine = 'Could not tell whether you are checked in. Try again before you check in a second time.';
+    checkInLine = 'Could not tell whether your training has started. Try again before you start a second time.';
   } else if (checkedInAt) {
-    checkInLine = `Checked in ${checkedInAt}.`;
+    checkInLine = `Training started ${checkedInAt}.`;
   } else if (checkedOutToday) {
-    checkInLine = 'Checked out today. Check in again if you are back on the floor.';
+    checkInLine = 'Training ended today. Start again if you are back on the floor.';
   } else {
-    checkInLine = 'You have not checked in today.';
+    checkInLine = 'Training has not started today.';
   }
 
   return (
@@ -126,7 +126,7 @@ export default function AthleteCorner({
         {afterPain ? <div className="athlete-corner__wide">{afterPain}</div> : null}
 
         <div className="athlete-corner__panel" data-section="check-in">
-          <p className="athlete-corner__label">Check in</p>
+          <p className="athlete-corner__label">Start training</p>
           <p
             className={sessionState === 'unavailable' && identityState === 'resolved' ? 'athlete-corner__alert' : undefined}
             role={sessionState === 'unavailable' && identityState === 'resolved' ? 'alert' : undefined}
@@ -135,7 +135,7 @@ export default function AthleteCorner({
           </p>
           {sessionKnown && !checkedInAt && checkInFailed && (
             <p role="alert" className="athlete-corner__alert">
-              That check-in did not save. Try again, or tell a coach you are here.
+              Training did not start. Try again, or tell a coach you are here.
             </p>
           )}
           {sessionKnown && !checkedInAt && (
@@ -145,7 +145,7 @@ export default function AthleteCorner({
               disabled={checkingIn}
               className="btn athlete-corner__btn disabled:opacity-50 disabled:grayscale"
             >
-              {checkingIn ? 'Checking in…' : 'Check in'}
+              {checkingIn ? 'Starting…' : 'Start training'}
             </button>
           )}
           {identityState === 'resolved' && sessionState === 'unavailable' && (
