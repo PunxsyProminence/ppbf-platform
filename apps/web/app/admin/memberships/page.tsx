@@ -165,6 +165,7 @@ function SupportRecords({ athleteId }: { athleteId: string }) {
                 <td>{row.recorded_by_name}</td>
                 <td>
                   <button type="button" className="btn--lever" disabled={busy !== null}
+                    aria-label={`Retire: ${row.support_kind}, ${formatGymDay(row.provided_on) ?? row.provided_on}`}
                     onClick={() => void send(row.record_id, 'PATCH', { record_id: row.record_id, action: 'retire' }, 'Could not retire the record')}>
                     {busy === row.record_id ? 'Retiring…' : 'Retire'}
                   </button>
@@ -177,7 +178,7 @@ function SupportRecords({ athleteId }: { athleteId: string }) {
 
       <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
         <div className="field">
-          <label className="t-label" htmlFor="support-kind">What the gym provided (the family can see this)</label>
+          <label className="t-label" htmlFor="support-kind">What the gym provided (the family will see this and the date)</label>
           <input id="support-kind" className="input" maxLength={200} value={form.support_kind}
             onChange={(e) => setForm((f) => ({ ...f, support_kind: e.target.value }))} />
         </div>

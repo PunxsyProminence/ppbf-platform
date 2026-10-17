@@ -3,8 +3,11 @@
 // admin or admin of this gym records and lists it, newest first, named and
 // with no account id or email; a coach, another gym's office and a seatless
 // admin are refused (the database's seat refusal arrives as a 403); a future
-// date and a blank kind are refused; a record is retired once, by an admin,
-// and leaves the list.
+// date and a blank kind are refused (by the app, and by the database when the
+// app's clock lets one through); a record is retired once, by an admin, and
+// leaves the list -- the loser of two racing retires is a 409; a withdrawn
+// athlete's records are hidden and cannot be added to or retired; a recorder
+// who has gone is shown as the gym office.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -19,6 +22,10 @@ import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
+
+import { gymDayIso } from '@/src/lib/gymTime';
+
+import { queryOne } from './db';
 
 /* ts-jest compiles a plain `await import()` down to require(), which cannot
    load an ES module here. Building it through Function keeps a real dynamic
@@ -45,6 +52,16 @@ jest.mock('./db', () => ({
     return result.rows[0] ?? null;
   }),
 }));
+
+// The app's own future-date check reads the gym day here; a test moves that
+// clock forward so the database's check is the one that answers.
+jest.mock('@/src/lib/gymTime', () => {
+  const actual = jest.requireActual('@/src/lib/gymTime');
+  return { ...actual, gymDayIso: jest.fn(actual.gymDayIso) };
+});
+
+const mockGymDayIso = gymDayIso as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 jest.setTimeout(180_000);
 
@@ -87,11 +104,15 @@ const ORG_ADMIN = 'acct-fss-orgadmin';
 const ADMIN = 'acct-fss-admin';
 const OTHER_ADMIN = 'acct-fss-other-admin';
 const SEATLESS = 'acct-fss-seatless';
+const LEAVER = 'acct-fss-leaver';
+const LEAVER_EMAIL = 'lee.harper@example.test';
 const ORG_ADMIN_EMAIL = 'jane.okafor@example.test';
 const ADMIN_EMAIL = 'sam.reyes@example.test';
 const ATHLETE = 'ATH-FSS-1';
 const SIBLING = 'ATH-FSS-2';
 const OTHER_ATHLETE = 'ATH-FSS-X';
+const SAME_DAY_ATHLETE = 'ATH-FSS-3';
+const WITHDRAWN = 'ATH-FSS-W';
 
 const office = { organizationId: ORG, accountId: ORG_ADMIN, role: 'organization_admin' };
 const admin = { organizationId: ORG, accountId: ADMIN, role: 'admin' };
@@ -154,6 +175,7 @@ beforeAll(async () => {
     [ADMIN, 'admin', ORG, ADMIN_EMAIL],
     [OTHER_ADMIN, 'organization_admin', OTHER_ORG, 'other.office@example.test'],
     [SEATLESS, 'organization_admin', ORG, 'no.seat@example.test'],
+    [LEAVER, 'organization_admin', ORG, LEAVER_EMAIL],
   ] as const) {
     await client.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email) values ($1, $2, $3, 'microsoft', $4)`,
@@ -166,13 +188,16 @@ beforeAll(async () => {
     [ORG_ADMIN, ORG, 'organization_admin'],
     [ADMIN, ORG, 'admin'],
     [OTHER_ADMIN, OTHER_ORG, 'organization_admin'],
+    [LEAVER, ORG, 'organization_admin'],
   ] as const) {
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, $3)`,
       [accountId, org, role],
     );
   }
-  for (const [org, athleteId] of [[ORG, ATHLETE], [ORG, SIBLING], [OTHER_ORG, OTHER_ATHLETE]] as const) {
+  for (const [org, athleteId] of [
+    [ORG, ATHLETE], [ORG, SIBLING], [ORG, SAME_DAY_ATHLETE], [ORG, WITHDRAWN], [OTHER_ORG, OTHER_ATHLETE],
+  ] as const) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
          emergency_contact, active_flag, coach_id, created_at, updated_at)
@@ -299,5 +324,91 @@ describe('the office records family support (PH-12b)', () => {
       await activeClient!.query(`update pilot.organization_memberships set active_flag = true where account_id = $1`, [ADMIN]);
     }
     expect(await rowCount()).toBe(before);
+  });
+
+  test("a future date the app's clock lets through is refused by the database, as a 400", async () => {
+    const before = await rowCount();
+    // The app believes it is the last day of 2999, so 2999-01-01 passes its check.
+    mockGymDayIso.mockReturnValueOnce('2999-12-31');
+    await expect(support.recordSupport(office, ATHLETE, 'Gloves', '2999-01-01'))
+      .rejects.toMatchObject({ status: 400, message: 'The date provided cannot be in the future.' });
+    expect(mockGymDayIso).toHaveBeenCalled();
+    expect(await rowCount()).toBe(before);
+  });
+
+  test('records of one day written in the same moment come back in a stable order: by record id', async () => {
+    const low = '00000000-0000-4000-8000-000000000001';
+    const high = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
+    // One transaction, so the guard stamps both with the same created_at. The high id is written first.
+    await activeClient!.query('begin');
+    try {
+      for (const [recordId, kind] of [[high, 'Mouthguard'], [low, 'Hand wraps']] as const) {
+        await activeClient!.query(
+          `insert into pilot.family_support_records
+             (organization_id, record_id, athlete_id, support_kind, provided_on, recorded_by_account_id, recorded_by_role)
+           values ($1, $2::uuid, $3, $4, '2026-10-05', $5, 'organization_admin')`,
+          [ORG, recordId, SAME_DAY_ATHLETE, kind, ORG_ADMIN],
+        );
+      }
+      await activeClient!.query('commit');
+    } catch (error) {
+      await activeClient!.query('rollback');
+      throw error;
+    }
+
+    const items = await support.listSupportForStaff(ORG, SAME_DAY_ATHLETE);
+    expect(new Set(items.map((item) => item.created_at)).size).toBe(1);
+    expect(items.map((item) => item.record_id)).toEqual([low, high]);
+  });
+
+  test('two retires racing on one record: one wins, the other is a 409 from the update itself, not a 404', async () => {
+    const created = await support.recordSupport(office, ATHLETE, 'Fee covered for the November card', '2026-10-06');
+    const recordId = created!.record_id;
+    mockQueryOne.mockClear();
+
+    // Both pre-checks are queued before either update, so both see a live record.
+    const results = await Promise.allSettled([support.retireSupport(admin, recordId), support.retireSupport(office, recordId)]);
+
+    const updates = mockQueryOne.mock.calls.filter(([text]) => String(text).includes('update pilot.family_support_records'));
+    expect(updates).toHaveLength(2);
+    const winners = results.filter((result) => result.status === 'fulfilled') as PromiseFulfilledResult<unknown>[];
+    expect(winners.map((result) => result.value)).toEqual([{ record_id: recordId }]);
+    const losers = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+    expect(losers).toHaveLength(1);
+    expect(losers[0].reason).toMatchObject({ status: 409 });
+  });
+
+  test("a withdrawn athlete's records are hidden: the list is empty, a new one is refused, retiring one is a not-found", async () => {
+    const created = await support.recordSupport(office, WITHDRAWN, 'Boxing shoes', '2026-10-04');
+    const recordId = created!.record_id;
+    await activeClient!.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, WITHDRAWN]);
+
+    expect(await support.listSupportForStaff(ORG, WITHDRAWN)).toEqual([]);
+    const before = await rowCount();
+    expect(await support.recordSupport(office, WITHDRAWN, 'Gloves', '2026-10-05')).toBeNull();
+    expect(await rowCount()).toBe(before);
+    expect(await support.retireSupport(admin, recordId)).toBeNull();
+
+    const stored = await activeClient!.query(
+      `select retired_at is null as live from pilot.family_support_records where record_id = $1::uuid`,
+      [recordId],
+    );
+    expect(stored.rows).toEqual([{ live: true }]);
+  });
+
+  test('a recorder whose seat is retired and whose account is removed is shown as the gym office, with no id', async () => {
+    const leaver = { organizationId: ORG, accountId: LEAVER, role: 'organization_admin' };
+    const created = await support.recordSupport(leaver, ATHLETE, 'Ride home from the Erie show', '2026-10-07');
+    const recordId = created!.record_id;
+    const named = (await support.listSupportForStaff(ORG, ATHLETE)).find((item) => item.record_id === recordId);
+    expect(named?.recorded_by_name).toBe('Lee Harper');
+
+    await activeClient!.query(`update pilot.organization_memberships set active_flag = false where account_id = $1`, [LEAVER]);
+    await activeClient!.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [LEAVER]);
+
+    const item = (await support.listSupportForStaff(ORG, ATHLETE)).find((row) => row.record_id === recordId);
+    expect(item?.recorded_by_name).toBe('Gym office');
+    const text = JSON.stringify(item);
+    for (const secret of [LEAVER, LEAVER_EMAIL, 'Lee', 'Harper', '@']) expect(text).not.toContain(secret);
   });
 });

@@ -17,6 +17,15 @@ export const runtime = 'nodejs';
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A JSON object body, or a 400: malformed JSON, an array or a bare value is the caller's mistake. */
+async function objectBody(request: NextRequest): Promise<Record<string, unknown>> {
+  const parsed: unknown = await request.json().catch(() => undefined);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ValidationError('The request body must be a JSON object.');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -37,7 +46,7 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SUPPORT_ROLES]);
 
-    const body = (await request.json()) as { athlete_id?: unknown; support_kind?: unknown; provided_on?: unknown };
+    const body = await objectBody(request);
     const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
 
@@ -54,7 +63,7 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SUPPORT_ROLES]);
 
-    const body = (await request.json()) as { record_id?: unknown; action?: unknown };
+    const body = await objectBody(request);
     const recordId = typeof body.record_id === 'string' ? body.record_id.trim() : '';
     if (!UUID_SHAPE.test(recordId)) throw new ValidationError('Missing or malformed record_id.');
     if (body.action !== 'retire') throw new ValidationError("The only change is action: 'retire'.");

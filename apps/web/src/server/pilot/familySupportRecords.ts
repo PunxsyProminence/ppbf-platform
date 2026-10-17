@@ -61,7 +61,7 @@ function seatRefusal(error: unknown): never {
   throw error;
 }
 
-/** Live records for one athlete of this gym, most recent provided_on first. */
+/** Live records for one athlete of this gym, most recent provided_on first (then newest written, then record id, so the order is stable). */
 export async function listSupportForStaff(organizationId: string, athleteId: string): Promise<StaffSupportRow[]> {
   // The recorder is named only while their account stands and they belong to
   // this gym (the rule achievements.ts names staff by); otherwise the floor.
@@ -77,7 +77,7 @@ export async function listSupportForStaff(organizationId: string, athleteId: str
               select 1 from pilot.organization_memberships om
                where om.account_id = acc.account_id and om.organization_id = r.organization_id and om.active_flag))
       where r.organization_id = $1 and r.athlete_id = $2 and r.retired_at is null
-      order by r.provided_on desc, r.created_at desc`,
+      order by r.provided_on desc, r.created_at desc, r.record_id`,
     [organizationId, athleteId],
   );
   return rows.map(({ recorder_email, ...row }) => ({
@@ -131,27 +131,35 @@ export async function recordSupport(
 
 /**
  * Retires a live record of this gym, naming who retired it. Returns null when
- * there is no such record in this gym.
+ * there is no such record in this gym, or its athlete is no longer a live
+ * athlete here (the same hidden not-found the list gives).
  */
 export async function retireSupport(actor: SupportActor, recordId: string): Promise<{ record_id: string } | null> {
   supportRole(actor);
   const current = await queryOne<{ retired: boolean }>(
-    `select retired_at is not null as retired from pilot.family_support_records
-     where organization_id = $1 and record_id = $2::uuid`,
+    `select r.retired_at is not null as retired
+       from pilot.family_support_records r
+       join pilot.athletes ath
+         on ath.organization_id = r.organization_id and ath.athlete_id = r.athlete_id and ath.deleted_at is null
+      where r.organization_id = $1 and r.record_id = $2::uuid`,
     [actor.organizationId, recordId],
   );
   if (!current) return null;
   if (current.retired) throw new ConflictError('This record is already retired.');
 
+  let retired: { record_id: string } | null;
   try {
-    return await queryOne<{ record_id: string }>(
+    retired = await queryOne<{ record_id: string }>(
       `update pilot.family_support_records
           set retired_by_account_id = $3
-        where organization_id = $1 and record_id = $2::uuid
+        where organization_id = $1 and record_id = $2::uuid and retired_at is null
         returning record_id::text as record_id`,
       [actor.organizationId, recordId, actor.accountId],
     );
   } catch (error) {
     return seatRefusal(error);
   }
+  // The record was live a moment ago; no row now means another retire got there first.
+  if (!retired) throw new ConflictError('This record is already retired.');
+  return retired;
 }
