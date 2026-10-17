@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
-import { recordFamilyMessageRead } from '@/src/server/pilot/familyMessageReads';
+import { GET, POST } from './route';
+import { listOwnMessageReads, recordFamilyMessageRead } from '@/src/server/pilot/familyMessageReads';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { NotFoundError } from '@/src/server/pilot/errors';
 
@@ -14,11 +14,13 @@ jest.mock('@/src/server/pilot/http', () => {
 // proved on Postgres in familyMessageReadState.pg.test.ts. Here: roles, the
 // body, and that the route hands the caller's own identity down. (#1542, FC-05)
 jest.mock('@/src/server/pilot/familyMessageReads', () => ({
+  listOwnMessageReads: jest.fn(),
   recordFamilyMessageRead: jest.fn(),
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockRecord = jest.mocked(recordFamilyMessageRead);
+const mockList = jest.mocked(listOwnMessageReads);
 
 function principal(role = 'parent') {
   return {
@@ -88,5 +90,31 @@ describe('POST /api/pilot/parent/message-reads (#1542, FC-05)', () => {
 
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe('Not found: that message is not on your page.');
+  });
+});
+
+describe('GET /api/pilot/parent/message-reads (#1542, FC-08)', () => {
+  function get() {
+    return GET(new NextRequest('http://localhost/api/pilot/parent/message-reads?account_id=someone-else&organization_id=org-2'));
+  }
+
+  test("this guardian's own opens, read with the session's gym and account and nothing from the URL", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockList.mockResolvedValue([{ note_id: NOTE_ID, first_read_at: '2026-10-13T23:30:00.000Z' }]);
+
+    const response = await get();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, items: [{ note_id: NOTE_ID, first_read_at: '2026-10-13T23:30:00.000Z' }] });
+    expect(mockList).toHaveBeenCalledWith('org-1', 'parent-1');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'athlete', 'platform_owner'])("%s cannot read a guardian's opens", async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+
+    const response = await get();
+
+    expect(response.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
   });
 });
