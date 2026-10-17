@@ -37,6 +37,15 @@ let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
 let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
+/* The athlete's own bookings the scheduler answers with (UXB-17's Next Session tile). */
+let schedulerRegistrations: Array<Record<string, unknown>> = [];
+
+/* Two buttons say "Check in" on Today and do the same thing: the corner's and the
+   Session Log's (UXB-19, one verb). Each test names the one it means. */
+const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
+const sessionLog = () => within(screen.getByRole('region', { name: 'Session log' }));
+const sessionLogCheckIn = async () =>
+  within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Check in' });
 // The session read never answers: the workspace stays on 'loading'.
 let sessionListHangs = false;
 let sessionUpdateFails = false;
@@ -223,6 +232,7 @@ beforeEach(() => {
   rabbitHolesFail = false;
   storedSessions = [];
   sessionListFails = false;
+  schedulerRegistrations = [];
   sessionListHangs = false;
   sessionUpdateFails = false;
   persistSessionUpdates = false;
@@ -305,7 +315,7 @@ beforeEach(() => {
           class_id: 'cls_far', title: 'Saturday Footwork', start_at: '2099-01-03T15:00:00.000Z',
           end_at: '2099-01-03T16:00:00.000Z', location: 'Main ring', capacity: 10, status: 'open', registered_count: 2,
         }],
-        registrations: [],
+        registrations: schedulerRegistrations,
       });
     }
     if (url.includes('/api/pilot/auth/session')) {
@@ -478,7 +488,7 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
     fireEvent.change(box, { target: { value: note } });
   }
   const before = postedTo('/api/pilot/sessions').length;
-  fireEvent.click(screen.getByRole('button', { name: 'Check In' }));
+  fireEvent.click(sessionLog().getByRole('button', { name: 'Check in' }));
   await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(before + 1));
   return postedTo('/api/pilot/sessions')[before].body;
 }
@@ -486,7 +496,7 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
 describe('one session check-in per press (#1529)', () => {
   test('two presses of Check In in the same tick open one session', async () => {
     await renderWorkspace();
-    const button = await screen.findByRole('button', { name: 'Check In' });
+    const button = await sessionLogCheckIn();
 
     await act(async () => {
       fireEvent.click(button);
@@ -533,9 +543,20 @@ describe('athlete workspace honesty', () => {
     await renderWorkspace();
 
     expect(screen.queryByText(/Youth Class 4:00 PM/)).toBeNull();
-    // The tile refuses to invent a class. What it says instead is the floor's
-    // own honest-empty grammar rather than a field status read out to a child.
-    expect(screen.getByText('Nothing posted yet.')).toBeTruthy();
+    // The scheduler answered with a class the athlete has not booked, and no
+    // bookings: the tile says so, and does not name the unbooked class (UXB-17).
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    await waitFor(() => expect(tile.textContent).toBe('Next SessionNothing booked.'));
+    expect(screen.queryByText('Nothing posted yet.')).toBeNull();
+  });
+
+  test('the Next Session tile names the athlete\'s own booked class, from the scheduler read (UXB-17)', async () => {
+    schedulerRegistrations = [{ registration_id: 'reg_1', class_id: 'cls_far', status: 'registered' }];
+    await renderWorkspace();
+
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    await waitFor(() => expect(tile.textContent).toContain('Saturday Footwork'));
+    expect(tile.textContent).not.toContain('Nothing booked.');
   });
 
   test('the Schedule tab offers the real scheduler instead of unbookable class rows', async () => {
@@ -560,14 +581,15 @@ describe('athlete workspace honesty', () => {
     expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
-  test('the Schedule tab reads the unified scheduler only once it is opened (WO-N5-01)', async () => {
+  test('the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it once for Next Session', async () => {
     await renderWorkspace();
     const schedulerReads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler(\?|$)/.test(call.url));
-    expect(schedulerReads()).toHaveLength(0);
+    // One read for the Next Session tile (UXB-17), and no more until the tab opens.
+    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
 
     openTab('Schedule');
 
-    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
     // The lists render inside the workspace, from that read.
     expect(await screen.findByText('Saturday Footwork')).toBeTruthy();
     expect(screen.getByText('8 spots left')).toBeTruthy();
@@ -1050,7 +1072,7 @@ describe('athlete safety reporting', () => {
   test('check-out puts the note the athlete shared on the session record', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     // A stored check-in sends the athlete to their floor; the session log they
     // check out from is back on the dashboard.
     await waitFor(() => expect(openSurface()).toBe('Floor'));
@@ -1090,7 +1112,7 @@ describe('athlete safety reporting', () => {
 
     expect(await screen.findByText(/not signed in as an athlete/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
     expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
   });
 });
@@ -1105,7 +1127,7 @@ describe('an open session across a reload', () => {
     await renderWorkspace();
 
     expect(await screen.findByRole('button', { name: 'Check Out' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
 
     const notes = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
     expect(notes.value).toBe('Left hook felt slow all session, right shoulder tight.');
@@ -1252,7 +1274,7 @@ describe('an open session across a reload', () => {
 
     expect(await screen.findByText(/You are not checked in right now/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+    expect(sessionLog().getByRole('button', { name: 'Check in' })).toBeTruthy();
   });
 
   // "No open session" and "could not ask" have different answers, and telling
@@ -1317,7 +1339,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
 
     expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+    expect(sessionLog().getByRole('button', { name: 'Check in' })).toBeTruthy();
     // Nor is yesterday's note handed back as something to send today: there is
     // no open-session box at all, and the note is nowhere on screen as a draft.
     expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
@@ -1545,7 +1567,7 @@ describe('authored announcements on the athlete workspace', () => {
     // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
     // the "Pre-Session Self-Report" card, which went with its defaulted slider.
     expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
+    expect(await sessionLogCheckIn()).toBeTruthy();
   });
 });
 
@@ -2092,7 +2114,7 @@ describe('Today states the day back rather than offering a row of buttons', () =
     await renderWorkspace();
 
     expect(screen.getByText('You have not checked in today.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Start check-in' })).toBeTruthy();
+    expect(corner().getByRole('button', { name: 'Check in' })).toBeTruthy();
   });
 
   test('Today offers no generated floor plan, because nothing generates one', async () => {
@@ -2121,7 +2143,7 @@ describe('Today states the day back rather than offering a row of buttons', () =
     // handler, the same one the Session Log's button calls.
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start check-in' }));
+    fireEvent.click(corner().getByRole('button', { name: 'Check in' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -2134,7 +2156,7 @@ describe('Today states the day back rather than offering a row of buttons', () =
     await renderWorkspace();
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'Start check-in' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
     });
     expect(screen.queryByText('You have not checked in today.')).toBeNull();
   });
@@ -2313,9 +2335,9 @@ describe('an issued workout keeps its shape on the Floor', () => {
       // The server listed this work first; it stays first.
       'h4: Shadowbox',
       'h4: Technical Tuesday',
-      'h5: warmup',
+      'h5: Warm-up',
       'h6: Skip Rope',
-      'h5: main work',
+      'h5: Main work',
       'h6: Jab Ladder',
       'h6: Body Sparring',
       // The work the server listed between two of the workout's steps is not
@@ -2394,7 +2416,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(headings(grid)).toEqual([
       'h4: Shadowbox',
       'h4: Technical Tuesday',
-      'h5: main work',
+      'h5: Main work',
       'h6: Jab Ladder',
       'h6: Body Sparring',
       'h4: Heavy Bag',
@@ -2427,7 +2449,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     await openFloorWith(work, [WORKOUT]);
     const grid = await floorGrid('Technical Tuesday');
 
-    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag', 'h4: Technical Tuesday', 'h5: main work', 'h6: Jab Ladder']);
+    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag', 'h4: Technical Tuesday', 'h5: Main work', 'h6: Jab Ladder']);
     expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday1 of 3 steps still to do, in this order');
   });
 
@@ -2442,7 +2464,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(panel.className.split(' ')).toEqual(expect.arrayContaining(['mat-leather', 'md:col-span-2']));
     // Inside it: the heading, both block names, and the three steps -- only those.
     expect(within(panel).getByTestId('floor-issued-workout')).toBeTruthy();
-    expect(headings(panel)).toEqual(['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring']);
+    expect(headings(panel)).toEqual(['h4: Technical Tuesday', 'h5: Warm-up', 'h6: Skip Rope', 'h5: Main work', 'h6: Jab Ladder', 'h6: Body Sparring']);
     expect(within(panel).getAllByRole('link', { name: /^Log completion: / })).toHaveLength(3);
     // The work in no workout stands on the grid itself, before and after the
     // panel, so the panel's edge is where the workout ends.
@@ -2463,8 +2485,8 @@ describe('an issued workout keeps its shape on the Floor', () => {
     const panels = within(grid).getAllByTestId('floor-issued-workout-panel');
 
     expect(panels.map((panel) => headings(panel))).toEqual([
-      ['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring'],
-      ['h4: Friday Rounds', 'h5: main work', 'h6: Heavy Bag'],
+      ['h4: Technical Tuesday', 'h5: Warm-up', 'h6: Skip Rope', 'h5: Main work', 'h6: Jab Ladder', 'h6: Body Sparring'],
+      ['h4: Friday Rounds', 'h5: Main work', 'h6: Heavy Bag'],
     ]);
     expect(cardsDirectlyIn(grid)).toEqual(['Shadowbox']);
   });
@@ -2518,7 +2540,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
 
     // And Retry reads again and draws the workout once it can be read.
     storedWorkouts = [WORKOUT];
-    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    fireEvent.click(screen.getByRole('button', { name: "Try loading your coach's work again" }));
     const grid = await floorGrid('Technical Tuesday');
     expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
   });
@@ -2611,7 +2633,7 @@ describe('the Floor is the work a coach assigned', () => {
     expect(await screen.findByText('No open work from your coach.')).toBeTruthy();
     expect(screen.queryByText(/Nothing on your floor yet/)).toBeNull();
     expect(screen.queryByText(/work gets built/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
     // The history lives one link away.
     expect(screen.getByRole('link', { name: 'Open your progression' }).getAttribute('href'))
       .toBe('/athlete/progression-intelligence');
@@ -2627,7 +2649,7 @@ describe('the Floor is the work a coach assigned', () => {
 
     assignmentsFail = false;
     storedAssignments = [assignment({ drill_display_name: 'Jab-cross on the bag' })];
-    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    fireEvent.click(screen.getByRole('button', { name: "Try loading your coach's work again" }));
     expect(await screen.findByRole('heading', { level: 4, name: 'Jab-cross on the bag' })).toBeTruthy();
   });
 
@@ -2647,7 +2669,7 @@ describe('the Floor is the work a coach assigned', () => {
   test('check-in generates nothing: no plan is read or written, and no synthetic work appears', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(openSurface()).toBe('Floor'));
 
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
@@ -2890,18 +2912,18 @@ describe('a session check-in goes where the day actually is', () => {
   test('stored, with wellness recorded: straight to the floor', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     expect(screen.getByText("You are checked in. Your coach's work is on your floor.")).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go to Wellness' })).toBeNull();
   });
 
   test('stored, with no wellness check yet: to Wellness, which is what opens the floor', async () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     await waitFor(() => expect(openSurface()).toBe('Wellness'));
     expect(screen.getByText('You are checked in. Do your wellness check next -- it opens your floor.')).toBeTruthy();
@@ -2913,10 +2935,10 @@ describe('a session check-in goes where the day actually is', () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(openSurface()).toBe('Wellness'));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save wellness' }));
     await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
 
     expect(await screen.findByText("You are checked in. Your coach's work is on your floor.")).toBeTruthy();
@@ -2927,7 +2949,7 @@ describe('a session check-in goes where the day actually is', () => {
     sessionCreateFails = true;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     expect(await screen.findByText(/Nothing was saved, so there is no session to check out of/)).toBeTruthy();
     expect(openSurface()).toBe('Dashboard');
@@ -3793,7 +3815,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     fireEvent.click(effortButton(9));
     expect((await checkOut()).rpe).toBe(9);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     expect(postedTo('/api/pilot/sessions')[0].body.rpe).toBeNull();
     expect(postedTo('/api/pilot/sessions')[0].body.rpe_method).toBe('UNKNOWN');
@@ -3951,7 +3973,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     // Check-in writes no minutes: the session has not happened yet.
     expect('duration_minutes' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
@@ -3969,7 +3991,7 @@ describe('check-in records no session RPE at all', () => {
   test('the created session carries a null rpe and an UNKNOWN method', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     const [checkIn] = postedTo('/api/pilot/sessions');
@@ -4157,7 +4179,7 @@ describe('no session observation is fabricated for SHADOW', () => {
   test('check-in submits no session observation either', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     // Specifically: no session_rpe observation carrying the readiness slider.
@@ -4364,7 +4386,7 @@ describe('the pre-session self-report presents as a self-report, not a clearance
       }
     }
 
-    fireEvent.click(screen.getByRole('button', { name: 'Check In' }));
+    fireEvent.click(sessionLog().getByRole('button', { name: 'Check in' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     const body = postedTo('/api/pilot/sessions')[0].body;
 
@@ -4617,7 +4639,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     await checkInFromSessionLog('Shoulder feels fine today.');
     await waitFor(() => expect(openSurface()).toBe('Wellness'));
     openTab('Floor');
-    expect(await screen.findByRole('button', { name: 'Go to check in' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Go to Wellness' })).toBeTruthy();
   });
 });
 
@@ -4679,7 +4701,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
-    expect(screen.getByRole('button', { name: 'Check in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
     const before = reads();
 
     checkInReadFails = false;
@@ -4688,7 +4710,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
 
     await waitFor(() => expect(reads()).toBe(before + 1));
     await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Check in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
   });
 
   test('a check-in saved from the kept form clears the failed read: no alert, and the tile says recorded', async () => {
@@ -4699,7 +4721,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
     await screen.findByText('check-in offline');
 
     checkInReadFails = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save wellness' }));
 
     await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
     await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
@@ -4734,7 +4756,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
     await waitFor(() => expect(within(wellnessTile()).getByText('Not recorded today')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save wellness' }));
 
     await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
     expect(postedTo('/api/pilot/athlete/check-in')).toHaveLength(1);
@@ -4838,7 +4860,7 @@ describe('the wellness check-in', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
-    expect(await screen.findByRole('button', { name: 'Check in' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Save wellness' })).toBeTruthy();
   });
 
   test('a skipped question is ABSENT from the request, never defaulted into it', async () => {
@@ -4853,7 +4875,7 @@ describe('the wellness check-in', () => {
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save wellness' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
     const body = postedTo('/api/pilot/athlete/check-in')[0].body as Record<string, unknown>;
@@ -4874,7 +4896,7 @@ describe('the wellness check-in', () => {
     // requirement ("they need a description on what each number represents")
     // asserted as behaviour rather than as the presence of some text.
     fireEvent.click(await screen.findByRole('button', { name: /How much energy do you have\? 4: Good/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save wellness' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/athlete/check-in').length).toBe(1));
     expect(postedTo('/api/pilot/athlete/check-in')[0].body).toEqual({ energy: 4 });
@@ -4887,7 +4909,7 @@ describe('the wellness check-in', () => {
     await renderWorkspace();
 
     openTab('Floor');
-    expect(await screen.findByRole('button', { name: 'Go to check in' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Go to Wellness' })).toBeTruthy();
 
     // ...and the rest of the workspace is untouched. Drills and Goals are the
     // cheap half of this; Messages matters most, because a child who needs to
@@ -4899,7 +4921,7 @@ describe('the wellness check-in', () => {
     expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
 
     openTab('Ask SHADOW');
-    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go to Wellness' })).toBeNull();
   });
 
   test('a check-in that could not be READ opens the floor instead of locking it', async () => {
@@ -4913,18 +4935,18 @@ describe('the wellness check-in', () => {
 
     openTab('Floor');
 
-    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go to Wellness' })).toBeNull();
   });
 
   test('once checked in, the floor is open and the form is not offered again', async () => {
     await renderWorkspace();
 
     openTab('Floor');
-    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go to Wellness' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
-    expect(await screen.findByText(/Already checked in today/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull();
+    expect(await screen.findByText(/Wellness saved today/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save wellness' })).toBeNull();
   });
 
   test('an account with no athlete record is told so, not left loading forever', async () => {
@@ -4944,10 +4966,10 @@ describe('the wellness check-in', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     expect(await screen.findByText(/not linked to an athlete record/)).toBeTruthy();
-    expect(screen.queryByText(/Loading your check-in/)).toBeNull();
+    expect(screen.queryByText(/Loading your wellness/)).toBeNull();
 
     openTab('Floor');
-    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Go to Wellness' })).toBeNull();
   });
 
   test('a stored null reads as not reported, never as a zero or a middle', async () => {
@@ -4958,7 +4980,7 @@ describe('the wellness check-in', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
-    const line = await screen.findByText(/checked in without answering the questions/);
+    const line = await screen.findByText(/saved it without answering the questions/);
     // Scoped to the check-in panel. An earlier draft asserted no '0' anywhere
     // on the page and failed on a stat tile showing a REAL measured zero --
     // which is the distinction this whole case is about, so asserting it

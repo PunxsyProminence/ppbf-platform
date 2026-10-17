@@ -161,7 +161,7 @@ describe('a goal cannot be failed', () => {
       expect(text).not.toContain(word);
     }
     // A date that has passed is just a date somebody wrote down once.
-    expect(container.textContent).toContain('Aiming for: Jan 1 2020');
+    expect(container.textContent).toContain('Aiming for: Jan 1, 2020');
     expect(container.textContent).not.toContain('Wrote down');
   });
 
@@ -190,8 +190,8 @@ describe('the day a goal was reached is the gym day', () => {
       expect(container.textContent).toContain('Run a mile');
     });
 
-    expect(container.textContent).toContain('Oct 11 2026');
-    expect(container.textContent).not.toContain('Oct 12 2026');
+    expect(container.textContent).toContain('Oct 11, 2026');
+    expect(container.textContent).not.toContain('Oct 12, 2026');
   });
 });
 
