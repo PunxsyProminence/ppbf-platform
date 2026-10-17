@@ -22,9 +22,12 @@
  *   DEVELOPMENT_PROFILE below, an example gym at example.org. It is not the
  *   gym's facts, so it cannot drift from them, and production never reaches it.
  *
- * CACHE. The last row read is kept for 60 seconds, and kept past that if a
- * later read fails, so a database blip does not take the public pages down.
- * It is the same source, held briefly, not a second one.
+ * CACHE. The last row read is fresh for 60 seconds. After that it is still
+ * served at once while one background read refreshes it, so a slow or hung
+ * database never holds a page render; it is kept if that read fails. Every
+ * read gives up after READ_TIMEOUT_MS (db.ts sets no connect timeout, so a
+ * black-holed database would otherwise wait forever), and concurrent callers
+ * share one read in flight. It is the same source, held briefly, not a second.
  */
 
 import { queryOne } from '@/src/server/pilot/db';
@@ -33,6 +36,7 @@ import type { OrganizationProfile } from '@/src/shared/organizationProfile';
 export const OPERATING_ORGANIZATION_ID = 'punxsy_prominence';
 
 const CACHE_MS = 60_000;
+const READ_TIMEOUT_MS = 2_500;
 
 export class OrganizationProfileUnavailableError extends Error {
   constructor(organizationId: string, cause?: unknown) {
@@ -114,10 +118,35 @@ function toProfile(row: ProfileRow): OrganizationProfile {
 }
 
 const cache = new Map<string, { profile: OrganizationProfile; readAt: number }>();
+const inFlight = new Map<string, Promise<OrganizationProfile | null>>();
 
-/** Test seam: forget every cached row. */
+/** Test seam: forget every cached row and every read in flight. */
 export function clearOrganizationProfileCache(): void {
   cache.clear();
+  inFlight.clear();
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ORGANIZATION_PROFILE_READ_TIMEOUT after ${ms} ms`)), ms);
+    (timer as { unref?: () => void }).unref?.();
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** One read per organization at a time; a found row is cached when it lands. */
+function sharedRead(organizationId: string, now: () => number, timeoutMs: number): Promise<OrganizationProfile | null> {
+  const pending = inFlight.get(organizationId);
+  if (pending) return pending;
+  const read = withTimeout(readRow(organizationId), timeoutMs)
+    .then((profile) => {
+      if (profile) cache.set(organizationId, { profile, readAt: now() });
+      return profile;
+    })
+    .finally(() => inFlight.delete(organizationId));
+  inFlight.set(organizationId, read);
+  return read;
 }
 
 async function readRow(organizationId: string): Promise<OrganizationProfile | null> {
@@ -138,19 +167,24 @@ async function readRow(organizationId: string): Promise<OrganizationProfile | nu
 
 export async function getOrganizationProfile(
   organizationId: string,
-  options: { now?: () => number; production?: boolean } = {},
+  options: { now?: () => number; production?: boolean; timeoutMs?: number } = {},
 ): Promise<OrganizationProfile> {
   const now = options.now ?? Date.now;
   const production = options.production ?? process.env.NODE_ENV === 'production';
+  const timeoutMs = options.timeoutMs ?? READ_TIMEOUT_MS;
   const cached = cache.get(organizationId);
-  if (cached && now() - cached.readAt < CACHE_MS) return cached.profile;
+  if (cached) {
+    if (now() - cached.readAt >= CACHE_MS) {
+      // Stale: served now, refreshed behind it. A failed or empty refresh keeps the last good row.
+      sharedRead(organizationId, now, timeoutMs).catch(() => undefined);
+    }
+    return cached.profile;
+  }
 
   let profile: OrganizationProfile | null;
   try {
-    profile = await readRow(organizationId);
+    profile = await sharedRead(organizationId, now, timeoutMs);
   } catch (error) {
-    // The last good row outlives a failed read; it is the same source, not a fallback copy.
-    if (cached) return cached.profile;
     if (!production) return DEVELOPMENT_PROFILE;
     throw new OrganizationProfileUnavailableError(organizationId, error);
   }
@@ -158,7 +192,6 @@ export async function getOrganizationProfile(
     if (!production) return DEVELOPMENT_PROFILE;
     throw new OrganizationProfileUnavailableError(organizationId);
   }
-  cache.set(organizationId, { profile, readAt: now() });
   return profile;
 }
 

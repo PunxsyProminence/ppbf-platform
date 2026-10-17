@@ -35,6 +35,25 @@ test('lists every field the interest form actually sends', async () => {
   );
 });
 
+test('a fact the gym has not given leaves its line out, and nothing is invented in its place', async () => {
+  const store = jest.requireMock('@/src/server/pilot/organizationProfileStore') as { getOperatingOrganizationProfile: () => Promise<unknown> };
+  const { PPBF_PROFILE } = jest.requireActual('@/src/testing/organizationProfileFixtures');
+  const original = store.getOperatingOrganizationProfile;
+  store.getOperatingOrganizationProfile = async () => ({ ...PPBF_PROFILE, ein: '', email: '', mailing: '' });
+  try {
+    const { container } = render(await PrivacyPage());
+    const t = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(t).toContain('Punxsy Prominence Boxing and Fitness runs this website, punxsyprominence.org.');
+    expect(t).not.toContain('EIN');
+    expect(t).not.toContain('Your choices');
+    expect(t).not.toContain('To see, correct or delete');
+    expect(container.querySelectorAll('a[href^="mailto:"]')).toHaveLength(0);
+    expect(t).toMatch(/Contact\s*Punxsy Prominence Boxing and Fitness\s*Back to the front page/);
+  } finally {
+    store.getOperatingOrganizationProfile = original;
+  }
+});
+
 test('is titled Privacy with its own canonical address', async () => {
   const metadata = await generateMetadata();
   expect(metadata.title).toBe('Privacy');

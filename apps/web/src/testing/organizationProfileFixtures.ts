@@ -4,8 +4,9 @@
  * PPBF_PROFILE is the operating gym's row exactly as the organization-profiles
  * migration seeds it, with the legal name from pilot.organizations. Tests that
  * pin PPBF's own text render from this, which is what the page shows once the
- * stored row is read. organizationProfilesMigration.pg.test.ts checks the seed
- * against it, so the two cannot drift. A test fixture, never read at runtime.
+ * stored row is read. organizationProfilesMigration.pg.test.ts reads the seeded
+ * row back through the real store and compares it with this field for field,
+ * so the two cannot drift. A test fixture, never read at runtime.
  *
  * SECOND_GYM_PROFILE is a gym that shares nothing with PPBF, for leakage tests.
  */

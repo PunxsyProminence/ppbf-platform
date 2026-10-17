@@ -1,7 +1,8 @@
 /**
  * The gym's profile store (lane L31, #1469): one read, of the operating gym's
- * row, mapped field for field; held 60 seconds; the last good row outlives a
- * failed read; and with no row, production refuses while every other
+ * row, mapped field for field; fresh for 60 seconds, then served while one
+ * background read refreshes it; a read that hangs gives up; concurrent callers
+ * share one read; and with no row, production refuses while every other
  * environment gets the labelled development profile -- never PPBF's facts.
  */
 
@@ -61,7 +62,9 @@ test('the row maps field for field, with the legal name from the organization re
   expect(sql).toMatch(/select o\.organization_name/);
 });
 
-test('a row is held for 60 seconds, then read again', async () => {
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('a row is fresh for 60 seconds; after that it is served at once while one read refreshes it', async () => {
   let clock = 1_000_000;
   const now = () => clock;
   mockQueryOne.mockResolvedValue(PPBF_ROW);
@@ -72,12 +75,16 @@ test('a row is held for 60 seconds, then read again', async () => {
 
   mockQueryOne.mockResolvedValue({ ...PPBF_ROW, contact_email: 'office@example.org' });
   clock += 2;
-  const reread = await getOrganizationProfile('punxsy_prominence', { now, production: true });
+  const stale = await getOrganizationProfile('punxsy_prominence', { now, production: true });
+  expect(stale.email).toBe('admin@punxsyprominence.org');
   expect(mockQueryOne).toHaveBeenCalledTimes(2);
-  expect(reread.email).toBe('office@example.org');
+  await flush();
+  const refreshed = await getOrganizationProfile('punxsy_prominence', { now, production: true });
+  expect(refreshed.email).toBe('office@example.org');
+  expect(mockQueryOne).toHaveBeenCalledTimes(2);
 });
 
-test('the last good row outlives a failed read', async () => {
+test('the last good row outlives a failed refresh', async () => {
   let clock = 0;
   const now = () => clock;
   mockQueryOne.mockResolvedValueOnce(PPBF_ROW);
@@ -85,6 +92,26 @@ test('the last good row outlives a failed read', async () => {
   clock += 120_000;
   mockQueryOne.mockRejectedValueOnce(new Error('connection reset'));
   await expect(getOrganizationProfile('punxsy_prominence', { now, production: true })).resolves.toEqual(PPBF_PROFILE);
+  await flush();
+  await expect(getOrganizationProfile('punxsy_prominence', { now, production: true })).resolves.toEqual(PPBF_PROFILE);
+});
+
+test('a read that hangs gives up instead of holding the page', async () => {
+  mockQueryOne.mockReturnValue(new Promise(() => undefined));
+  await expect(getOrganizationProfile('punxsy_prominence', { production: true, timeoutMs: 20 })).rejects.toBeInstanceOf(
+    OrganizationProfileUnavailableError,
+  );
+  clearOrganizationProfileCache();
+  await expect(getOrganizationProfile('punxsy_prominence', { production: false, timeoutMs: 20 })).resolves.toBe(DEVELOPMENT_PROFILE);
+});
+
+test('concurrent callers on a cold cache share one read', async () => {
+  let release: (row: typeof PPBF_ROW) => void = () => undefined;
+  mockQueryOne.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+  const reads = [1, 2, 3].map(() => getOrganizationProfile('punxsy_prominence', { production: true }));
+  release(PPBF_ROW);
+  await expect(Promise.all(reads)).resolves.toEqual([PPBF_PROFILE, PPBF_PROFILE, PPBF_PROFILE]);
+  expect(mockQueryOne).toHaveBeenCalledTimes(1);
 });
 
 test('production with no row, or no database, refuses with a named error', async () => {

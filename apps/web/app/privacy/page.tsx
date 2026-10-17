@@ -52,21 +52,17 @@ export default async function PrivacyPage() {
             <p className="t-body mt-[var(--s2)]">{section.body}</p>
           </section>
         ))}
-        <section className="mt-[var(--s5)]">
-          <h2 className="t-command" style={{ fontSize: "var(--t-lg)" }}>
-            Your choices
-          </h2>
-          <p className="t-body mt-[var(--s2)]">
-            To see, correct or delete what you sent,{" "}
-            {gym.email ? (
-              <>
-                email <a href={`mailto:${gym.email}`}>{gym.email}</a>.
-              </>
-            ) : (
-              "ask us at the gym."
-            )}
-          </p>
-        </section>
+        {gym.email && (
+          <section className="mt-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: "var(--t-lg)" }}>
+              Your choices
+            </h2>
+            <p className="t-body mt-[var(--s2)]">
+              To see, correct or delete what you sent, email{" "}
+              <a href={`mailto:${gym.email}`}>{gym.email}</a>.
+            </p>
+          </section>
+        )}
         <section className="mt-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: "var(--t-lg)" }}>
             Contact

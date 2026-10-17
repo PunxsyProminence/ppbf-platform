@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+import { PPBF_PROFILE } from '@/src/testing/organizationProfileFixtures';
 
 jest.setTimeout(180_000);
 
@@ -214,7 +214,8 @@ describe('organization profiles migration (#1469)', () => {
       // Only the operating organization is seeded; another gym gets no invented profile.
       expect(rows.rows.map((row) => row.organization_id)).toEqual([OPERATING_ORG]);
       const row = rows.rows[0];
-      const constant = currentOrganizationProfile();
+      // The fixture every PPBF parity test renders from (src/testing/organizationProfileFixtures.ts).
+      const constant = PPBF_PROFILE;
       expect({
         brand: row.brand,
         shortName: row.short_name,
@@ -254,10 +255,44 @@ describe('organization profiles migration (#1469)', () => {
         mailing: constant.mailing,
       });
       // The head coach as the homepage names him today (app/page.tsx).
-      expect(row.head_coach_name).toBe('Jason Neale');
+      expect(row.head_coach_name).toBe(constant.headCoachName);
       // The legal name is not repeated: it stays the organization's name of record.
       expect(Object.keys(row)).not.toContain('legal_name');
     } finally {
+      await client.end();
+    }
+  });
+
+  test('the store reads the seeded row back, through its real query, as the fixture every parity test uses', async () => {
+    const client = await freshDatabase('orgprof_store');
+    const saved = {
+      url: process.env.AZURE_POSTGRES_CONNECTION_STRING,
+      ssl: process.env.PPBF_POSTGRES_DISABLE_SSL,
+    };
+    try {
+      await addOrganization(client, OPERATING_ORG, PPBF_PROFILE.legalName);
+      await applyRunner(client, migrationSql);
+
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('orgprof_store');
+      // db.ts honors this only when NODE_ENV is exactly 'test', which Jest sets.
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      const store = await import('./organizationProfileStore');
+      store.clearOrganizationProfileCache();
+      await expect(store.getOrganizationProfile(OPERATING_ORG, { production: true })).resolves.toEqual(PPBF_PROFILE);
+      // The legal name is the organization's name of record, not a column of the profile.
+      await client.query(`update pilot.organizations set organization_name = 'Renamed Of Record' where organization_id = $1`, [OPERATING_ORG]);
+      store.clearOrganizationProfileCache();
+      expect((await store.getOrganizationProfile(OPERATING_ORG, { production: true })).legalName).toBe('Renamed Of Record');
+      // Production with no row refuses by name.
+      store.clearOrganizationProfileCache();
+      await expect(store.getOrganizationProfile(OTHER_ORG, { production: true })).rejects.toThrow(/ORGANIZATION_PROFILE_UNAVAILABLE/);
+    } finally {
+      const { closePool } = await import('./db');
+      await closePool();
+      for (const [name, value] of [['AZURE_POSTGRES_CONNECTION_STRING', saved.url], ['PPBF_POSTGRES_DISABLE_SSL', saved.ssl]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       await client.end();
     }
   });

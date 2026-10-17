@@ -4,7 +4,10 @@ import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
 import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { getOperatingOrganizationProfile } from "@/src/server/pilot/organizationProfileStore";
+import {
+  getOperatingOrganizationProfile,
+  OrganizationProfileUnavailableError,
+} from "@/src/server/pilot/organizationProfileStore";
 
 /* Golden-era pass: every face is now served from files in this repo — no
    Google Fonts fetch at build time or run time. That matches the design
@@ -44,7 +47,19 @@ const geistMono = localFont({
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const gym = await getOperatingOrganizationProfile();
+  let gym;
+  try {
+    gym = await getOperatingOrganizationProfile();
+  } catch (error) {
+    /* Every page sits under this layout, sign-in included. If the profile
+       cannot be read (production, no row, no database, nothing cached), the
+       pages that state the gym's facts refuse on their own; the rest keep
+       working under a plain title that carries none of them. */
+    if (error instanceof OrganizationProfileUnavailableError) {
+      return { title: { default: "Platform", template: "%s" } };
+    }
+    throw error;
+  }
   return {
     metadataBase: new URL(gym.url),
     title: {

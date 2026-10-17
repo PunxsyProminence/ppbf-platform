@@ -42,6 +42,8 @@ jest.mock('./organizationProfile', () => {
 // constant until the next pull request moves them.
 jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
   getOperatingOrganizationProfile: async () => mockSecondGym,
+  // The real module loads pg, which jsdom cannot; the layout only needs the class to compare with.
+  OrganizationProfileUnavailableError: class OrganizationProfileUnavailableError extends Error {},
 }));
 
 // The root layout's own imports, so its metadata can be read here.
@@ -55,7 +57,7 @@ jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 // PPBF's own identity, in every form the old copies wrote it.
-const PPBF_TRACES = [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /220 N Jefferson/i, /99-2073622/, /Big Run/i, /15767/];
+const PPBF_TRACES = [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /220 N Jefferson/i, /99-2073622/, /Big Run/i, /15767/, /Neale/i, /\bJason\b/];
 
 function expectNoPpbfTrace(text: string) {
   for (const trace of PPBF_TRACES) expect(text).not.toMatch(trace);
@@ -73,6 +75,10 @@ test('the public homepage names the second gym everywhere, in the page and in it
   expect(html).toContain('mailto:give@ridgeway-lantern.example');
   expect(html).toContain('Support RLBF');
   expect(html).toContain('Morgan Hale is head coach.');
+  const ld = JSON.parse(container.querySelector('script[type="application/ld+json"]')?.innerHTML ?? '{}');
+  expect(ld.founder.name).toBe('Morgan Hale');
+  const headCoachCard = Array.from(container.querySelectorAll('dt')).find((dt) => /Head Coach/.test(dt.textContent ?? ''));
+  expect(headCoachCard?.nextElementSibling?.textContent).toBe('Morgan Hale');
   expect(html).toContain('Ridgeway and the surrounding valley towns');
   expectNoPpbfTrace(html);
   expect(metadata.title).toBe('Ridgeway Lantern Boxing & Fitness');

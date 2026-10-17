@@ -13,6 +13,8 @@ jest.mock('@/components/ThemeProvider', () => ({ ThemeProvider: ({ children }: {
 // The stored profile as the migration seeds it for the operating gym (lane L31, #1469).
 jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
   getOperatingOrganizationProfile: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
+  // The real module loads pg, which jsdom cannot; the layout only needs the class to compare with.
+  OrganizationProfileUnavailableError: class OrganizationProfileUnavailableError extends Error {},
 }));
 
 async function renderPage() {
@@ -104,6 +106,21 @@ test('canonical and metadataBase use the www address', async () => {
   expect(String(rootMetadata.metadataBase)).toBe('https://www.punxsyprominence.org/');
   expect(rootMetadata.title).toEqual({ default: 'PPBF Platform', template: '%s | PPBF Platform' });
   expect(rootMetadata.description).toBe('Punxsy Prominence Boxing and Fitness ecosystem platform.');
+});
+
+test('with no readable profile the root layout keeps every page up under a plain title, carrying no gym fact', async () => {
+  const store = jest.requireMock('@/src/server/pilot/organizationProfileStore') as Record<string, unknown>;
+  const OrganizationProfileUnavailableError = store.OrganizationProfileUnavailableError as new (id: string) => Error;
+  const original = store.getOperatingOrganizationProfile;
+  store.getOperatingOrganizationProfile = async () => { throw new OrganizationProfileUnavailableError('punxsy_prominence'); };
+  try {
+    await expect(generateRootMetadata()).resolves.toEqual({ title: { default: 'Platform', template: '%s' } });
+    // Any other failure is not swallowed.
+    store.getOperatingOrganizationProfile = async () => { throw new Error('something else'); };
+    await expect(generateRootMetadata()).rejects.toThrow('something else');
+  } finally {
+    store.getOperatingOrganizationProfile = original;
+  }
 });
 
 test('the share-card alt text claims youth are free, not every family', () => {
