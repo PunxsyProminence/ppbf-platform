@@ -310,6 +310,16 @@ describe('family support records migration (PH-12)', () => {
       await expect(record(client)).rejects.toMatchObject(refused);
       await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [ADMIN]);
       await expect(record(client)).rejects.toMatchObject(refused);
+
+      // The same for whoever retires a record: a switched-off or deleted admin does not.
+      const retire = (by: string) =>
+        client.query('update pilot.family_support_records set retired_by_account_id = $2 where record_id = $1::uuid', [id, by]);
+      await client.query('update pilot.accounts set active_flag = false where account_id = $1', [OTHER_ADMIN]);
+      await expect(retire(OTHER_ADMIN)).rejects.toMatchObject(refused);
+      await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [OTHER_ADMIN]);
+      await expect(retire(OTHER_ADMIN)).rejects.toMatchObject(refused);
+      await client.query('update pilot.accounts set deleted_at = null where account_id = $1', [OTHER_ADMIN]);
+      await retire(OTHER_ADMIN);
     } finally {
       await client.end();
     }
