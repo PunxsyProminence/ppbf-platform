@@ -2,11 +2,12 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **MAPPED** |
-| Status note | Was "DRAFT (code exists; see Implementation notes and audit log)" until 2026-10-16. Parent marks own child's class registration reviewed: parent_review_registration (scheduler/route.ts -> markSchedulerRegistrationReviewed, schedulerDb.ts), button at schedule/page.tsx. NOTE: scheduler/route.test.ts now tests the action including the success path (200, markReviewed called), so the... |
+| Status | **DONE** |
+| Status note | Was "DRAFT (code exists; see Implementation notes and audit log)" until 2026-10-16. A parent marks their own child's class registration reviewed: action parent_review_registration on the scheduler route (markSchedulerRegistrationReviewed in schedulerDb.ts), from the button on /schedule. The route test covers the guardian's own-child success and refuses a missing id, another family's id, a coach and a database fault. |
 | Code | `apps/web/app/api/pilot/scheduler/route.ts`, `apps/web/src/server/pilot/schedulerDb.ts`, `apps/web/app/schedule/page.tsx` |
 | Tests | `apps/web/app/api/pilot/scheduler/route.test.ts` |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | At-Home / Parent / Guardian (`atHomeParentGuardian`) |
 | Source | `2.0.0-draft-merged` |
@@ -54,3 +55,4 @@ action and its button still exist. Do not mark active until promotion review.
 | 2026-09-28 | Claude (documentation cleanup) | Stub corrected to match the code: it said "Scaffold only" while a parent registration review exists (see Implementation notes). Status left DRAFT, not changed to DONE: a DONE here raises the capability evidence guard's tracker-disagreement count (the 2026-08-03 index, now history, still says DRAFT), and that count may not rise. It would also not meet the playbook's Definition of done: no automated test exercises the action and no live smoke steps are written. Jason's call. |
 | 2026-09-29 | Claude (housekeeping round 3) | Stays DRAFT under Jason's answer "11A" (OD-2026-09-29-002 item 11): no automated test exercises the action. The tracker-disagreement check named in the row above was removed the same day, so that reason no longer applies; the missing behaviour test is the reason now. |
 | 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT (code exists; see Implementation notes and audit log)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
+| 2026-10-17 | Claude (lane L32) | Status **MAPPED** -> **DONE** (Overwatch 2026-10-17: labels follow the code). The premise of "11A" (OD-2026-09-29-002 item 11), that no automated test exercises the action, no longer holds: `apps/web/app/api/pilot/scheduler/route.test.ts` tests parent_review_registration, including the guardian's own-child success (200, the review recorded) and the refusals. ManualVerification row added: PENDING_SIGN_OFF, built, not yet tried by a person (OD-2026-09-29-002 item 9a). |
