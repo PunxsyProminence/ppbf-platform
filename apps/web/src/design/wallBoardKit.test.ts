@@ -50,7 +50,10 @@ describe('the wall-board kit', () => {
   });
 
   it('paints cream enamel only on the small label caps', () => {
-    const painting = [...rules(kit), ...rules(wallBlock)].filter((rule) => /var\(--enamel\)/.test(rule.body));
+    // By token (with or without a fallback) and by its literal value, outside the scope that defines it.
+    const painting = [...rules(kit), ...rules(wallBlock)]
+      .filter((rule) => rule.selector !== '.ge-wallboard')
+      .filter((rule) => /var\(--enamel\s*[,)]|#E2D5B5/i.test(rule.body));
     // The cap itself must be found, or this passes against nothing.
     expect(painting.map((rule) => rule.selector)).toContain('.ge-wallboard .ge-enamel');
     for (const rule of painting) {

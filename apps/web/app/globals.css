@@ -2080,6 +2080,18 @@ h6 {
 [data-surface="wall"] .wall-board {
   color: var(--wall-ink);
   animation: wall-drift 1200s linear infinite;
+  /* Restated on the board, which carries the wall-board kit's scope
+     (.ge-wallboard): set only on the surface above, the rule would resolve the
+     ramp there, before the scope moves it, and paint the old gold beside the
+     kit's bronze. */
+  --wall-rule: rgb(var(--brass-400-rgb) / .30);
+}
+
+/* The pair box and the sound switch are worked with a remote. The app's ring
+   (brass-700) is chosen for light grounds; on this dark board it falls under
+   3:1, so the wall takes a lighter rung. */
+[data-surface="wall"] .wall-board :focus-visible {
+  outline-color: var(--brass-300);
 }
 
 @keyframes wall-drift {
@@ -2097,7 +2109,7 @@ h6 {
 [data-surface="wall"] .wall-motto {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: var(--s5);
   margin: 0;
   padding: var(--s2) var(--s7);

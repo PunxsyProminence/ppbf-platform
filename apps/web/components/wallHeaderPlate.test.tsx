@@ -48,34 +48,44 @@ function plateText(container: HTMLElement): string {
   return container.querySelector('.wall-motto')?.textContent ?? '';
 }
 
+/** The plate's lines as the room reads them: every span that is not decoration. */
+function plateLines(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('.wall-motto > span:not([aria-hidden="true"])')].map((span) => span.textContent ?? '');
+}
+
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe('the header plate', () => {
-  it('carries both of Jason\'s lines, in his order, before any data has arrived', () => {
+  it('carries both of Jason\'s lines, in his order, and nothing else, before any data has arrived', async () => {
     const { container } = render(<WallDisplay />);
-    const text = plateText(container);
-    expect(text).toContain('ADAPT AND OVERCOME');
-    expect(text).toContain('OBSERVE. DECIDE. EXECUTE. REPEAT.');
-    expect(text.indexOf('ADAPT AND OVERCOME')).toBeLessThan(text.indexOf('OBSERVE. DECIDE. EXECUTE. REPEAT.'));
+    expect(plateLines(container)).toEqual(['ADAPT AND OVERCOME', 'OBSERVE. DECIDE. EXECUTE. REPEAT.']);
+    await settle();
   });
 
   it('stays up once a paired board is on the wall', async () => {
     const { container } = render(<WallDisplay />);
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settle();
     expect(screen.getByText('A.B.')).toBeTruthy();
     expect(plateText(container)).toContain('ADAPT AND OVERCOME');
     expect(container.querySelectorAll('.wall-motto')).toHaveLength(1);
   });
 
-  it('carries only lines on the approved list', () => {
+  it('carries only lines on the approved list', async () => {
     const approved = GYM_SAYINGS.map((saying) => saying.line);
-    expect(WALL_MOTTO).toHaveLength(2);
-    for (const line of WALL_MOTTO) expect(approved).toContain(line);
+    const { container } = render(<WallDisplay />);
+    expect(plateLines(container)).toEqual([...WALL_MOTTO]);
+    for (const line of plateLines(container)) expect(approved).toContain(line);
+    await settle();
   });
 
-  it('puts the board in the wall-board kit\'s scope, so its materials apply', () => {
+  it('puts the board in the wall-board kit\'s scope, so its materials apply', async () => {
     const { container } = render(<WallDisplay />);
     expect(container.querySelector('.wall-board')?.classList.contains('ge-wallboard')).toBe(true);
+    await settle();
   });
 });
