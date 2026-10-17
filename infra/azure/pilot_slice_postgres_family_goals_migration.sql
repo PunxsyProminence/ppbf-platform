@@ -28,13 +28,26 @@
 -- of a child's goals. created_by_account_id and created_by_role are what make
 -- that enforceable, so a goal is born with its author named, and the author
 -- and every editor must hold the role they are written with in the goal's
--- gym (an active organization membership, or the account's home gym) (the column is
--- nullable only for the account-removal set null) and they never change by
--- hand. A change by hand must carry
--- an editor (updated_by_account_id and updated_by_role are not null after it);
--- the application sets them to whoever is making that change on every write.
--- When the writer's account is removed the goal stays, about the child, with
--- no writer (set null), as a family reply does (D-9).
+-- gym: an ACTIVE organization membership with that role, on an account that
+-- is active and not deleted -- the same seat sign-in grants authority from
+-- (auth.ts, "THE ROLE COMES FROM THE MEMBERSHIP"). The account's home role
+-- alone is not enough: a coach switched off keeps that row. (The author
+-- column is nullable only for the account-removal set null, and it never
+-- changes by hand.) A goal is born unedited (no updated_by_*), and a change by
+-- hand must carry an editor (updated_by_account_id and updated_by_role are not
+-- null after it); the application sets them to whoever is making that change
+-- on every write. A guardian edits only a goal they wrote themselves (PH-06
+-- Q-2 default A: a coach's goal is read-only to the family, and one guardian
+-- never ticks another's). When the writer's account is removed the goal stays,
+-- about the child, with no writer (set null), as a family reply does (D-9).
+--
+-- THE DATABASE KEEPS THE TIMES. created_at, and completed_at and retired_at
+-- when each is first set, are stamped now() here, whatever the writer sent, so
+-- a family never sees a done date nobody recorded.
+--
+-- A CASCADE ONLY DETACHES. An UPDATE that arrives from inside another trigger
+-- (an account going sets its writer columns to null) may only null those
+-- writer columns; any other change from inside a trigger is refused.
 --
 -- THE GOAL'S CHILD AND GYM NEVER MOVE. The athlete reference is (gym, athlete)
 -- over pilot.athletes' own key, so a goal cannot name another gym's child, and
@@ -42,7 +55,8 @@
 --
 -- EACH REFUSAL NAMES ITSELF (23514 with its own constraint name).
 --
--- DEPENDS ON pilot.organizations, pilot.accounts, pilot.athletes.
+-- DEPENDS ON pilot.organizations, pilot.accounts, pilot.organization_memberships,
+-- pilot.athletes.
 -- Idempotent: if-not-exists throughout, the trigger function is create-or-
 -- replace, and the trigger is dropped-and-created by name. No drops of any
 -- table or data, no backfill. No begin;/commit; here on purpose, matching this
@@ -116,27 +130,51 @@ begin
       raise exception 'FAMILY_GOAL_NAMES_ITS_AUTHOR'
         using errcode = '23514', constraint = 'pilot_family_goals_author_named';
     end if;
-    -- The author holds that role in this gym. A role outside the allowed list
-    -- is left to the role check, which names itself.
+    -- The author holds that role in this gym, through an active seat on a
+    -- live account. A role outside the allowed list is left to the role
+    -- check, which names itself.
     if new.created_by_role in ('parent', 'coach', 'organization_admin', 'admin') and not exists (
       select 1 from pilot.organization_memberships om
+        join pilot.accounts a on a.account_id = om.account_id
        where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
          and om.active_flag and om.role = new.created_by_role
-      union all
-      select 1 from pilot.accounts a
-       where a.account_id = new.created_by_account_id and a.organization_id = new.organization_id
-         and a.role = new.created_by_role
+         and a.active_flag and a.deleted_at is null
     ) then
       raise exception 'FAMILY_GOAL_WRITER_OF_THIS_GYM'
         using errcode = '23514', constraint = 'pilot_family_goals_writer_of_this_gym';
     end if;
+    -- Born unedited: the first editor is whoever first changes it.
+    if new.updated_by_account_id is not null or new.updated_by_role is not null then
+      raise exception 'FAMILY_GOAL_IS_BORN_UNEDITED'
+        using errcode = '23514', constraint = 'pilot_family_goals_born_unedited';
+    end if;
+    new.created_at := now();
+    new.updated_at := now();
+    if new.completed_at is not null then
+      new.completed_at := now();
+    end if;
+    if new.retired_at is not null then
+      new.retired_at := now();
+    end if;
     return new;
   end if;
 
-  -- UPDATE. A cascade (an account going sets its writer columns to null) runs
-  -- from inside the foreign key's own trigger, so it is let through as is.
+  -- UPDATE from inside another trigger: only the account-removal set null of
+  -- a writer column passes; nothing else changes that way.
   if pg_trigger_depth() > 1 then
-    return new;
+    if (new.organization_id, new.goal_id, new.athlete_id, new.title, new.support_action, new.target_date,
+        new.state, new.completed_at, new.retired_at, new.created_by_role, new.updated_by_role,
+        new.created_at, new.updated_at)
+       is not distinct from
+       (old.organization_id, old.goal_id, old.athlete_id, old.title, old.support_action, old.target_date,
+        old.state, old.completed_at, old.retired_at, old.created_by_role, old.updated_by_role,
+        old.created_at, old.updated_at)
+       and (new.created_by_account_id is not distinct from old.created_by_account_id or new.created_by_account_id is null)
+       and (new.updated_by_account_id is not distinct from old.updated_by_account_id or new.updated_by_account_id is null) then
+      return new;
+    end if;
+    raise exception 'FAMILY_GOAL_CASCADE_ONLY_DETACHES'
+      using errcode = '23514', constraint = 'pilot_family_goals_cascade_detaches_only';
   end if;
 
   if new.organization_id is distinct from old.organization_id
@@ -170,17 +208,29 @@ begin
   end if;
   if new.updated_by_role in ('parent', 'coach', 'organization_admin', 'admin') and not exists (
     select 1 from pilot.organization_memberships om
+      join pilot.accounts a on a.account_id = om.account_id
      where om.account_id = new.updated_by_account_id and om.organization_id = new.organization_id
        and om.active_flag and om.role = new.updated_by_role
-    union all
-    select 1 from pilot.accounts a
-     where a.account_id = new.updated_by_account_id and a.organization_id = new.organization_id
-       and a.role = new.updated_by_role
+       and a.active_flag and a.deleted_at is null
   ) then
     raise exception 'FAMILY_GOAL_WRITER_OF_THIS_GYM'
       using errcode = '23514', constraint = 'pilot_family_goals_writer_of_this_gym';
   end if;
+  -- A guardian changes only a goal they wrote (PH-06 Q-2 A).
+  if new.updated_by_role = 'parent'
+     and (old.created_by_role is distinct from 'parent'
+          or old.created_by_account_id is distinct from new.updated_by_account_id) then
+    raise exception 'FAMILY_GOAL_GUARDIAN_EDITS_OWN'
+      using errcode = '23514', constraint = 'pilot_family_goals_guardian_edits_own';
+  end if;
 
+  -- The times are the database's: a first completion or retirement is now.
+  if old.completed_at is null and new.completed_at is not null then
+    new.completed_at := now();
+  end if;
+  if old.retired_at is null and new.retired_at is not null then
+    new.retired_at := now();
+  end if;
   new.updated_at := now();
   return new;
 end;
