@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { fetchAllResearchRequirements } from '@/client/researchRequirementsList';
 
@@ -76,7 +78,23 @@ interface LibrarySourceOption {
   source_id: string;
   title: string;
   source_type: string;
+  /* The source's own evidence review on /evidence. A submission's verdict here
+     says whether it answers the question; only these say whether SHADOW may
+     cite it. */
+  approval_state?: 'pending_review' | 'approved' | 'rejected';
+  verification_state?: 'unverified' | 'verified';
 }
+
+const EVIDENCE_APPROVAL_LABEL: Record<NonNullable<LibrarySourceOption['approval_state']>, string> = {
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+};
+
+const EVIDENCE_VERIFICATION_LABEL: Record<NonNullable<LibrarySourceOption['verification_state']>, string> = {
+  unverified: 'Unverified',
+  verified: 'Verified',
+};
 
 function formatProvenance(provenance: Record<string, unknown> | undefined): string | null {
   const entries = Object.entries(provenance ?? {}).filter(([, value]) => typeof value === 'string' && value.trim());
@@ -93,6 +111,12 @@ export default function ResearchSubmissionReviewPage() {
   const [reviewNoteDrafts, setReviewNoteDrafts] = useState<Record<string, string>>({});
   const [busySubmissionId, setBusySubmissionId] = useState<string | null>(null);
   const [submissionMessages, setSubmissionMessages] = useState<Record<string, string>>({});
+  // Closing is a coach's or organization admin's act (OD-2026-10-06-003); the
+  // platform owner reviews its own shelf here but closes no gym requirement.
+  const session = usePilotSession();
+  const mayClose = isOrganizationAdminSessionRole(session.role);
+  const [closingSubmissionId, setClosingSubmissionId] = useState<string | null>(null);
+  const [closedRequirements, setClosedRequirements] = useState<Record<number, string>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -207,6 +231,40 @@ export default function ResearchSubmissionReviewPage() {
     }
   }
 
+  // A Responsive verdict may close the requirement (OD-2026-10-08-005 A-Q13;
+  // N6-02-Q1 A). The server checks the submission again; the review itself
+  // never closes anything (D6).
+  async function handleClose(submissionId: string, requirement: OpenRequirement) {
+    setClosingSubmissionId(submissionId);
+    setSubmissionMessages((current) => ({ ...current, [submissionId]: '' }));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'resolve',
+          research_requirement_id: requirement.research_requirement_id,
+          closing_submission_id: submissionId,
+          metadata: { resolved_from: 'research_review_page' },
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Close failed (${response.status})`);
+      }
+      setRequirements((current) => current.filter((item) => item.research_requirement_id !== requirement.research_requirement_id));
+      setClosedRequirements((current) => ({ ...current, [requirement.research_requirement_id]: requirement.research_requirement }));
+    } catch (error) {
+      setSubmissionMessages((current) => ({
+        ...current,
+        [submissionId]: error instanceof Error ? error.message : 'Unable to close the requirement.',
+      }));
+    } finally {
+      setClosingSubmissionId(null);
+    }
+  }
+
   const requirementsWithSubmissions = requirements.filter(
     (requirement) => (submissionsByRequirement[requirement.research_requirement_id] ?? []).length > 0,
   );
@@ -255,6 +313,14 @@ export default function ResearchSubmissionReviewPage() {
               <i>✕</i>Unable to Load
             </span>
             <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+          </section>
+        ) : null}
+
+        {Object.keys(closedRequirements).length > 0 ? (
+          <section role="status" aria-label="Closed requirements" className="mat-leather rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s1)]">
+            {Object.entries(closedRequirements).map(([id, text]) => (
+              <p key={id} className="t-body">Closed on a Responsive submission: {text}</p>
+            ))}
           </section>
         ) : null}
 
@@ -307,6 +373,12 @@ export default function ResearchSubmissionReviewPage() {
                           <p className="t-typed text-[length:var(--t-md)] font-bold">
                             {sourceLabel}
                           </p>
+                          {source?.approval_state && source.verification_state ? (
+                            <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
+                              Evidence review: {EVIDENCE_APPROVAL_LABEL[source.approval_state]} · {EVIDENCE_VERIFICATION_LABEL[source.verification_state]}{' '}
+                              <Link href="/evidence" className="underline">Open Evidence Review</Link>
+                            </p>
+                          ) : null}
                           {submission.submission_note ? (
                             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">{submission.submission_note}</p>
                           ) : null}
@@ -356,6 +428,16 @@ export default function ResearchSubmissionReviewPage() {
                             </button>
                           ))}
                         </div>
+                        {mayClose && submission.applicability_state === 'responsive' ? (
+                          <button
+                            type="button"
+                            disabled={busy || closingSubmissionId !== null}
+                            onClick={() => void handleClose(submission.submission_id, requirement)}
+                            className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {closingSubmissionId === submission.submission_id ? 'Closing…' : 'Close requirement with this submission'}
+                          </button>
+                        ) : null}
                         {busy ? (
                           <p className="t-typed text-[length:var(--t-sm)] text-[color:var(--hide-600)]" role="status">
                             Saving…
