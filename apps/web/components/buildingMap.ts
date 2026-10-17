@@ -162,6 +162,10 @@ export const BUILDING: readonly Door[] = [
     hint: 'Capability definitions, assignments, status and role exposure.' },
   { href: '/admin/people', label: 'People', room: 'office', roles: ADMIN_GATE,
     keywords: 'roster members directory participants' },
+  // Lane L31 P5: what is left before the gym's first class, read-only.
+  { href: '/admin/setup', label: 'Gym Setup', room: 'office', roles: ['admin'],
+    keywords: 'setup checklist onboarding first class ready coaches athletes guardians waivers schedule tv',
+    hint: 'What is left before the first class: coaches, athletes, sign-ins, guardians, waivers, a class, a TV.' },
   /* This file, read from the front desk. The register prints the doors below
      grouped by role and by room -- label, path, room -- and nothing else: it
      performs no fetch, and it previews a role's NAVIGATION, never a role's
