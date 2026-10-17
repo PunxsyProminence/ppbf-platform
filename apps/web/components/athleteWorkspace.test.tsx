@@ -45,7 +45,7 @@ let schedulerRegistrations: Array<Record<string, unknown>> = [];
 const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
 const sessionLog = () => within(screen.getByRole('region', { name: 'Session log' }));
 const sessionLogCheckIn = async () =>
-  within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Check in' });
+  within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' });
 // The session read never answers: the workspace stays on 'loading'.
 let sessionListHangs = false;
 let sessionUpdateFails = false;
@@ -488,7 +488,7 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
     fireEvent.change(box, { target: { value: note } });
   }
   const before = postedTo('/api/pilot/sessions').length;
-  fireEvent.click(screen.getByRole('button', { name: 'Start Training' }));
+  fireEvent.click(sessionLog().getByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(before + 1));
   return postedTo('/api/pilot/sessions')[before].body;
 }
@@ -496,7 +496,7 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
 describe('one session check-in per press (#1529)', () => {
   test('two presses of Check In in the same tick open one session', async () => {
     await renderWorkspace();
-    const button = await screen.findByRole('button', { name: 'Start Training' });
+    const button = await sessionLogCheckIn();
 
     await act(async () => {
       fireEvent.click(button);
@@ -581,17 +581,16 @@ describe('athlete workspace honesty', () => {
     expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
-  // WO-N5-01 read the scheduler only when Schedule opened. Jason 2026-10-17
-  // ("A: Rename + I'm here on Today") put today's class on Today, so Today
-  // reads it once for "I'm here" (lane U2); Schedule still reads its own.
-  test("Today reads the scheduler once for today's class; the Schedule tab reads its own when opened", async () => {
+  test("the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it for Next Session and for I'm here (lane U2)", async () => {
     await renderWorkspace();
     const schedulerReads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler(\?|$)/.test(call.url));
-    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    // Two on Today: the Next Session tile (UXB-17) and the I'm here card (lane U2,
+    // Jason 2026-10-17); no more until the tab opens.
+    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
 
     openTab('Schedule');
 
-    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(3));
     // The lists render inside the workspace, from that read.
     expect(await screen.findByText('Saturday Footwork')).toBeTruthy();
     expect(screen.getByText('8 spots left')).toBeTruthy();
@@ -1074,7 +1073,7 @@ describe('athlete safety reporting', () => {
   test('check-out puts the note the athlete shared on the session record', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     // A stored check-in sends the athlete to their floor; the session log they
     // check out from is back on the dashboard.
     await waitFor(() => expect(openSurface()).toBe('Floor'));
@@ -1086,7 +1085,7 @@ describe('athlete safety reporting', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(2));
 
     const [checkIn] = postedTo('/api/pilot/sessions');
@@ -1113,8 +1112,8 @@ describe('athlete safety reporting', () => {
     await renderWorkspace();
 
     expect(await screen.findByText(/not signed in as an athlete/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'End Training' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Start Training' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start training' })).toBeNull();
     expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
   });
 });
@@ -1128,8 +1127,8 @@ describe('an open session across a reload', () => {
     storedSessions = [openSessionRow()];
     await renderWorkspace();
 
-    expect(await screen.findByRole('button', { name: 'End Training' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Start Training' })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'End training' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Start training' })).toBeNull();
 
     const notes = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
     expect(notes.value).toBe('Left hook felt slow all session, right shoulder tight.');
@@ -1139,7 +1138,7 @@ describe('an open session across a reload', () => {
     storedSessions = [openSessionRow()];
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const [checkOut] = postedTo('/api/pilot/sessions/update');
@@ -1171,7 +1170,7 @@ describe('an open session across a reload', () => {
     storedSessions = [openSessionRow()];
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const [checkOut] = postedTo('/api/pilot/sessions/update');
@@ -1197,7 +1196,7 @@ describe('an open session across a reload', () => {
     storedSessions = [openSessionRow({ notes: stored })];
     await renderWorkspace();
 
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value).toBe('');
     // Nor anywhere else on the open session: the system's sentence is not
     // on screen at all.
@@ -1221,7 +1220,7 @@ describe('an open session across a reload', () => {
     storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN -- actually my knee hurts' })];
     await renderWorkspace();
 
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value)
       .toBe('Auto check-in readiness GREEN -- actually my knee hurts');
   });
@@ -1263,10 +1262,10 @@ describe('an open session across a reload', () => {
     sessionUpdateFails = true;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
 
     expect(await screen.findByText(/still going/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'End Training' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'End training' })).toBeTruthy();
     expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value)
       .toBe('Left hook felt slow all session, right shoulder tight.');
   });
@@ -1275,8 +1274,8 @@ describe('an open session across a reload', () => {
     await renderWorkspace();
 
     expect(await screen.findByText(/Your training has not started/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'End Training' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Start Training' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+    expect(sessionLog().getByRole('button', { name: 'Start training' })).toBeTruthy();
   });
 
   // "No open session" and "could not ask" have different answers, and telling
@@ -1287,7 +1286,7 @@ describe('an open session across a reload', () => {
     await renderWorkspace();
 
     expect(await screen.findByText(/Your sessions could not be read/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'End Training' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
     expect(screen.queryByText(/Your training has not started/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
   });
@@ -1340,8 +1339,8 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     }));
     expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
 
-    expect(screen.queryByRole('button', { name: 'End Training' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Start Training' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+    expect(sessionLog().getByRole('button', { name: 'Start training' })).toBeTruthy();
     // Nor is yesterday's note handed back as something to send today: there is
     // no open-session box at all, and the note is nowhere on screen as a draft.
     expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
@@ -1359,7 +1358,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     const checkIn = await checkInFromSessionLog('Right hand is sore today.');
     expect(checkIn.session_id).not.toBe(STALE_SESSION_ID);
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
@@ -1410,7 +1409,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
       })];
       await renderWorkspace();
 
-      expect(await screen.findByRole('button', { name: 'End Training' })).toBeTruthy();
+      expect(await screen.findByRole('button', { name: 'End training' })).toBeTruthy();
       expect(screen.queryByText(/Your training has not started/)).toBeNull();
     } finally {
       jest.useRealTimers();
@@ -1471,7 +1470,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
       await renderWorkspace();
 
       expect(await screen.findByText(/Your training has not started/)).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'End Training' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
     } finally {
       jest.useRealTimers();
     }
@@ -1484,7 +1483,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
 
     const checkIn = await checkInFromSessionLog();
     openTab('Dashboard');
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
     const [checkOut] = postedTo('/api/pilot/sessions/update');
@@ -1569,7 +1568,7 @@ describe('authored announcements on the athlete workspace', () => {
     // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
     // the "Pre-Session Self-Report" card, which went with its defaulted slider.
     expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Start Training' })).toBeTruthy();
+    expect(await sessionLogCheckIn()).toBeTruthy();
   });
 });
 
@@ -2116,7 +2115,7 @@ describe('Today states the day back rather than offering a row of buttons', () =
     await renderWorkspace();
 
     expect(screen.getByText('Training has not started today.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Start training' })).toBeTruthy();
+    expect(corner().getByRole('button', { name: 'Start training' })).toBeTruthy();
   });
 
   test('Today offers no generated floor plan, because nothing generates one', async () => {
@@ -2145,7 +2144,7 @@ describe('Today states the day back rather than offering a row of buttons', () =
     // handler, the same one the Session Log's button calls.
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start training' }));
+    fireEvent.click(corner().getByRole('button', { name: 'Start training' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -2635,7 +2634,7 @@ describe('the Floor is the work a coach assigned', () => {
     expect(await screen.findByText('No open work from your coach.')).toBeTruthy();
     expect(screen.queryByText(/Nothing on your floor yet/)).toBeNull();
     expect(screen.queryByText(/work gets built/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Start Training' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start training' })).toBeNull();
     // The history lives one link away.
     expect(screen.getByRole('link', { name: 'Open your progression' }).getAttribute('href'))
       .toBe('/athlete/progression-intelligence');
@@ -2671,7 +2670,7 @@ describe('the Floor is the work a coach assigned', () => {
   test('check-in generates nothing: no plan is read or written, and no synthetic work appears', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(openSurface()).toBe('Floor'));
 
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
@@ -2914,7 +2913,7 @@ describe('a session check-in goes where the day actually is', () => {
   test('stored, with wellness recorded: straight to the floor', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     expect(screen.getByText("Training started. Your coach's work is on your floor.")).toBeTruthy();
@@ -2925,7 +2924,7 @@ describe('a session check-in goes where the day actually is', () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
     expect(screen.getByText('Training started. Say how you feel today next -- it opens your floor.')).toBeTruthy();
@@ -2937,7 +2936,7 @@ describe('a session check-in goes where the day actually is', () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save how I feel' }));
@@ -2951,7 +2950,7 @@ describe('a session check-in goes where the day actually is', () => {
     sessionCreateFails = true;
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
 
     expect(await screen.findByText(/Nothing was saved, so there is no training to end/)).toBeTruthy();
     expect(openSurface()).toBe('Dashboard');
@@ -3410,7 +3409,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
 
   async function checkOut(): Promise<Record<string, unknown>> {
     const before = checkOutBodies().length;
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(before + 1));
     return checkOutBodies()[before];
   }
@@ -3418,7 +3417,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
   async function openSession(overrides: Record<string, unknown> = {}) {
     storedSessions = [openSessionRow({ rpe: null, ...overrides })];
     await renderWorkspace();
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
   }
 
   test('the question is asked only on an open session, and starts unanswered', async () => {
@@ -3471,7 +3470,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     // check-in stored. Answered, the answer wins; unanswered, it stays unrecorded.
     storedSessions = [openSessionRow()];
     await renderWorkspace();
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
 
     fireEvent.click(effortButton(3));
     expect((await checkOut()).rpe).toBe(3);
@@ -3497,7 +3496,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     // NOTE, which is the half of this case the trigger change moved.
     expect(checkIn.notes).toBe(NO_NOTE_PLACEHOLDER);
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const shared = postedTo('/api/pilot/sessions/update')[0].body;
@@ -3514,7 +3513,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await renderWorkspace();
     await checkInFromSessionLog('2');
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(effortButton(7));
     const answered = await checkOut();
     expect(answered.rpe).toBe(7);
@@ -3556,10 +3555,10 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await openSession();
 
     fireEvent.click(effortButton(7));
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
 
     expect(await screen.findByText(/still going/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'End Training' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'End training' })).toBeTruthy();
     expect(effortButton(7).getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByText(/Your effort, 7 of 10, is on it too/)).toBeNull();
 
@@ -3586,7 +3585,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
     fireEvent.click(effortButton(7));
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -3644,7 +3643,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
 
     fireEvent.click(effortButton(7));
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
 
     // Release everything held, newest first, until check-out has gone.
     await waitFor(async () => {
@@ -3699,7 +3698,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(screen.getByRole('button', { name: 'Withdraw from coach' })).toBeTruthy();
     expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -3727,7 +3726,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
     sessionUpdateFails = true;
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -3817,7 +3816,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     fireEvent.click(effortButton(9));
     expect((await checkOut()).rpe).toBe(9);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     expect(postedTo('/api/pilot/sessions')[0].body.rpe).toBeNull();
     expect(postedTo('/api/pilot/sessions')[0].body.rpe_method).toBe('UNKNOWN');
@@ -3846,7 +3845,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
   async function openSession() {
     storedSessions = [openSessionRow({ rpe: null })];
     await renderWorkspace();
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
   }
 
   function minutesBox(): HTMLInputElement {
@@ -3868,7 +3867,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
 
     fireEvent.click(screen.getByRole('button', { name: 'How hard was the session you just finished? 7' }));
     fireEvent.change(minutesBox(), { target: { value: ' 45 ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
     expect(checkOutBodies()[0].duration_minutes).toBe(45);
@@ -3880,7 +3879,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     await openSession();
 
     fireEvent.change(minutesBox(), { target: { value: '60' } });
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
     expect(checkOutBodies()[0].duration_minutes).toBe(60);
@@ -3897,7 +3896,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
       fireEvent.change(minutesBox(), { target: { value: typed } });
 
       expect(screen.getByRole('alert').textContent).toMatch(/whole number from 1 to 300/);
-      const button = screen.getByRole('button', { name: 'End Training' }) as HTMLButtonElement;
+      const button = screen.getByRole('button', { name: 'End training' }) as HTMLButtonElement;
       expect(button.disabled).toBe(true);
       fireEvent.click(button);
       expect(checkOutBodies()).toHaveLength(0);
@@ -3905,7 +3904,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
       // Clearing the box is "not given", and check-out goes through again.
       fireEvent.change(minutesBox(), { target: { value: '' } });
       expect(screen.queryByRole('alert')).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+      fireEvent.click(screen.getByRole('button', { name: 'End training' }));
       await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
       expect(checkOutBodies()[0].duration_minutes).toBeNull();
     },
@@ -3916,10 +3915,10 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
 
     fireEvent.change(minutesBox(), { target: { value: '0' } });
     expect(screen.queryByRole('alert')).toBeNull();
-    expect((screen.getByRole('button', { name: 'End Training' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'End training' }) as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.change(minutesBox(), { target: { value: '045' } });
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
     expect(checkOutBodies()[0].duration_minutes).toBe(45);
   });
@@ -3929,13 +3928,13 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     await openSession();
 
     fireEvent.change(minutesBox(), { target: { value: '45' } });
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     expect(await screen.findByText(/still going/i)).toBeTruthy();
     expect(minutesBox().value).toBe('45');
 
     sessionUpdateFails = false;
     const before = checkOutBodies().length;
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(before + 1));
     expect(checkOutBodies()[before].duration_minutes).toBe(45);
   });
@@ -3959,7 +3958,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     await openSession();
     fireEvent.change(minutesBox(), { target: { value: typed } });
     expect(screen.queryByRole('alert')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
     expect(checkOutBodies()[0].duration_minutes).toBe(expected);
   });
@@ -3972,10 +3971,10 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     await openSession();
 
     fireEvent.change(minutesBox(), { target: { value: '50' } });
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     // Check-in writes no minutes: the session has not happened yet.
     expect('duration_minutes' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
@@ -3993,7 +3992,7 @@ describe('check-in records no session RPE at all', () => {
   test('the created session carries a null rpe and an UNKNOWN method', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     const [checkIn] = postedTo('/api/pilot/sessions');
@@ -4028,7 +4027,7 @@ describe('check-in records no session RPE at all', () => {
     // words typed, never read as a rating. That is the half this case has
     // always been about, moved to where the words now reach the record.
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const shared = postedTo('/api/pilot/sessions/update')[0].body;
@@ -4105,7 +4104,7 @@ describe('nothing said before the session can change the work', () => {
     // case has always held. Asserted on the high-wellness pass, where a band
     // would have been GREEN.
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const shared = postedTo('/api/pilot/sessions/update')[0].body;
@@ -4172,7 +4171,7 @@ describe('no session observation is fabricated for SHADOW', () => {
     storedSessions = [openSessionRow()];
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
     expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
@@ -4181,7 +4180,7 @@ describe('no session observation is fabricated for SHADOW', () => {
   test('check-in submits no session observation either', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+    fireEvent.click(await sessionLogCheckIn());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     // Specifically: no session_rpe observation carrying the readiness slider.
@@ -4388,7 +4387,7 @@ describe('the pre-session self-report presents as a self-report, not a clearance
       }
     }
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start Training' }));
+    fireEvent.click(sessionLog().getByRole('button', { name: 'Start training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     const body = postedTo('/api/pilot/sessions')[0].body;
 
@@ -4417,7 +4416,7 @@ describe('the pre-session self-report presents as a self-report, not a clearance
     // What they DO send is pinned the same way -- the same nine fields, and
     // their words are the only thing of theirs in it.
     openTab('Dashboard');
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
     fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const shared = postedTo('/api/pilot/sessions/update')[0].body;
@@ -4584,7 +4583,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
 
     await checkInFromSessionLog();
     openTab('Dashboard');
-    fireEvent.click(await screen.findByRole('button', { name: 'End Training' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'End training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
     const [checkOut] = postedTo('/api/pilot/sessions/update');
@@ -4703,7 +4702,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
-    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save how I feel' })).toBeTruthy();
     const before = reads();
 
     checkInReadFails = false;
@@ -4712,7 +4711,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
 
     await waitFor(() => expect(reads()).toBe(before + 1));
     await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save how I feel' })).toBeTruthy();
   });
 
   test('a check-in saved from the kept form clears the failed read: no alert, and the tile says recorded', async () => {
@@ -4723,7 +4722,7 @@ describe('the summary says whether today\'s wellness is on record, never a score
     await screen.findByText('check-in offline');
 
     checkInReadFails = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Save wellness' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save how I feel' }));
 
     await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
     await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
@@ -5011,7 +5010,7 @@ describe('an athlete can take a shared note back', () => {
   async function openSharedSession() {
     storedSessions = [openSessionRow({ rpe: null, notes: SHARED })];
     await renderWorkspace();
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
   }
 
   test('withdrawing writes the no-note sentinel, never an empty string', async () => {
@@ -5058,7 +5057,7 @@ describe('an athlete can take a shared note back', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw from coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'End Training' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(2));
 
     const checkOut = postedTo('/api/pilot/sessions/update')[1];
@@ -5101,7 +5100,7 @@ describe('a failed send says try again only while there is something to try', ()
     persistSessionUpdates = true;
     storedSessions = [openSessionRow({ rpe: null, notes })];
     await renderWorkspace();
-    await screen.findByRole('button', { name: 'End Training' });
+    await screen.findByRole('button', { name: 'End training' });
   }
 
   test('a failed Share stops saying try again once that draft is gone', async () => {

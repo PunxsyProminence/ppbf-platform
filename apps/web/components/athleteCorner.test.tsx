@@ -103,7 +103,7 @@ describe('check-in says only what the session read said', () => {
 
   test('a check-in in progress says so and cannot be pressed twice', () => {
     render(<AthleteCorner {...props({ checkingIn: true })} />);
-    const button = checkIn().getByRole('button', { name: 'Starting...' }) as HTMLButtonElement;
+    const button = checkIn().getByRole('button', { name: 'Starting…' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
   });
 });

@@ -39,10 +39,10 @@ describe('Wellness: a failed read is an alert with Try again (UXB-06)', () => {
   test('the panel shows the failure as an alert and Try again reads again', () => {
     const onRetry = jest.fn();
     render(
-      <AthleteCheckInPanel today={null} recent={[]} loading={false} loadError="Your wellness did not load." onRetry={onRetry} onSaved={() => {}} />,
+      <AthleteCheckInPanel today={null} recent={[]} loading={false} loadError="How you feel today did not load." onRetry={onRetry} onSaved={() => {}} />,
     );
 
-    expect(screen.getByRole('alert').textContent).toContain('Your wellness did not load.');
+    expect(screen.getByRole('alert').textContent).toContain('How you feel today did not load.');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -50,7 +50,7 @@ describe('Wellness: a failed read is an alert with Try again (UXB-06)', () => {
   test('the form is named Wellness and saves as "Save wellness", never "Check in" (UXB-19)', () => {
     render(<AthleteCheckInPanel today={null} recent={[]} loading={false} loadError={null} onSaved={() => {}} />);
 
-    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save how I feel' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /check in/i })).toBeNull();
   });
 });

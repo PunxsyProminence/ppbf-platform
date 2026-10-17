@@ -892,7 +892,8 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
-    await page.getByRole('button', { name: 'Start training' }).first().click();
+    // The corner's button and the Session Log's both read 'Start training' and send the same (UXB-19).
+    await page.getByRole('button', { name: 'Start training', exact: true }).first().click();
 
     /* Check-in deliberately moves the athlete off the Session Log -- to
        Wellness when today's wellness is missing, to the Floor when it is not
@@ -1004,7 +1005,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await enterWorkspaceOrSkip(page);
 
     await page.getByLabel('How hard was the session you just finished? 7').click();
-    await page.getByRole('button', { name: 'End Training' }).click();
+    await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);
@@ -1019,7 +1020,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
-    await page.getByRole('button', { name: 'End Training' }).click();
+    await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);
@@ -1041,7 +1042,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await expect(page.getByText('Your coach can read this.')).toBeVisible();
 
     await box.fill(unsent);
-    await page.getByRole('button', { name: 'End Training' }).click();
+    await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);

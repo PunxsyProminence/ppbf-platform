@@ -112,7 +112,7 @@ test('the corner\'s Start check-in sends exactly what the Session Log\'s Check I
   document.body.innerHTML = '';
   fetchCalls.length = 0;
   await renderWorkspace();
-  fireEvent.click(await screen.findByRole('button', { name: 'Start Training' }));
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(checkInPosts()).toHaveLength(1));
   expect(stable(checkInPosts()[0].body)).toEqual(stable(fromCorner));
 });
@@ -175,7 +175,10 @@ test('Report pain takes the athlete to the existing report\'s location picker, w
 
 test('the old Today section no longer repeats the corner\'s controls below it', async () => {
   await renderWorkspace();
-  expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
+  // One in the corner and one in the Session Log, both the same action and the
+  // same word (UXB-19); the old Today section adds no third.
+  expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(2);
+  expect(corner().getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Open the floor' })).toHaveLength(1);
 });
 

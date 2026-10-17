@@ -2450,7 +2450,7 @@ export default function AthleteWorkspace() {
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
       setBackendSyncMessage(
         `That did not take and your training is still going${detail} `
-        + "Press End Training again, and tell a coach anything they need to know.",
+        + "Press End training again, and tell a coach anything they need to know.",
       );
     } finally {
       checkingOutRef.current = false;
@@ -3293,7 +3293,7 @@ export default function AthleteWorkspace() {
                       disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
-                      {isCheckingOut ? 'Ending...' : 'End Training'}
+                      {isCheckingOut ? 'Ending…' : 'End training'}
                     </button>
                   </div>
                 ) : (
@@ -3332,7 +3332,7 @@ export default function AthleteWorkspace() {
                       disabled={isCheckingIn}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
-                      {isCheckingIn ? 'Starting...' : 'Start Training'}
+                      {isCheckingIn ? 'Starting…' : 'Start training'}
                     </button>
                   </div>
                 )}
