@@ -159,8 +159,8 @@ describe('AthleteCheckInPanel sleep trend', () => {
         onSaved={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
-    expect(screen.getByText('Your sleep on recent wellness days')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save how I feel' })).toBeTruthy();
+    expect(screen.getByText('Your sleep on recent days')).toBeTruthy();
     expect(screen.getByText('6.5 hours')).toBeTruthy();
     expect(screen.getByText('not answered')).toBeTruthy();
   });
@@ -176,12 +176,12 @@ describe('AthleteCheckInPanel sleep trend', () => {
         onSaved={() => {}}
       />,
     );
-    expect(screen.getByText('Your sleep on recent wellness days')).toBeTruthy();
+    expect(screen.getByText('Your sleep on recent days')).toBeTruthy();
     expect(screen.getByText('8 hours')).toBeTruthy();
   });
 
   test('no history, no trend', () => {
     render(<AthleteCheckInPanel today={null} recent={[]} loading={false} loadError={null} onSaved={() => {}} />);
-    expect(screen.queryByText('Your sleep on recent wellness days')).toBeNull();
+    expect(screen.queryByText('Your sleep on recent days')).toBeNull();
   });
 });
