@@ -33,9 +33,9 @@ const gateOf = (source: string) => {
 };
 const ALL = Object.entries(COACH_CLUSTERS).flatMap(([cluster, hrefs]) => hrefs.map((href) => [cluster, href] as const));
 
-// The Decision Loop page is being edited by other lanes; its line is added
-// once those land (Overwatch 2026-10-17). It is still IN the who-needs-me line.
-const PLACEMENT_PENDING = new Set(['/coach/decision-loop']);
+// Every page of every group carries its line (the Decision Loop's waited
+// for #1678, per Overwatch 2026-10-17, and is in now).
+const PLACEMENT_PENDING = new Set<string>();
 
 describe('the cluster lines', () => {
   test.each(ALL)('%s: %s has a door whose roles are exactly the page\'s gate', (_cluster, href) => {
