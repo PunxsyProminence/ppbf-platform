@@ -31,7 +31,8 @@ import {
   ShadowSessionsRequestError,
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
-import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymClock24, formatGymDateShort } from '@/src/lib/gymTime';
+import { roleWords } from '@/src/shared/roleWords';
 import { researchQuestionKey } from '@/src/shared/researchQuestionKey';
 import {
   SHADOW_MESSAGE_TOO_LONG_RESPONSE,
@@ -422,7 +423,9 @@ function ShadowChatPageContent() {
   const entryParams = useSearchParams();
   const context = sanitizeEntryParam(entryParams.get('context'));
   const subject = sanitizeEntryParam(entryParams.get('subject'));
-  const roleLabel = (userRole || 'guest').toUpperCase();
+  // Plain words, never the raw role (F-122: "ROLE: PLATFORM_OWNER"). The
+  // welcome line keeps its capitals; isFamilyFacingRole lowercases what it gets.
+  const roleLabel = (roleWords(userRole) || 'Guest').toUpperCase();
   const built = buildHeading(mode, subject);
   const familyFacing = mode === 'scoped' && isFamilyFacingRole(userRole);
   const { heading, scopeSummary } = built;
@@ -567,7 +570,7 @@ function ShadowChatPageContent() {
             setMessages([{
               id: '0',
               type: 'shadow',
-              text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), context, subject),
+              text: buildWelcomeMessage('scoped', (roleWords(userRole) || 'Guest').toUpperCase(), context, subject),
               timestamp: formatTimestamp(),
             }]);
             setCapabilitiesLoaded(true);
@@ -597,7 +600,7 @@ function ShadowChatPageContent() {
           setMessages([{
             id: '0',
             type: 'shadow',
-            text: buildWelcomeMessage(serverMode, (userRole || 'guest').toUpperCase(), context, subject),
+            text: buildWelcomeMessage(serverMode, (roleWords(userRole) || 'Guest').toUpperCase(), context, subject),
             timestamp: formatTimestamp(),
           }]);
           setCapabilitiesLoaded(true);
@@ -610,7 +613,7 @@ function ShadowChatPageContent() {
           setMessages([{
             id: '0',
             type: 'shadow',
-            text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), '', ''),
+            text: buildWelcomeMessage('scoped', (roleWords(userRole) || 'Guest').toUpperCase(), '', ''),
             timestamp: formatTimestamp(),
           }]);
           setCapabilitiesLoaded(true);
@@ -1745,7 +1748,7 @@ function ShadowChatPageContent() {
                             {restoring ? 'Restoring…' : session.title}
                           </span>
                           <span className="t-label mt-[var(--s1)] block">
-                            {sessionTypeWords(session.sessionType)} · {formatGymDateNumeric(session.updatedAt)}
+                            {sessionTypeWords(session.sessionType)} · {formatGymDateShort(session.updatedAt)}
                           </span>
                         </button>
                         <div className="flex flex-wrap items-center gap-[var(--s3)] border-t border-[color:var(--brass-900)] p-[var(--s3)]">
