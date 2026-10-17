@@ -186,7 +186,7 @@ export function planFingerprint(plan) {
     detach_evidence_items: [...plan.ids.evidenceItems].sort(),
     detach_message_citations: [...plan.ids.messageCitations].sort(),
     // Which detached items a flag touches: what Jason is told before the
-    // apply. A flag added or cleared since the dry run stops the apply.
+    // apply. If that set changes after the dry run, the apply stops.
     detach_flagged_evidence_items: [...plan.ids.flaggedEvidenceItems].sort(),
   });
   return `sha256:${crypto.createHash('sha256').update(material).digest('hex')}`;
@@ -339,9 +339,10 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   // dry run counts those (flagged_detached) and the audit row marks them.
   // On apply, before the count: the citing bundles FOR UPDATE (no new claim
   // can attach), the review queue in SHARE mode (no new flag), and FOR SHARE
-  // the sessions touching the bundles, the askers' accounts and those
-  // sessions' athletes (no hold or deletion set mid-run). Those locks select
-  // a constant: no account id leaves the database.
+  // the sessions touching the bundles, those sessions' athletes and the
+  // askers' accounts (no hold or deletion set mid-run). Those locks select a
+  // constant: no account id leaves the database. The count sees what the
+  // locks protect only under READ COMMITTED, which apply pins.
   const citingBundleIds = [...new Set(citingItems.map((row) => row.bundle_id))];
   const sessionsTouchingBundles = `select c.conversation_id from pilot.shadow_evidence_claims c
                  where c.bundle_id = any($1::uuid[])
@@ -365,6 +366,17 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
         order by s.conversation_id for share`,
       [citingBundleIds],
     );
+    // Athletes before accounts: the order dataDeletion.ts and the purge take
+    // them in, so a concurrent deletion waits rather than deadlocks.
+    await client.query(
+      `select 1 from pilot.athletes t
+        where (t.organization_id, t.athlete_id) in (
+                select s.organization_id, s.athlete_id from pilot.shadow_chat_sessions s
+                 where s.conversation_id in (
+                ${sessionsTouchingBundles}))
+        order by t.organization_id, t.athlete_id for share`,
+      [citingBundleIds],
+    );
     await client.query(
       `select 1 from pilot.accounts a
         where a.account_id in (
@@ -375,15 +387,6 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
                 ${sessionsTouchingBundles}))
         order by a.account_id for share`,
       [citingBundleIds, citingItemIds],
-    );
-    await client.query(
-      `select 1 from pilot.athletes t
-        where (t.organization_id, t.athlete_id) in (
-                select s.organization_id, s.athlete_id from pilot.shadow_chat_sessions s
-                 where s.conversation_id in (
-                ${sessionsTouchingBundles}))
-        order by t.organization_id, t.athlete_id for share`,
-      [citingBundleIds],
     );
   }
   const holdRow = (await client.query(
@@ -790,7 +793,10 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
   }
 
   try {
-    await client.query(apply ? 'begin' : 'begin read only');
+    // Apply pins READ COMMITTED: the hold count must read past the row locks
+    // taken just before it, which a snapshot taken at the first statement
+    // (REPEATABLE READ or SERIALIZABLE as a role default) would not.
+    await client.query(apply ? 'begin isolation level read committed' : 'begin read only');
     open = true;
     if (apply) await client.query("set local lock_timeout = '10s'");
 

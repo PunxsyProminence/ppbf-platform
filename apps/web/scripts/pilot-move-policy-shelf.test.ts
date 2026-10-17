@@ -206,7 +206,7 @@ function runTool(spec: Spec): Outcome {
         const t = text.trim();
         calls.push({ text: t, values });
         if (spec.failOn && new RegExp(spec.failOn, 'i').test(t)) throw new Error('stub: statement failed');
-        if (/^(begin|begin read only|rollback|commit)$/i.test(t)) return ok();
+        if (/^(begin|begin read only|begin isolation level read committed|rollback|commit)$/i.test(t)) return ok();
         if (/^set local lock_timeout/i.test(t)) return ok();
         let match = /^update pilot\\.(\\w+)/i.exec(t);
         if (match) {
@@ -658,7 +658,7 @@ describe('detaching citing evidence', () => {
     expectRolledBackWithoutWrites(out);
   });
 
-  test('apply locks bundles, the review queue, the sessions, the askers and the athletes before counting the hold; a dry run takes no lock', () => {
+  test('apply locks bundles, the review queue, the sessions, the athletes and the askers before counting the hold; a dry run takes no lock', () => {
     const spec = citedShelf();
     const applied = runTool({ ...spec, options: applyOptions() });
     const all = texts(applied);
@@ -672,9 +672,10 @@ describe('detaching citing evidence', () => {
     expect(bundlesAt).toBeGreaterThan(-1);
     expect(bundlesAt).toBeLessThan(queueAt);
     expect(queueAt).toBeLessThan(sessionsAt);
-    expect(sessionsAt).toBeLessThan(accountsAt);
-    expect(accountsAt).toBeLessThan(athletesAt);
-    expect(athletesAt).toBeLessThan(countAt);
+    // Athletes before accounts, the order a deletion takes them in.
+    expect(sessionsAt).toBeLessThan(athletesAt);
+    expect(athletesAt).toBeLessThan(accountsAt);
+    expect(accountsAt).toBeLessThan(countAt);
     expect(all[bundlesAt]).toMatch(/for update$/i);
     for (const i of [sessionsAt, accountsAt, athletesAt]) expect(all[i]).toMatch(/for share$/i);
     const bundles = ['00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b2'];
@@ -719,7 +720,7 @@ describe('detaching citing evidence', () => {
     expect(JSON.stringify(details)).not.toMatch(/account/);
   });
 
-  test('a flag added or cleared since the reviewed dry run changes the fingerprint and stops the apply', () => {
+  test('a change in which detached items a flag touches, after the reviewed dry run, stops the apply', () => {
     const reviewed = runTool({ ...citedShelf(), options: dryRunOptions() });
     const flaggedSince = runTool({ ...citedShelf(), flagged: flaggedOutsideHold, options: dryRunOptions() });
     expect(flaggedSince.result!.plan_fingerprint).not.toBe(reviewed.result!.plan_fingerprint);
@@ -785,12 +786,14 @@ describe('apply', () => {
     expect(out.result!.status).toBe('applied');
     expect(out.exitCode).toBe(0);
     const all = texts(out);
-    expect(all[0]).toBe('begin');
+    // READ COMMITTED, pinned: the hold count must see past the locks taken
+    // just before it.
+    expect(all[0]).toBe('begin isolation level read committed');
     expect(all[all.length - 1]).toBe('commit');
     expect(all.filter((t) => t === 'commit')).toHaveLength(1);
     expect(all).not.toContain('rollback');
 
-    const beginAt = all.indexOf('begin');
+    const beginAt = all.indexOf('begin isolation level read committed');
     const commitAt = all.indexOf('commit');
     all.forEach((t, i) => {
       if (WRITE.test(t)) {
