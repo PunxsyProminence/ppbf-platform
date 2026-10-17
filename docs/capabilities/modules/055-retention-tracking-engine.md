@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **MAPPED** |
-| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. No derived last-practiced date on a skill or assignment exists (searched last_/days_since patterns in app, src, components); the nearest code is the per-assignment completion log with completed_at (progression.ts select ... order by completed_at desc, served by completions/route.ts GET), which ho... |
+| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. No derived last-practiced date on a skill or assignment exists (searched last_/days_since patterns in app, src, components); the nearest code is the per-assignment completion log with completed_at (progression.ts select... order by completed_at desc, served by completions/route.ts GET), which ho... |
 | Code | `apps/web/app/api/pilot/progression/completions/route.ts`, `apps/web/src/server/pilot/progression.ts` |
 | Tests | `apps/web/app/api/pilot/progression/completions/route.test.ts` |
 | Active | false |

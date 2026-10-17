@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. Athlete punch logging page (sparring/page.tsx punch_attempted/landed observations) posts to shadow/formulas/observations/route.ts; MVP-02/03/04/05 punch formulas registered (registry.ts, engine.ts calculatePunchOutput); results route :50 GET. Results display UI is future work per the slice. |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. Athlete punch logging page (sparring/page.tsx punch_attempted/landed observations) posts to shadow/formulas/observations/route.ts; MVP-02/03/04/05 punch formulas registered (registry.ts, engine.ts calculatePunchOutput); results route GET. Results display UI is future work per the slice. |
 | Code | `apps/web/app/athlete/dashboard/sparring/page.tsx`, `apps/web/app/api/pilot/shadow/formulas/observations/route.ts`, `apps/web/app/api/pilot/shadow/formulas/results/route.ts`, `apps/web/src/server/pilot/formulas/engine.ts`, `apps/web/src/server/pilot/formulas/registry.ts` |
 | Tests | `apps/web/src/server/pilot/formulas/mvpFormulaEngine.test.ts`, `apps/web/app/api/pilot/shadow/formulas/formulaRoutes.test.ts`, `apps/web/app/athlete/dashboard/sparring/page.test.tsx` |
 | Vertical slice | athlete/coach punch logging (Deep-Track form) + tested MVP punch-output/accuracy/connect-differential/offensive-efficiency formulas; results display UI is future work |

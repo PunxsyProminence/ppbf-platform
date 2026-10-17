@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
-| Status note | Was "DRAFT" until 2026-10-16. No energy-system engine; only an 'aerobic_base' development-block template (developmentBlockTemplates.ts), a template and not this capability. Training-attempts migration (:10) says the engine is still unbuilt. |
+| Status note | Was "DRAFT" until 2026-10-16. No energy-system engine; only an 'aerobic_base' development-block template (developmentBlockTemplates.ts), a template and not this capability. Training-attempts migration says the engine is still unbuilt. |
 | Code | none |
 | Tests | none |
 | Active | false |

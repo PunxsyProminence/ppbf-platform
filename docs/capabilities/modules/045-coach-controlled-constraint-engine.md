@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. training-holds/route.ts GET, :181 POST place hold (role-gated, org-scoped) over trainingHolds.ts placeTrainingHold :191, liftTrainingHold :280; banner component shows it. |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. training-holds/route.ts GET, POST place hold (role-gated, org-scoped) over trainingHolds.ts placeTrainingHold, liftTrainingHold; banner component shows it. |
 | Code | `apps/web/app/api/pilot/training-holds/route.ts`, `apps/web/src/server/pilot/trainingHolds.ts`, `apps/web/components/TrainingHoldBanner.tsx` |
 | Tests | `apps/web/app/api/pilot/training-holds/route.test.ts`, `apps/web/src/server/pilot/trainingHolds.test.ts`, `apps/web/src/server/pilot/trainingHolds.pg.test.ts` |
 | Vertical slice | coach/org-admin STOP-HOLD-REGRESS training constraint system with transactional escalation, role-gated and org-scoped, fully tested |

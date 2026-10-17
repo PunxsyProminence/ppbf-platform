@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`)" until 2026-10-16. Three coach routes (intervention-executions/route.ts GET, :87 POST, :131 PATCH) plus protocols/review routes and three coach pages over interventionProtocols/Executions/Evidence server modules. |
+| Status note | Was "DONE (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`)" until 2026-10-16. Three coach routes (intervention-executions/route.ts GET, POST, PATCH) plus protocols/review routes and three coach pages over interventionProtocols/Executions/Evidence server modules. |
 | Code | `apps/web/app/api/pilot/coach/intervention-protocols/route.ts`, `apps/web/app/api/pilot/coach/intervention-executions/route.ts`, `apps/web/app/api/pilot/coach/intervention-review/route.ts`, `apps/web/app/coach/intervention-executions/page.tsx`, `apps/web/src/server/pilot/interventionExecutions.ts` |
 | Tests | `apps/web/app/api/pilot/coach/intervention-executions/route.test.ts`, `apps/web/app/coach/intervention-review/page.test.tsx`, `apps/web/src/server/pilot/interventionExecutions.pg.test.ts` |
 | Vertical slice | Three-table ledger + three coach surfaces: protocols (versioned intent), executions (planned-vs-actual, adherence, corrections), evidence links + outcome reviews (typed evidence, three-answer human verdicts). Migrations registered but **not yet applied to staging/production** — ships with the next release wave. |

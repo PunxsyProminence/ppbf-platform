@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. observations/route.ts,149 calls flagContactWithoutClearance (contactClearanceGate.ts) and flagContactDuringHold on contact observations; trainingHolds.ts findContactEventBlockingHold :560. |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. observations/route.ts,149 calls flagContactWithoutClearance (contactClearanceGate.ts) and flagContactDuringHold on contact observations; trainingHolds.ts findContactEventBlockingHold. |
 | Code | `apps/web/src/server/pilot/contactClearanceGate.ts`, `apps/web/src/server/pilot/trainingHolds.ts`, `apps/web/app/api/pilot/shadow/formulas/observations/route.ts` |
 | Tests | `apps/web/src/server/pilot/contactClearanceGate.test.ts`, `apps/web/app/api/pilot/shadow/formulas/observations/route.test.ts`, `apps/web/src/server/pilot/trainingHolds.test.ts` |
 | Vertical slice | contact-observation medical-clearance and training-hold gate, safety-gate-matrix logged, athlete-facing lesson + coach decision-loop near-miss surfacing, fully tested |

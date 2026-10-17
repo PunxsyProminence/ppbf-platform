@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped)" until 2026-10-16. Admin-only rolled-up review queue of holds, gate failures, escalations and violations (safetyReview.ts getOrganizationSafetyReview, route.ts GET admin/organization_admin) with hold place/lift on the training-holds route (trainingHolds.ts, :280); page at app/admin/safety-review/page.tsx. |
+| Status note | Was "DONE (slice shipped)" until 2026-10-16. Admin-only rolled-up review queue of holds, gate failures, escalations and violations (safetyReview.ts getOrganizationSafetyReview, route.ts GET admin/organization_admin) with hold place/lift on the training-holds route (trainingHolds.ts); page at app/admin/safety-review/page.tsx. |
 | Code | `apps/web/app/api/pilot/admin/safety-review/route.ts`, `apps/web/src/server/pilot/safetyReview.ts`, `apps/web/app/admin/safety-review/page.tsx`, `apps/web/app/api/pilot/training-holds/route.ts`, `apps/web/src/server/pilot/trainingHolds.ts` |
 | Tests | `apps/web/app/api/pilot/admin/safety-review/route.test.ts`, `apps/web/src/server/pilot/safetyReview.test.ts`, `apps/web/app/api/pilot/training-holds/route.test.ts` |
 | Active | false |

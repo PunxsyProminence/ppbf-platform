@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **MAPPED** |
-| Status note | Was "DRAFT" until 2026-10-16. Coach-authored development blocks with objectives: development-blocks/route.ts GET, :231 POST, :277 PATCH plus coach page. The module's audit log names these as its slices, but the code explicitly derives no periodization label/taper/volume curve (route.ts), so it plans blocks, not a periodizatio... |
+| Status note | Was "DRAFT" until 2026-10-16. Coach-authored development blocks with objectives: development-blocks/route.ts GET, POST, PATCH plus coach page. The module's audit log names these as its slices, but the code explicitly derives no periodization label/taper/volume curve (route.ts), so it plans blocks, not a periodizatio... |
 | Code | `apps/web/app/api/pilot/coach/development-blocks/route.ts`, `apps/web/app/coach/development-blocks/page.tsx`, `apps/web/src/server/pilot/athleteDevelopmentBlocks.ts` |
 | Tests | `apps/web/app/api/pilot/coach/development-blocks/route.test.ts`, `apps/web/app/coach/development-blocks/page.test.tsx`, `apps/web/src/server/pilot/athleteDevelopmentBlocks.pg.test.ts` |
 | Active | false |

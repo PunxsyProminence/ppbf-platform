@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "claimed, no code (relabelled 2026-09-28; see audit log)" until 2026-10-16. Now has code: POST /api/pilot/session-scripts (route.ts) creates a draft script from a workout template (sessionScriptAuthoring.ts, authoring_state 'draft' at :196), PATCH edits name/blocks, GET lists for coach; editor on /coach/session-scripts. Added after the 2026-09-30 note. |
+| Status note | Was "claimed, no code (relabelled 2026-09-28; see audit log)" until 2026-10-16. Now has code: POST /api/pilot/session-scripts (route.ts) creates a draft script from a workout template (sessionScriptAuthoring.ts, authoring_state 'draft'), PATCH edits name/blocks, GET lists for coach; editor on /coach/session-scripts. Added after the 2026-09-30 note. |
 | Code | `apps/web/app/api/pilot/session-scripts/route.ts`, `apps/web/src/server/pilot/sessionScriptAuthoring.ts`, `apps/web/src/server/pilot/sessionScripts.ts`, `apps/web/app/coach/session-scripts/page.tsx`, `apps/web/app/coach/session-scripts/SessionScriptEditor.tsx` |
 | Tests | `apps/web/app/api/pilot/session-scripts/route.authoring.test.ts`, `apps/web/src/server/pilot/sessionScriptAuthoring.test.ts`, `apps/web/app/coach/session-scripts/SessionScriptEditor.test.tsx` |
 | Active | false |

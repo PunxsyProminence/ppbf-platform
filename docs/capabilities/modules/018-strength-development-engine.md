@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
-| Status note | Was "DRAFT" until 2026-10-16. No strength-development engine; training-attempts migration (:10) lists strength as an unbuilt engine that will read that ledger. A strength development-block template and gap_type 'strength' exist but are not the engine. |
+| Status note | Was "DRAFT" until 2026-10-16. No strength-development engine; training-attempts migration lists strength as an unbuilt engine that will read that ledger. A strength development-block template and gap_type 'strength' exist but are not the engine. |
 | Code | none |
 | Tests | none |
 | Active | false |
