@@ -68,11 +68,13 @@ export interface GymPhotoSlot {
   /** One line under the title, in the gym's voice, empty or full. */
   readonly caption: string;
   /**
-   * The caption and alt text when the gym's stored profile is at hand (lane
-   * L31): the entrance names the street. Without a profile the plain
-   * caption and alt stand, and name no address.
+   * The caption and alt text when the gym's stored profile gives a street
+   * (lane L31): {street} and {city} are filled from it ({city} as ", <city>",
+   * or nothing). Without one the plain caption and alt stand, and name no
+   * address. Plain text, not a function: a slot crosses from server pages to
+   * browser components.
    */
-  readonly withGym?: (gym: OrganizationProfile) => { caption: string; alt: string };
+  readonly withStreet?: { readonly caption: string; readonly alt: string };
   /**
    * The file name under apps/web/public/gym/, or null while nobody has taken
    * the picture yet. Never a URL: a slot cannot point at another origin, and it
@@ -101,16 +103,10 @@ export const GYM_PHOTO_SLOTS: readonly GymPhotoSlot[] = [
     title: 'The front door',
     caption: 'What you are looking for when you pull up the first time.',
     // The street and town, from the gym's stored profile (lane L31, #1469).
-    withGym: (gym) =>
-      gym.physical.street
-        ? {
-            caption: `${gym.physical.street}. What you are looking for when you pull up the first time.`,
-            alt: `Illustration of the entrance to the gym at ${gym.physical.street}${gym.physical.city ? `, ${gym.physical.city}` : ''} — a placeholder until the real photograph is taken.`,
-          }
-        : {
-            caption: 'What you are looking for when you pull up the first time.',
-            alt: 'Illustration of the entrance to the gym — a placeholder until the real photograph is taken.',
-          },
+    withStreet: {
+      caption: '{street}. What you are looking for when you pull up the first time.',
+      alt: 'Illustration of the entrance to the gym at {street}{city} — a placeholder until the real photograph is taken.',
+    },
     file: 'entrance.svg',
     alt: 'Illustration of the entrance to the gym — a placeholder until the real photograph is taken.',
     surfaces: ['public'],
@@ -207,7 +203,11 @@ export function gymStaffCards(gym: Pick<OrganizationProfile, 'headCoachName'> | 
 
 /** A slot's caption and alt text, with the gym's facts where it has them. */
 export function gymPhotoSlotText(slot: GymPhotoSlot, gym: OrganizationProfile | null): { caption: string; alt: string } {
-  return slot.withGym && gym ? slot.withGym(gym) : { caption: slot.caption, alt: slot.alt };
+  const street = gym?.physical.street ?? '';
+  if (!slot.withStreet || !street) return { caption: slot.caption, alt: slot.alt };
+  const fill = (text: string) =>
+    text.replace('{street}', street).replace('{city}', gym?.physical.city ? `, ${gym.physical.city}` : '');
+  return { caption: fill(slot.withStreet.caption), alt: fill(slot.withStreet.alt) };
 }
 
 /** Where a filled slot's bytes live. Static, same-origin, no session involved. */
