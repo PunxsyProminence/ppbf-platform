@@ -224,6 +224,8 @@ async function seed(client: Client): Promise<void> {
         end_at: end.toISOString(),
         location: 'Main floor',
         capacity: 20,
+        // An admin names the class coach (lane L31 P6).
+        coach_account_id: COACH,
       }),
     );
     if (title === 'Seeded class') seededClassId = created.class_id;
@@ -449,6 +451,7 @@ describe('scheduler: an admin cannot act on a deleted athlete', () => {
         end_at: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
         location: 'Main floor',
         capacity: 20,
+        coach_account_id: COACH,
       }),
     );
     return created.class_id;

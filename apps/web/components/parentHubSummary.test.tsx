@@ -367,3 +367,22 @@ describe('what the overview no longer says, and what it still does', () => {
     expect(text).toContain('Community Service Support Status');
   });
 });
+
+describe('the paper version (#1596 item 2b)', () => {
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  test('the print link carries no child id in the address; the chosen child goes over in tab storage', async () => {
+    installFetch();
+    await renderHub();
+    await selectChild('Second Child');
+
+    const link = screen.getByRole('link', { name: 'Print their card and certificate' });
+    expect(link.getAttribute('href')).toBe('/print');
+    // Kept on selection, before any click: a middle-click fires no click.
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
+    await selectChild('First Child');
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_1');
+  });
+});

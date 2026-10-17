@@ -278,6 +278,114 @@ describe('the invite form', () => {
     expect(await screen.findByText(/is now a guardian of Alex Johnson/i)).toBeTruthy();
   });
 
+  /* Lane L31: re-inviting is how a role changes, so a role change is named
+     before it is made, the confirm is a separate button that does not sit
+     where the submit was, and the server holds the same line. */
+  const COACH_MEMBER = { account_id: 'coach-acct', login_email: 'Coach.Alvarez@example.com', auth_provider: 'microsoft', role: 'coach', athlete_id: null, active_flag: true, has_pin: false, membership_active: true };
+
+  test('inviting a coach address as a volunteer names the change, sends nothing, and only the confirm button saves', async () => {
+    const posted: Record<string, unknown>[] = [];
+    await openInviteTab({ roster: ROSTER, members: [COACH_MEMBER], onPost: (body) => { posted.push(body); return { ok: true }; } });
+
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: ' coach.alvarez@example.com ' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Volunteer/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(posted).toEqual([]);
+    expect(screen.getByRole('status').textContent).toMatch(
+      /coach\.alvarez@example\.com is a coach here\. Saving this makes them a volunteer instead \(a person holds one role here\) and signs them out; they sign back in as a volunteer\./i,
+    );
+    // The submit button is gone, so a second click or Enter on its spot cannot confirm.
+    expect(screen.queryByRole('button', { name: /Add To My Gym/i })).toBeNull();
+    const confirm = screen.getByRole('button', { name: /Change coach\.alvarez@example\.com To Volunteer/i });
+    expect(confirm.getAttribute('type')).toBe('button');
+
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual({ login_email: 'coach.alvarez@example.com', role: 'volunteer', confirm_role_change_from: 'coach' });
+  });
+
+  test('a second submit while a change is named sends nothing', async () => {
+    const posted: Record<string, unknown>[] = [];
+    await openInviteTab({ roster: ROSTER, members: [COACH_MEMBER], onPost: (body) => { posted.push(body); return { ok: true }; } });
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: 'coach.alvarez@example.com' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Staff/ }));
+    const form = screen.getByLabelText(/^Email address$/i).closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(posted).toEqual([]);
+    expect(screen.getByRole('button', { name: /Change coach\.alvarez@example\.com To Staff/i })).toBeTruthy();
+  });
+
+  test('editing the role or Keep Their Role takes a named change back without saving', async () => {
+    const posted: Record<string, unknown>[] = [];
+    await openInviteTab({ roster: ROSTER, members: [COACH_MEMBER], onPost: (body) => { posted.push(body); return { ok: true }; } });
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: 'coach.alvarez@example.com' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Staff/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /Volunteer/ }));
+    expect(screen.queryByRole('button', { name: /^Change /i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Add To My Gym/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Their Role' }));
+    expect(screen.getByRole('button', { name: /Add To My Gym/i })).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(posted).toEqual([]);
+  });
+
+  test('a change the page did not know about is named from the server refusal, then confirmed with the role it gave', async () => {
+    const posted: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({ roster: ROSTER, members: [] }) as never;
+    const inner = global.fetch as unknown as jest.Mock;
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/admin/staff') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
+        posted.push(body);
+        return body.confirm_role_change_from
+          ? ({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response)
+          : ({ ok: false, status: 409, json: async () => ({ error: 'x', code: 'ROLE_CHANGE_UNCONFIRMED', current_role: 'staff' }) } as Response);
+      }
+      return inner(url, init);
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Add Coach, Staff Or Guardian/i }));
+
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: 'unlisted@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+
+    expect(await screen.findByRole('button', { name: /Change unlisted@example\.com To Coach/i })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toMatch(/unlisted@example\.com is a staff here/i);
+    expect(posted).toEqual([{ login_email: 'unlisted@example.com', role: 'coach' }]);
+
+    fireEvent.click(screen.getByRole('button', { name: /Change unlisted@example\.com To Coach/i }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1]).toEqual({ login_email: 'unlisted@example.com', role: 'coach', confirm_role_change_from: 'staff' });
+  });
+
+  test('a role an invite cannot change is said plainly, with nothing armed', async () => {
+    await openInviteTab({
+      roster: ROSTER,
+      members: [{ ...COACH_MEMBER, login_email: 'office@example.com', role: 'organization_admin' }],
+    });
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: 'office@example.com' } });
+    expect(screen.getByRole('status').textContent).toMatch(/office@example\.com is a .* here\. An invite cannot change that role\./i);
+    expect(screen.queryByRole('button', { name: /^Change /i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Add To My Gym/i })).toBeTruthy();
+  });
+
+  test('re-inviting a member at the same role is one press, as before', async () => {
+    const posted: Record<string, unknown>[] = [];
+    await openInviteTab({ roster: ROSTER, members: [COACH_MEMBER], onPost: (body) => { posted.push(body); return { ok: true }; } });
+    fireEvent.change(screen.getByLabelText(/^Email address$/i), { target: { value: 'coach.alvarez@example.com' } });
+    expect(screen.queryByRole('status')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Add To My Gym/i }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual({ login_email: 'coach.alvarez@example.com', role: 'coach' });
+  });
+
   test('a coach invite carries no guardian block at all', async () => {
     const posted: Record<string, unknown>[] = [];
     await openInviteTab({
@@ -380,8 +488,43 @@ describe('sign-in status labels follow the credential policy', () => {
     }) as never;
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Issue The New Code' }));
     await waitFor(() => expect(bodies).toEqual([{ account_id: 'sriv' }]));
     expect(await screen.findByText('WXYZ-2345-6789')).toBeTruthy();
+  });
+
+  /* Lane L31: the heavy athlete action is armed per row, like Sign Out and
+     Deactivate beside it. */
+  test('the first press of a new activation code only names what it does; Keep Their PIN takes it back', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [{ account_id: 'sriv', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-2', active_flag: true, has_pin: true, membership_active: true }],
+      roster: ROSTER,
+      onActivationReset: (body) => { bodies.push(body); return { ok: true, activation_code: 'WXYZ-2345-6789', expires_at: '2026-08-26T00:00:00Z' }; },
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+
+    expect(screen.getByText(/Issues sriv a new one-time activation code now\. Their PIN stops working and they are signed out on every device until they redeem the new code\./)).toBeTruthy();
+    expect(bodies).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Their PIN' }));
+    expect(screen.queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Issue New Activation Code' })).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bodies).toEqual([]);
+  });
+
+  test('for an athlete still awaiting activation, the armed sentence says only that the earlier code stops working', async () => {
+    global.fetch = fetchMock({
+      members: [{ account_id: 'ath-new', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-3', active_flag: false, has_pin: false, membership_active: false }],
+      roster: ROSTER,
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue New Activation Code' }));
+    expect(screen.getByText('Issues ath-new a new one-time activation code now. The code issued before stops working.')).toBeTruthy();
+    expect(screen.queryByText(/Their PIN stops working/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Keep The Current Code' })).toBeTruthy();
   });
 });
 
