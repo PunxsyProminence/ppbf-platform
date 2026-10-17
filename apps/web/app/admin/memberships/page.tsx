@@ -209,7 +209,7 @@ function SupportSection({ athletes, athleteId, onAthlete }: {
       <div className="field mt-[var(--s3)]">
         <label className="t-label" htmlFor="support-athlete">Support for</label>
         <select id="support-athlete" className="select" value={athleteId} onChange={(e) => onAthlete(e.target.value)}>
-          <option value="">Select an athlete…</option>
+          <option value="">Choose an athlete</option>
           {athletes.map((athlete) => (
             <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
           ))}
