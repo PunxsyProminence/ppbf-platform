@@ -271,6 +271,19 @@ function PeopleConsoleContent() {
      a colleague out. The server decides who may be switched off; this page
      only offers the control where the server would say yes. */
   const [deactivateArmedId, setDeactivateArmedId] = useState<string | null>(null);
+  /* A NEW ACTIVATION CODE IS THE HEAVY ONE FOR AN ATHLETE (lane L31, gap check
+     (b) step 4): pin-reset nulls their PIN, switches the account off and signs
+     them out everywhere until the new code is redeemed. It sat one tap away,
+     beside the armed Sign Out and Deactivate, so it is armed per row the same
+     way and names what it does before it does it. */
+  const [codeArmedId, setCodeArmedId] = useState<string | null>(null);
+  /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
+     said nothing when the address already belonged to someone in the gym: a
+     coach re-invited as a guardian silently became a guardian. When the
+     address is a member's with another role, the first press names the change
+     and the second makes it. Keyed on the address and the role, so editing
+     either takes the arming back. */
+  const [roleChangeArmedKey, setRoleChangeArmedKey] = useState<string | null>(null);
 
   // Add athlete form. account_id and athlete_id are shared by both modes; the
   // rest of the roster fields are only sent when creating a new record.
@@ -593,10 +606,24 @@ function PeopleConsoleContent() {
         !parentInviteBlockedReason && guardianFullName.trim() && guardianAthleteId && guardianRelationship,
       ));
 
+  const inviteRoleChange = (() => {
+    const wanted = inviteEmail.trim().toLowerCase();
+    if (!wanted) return null;
+    const existing = members.find((member) => member.login_email?.trim().toLowerCase() === wanted);
+    return existing && existing.role !== inviteRole ? existing : null;
+  })();
+  const inviteRoleChangeKey = inviteRoleChange ? `${inviteEmail.trim().toLowerCase()}|${inviteRole}` : null;
+  const inviteRoleChangeArmed = inviteRoleChangeKey !== null && roleChangeArmedKey === inviteRoleChangeKey;
+
   async function inviteStaff(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setNotice('');
+    if (inviteRoleChangeKey && !inviteRoleChangeArmed) {
+      setRoleChangeArmedKey(inviteRoleChangeKey);
+      return;
+    }
+    setRoleChangeArmedKey(null);
     setBusy(true);
 
     const email = inviteEmail.trim();
@@ -1389,16 +1416,44 @@ function PeopleConsoleContent() {
 
                         <td>
                           <div className="flex flex-col items-start gap-[var(--s2)]">
-                            {isPinAthlete && (
+                            {isPinAthlete && (codeArmedId === member.account_id ? (
+                              <>
+                                <p className="max-w-[34ch]">
+                                  Issues {member.account_id} a new one-time activation code now. Their PIN stops
+                                  working and they are signed out on every device until they redeem the new code.
+                                </p>
+                                <div className="flex flex-wrap gap-[var(--s2)]">
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setCodeArmedId(null);
+                                      void handleResetToStartingPin(member.account_id);
+                                    }}
+                                    className="btn btn--danger whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    Issue The New Code
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setCodeArmedId(null)}
+                                    className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    Keep Their PIN
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void handleResetToStartingPin(member.account_id)}
+                                onClick={() => setCodeArmedId(member.account_id)}
                                 className="btn--lever whitespace-nowrap disabled:opacity-50"
                               >
                                 Issue New Activation Code
                               </button>
-                            )}
+                            ))}
 
                             {/* Offered on EVERY row, not just the PIN athletes.
                                 Until now a staff row had no action at all --
@@ -1542,7 +1597,12 @@ function PeopleConsoleContent() {
                 type="email"
                 required
                 value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
+                onChange={(event) => {
+                  // Any edit takes a named role change back, even one that returns to the armed
+                  // pair: the change is confirmed by the press after it is named, not remembered.
+                  setRoleChangeArmedKey(null);
+                  setInviteEmail(event.target.value);
+                }}
                 placeholder="coach@example.com"
                 className="input"
               />
@@ -1571,7 +1631,10 @@ function PeopleConsoleContent() {
                         value={option.value}
                         checked={inviteRole === option.value}
                         disabled={Boolean(blockedReason)}
-                        onChange={() => setInviteRole(option.value)}
+                        onChange={() => {
+                          setRoleChangeArmedKey(null);
+                          setInviteRole(option.value);
+                        }}
                         className="mt-1 accent-[var(--brass-500)]"
                       />
                       <span>
@@ -1664,13 +1727,37 @@ function PeopleConsoleContent() {
               </fieldset>
             )}
 
-            <button
-              type="submit"
-              disabled={busy || !inviteReady}
-              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? 'Adding...' : 'Add To My Gym'}
-            </button>
+            {inviteRoleChange && (
+              <p className="t-body" role="status">
+                {inviteRoleChange.login_email} is a {roleLabel(inviteRoleChange.role)} in your gym today.
+                Saving this makes them a {roleLabel(inviteRole)} instead: a person holds one role here.
+                {inviteRoleChangeArmed ? ' Press again to change it.' : ''}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-[var(--s2)]">
+              <button
+                type="submit"
+                disabled={busy || !inviteReady}
+                className={`${inviteRoleChangeArmed ? 'btn btn--danger' : 'btn'} w-full disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {busy
+                  ? 'Adding...'
+                  : inviteRoleChangeArmed && inviteRoleChange
+                    ? `Change ${inviteRoleChange.login_email} To ${roleLabel(inviteRole)}`
+                    : 'Add To My Gym'}
+              </button>
+              {inviteRoleChangeArmed && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setRoleChangeArmedKey(null)}
+                  className="btn btn--ghost w-full disabled:opacity-50"
+                >
+                  Keep Their Role
+                </button>
+              )}
+            </div>
           </form>
         )}
 
