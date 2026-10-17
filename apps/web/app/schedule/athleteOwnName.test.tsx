@@ -127,9 +127,10 @@ test("an athlete's own rows read their name, not their roster code", async () =>
   expect(requestRow?.textContent).not.toContain(OWN_ID);
 
   // Their own record, asked for by their own id.
-  const ownCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/pilot/athletes/get'));
+  const ownCalls = (fetchMock.mock.calls as unknown as [RequestInfo | URL, RequestInit | undefined][])
+    .filter(([url]) => String(url).endsWith('/api/pilot/athletes/get'));
   expect(ownCalls).toHaveLength(1);
-  expect(JSON.parse(String((ownCalls[0][1] as RequestInit).body))).toEqual({ athlete_id: OWN_ID });
+  expect(JSON.parse(String(ownCalls[0][1]?.body))).toEqual({ athlete_id: OWN_ID });
 });
 
 test('an athlete reads no roster, and no other id gains a name', async () => {
