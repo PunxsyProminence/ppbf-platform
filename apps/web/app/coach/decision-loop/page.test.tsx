@@ -2864,6 +2864,64 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(load).toHaveTextContent('Load Outcomes');
   });
 
+  test('Load Outcomes that fails and then works: the failure is gone from that decision', async () => {
+    const base = installSwitchFetch();
+    let fail = true;
+    global.fetch = jest.fn((url: string, init?: RequestInit) => {
+      if (!String(url).includes('/decision-outcomes?')) return base(url, init);
+      return Promise.resolve(fail ? jsonResponse({ error: 'OUTCOMES-DOWN' }, false) : jsonResponse({ outcomes: [] }));
+    }) as unknown as typeof fetch;
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('OUTCOMES-DOWN');
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('No outcomes evaluated yet.');
+    expect(screen.queryByText('OUTCOMES-DOWN')).toBeNull();
+  });
+
+  test('a refused incident, sent again and filed: the refusal is gone from under it', async () => {
+    let refuse = true;
+    installSwitchFetch({ post: (url, init) => (url.includes('/api/pilot/incidents') && refuse
+      ? jsonResponse({ error: 'INCIDENT-REFUSED' }, false)
+      : acknowledge(url, init)) });
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('INCIDENT-REFUSED');
+    refuse = false;
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+    expect(screen.queryByText('INCIDENT-REFUSED')).toBeNull();
+  });
+
+  test('an incident not-confirmed line is not erased by another form write or by a failed outcomes read', async () => {
+    const base = installSwitchFetch({ post: (url, init) => (url.includes('/api/pilot/incidents')
+      // A 200 that is not the route's acknowledgement: not confirmed.
+      ? jsonResponse({ ok: true })
+      : acknowledge(url, init)) });
+    global.fetch = jest.fn((url: string, init?: RequestInit) =>
+      (String(url).includes('/decision-outcomes?') ? Promise.resolve(jsonResponse({ error: 'OUTCOMES-DOWN' }, false)) : base(url, init))) as unknown as typeof fetch;
+    await openAthleteA();
+    const incidentSection = () => screen.getByRole('heading', { name: 'Report Incident' }).closest('section') as HTMLElement;
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await waitFor(() => expect(within(incidentSection()).getByText(/The server did not confirm this/)).toBeInTheDocument());
+
+    // Another form's write lands; another read fails.
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'near miss for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await screen.findByText('Near-miss flagged.');
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('OUTCOMES-DOWN');
+
+    expect(within(incidentSection()).getByText(/The server did not confirm this/)).toBeInTheDocument();
+    expect(screen.getByLabelText('What happened')).toHaveValue('incident for A');
+  });
+
   test('with every read failing, the page offers Check again and never says Reload (UXB-05)', async () => {
     installSwitchFetch({ readA: () => Promise.reject(new Error('Network down')) });
     render(<DecisionLoopReviewPage />);

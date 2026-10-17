@@ -170,6 +170,10 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   // replaces the form. The server answers body_mass_saved; a weight it did not
   // store is said so rather than looking accepted.
   const [bodyMassNotice, setBodyMassNotice] = useState('');
+  // The server keeps the first check-in of the day. When it already had one,
+  // what was just entered was not stored, and the athlete is told so rather
+  // than seeing their answers swapped for the earlier ones without a word.
+  const [earlierCheckInNotice, setEarlierCheckInNotice] = useState('');
   const [note, setNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -239,6 +243,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             ? 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'
             : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
       }
+      setEarlierCheckInNotice(payload.already_checked_in === true
+        ? 'You had already checked in today, so what you just entered was not saved. These are your answers from earlier.'
+        : '');
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {
       setSaveError('Check-in was not saved. Try again, and tell a coach you are here.');
@@ -306,6 +313,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             You checked in on {formatCalendarDay(today.checked_in_on)}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
+          {earlierCheckInNotice !== '' && (
+            <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{earlierCheckInNotice}</p>
+          )}
           {bodyMassNotice !== '' && (
             <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
           )}

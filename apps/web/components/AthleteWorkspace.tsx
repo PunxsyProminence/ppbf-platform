@@ -3710,6 +3710,8 @@ export default function AthleteWorkspace() {
               loadError={checkInLoadError}
               onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
               onSaved={(row) => {
+                // The server has answered with today's check-in: the failed read is no longer the news.
+                setCheckInLoadError(null);
                 setTodayCheckIn(row);
                 setRecentCheckIns((current) =>
                   current.some((entry) => entry.check_in_id === row.check_in_id)
