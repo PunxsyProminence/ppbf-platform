@@ -60,6 +60,10 @@ function mockFetch(overrides: Record<string, () => Promise<Response> | Response>
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // A switch is remembered (src/lib/chosenChild.ts); one test's pick must not
+  // choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 test("the child's rounds are read for that child, and the coach note shows under the opened round", async () => {

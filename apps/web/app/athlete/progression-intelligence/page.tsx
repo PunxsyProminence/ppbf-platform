@@ -11,6 +11,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import { orderAssignedWork, readDatedIssuedWorkouts, type DatedIssuedWorkout } from '@/src/lib/issuedWorkouts';
+import BackHome from '@/components/BackHome';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
@@ -588,6 +589,7 @@ export default function AthleteProgressionIntelligencePage() {
               says what it is. */}
           <p className="t-eyebrow">Drills</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             What your coach wants you working on, and somewhere to say when you have done it.
           </p>

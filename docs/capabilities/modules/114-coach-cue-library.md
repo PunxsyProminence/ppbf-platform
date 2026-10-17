@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation follow-up) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. coach/cue-library route + /coach/cue-library page over listCueLibrary (drillLibraryV3.ts), read-only browse of pilot.drill_cues. |
+| Code | `apps/web/app/api/pilot/coach/cue-library/route.ts`, `apps/web/app/coach/cue-library/page.tsx`, `apps/web/src/server/pilot/drillLibraryV3.ts` |
+| Tests | `apps/web/app/api/pilot/coach/cue-library/route.test.ts`, `apps/web/app/coach/cue-library/page.test.tsx` |
 | Vertical slice | read-only /coach/cue-library browse/search over pilot.drill_cues (current versions of active drills only), grouped by cue family with drill attribution; authoring stays on the drill |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -43,3 +46,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: build the read-only browse over cues already in drill records, no invented content. listCueLibrary (org-scoped, active-drill join), principal-gated route matching the drill-library posture, page grouped by cue family with search + focus filter. Tests pin server-side filtering, no-authoring-control, empty-vs-failed honesty. Promoted DRAFT -> DONE. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
 | 2026-09-30 | Claude (housekeeping) | Vertical slice reworded "(active drills only)" -> "(current versions of active drills only)": since #1032 (d100e6bd) listCueLibrary also requires d.superseded_at is null (apps/web/src/server/pilot/drillLibraryV3.ts:663), so a superseded version's cues no longer show. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation follow-up)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

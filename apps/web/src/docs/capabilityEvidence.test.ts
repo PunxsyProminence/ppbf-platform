@@ -42,14 +42,13 @@ import path from 'node:path';
  *    half that can catch a capability quietly deleted underneath its own
  *    documentation.
  *
- * 2. UNEVIDENCED `DONE` IS CAPPED, NOT BANNED. Existing debt passes: the
- *    ceiling is measured below, at today's count. One MORE unevidenced DONE
- *    fails the run and names the module. Same shape as
- *    the legacyVisualVocabulary.test.ts that was removed 2026-10-02 -- tolerate what is there, refuse growth --
- *    because retro-evidencing 54 modules is a body of work, not a line edit,
- *    and blocking the suite until it is done would just get the guard deleted.
+ * 2. A ManualVerification ROW, WHERE PRESENT, CARRIES A RECOGNISED VALUE.
  *
- * 3. A ManualVerification ROW, WHERE PRESENT, CARRIES A RECOGNISED VALUE.
+ * REMOVED 2026-10-16 (lane L32): the ceiling on DONE modules citing nothing
+ * (CEILING_UNEVIDENCED_DONE, 59 at the start, 0 at the end). Every module
+ * now carries Code and Tests rows, and scripts/check-capability-status.mjs
+ * refuses a DONE without an existing route or page and an existing test, on
+ * every PR including docs-only ones (capabilityStatus.test.ts proves it).
  *
  * REMOVED 2026-09-29: the check that the module files and
  * expanded-200-index.json did not drift further apart (its ceiling was
@@ -64,31 +63,17 @@ import path from 'node:path';
  * WHAT IT DELIBERATELY DOES NOT DO. It does not decide whether a capability
  * WORKS. A cited file existing is not a working feature, and this guard never
  * says it is -- that is what ManualVerification and a human on a deployed URL
- * are for. It only refuses the two failures a machine can actually see: a
- * citation pointing at nothing, and the unevidenced pile growing.
+ * are for. It only refuses a citation pointing at nothing, anywhere in a
+ * module file, and a ManualVerification value nobody defined.
  */
 
 const REPO = path.resolve(__dirname, '../../../..');
 const MODULE_DIR = path.join(REPO, 'docs/capabilities/modules');
 
-/**
- * Measured 2026-08-28 by running this file against the catalogue as it stood;
- * lowered 2026-09-28 (59 -> 51) after DONE claims with no code were
- * relabelled "claimed, no code" (OD-2026-09-28-010 item 18); lowered again the
- * same day (51 -> 48) after module 022 was relabelled and modules 070 and 082
- * cited their code. Unchanged 2026-09-29: module 084 became DONE citing its
- * route, page and tests, so it did not join the unevidenced pile.
- * This is a floor-to-not-exceed, not a target. Lowering it as modules get
- * evidenced is the point; raising it is an admission that has to be argued
- * for in the same change.
- */
-const CEILING_UNEVIDENCED_DONE = 48;
-
 interface Module {
   file: string;
   status: string | null;
   manualVerification: string | null;
-  claimsDone: boolean;
   citations: string[];
 }
 
@@ -133,7 +118,6 @@ function loadModules(): Module[] {
         file,
         status,
         manualVerification: tableField(text, 'ManualVerification'),
-        claimsDone: /\bDONE\b/.test(status ?? ''),
         citations: [...citations],
       };
     });
@@ -169,20 +153,6 @@ describe('the capability catalogue is readable as evidence', () => {
     // this repository, and a wrong one is wrong today -- there is no legacy
     // pile to tolerate.
     expect(broken).toEqual([]);
-  });
-
-  test('the pile of DONE-without-evidence does not grow', () => {
-    const unevidenced = modules.filter((m) => m.claimsDone && m.citations.length === 0);
-    const names = unevidenced.map((m) => m.file);
-    if (unevidenced.length > CEILING_UNEVIDENCED_DONE) {
-      throw new Error(
-        `${unevidenced.length} modules claim DONE while citing nothing checkable, ` +
-          `above the ceiling of ${CEILING_UNEVIDENCED_DONE} measured 2026-08-28.\n` +
-          `A new DONE needs at least one path into the codebase in its module file.\n` +
-          names.slice(0, 40).join('\n'),
-      );
-    }
-    expect(unevidenced.length).toBeLessThanOrEqual(CEILING_UNEVIDENCED_DONE);
   });
 
   test('a DONE module that has been signed off says so, rather than leaving it blank', () => {

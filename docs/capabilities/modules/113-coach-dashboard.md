@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. intake-router/page.tsx renders CoachWorkspace as the coach home (getPilotRoleDestination coach); CoachWorkspace.tsx loads floor plans, coach reviews, escalations, pain reports. |
+| Code | `apps/web/app/coach/environment/intake-router/page.tsx`, `apps/web/components/CoachWorkspace.tsx` |
+| Tests | `apps/web/components/coachWorkspaceHonesty.test.tsx`, `apps/web/components/coachWorkspaceFailedReads.test.tsx` |
 | Vertical slice | coach workspace dashboard: floor plans, open coach reviews, tasks/goals, pain/barrier reports, escalations |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -43,3 +46,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/coach/environment/intake-router/page.tsx; apps/web/components/CoachWorkspace.tsx; apps/web/components/coachWorkspaceHonesty.test.tsx. Test: apps/web/components/coachWorkspaceHonesty.test.tsx exercises rendering against mocked backing routes |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

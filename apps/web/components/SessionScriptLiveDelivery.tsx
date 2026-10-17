@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { explainLine } from '@/src/lib/sessionScriptWords';
 import RoundTimerControls from '@/components/RoundTimerControls';
 import SessionRunPresence from '@/components/SessionRunPresence';
@@ -109,16 +110,10 @@ function formatElapsed(totalSeconds: number): string {
   return `${hours > 0 ? `${hours}:` : ''}${mm}:${String(rest).padStart(2, '0')}`;
 }
 
-// Known refusal codes, translated for a coach mid-class. The raw code is kept
-// in the sentence so what the server actually said is never hidden.
-function describeRunError(code: unknown): string {
-  if (code === 'SESSION_RUN_BLOCK_NOT_IN_SCRIPT') {
-    return 'The server refused the move: that block is not part of this session\'s script. (SESSION_RUN_BLOCK_NOT_IN_SCRIPT)';
-  }
-  if (typeof code === 'string' && code.trim() !== '') {
-    return `The server refused: ${code}`;
-  }
-  return 'The server refused the request.';
+// Refusal codes in words for a coach mid-class; a code or a status number is
+// never shown (UXB-09). The words live in src/lib/serverRefusalWords.ts.
+function describeRunError(code: unknown, status?: number): string {
+  return refusalWords({ error: code, status });
 }
 
 interface SessionScriptLiveDeliveryProps {
@@ -277,7 +272,7 @@ export default function SessionScriptLiveDelivery({
         error?: string;
       };
       if (!response.ok || !payload.item) {
-        setLogError(payload.error || `The server refused to log the intervention (${response.status}).`);
+        setLogError(refusalWords({ error: payload.error, status: response.status }, {}, 'The intervention was not logged. Try again.'));
         return;
       }
       const athleteName = logAthletes.find((a) => a.athlete_id === logAthleteId)?.full_name ?? logAthleteId;
@@ -350,7 +345,7 @@ export default function SessionScriptLiveDelivery({
             await resyncAfterNotLive();
             return;
           }
-          setActionError(describeRunError(payload.error));
+          setActionError(describeRunError(payload.error, response.status));
           return;
         }
 
@@ -519,7 +514,7 @@ export default function SessionScriptLiveDelivery({
       <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
 
       {actionError && (
-        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           {actionError}
         </p>
       )}
@@ -530,8 +525,8 @@ export default function SessionScriptLiveDelivery({
       )}
 
       {!isPlain && detailState === 'unavailable' && (
-        <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-          <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+          <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
             The plan for this session could not be loaded, so its blocks cannot be shown or
             navigated. The session itself is still live -- pausing, resuming and ending it still work.
           </p>
@@ -643,7 +638,7 @@ export default function SessionScriptLiveDelivery({
             </p>
 
             {logAthletesState === 'unavailable' || logProtocolsState === 'unavailable' ? (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {logAthletesState === 'unavailable' && logProtocolsState === 'unavailable'
                   ? 'The athlete roster and the protocol list could not be loaded, so nothing can be logged from here.'
                   : logAthletesState === 'unavailable'
@@ -686,7 +681,7 @@ export default function SessionScriptLiveDelivery({
             )}
 
             {logError && (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {logError}
               </p>
             )}
@@ -803,7 +798,7 @@ export default function SessionScriptLiveDelivery({
               />
             </label>
             {settleFieldError && (
-              <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">{settleFieldError}</p>
+              <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{settleFieldError}</p>
             )}
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button
