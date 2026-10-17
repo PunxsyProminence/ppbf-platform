@@ -8821,6 +8821,87 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/family-goals/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-goals/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Adds a goal written as role parent by the session's account.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-goals/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Edit, tick done, untick or retire a goal this guardian wrote; never a delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/message-reads/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/message-reads",
