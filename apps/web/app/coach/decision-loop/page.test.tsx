@@ -412,9 +412,6 @@ describe('Message Home (#90)', () => {
   });
 });
 
-// Round 9 review: capability #152's Report Incident form shipped with zero
-// test coverage -- only the server route and the pure function were
-// exercised, never the UI a coach actually uses to file one.
 describe('Family goals (PH-06b)', () => {
   const goal = (athleteId: string, title: string) => ({
     goal_id: `g-${athleteId}`, title, support_action: 'At home.', target_date: null,
@@ -444,6 +441,9 @@ describe('Family goals (PH-06b)', () => {
   });
 });
 
+// Round 9 review: capability #152's Report Incident form shipped with zero
+// test coverage -- only the server route and the pure function were
+// exercised, never the UI a coach actually uses to file one.
 describe('Report Incident (#152)', () => {
   test('severity defaults to high and posts the payload the route expects', async () => {
     const fetchMock = installFetch();

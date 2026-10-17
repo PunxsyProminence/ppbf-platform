@@ -11,8 +11,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import FamilyGoalsForStaff, { type StaffFamilyGoal } from './FamilyGoalsForStaff';
 
-function jsonResponse(body: unknown, ok = true): Response {
-  return { ok, status: ok ? 200 : 400, json: async () => body } as unknown as Response;
+function jsonResponse(body: unknown, status = 200): Response {
+  return { ok: status < 400, status, json: async () => body } as unknown as Response;
 }
 
 const GUARDIAN: StaffFamilyGoal = {
@@ -97,7 +97,7 @@ test('reads guardian and staff goals with who set them, the day and the state; c
 });
 
 test('a failed read says so and is not the empty state; an empty answer is', async () => {
-  installFetch(() => jsonResponse({ error: 'nope' }, false));
+  installFetch(() => jsonResponse({ error: 'nope' }, 400));
   const { unmount } = render(<FamilyGoalsForStaff athleteId="ath-1" />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Family goals could not be loaded. This is not a statement that there are none.');
   expect(screen.queryByText('No family goals for this athlete yet.')).toBeNull();
@@ -231,21 +231,130 @@ test('blank fields keep Add and Save disabled and a forced submit sends nothing'
   expect(writes(mock)).toEqual([]);
 });
 
-test('a network failure on a write says the goal was not saved; a refusal shows the server text', async () => {
-  let fail: () => Promise<Response> = () => Promise.reject(new TypeError('Failed to fetch'));
+test('a goal the server does not mark mine_to_change has no controls, even when staff set it', async () => {
+  installFetch([{ ...STAFF, mine_to_change: false }]);
+  await mount();
+  const goal = goalItem('Water bottle every session');
+  expect(goal).toHaveTextContent('Set by Coach Pat');
+  expect(within(goal).queryByRole('checkbox')).toBeNull();
+  expect(within(goal).queryByRole('button')).toBeNull();
+});
+
+test('loading the panel writes nothing', async () => {
+  const mock = installFetch([GUARDIAN, STAFF], () => jsonResponse({ ok: true, item: STAFF }));
+  await mount();
+  expect(screen.getByText('Water bottle every session')).toBeInTheDocument();
+  expect(writes(mock)).toEqual([]);
+  expect(mock).toHaveBeenCalledTimes(1);
+});
+
+test('a refusal (4xx) shows the server text; a 5xx or a network failure says the goal may not have been saved; the goal stays', async () => {
+  let fail: () => Promise<Response> = async () => jsonResponse({ error: 'Forbidden: your staff seat in this gym is not active.' }, 403);
   installFetch([STAFF], () => fail());
   await mount();
-  await act(async () => {
+  const retire = async () => act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retire: Water bottle every session' }));
   });
-  expect(screen.getByRole('alert')).toHaveTextContent('The goal was not saved.');
+
+  await retire();
+  expect(screen.getByRole('alert')).toHaveTextContent('Forbidden: your staff seat in this gym is not active.');
   expect(screen.getByText('Water bottle every session')).toBeInTheDocument();
 
-  fail = async () => jsonResponse({ error: 'Not found: that goal is not one you can change.' }, false);
+  // The write may have landed: "not saved" would invite a duplicate.
+  fail = async () => jsonResponse({ error: 'Internal error' }, 500);
+  await retire();
+  expect(screen.getByRole('alert')).toHaveTextContent('The goal may not have been saved. Reload to check.');
+  expect(screen.getByRole('alert')).not.toHaveTextContent('Internal error');
+  expect(screen.getByText('Water bottle every session')).toBeInTheDocument();
+
+  fail = () => Promise.reject(new TypeError('Failed to fetch'));
+  await retire();
+  expect(screen.getByRole('alert')).toHaveTextContent('The goal may not have been saved. Reload to check.');
+  expect(screen.getByText('Water bottle every session')).toBeInTheDocument();
+});
+
+test('a failed Add keeps the typed goal; a 5xx says it may not have been saved', async () => {
+  installFetch([], async () => jsonResponse({}, 502));
+  await mount();
+  fireEvent.change(screen.getByLabelText('Goal'), { target: { value: 'Stretch' } });
+  fireEvent.change(screen.getByLabelText('What the family will do'), { target: { value: 'Ten minutes.' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Retire: Water bottle every session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add goal' }));
   });
-  expect(screen.getByRole('alert')).toHaveTextContent('Not found: that goal is not one you can change.');
+  expect(screen.getByRole('alert')).toHaveTextContent('The goal may not have been saved. Reload to check.');
+  expect(screen.getByLabelText('Goal')).toHaveValue('Stretch');
+});
+
+test('a failed edit keeps the form open with the typed text', async () => {
+  let fail: () => Promise<Response> = async () => jsonResponse({ error: 'Title is too long.' }, 400);
+  installFetch([STAFF], () => fail());
+  await mount();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit: Water bottle every session' }));
+  const form = screen.getByRole('form', { name: 'Edit Water bottle every session' });
+  fireEvent.change(within(form).getByLabelText('Goal'), { target: { value: 'Two bottles' } });
+
+  await act(async () => {
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent('Title is too long.');
+  expect(within(screen.getByRole('form', { name: 'Edit Water bottle every session' })).getByLabelText('Goal')).toHaveValue('Two bottles');
+
+  fail = async () => jsonResponse({}, 503);
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole('form', { name: 'Edit Water bottle every session' })).getByRole('button', { name: 'Save' }));
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent('The goal may not have been saved. Reload to check.');
+  expect(within(screen.getByRole('form', { name: 'Edit Water bottle every session' })).getByLabelText('Goal')).toHaveValue('Two bottles');
+});
+
+test('a 404 on a change (the goal is gone) takes it off the list and says so', async () => {
+  installFetch([GUARDIAN, STAFF, STAFF_2], async () => jsonResponse({ error: 'Not found: that goal is not one you can change.' }, 404));
+  await mount();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Done: Water bottle every session' }));
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent('That goal is no longer on the list.');
+  expect(screen.queryByText('Water bottle every session')).toBeNull();
+  expect(screen.getByText('Lights out by nine')).toBeInTheDocument();
+
+  // Gone while being edited: the form closes with it.
+  fireEvent.click(screen.getByRole('button', { name: 'Edit: Wrap hands at home' }));
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole('form', { name: 'Edit Wrap hands at home' })).getByRole('button', { name: 'Save' }));
+  });
+  expect(screen.queryByText('Wrap hands at home')).toBeNull();
+  expect(screen.queryByRole('form', { name: 'Edit Wrap hands at home' })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Family goals' }));
+});
+
+test('focus after a write: Save to that goal\'s Edit, Retire to the heading, Add to the new goal', async () => {
+  const created: StaffFamilyGoal = { ...STAFF, goal_id: 'g-new', title: 'Stretch after school', support_action: 'Ten minutes.' };
+  let answer: () => Response = () => jsonResponse({ ok: true, item: { ...STAFF, title: 'Two bottles' } });
+  installFetch([STAFF, STAFF_2], async () => answer());
+  await mount();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit: Water bottle every session' }));
+  const form = screen.getByRole('form', { name: 'Edit Water bottle every session' });
+  fireEvent.change(within(form).getByLabelText('Goal'), { target: { value: 'Two bottles' } });
+  await act(async () => {
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+  });
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit: Two bottles' }));
+
+  answer = () => jsonResponse({ ok: true, item: null });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Retire: Wrap hands at home' }));
+  });
+  expect(screen.queryByText('Wrap hands at home')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Family goals' }));
+
+  answer = () => jsonResponse({ ok: true, item: created });
+  fireEvent.change(screen.getByLabelText('Goal'), { target: { value: 'Stretch after school' } });
+  fireEvent.change(screen.getByLabelText('What the family will do'), { target: { value: 'Ten minutes.' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add goal' }));
+  });
+  expect(document.activeElement).toBe(goalItem('Stretch after school'));
 });
 
 // No key here on purpose: even a prop change on the same instance never lets
@@ -269,17 +378,4 @@ test("switching athlete drops the previous athlete's goals, and their slow read 
   });
   expect(screen.queryByText('Lights out by nine')).toBeNull();
   expect(screen.getByText('Wrap hands at home')).toBeInTheDocument();
-});
-
-test('a draft typed for one athlete is gone after switching to another (key)', async () => {
-  installFetch([]);
-  let view!: ReturnType<typeof render>;
-  await act(async () => {
-    view = render(<FamilyGoalsForStaff key="ath-a" athleteId="ath-a" />);
-  });
-  fireEvent.change(screen.getByLabelText('Goal'), { target: { value: 'For A only' } });
-  await act(async () => {
-    view.rerender(<FamilyGoalsForStaff key="ath-b" athleteId="ath-b" />);
-  });
-  expect(screen.getByLabelText('Goal')).toHaveValue('');
 });
