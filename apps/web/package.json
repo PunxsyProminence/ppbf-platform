@@ -238,6 +238,7 @@
     "test:migrations:family-message-read-state": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/familyMessageReadState.pg.test.ts --testTimeout=180000",
     "test:migrations:family-message-reads": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/familyMessageReads.pg.test.ts --testTimeout=180000",
     "test:migrations:session-run-athletes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionRunAthletesMigration.pg.test.ts --testTimeout=180000",
+    "test:migrations:gym-setup-status": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/gymSetupStatus.pg.test.ts --testTimeout=180000",
     "test:migrations:session-run-presence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionRunAthletes.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-mental-skills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMentalSkills.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-injuries": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteInjuries.pg.test.ts --testTimeout=180000",
