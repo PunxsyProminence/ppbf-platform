@@ -106,3 +106,19 @@ test('the one change is retire, by record id; anything else is refused before an
   mockRetire.mockResolvedValueOnce(null);
   expect((await PATCH(bodyRequest('PATCH', { record_id: RECORD_ID, action: 'retire' }))).status).toBe(404);
 });
+
+test('a malformed or non-object body is a 400, never a 500, and reaches no write', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal());
+  const rawRequest = (method: 'POST' | 'PATCH', body: string) =>
+    new NextRequest(URL_BASE, { method, headers: { 'content-type': 'application/json' }, body });
+
+  for (const body of ['{not json', '', 'null', '[]', '"retire"', '42']) {
+    for (const [method, handler] of [['POST', POST], ['PATCH', PATCH]] as const) {
+      const response = await handler(rawRequest(method, body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'The request body must be a JSON object.' });
+    }
+  }
+  expect(mockRecord).not.toHaveBeenCalled();
+  expect(mockRetire).not.toHaveBeenCalled();
+});
