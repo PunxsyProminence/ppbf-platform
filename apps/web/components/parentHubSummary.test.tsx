@@ -98,6 +98,8 @@ function installFetch(options: {
 } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({
         items: [
@@ -331,6 +333,8 @@ describe('no child selected', () => {
   test('a schedule that answered before the roster, with the roster failing, is not zero sessions', async () => {
     const fetchMock = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ error: 'down' }, false);
       if (url.includes('/api/pilot/scheduler')) return jsonResponse(SCHEDULE);
       return jsonResponse({ ok: true, items: [], announcements: [], card: null });

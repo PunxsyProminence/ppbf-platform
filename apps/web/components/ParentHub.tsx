@@ -15,6 +15,7 @@ import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import SentToYourAthlete from './SentToYourAthlete';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
@@ -1766,6 +1767,10 @@ export default function ParentHub() {
                 </div>
               )}
 
+              {/* A copy of what staff wrote to the guardian's children under 18
+                  (#1542, FC-06 Q-2, ruled B), kept apart from the family's own
+                  messages above. */}
+              <SentToYourAthlete childNames={Object.fromEntries(children.map((child) => [child.id, child.name]))} />
             </div>
           )}
 
