@@ -3,6 +3,9 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
+| Status note | Was "DONE" until 2026-10-16. Coaches/admins place and lift holds at GET/POST training-holds (route.ts,181) and on /coach/sports-medicine; pilot.training_holds enforced at class registration and competition entry (trainingHolds.ts, competitionSafetyGates.ts). |
+| Code | `apps/web/app/api/pilot/training-holds/route.ts`, `apps/web/src/server/pilot/trainingHolds.ts`, `apps/web/app/coach/sports-medicine/page.tsx`, `apps/web/src/server/pilot/competitionSafetyGates.ts`, `apps/web/app/api/pilot/scheduler/route.ts` |
+| Tests | `apps/web/app/api/pilot/training-holds/route.test.ts`, `apps/web/src/server/pilot/trainingHolds.test.ts`, `apps/web/app/coach/sports-medicine/page.test.tsx` |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
@@ -77,3 +80,4 @@ see module 034.)
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-06 | session B (remote) | Built on PR #238: training_holds table, gate row, escalation wiring, registration block, contact flag, athlete banner. Scope decisions taken with owner. Status stays inactive pending promotion review. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

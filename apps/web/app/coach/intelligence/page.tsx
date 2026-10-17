@@ -8,6 +8,7 @@ import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 
 import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
+import BackHome from '@/components/BackHome';
 
 /** Some of this digest's instants arrive as Postgres text ("2026-08-20
  *  00:00:00+00"), which not every browser parses. Written as ISO first. */
@@ -259,7 +260,7 @@ export default function CoachIntelligencePage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

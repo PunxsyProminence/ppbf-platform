@@ -496,3 +496,25 @@ describe('a role the hub no longer admits', () => {
     expect(screen.queryByText('Checking access')).toBeNull();
   });
 });
+
+/* Lane U2 (audit UX-A A-5): the hub is administration only, so it offers no
+   tile into another role's home -- every one of them refused the admin who
+   clicked it and sent them home with nothing said. */
+describe.each(['admin', 'platform_owner'] as const)('the hub, read by %s', (role) => {
+  test('links no other role\'s home or athlete-only page', async () => {
+    await renderPage(role);
+    const hrefs = screen.queryAllByRole('link').map((a) => a.getAttribute('href'));
+    for (const crossRole of [
+      '/athlete/dashboard',
+      '/coach/environment/intake-router',
+      '/parent/dashboard',
+      '/board',
+      '/guardian',
+      '/athlete/progression-intelligence',
+    ]) {
+      expect(hrefs).not.toContain(crossRole);
+    }
+    expect(screen.queryByRole('heading', { name: 'Role Selector' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'WORKSPACES' })).toBeNull();
+  });
+});
