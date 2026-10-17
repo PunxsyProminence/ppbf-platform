@@ -16,6 +16,7 @@ import {
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymCustom } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // The authoring view of one lesson: what a reader gets, plus the three fields
 // only the people who write them need.
@@ -256,6 +257,7 @@ function RabbitHoleAuthoringPage() {
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-2xl)' }}>
             Rabbit Holes
           </h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s4)] max-w-[72ch]">
             A rabbit hole is a concept worth understanding and something to go and do with it. Pick the term it is
             about, write it, and it appears inside every card that already names that term.

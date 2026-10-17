@@ -396,15 +396,16 @@ export function ParentSummaryPanel({
         </div>
       )}
 
-      {/* Messages */}
+      {/* New messages: the ones this guardian has not opened yet (FC-08).
+          PROPOSED label, was "Messages". */}
       {unreadMessages === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Messages</p>
+          <p className="t-label">New messages</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={STAT_TILE}>
-          <p className="stat-label">Messages</p>
+          <p className="stat-label">New messages</p>
           <p className="stat-val">{unreadMessages}</p>
         </div>
       )}

@@ -1,10 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
-import { getRoleRoute } from '@/components/roleRoutes';
+import BackHome from '@/components/BackHome';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 
@@ -46,7 +44,6 @@ const RESOLUTIONS = [
 ] as const;
 
 export default function SafetyFlagsBoardPage() {
-  const session = usePilotSession();
   const [flags, setFlags] = useState<FlagRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -263,11 +260,7 @@ export default function SafetyFlagsBoardPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            {isOrganizationAdminSessionRole(session.role) ? (
-              <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
-            ) : session.role === 'coach' ? (
-              <Link href={getRoleRoute('coach')} className="btn btn--ghost">Back to Workspace</Link>
-            ) : null}
+            <BackHome />
           </div>
         </div>
       </main>

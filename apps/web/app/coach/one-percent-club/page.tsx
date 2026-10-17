@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // 1% Club (module 127). Owner design, verbatim: "1,2,3 with the majority of
 // coach and admin on the list vote to confirm".
@@ -353,7 +353,7 @@ export default function OnePercentClubPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>
