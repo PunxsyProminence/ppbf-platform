@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. A coach-set due date on a parent message plus a guardian-ticked done flag: setParentTaskCompletion (parentTasks.ts) called from POST parent/messages (route.ts, call) and ticked in ParentHub.tsx, reached from app/parent/dashboard/page.tsx; athlete-side completions are recorded separately v... |
+| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. A coach-set due date on a parent message plus a guardian-ticked done flag: setParentTaskCompletion (parentTasks.ts) called from POST parent/messages (route.ts, call) and ticked in ParentHub.tsx, reached from app/parent/dashboard/page.tsx; athlete-side completions are recorded separately via recordCompletion (progression.ts). |
 | Code | `apps/web/app/api/pilot/parent/messages/route.ts`, `apps/web/src/server/pilot/parentTasks.ts`, `apps/web/components/ParentHub.tsx`, `apps/web/app/parent/dashboard/page.tsx`, `apps/web/app/api/pilot/parent-tasks/route.ts` |
 | Tests | `apps/web/components/parentHubTasks.test.tsx`, `apps/web/app/api/pilot/parent-tasks/route.test.ts`, `apps/web/src/server/pilot/parentTaskState.pg.test.ts` |
 | Active | false |

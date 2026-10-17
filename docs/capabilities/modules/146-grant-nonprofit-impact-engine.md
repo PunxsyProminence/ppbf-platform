@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **MAPPED** |
-| Status note | Was "DONE" until 2026-10-16. Only grant code is the internal grant-obligation ledger (grantObligations.ts, deadlines/deliverables to funders, deliberately no athlete or impact data); the impact half does not exist. Module has no slice row and build plan listed it unbuilt (CAPABILITY_BUILD_PLAN_2026-08-03.md); same code is mo... |
+| Status note | Was "DONE" until 2026-10-16. Only grant code is the internal grant-obligation ledger (grantObligations.ts, deadlines/deliverables to funders, deliberately no athlete or impact data); the impact half does not exist. Module has no slice row and build plan listed it unbuilt (CAPABILITY_BUILD_PLAN_2026-08-03.md); same code is module 174's evidence. Could be read as DONE if the owner treats the ledger as the whole slice |
 | Code | `apps/web/app/api/pilot/admin/grant-obligations/route.ts`, `apps/web/app/admin/grants/page.tsx`, `apps/web/src/server/pilot/grantObligations.ts` |
 | Tests | `apps/web/app/api/pilot/admin/grant-obligations/route.test.ts`, `apps/web/app/admin/grants/page.test.tsx`, `apps/web/src/server/pilot/grantObligations.pg.test.ts` |
 | Active | false |

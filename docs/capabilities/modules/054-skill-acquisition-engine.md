@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. Drills carry a skill tag (pilot.drill_library.skill_id plus pilot.drill_secondary_skills), filterable at drill-library/route.ts GET (skill_id, related_skill_id), and an athlete's assignments are grouped by skill family via listAthleteFamilyDrills (skillProgressionOrder.ts) at athlete/skill-progre... |
+| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. Drills carry a skill tag (pilot.drill_library.skill_id plus pilot.drill_secondary_skills), filterable at drill-library/route.ts GET (skill_id, related_skill_id), and an athlete's assignments are grouped by skill family via listAthleteFamilyDrills (skillProgressionOrder.ts) at athlete/skill-progression/route.ts; the tag vocabulary comes from reference content rather than a coach-edited allowlist, so the 'coach set allowlist' part is a judgement call. |
 | Code | `apps/web/app/api/pilot/drill-library/route.ts`, `apps/web/src/server/pilot/drillLibraryV3.ts`, `apps/web/app/api/pilot/athlete/skill-progression/route.ts`, `apps/web/src/server/pilot/skillProgressionOrder.ts` |
 | Tests | `apps/web/app/api/pilot/drill-library/route.test.ts`, `apps/web/app/api/pilot/athlete/skill-progression/route.test.ts` |
 | Active | false |

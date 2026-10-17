@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **CLAIMED-NO-CODE** |
-| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. No mastery status (learning/practiced/verified) on a skill exists in app, src, components or infra/azure/*.sql; the only coach 'verified' state is assignment_completions.verification_status pending/verified/disputed (infra/azure/pilot_slice_postgres_progression_migration.sql), which verifies one... |
+| Status note | Was "DONE (Wave 7 tracker)" until 2026-10-16. No mastery status (learning/practiced/verified) on a skill exists in app, src, components or infra/azure/*.sql; the only coach 'verified' state is assignment_completions.verification_status pending/verified/disputed (infra/azure/pilot_slice_postgres_progression_migration.sql), which verifies one completed assignment, not skill mastery, so it is related-but-different. |
 | Code | none |
 | Tests | none |
 | Active | false |

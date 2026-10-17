@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
-| Status note | Was "DRAFT" until 2026-10-16. No review-due logic found (grepped review_due/due_for_review/next_review/overdue across app, src, scripts, infra/azure). Only adjacent: stale_recheck_due source retraction recheck queue (infra/azure/pilot_slice_postgres_retraction_surveillance_migration.sql, admin/retraction-checks route) is a re... |
+| Status note | Was "DRAFT" until 2026-10-16. No review-due logic found (grepped review_due/due_for_review/next_review/overdue across app, src, scripts, infra/azure). Only adjacent: stale_recheck_due source retraction recheck queue (infra/azure/pilot_slice_postgres_retraction_surveillance_migration.sql, admin/retraction-checks route) is a retraction check, not a review-due engine, so not cited |
 | Code | none |
 | Tests | none |
 | Active | false |

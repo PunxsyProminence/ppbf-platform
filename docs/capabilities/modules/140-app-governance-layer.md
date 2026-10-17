@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DRAFT" until 2026-10-16. Per-gym capability registry (pilot.admin_capability_registry) read/saved by admin-gated GET/POST (admin/capabilities/route.ts,35) and edited from /admin (page.tsx,991). Module file has no slice row; mapping rests on docs/CAPABILITY_BUILD_PLAN_2026-08-03.md ("capability registry + console"). A rev... |
+| Status note | Was "DRAFT" until 2026-10-16. Per-gym capability registry (pilot.admin_capability_registry) read/saved by admin-gated GET/POST (admin/capabilities/route.ts) and edited from /admin (page.tsx). Module file has no slice row; mapping rests on docs/CAPABILITY_BUILD_PLAN_2026-08-03.md ("capability registry + console"). A reviewer may judge it only partial (MAPPED) |
 | Code | `apps/web/app/api/pilot/admin/capabilities/route.ts`, `apps/web/app/admin/page.tsx` |
 | Tests | `apps/web/app/api/pilot/admin/capabilities/route.test.ts`, `apps/web/app/admin/page.test.tsx` |
 | Active | false |

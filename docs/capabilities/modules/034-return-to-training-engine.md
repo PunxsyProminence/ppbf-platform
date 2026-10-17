@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 5 tracker)" until 2026-10-16. return-to-training/route.ts GET, POST create plan on an injury (medical_clearance_on_file), PATCH advance step, over safetyFlags.ts createReturnToTrainingPlan, addReturnToTrainingStep, advanceReturnToTrainingStep. The 2026-09-28 audit note said no route; one now exis... |
+| Status note | Was "DONE (Wave 5 tracker)" until 2026-10-16. return-to-training/route.ts GET, POST create plan on an injury (medical_clearance_on_file), PATCH advance step, over safetyFlags.ts createReturnToTrainingPlan, addReturnToTrainingStep, advanceReturnToTrainingStep. The 2026-09-28 audit note said no route; one now exists. Slice wording is 'flag after gate clear' while the code is a plan/step tracker - judgment call. |
 | Code | `apps/web/app/api/pilot/coach/return-to-training/route.ts`, `apps/web/src/server/pilot/safetyFlags.ts` |
 | Tests | `apps/web/app/api/pilot/coach/return-to-training/route.test.ts`, `apps/web/src/server/pilot/safetyFlags.pg.test.ts` |
 | Active | false |
