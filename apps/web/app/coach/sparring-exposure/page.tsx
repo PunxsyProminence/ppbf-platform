@@ -8,6 +8,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/src/lib/apiBase';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /*
  * Coach floor entry for sparring exposure: what the coach SAW during one
@@ -301,6 +302,7 @@ export default function CoachSparringExposurePage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Sparring</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Sparring Record</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record what you saw in one sparring segment. The app counts and shows it. It does not score it, set a
             limit, or clear anyone. You decide.

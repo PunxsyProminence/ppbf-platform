@@ -11,6 +11,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDay, formatGymStamp } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
+import BackHome from '@/components/BackHome';
 
 // A rabbit hole renders as a paper note pinned to the leather panel, so it
 // takes the design system's paper material (which carries its own dark ink)
@@ -1519,9 +1520,7 @@ export default function CoachProgressionIntelligencePage() {
         )}
 
         <div className="flex flex-wrap gap-[var(--s3)]">
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost">
-            Back to Coach Workspace
-          </Link>
+          <BackHome />
           <Link href="/rabbit-holes" className="btn btn--ghost">
             Write a Rabbit Hole
           </Link>
