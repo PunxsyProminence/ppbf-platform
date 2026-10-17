@@ -69,6 +69,7 @@ test('the parent guide names the live task feed and lists no Parent Hub section 
   expect(parent).toMatch(/goals the gym sets show there too, and only the gym can change them/);
   expect(parent).toMatch(/Resources are on the Resources tab/);
   expect(parent).not.toMatch(/Planned, with no feed yet/);
+  expect(guide('parent-guide').doNotTestYet).not.toMatch(/stamped PLANNED/);
   // FC-05: the coaches read observations (F-073).
   expect(parent).toMatch(/Observations tab, and the coaches can read them/);
   // Replies to coach messages are built (#1542, FC-03).
