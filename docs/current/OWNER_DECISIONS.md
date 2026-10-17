@@ -164,6 +164,31 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-001 -- UX coherence cards: "A: Use these words (Recommended)"; "A: Rename + I'm here on Today (Recommended)"; "A: Cross-link now (Recommended)"; "B: Keep one", corrected to "Im Ment A"
+
+**Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 9921, 2026-10-17T01:14:03.456Z; answered at line 9922, 2026-10-17T15:01:17.651Z; his typed correction queued at line 9926, 2026-10-17T15:01:35.108Z). Read by script (records pass, lane L36, 2026-10-17). The button picks and his typed words are quoted exactly; the questions and options are quoted as overwatch wrote them. The findings behind the card are in the UX coherence audit, `Documents\PPBF-overwatch\audit\UX-COHERENCE-A-STRUCTURE-2026-10-16.md`. New; edits no earlier entry.
+
+**Question "Glossary".** Overwatch, as written: "UX glossary (UX audit A-12): the same thing has different names on different screens. Use one word for each: (a) a coach's plan for a session = "Session Plan" (not "Session Script"); (b) a training stop = "Training Hold" ("paused" only in the family sentence); (c) the coach's multi-week plan for an athlete = "Development Plan"; (d) the admin's home = "Gym Office"? Plain: today one thing has several names, so people can't find it. You pick one word each, and every screen and menu uses it." Options as written: "A: Use these words (Recommended)": "Session Plan, Training Hold, Development Plan, Gym Office, everywhere; each menu label matches its page title."; "B: Keep current names": "No renames; only the menu labels are made to match the page titles." Jason: *"A: Use these words (Recommended)"*
+
+**Question "Check-in".** Overwatch, as written: "Athlete check-in (UX audit A-4): three different athlete buttons are all called "check in". Rename them to "How I feel today" (wellness), "Start training" (starts a session) and "I'm here" (attendance), and put "I'm here" for today's class on the athlete's Today tab? Plain: a kid can press "check in" and still not be marked present. This makes "I'm here" the only attendance button and puts it where they already are." Options as written: "A: Rename + I'm here on Today (Recommended)": "Three clear names; attendance from the athlete's home."; "B: Keep as is": "No change." Jason: *"A: Rename + I'm here on Today (Recommended)"*
+
+**Question "Coach pages".** Overwatch, as written: "Overlapping coach pages (UX audit A-11): five pages answer "who needs me" (Morning Read, Performance Analytics, Passbook Gaps, Athlete Intelligence, the home list), and four pages cover sparring. Keep them as separate pages with cross-links, or merge each group into one page? Plain: links make them findable now and are cheap. Merging means fewer pages, but it's real rebuild work across several lanes." Options as written: "A: Cross-link now (Recommended)": "Home links to the Morning Read as the full list; each group gets a shared sub-nav. No merges."; "B: Merge each group": "Rebuild into one page per group; several lanes of work." Jason: *"A: Cross-link now (Recommended)"*
+
+**Question "Menus".** Overwatch, as written: "Header menus (UX audit A-16): the top bar has two menus showing the same page list two ways (the Corridor and the Jump catalog). Keep both or keep one? Plain: two menus with the same list. Keeping both costs nothing; keeping one is simpler." Options as written: "A: Keep both (Recommended)": "Low cost; no change."; "B: Keep one": "Remove one menu (we'd keep the Jump catalog, which has search)." Jason: *"B: Keep one"*, which is not the recommended option. About 17 seconds later he typed (line 9926, 2026-10-17T15:01:35.108Z): *"Im Ment A"*. Overwatch withdrew the lane chip it had just issued with the "keep one" wording (line 9946, reason "Jason corrected the menus answer to A (keep both)") and answered (line 9954, 2026-10-17T15:01:57.642Z): "Got it: both header menus stay."
+
+**Ruling:**
+
+1. Glossary: one word for each thing on every screen and menu: Session Plan (not Session Script), Training Hold ("paused" only in the family sentence), Development Plan (the coach's multi-week plan for an athlete), Gym Office (the admin's home). Each menu label matches its page title.
+2. Athlete check-in: the three buttons are named "How I feel today" (wellness), "Start training" (starts a session) and "I'm here" (attendance), and "I'm here" for today's class is on the athlete's Today tab.
+3. Overlapping coach pages: they stay separate pages, cross-linked; no merges. The home links to the Morning Read as the full list, and each group gets a shared sub-nav.
+4. Header menus: A, both stay (the Corridor and the Jump catalog). His card pick was "B: Keep one"; his typed "Im Ment A" corrects it, and overwatch read and acted on it as A. Option B of the first three questions and his first menus pick are not the ruling.
+
+**Acted on (OBSERVED in the transcript):** overwatch re-issued the navigation lane chip (lane U2) with these four rulings and both menus kept (line 9948; chip id at line 9949). Whether each ruling is built was not checked by this records pass.
+
+**Status:** REPORTED, lane U2 started (gap check) at the time of writing; not built.
+
+---
+
 ## OD-2026-10-15-002 -- Overwatch's application of an existing ruling, NOT a new pick of Jason's: F-076, a child's disclosure of harm typed into SHADOW chat is an athlete-scoped high-risk SHADOW message under OD-2026-10-01-008 section 3; "You just asked me that are you fucking with me now"; "I already answered it ..."
 
 **Provenance: DERIVED, with his words PRIMARY.** He did not pick a letter on F-076; he said he had already answered it, and Overwatch then applied his OD-2026-10-01-008 section 3 ruling. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-15). His words are quoted exactly, spelling and spacing kept (the second ends in a space). New; edits no earlier entry. It follows from OD-2026-10-13-013.
@@ -378,6 +403,8 @@ and should not try to.
 **Acted on (REPORTED, handover 00:21 and 01:50 UTC entries):** nothing has been changed. The platform-owner and athlete test windows were signed out, so the two records were not read; the next step is a read-only look on the platform desk, then a lane for the program move.
 
 **Status:** OPEN, not acted on.
+
+**Status (2026-10-17), H-2 read-only look (REPORTED, live audit LA1, `Documents\PPBF-overwatch\audit\LIVE-AUDIT-2026-10-17.md`):** the gym named "hiit fit" has the id `danielles`, and Danielle's HIIT Fit has the id `hiit_boxing_danielle`; the names and ids cross. "hiit fit" has 0 accounts of any role, 0 track assignments and 0 SHADOW interactions; Danielle's HIIT Fit has one organization admin, 0 track assignments and 0 SHADOW interactions. Roster rows without an account, programs and classes are UNVERIFIED (no platform-owner read route returns them). Nothing has been closed or moved.
 
 ---
 
@@ -684,6 +711,8 @@ and should not try to.
 
 **Acted on:** overwatch's comment on PR #1506 at 2026-10-12T17:21:54Z (OBSERVED, `gh`) quotes his words and asks the lane to update the comment in `athleteBodyMass.ts` that calls this an open owner question, at its next touch of the file. PR #1506, "Lane P11 (PR A): a coach's reach is the whole gym, not only assigned athletes", merged `0ad57fa6c196c61f8cce1e96bdc0ff716be2b282` at 2026-10-12T17:22:02Z (OBSERVED, `gh`) and shipped in Release 19 (OD-2026-10-12-017). Overwatch's note (handover, REPORTED): it raises the shadow context contract version, so queued SHADOW jobs are refused as stale at deploy time.
 
+**Status (2026-10-17), applied by Overwatch 2026-10-15:** two more cases were closed under his words *"Any coach all coaches coach all athletes"*, without a new question (lane L11, issue #1480). Q2: any coach of the gym may be named as the coach for a 1:1 (PR #1635, merged `f35184ac0253ede39e22df653997547e5189e767` 2026-10-16T14:30:22Z). Q5: every coach of the athlete's gym is in a minor's photo circle (the released portrait and ring name, releasing or blocking the portrait after viewing it, clearing the ring name); the org admin stays outside the circle; `is_mine` stays the coach of record (PR #1643, merged `5c0488325a514797cba57c8f58b98bc674f1850d` 2026-10-16T14:31:35Z). Merges OBSERVED (`gh`); what each PR does is REPORTED by lane L11 (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, lines 7421 and 8476). Overwatch, as written (line 7426, 2026-10-15T19:56:03.708Z): "GO on C2 under the Q5 application of "Any coach all coaches coach all athletes"." This is overwatch's reading of his words, not new words of his.
+
 ---
 
 ## OD-2026-10-12-015 -- "No keep this open": the two HIIT gyms are left alone and the session keeps working
@@ -924,6 +953,8 @@ and should not try to.
 7. **Gemini is on his psu.edu account.** "A: fine" / "B: stop using it for gym work". Answer "7 A". Gemini on that account is fine for gym work.
 8. **Grok.** "Sign it in when convenient, or skip it". The row had no lettered options; he answered *"8 a"*. Overwatch read it as: he signs Grok in himself (its reply: "you'll sign Grok in"). That reading is overwatch's; the letter does not map to a lettered option.
 
+**Status (2026-10-17), item 2 (REPORTED, live audit LA1, `Documents\PPBF-overwatch\audit\LIVE-AUDIT-2026-10-17.md` and the findings register row F-009):** the gym named Audit Test Gym reads `inactive` with 0 members (OBSERVED by that audit through the platform read routes). Still to check or do: the other Audit Test Gyms, and the ZZ-AUDIT Test Class, which still shows in the athlete's `/schedule` records.
+
 ---
 
 ## OD-2026-10-11-008 -- Remaining coach-written text is stripped for family readers: "strip them" (PR #1479)
@@ -1060,6 +1091,8 @@ and should not try to.
 3. Overwatch stops putting safety, legal, medical and compliance questions to him, and stops sending him lists of what can now get through. When a lane or a reviewer raises one, overwatch decides it in the direction he has ruled (teach; do not block, flag, warn, banner, log for staff or hold for extra review) and tells the lane. He hears about such a matter only if it breaks the hard floor in his rules (safeguarding, minors' privacy, authorization, data integrity, nothing false), and then as one line.
 
 **Withdrawn by overwatch on ruling 3:** the note it had sent him that the emergency rule misses some spellings. Nothing was changed for it.
+
+**Status (2026-10-17), applied by Overwatch 2026-10-16:** F-051 (the athlete reads the coach's gap description and its severity on `/athlete/progression-intelligence`) was closed under this ruling without a question: the severity stays visible to the athlete. Overwatch, as written to lane L28 (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, line 9056, 2026-10-16T16:27:48.950Z): "F-051: keep the severity shown to the athlete. Jason's principle "Blocking and flagging stuff can cause more damage then knowledge" (OD-2026-10-10-007) points toward showing it, and the description is now labelled as athlete-read, so there is no question for Jason." This is overwatch's reading of his words, not new words of his.
 
 ---
 
@@ -1942,6 +1975,8 @@ The lane's question, line 398 (2026-10-03T21:28:35.666Z), as written: "**Copies 
 4. Session notes (Q8): only the writer can edit a session note; coaches and admins add a separate note of their own and never rewrite the athlete's. Jason chose the recommended option.
 
 **Not ruled here:** which features are the 15, and the order or timing of building their screens.
+
+**Status (2026-10-17), applied by Overwatch 2026-10-17:** UX audit question UXB Q3 was closed under *"Show coach name, hide ID"* without a question: the schedule's coach picker shows coach names only, never the sign-in email. Overwatch, as written in lane U3's brief (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, line 9903, 2026-10-17T01:13:37.012Z): "Q3: the schedule coach picker shows names only, never the sign-in email (OD-2026-10-06-025, "Show coach name, hide ID")." Whether it is built was not checked by this records pass. This is overwatch's reading of his words, not new words of his.
 
 ---
 
