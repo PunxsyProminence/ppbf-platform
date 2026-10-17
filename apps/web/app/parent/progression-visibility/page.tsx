@@ -14,7 +14,7 @@ import {
   type DatedIssuedWorkout,
   type IssuedWorkoutStepView,
 } from '@/src/lib/issuedWorkouts';
-import { readChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 // A rabbit hole renders as a paper note carrying the gym's own vocabulary
 // lesson for a term on the card. Parent surfaces sit on the warm canvas
@@ -418,7 +418,11 @@ export default function ParentProgressionVisibilityPage() {
                   type="button"
                   className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
                   aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => setActiveChildId(child.athlete_id)}
+                  onClick={() => {
+                    setActiveChildId(child.athlete_id);
+                    // A switch here is the child the next family page opens on.
+                    rememberChosenChild(child.athlete_id);
+                  }}
                 >
                   {child.full_name || 'Unknown'}
                 </button>

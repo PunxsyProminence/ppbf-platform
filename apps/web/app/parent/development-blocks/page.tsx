@@ -6,7 +6,7 @@ import Link from 'next/link';
 import DevelopmentBlockPlanView, { type PlanBlock } from '@/components/DevelopmentBlockPlanView';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { readChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 /*
  * A guardian reading the plan their child's coach wrote.
@@ -110,6 +110,8 @@ export default function ParentDevelopmentBlocksPage() {
     // arrives afterwards can recognise itself as stale.
     subjectRef.current = nextId;
     setActiveChildId(nextId);
+    // The child the next family page opens on (src/lib/chosenChild.ts).
+    rememberChosenChild(nextId);
     void loadBlocks(nextId);
   }
 

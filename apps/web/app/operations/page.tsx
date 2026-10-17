@@ -94,6 +94,7 @@ const utilityLinks = [
   { label: 'Notices & Motivation', href: '/notices' },
   { label: 'Entry Point', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
+  { label: 'The Stands', href: '/guardian' },
 ];
 
 type CapabilityState = 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING';

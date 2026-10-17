@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { readChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
 /*
@@ -193,7 +193,11 @@ export default function ParentVideoPage() {
                   type="button"
                   className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
                   aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => setActiveChildId(child.athlete_id)}
+                  onClick={() => {
+                    setActiveChildId(child.athlete_id);
+                    // A switch here is the child the next family page opens on.
+                    rememberChosenChild(child.athlete_id);
+                  }}
                 >
                   {child.full_name || 'Unknown'}
                 </button>

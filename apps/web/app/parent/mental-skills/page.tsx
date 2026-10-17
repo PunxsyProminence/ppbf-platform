@@ -5,7 +5,7 @@ import Link from 'next/link';
 import MentalSkillsSubjectPanel, { entriesFrom, getJson, type SubjectLoaders } from '@/components/MentalSkillsSubjectPanel';
 import type { MentalSkillsData } from '@/components/MentalSkillsView';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
-import { readChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { VISIBILITY_LINES } from '@/src/lib/mentalSkills/content';
 
 /*
@@ -63,6 +63,8 @@ export default function ParentMentalSkillsPage() {
           // The child chosen in the hub, when it is one of this guardian's own
           // (src/lib/chosenChild.ts); the route checks the link on every read.
           initialSubject={readChosenChild}
+          // A switch here is the child the next family page opens on.
+          onSelect={rememberChosenChild}
         />
       </div>
     </RoleStandaloneView>

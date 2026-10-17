@@ -10,10 +10,10 @@
  * the page keeps its own default: the first child, or none picked.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentType, ReactNode } from 'react';
 
-import { rememberChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import ParentDevelopmentBlocksPage from './development-blocks/page';
 import ParentMentalSkillsPage from './mental-skills/page';
 import ParentProgressionVisibilityPage from './progression-visibility/page';
@@ -68,14 +68,18 @@ async function renderSettled(Page: ComponentType) {
   await act(async () => {});
 }
 
-const PAGES: Array<{ name: string; Page: ComponentType; read: string; fallback: string | null }> = [
-  { name: '/parent/progression-visibility', Page: ParentProgressionVisibilityPage, read: '/progression/gaps', fallback: 'kid-a' },
-  { name: '/parent/video', Page: ParentVideoPage, read: '/video/list', fallback: 'kid-a' },
-  { name: '/parent/development-blocks', Page: ParentDevelopmentBlocksPage, read: '/athlete/development-blocks', fallback: null },
-  { name: '/parent/mental-skills', Page: ParentMentalSkillsPage, read: '/athlete/mental-skills', fallback: null },
+/** Switches by the page's own control: a row of buttons, or a select. */
+const byButton = () => fireEvent.click(screen.getByRole('button', { name: 'Blake Doe' }));
+const bySelect = () => fireEvent.change(screen.getByLabelText('Which child'), { target: { value: 'kid-b' } });
+
+const PAGES: Array<{ name: string; Page: ComponentType; read: string; fallback: string | null; pickB: () => void }> = [
+  { name: '/parent/progression-visibility', Page: ParentProgressionVisibilityPage, read: '/progression/gaps', fallback: 'kid-a', pickB: byButton },
+  { name: '/parent/video', Page: ParentVideoPage, read: '/video/list', fallback: 'kid-a', pickB: byButton },
+  { name: '/parent/development-blocks', Page: ParentDevelopmentBlocksPage, read: '/athlete/development-blocks', fallback: null, pickB: bySelect },
+  { name: '/parent/mental-skills', Page: ParentMentalSkillsPage, read: '/athlete/mental-skills', fallback: null, pickB: bySelect },
 ];
 
-describe.each(PAGES)('$name', ({ Page, read, fallback }) => {
+describe.each(PAGES)('$name', ({ Page, read, fallback, pickB }) => {
   test('opens on the child chosen in the hub when it is one of the guardian\'s own', async () => {
     rememberChosenChild('kid-b');
     await renderSettled(Page);
@@ -88,5 +92,21 @@ describe.each(PAGES)('$name', ({ Page, read, fallback }) => {
     await renderSettled(Page);
     expect(readsFor(read)).not.toContain('kid-other-family');
     expect(readsFor(read)).toEqual(fallback ? expect.arrayContaining([fallback]) : []);
+  });
+
+  test('a switch made here is remembered, and the next family page opens on it', async () => {
+    rememberChosenChild('kid-a');
+    await renderSettled(Page);
+    await act(async () => {
+      pickB();
+    });
+    expect(readChosenChild()).toBe('kid-b');
+
+    // The next page: the video page reads its first child unless told otherwise.
+    cleanup();
+    fetchMock.mockClear();
+    await renderSettled(ParentVideoPage);
+    expect(readsFor('/video/list')).toContain('kid-b');
+    expect(readsFor('/video/list')).not.toContain('kid-a');
   });
 });
