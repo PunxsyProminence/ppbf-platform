@@ -100,11 +100,11 @@ describe('the class coach picker (lane L31 P6)', () => {
 
     const picker = await screen.findByLabelText('Class coach');
     expect(picker.tagName).toBe('SELECT');
-    await within(picker).findByRole('option', { name: 'Coach Jane Doe (jane.doe@gym.example)' });
+    await within(picker).findByRole('option', { name: 'Coach Jane Doe' });
     expect(Array.from((picker as HTMLSelectElement).options).map((option) => option.textContent)).toEqual([
       'Select the coach who runs it',
-      'Coach Jane Doe (jane.doe@gym.example)',
-      'Coach Sam Ruiz (sam_ruiz2@gym.example)',
+      'Coach Jane Doe',
+      'Coach Sam Ruiz',
     ]);
     const schedule = screen.getByRole('button', { name: 'Schedule Class' });
     expect(schedule).toBeDisabled();
