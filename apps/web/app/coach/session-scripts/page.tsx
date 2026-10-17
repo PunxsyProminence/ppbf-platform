@@ -17,6 +17,7 @@ import type {
   SessionScriptRow,
   SessionScriptWithDetail,
 } from '@/src/server/pilot/sessionScripts';
+import ClusterNav from '@/components/ClusterNav';
 
 // The session plans the gym actually teaches from, read on the floor.
 //
@@ -497,6 +498,7 @@ function CoachSessionScripts() {
         <header data-surface="kiosk" className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Session Scripts</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The plan for a session, block by block. Times are minutes from the start of the session,
             not clock times -- the same script runs whether the room opens at 4:00 or 6:30.

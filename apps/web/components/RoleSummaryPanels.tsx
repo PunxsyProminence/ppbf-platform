@@ -187,9 +187,9 @@ export function AthleteSummaryPanel({
           REQUIRED" until #597), and the "not a clearance" line it carried then
           is kept, because the wellness check is not one either. */}
       <div className={KPI_TILE}>
-        <p className="t-label">Today&apos;s Wellness</p>
+        <p className="t-label">How I feel today</p>
         <p className="t-body mt-[var(--s3)]">{WELLNESS_TODAY_TEXT[wellnessToday.status]}</p>
-        <p className="t-muted mt-[var(--s2)]">Your own check. Not a clearance.</p>
+        <p className="t-muted mt-[var(--s2)]">Your own words. Not a clearance.</p>
       </div>
 
       {/* Open coach work: every assigned or in-progress row a coach set,

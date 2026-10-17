@@ -34,6 +34,7 @@ import {
   mediaSecondsFromMs,
   msFromMediaSeconds,
 } from '@/src/lib/clipTime';
+import ClusterNav from '@/components/ClusterNav';
 
 /**
  * THE ANNOTATION BENCH -- one coach, one clip, one independent reading.
@@ -1282,6 +1283,7 @@ export default function CoachCalibrationPage() {
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
               Clip Annotation
             </h1>
+            <ClusterNav cluster="film" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Watch the clip and label what you saw, from the fixed vocabulary. Two coaches label
               the same clip separately, and neither sees the other&apos;s answers -- the point is to

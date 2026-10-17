@@ -52,7 +52,12 @@ test.describe('Coach journey', () => {
     // It names the open surface now (approved board AF-09), so the coach
     // landing's heading is the tab it opens on; the workspace's own name
     // moved to the line under it, which this checks too.
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    //
+    // One h1 on the page (lane U2, audit UX-A A-16): "Coach Workspace", the
+    // name the door and every back link use. The tab masthead is an h2.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1, name: 'Coach Workspace' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Dashboard' })).toBeVisible();
     await expect(page.getByText('Coach workspace · Live session management')).toBeVisible();
 
     // The two live safety reads a coach scans first. Their presence is the

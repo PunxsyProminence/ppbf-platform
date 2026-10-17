@@ -876,7 +876,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page);
     await enterWorkspaceOrSkip(page);
 
-    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+    await expect(page.getByText('Your training has not started.')).toBeVisible();
     /* Waited out rather than read on arrival: a create fired by a mount effect
        would land after the first paint, so an assertion taken immediately
        would pass whether or not one was coming. */
@@ -892,15 +892,15 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
-    // The corner's button and the Session Log's both read 'Check in' and send the same (UXB-19).
-    await page.getByRole('button', { name: 'Check in', exact: true }).first().click();
+    // The corner's button and the Session Log's both read 'Start training' and send the same (UXB-19).
+    await page.getByRole('button', { name: 'Start training', exact: true }).first().click();
 
     /* Check-in deliberately moves the athlete off the Session Log -- to
        Wellness when today's wellness is missing, to the Floor when it is not
        -- so the confirmation is read where it is shown and the Session Log is
        returned to for the rest. Asserted loosely on purpose: which of the two
        lines appears is a property of the wellness gate, not of check-in. */
-    await expect(page.getByText(/You are checked in\./)).toBeVisible();
+    await expect(page.getByText(/Training started\./)).toBeVisible();
     await page.getByRole('button', { name: 'Dashboard', exact: true }).first().click();
     await expect(page.getByText(/Session active since/)).toBeVisible();
 
@@ -1005,8 +1005,8 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await enterWorkspaceOrSkip(page);
 
     await page.getByLabel('How hard was the session you just finished? 7').click();
-    await page.getByRole('button', { name: 'Check Out' }).click();
-    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+    await page.getByRole('button', { name: 'End training' }).click();
+    await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);
     expect(updates, 'check-out is one write').toHaveLength(1);
@@ -1020,8 +1020,8 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
-    await page.getByRole('button', { name: 'Check Out' }).click();
-    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+    await page.getByRole('button', { name: 'End training' }).click();
+    await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);
     expect(updates).toHaveLength(1);
@@ -1042,8 +1042,8 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await expect(page.getByText('Your coach can read this.')).toBeVisible();
 
     await box.fill(unsent);
-    await page.getByRole('button', { name: 'Check Out' }).click();
-    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+    await page.getByRole('button', { name: 'End training' }).click();
+    await expect(page.getByText('Your training has not started.')).toBeVisible();
 
     const updates = updatesIn(writes);
     expect(updates, 'the share, then the check-out -- nothing in between').toHaveLength(2);
