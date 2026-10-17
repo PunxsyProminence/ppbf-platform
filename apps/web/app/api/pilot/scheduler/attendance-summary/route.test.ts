@@ -7,7 +7,7 @@ import {
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
 } from '@/src/server/pilot/attendanceReporting';
-import { athleteIdsForCoach } from '@/src/server/pilot/access';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 
@@ -28,7 +28,16 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
 
 jest.mock('@/src/server/pilot/access', () => ({
   isOrganizationAdminRole: (role: string) => role === 'organization_admin' || role === 'admin',
-  athleteIdsForCoach: jest.fn(),
+  requireRole: jest.requireActual('@/src/server/pilot/access').requireRole,
+}));
+
+/* A coach's reach is the whole gym (OD-2026-10-11-007, issue #1480): the live
+   athletes of their own organization. mockReachable is that set; an athlete
+   outside it is one the gate refuses (deleted, or another gym's). */
+const mockReachable = jest.fn();
+jest.mock('@/src/server/pilot/coachAthleteRoster', () => ({
+  organizationActionableRoster: jest.fn(async () =>
+    ((await mockReachable()) ?? []).map((athlete_id: string) => ({ athlete_id }))),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -54,7 +63,7 @@ const mockSummary = jest.mocked(getOrganizationAttendanceSummary);
 const mockRoster = jest.mocked(getClassAttendanceRoster);
 const mockGetClass = jest.mocked(getSchedulerClassById);
 const mockTrend = jest.mocked(getWeeklyAttendanceTrend);
-const mockReachable = jest.mocked(athleteIdsForCoach);
+const mockGymRoster = jest.mocked(organizationActionableRoster);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -264,7 +273,7 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
       expect(payload.roster.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
       expect(JSON.stringify(payload)).not.toContain('family matter');
       expect(JSON.stringify(payload)).not.toContain('Other Child');
-      expect(mockReachable).toHaveBeenCalledWith('org-a', 'acct-covering');
+      expect(mockGymRoster).toHaveBeenCalledWith('org-a');
     });
 
     test('a coach with no reachable athletes gets an empty roster, not the class list', async () => {
@@ -314,7 +323,7 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
       const response = await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'));
 
       expect(response.status).toBe(403);
-      expect(mockReachable).not.toHaveBeenCalled();
+      expect(mockGymRoster).not.toHaveBeenCalled();
     });
 
     test('an organization admin is not narrowed and never consults coach reach', async () => {
@@ -328,7 +337,7 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
       const payload = await (await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'))).json();
 
       expect(payload.roster).toHaveLength(2);
-      expect(mockReachable).not.toHaveBeenCalled();
+      expect(mockGymRoster).not.toHaveBeenCalled();
     });
   });
 });
@@ -455,7 +464,7 @@ describe('the attendance report by class (RP-02)', () => {
       coachAccountId: undefined,
       athleteIds: undefined,
     });
-    expect(mockReachable).not.toHaveBeenCalled();
+    expect(mockGymRoster).not.toHaveBeenCalled();
   });
 
   test("a coach's report is their own classes, counted over the athletes they reach", async () => {

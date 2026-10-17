@@ -117,3 +117,13 @@ export const SHADOW_LIBRARY_CURATOR_ROLES: readonly PilotRole[] = [
   'admin',
   'platform_owner',
 ];
+
+// Who may ATTACH an existing Library source to a research requirement, and so
+// read the shelf's source list to pick one: the curators, and coaches
+// (OD-2026-10-08-005 A-Q13, ruling 6: "a coach may attach a source").
+// Attaching is never approval: a submission lands 'unreviewed', and reviewing
+// it (PATCH) and registering a new source (sources POST) stay curator acts.
+export const SHADOW_SOURCE_ATTACH_ROLES: readonly PilotRole[] = [
+  ...SHADOW_LIBRARY_CURATOR_ROLES,
+  'coach',
+];

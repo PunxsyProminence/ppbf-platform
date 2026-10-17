@@ -180,7 +180,7 @@ describe('the class register on /schedule', () => {
     expect(notice).toBeDefined();
     expect(notice).toHaveTextContent('CONTACT WORK is currently paused for this athlete.');
     expect(notice).toHaveTextContent('The check-in was NOT blocked.');
-    expect(notice).toHaveTextContent("The reason and what lifts it are with this athlete's own coach.");
+    expect(notice).toHaveTextContent('The reason and what lifts it are not shown to you here.');
     expect(notice).not.toHaveTextContent('To lift it');
     expect(notice).not.toHaveTextContent('()');
   });

@@ -215,9 +215,11 @@ export async function GET(request: NextRequest) {
         // too. Unassigned footage is untouched.
         //
         // The assigned half is athleteIdsForCoach: coach of record UNION
-        // active coverage (OD-2026-10-05-024 item 2), so a covering coach
-        // sees the footage of the athletes they are covering, the same set
-        // the named-athlete branch above admits through the access gate.
+        // active coverage, so a covering coach sees the footage of the
+        // athletes they are covering. This unfiltered list is "my athletes"
+        // (OD-2026-10-11-007: "my athletes" lists keep working); the
+        // named-athlete branch above admits any live athlete of the coach's
+        // gym through the access gate (issue #1480).
         const reach = await athleteIdsForCoach(principal.organizationId, principal.accountId);
         rows = await query<VideoSessionRow>(
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at

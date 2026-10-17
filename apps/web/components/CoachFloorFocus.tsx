@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { handOffArrivalAthlete } from './decisionLoopArrival';
 
 /**
  * THE FLOOR, AS A COMMAND BOARD.
@@ -89,7 +90,9 @@ export interface FocusItem {
     readonly onAcknowledge: () => void;
     readonly error?: string;
   };
-  readonly link?: { readonly href: string; readonly label: string };
+  /** athleteId: the athlete the page behind the link should open on, handed
+      over in page memory and never put in the address (decisionLoopArrival.ts). */
+  readonly link?: { readonly href: string; readonly label: string; readonly athleteId?: string };
 }
 
 export interface FocusFeed {
@@ -495,7 +498,18 @@ export default function CoachFloorFocus({
                   </button>
                 )}
                 {open && currentItem.link && (
-                  <Link href={currentItem.link.href} className="btn coach-floor-focus__btn">
+                  <Link
+                    href={currentItem.link.href}
+                    className="btn coach-floor-focus__btn"
+                    onClick={(event) => {
+                      // A plain click only: a modified click opens another
+                      // tab, which would leave the hand-off waiting here for
+                      // whatever this tab opens next.
+                      const athleteId = currentItem.link?.athleteId;
+                      const plain = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+                      if (athleteId && plain) handOffArrivalAthlete(athleteId);
+                    }}
+                  >
                     {currentItem.link.label}
                   </Link>
                 )}

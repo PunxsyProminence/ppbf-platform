@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
+import { FROM_TEMPLATE, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
@@ -22,6 +23,8 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 //   editSessionScript  the name, and each block's title and minutes.
 //   setSessionScriptRetired  retires a script (kept, left out of the browse
 //     list) or brings a retired one back. In place, never a new version.
+//   markSessionScriptReviewed  a coach marks a draft plan reviewed. In place,
+//     never a new version.
 //
 // AN EDIT NEVER CHANGES A NIGHT ALREADY DELIVERED. A run pins script_id and
 // script_version (sessionScriptRuns.ts startSessionScriptRun) and reads that
@@ -131,7 +134,8 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
   return steps.map((step, index) => {
     const start = offset;
     offset += step.duration_minutes ?? DEFAULT_STEP_MINUTES;
-    const facts = [step.block.trim(), step.rep_count === null ? '' : `${step.rep_count} reps`]
+    // In words, and said to be the template's (F-078): "From the template: Warm-up, 3 reps".
+    const facts = [step.block.trim() === '' ? '' : templateSectionWords(step.block), step.rep_count === null ? '' : `${step.rep_count} reps`]
       .filter((part) => part !== '');
     const label = (step.head_drill_name ?? step.free_text_drill ?? '').trim() || `Step ${index + 1}`;
     return {
@@ -140,7 +144,7 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
       end_offset_min: offset,
       block_label: label.slice(0, MAX_TEXT_LENGTH),
       what_to_say: step.coach_note?.trim() || null,
-      what_to_explain: facts.length > 0 ? facts.join(' - ') : `From workout template: ${templateName}`,
+      what_to_explain: `${FROM_TEMPLATE}${facts.length > 0 ? facts.join(', ') : templateName}`,
       block_kind: step.drill_id === null ? 'instruction' : 'drill_round',
       drill_id: step.drill_id,
       scale_level: step.scale_level,
@@ -190,7 +194,7 @@ export async function createSessionScriptFromTemplate(
       `insert into pilot.session_scripts (
          organization_id, script_id, lineage_id, version, name, total_minutes, contact_structure,
          authoring_state, source_document, created_by_account_id
-       ) values ($1, $2, $2, 1, $3, $4, $5, 'coach_reviewed', $6, $7)`,
+       ) values ($1, $2, $2, 1, $3, $4, $5, 'draft', $6, $7)`,
       [
         params.organizationId,
         scriptId,
@@ -494,8 +498,25 @@ export interface RetiredSessionScript {
   version: number;
 }
 
-/** What a plan a coach brings back is: a coach has looked at it and chosen to run it. */
-const BROUGHT_BACK_STATE = 'coach_reviewed';
+/** The states a plan can be brought back to: whatever it was before it was retired. */
+const RESTORABLE_STATES = ['draft', 'coach_reviewed', 'in_use'] as const;
+
+// Across every version of the plan: an edit or an import of a retired plan makes a new version that is
+// retired too, while the retire's own audit row stays under the version that was retired.
+async function stateBeforeRetiring(client: PoolClient, organizationId: string, lineageId: string): Promise<string> {
+  const row = await client.query<{ state_before: string | null }>(
+    `select details->>'state_before' as state_before
+       from pilot.audit_events
+      where organization_id = $1 and entity_type = 'session_script'
+        and entity_id in (select script_id from pilot.session_scripts where organization_id = $1 and lineage_id = $2)
+        and details->>'outcome' = 'retired'
+      order by created_at desc, audit_id desc
+      limit 1`,
+    [organizationId, lineageId],
+  );
+  const before = row.rows[0]?.state_before ?? null;
+  return before !== null && (RESTORABLE_STATES as readonly string[]).includes(before) ? before : 'draft';
+}
 
 /**
  * Retire a script, or bring a retired one back.
@@ -525,7 +546,9 @@ export async function setSessionScriptRetired(
     if (isRetired === params.retired) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    const stateAfter = params.retired ? 'retired' : BROUGHT_BACK_STATE;
+    // Brought back, a plan is what it was before it was retired (the retire's own audit row holds
+    // state_before), not a review nobody did (F-078). No such row: a draft.
+    const stateAfter = params.retired ? 'retired' : await stateBeforeRetiring(client, params.organizationId, script.lineage_id);
     await client.query(
       `update pilot.session_scripts
           set authoring_state = $3,
@@ -553,5 +576,67 @@ export async function setSessionScriptRetired(
       client,
     );
     return { outcome, script_id: script.script_id, version: script.version };
+  });
+}
+
+export interface ReviewedSessionScript {
+  outcome: 'unchanged' | 'reviewed';
+  script_id: string;
+  version: number;
+}
+
+/**
+ * A coach marks a draft plan reviewed (F-092). "The AI teaches and drafts;
+ * coaches decide" (OWNER_DECISIONS, app description): a plan made from a
+ * template starts as a draft, and this is the coach's word that it has been
+ * read and is fit to run. Engine-unlock proposal 029 would count only reviewed
+ * and in-use plans (an open question in that proposal, not a rule here).
+ *
+ * Draft to coach_reviewed only. A plan already reviewed or in use is left as it
+ * is. Nothing here writes in_use and nothing takes a review back: no ruling
+ * covers either. A retired plan is refused: it is brought back first.
+ *
+ * IN PLACE, NEVER A NEW VERSION, for the reason retiring is
+ * (setSessionScriptRetired): authoring_state is lifecycle, not content. Any
+ * coach of the gym may mark any of its plans (OD-2026-10-11-007, whole-gym
+ * reach); the role gate is the route's. The audit row names the coach.
+ */
+export async function markSessionScriptReviewed(
+  params: Actor & { scriptId: string; expectedUpdatedAt?: string },
+): Promise<ReviewedSessionScript> {
+  return withTransaction(async (client) => {
+    const script = await lockCurrentScript(client, params);
+    if (script.authoring_state === 'retired') {
+      throw new SessionScriptAuthoringError('SESSION_SCRIPT_RETIRED', 409);
+    }
+    if (script.authoring_state !== 'draft') {
+      return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
+    }
+    await client.query(
+      `update pilot.session_scripts
+          set authoring_state = 'coach_reviewed',
+              updated_at = greatest(now(), updated_at + interval '1 millisecond')
+        where organization_id = $1 and script_id = $2`,
+      [params.organizationId, script.script_id],
+    );
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: params.actorAccountId,
+        actor_role: params.actorRole,
+        organization_id: params.organizationId,
+        entity_type: 'session_script',
+        entity_id: script.script_id,
+        details: {
+          name: script.name,
+          version: script.version,
+          outcome: 'reviewed',
+          state_before: script.authoring_state,
+          state_after: 'coach_reviewed',
+        },
+      },
+      client,
+    );
+    return { outcome: 'reviewed', script_id: script.script_id, version: script.version };
   });
 }

@@ -543,11 +543,19 @@ describe('shadow-deidentify-keys migration', () => {
     // A purge that was refused proves nothing below.
     expect(event.blocked_by ?? {}).toEqual({});
     expect(await identifiedRows(person)).toEqual({ byAccount: 0, byAthlete: 0 });
-    // PRE-EXISTING GAP, unchanged by this migration and pinned so it is not
-    // mistaken for covered: shadow_feedback has never had an account key and
-    // the purge does not touch it, so the guardian's feedback row (their
-    // email, their own comment) survives. PR C tokens it.
-    expect((await client.query('select 1 from pilot.shadow_feedback where account_id = $1', [person.guardian])).rowCount).toBe(1);
+    // shadow_feedback has never had an account key, so no cascade or trigger
+    // reaches it: the purge itself de-identifies it (#1600 gap B,
+    // feedbackNotesPurge.pg.test.ts). No row names the guardian's login any
+    // more; their row stays, under a token of its own, with no comment.
+    expect((await client.query('select 1 from pilot.shadow_feedback where account_id = $1', [person.guardian])).rowCount).toBe(0);
+    // (Earlier tests' guardians were deleted without the purge, so their rows
+    // still carry their logins; only this purged guardian's row is tokened.)
+    const tokened = await client.query(
+      `select comment, helpful from pilot.shadow_feedback
+        where organization_id = $1 and role = 'parent' and account_id like 'anon\_%'`,
+      [ORG],
+    );
+    expect(tokened.rows).toEqual([{ comment: null, helpful: true }]);
     expect((await client.query('select 1 from pilot.accounts where account_id = $1', [person.guardian])).rowCount).toBe(0);
     expect((await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, person.athleteId])).rowCount).toBe(0);
   });

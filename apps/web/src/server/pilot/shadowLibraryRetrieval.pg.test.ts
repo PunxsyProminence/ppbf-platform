@@ -443,3 +443,147 @@ describe('the empty-Library check counts only gym-wide servable evidence (CL-C21
     await expect(hasRetrievableLibraryEvidence({ organizationId: ORG_ID })).resolves.toBe(false);
   });
 });
+
+// F-087. Search checked a chunk's subject and never its document's, and
+// nothing in the schema ties the two together (the research importer writes
+// chunk subjects separately from the document's). So a chunk with no subject
+// under a document filed against athlete A was served to the whole gym, and to
+// athlete B's own search. Each reader below asks as the scope it resolves to:
+// the athlete is forced to their own subject, a parent names their child, and
+// the gym-wide reader names nobody.
+describe("a chunk under another athlete's document stays with that athlete (F-087)", () => {
+  const ATHLETE_A = 'athlete-f087-a';
+  const ATHLETE_B = 'athlete-f087-b';
+  const PARENT_OF_B = 'acct-f087-parent-b';
+  const PRIVATE_TEXT = 'Southpaw footwork pivot: private note filed for athlete A only.';
+  const GYM_TEXT = 'Southpaw footwork pivot: gym-wide passage.';
+
+  /** Athletes A and B, B's parent, and two documents: one filed against A, one gym-wide. */
+  async function filedDocumentFixture(name: string, mode: 'semantic' | 'keyword'): Promise<Client> {
+    const client = await freshDatabase(name);
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, $2, 'Athlete A', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $4, now(), now()),
+         ($1, $3, 'Athlete B', '2012-05-04', 'youth-60', 'active', 'Guardian', true, $4, now(), now())`,
+      [ORG_ID, ATHLETE_A, ATHLETE_B, ADMIN_ID],
+    );
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [PARENT_OF_B, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
+       values ($1, 'par-f087-b', $2, 'Parent of B', '555-0100', 'parent-b@example.test')`,
+      [ORG_ID, PARENT_OF_B],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'par-f087-b', $2, 'mother')`,
+      [ORG_ID, ATHLETE_B],
+    );
+
+    // Semantic search reads only embedded chunks; with none embedded the
+    // keyword path answers, so each mode gets its own fixture.
+    const embedding = mode === 'semantic' ? JSON.stringify(axis(0)) : null;
+    const embeddingModel = mode === 'semantic' ? 'test-embedding' : null;
+    const filedDoc = await servableSource(client, 'source-filed', 2);
+    await client.query(
+      `update pilot.shadow_library_documents set subject_id = $1 where document_id = $2`,
+      [ATHLETE_A, filedDoc],
+    );
+    const gymDoc = await servableSource(client, 'source-gym-wide', 2);
+    await client.query(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content,
+          embedding, embedding_model)
+       values
+         ('filed-chunk', $1, 'source-filed', $3, null, 0, $4, $6::jsonb, $7),
+         ('gym-chunk', $2, 'source-gym-wide', $3, null, 0, $5, $6::jsonb, $7)`,
+      [filedDoc, gymDoc, ORG_ID, PRIVATE_TEXT, GYM_TEXT, embedding, embeddingModel],
+    );
+    return client;
+  }
+
+  const readers = [
+    {
+      who: 'the gym-wide reader (no subject)',
+      input: { actorAccountId: ADMIN_ID, actorRole: 'organization_admin' as const },
+    },
+    {
+      who: 'athlete B (forced to their own subject)',
+      input: { actorAccountId: 'acct-f087-athlete-b', actorRole: 'athlete' as const, athleteId: ATHLETE_B },
+    },
+    {
+      who: "athlete B's parent, naming B",
+      input: { actorAccountId: PARENT_OF_B, actorRole: 'parent' as const, scope: 'subject' as const, subjectId: ATHLETE_B },
+    },
+    {
+      who: "athlete B's parent, gym-wide",
+      input: { actorAccountId: PARENT_OF_B, actorRole: 'parent' as const },
+    },
+  ];
+
+  describe.each(['semantic', 'keyword'] as const)('%s search', (mode) => {
+    it.each(readers)("never serves A's filed chunk to $who", async ({ input }) => {
+      activeClient = await filedDocumentFixture(`f087_${mode}_${input.actorRole}_${input.scope ?? 'x'}`, mode);
+      const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+
+      const relevant = await searchShadowLibrary(
+        { organizationId: ORG_ID, queryText: 'southpaw footwork pivot', limit: 5, ...input },
+        detail,
+      );
+
+      expect(detail.mode).toBe(mode);
+      // The gym-wide passage proves the search ran and matched.
+      expect(relevant.map((row) => row.chunk_id)).toEqual(['gym-chunk']);
+      const body = JSON.stringify({ relevant, nearest: detail.nearest });
+      expect(body).not.toContain('private note');
+      expect(body).not.toContain('source-filed');
+      // No account id, email or creator id rides on a search result.
+      expect(body).not.toContain(ADMIN_ID);
+      expect(body).not.toContain(PARENT_OF_B);
+      expect(body).not.toContain('@');
+    });
+
+    it("serves A's filed chunk to athlete A (control: the chunk is otherwise servable)", async () => {
+      activeClient = await filedDocumentFixture(`f087_${mode}_athlete_a`, mode);
+      const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+
+      const relevant = await searchShadowLibrary(
+        {
+          organizationId: ORG_ID,
+          actorAccountId: 'acct-f087-athlete-a',
+          actorRole: 'athlete',
+          athleteId: ATHLETE_A,
+          queryText: 'southpaw footwork pivot',
+          limit: 5,
+        },
+        detail,
+      );
+
+      expect(detail.mode).toBe(mode);
+      expect(relevant.map((row) => row.chunk_id).sort()).toEqual(['filed-chunk', 'gym-chunk']);
+    });
+  });
+
+  it('reads a Library whose only chunk sits under an athlete-filed document as empty', async () => {
+    activeClient = await freshDatabase('retrievable_filed_document');
+    const doc = await servableSource(activeClient, 'source-filed-only', 2);
+    await activeClient.query(
+      `update pilot.shadow_library_documents set subject_id = $1 where document_id = $2`,
+      [ATHLETE_A, doc],
+    );
+    await activeClient.query(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content)
+       values ('filed-only-chunk', $1, 'source-filed-only', $2, 0, $3)`,
+      [doc, ORG_ID, PRIVATE_TEXT],
+    );
+
+    await expect(hasRetrievableLibraryEvidence({ organizationId: ORG_ID })).resolves.toBe(false);
+  });
+});

@@ -34,7 +34,7 @@ interface AthleteSafety {
   /* Every tracked waiver type's status, returned by the route since #799
      (api/pilot/parent/safety/route.ts, `waivers`). Typed loosely on purpose:
      the page renders whatever actually arrives, and anything outside the
-     vocabulary below reads Unknown -- never Signed, never Missing. */
+     vocabulary below reads Unknown -- never Signed, never Not on file. */
   waivers?: Record<string, unknown> | null;
 }
 
@@ -68,14 +68,28 @@ interface WaiverStatusDisplay {
 
 /* Glyph + uppercase label (.badge sets text-transform), never colour alone
    (design-system README, Law 3). Signed/other split and glyphs match
-   /admin/waiver-status for the same statuses; Unknown uses the ◌ / --filed
-   mark other pages use for an unknown state. */
+   /admin/waiver-status for the same statuses, except Not on file (F-065: a
+   family is told what to do, not warned); it and Unknown use the ◌ / --filed
+   mark other pages use for a state that is not a problem. */
 const WAIVER_STATUS_DISPLAY: Record<WaiverStatus, WaiverStatusDisplay> = {
   signed: { label: 'Signed', glyph: '✓', badge: 'badge--cleared' },
   photo_only: { label: 'Photos only', glyph: '▲', badge: 'badge--restricted' },
   declined: { label: 'Declined', glyph: '▲', badge: 'badge--restricted' },
   withdrawn: { label: 'Withdrawn', glyph: '▲', badge: 'badge--restricted' },
-  missing: { label: 'Missing', glyph: '▲', badge: 'badge--restricted' },
+  // Not a warning (F-065): nothing is wrong with the child, a form is not in
+  // yet. The row says what the family can do about it (WAIVER_MISSING_ACTION).
+  missing: { label: 'Not on file', glyph: '◌', badge: 'badge--filed' },
+};
+
+/* What a family does about a waiver the gym has no signed copy of. The office
+   records a signed paper general, medical release or travel waiver on Waiver
+   Compliance (OD-2026-10-12-009, #1543); photo & media is the guardian's own
+   consent, signed on /parent/consent. Wording PROPOSED (F-065). */
+const WAIVER_MISSING_ACTION: Record<TrackedWaiverType, string> = {
+  general: 'Hand the signed paper form to the gym office, and they record it.',
+  medical_release: 'Hand the signed paper form to the gym office, and they record it.',
+  photo_media: 'Sign it on the Photo & Video Consent page below.',
+  travel: 'Hand the signed paper form to the gym office, and they record it.',
 };
 
 const UNKNOWN_WAIVER_STATUS: WaiverStatusDisplay = { label: 'Unknown', glyph: '◌', badge: 'badge--filed' };
@@ -257,8 +271,8 @@ export default function GuardianSafetyPage() {
               &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
               your child has signed it with video included. Photos only means a guardian&rsquo;s consent on file,
               including a former guardian&rsquo;s, covers photos but not video, so the gym cannot use video.
-              The Photo &amp; Video Consent page below is where you sign or withdraw yours. Missing means
-              the gym has no signed waiver of that kind on file.
+              The Photo &amp; Video Consent page below is where you sign or withdraw yours. Not on file means
+              the gym has no signed waiver of that kind yet, and the row says what to do.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--critical mt-[var(--s3)]">
@@ -327,17 +341,18 @@ export default function GuardianSafetyPage() {
                     <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
                       {waiverRows(item.waivers).map(({ type, status }) => {
                         const display = waiverStatusDisplay(status);
+                        const action =
+                          status === 'missing' && isTrackedWaiverType(type) ? WAIVER_MISSING_ACTION[type] : null;
                         return (
-                          <div
-                            key={type}
-                            data-waiver-type={type}
-                            className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]"
-                          >
-                            <span>{waiverTypeLabel(type)}</span>
-                            <span className={`badge ${display.badge}`}>
-                              <i aria-hidden="true">{display.glyph}</i>
-                              {display.label}
-                            </span>
+                          <div key={type} data-waiver-type={type} className="text-[length:var(--t-sm)]">
+                            <div className="flex items-center justify-between gap-[var(--s3)]">
+                              <span>{waiverTypeLabel(type)}</span>
+                              <span className={`badge ${display.badge}`}>
+                                <i aria-hidden="true">{display.glyph}</i>
+                                {display.label}
+                              </span>
+                            </div>
+                            {action ? <p className="mt-[var(--s1)] text-[color:var(--bone-300)]">{action}</p> : null}
                           </div>
                         );
                       })}

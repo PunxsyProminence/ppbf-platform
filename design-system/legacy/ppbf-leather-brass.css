@@ -2389,7 +2389,7 @@ body.ppbf.on-canvas {
   min-height: var(--tap); padding: 0 var(--s4); cursor: pointer;
   border: 1px solid var(--brass-700); border-radius: var(--r-sm);
   background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
-  color: var(--bone-200); font: 650 11px/1 var(--font-ui);
+  color: var(--bone-200); font: 650 var(--t-xs)/1 var(--font-ui);
   letter-spacing: .08em; text-transform: uppercase;
   transition: border-color var(--m-quick) var(--e-stamp),
               background-image var(--m-base) var(--e-lever);
@@ -2408,8 +2408,13 @@ body.ppbf.on-canvas {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 18ch;
 }
+/* The session bar rides every signed-in page, so its two controls (this one
+   and .catalog-hint) take the ladder's smallest rung, --t-xs, and nothing
+   under it. They pinned 11px, 10.5px, 10px and 9.5px: the shared source, read
+   from code, of the 10px the audit found on every page (F-020). Guarded by
+   apps/web/src/design/smallestTypeRung.test.ts. */
 .corridor-trigger-here {
-  font: 400 10.5px/1 var(--font-data); letter-spacing: .04em;
+  font: 400 var(--t-xs)/1 var(--font-data); letter-spacing: .04em;
   text-transform: none; color: var(--bone-400);
   padding-left: var(--s3); border-left: 1px solid rgb(var(--brass-400-rgb) / .24);
 }
@@ -2605,11 +2610,11 @@ body.ppbf.on-canvas {
   min-height: var(--tap); padding: 0 var(--s3); cursor: pointer;
   border: 1px solid rgb(var(--brass-400-rgb) / .3); border-radius: var(--r-sm);
   background: rgba(12,9,6,.5); color: var(--bone-300);
-  font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
+  font: 650 var(--t-xs)/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
   transition: border-color var(--m-quick) var(--e-stamp), color var(--m-quick) var(--e-stamp);
 }
 .catalog-hint:hover { border-color: var(--brass-400); color: var(--bone-100); }
-.catalog-hint kbd { font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+.catalog-hint kbd { font: 650 var(--t-xs)/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
                     background: rgba(0,0,0,.5); border: 1px solid rgb(var(--brass-400-rgb) / .3);
                     color: var(--brass-200); }
 @media (max-width: 620px) { .catalog-hint-lbl { display: none; } }

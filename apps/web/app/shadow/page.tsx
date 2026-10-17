@@ -15,6 +15,7 @@ import {
 } from '@/components/shadowEvidenceDisplay';
 import { apiBase } from '@/lib/apiBase';
 import { revokeShadowSession } from '@/client/shadowLogout';
+import { fetchAllResearchRequirements } from '@/client/researchRequirementsList';
 import {
   buildShadowChatRequest,
   deleteOwnedShadowSession,
@@ -697,11 +698,10 @@ function ShadowChatPageContent() {
   const unansweredReplies = messages.filter((msg) => msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE').length;
 
   async function readResearchFilings(): Promise<Record<string, ResearchFiling>> {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
-    if (!response.ok) throw new Error('research requirements');
-    const payload = (await response.json()) as { items?: ResearchRequirementListRow[] };
+    // Every page: a question filed long ago is still filed.
+    const rows = await fetchAllResearchRequirements<ResearchRequirementListRow>();
     const filed: Record<string, ResearchFiling> = {};
-    for (const row of payload.items ?? []) {
+    for (const row of rows) {
       if (row.source_event_name === RESEARCH_FILING_EVENT && row.source_entity_type === RESEARCH_FILING_ENTITY) {
         filed[row.source_entity_id] = { id: row.research_requirement_id, status: row.status };
       }
@@ -1973,6 +1973,14 @@ function ShadowChatPageContent() {
                         {msg.citations.map((citation) => (
                           <li key={citation.evidenceId} className="t-data text-[color:var(--bone-400)]">
                             [{citation.token}] {citation.sourceTitle} — {citation.documentName}
+                            {/* The passage itself, sent only within the rights
+                                rule (A-Q11); a licensed or unknown source stays
+                                a title. */}
+                            {citation.excerpt ? (
+                              <blockquote className="t-body mt-[var(--s1)] border-l-2 border-[color:var(--brass-900)] pl-[var(--s3)] text-[color:var(--bone-300)]">
+                                {citation.excerpt}
+                              </blockquote>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

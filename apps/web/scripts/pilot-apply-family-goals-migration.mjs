@@ -72,9 +72,13 @@ const READINESS_QUERY = `
              and d.def like '%''active''%' and d.def like '%''completed''%')
            or (c.conname = 'pilot_family_goals_completed_check'
              and d.def like '%''completed''%' and d.def like '%completed_at IS NOT NULL%')
+           -- The writer roles exactly (Q-E): every quoted word in the check, and nothing more, so a
+           -- same-named check left by an earlier table that also admits 'athlete' does not pass.
            or (c.conname in ('pilot_family_goals_created_by_role_check', 'pilot_family_goals_updated_by_role_check')
-             and d.def like '%''parent''%' and d.def like '%''coach''%'
-             and d.def like '%''organization_admin''%' and d.def like '%''admin''%')
+             and (
+               select array_agg(distinct m[1] order by m[1])
+                 from regexp_matches(d.def, '''([a-z_]+)''', 'g') as m
+             ) = array['admin', 'coach', 'organization_admin', 'parent'])
          )
     ) = 6 as checks_ready,
     exists (

@@ -303,3 +303,30 @@ test('a load that fully answered prints real counts', async () => {
   expect(screen.getByText('SUBMISSIONS: 1')).toBeInTheDocument();
   expect(screen.getByText('UNREVIEWED: 1')).toBeInTheDocument();
 });
+
+test('an open requirement on a later page of the list still reaches the review queue (F-025)', async () => {
+  const resolved = Array.from({ length: 3 }, (_, index) => ({ ...OPEN_REQUIREMENT, research_requirement_id: 100 + index, status: 'resolved' }));
+  const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/research-requirements')) {
+      return url.includes('cursor=page-2')
+        ? ({ ok: true, json: async () => ({ items: [OPEN_REQUIREMENT], next_cursor: null }) } as Response)
+        : ({ ok: true, json: async () => ({ items: resolved, next_cursor: 'page-2' }) } as Response);
+    }
+    if (url.includes('/research-submissions?research_requirement_id=')) {
+      return { ok: true, json: async () => ({ items: [SUBMISSION] }) } as Response;
+    }
+    if (url.includes('/library/sources')) {
+      return { ok: true, json: async () => ({ sources: [LIBRARY_SOURCE] }) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('research-requirements?limit=200&cursor=page-2'))).toBe(true);
+});

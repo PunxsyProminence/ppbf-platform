@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { roleRoutes } from '@/components/roleRoutes';
 import { formatGymCustom } from '@/src/lib/gymTime';
 
 // Mirrors the closed vocabularies in src/server/pilot/announcements.ts and the
@@ -84,6 +85,17 @@ export function announcementReachesPlacement(item: AnnouncementItem, placement: 
   return item.placement === placement || item.placement === 'everywhere';
 }
 
+/**
+ * The byline's role in plain words (#1542, FC-07): the stored author_role is
+ * 'coach', 'admin' or a board seat ('board-treasurer', ...), and a reader sees
+ * "Coach", "Admin" or "Treasurer". Same vocabulary as /notices (roleRoutes),
+ * so the two cannot drift; a value roleRoutes has no label for prints as
+ * stored rather than as a blank.
+ */
+export function bylineRoleLabel(role: string): string {
+  return roleRoutes.find((route) => route.role === role)?.label ?? role;
+}
+
 export function formatAnnouncementTime(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) {
@@ -112,6 +124,8 @@ interface AnnouncementBannerProps {
    */
   readonly source?: 'session' | 'public';
   readonly heading?: string;
+  /** A line under the heading saying what this section is (FC-07). */
+  readonly note?: string;
   readonly className?: string;
   readonly showByline?: boolean;
 }
@@ -130,6 +144,7 @@ export default function AnnouncementBanner({
   limit = 3,
   source = 'session',
   heading,
+  note,
   className,
   showByline,
 }: Readonly<AnnouncementBannerProps>) {
@@ -194,6 +209,7 @@ export default function AnnouncementBanner({
       className={className ?? 'rounded-lg border border-[rgba(0,0,0,0.12)]  p-3'}
     >
       {heading ? <p className="mb-2 text-xs font-semibold">{heading}</p> : null}
+      {note ? <p className="mb-2 text-xs opacity-75">{note}</p> : null}
       <div className="space-y-2">
         {items.map((item) => (
           <article
@@ -203,7 +219,7 @@ export default function AnnouncementBanner({
             <p className="text-sm leading-6">{item.message}</p>
             {withByline ? (
               <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] opacity-60">
-                By {item.author_name} ({item.author_role}) - {formatAnnouncementTime(item.created_at)}
+                By {item.author_name} ({bylineRoleLabel(item.author_role)}) - {formatAnnouncementTime(item.created_at)}
               </p>
             ) : null}
           </article>
