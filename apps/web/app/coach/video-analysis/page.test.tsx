@@ -474,7 +474,7 @@ describe('athlete identity on this page', () => {
 
     render(<CoachVideoAnalysisPage />);
 
-    await screen.findByText(/Athlete: Marcus Reed · 12 frame\(s\) · gpt-4o-vision/);
+    await screen.findByText(/Athlete: Marcus Reed · 12 frame\(s\)$/);
   });
 
   test('the upload form picks an athlete from the roster instead of asking for a UUID', async () => {

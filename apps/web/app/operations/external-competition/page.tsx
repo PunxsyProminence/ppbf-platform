@@ -565,7 +565,7 @@ export default function ExternalCompetitionPlatformPage() {
                                 <label className="t-label" htmlFor="entry-athlete">Enter athlete</label>
                                 <select id="entry-athlete" className="select" value={entryAthleteId}
                                   onChange={(e) => setEntryAthleteId(e.target.value)}>
-                                  <option value="">Select an athlete…</option>
+                                  <option value="">Choose an athlete</option>
                                   {athletes.map((athlete) => (
                                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                                   ))}

@@ -373,7 +373,7 @@ function SetupWizardContent() {
                 }}
                 className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Saving...' : 'Save & Complete Setup'}
+                {isBusy ? 'Saving…' : 'Save & Complete Setup'}
               </button>
             </div>
           )}
