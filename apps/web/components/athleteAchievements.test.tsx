@@ -350,6 +350,15 @@ it('says a load failed rather than showing an empty record', async () => {
   expect(container.textContent).toContain('nothing already earned has gone anywhere');
 });
 
+// F-118 (LIVE-AUDIT 2026-10-17): the page text read "Wraps your own handsI did it".
+it('separates a milestone from its I did it button with a real space', async () => {
+  await renderPanel();
+  const button = screen.getAllByRole('button', { name: 'I did it' })[0]!;
+  const row = button.closest('li')!;
+  expect(row.textContent).toMatch(/\S I did it/);
+  expect(row.textContent).not.toMatch(/\SI did it/);
+});
+
 describe('one mark per press (#1529)', () => {
   it('two presses of Did it in the same tick send one mark', async () => {
     await renderPanel();
