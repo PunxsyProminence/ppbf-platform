@@ -17,7 +17,7 @@ import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
  *
  * Labels and roles come from the building map's own door for each page, so
  * the line and the catalog cannot name a page two ways, and a reader is shown
- * only the pages their role may open (clusterNav.test.ts checks each door's
+ * only the pages their role may open (clusterNav.test.tsx checks each door's
  * roles against the page's own gate).
  */
 

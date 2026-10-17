@@ -68,6 +68,16 @@ describe('the cluster lines', () => {
     ]);
   });
 
+  test('an athlete on the sparring log sees no line: one page is nowhere to go', async () => {
+    createPersistentRoleSession('athlete');
+    mockPath = '/athlete/dashboard/sparring';
+    let container: HTMLElement | undefined;
+    await act(async () => {
+      ({ container } = render(<ClusterNav cluster="sparring" />));
+    });
+    expect(container!.innerHTML).toBe('');
+  });
+
   test('an admin is not shown a coach-only page', async () => {
     createPersistentRoleSession('admin');
     mockPath = '/coach/workout-templates';
