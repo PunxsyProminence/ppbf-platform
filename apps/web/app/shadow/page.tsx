@@ -387,7 +387,7 @@ function sessionTypeWords(sessionType: string): string {
 
 /* A response that is not a plain answer, in words (UXB-21). PROPOSED. */
 function responseStateWords(state: string): string {
-  if (state === 'filtered') return 'Withheld';
+  if (state === 'filtered') return 'Not answered';
   if (state === 'queued') return 'Waiting for an answer';
   return 'SHADOW could not answer';
 }
@@ -872,7 +872,7 @@ function ShadowChatPageContent() {
           tier: mapped.type === 'shadow' ? restoredTier : undefined,
           // evidenceTier and handoff come from the stored row, so a reopened
           // conversation shows the grade the answer was given and keeps its
-          // "Talk to a coach about this" banner.
+          // "Talk to someone about this" banner.
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
           citations: mapped.type === 'shadow' ? mapped.citations : undefined,
@@ -1391,7 +1391,7 @@ function ShadowChatPageContent() {
         setConversationAthleteId(undefined);
         addMessage(
           'shadow',
-          'This conversation no longer exists on the server, so it cannot be continued. Your next message starts a new conversation.',
+          'This chat no longer exists, so it cannot be continued. Your next message starts a new chat.',
           { state: 'filtered', evidenceTier: NO_SERVER_EVIDENCE_TIER },
         );
         return;
@@ -1406,7 +1406,7 @@ function ShadowChatPageContent() {
 
     addMessage(
       'shadow',
-      'SHADOW could not reach the secure chat service. No generated or fallback guidance was displayed.',
+      'SHADOW could not be reached. No answer was shown.',
       { state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER },
     );
   }
@@ -1482,8 +1482,7 @@ function ShadowChatPageContent() {
       <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
-            <p className="t-eyebrow">SHADOW</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>Opening SHADOW</h1>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Opening SHADOW</h1>
           </div>
         </div>
       </main>
@@ -1938,7 +1937,7 @@ function ShadowChatPageContent() {
                     <div className="mt-[var(--s3)]">
                       <span className="badge badge--restricted">
                         <i aria-hidden="true">▲</i>
-                        Talk to a coach about this
+                        Talk to someone about this
                       </span>
                       <p className="mt-[var(--s2)] max-w-[66ch] text-[16px] leading-[1.6] text-[color:var(--bone-300)]">
                         {msg.handoff}
@@ -1971,7 +1970,9 @@ function ShadowChatPageContent() {
                       between the answer and the controls at full contrast.
                       Behind one disclosure, in the order someone debugging
                       would want them. */}
-                  {msg.type === 'shadow' && (msg.tier || msg.modelUsed) ? (
+                  {/* Staff only: the model and tier are for whoever debugs an
+                      answer, not for an athlete or parent (UXB-21). */}
+                  {msg.type === 'shadow' && !familyFacing && (msg.tier || msg.modelUsed) ? (
                     <ShadowDisclosure label="Details" className="mt-[var(--s3)] border-t border-[color:var(--brass-900)]">
                       <ul className="space-y-[var(--s1)]">
                         {msg.tier ? (

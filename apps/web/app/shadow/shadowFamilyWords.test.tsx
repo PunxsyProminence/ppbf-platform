@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ReactNode } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ShadowChatPage from './page';
 import { fetchOwnShadowDeletionRequest, listOwnedShadowSessions } from '@/client/shadowSessions';
@@ -82,6 +82,8 @@ describe.each(['athlete', 'parent'])('a %s reading SHADOW', (role) => {
     await renderPage();
     await screen.findByText('Footwork question');
 
+    // The heading still says what the room is; only the staff markers go.
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
     expect(screen.queryByText(/^Role:/)).toBeNull();
     expect(screen.queryByText('LIVE')).toBeNull();
     expect(screen.queryByText('Scout')).toBeNull();
@@ -96,6 +98,56 @@ describe.each(['athlete', 'parent'])('a %s reading SHADOW', (role) => {
     expect(screen.queryByText(/server-stored/)).toBeNull();
     await waitFor(() => expect(screen.getByText(/^Quick Round · /)).toBeTruthy());
     expect(screen.queryByText(/quick round/)).toBeNull();
+  });
+});
+
+function chatServer(chat: () => { ok: boolean; status: number; json: () => Promise<unknown> }) {
+  global.fetch = jest.fn(async (url: string) => {
+    const target = String(url);
+    if (target.includes('/api/pilot/auth/session')) {
+      return { ok: true, json: async () => ({ authenticated: true, role: signedInRole }) };
+    }
+    if (target.includes('/api/pilot/shadow/capabilities')) {
+      return { ok: true, json: async () => ({ success: true, capabilities: { allowedSessionTypes: ['quick_round'], mode: 'scoped' } }) };
+    }
+    if (target.includes('/api/pilot/shadow/chat')) return chat();
+    return { ok: true, json: async () => ({}) };
+  }) as unknown as typeof fetch;
+}
+
+async function ask(): Promise<void> {
+  fireEvent.change(await screen.findByLabelText('Your question'), { target: { value: 'How do I cut weight?' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+  });
+}
+
+describe('an answer, as an athlete reads it', () => {
+  test('a handoff is "Talk to someone about this", and Details (model, tier) is not shown', async () => {
+    chatServer(() => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        state: 'ok', response: 'Here is what I can say.', evidenceTier: 'EMERGING', messageId: 'm1',
+        tier: 'quick_round', modelUsed: 'gpt-deployment-x', handoff: 'Talk with your coach before changing your weight.',
+      }),
+    }));
+    await renderPage();
+    await ask();
+
+    expect(await screen.findByText('Talk to someone about this')).toBeTruthy();
+    expect(screen.queryByText(/Human Handoff Required/)).toBeNull();
+    expect(screen.queryByText(/Model:/)).toBeNull();
+    expect(screen.queryByText('Details')).toBeNull();
+  });
+
+  test('a server failure reads "SHADOW could not answer", never "degraded"', async () => {
+    chatServer(() => ({ ok: false, status: 503, json: async () => ({ error: 'unavailable' }) }));
+    await renderPage();
+    await ask();
+
+    await waitFor(() => expect(screen.getByText('SHADOW could not answer')).toBeTruthy());
+    expect(screen.queryByText(/degraded/i)).toBeNull();
   });
 });
 
