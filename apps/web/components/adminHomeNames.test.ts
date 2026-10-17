@@ -45,7 +45,9 @@ describe('one admin home, one name per hub', () => {
   });
 
   test('no screen shows a retired hub name', () => {
-    const RETIRED = /> *(?:Back to )?(?:Mission Control|The Ring|The Capability Room|Capability Room|Capability Console|Admin Hub|Admin Home|Admin Dashboard|Go To Admin Dashboard|the Front Office|the office) *</;
+    // Case-insensitive and across line breaks: a button label written in
+    // capitals on its own line is still the name on the screen.
+    const RETIRED = />\s*(?:Back to )?(?:Mission Control|The Ring|The Capability Room|Capability Room|Capability Console|Admin Hub|Admin Home|Admin Dashboard|Go To Admin Dashboard|the Front Office|the office)\s*</i;
     const offenders = SOURCES.filter(([, s]) => RETIRED.test(s)).map(([f]) => f);
     expect(offenders).toEqual([]);
   });
