@@ -145,7 +145,9 @@ test('the badge is the server\'s answer, not the tap: a refused switch stays off
   fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
 
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeNull());
-  expect(screen.getByRole('alert').textContent).toContain('SOME_REFUSAL');
+  // Words, never the stored code (UXB-09).
+  expect(screen.getByRole('alert').textContent).toBe('That did not go through. Nothing was changed. Try again.');
+  expect(screen.getByRole('alert').textContent).not.toContain('SOME_REFUSAL');
   expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
   expect(screen.queryByText('ON THE TV')).toBeNull();
 });

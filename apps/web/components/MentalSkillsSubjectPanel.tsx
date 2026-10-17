@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import MentalSkillsView, {
   type LoadState,
@@ -50,11 +50,19 @@ export default function MentalSkillsSubjectPanel({
   pickerLabel,
   noneText,
   rosterErrorText,
+  initialSubject,
+  onSelect,
 }: {
   readonly loaders: SubjectLoaders;
   readonly pickerLabel: string;
   readonly noneText: string;
   readonly rosterErrorText: string;
+  /** Asked once the list arrives; opens on that athlete only when they are in
+   *  it. Without it, or for anyone else, nothing is picked. */
+  readonly initialSubject?: () => string | null;
+  /** Told when the person picks someone in the picker (not on the initial
+   *  open). Without it, nothing happens beyond the read. */
+  readonly onSelect?: (athleteId: string) => void;
 }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [rosterState, setRosterState] = useState<LoadState>('loading');
@@ -65,14 +73,21 @@ export default function MentalSkillsSubjectPanel({
   const [goalsState, setGoalsState] = useState<LoadState>('loading');
   const subjectRef = useRef('');
 
+  const openInitial = useEffectEvent((items: Person[]) => {
+    const wanted = initialSubject?.();
+    if (wanted && items.some((person) => person.athlete_id === wanted)) select(wanted);
+  });
+
   useEffect(() => {
     let live = true;
     void (async () => {
       try {
         const payload = await getJson<{ items?: Person[] }>(loaders.rosterPath);
         if (!live) return;
-        setPeople(payload.items ?? []);
+        const items = payload.items ?? [];
+        setPeople(items);
         setRosterState('loaded');
+        openInitial(items);
       } catch {
         if (!live) return;
         setPeople([]);
@@ -120,7 +135,10 @@ export default function MentalSkillsSubjectPanel({
           <select
             id="mentalSkillsSubject"
             value={activeId}
-            onChange={(event) => select(event.target.value)}
+            onChange={(event) => {
+              select(event.target.value);
+              onSelect?.(event.target.value);
+            }}
             disabled={rosterState !== 'loaded' || people.length === 0}
             className="select"
           >
