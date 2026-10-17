@@ -72,6 +72,8 @@ interface Props {
   loading: boolean;
   /** Why the record could not be read, if it could not. */
   loadError: string | null;
+  /** Reads the record again after a failed read (UXB-06). */
+  onRetry?: () => void;
   onSaved: (row: AthleteCheckInRecord) => void;
 }
 
@@ -146,7 +148,7 @@ function StoredAnswers({ record }: { record: AthleteCheckInRecord }) {
         // A bare check-in is a real check-in. "I'm here" on its own is the
         // whole point of every field being optional.
         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-          You checked in without answering the questions — that counts.
+          You saved it without answering the questions — that counts.
         </p>
       )}
       {record.note.trim() !== '' && (
@@ -156,7 +158,7 @@ function StoredAnswers({ record }: { record: AthleteCheckInRecord }) {
   );
 }
 
-export default function AthleteCheckInPanel({ today, recent, loading, loadError, onSaved }: Props) {
+export default function AthleteCheckInPanel({ today, recent, loading, loadError, onRetry, onSaved }: Props) {
   // Starts EMPTY. A key appears only when the athlete picks a value, and only
   // the keys present here are sent -- this object IS rule 1 above.
   const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>({});
@@ -223,7 +225,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
         setSaveError(
           typeof payload?.error === 'string'
             ? payload.error
-            : 'Check-in was not saved. Try again, and tell a coach you are here.',
+            : 'Your wellness was not saved. Try again, or tell a coach.',
         );
         return;
       }
@@ -233,12 +235,12 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
         setBodyMassNotice(payload.body_mass_saved === true
           ? `Body mass saved: ${body.body_mass} ${body.body_mass_unit}.`
           : payload.body_mass_failed === true
-            ? 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'
+            ? 'Your wellness is saved, but your body mass could not be saved. Tell a coach your weight.'
             : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
       }
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {
-      setSaveError('Check-in was not saved. Try again, and tell a coach you are here.');
+      setSaveError('Your wellness was not saved. Try again, or tell a coach.');
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -246,15 +248,27 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   };
 
   if (loading) {
-    return <p className="t-data">Loading your check-in…</p>;
+    return <p className="t-data">Loading your wellness…</p>;
   }
 
   if (loadError) {
     // Honest absence, never an empty form that would silently double-write.
     return (
       <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s3)]`}>
-        <h3 className="t-label">Check-In</h3>
-        <p className="t-data">{loadError}</p>
+        <h3 className="t-label">Wellness</h3>
+        {/* An alert with a way back, so a child is not left on a dead screen
+            until someone reloads the tablet (UXB-06). */}
+        <div className="alert alert--warning" role="alert">
+          <span className="alert-icon" aria-hidden="true">▲</span>
+          <div className="alert-body">
+            <p className="alert-msg">{loadError}</p>
+          </div>
+        </div>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="btn btn--kiosk">
+            Try again
+          </button>
+        )}
       </div>
     );
   }
@@ -264,7 +278,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   const sleepTrend = recent.length > 0 && (
     <div className={PANEL_RAISED_CLASS}>
       <SleepTrend
-        heading="Your sleep on recent check-ins"
+        heading="Your sleep on recent wellness days"
         items={recent.slice(0, 14).map((record) => ({
           checked_in_on: record.checked_in_on,
           sleep_hours: record.sleep_hours,
@@ -277,9 +291,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
     return (
       <div className="space-y-6 panel-settle">
         <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s4)]`}>
-          <h3 className="t-label">Already checked in today</h3>
+          <h3 className="t-label">Wellness saved today</h3>
           <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
-            You checked in on {formatCalendarDay(today.checked_in_on)}. Your workout and tasks are open.
+            You saved your wellness on {formatCalendarDay(today.checked_in_on)}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
           {bodyMassNotice !== '' && (
@@ -290,7 +304,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
 
         {recent.length > 1 && (
           <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s3)]`}>
-            <h3 className="t-label">Your recent check-ins</h3>
+            <h3 className="t-label">Your recent wellness days</h3>
             {/* The athlete's OWN history. Never comparable across athletes,
                 and deliberately no streak counter or shame framing -- the
                 contract's engagement rules apply to anything built on this. */}
@@ -310,9 +324,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   return (
     <div className="space-y-6 panel-settle">
       <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s5)]`}>
-        <h3 className="t-label">Check in</h3>
+        <h3 className="t-label">Wellness</h3>
         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-300)' }}>
-          Tell us you are here. Every question is optional — you can check in without
+          Tell us how you are. Every question is optional — you can save without
           answering any of them.
         </p>
 
@@ -418,7 +432,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           disabled={saving}
           className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
         >
-          {saving ? 'Checking in…' : 'Check in'}
+          {saving ? 'Saving…' : 'Save wellness'}
         </button>
 
         {saveError !== '' && <p className="t-data">{saveError}</p>}

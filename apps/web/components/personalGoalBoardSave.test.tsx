@@ -76,7 +76,7 @@ test.each(['refused', 'offline'] as const)('a %s "I did it" says it did not save
   await act(async () => {
     fireEvent.click(screen.getAllByRole('button', { name: /i did it/i })[0]);
   });
-  expect(screen.getByText('That did not save. Try it again.')).toBeInTheDocument();
+  expect(screen.getByText('That did not save. Try again.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /i did it/i })).toBeInTheDocument();
 });
 
@@ -92,7 +92,7 @@ test('"I did it" in flight says "Saving...", and a kept one moves the goal with 
   });
   await waitFor(() => expect(screen.queryByRole('button', { name: /i did it/i })).toBeNull());
   expect(screen.queryByText('Saving...')).toBeNull();
-  expect(screen.queryByText('That did not save. Try it again.')).toBeNull();
+  expect(screen.queryByText('That did not save. Try again.')).toBeNull();
 });
 
 test('with another goal still open, a kept "I did it" leaves no saving line behind', async () => {
@@ -103,7 +103,7 @@ test('with another goal still open, a kept "I did it" leaves no saving line behi
   });
   await waitFor(() => expect(screen.getAllByRole('button', { name: /i did it/i })).toHaveLength(1));
   expect(screen.queryByText('Saving...')).toBeNull();
-  expect(screen.queryByText('That did not save. Try it again.')).toBeNull();
+  expect(screen.queryByText('That did not save. Try again.')).toBeNull();
 });
 
 function goalCard(title: string): HTMLElement {
@@ -117,9 +117,9 @@ test('the line sits on the goal that was pressed, at floor size', async () => {
   await act(async () => {
     fireEvent.click(within(goalCard('Hold my guard')).getByRole('button', { name: /i did it/i }));
   });
-  const note = within(goalCard('Hold my guard')).getByText('That did not save. Try it again.');
+  const note = within(goalCard('Hold my guard')).getByText('That did not save. Try again.');
   expect(note.className).toContain('text-[length:var(--t-md)]');
-  expect(within(goalCard('Run a mile')).queryByText('That did not save. Try it again.')).toBeNull();
+  expect(within(goalCard('Run a mile')).queryByText('That did not save. Try again.')).toBeNull();
 });
 
 test("another goal's kept press does not erase a goal's failure", async () => {
@@ -133,7 +133,7 @@ test("another goal's kept press does not erase a goal's failure", async () => {
     fireEvent.click(within(goalCard('Hold my guard')).getByRole('button', { name: /i did it/i }));
   });
   await waitFor(() => expect(screen.getAllByRole('button', { name: /i did it/i })).toHaveLength(1));
-  expect(within(goalCard('Run a mile')).getByText('That did not save. Try it again.')).toBeInTheDocument();
+  expect(within(goalCard('Run a mile')).getByText('That did not save. Try again.')).toBeInTheDocument();
 });
 
 test('a failed press does not follow the kiosk to another athlete', async () => {
@@ -143,7 +143,7 @@ test('a failed press does not follow the kiosk to another athlete', async () => 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /i did it/i }));
   });
-  expect(screen.getByText('That did not save. Try it again.')).toBeInTheDocument();
+  expect(screen.getByText('That did not save. Try again.')).toBeInTheDocument();
   rerender(<PersonalGoalBoard athleteId="ath_2" />);
-  await waitFor(() => expect(screen.queryByText('That did not save. Try it again.')).toBeNull());
+  await waitFor(() => expect(screen.queryByText('That did not save. Try again.')).toBeNull());
 });

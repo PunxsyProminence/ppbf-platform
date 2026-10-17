@@ -100,7 +100,7 @@ function stable(body: Record<string, unknown>): Record<string, unknown> {
 
 test('the corner\'s Start check-in sends exactly what the Session Log\'s Check In sends', async () => {
   await renderWorkspace();
-  fireEvent.click(await corner().findByRole('button', { name: 'Start check-in' }));
+  fireEvent.click(await corner().findByRole('button', { name: 'Check in' }));
   await waitFor(() => expect(checkInPosts()).toHaveLength(1));
   const fromCorner = checkInPosts()[0].body;
   expect(fromCorner.athlete_id).toBe('ath_test');
@@ -112,7 +112,7 @@ test('the corner\'s Start check-in sends exactly what the Session Log\'s Check I
   document.body.innerHTML = '';
   fetchCalls.length = 0;
   await renderWorkspace();
-  fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Check in' }));
   await waitFor(() => expect(checkInPosts()).toHaveLength(1));
   expect(stable(checkInPosts()[0].body)).toEqual(stable(fromCorner));
 });
@@ -125,7 +125,7 @@ test('with a session open today, the corner says checked in and offers no second
   }];
   await renderWorkspace();
   expect(await corner().findByText(/^Checked in /)).toBeTruthy();
-  expect(corner().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+  expect(corner().queryByRole('button', { name: 'Check in' })).toBeNull();
 });
 
 test('while the session read is in flight, the corner says it is checking -- not "not checked in"', async () => {
@@ -133,7 +133,7 @@ test('while the session read is in flight, the corner says it is checking -- not
   await renderWorkspace();
   expect(await corner().findByText('Checking whether you are checked in...')).toBeTruthy();
   expect(corner().queryByText('You have not checked in today.')).toBeNull();
-  expect(corner().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+  expect(corner().queryByRole('button', { name: 'Check in' })).toBeNull();
 });
 
 test('a failed session read is said as a failure, and Try again asks the same read again', async () => {
@@ -141,7 +141,7 @@ test('a failed session read is said as a failure, and Try again asks the same re
   await renderWorkspace();
   expect(await corner().findByText(/Could not tell whether you are checked in/)).toBeTruthy();
   expect(corner().queryByText('You have not checked in today.')).toBeNull();
-  expect(corner().queryByRole('button', { name: 'Start check-in' })).toBeNull();
+  expect(corner().queryByRole('button', { name: 'Check in' })).toBeNull();
 
   const before = fetchCalls.filter((call) => call.url.includes('/api/pilot/sessions/list')).length;
   sessionListMode = 'answer';
@@ -175,7 +175,10 @@ test('Report pain takes the athlete to the existing report\'s location picker, w
 
 test('the old Today section no longer repeats the corner\'s controls below it', async () => {
   await renderWorkspace();
-  expect(screen.getAllByRole('button', { name: 'Start check-in' })).toHaveLength(1);
+  // One in the corner and one in the Session Log, both the same action and the
+  // same word (UXB-19); the old Today section adds no third.
+  expect(screen.getAllByRole('button', { name: 'Check in' })).toHaveLength(2);
+  expect(corner().getAllByRole('button', { name: 'Check in' })).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Open the floor' })).toHaveLength(1);
 });
 
@@ -193,7 +196,7 @@ test('after today\'s session was checked out, the corner says so instead of "not
 test('a check-in that fails says so in the corner', async () => {
   checkInPostFails = true;
   await renderWorkspace();
-  fireEvent.click(await corner().findByRole('button', { name: 'Start check-in' }));
+  fireEvent.click(await corner().findByRole('button', { name: 'Check in' }));
   expect(await corner().findByText(/That check-in did not save/)).toBeTruthy();
 });
 
