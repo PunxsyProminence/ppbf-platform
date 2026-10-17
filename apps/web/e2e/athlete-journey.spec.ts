@@ -892,7 +892,8 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
-    await page.getByRole('button', { name: 'Start check-in' }).first().click();
+    // The corner's button and the Session Log's both read 'Check in' and send the same (UXB-19).
+    await page.getByRole('button', { name: 'Check in', exact: true }).first().click();
 
     /* Check-in deliberately moves the athlete off the Session Log -- to
        Wellness when today's wellness is missing, to the Floor when it is not
