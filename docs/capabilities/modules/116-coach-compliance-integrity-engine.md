@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. compliance routes (violations GET at violations/route.ts, rules, escalate) over compliance.ts createComplianceViolation/escalateViolation (:262/:360) with role gates and org scoping. |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. compliance routes (violations GET at violations/route.ts, rules, escalate) over compliance.ts createComplianceViolation/escalateViolation with role gates and org scoping. |
 | Code | `apps/web/app/api/pilot/compliance/violations/route.ts`, `apps/web/app/api/pilot/compliance/rules/route.ts`, `apps/web/app/api/pilot/compliance/escalate/route.ts`, `apps/web/src/server/pilot/compliance.ts` |
 | Tests | `apps/web/app/api/pilot/compliance/violations/route.test.ts`, `apps/web/app/api/pilot/compliance/rules/route.test.ts`, `apps/web/src/server/pilot/compliance.test.ts` |
 | Vertical slice | compliance rule/violation tracking with severity, escalation ladder, coach/admin role gates, org- and athlete-scoped access |

@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. create_class validates capacity 1-200 (scheduler/route.ts); registerForClassTransactionally (schedulerDb.ts) waitlists when registered count >= capacity (:353). |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. create_class validates capacity 1-200 (scheduler/route.ts); registerForClassTransactionally (schedulerDb.ts) waitlists when registered count >= capacity. |
 | Code | `apps/web/app/api/pilot/scheduler/route.ts`, `apps/web/src/server/pilot/schedulerDb.ts`, `apps/web/app/schedule/page.tsx` |
 | Tests | `apps/web/app/api/pilot/scheduler/route.test.ts`, `apps/web/src/server/pilot/schedulerDb.test.ts` |
 | Vertical slice | per-class seat cap + waitlist enforcement inside the scheduler; a broader capacity console is future work |

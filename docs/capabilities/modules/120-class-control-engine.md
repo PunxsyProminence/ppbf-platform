@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE" until 2026-10-16. scheduler/route.ts POST create_class (:697), cancel_class (:770), cover_class; cancel authority in schedulerCancelRule.ts; surfaced at /schedule. |
+| Status note | Was "DONE" until 2026-10-16. scheduler/route.ts POST create_class, cancel_class, cover_class; cancel authority in schedulerCancelRule.ts; surfaced at /schedule. |
 | Code | `apps/web/app/api/pilot/scheduler/route.ts`, `apps/web/app/schedule/page.tsx`, `apps/web/src/server/pilot/schedulerCancelRule.ts`, `apps/web/src/server/pilot/schedulerDb.ts` |
 | Tests | `apps/web/app/api/pilot/scheduler/route.test.ts`, `apps/web/src/server/pilot/schedulerCancelRule.test.ts`, `apps/web/app/schedule/cancelClass.test.tsx` |
 | Active | false |

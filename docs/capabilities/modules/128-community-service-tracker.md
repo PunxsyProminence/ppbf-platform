@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. getCommunityServiceTotals (communityService.ts) read via admin route :22 and /admin/community-service page; verified/unverified kept separate |
+| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. getCommunityServiceTotals (communityService.ts) read via admin route and /admin/community-service page; verified/unverified kept separate |
 | Code | `apps/web/app/api/pilot/admin/community-service/route.ts`, `apps/web/app/admin/community-service/page.tsx`, `apps/web/src/server/pilot/communityService.ts` |
 | Tests | `apps/web/app/api/pilot/admin/community-service/route.test.ts`, `apps/web/app/admin/community-service/page.test.tsx`, `apps/web/src/server/pilot/communityService.test.ts` |
 | Vertical slice | Read-only tracker over the `community_service` rows already in `pilot.activity_log` (a verifier-required domain): per-person totals with verified and unverified minutes kept structurally separate, entries listed with their own verification state, hours floored. `/admin/community-service` + read route. No new table and no new write path -- recording stays on the activity log. Future work: exportable verified statements once a disclosure policy exists. |

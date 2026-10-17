@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. startPhase/endPhase (programPhases.ts,101) behind GET/POST/PATCH route :33,46,76 and /admin/program-phases page |
+| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. startPhase/endPhase (programPhases.ts,101) behind GET/POST/PATCH route and /admin/program-phases page |
 | Code | `apps/web/app/api/pilot/admin/program-phases/route.ts`, `apps/web/app/admin/program-phases/page.tsx`, `apps/web/src/server/pilot/programPhases.ts` |
 | Tests | `apps/web/app/api/pilot/admin/program-phases/route.test.ts`, `apps/web/app/admin/program-phases/page.test.tsx`, `apps/web/src/server/pilot/programPhases.pg.test.ts` |
 | Vertical slice | `pilot.program_phases`: human-declared blocks per program (name, focus, start, optional end) with ONE OPEN PHASE per program enforced by partial unique index; starting a new phase closes the previous the day before, keeping history intact. Staff read, admin declares; audited. `/admin/program-phases`. Phases carry no athlete ids and change nothing about any athlete. Future work: surfacing the active phase as context on session and planning surfaces. |

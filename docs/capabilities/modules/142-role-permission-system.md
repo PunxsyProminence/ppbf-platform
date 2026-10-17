@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. requireRole (access.ts), isOrganizationAdminRole (:15), assertActorCanAccessAthlete (:384) used across routes; staff provisioning via admin/staff route and /admin/people |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. requireRole (access.ts), isOrganizationAdminRole, assertActorCanAccessAthlete used across routes; staff provisioning via admin/staff route and /admin/people |
 | Code | `apps/web/src/server/pilot/access.ts`, `apps/web/app/admin/people/page.tsx`, `apps/web/app/api/pilot/admin/staff/route.ts`, `apps/web/src/server/pilot/staffProvisioning.ts` |
 | Tests | `apps/web/src/server/pilot/access.test.ts`, `apps/web/app/admin/people/page.test.tsx`, `apps/web/app/api/pilot/admin/staff/route.test.ts` |
 | Vertical slice | Central requireRole()/isOrganizationAdminRole() primitives used by essentially every API route in the platform |

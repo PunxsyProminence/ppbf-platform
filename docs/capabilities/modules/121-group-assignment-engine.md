@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. floor-groups/route.ts and floorGroups.ts (createPlan :41, addGroup, placeAthlete) implement day-scoped groups, one group per athlete per plan; /coach/floor-groups. |
+| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. floor-groups/route.ts and floorGroups.ts (createPlan, addGroup, placeAthlete) implement day-scoped groups, one group per athlete per plan; /coach/floor-groups. |
 | Code | `apps/web/app/api/pilot/coach/floor-groups/route.ts`, `apps/web/app/coach/floor-groups/page.tsx`, `apps/web/src/server/pilot/floorGroups.ts` |
 | Tests | `apps/web/app/api/pilot/coach/floor-groups/route.test.ts`, `apps/web/app/coach/floor-groups/page.test.tsx`, `apps/web/src/server/pilot/floorGroups.pg.test.ts` |
 | Vertical slice | Attendance-driven floor groups: a plan belongs to a DAY (not a permanent roster), athletes are placed into groups for that session only, one group per athlete per plan enforced by primary key, placements carry no level/rank and never carry forward. Shares `pilot.floor_plans_daily` / `floor_plan_groups` / `floor_plan_members` with module 123. `/coach/floor-groups`. |

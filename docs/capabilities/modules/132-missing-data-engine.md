@@ -2,7 +2,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE" until 2026-10-16. assertOnlyAllowedKeys throws "Missing required fields: ..." (validation.ts), mapped to 400 via jsonError; used by athlete create (validateAthleteCreatePayload, athletes/route.ts) and update |
+| Status note | Was "DONE" until 2026-10-16. assertOnlyAllowedKeys throws "Missing required fields:..." (validation.ts), mapped to 400 via jsonError; used by athlete create (validateAthleteCreatePayload, athletes/route.ts) and update |
 | Code | `apps/web/app/api/pilot/athletes/route.ts`, `apps/web/app/api/pilot/athletes/update/route.ts`, `apps/web/src/server/pilot/validation.ts` |
 | Tests | `apps/web/src/server/pilot/validation.test.ts`, `apps/web/app/api/pilot/athletes/route.test.ts`, `apps/web/app/api/pilot/athletes/update/route.test.ts` |
 | Active | false |

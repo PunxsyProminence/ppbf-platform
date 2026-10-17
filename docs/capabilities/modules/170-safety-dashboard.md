@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. admin/safety-flags/page.tsx (header names module 170) consumes safety-flags/route.ts GET open queue and :210 PATCH resolve with mandatory note. |
+| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. admin/safety-flags/page.tsx (header names module 170) consumes safety-flags/route.ts GET open queue and PATCH resolve with mandatory note. |
 | Code | `apps/web/app/admin/safety-flags/page.tsx`, `apps/web/app/api/pilot/safety-flags/route.ts`, `apps/web/src/server/pilot/safetyFlags.ts` |
 | Tests | `apps/web/app/admin/safety-flags/page.test.tsx`, `apps/web/app/api/pilot/safety-flags/route.test.ts`, `apps/web/src/server/pilot/safetyFlags.pg.test.ts` |
 | Vertical slice | /admin/safety-flags board consuming the open-flag queue API (coach/admin): severity counts worst-first, resolve with mandatory note, external-rule flags never offered a bypass |

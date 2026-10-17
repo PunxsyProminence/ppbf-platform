@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 8 tracker)" until 2026-10-16. shadowRecommendations.ts createProvisionalRecommendation writes only status provisional; :176 decideOnRecommendation is the human accept/reject, reached via recommendations/decide/route.ts (coach roles, athlete-access checked). |
+| Status note | Was "DONE (Wave 8 tracker)" until 2026-10-16. shadowRecommendations.ts createProvisionalRecommendation writes only status provisional; decideOnRecommendation is the human accept/reject, reached via recommendations/decide/route.ts (coach roles, athlete-access checked). |
 | Code | `apps/web/app/api/pilot/shadow/recommendations/route.ts`, `apps/web/app/api/pilot/shadow/recommendations/decide/route.ts`, `apps/web/src/server/pilot/shadowRecommendations.ts` |
 | Tests | `apps/web/app/api/pilot/shadow/recommendations/decide/route.test.ts`, `apps/web/src/server/pilot/shadowRecommendations.test.ts` |
 | Active | false |

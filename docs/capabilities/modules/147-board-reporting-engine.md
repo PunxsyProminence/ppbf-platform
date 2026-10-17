@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE" until 2026-10-16. Board hub renders BoardSummaryPanel (board/page.tsx) over GET board/summary (route.ts) -> buildBoardSummary (boardSummary.ts) with cohort suppression (BOARD_MINIMUM_COHORT_SIZE :5); compliance-summary route alongside |
+| Status note | Was "DONE" until 2026-10-16. Board hub renders BoardSummaryPanel (board/page.tsx) over GET board/summary (route.ts) -> buildBoardSummary (boardSummary.ts) with cohort suppression (BOARD_MINIMUM_COHORT_SIZE); compliance-summary route alongside |
 | Code | `apps/web/app/api/pilot/board/summary/route.ts`, `apps/web/src/server/pilot/boardSummary.ts`, `apps/web/app/board/page.tsx`, `apps/web/app/board/BoardSummaryPanel.tsx` |
 | Tests | `apps/web/app/api/pilot/board/summary/route.test.ts`, `apps/web/src/server/pilot/boardSummary.test.ts`, `apps/web/app/board/BoardSummaryPanel.test.tsx` |
 | Active | false |

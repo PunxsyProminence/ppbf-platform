@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. findDuplicateGuardianGroups (duplicateGuardians.ts, maskEmail :28) served by admin route and /admin/data-quality page, report-only |
+| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. findDuplicateGuardianGroups (duplicateGuardians.ts, maskEmail) served by admin route and /admin/data-quality page, report-only |
 | Code | `apps/web/app/api/pilot/admin/data-quality/duplicate-guardians/route.ts`, `apps/web/app/admin/data-quality/page.tsx`, `apps/web/src/server/pilot/duplicateGuardians.ts` |
 | Tests | `apps/web/app/api/pilot/admin/data-quality/duplicate-guardians/route.test.ts`, `apps/web/app/admin/data-quality/page.test.tsx`, `apps/web/src/server/pilot/duplicateGuardians.test.ts` |
 | Vertical slice | guardian-record duplicate detection surfaced org-scoped at /admin/data-quality (masked emails, athlete ids only, report-only -- merging stays a human decision); other entity classes are future slices |

@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE" until 2026-10-16. escalationLadder.ts files/lists/acknowledges/resolves safety escalations (fileEscalation:181, listEscalations:395, resolveEscalation:492); served by GET /api/pilot/escalations and the /admin/escalations page. |
+| Status note | Was "DONE" until 2026-10-16. escalationLadder.ts files/lists/acknowledges/resolves safety escalations (fileEscalation, listEscalations, resolveEscalation); served by GET /api/pilot/escalations and the /admin/escalations page. |
 | Code | `apps/web/src/server/pilot/escalationLadder.ts`, `apps/web/app/api/pilot/escalations/route.ts`, `apps/web/app/admin/escalations/page.tsx` |
 | Tests | `apps/web/src/server/pilot/escalationLadder.test.ts`, `apps/web/app/api/pilot/escalations/route.test.ts`, `apps/web/app/admin/escalations/page.test.tsx` |
 | Active | false |

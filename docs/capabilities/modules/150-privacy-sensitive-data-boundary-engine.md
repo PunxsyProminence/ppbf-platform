@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE" until 2026-10-16. Write path rejects unsupported fields with 400 (validation.ts; athletes/route.test.ts) and athlete update audit stores field names only (athletes/update/route.ts; test :91-94). No oversize-notes limit found, so slice is partly met |
+| Status note | Was "DONE" until 2026-10-16. Write path rejects unsupported fields with 400 (validation.ts; athletes/route.test.ts) and athlete update audit stores field names only (athletes/update/route.ts; test). No oversize-notes limit found, so slice is partly met |
 | Code | `apps/web/app/api/pilot/athletes/route.ts`, `apps/web/app/api/pilot/athletes/update/route.ts`, `apps/web/src/server/pilot/validation.ts` |
 | Tests | `apps/web/app/api/pilot/athletes/route.test.ts`, `apps/web/app/api/pilot/athletes/update/route.test.ts`, `apps/web/src/server/pilot/validation.test.ts` |
 | Active | false |

@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (vertical slice — see Implementation notes)" until 2026-10-16. Nominate (createNomination onePercentClub.ts) and majority-vote confirmation (castVote :346) behind GET/POST route :55,79 and coach page |
+| Status note | Was "DONE (vertical slice — see Implementation notes)" until 2026-10-16. Nominate (createNomination onePercentClub.ts) and majority-vote confirmation (castVote) behind GET/POST route and coach page |
 | Code | `apps/web/app/api/pilot/coach/one-percent-club/route.ts`, `apps/web/app/coach/one-percent-club/page.tsx`, `apps/web/src/server/pilot/onePercentClub.ts` |
 | Tests | `apps/web/app/api/pilot/coach/one-percent-club/route.test.ts`, `apps/web/app/coach/one-percent-club/page.test.tsx`, `apps/web/src/server/pilot/onePercentClub.test.ts` |
 | Active | false |

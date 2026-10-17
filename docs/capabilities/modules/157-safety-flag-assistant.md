@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **MAPPED** |
-| Status note | Was "DRAFT" until 2026-10-16. shadowDisclosure.ts detectShadowDisclosure scans an athlete SHADOW message and :319 files a safety escalation to staff; files escalations, not safety_flags rows (safetyFlags.ts raised only by human route), so partial. |
+| Status note | Was "DRAFT" until 2026-10-16. shadowDisclosure.ts detectShadowDisclosure scans an athlete SHADOW message and files a safety escalation to staff; files escalations, not safety_flags rows (safetyFlags.ts raised only by human route), so partial. |
 | Code | `apps/web/app/api/pilot/shadow/chat/route.ts`, `apps/web/src/server/pilot/shadowDisclosure.ts`, `apps/web/src/server/pilot/escalationLadder.ts` |
 | Tests | `apps/web/src/server/pilot/shadowDisclosure.test.ts`, `apps/web/app/api/pilot/shadow/chat/route.test.ts` |
 | Active | false |

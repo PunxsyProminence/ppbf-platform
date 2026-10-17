@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** |
-| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. PublicationStatus lifecycle (publication.ts) with submitPublicationForReview (:85), publishToResearchLibrary (:135), retractPublication (:311) behind submit/publish routes |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. PublicationStatus lifecycle (publication.ts) with submitPublicationForReview, publishToResearchLibrary, retractPublication behind submit/publish routes |
 | Code | `apps/web/app/api/pilot/publications/submit/route.ts`, `apps/web/app/api/pilot/publications/publish/route.ts`, `apps/web/src/server/pilot/publication.ts`, `apps/web/app/admin/video-compliance/page.tsx` |
 | Tests | `apps/web/app/api/pilot/publications/submit/route.test.ts`, `apps/web/app/api/pilot/publications/publish/route.test.ts`, `apps/web/src/server/pilot/publication.test.ts` |
 | Vertical slice | PublicationStatus enum (draft/pending_review/approved/published/rejected/archived/retracted) with createPublication, submitPublicationForRev |
