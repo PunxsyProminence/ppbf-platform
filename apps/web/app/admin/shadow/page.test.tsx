@@ -636,3 +636,27 @@ describe('the library review flags heading', () => {
     expect(screen.getByRole('heading', { name: /Review Flags/ }).textContent).toBe('Review Flags (0)');
   });
 });
+
+describe('the console names itself and reads its dials honestly (F-024)', () => {
+  it('has one page heading', async () => {
+    await renderConsole('organization_admin');
+
+    expect(screen.getByRole('heading', { level: 1, name: 'SHADOW Admin Console' })).toBeTruthy();
+  });
+
+  it('says no outcome was reviewed, not "Unavailable", when that is the reason there is no effectiveness score', async () => {
+    const noReviews = {
+      ...growthMetrics,
+      effectiveness: {
+        ...growthMetrics.effectiveness,
+        avgRecommendationScore: null,
+        unavailableReasons: { avgRecommendationScore: 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD' },
+      },
+    };
+    renderConsoleWith({ '/shadow/metrics': async () => jsonResponse({ ok: true, metrics: noReviews }) });
+
+    expect(await screen.findByText('No reviewed outcomes yet')).toBeTruthy();
+    const effectivenessGauge = screen.getByText('Effectiveness').closest('.gauge');
+    expect(effectivenessGauge?.textContent).not.toContain('Unavailable');
+  });
+});

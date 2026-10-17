@@ -29,6 +29,7 @@ interface Routes {
   painReports?: Route;
   barrierReports?: Route;
   escalationsGet?: Route;
+  attendanceToday?: Route;
   escalationsPost?: (body: { action?: string; escalation_id?: string }) => Response;
 }
 
@@ -43,6 +44,7 @@ function installFetch(routes: Routes = {}): jest.Mock {
     if (url.includes('/api/pilot/scheduler')) return jsonResponse({ ok: true, classes: [] });
     if (url.includes('/api/pilot/coach/credentials')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/coach/attendance-today')) {
+      if (routes.attendanceToday) return routes.attendanceToday();
       return jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1'], marks: [] });
     }
     if (url.includes('/api/pilot/coach/development')) return jsonResponse({ ok: true, goals: [], activities: [] });
@@ -284,7 +286,7 @@ test('on the Dashboard each report action is on the board only, and the full lis
   // No action below the board: none until the coach opens an item on it.
   expect(screen.queryAllByRole('button', { name: 'Acknowledge' })).toHaveLength(0);
   expect(screen.queryAllByRole('link', { name: /record what you did/i })).toHaveLength(0);
-  expect(screen.queryAllByRole('link', { name: /Message Home/ })).toHaveLength(0);
+  expect(screen.queryAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(0);
 
   // Each one, opened on the board, is there exactly once on the page.
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
@@ -295,14 +297,19 @@ test('on the Dashboard each report action is on the board only, and the full lis
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
   fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
   fireEvent.click(floor().getByRole('button', { name: 'Open' }));
-  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
 
   // Off the Dashboard the board is gone and the lists carry the actions.
   fireEvent.click(screen.getByRole('button', { name: /^Goals/ }));
   expect(screen.queryByRole('region', { name: 'The floor' })).toBeNull();
   expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
-  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
+
+  // F-042: the reply hint names the panel by its heading on the Decision
+  // Loop; nothing there is called Message Home.
+  expect(screen.getAllByText("Answer the family through Post to the Family's Page on the Decision Loop.").length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/Message Home/)).toHaveLength(0);
 });
 
 test('a live-run read that failed shows the session gauge as unknown, never "None"', async () => {
@@ -377,6 +384,37 @@ test('an athlete the register says this coach does not cover is marked "Not your
   expect(casey.textContent).toContain('Not your athlete');
   const jordan = floor().getByRole('button', { name: /^Jordan P\./ });
   expect(jordan.textContent).not.toContain('Not your athlete');
+});
+
+/* Issue #1480 PR B: a coach's register now covers the whole gym, so `covered`
+   no longer says whose athlete is whose. The route sends the coach's own
+   athletes as `mine`, and the floor marks the rest "Not your athlete". */
+test('with the whole gym covered, an athlete outside the coach own set (`mine`) is still "Not your athlete"', async () => {
+  await renderWorkspace({
+    athletesList: () => jsonResponse({ items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Casey R.' },
+    ] }),
+    attendanceToday: () => jsonResponse({
+      ok: true, day: '2026-08-28', covered: ['ath_1', 'ath_2'], mine: ['ath_1'], marks: [],
+    }),
+  });
+  const casey = floor().getByRole('button', { name: /^Casey R\./ });
+  expect(casey.textContent).toContain('Not your athlete');
+  const jordan = floor().getByRole('button', { name: /^Jordan P\./ });
+  expect(jordan.textContent).not.toContain('Not your athlete');
+});
+
+test('with no `mine` (an organization admin), nobody on a covered register is "Not your athlete"', async () => {
+  await renderWorkspace({
+    athletesList: () => jsonResponse({ items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Casey R.' },
+    ] }),
+    attendanceToday: () => jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1', 'ath_2'], marks: [] }),
+  });
+  expect(floor().getByRole('button', { name: /^Casey R\./ }).textContent).not.toContain('Not your athlete');
+  expect(floor().getByRole('button', { name: /^Jordan P\./ }).textContent).not.toContain('Not your athlete');
 });
 
 test('the floor shows a pain report as its number only (#1528)', async () => {

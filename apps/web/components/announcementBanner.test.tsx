@@ -130,7 +130,26 @@ describe('AnnouncementBanner', () => {
 
     expect(screen.getByText('Gloves on at 5.')).toBeTruthy();
     expect(screen.getByText('Gym Notice')).toBeTruthy();
-    expect(screen.getByText(/By Coach M\. \(coach\)/)).toBeTruthy();
+    expect(screen.getByText(/By Coach M\. \(Coach\)/)).toBeTruthy();
+  });
+
+  // FC-07 (#1542): the byline's role in plain words, never the stored literal,
+  // and a line under the heading saying what the section is.
+  test.each([
+    // The values the post route stores: 'coach', 'admin' and a board seat.
+    ['admin', 'By Coach M. (Admin)'],
+    ['board-treasurer', 'By Coach M. (Treasurer)'],
+    ['board-safety-director', 'By Coach M. (Program & Safety Director)'],
+    ['a-retired-role', 'By Coach M. (a-retired-role)'],
+  ])('a %s byline reads in plain words', async (role, byline) => {
+    await renderBanner(
+      jest.fn(async () => jsonResponse({ ok: true, announcements: [item({ author_role: role })] })),
+      { heading: 'Gym Notice', note: 'Posted for every family.' },
+    );
+
+    expect(screen.getByText((_, element) => element?.tagName === 'P' && (element.textContent ?? '').startsWith(byline))).toBeTruthy();
+    expect(screen.queryByText(/board-/)).toBeNull();
+    expect(screen.getByText('Posted for every family.')).toBeTruthy();
   });
 
   // A response that still carries an unpublished row must not put it on screen.

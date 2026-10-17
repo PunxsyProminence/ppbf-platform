@@ -17,11 +17,11 @@ export const runtime = 'nodejs';
 // Nothing here writes; confirmation happens through the ordinary POST
 // /api/pilot/progression/gaps by the coach's own hand.
 
-// The pairing this route used to hold inline -- the access contract decides
-// membership, the whole-org roster read supplies display names -- now lives in
-// coachAuthorizedRoster so that the sparring log's athlete picker and this
-// route cannot drift into two different answers to "which athletes is this
-// coach allowed to reach".
+// The pairing this route used to hold inline -- "my athletes" decides
+// membership, the whole-org roster read supplies display names -- lives in
+// coachAuthorizedRoster. Since issue #1480 this queue is deliberately the
+// coach's own athletes ("my athletes" lists keep working, OD-2026-10-11-007),
+// while the athlete pickers offer the whole gym.
 
 export async function GET(request: NextRequest) {
   try {

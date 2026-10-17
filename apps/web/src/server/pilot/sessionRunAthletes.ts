@@ -210,8 +210,26 @@ export async function listPresentAthletes(
  * marked present.
  */
 export async function staffPermittedAthleteIds(actor: ActorIdentity): Promise<string[]> {
+  return (await staffPermittedAthletes(actor)).map((athlete) => athlete.athlete_id);
+}
+
+/** An athlete a staff reader may mark or see, as a picker shows them: id and name, nothing else. */
+export interface PermittedAthlete {
+  athlete_id: string;
+  full_name: string;
+}
+
+/**
+ * The same set as staffPermittedAthleteIds, with names, in name order: what the live screen offers
+ * a coach to mark present (F-067). It is the set the mark gate admits, so the picker neither hides
+ * an athlete the coach may mark nor offers one the server would refuse (OD-2026-10-11-007). Id and
+ * name only: nothing else from the athlete row leaves this function.
+ */
+export async function staffPermittedAthletes(actor: ActorIdentity): Promise<PermittedAthlete[]> {
   if (!(await staffNoteRoleInOrganization(actor))) {
     return [];
   }
-  return (await organizationActionableRoster(actor.organizationId)).map((athlete) => athlete.athlete_id);
+  return (await organizationActionableRoster(actor.organizationId))
+    .map(({ athlete_id, full_name }) => ({ athlete_id, full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name) || a.athlete_id.localeCompare(b.athlete_id));
 }

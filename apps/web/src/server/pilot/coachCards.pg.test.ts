@@ -641,10 +641,13 @@ describe('the coach card list', () => {
 // their completion notes, and their verification state. Scoping it by
 // assigned_by_account_id alone derives authorization from an identity that
 // never changes: the coach who issued a card keeps reading that athlete
-// forever, through a roster reassignment and past the expiry of temporary
-// coverage -- while assertActorCanAccessAthlete refuses them, and the
-// verify endpoint (which DOES recheck) refuses the write. #546 fixed this
-// defect class platform-wide; the fix is the same one, athleteIdsForCoach.
+// forever, past whatever ended their reach -- while assertActorCanAccessAthlete
+// refuses them. The list is bounded by the gate's CURRENT answer instead.
+//
+// Since issue #1480 (OD-2026-10-11-007, "lets make it coaches to whole gym")
+// the gate admits a coach to every live athlete of their own gym, so a
+// reassignment or a lapsed coverage grant no longer ends a coach's reach;
+// the athlete's deletion still does.
 describe('a card read is bounded by CURRENT access, not by who issued it', () => {
   async function seedIssuedCard(athleteId: string) {
     return issueCoachCard({
@@ -656,7 +659,7 @@ describe('a card read is bounded by CURRENT access, not by who issued it', () =>
     });
   }
 
-  test('a reassigned athlete drops out of the issuing coach list, while the admin keeps seeing it', async () => {
+  test('a reassigned athlete stays on the issuing coach list: the whole gym is in reach', async () => {
     const client = await freshDatabase('cards_scope_reassign');
     activeClient = client;
     try {
@@ -665,67 +668,80 @@ describe('a card read is bounded by CURRENT access, not by who issued it', () =>
         organizationId: ORG_ID,
         assignmentId: card.assignment_id,
         athleteId: ATHLETES[0].id,
-        notes: 'Notes the coach must stop reading once the athlete moves',
+        notes: 'Notes from before the athlete moved coach',
       });
 
-      // While the athlete is still theirs, the issuing coach reads it.
       expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
 
-      // The gym moves the athlete to another coach. Nothing about the card
-      // changes -- assigned_by_account_id still names the original issuer.
+      // The gym moves the athlete to another coach of the same gym.
       await client.query(
         `update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3`,
         [OTHER_COACH_ID, ORG_ID, ATHLETES[0].id],
       );
 
-      expect(await listCoachCards(coachActor)).toEqual([]);
-      // Not a deletion: the record stands, and the organization admin --
-      // whose access did not change -- still reads it in full.
-      const adminView = await listCoachCards(adminActor);
-      expect(adminView.map((row) => row.assignment_id)).toEqual([card.assignment_id]);
-      expect(adminView[0].completions[0].notes).toBe('Notes the coach must stop reading once the athlete moves');
-
-      // And the athlete's own read is untouched: their work does not vanish
-      // because the gym changed who coaches them.
-      const athleteView = await getAthleteAssignments(ORG_ID, ATHLETES[0].id);
-      expect(athleteView.map((row) => row.assignment_id)).toEqual([card.assignment_id]);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
-  });
-
-  test('expired coverage ends the read the same way an assignment change does', async () => {
-    const client = await freshDatabase('cards_scope_coverage');
-    activeClient = client;
-    try {
-      // ATHLETES[1] is the OTHER coach's athlete; this coach reaches them
-      // only through a live coverage grant.
-      await client.query(
-        `insert into pilot.coach_coverage
-           (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
-         values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
-        [ORG_ID, ATHLETES[1].id, COACH_ID, ADMIN_ID],
-      );
-
-      const card = await seedIssuedCard(ATHLETES[1].id);
-      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
-
-      // Coverage lapses. Same rule the access gate applies at read time:
-      // expires_at > now() is false, so the grant is simply over.
-      await client.query(
-        `update pilot.coach_coverage set starts_at = now() - interval '3 hours', expires_at = now() - interval '1 minute'
-         where organization_id = $1 and athlete_id = $2`,
-        [ORG_ID, ATHLETES[1].id],
-      );
-
-      expect(await listCoachCards(coachActor)).toEqual([]);
+      const coachView = await listCoachCards(coachActor);
+      expect(coachView.map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+      expect(coachView[0].completions[0].notes).toBe('Notes from before the athlete moved coach');
       expect((await listCoachCards(adminActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
     } finally {
       activeClient = null;
       await client.end();
     }
   });
+
+  test('a coach with no assignment and no coverage reads the card they issued to another coach\'s athlete', async () => {
+    const client = await freshDatabase('cards_scope_unassigned');
+    activeClient = client;
+    try {
+      // ATHLETES[1] is the OTHER coach's athlete, and this coach holds no
+      // coverage grant for them. Before #1480 this card vanished from the
+      // list of the coach who issued it.
+      const card = await seedIssuedCard(ATHLETES[1].id);
+
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+      expect((await listCoachCards(adminActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a deleted athlete drops out of the list, as the gate refuses them', async () => {
+    const client = await freshDatabase('cards_scope_deleted');
+    activeClient = client;
+    try {
+      const card = await seedIssuedCard(ATHLETES[0].id);
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
+
+      await client.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETES[0].id],
+      );
+
+      expect(await listCoachCards(coachActor)).toEqual([]);
+      await expect(assertActorCanAccessAthlete(coachActor, ATHLETES[0].id)).rejects.toThrow();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test.each(['staff', 'volunteer', 'parent', 'athlete'] as const)(
+    'a %s reads no cards at all, even ones issued in their own gym',
+    async (role) => {
+      const client = await freshDatabase(`cards_scope_role_${role}`);
+      activeClient = client;
+      try {
+        await seedIssuedCard(ATHLETES[0].id);
+        expect(await listCoachCards({
+          accountId: COACH_ID, role, organizationId: ORG_ID, athleteId: null,
+        } as ActorIdentity)).toEqual([]);
+      } finally {
+        activeClient = null;
+        await client.end();
+      }
+    },
+  );
 
   test('issuer scoping survives as a convenience: one coach does not read another coach card for a shared athlete', async () => {
     const client = await freshDatabase('cards_scope_issuer');
@@ -978,7 +994,7 @@ describe('the listing never shows more than the verification gate admits', () =>
     }
   }
 
-  test('authorized: both allow -- and after reassignment the list narrows while the gym-wide gate still admits', async () => {
+  test('authorized: both allow -- and after reassignment both still allow, the whole gym being in reach', async () => {
     const client = await freshDatabase('cards_agreement');
     activeClient = client;
     try {
@@ -1009,18 +1025,14 @@ describe('the listing never shows more than the verification gate admits', () =>
       );
 
       // (3) Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym,
-      // so the access gate still admits the coach after reassignment. The card
-      // LIST is the coach's "my athletes" list (athleteIdsForCoach), which PR A
-      // keeps by the lane's Q1 default, so it drops the card. The two now
-      // differ on purpose and in the safe direction -- the list is the
-      // narrower side and shows nothing the gate would refuse; making the list
-      // gym-wide is PR B's question (#1480).
-      expect(await listCoachCards(coachActor)).toEqual([]);
+      // so the access gate still admits the coach after reassignment -- and
+      // the card list, bounded by the same rule since #1480's PR B, still
+      // shows the card. The two agree again.
+      expect((await listCoachCards(coachActor)).map((row) => row.assignment_id)).toEqual([card.assignment_id]);
       expect(await canVerify(coachActor, ATHLETES[0].id)).toBe(true);
 
-      // The coach who now HOLDS the athlete is allowed by the access gate --
-      // so "nobody can reach this record" is not why the list came back
-      // empty. The other coach simply issued no card of their own.
+      // The coach who now HOLDS the athlete is allowed by the access gate too;
+      // their own list is empty only because they issued no card of their own.
       expect(await canVerify(
         { accountId: OTHER_COACH_ID, role: 'coach', organizationId: ORG_ID, athleteId: null },
         ATHLETES[0].id,

@@ -46,8 +46,10 @@ export const dynamic = 'force-dynamic';
  *                             console's queue and decision route already use
  *                             (see ../../route.ts), plus coach. A coach is
  *                             admitted ONLY for a subject they may already
- *                             decide on in profile/photo/review: their own
- *                             athlete (coach_of_subject) or themselves (self).
+ *                             decide on in profile/photo/review: an athlete
+ *                             of their own gym (coach_of_subject, every coach
+ *                             of the gym since issue #1480 C2) or themselves
+ *                             (self).
  *                             Lane W7: that route now requires this route's
  *                             view row before a non-self release, so the coach
  *                             who may release a child's face must be able to

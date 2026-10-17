@@ -67,7 +67,7 @@ type SendState =
   | { kind: 'sent'; athleteId: string; name: string; said: string }
   | { kind: 'failed'; message: string };
 
-export default function CoachRecognitionPad() {
+export default function CoachRecognitionPad({ onSent }: { onSent?: (athleteId: string) => void } = {}) {
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [rosterState, setRosterState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [filter, setFilter] = useState('');
@@ -154,6 +154,7 @@ export default function CoachRecognitionPad() {
         name: selected.full_name ?? 'them',
         said,
       });
+      onSent?.(selected.athlete_id);
       setNote('');
       setShowNote(false);
       // Cleared so the next thing a coach does is pick the next athlete rather
@@ -164,7 +165,7 @@ export default function CoachRecognitionPad() {
     } finally {
       sendingRef.current = false;
     }
-  }, [selected, note, play]);
+  }, [selected, note, play, onSent]);
 
   return (
     <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]" aria-label="Send recognition">

@@ -47,6 +47,7 @@ export const SAFETY_ESCALATION_SOURCE_TYPES = [
   'incident',
   'video_scan',
   'compliance_violation',
+  'shadow_disclosure',
 ] as const;
 export type SafetyEscalationSourceType = typeof SAFETY_ESCALATION_SOURCE_TYPES[number];
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';

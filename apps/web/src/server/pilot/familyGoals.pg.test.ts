@@ -95,6 +95,13 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
      values ($1, 'coach', $4, 'microsoft'), ($2, 'parent', $4, 'microsoft'), ($3, 'parent', $4, 'microsoft')`,
     [COACH, GUARDIAN, SECOND_GUARDIAN, ORG],
   );
+  // Authority comes from an active seat in the gym, as sign-in grants it (auth.ts); the
+  // account's home role alone is not a seat.
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $4, 'coach', true), ($2, $4, 'parent', true), ($3, $4, 'parent', true)`,
+    [COACH, GUARDIAN, SECOND_GUARDIAN, ORG],
+  );
   for (const [org, athleteId] of [[ORG, ATHLETE], [ORG, OTHER_ATHLETE], [OTHER_ORG, OTHER_ONLY]] as const) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -237,12 +244,14 @@ describe('family goals migration (PH-05)', () => {
         `update pilot.family_goals set state = 'completed', completed_at = '2026-10-20T15:00:00Z',
                 updated_by_account_id = $2, updated_by_role = 'parent'
           where goal_id = $1::uuid`,
-        [goalId, SECOND_GUARDIAN],
+        [goalId, GUARDIAN],
       );
-      const done = await client.query('select state, completed_at, updated_at > created_at as touched from pilot.family_goals');
-      expect(done.rows[0].state).toBe('completed');
-      expect(done.rows[0].completed_at.toISOString()).toBe('2026-10-20T15:00:00.000Z');
-      expect(done.rows[0].touched).toBe(true);
+      // The time is the database's: what the writer sent is replaced by now().
+      const done = await client.query(
+        `select state, completed_at > now() - interval '5 minutes' as stamped_now, updated_at > created_at as touched
+           from pilot.family_goals`,
+      );
+      expect(done.rows[0]).toEqual({ state: 'completed', stamped_now: true, touched: true });
     } finally {
       await client.end();
     }
@@ -358,19 +367,138 @@ describe('family goals migration (PH-05)', () => {
       });
 
       await edit(`state = 'completed', completed_at = '2026-10-20T15:00:00Z'`);
+      const first = await client.query('select completed_at from pilot.family_goals');
+      expect(first.rows[0].completed_at.toISOString()).not.toBe('2026-10-20T15:00:00.000Z');
       await expect(edit(`completed_at = '2026-09-01T15:00:00Z'`)).rejects.toMatchObject({
         code: '23514', constraint: 'pilot_family_goals_completed_kept',
       });
-      // Unticked, then ticked again: the new time is the one recorded.
+      // Unticked, then ticked again: the new time is the one recorded, and it is now.
       await edit(`state = 'active', completed_at = null`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
       await edit(`state = 'completed', completed_at = '2026-10-22T15:00:00Z'`);
       const done = await client.query('select completed_at from pilot.family_goals');
-      expect(done.rows[0].completed_at.toISOString()).toBe('2026-10-22T15:00:00.000Z');
+      expect(done.rows[0].completed_at.toISOString()).not.toBe('2026-10-22T15:00:00.000Z');
+      expect(done.rows[0].completed_at.getTime()).toBeGreaterThan(first.rows[0].completed_at.getTime());
 
       await edit(`retired_at = '2026-10-23T15:00:00Z'`);
+      const retired = await client.query(`select retired_at > now() - interval '5 minutes' as stamped_now from pilot.family_goals`);
+      expect(retired.rows[0].stamped_now).toBe(true);
       for (const set of ['retired_at = null', `retired_at = '2026-10-24T15:00:00Z'`, `title = 'Back again'`, `state = 'active', completed_at = null`]) {
         await expect(edit(set)).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_retired_kept' });
       }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a writer needs an active seat in this gym on a live account; the home role alone is not one', async () => {
+    const client = await freshDatabase('fgoal_seat');
+    try {
+      const FORMER = 'acct-goals-former';
+      const HOME_ONLY = 'acct-goals-home-only';
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $3, 'microsoft'), ($2, 'coach', $3, 'microsoft')`,
+        [FORMER, HOME_ONLY, ORG],
+      );
+      await client.query(`insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')`, [FORMER, ORG]);
+      const refused = { code: '23514', constraint: 'pilot_family_goals_writer_of_this_gym' };
+
+      // A home coach with no seat in the gym.
+      await expect(goal(client, { creator: HOME_ONLY, role: 'coach' })).rejects.toMatchObject(refused);
+      // A seated coach writes; then the seat is switched off, the account switched off, or deleted.
+      await goal(client, { creator: FORMER, role: 'coach' });
+      await client.query('update pilot.organization_memberships set active_flag = false where account_id = $1', [FORMER]);
+      await expect(goal(client, { creator: FORMER, role: 'coach' })).rejects.toMatchObject(refused);
+      await client.query('update pilot.organization_memberships set active_flag = true where account_id = $1', [FORMER]);
+      await client.query('update pilot.accounts set active_flag = false where account_id = $1', [FORMER]);
+      await expect(goal(client, { creator: FORMER, role: 'coach' })).rejects.toMatchObject(refused);
+      await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [FORMER]);
+      await expect(goal(client, { creator: FORMER, role: 'coach' })).rejects.toMatchObject(refused);
+
+      // The same for an editor.
+      const { rows: [{ goal_id: goalId }] } = await goal(client);
+      await expect(client.query(
+        `update pilot.family_goals set title = 'x', updated_by_account_id = $2, updated_by_role = 'coach' where goal_id = $1::uuid`,
+        [goalId, FORMER],
+      )).rejects.toMatchObject(refused);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a goal is born unedited, with the times the database gives it', async () => {
+    const client = await freshDatabase('fgoal_born');
+    try {
+      await expect(client.query(
+        `insert into pilot.family_goals (organization_id, athlete_id, title, support_action, created_by_account_id, created_by_role,
+                                         updated_by_account_id, updated_by_role)
+         values ($1, $2, 'T', 'S', $3, 'parent', $3, 'parent')`,
+        [ORG, ATHLETE, GUARDIAN],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_born_unedited' });
+
+      await client.query(
+        `insert into pilot.family_goals (organization_id, athlete_id, title, support_action, created_by_account_id, created_by_role,
+                                         state, completed_at, retired_at, created_at, updated_at)
+         values ($1, $2, 'T', 'S', $3, 'parent', 'completed', '2020-01-01', '2020-01-02', '2020-01-01', '2020-01-01')`,
+        [ORG, ATHLETE, GUARDIAN],
+      );
+      const row = await client.query(
+        `select created_at > now() - interval '5 minutes' as created_now, updated_at > now() - interval '5 minutes' as updated_now,
+                completed_at > now() - interval '5 minutes' as completed_now, retired_at > now() - interval '5 minutes' as retired_now
+           from pilot.family_goals`,
+      );
+      expect(row.rows[0]).toEqual({ created_now: true, updated_now: true, completed_now: true, retired_now: true });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a guardian changes only a goal they wrote: not another guardian's, not the coach's", async () => {
+    const client = await freshDatabase('fgoal_own');
+    try {
+      const { rows: [{ goal_id: mine }] } = await goal(client);
+      const { rows: [{ goal_id: coachs }] } = await goal(client, { creator: COACH, role: 'coach' });
+      const tick = (goalId: string, editor: string) => client.query(
+        `update pilot.family_goals set state = 'completed', completed_at = now(), updated_by_account_id = $2, updated_by_role = 'parent'
+          where goal_id = $1::uuid`,
+        [goalId, editor],
+      );
+      const refused = { code: '23514', constraint: 'pilot_family_goals_guardian_edits_own' };
+      await expect(tick(mine, SECOND_GUARDIAN)).rejects.toMatchObject(refused);
+      await expect(tick(coachs, GUARDIAN)).rejects.toMatchObject(refused);
+      await tick(mine, GUARDIAN);
+      // Staff may still change the coach's goal.
+      await client.query(
+        `update pilot.family_goals set state = 'completed', completed_at = now(), updated_by_account_id = $2, updated_by_role = 'coach'
+          where goal_id = $1::uuid`,
+        [coachs, COACH],
+      );
+      const done = await client.query(`select count(*)::int as n from pilot.family_goals where state = 'completed'`);
+      expect(done.rows[0].n).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an update from inside another trigger may only detach a writer', async () => {
+    const client = await freshDatabase('fgoal_depth');
+    try {
+      await goal(client);
+      // A stand-in for any future trigger that writes this table: it fires on an organization
+      // update and rewrites a goal's title from inside itself.
+      await client.query(`
+        create function pilot.test_rewrite_family_goal() returns trigger language plpgsql as $f$
+        begin
+          update pilot.family_goals set title = 'Rewritten' where organization_id = new.organization_id;
+          return new;
+        end;
+        $f$`);
+      await client.query(`create trigger trg_test_rewrite after update on pilot.organizations
+                          for each row execute function pilot.test_rewrite_family_goal()`);
+      await expect(client.query(`update pilot.organizations set organization_name = 'Renamed' where organization_id = $1`, [ORG]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_goals_cascade_detaches_only' });
+      const row = await client.query('select title from pilot.family_goals');
+      expect(row.rows[0].title).toBe('Get to the gym twice a week');
     } finally {
       await client.end();
     }
@@ -472,6 +600,18 @@ describe('family goals migration (PH-05)', () => {
     try {
       await client.query('alter table pilot.family_goals drop constraint pilot_family_goals_title_check');
       await client.query('alter table pilot.family_goals add constraint pilot_family_goals_title_check check (true)');
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_GOALS_NOT_READY: checks_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a same-named writer-role check that admits more roles than Q-E', async () => {
+    const client = await freshDatabase('fgoal_wide_roles');
+    try {
+      await client.query('alter table pilot.family_goals drop constraint pilot_family_goals_created_by_role_check');
+      await client.query(`alter table pilot.family_goals add constraint pilot_family_goals_created_by_role_check
+                            check (created_by_role in ('parent', 'coach', 'organization_admin', 'admin', 'athlete'))`);
       await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_GOALS_NOT_READY: checks_ready');
     } finally {
       await client.end();

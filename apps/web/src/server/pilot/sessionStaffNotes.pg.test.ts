@@ -514,11 +514,26 @@ describe('sessionStaffNotes.ts against real rows', () => {
       await createSessionStaffNote({ actor: ADMIN, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'From an admin with no email on file.' });
 
       const listed = await listSessionStaffNotes(ADMIN, SESSION_ID, ATHLETE_ID);
-      expect(listed.map((row) => row.author_name)).toEqual(['Coach Dana Reyes', 'Your coach']);
+      // An admin who cannot be named reads as the office, not "Your coach" (F-058).
+      expect(listed.map((row) => row.author_name)).toEqual(['Coach Dana Reyes', 'Gym office']);
       const wire = JSON.stringify(listed);
       expect(wire).not.toContain(COACH_ID);
       expect(wire).not.toContain(ADMIN_ID);
       expect(wire).not.toContain('example.test');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("an admin's note is signed by name without the Coach title (F-058)", async () => {
+    const client = await migratedDatabase('notes_admin_name');
+    try {
+      await client.query('update pilot.accounts set login_email = $2 where account_id = $1', [ADMIN_ID, 'pat.office@example.test']);
+      await createSessionStaffNote({ actor: ADMIN, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'Parent asked about Saturday.' });
+
+      const listed = await listSessionStaffNotes(COACH, SESSION_ID, ATHLETE_ID);
+      expect(listed.map((row) => row.author_name)).toEqual(['Pat Office']);
+      expect(JSON.stringify(listed)).not.toContain('example.test');
     } finally {
       await client.end();
     }

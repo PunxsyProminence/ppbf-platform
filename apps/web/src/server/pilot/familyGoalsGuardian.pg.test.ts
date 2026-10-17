@@ -118,6 +118,11 @@ async function freshDatabase(name: string): Promise<Client> {
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email) values ($1, $2, $3, 'microsoft', $4)`,
       [accountId, role, org, login],
     );
+    // Authority is an active seat in the gym, as sign-in grants it (PH-05's guard).
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, $3)`,
+      [accountId, org, role],
+    );
   }
   for (const [org, athleteId, dob, deleted] of [
     [ORG_ID, ATHLETE, '2012-03-04', false],
@@ -151,15 +156,16 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, parentId, athleteId],
     );
   }
-  // Staff goals for the child, written as staff would be (the staff screen is PH-06b).
-  for (const [author, role, title, at] of [
-    [COACH, 'coach', 'Shadowbox at home', '2026-10-10T15:00:00Z'],
-    [ADMIN, 'organization_admin', 'Bring the signed waiver', '2026-10-09T15:00:00Z'],
+  // Staff goals for the child, written as staff would be (the staff screen is PH-06b). The
+  // database stamps created_at, so the older one is written first.
+  for (const [author, role, title] of [
+    [ADMIN, 'organization_admin', 'Bring the signed waiver'],
+    [COACH, 'coach', 'Shadowbox at home'],
   ] as const) {
     await client.query(
-      `insert into pilot.family_goals (organization_id, athlete_id, title, support_action, created_by_account_id, created_by_role, created_at)
-       values ($1, $2, $3, 'Clear space in the garage.', $4, $5, $6::timestamptz)`,
-      [ORG_ID, ATHLETE, title, author, role, at],
+      `insert into pilot.family_goals (organization_id, athlete_id, title, support_action, created_by_account_id, created_by_role)
+       values ($1, $2, $3, 'Clear space in the garage.', $4, $5)`,
+      [ORG_ID, ATHLETE, title, author, role],
     );
   }
   return client;
@@ -340,7 +346,7 @@ describe('family goals for a guardian (#1593, PH-06)', () => {
       .rejects.toThrow('Write the goal before saving.');
     await expect(goals.createFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, athleteId: ATHLETE, title: 'x', supportAction: '' }))
       .rejects.toThrow('Write the family support action before saving.');
-    for (const targetDate of ['30/11/2026', '2026-02-31', '2026-04-31', '2026-13-01']) {
+    for (const targetDate of ['30/11/2026', '2026-02-31', '2026-04-31', '2026-13-01', '0000-01-01']) {
       await expect(goals.createFamilyGoal({ organizationId: ORG_ID, accountId: GUARDIAN_A, athleteId: ATHLETE, title: 'x', supportAction: 'y', targetDate }))
         .rejects.toThrow('The target date must be a date (YYYY-MM-DD).');
     }

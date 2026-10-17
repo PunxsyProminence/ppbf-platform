@@ -153,26 +153,30 @@ const ATHLETE_SCOPE_PREDICATE = /athlete_id = any\(\$(\d+)/;
 // whole organization comes back -- which is precisely what the unfixed route
 // received. A "fix" that filtered in the route instead of in SQL, or that
 // dropped the predicate for an empty scope, fails here rather than passing.
-function publicationRowsFor(sql: string, params: unknown[]) {
+const SUBMITTER_PREDICATE = /or submitted_by_account_id = \$(\d+)/;
+
+function publicationRowsFor(sql: string, params: unknown[], rows: Array<typeof OWN_PUBLICATION> = ALL_PUBLICATIONS) {
   const match = sql.match(ATHLETE_SCOPE_PREDICATE);
   if (!match) {
-    return ALL_PUBLICATIONS;
+    return rows;
   }
   const scoped = params[Number(match[1]) - 1] as string[];
-  return ALL_PUBLICATIONS.filter((row) => scoped.includes(row.athlete_id));
+  const submitter = sql.match(SUBMITTER_PREDICATE);
+  const author = submitter ? (params[Number(submitter[1]) - 1] as string) : null;
+  return rows.filter((row) => scoped.includes(row.athlete_id) || (author !== null && row.submitted_by_account_id === author));
 }
 
 // access.ts is NOT mocked here, so the reachability lookup runs for real
 // against this same fake database -- including its live `starts_at <= now()`
 // / `expires_at > now()` predicates, which is how a lapsed or revoked coverage
 // grant stops working with no cleanup job.
-function databaseWithReachableAthletes(reachable: string[]) {
+function databaseWithReachableAthletes(reachable: string[], rows: Array<typeof OWN_PUBLICATION> = ALL_PUBLICATIONS) {
   return (sql: string, params: unknown[] = []) => {
     if (sql.includes('pilot.coach_coverage')) {
       return Promise.resolve(reachable.map((athlete_id) => ({ athlete_id })));
     }
     if (sql.includes('pilot.video_publications')) {
-      return Promise.resolve(publicationRowsFor(sql, params));
+      return Promise.resolve(publicationRowsFor(sql, params, rows));
     }
     throw new Error(`unexpected statement in this test: ${sql}`);
   };
@@ -254,7 +258,9 @@ describe('GET /api/pilot/publications/create -- a coach reads only their own ath
   // scope. An implementation that treated `[]` as "no filter" would hand back
   // the whole organization at the exact moment access ended.
   test('a coach with no reachable athletes reads nothing, and the empty scope still reaches the SQL', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    // A coach who submitted none of these rows: their own submissions would
+    // come back whatever the athlete (issue #1480 PR B).
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-submitted-nothing' }));
     mockQuery.mockImplementation(databaseWithReachableAthletes([]));
 
     const res = await GET(getRequest());
@@ -265,6 +271,24 @@ describe('GET /api/pilot/publications/create -- a coach reads only their own ath
     const { sql, params } = publicationsCall();
     expect(sql).toMatch(ATHLETE_SCOPE_PREDICATE);
     expect(params).toContainEqual([]);
+  });
+
+  // Issue #1480 PR B (Overwatch): the list stays "my athletes", but a coach
+  // may draft for any athlete of the gym, so their OWN submissions come back
+  // whatever the athlete -- the same reasoning as the coach-cards list.
+  test("a coach's own publication for an athlete they do not coach stays on their list; another coach's does not", async () => {
+    const ownForGymAthlete = { ...VICTIM_PUBLICATION, publication_id: 'pub-own-gym', athlete_id: 'ath-gym', submitted_by_account_id: 'acct-1' };
+    const otherCoachForGymAthlete = { ...VICTIM_PUBLICATION, publication_id: 'pub-other-gym', athlete_id: 'ath-gym', submitted_by_account_id: 'acct-other-coach' };
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-1' }));
+    mockQuery.mockImplementation(databaseWithReachableAthletes(['ath-mine'], [OWN_PUBLICATION, ownForGymAthlete, otherCoachForGymAthlete]));
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(200);
+    expect(idsFrom(await res.json())).toEqual(['pub-mine', 'pub-own-gym']);
+    const { sql, params } = publicationsCall();
+    expect(sql).toMatch(SUBMITTER_PREDICATE);
+    expect(params).toContain('acct-1');
   });
 
   // Org-scoping IS the gate for this role, so the reach is unchanged and no
@@ -296,7 +320,7 @@ describe('GET /api/pilot/publications/create -- a coach reads only their own ath
     await GET(getRequest('status=draft&publication_type=research_library&limit=10'));
 
     const { sql, params } = publicationsCall();
-    expect(params).toEqual(['org-1', 'draft', 'research_library', ['ath-mine'], 10]);
+    expect(params).toEqual(['org-1', 'draft', 'research_library', ['ath-mine'], 'acct-1', 10]);
     const placeholders = [...sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
     expect(Math.max(...placeholders)).toBe(params.length);
   });

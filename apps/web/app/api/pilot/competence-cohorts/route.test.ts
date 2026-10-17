@@ -160,8 +160,8 @@ describe('GET /api/pilot/competence-cohorts -- one athlete', () => {
 
   it('refuses a coach who holds no relationship to that athlete', async () => {
     // The role gate passes -- this caller IS a coach. What it must not decide
-    // is WHICH athlete, and age_years here is derived from the dob that
-    // entities.ts redacts from this same coach's roster listing.
+    // is WHICH athlete: the access gate does (since issue #1480, any athlete
+    // of the coach's own gym), and age_years here is derived from the dob.
     mockAccess.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
 
     const response = await get('http://localhost/api/pilot/competence-cohorts?athlete_id=ath-other');

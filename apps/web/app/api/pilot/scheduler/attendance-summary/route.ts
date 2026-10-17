@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import {
   attendanceByAthleteCsv,
   attendanceByClassCsv,
@@ -10,6 +10,7 @@ import {
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
 } from '@/src/server/pilot/attendanceReporting';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 
@@ -36,8 +37,10 @@ function calendarDay(raw: string | null, field: string): string | undefined {
 //   * coach sees only classes they own (coach_account_id,
 //     scheduled_by_account_id, or covering_coach_account_id) -- the same
 //     ownership test the scheduler route's own GET already applies -- AND,
-//     within those classes, only athletes the coach reaches (assignment of
-//     record or a live coverage grant, athleteIdsForCoach). Ownership alone
+//     within those classes, only athletes the coach reaches -- since issue
+//     #1480 (OD-2026-10-11-007) every live athlete of their own gym, the set
+//     assertActorCanAccessAthlete admits; before it, assignment of record or
+//     a live coverage grant (athleteIdsForCoach). Ownership alone
 //     was self-granting: cover_class writes the caller in as covering coach
 //     with no approval, so one POST bought any coach every registered
 //     athlete's name, attendance and free-text note for any class (CL-A2).
@@ -57,12 +60,17 @@ export async function GET(request: NextRequest) {
     if (!isAdmin && !isCoach) {
       throw new Error('Forbidden: attendance reporting is available to coach and organization_admin/admin only');
     }
+    // The same roles, said where the route-gate convention can see them: the
+    // coach branch no longer reaches athleteIdsForCoach (issue #1480 PR B2).
+    requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
     const coachAccountId = isCoach ? principal.accountId : undefined;
     // Looked up only after each branch's own checks pass, so a refused or
     // malformed request costs no extra query. null = not narrowed (admin).
     const coachReach = async (): Promise<Set<string> | null> =>
-      isCoach ? new Set(await athleteIdsForCoach(principal.organizationId, principal.accountId)) : null;
+      isCoach
+        ? new Set((await organizationActionableRoster(principal.organizationId)).map((athlete) => athlete.athlete_id))
+        : null;
     const inReach = <Row extends { athlete_id: string }>(rows: Row[], reachable: Set<string> | null): Row[] =>
       reachable ? rows.filter((row) => reachable.has(row.athlete_id)) : rows;
     const classId = request.nextUrl.searchParams.get('class_id');

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { fetchAllResearchRequirements } from '@/client/researchRequirementsList';
 
 // The missing surface for issue #345's submission-review lifecycle. The
 // requirement/gap workspace (/research) already lets a curator SUBMIT a
@@ -98,15 +99,9 @@ export default function ResearchSubmissionReviewPage() {
 
     void (async () => {
       try {
-        const requirementsResponse = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
-          credentials: 'include',
-          signal: controller.signal,
-        });
-        if (!requirementsResponse.ok) {
-          throw new Error('Unable to load research requirements.');
-        }
-        const requirementsPayload = (await requirementsResponse.json()) as { items?: OpenRequirement[] };
-        const openRequirements = (requirementsPayload.items ?? []).filter((item) => item.status === 'open');
+        // Every page: an open requirement can sit behind many resolved ones.
+        const allRequirements = await fetchAllResearchRequirements<OpenRequirement>({ signal: controller.signal });
+        const openRequirements = allRequirements.filter((item) => item.status === 'open');
         if (controller.signal.aborted) return;
         setRequirements(openRequirements);
 

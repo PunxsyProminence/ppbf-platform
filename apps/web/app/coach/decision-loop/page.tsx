@@ -7,7 +7,8 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
-import { formatGymDate, formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
@@ -213,6 +214,14 @@ function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
 }
 
+/* A stored instant as the gym reads it: "Oct 11, 2026, 7:45 PM". The routes
+   send ISO or Postgres text; either way a coach never reads the raw form or
+   the UTC day (F-072). Anything unreadable is shown as sent. */
+function gymStamp(value: string | null | undefined): string {
+  if (typeof value !== 'string' || value.trim() === '') return '';
+  return formatGymDateTimeShort(isoInstant(value)) ?? value;
+}
+
 /* The medical status on file, stated as a fact (issue #1474): the words after
    "Medical status on file:". Never a warning and never a reason to refuse;
    the coach makes the assessment (OD-2026-10-10-004 to -007). Wording
@@ -399,6 +408,10 @@ const EMPTY_DRAFTS: Drafts = {
 
 type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
 
+/** A roster read that has not answered by then is treated as failed, so the
+    coach is offered Check again rather than a picker that never fills. */
+const ROSTER_TIMEOUT_MS = 15_000;
+
 const PREVIOUS_ATHLETE_WRITE_FAILED =
   'Something you submitted for the athlete you were on before did not go through. Go back to them and check.';
 
@@ -573,18 +586,56 @@ export default function DecisionLoopReviewPage() {
   const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
   const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { items?: AthleteListItem[] };
-        setAthletes(payload.items ?? []);
-      } catch {
-        // Manual athleteId entry remains available if the roster fetch fails.
+  /* ARRIVING FROM "Record what you did" (#1474 item 5): the athlete the coach
+     came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
+     on the first effect; undefined means not yet taken. */
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  /* The picker is the only way to choose an athlete, so it is never an empty
+     picker that reads as "no athletes": while the roster is read it says so,
+     and a roster that would not load -- or has not answered within
+     ROSTER_TIMEOUT_MS -- says that and offers another try. */
+  const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const loadRoster = useCallback(async () => {
+    let roster: AthleteListItem[] | null = null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ROSTER_TIMEOUT_MS);
+    // Settles the read as failed on the timeout even if the request ignores the abort.
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new Error('Roster read timed out')));
+    });
+    try {
+      const response = await Promise.race([
+        fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include', signal: controller.signal }),
+        timedOut,
+      ]);
+      if (response.ok) {
+        const payload = (await Promise.race([response.json(), timedOut])) as { items?: AthleteListItem[] };
+        roster = payload.items ?? [];
+        setAthletes(roster);
       }
-    })();
+    } catch {
+      // Said on the page below the picker.
+    } finally {
+      clearTimeout(timer);
+    }
+    setRosterState(roster ? 'loaded' : 'failed');
+    /* The arriving athlete is selected only if the roster lists them: the
+       roster is the server's answer to whom this coach may reach. Not listed,
+       and the page opens as it always has, with nobody chosen. With no roster
+       yet, the arrival waits for a "Check again" that loads one. */
+    if (!roster) return;
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && roster.some((athlete) => athlete.athlete_id === arriving)) {
+      selectAthlete(arriving);
+    }
+    // selectAthlete moves refs and state setters only.
   }, []);
+  useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
+    // The roster's answer sets state when it arrives, never in this effect's body.
+    void Promise.resolve().then(loadRoster);
+  }, [loadRoster]);
 
   const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
     // A write for athlete A that finishes after the coach moved to B asks to
@@ -1080,9 +1131,10 @@ export default function DecisionLoopReviewPage() {
      date to a posted message; a coach who needs the deadline posts a short
      follow-up with the date set.
 
-     The date is printed as typed (YYYY-MM-DD), not through the gym-time
-     formatters: those read a bare date as UTC midnight and would show the
-     day before. */
+     The date is a bare calendar day (YYYY-MM-DD). It is printed through
+     formatGymDay, which keeps a bare day on the day it names ("October 20,
+     2026"); the instant formatters would read it as UTC midnight and show
+     the day before. */
   async function attachDueDate(
     noteId: string,
     forAthleteId: string,
@@ -1103,7 +1155,7 @@ export default function DecisionLoopReviewPage() {
         const task = returnedRow(envelope, 'task');
         return task !== null && task.due_date === dueDate;
       });
-      return { outcome: 'saved', text: `Posted to the family's page, due ${dueDate}.` };
+      return { outcome: 'saved', text: `Posted to the family's page, due ${formatGymDay(dueDate) ?? dueDate}.` };
     } catch (error) {
       if (answered && error instanceof Error && error.message !== WRITE_NOT_CONFIRMED) {
         return {
@@ -1204,25 +1256,34 @@ export default function DecisionLoopReviewPage() {
               <select
                 value={athleteId}
                 onChange={(event) => selectAthlete(event.target.value)}
+                disabled={rosterState === 'loading'}
                 className="select max-w-md"
               >
                 <option value="">Select an athlete…</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                    {athlete.full_name || athlete.athlete_id}
+                    {/* Never the raw id: an athlete with no name on file is named as such. */}
+                    {athlete.full_name?.trim() || 'Unnamed athlete'}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field mt-[var(--s3)] block">
-              <span className="t-label">Or enter an athlete ID directly</span>
-              <input
-                value={athleteId}
-                onChange={(event) => selectAthlete(event.target.value)}
-                placeholder="athlete-id"
-                className="input max-w-md"
-              />
-            </label>
+            {rosterState === 'loading' && <p className="t-muted mt-[var(--s3)]">Loading your athletes…</p>}
+            {rosterState === 'failed' && (
+              <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+                <p className="t-body">Couldn&apos;t load your athletes.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRosterState('loading');
+                    void loadRoster();
+                  }}
+                  className="btn btn--ghost"
+                >
+                  Check again
+                </button>
+              </div>
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine
@@ -1233,7 +1294,7 @@ export default function DecisionLoopReviewPage() {
           </section>
 
           {!athleteId ? (
-            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select or enter an athlete to review their decision loop.</p>
+            <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">Select an athlete to review their decision loop.</p>
           ) : (
             <div className="mt-[var(--s5)] grid gap-[var(--s5)] xl:grid-cols-2">
               {/* Medical Administrative Status */}
@@ -1254,7 +1315,7 @@ export default function DecisionLoopReviewPage() {
                       </p>
                     )}
                     <p className="t-data text-[color:var(--bone-400)]">
-                      Set by {medicalStatus.set_by_role} ({medicalStatus.set_by_account_id}) at {medicalStatus.effective_at}
+                      Set by {medicalStatus.set_by_role.replaceAll('_', ' ')}, {gymStamp(medicalStatus.effective_at)}
                     </p>
                     {medicalStatus.source_reference && (
                       <p className="t-data text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
@@ -1319,7 +1380,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-muted mt-[var(--s2)]">Expected: {rec.expected_outcome}</p>
                       <p className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s3)]">
                         <StatusBadge status={rec.status} />
-                        <span className="t-data text-[color:var(--bone-400)]">expires {rec.expires_at}</span>
+                        <span className="t-data text-[color:var(--bone-400)]">expires {gymStamp(rec.expires_at)}</span>
                       </p>
                       {rec.status === 'provisional' && (
                         <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
@@ -1359,7 +1420,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="font-semibold text-[color:var(--bone-100)]">{decision.decision_text}</p>
                       <p className="t-muted mt-[var(--s2)]">Expected: {decision.expected_outcome}</p>
                       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                        By {decision.decided_by_role} at {formatGymDateTimeShort(decision.decided_at) ?? decision.decided_at}
+                        By {decision.decided_by_role.replaceAll('_', ' ')} at {formatGymDateTimeShort(decision.decided_at) ?? decision.decided_at}
                       </p>
                       {typeof decision.medical_status_on_file === 'string' && (
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
@@ -1459,7 +1520,7 @@ export default function DecisionLoopReviewPage() {
                         {/* A pain report reads as its number only (#1528). */}
                         {isPainReportNearMiss(nearMiss.metadata)
                           ? painReportLabel(painScoreFromMetadata(nearMiss.metadata))
-                          : `Severity: ${nearMiss.severity}`} · {nearMiss.created_at}
+                          : `Severity: ${nearMiss.severity}`} · {gymStamp(nearMiss.created_at)}
                       </p>
                     </article>
                   ))}

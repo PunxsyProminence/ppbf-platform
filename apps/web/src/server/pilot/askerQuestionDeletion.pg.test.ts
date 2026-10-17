@@ -219,8 +219,8 @@ beforeAll(async () => {
   );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
-     values ($1, 'par-ad-p', 'acct-ad-parent', 'Parent of D', '555-0100', 'p@example.test'),
-            ($1, 'par-ad-p2', 'acct-ad-parent-2', 'Parent Two', '555-0200', 'p2@example.test')`,
+     values ($1, 'par-ad-p', 'acct-ad-parent', 'Dana Park', '555-0100', 'p@example.test'),
+            ($1, 'par-ad-p2', 'acct-ad-parent-2', 'Robin Hale', '555-0200', 'p2@example.test')`,
     [ORG],
   );
   await db.query(
@@ -332,7 +332,7 @@ describe('an asker question and its asker deletion', () => {
     expect(still.rows[0].status).toBe('open');
   });
 
-  test('the retention purge deletes the athlete asker row, and only that', async () => {
+  test('the retention purge deletes the athlete asker row, and no other asker row', async () => {
     await db.query(
       `update pilot.athletes set deleted_at = now() - interval '3 years' where organization_id = $1 and athlete_id = $2`,
       [ORG, ATHLETE_A],
@@ -345,8 +345,11 @@ describe('an asker question and its asker deletion', () => {
     expect(await rowCount(`research_requirement like '%ZEBRA-ATHLETE-7731%'`)).toBe(0);
     expect(await rowCount(`research_requirement like '%OTTER-CONTROL-2208%'`)).toBe(1);
     expect(await rowCount(`research_requirement like '%QUOKKA-PARENT-4419%'`)).toBe(1);
-    // The coach own filing about A is research work and stays.
-    expect(await rowCount(`research_requirement like '%COACHFILED-5521%'`)).toBe(1);
+    // The coach's own filing ABOUT A (subject_id = A) goes with A (F-079,
+    // subjectResearchPurge.pg.test.ts), counted as a subject row, not an asker
+    // question.
+    expect(event.subject_research_requirements_deleted).toBe(1);
+    expect(await rowCount(`research_requirement like '%COACHFILED-5521%'`)).toBe(0);
   });
 
   test('deleting the guardian hides the parent row, and the purge deletes it with the account', async () => {

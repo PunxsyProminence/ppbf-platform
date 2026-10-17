@@ -19,7 +19,8 @@ import {
   COVERED_AFTER_RESOLUTION_KEY,
   getShadowResearchRequirementById,
   isResearchStaff,
-  listShadowResearchRequirements,
+  listNamedAthleteIdsInResearch,
+  listShadowResearchRequirementsBatch,
   mayReadSubjectlessResearchRow,
   namedAthleteId,
   namedAthleteIdsOf,
@@ -27,9 +28,11 @@ import {
   submissionClosesRequirement,
   subjectAthleteIdOf,
   SUBJECT_NAMING_METADATA_KEYS,
+  type ResearchRequirementPageKey,
   type ShadowResearchRequirementRow,
   omitDeletedAskerRows,
 } from '@/src/server/pilot/shadowResearch';
+import { ValidationError } from '@/src/server/pilot/errors';
 
 // Requirement kinds only the server writes: the capability-coverage check's gap
 // tickets and the Library claim path's. The research-bridge export reads the
@@ -210,23 +213,77 @@ async function scopeToReachableSubjects(
   });
 }
 
+/**
+ * The research list comes a page at a time (F-025: the Research Inbox put
+ * every requirement on one page). A page holds up to `limit` rows THIS reader
+ * may see; `next_cursor` is null once nothing readable is left.
+ */
+const LIST_PAGE_DEFAULT = 50;
+const LIST_PAGE_MAX = 200;
+/** Rows read from the database per pass; the reader's scope is applied to each. */
+const LIST_BATCH = 200;
+
+// Postgres's ISO text for a timestamptz: "2026-10-15 03:36:12.123456+00".
+const PAGE_KEY_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?([+-])(\d{2})(?::(\d{2}))?(?::(\d{2}))?$/;
+
+function isRealTimestamp(text: string): boolean {
+  const match = PAGE_KEY_TIMESTAMP.exec(text);
+  if (!match) return false;
+  const [year, month, day, hour, minute, second, offsetHours, offsetMinutes, offsetSeconds] = [
+    match[1], match[2], match[3], match[4], match[5], match[6], match[9], match[10] ?? '0', match[11] ?? '0',
+  ].map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+    && hour < 24 && minute < 60 && second < 60
+    && offsetHours <= 15 && offsetMinutes < 60 && offsetSeconds < 60;
+}
+
+function encodeResearchListCursor(key: ResearchRequirementPageKey): string {
+  return Buffer.from(`${key.createdAt}|${key.id}`, 'utf8').toString('base64url');
+}
+
+/** The cursor a previous page returned, or a 400 for anything else. */
+function decodeResearchListCursor(cursor: string): ResearchRequirementPageKey {
+  const refuse = () => new ValidationError('cursor is not one this list returned.');
+  if (cursor.length === 0 || cursor.length > 120 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw refuse();
+  const text = Buffer.from(cursor, 'base64url').toString('utf8');
+  const bar = text.lastIndexOf('|');
+  const createdAt = text.slice(0, bar);
+  const idText = text.slice(bar + 1);
+  if (bar < 0 || !/^[1-9]\d{0,15}$/.test(idText) || !isRealTimestamp(createdAt)) throw refuse();
+  return { createdAt, id: Number(idText) };
+}
+
+function parsePageLimit(raw: string | null): number {
+  if (raw === null) return LIST_PAGE_DEFAULT;
+  const limit = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isInteger(limit) || limit < 1 || limit > LIST_PAGE_MAX) {
+    throw new ValidationError(`limit must be an integer between 1 and ${LIST_PAGE_MAX}.`);
+  }
+  return limit;
+}
+
 async function handleList(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
+    const limit = parsePageLimit(request.nextUrl.searchParams.get('limit'));
+    const rawCursor = request.nextUrl.searchParams.get('cursor');
+    let after = rawCursor === null ? null : decodeResearchListCursor(rawCursor);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_requirements'] });
 
-    const items = await listShadowResearchRequirements(principal.organizationId);
-
-    // The organization predicate above is NOT the access boundary for most of
-    // the roles this route admits. SHADOW_PROJECTION_READ_ROLES is every seat
-    // in the organization plus platform_owner, and only the parent branch was
-    // ever scoped -- so a coach read every child's intake-review requirement
-    // regardless of assignment, an athlete read every other athlete's, a
-    // volunteer or staff account read all of them, and platform_owner (which
-    // assertActorCanAccessAthlete refuses outright for any athlete record, and
-    // which shadowRoleSets.ts documents must never reach an organization's
-    // athlete depth) read them across every gym it can sign into.
+    // The organization predicate in the read is NOT the access boundary for
+    // most of the roles this route admits. SHADOW_PROJECTION_READ_ROLES is
+    // every seat in the organization plus platform_owner, and only the parent
+    // branch was ever scoped -- so a coach read every child's intake-review
+    // requirement regardless of assignment, an athlete read every other
+    // athlete's, a volunteer or staff account read all of them, and
+    // platform_owner (which assertActorCanAccessAthlete refuses outright for
+    // any athlete record, and which shadowRoleSets.ts documents must never
+    // reach an organization's athlete depth) read them across every gym it
+    // can sign into.
     //
     // A parent used to be narrowed in SQL first, to rows whose subject_id
     // column named one of their children, and answered [] outright with no
@@ -236,7 +293,42 @@ async function handleList(request: NextRequest) {
     // below now decides for a parent as for everyone else: a row about a
     // child only for that child's guardians (accessibleAthleteIds), a row
     // about nobody only for whoever filed it.
-    const scoped = await scopeToReachableSubjects(principal, items);
+    //
+    // Paging runs the SAME filter on every batch it reads, and a page is
+    // filled only from rows that passed it: a row the reader may not see
+    // never counts toward a page, so it cannot shorten one or be inferred
+    // from one. One row past the page is looked for, so next_cursor is null
+    // exactly when nothing readable is left.
+    //
+    // A reader outside research staff sees only rows they filed and rows
+    // about athletes they reach, often a handful in a large gym. The read is
+    // narrowed in SQL to that superset first (visibleTo), with the reach
+    // asked of the one central gate, so filling a page does not walk the
+    // whole gym; the filter below still decides every row. Staff see nearly
+    // every row, so their batches fill pages as they are.
+    let visibleTo: { accountId: string; athleteIds: string[] } | undefined;
+    if (!isResearchStaff(principal.role)) {
+      const named = await listNamedAthleteIdsInResearch(principal.organizationId);
+      const reachable = named.length > 0 ? await accessibleAthleteIds(principal, named) : new Set<string>();
+      visibleTo = { accountId: principal.accountId, athleteIds: Array.from(reachable) };
+    }
+    const page: Array<{ row: ShadowResearchRequirementRow; key: ResearchRequirementPageKey }> = [];
+    let more = false;
+    while (!more) {
+      const batch = await listShadowResearchRequirementsBatch(principal.organizationId, { after, limit: LIST_BATCH, visibleTo });
+      if (batch.length === 0) break;
+      const kept = new Set(await scopeToReachableSubjects(principal, batch.map((entry) => entry.row)));
+      for (const entry of batch) {
+        if (!kept.has(entry.row)) continue;
+        if (page.length === limit) {
+          more = true;
+          break;
+        }
+        page.push(entry);
+      }
+      if (batch.length < LIST_BATCH) break;
+      after = batch[batch.length - 1].key;
+    }
 
     // Which rows is settled above; this is what each row carries. Coaches
     // and organization admins get the stored row, every other reader the
@@ -244,7 +336,8 @@ async function handleList(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       organization_id: principal.organizationId,
-      items: researchRequirementsForReader(principal, scoped),
+      items: researchRequirementsForReader(principal, page.map((entry) => entry.row)),
+      next_cursor: more ? encodeResearchListCursor(page[page.length - 1].key) : null,
     });
   } catch (error) {
     return jsonError(error);

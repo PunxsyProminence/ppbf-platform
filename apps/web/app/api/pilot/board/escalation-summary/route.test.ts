@@ -3,9 +3,14 @@ import { NextRequest } from 'next/server';
 import { GET } from './route';
 import { getBoardEscalationSummary } from '@/src/server/pilot/escalationLadder';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { closeEndedHoldNotices } from '@/src/server/pilot/trainingHolds';
 
 jest.mock('@/src/server/pilot/escalationLadder', () => ({
   getBoardEscalationSummary: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/trainingHolds', () => ({
+  closeEndedHoldNotices: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -15,6 +20,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockSummary = jest.mocked(getBoardEscalationSummary);
+const mockCloseEndedHoldNotices = jest.mocked(closeEndedHoldNotices);
 
 function principal(role: string) {
   return {
@@ -50,6 +56,9 @@ describe('GET /api/pilot/board/escalation-summary', () => {
 
     expect(response.status).toBe(200);
     expect(mockSummary).toHaveBeenCalledWith('org-a');
+    // An ended hold's notice is closed first, so it is not counted open (#1596).
+    expect(mockCloseEndedHoldNotices).toHaveBeenCalledWith('org-a');
+    expect(mockCloseEndedHoldNotices.mock.invocationCallOrder[0]).toBeLessThan(mockSummary.mock.invocationCallOrder[0]);
     const body = await response.json();
     // The suppressed bucket stays suppressed all the way to the wire: a
     // small cohort must never surface as a small real number.
@@ -68,6 +77,7 @@ describe('GET /api/pilot/board/escalation-summary', () => {
 
       expect(response.status).toBe(403);
       expect(mockSummary).not.toHaveBeenCalled();
+      expect(mockCloseEndedHoldNotices).not.toHaveBeenCalled();
     },
   );
 });

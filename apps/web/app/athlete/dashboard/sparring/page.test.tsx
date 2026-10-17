@@ -375,14 +375,14 @@ describe('a coach logging a session for an athlete', () => {
     await renderAsStaff({ rosterOk: false });
 
     expect(screen.getByText(/could not be loaded/i)).toBeTruthy();
-    expect(screen.queryByText(/not the coach of record for any athlete/i)).toBeNull();
+    expect(screen.queryByText(/no active athletes in your gym/i)).toBeNull();
     expect((screen.getByRole('button', { name: 'Log This Session' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('a coach with genuinely no assigned athletes is told that, distinctly', async () => {
     await renderAsStaff({ roster: [] });
 
-    expect(screen.getByText(/not the coach of record for any athlete/i)).toBeTruthy();
+    expect(screen.getByText(/no active athletes in your gym/i)).toBeTruthy();
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
   });
 

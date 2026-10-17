@@ -93,7 +93,9 @@ function cleanDay(value: unknown): string | null {
   // A real calendar day: Date rolls 2026-02-31 over to March, so the day it
   // lands on must be the day that was written.
   const parsed = typeof value === 'string' && DAY.test(value) ? new Date(`${value}T00:00:00Z`) : null;
-  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+  // Year 0000 round-trips through Date but PostgreSQL's date has no year zero
+  // (22008), which would surface as a 500 instead of this 400.
+  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value || value.startsWith('0000')) {
     throw new ValidationError('The target date must be a date (YYYY-MM-DD).');
   }
   return value;
