@@ -229,7 +229,7 @@ export default function CoachCoveragePage() {
                   className="select min-h-[44px]"
                 >
                   <option value="">
-                    {rosterState === 'loading' ? 'Loading athletes...' : 'Select an athlete'}
+                    {rosterState === 'loading' ? 'Loading athletes...' : 'Choose an athlete'}
                   </option>
                   {roster.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>

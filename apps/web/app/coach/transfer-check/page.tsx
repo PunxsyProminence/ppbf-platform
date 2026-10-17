@@ -142,7 +142,7 @@ export default function TransferCheckPage() {
             <label className="t-label" htmlFor="transfer-athlete">Athlete</label>
             <select id="transfer-athlete" className="select" value={athleteId}
               onChange={(e) => selectAthlete(e.target.value)}>
-              <option value="">Select an athlete…</option>
+              <option value="">Choose an athlete</option>
               {athletes.map((athlete) => (
                 <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
               ))}

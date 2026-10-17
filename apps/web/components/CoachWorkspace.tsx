@@ -946,6 +946,14 @@ function parseSessionNote(value: unknown): TodaySessionNote | null | 'unreadable
    The ladder shifts down one rung and keeps three distinct, ordered steps:
    cleared / monitor / restricted. No token is invented and none is added --
    all three already exist and already carry this order. */
+/* The band in readinessBoard's own words, beside the dot (UXB-29). PROPOSED. */
+function readinessWords(readiness: Athlete['readiness']): string {
+  if (readiness === 'GREEN') return 'Train as planned';
+  if (readiness === 'YELLOW') return 'Check in first';
+  if (readiness === 'RED') return 'Adjust the plan';
+  return 'Not tracked';
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
   if (readiness === 'YELLOW') return 'bg-[var(--monitor)]';
@@ -2047,14 +2055,16 @@ export default function CoachWorkspace() {
 
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
-          setShadowReadError(`Unable to load SHADOW ${failed}.`);
+          // The parts in words, not the projection names (UXB-31).
+          const failedWords = failed.replace('review projection', 'review queue').replace('observation projection', 'notes');
+          setShadowReadError(`SHADOW's ${failedWords} could not be loaded.`);
         } else {
           setShadowReadError('');
         }
       } catch (error) {
         setShadowQueueUnavailable(true);
         setShadowObservationsUnavailable(true);
-        setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
+        setShadowReadError(error instanceof Error ? error.message : 'SHADOW\'s notes could not be loaded.');
       }
   }, []);
 
@@ -3277,7 +3287,7 @@ export default function CoachWorkspace() {
                   {readinessTrackingAvailable ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
+                      <p className="t-muted">{redReadinessCount} to adjust the plan, {yellowReadinessCount} to check in with{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} not tracked (not tracked is not clear)` : ''}</p>
                       {/* The score's own caveat, shown WITH the count rather
                           than in a help panel a coach may never open. The rule
                           that already governs assessment results -- a value is
@@ -3419,7 +3429,7 @@ export default function CoachWorkspace() {
                         <p className="t-body font-semibold">{formatGymDateTimeShort(liveRun.started_at) ?? liveRun.started_at}</p>
                       </div>
                       <div>
-                        <p className="t-label mb-[var(--s2)] block">Elapsed (server clock)</p>
+                        <p className="t-label mb-[var(--s2)] block">Time so far</p>
                         <p className="t-data text-[length:var(--t-sm)]">{formatElapsed(liveRun.elapsed_seconds)}</p>
                       </div>
                       <div>
@@ -3664,11 +3674,12 @@ export default function CoachWorkspace() {
                           {/* The safety column, kept as its own block on the far
                               side of the row. Identity on the left, state on the
                               right, and nothing personal painted onto either. */}
-                          <span className="flex flex-none items-center gap-2">
+                          <span className="flex flex-none flex-wrap items-center justify-end gap-2">
                             <span
+                              aria-hidden="true"
                               className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
-                              title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
                             ></span>
+                            <span className="t-label">{readinessWords(athlete.readiness)}</span>
                             {/* TODAY'S MARK, and the three readings it can
                                 carry are worded so they cannot be confused.
                                 A mark that exists shows as itself. 'No mark
@@ -4818,7 +4829,7 @@ export default function CoachWorkspace() {
                     disabled={athletesLoading}
                     className="select"
                   >
-                    <option value="">Select an athlete</option>
+                    <option value="">Choose an athlete</option>
                     {athletes.map((athlete) => (
                       <option key={athlete.id} value={athlete.id}>
                         {athlete.name}
@@ -4950,7 +4961,7 @@ export default function CoachWorkspace() {
                   disabled={reviewSubmitting}
                   className="btn disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {reviewSubmitting ? 'Saving...' : 'Save Coach Review'}
+                  {reviewSubmitting ? 'Saving…' : 'Save Coach Review'}
                 </button>
                 {reviewSyncMessage ? <p className="t-data text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>
