@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import DecisionLoopReviewPage from './page';
 import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -181,6 +182,10 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       return jsonResponse({ ok: true, task: { due_date: sent.due_date, completed_at: null } });
     }
+    // Message the Athlete's "Sent to this athlete" list (#1542, FC-06); empty here.
+    if (key.includes('/api/pilot/coach/athlete-messages')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     throw new Error(`Unexpected fetch: ${key}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -253,6 +258,24 @@ test('a failed log shows the error, not a false success message', async () => {
 
   await screen.findByText('Forbidden');
   expect(screen.queryByText('Note logged.')).toBeNull();
+});
+
+// FC-06: the message box belongs to the athlete it was opened for. Fails if
+// <MessageAthlete> loses key={athleteId} and a draft for one athlete carries
+// over to the next.
+test('a message typed for one athlete is not left in the box after switching to another', async () => {
+  installFetch();
+  render(<DecisionLoopReviewPage />);
+  const picker = await rosterLoaded();
+
+  fireEvent.change(picker, { target: { value: 'ath-a' } });
+  const boxA = await screen.findByLabelText('Message to the athlete');
+  fireEvent.change(boxA, { target: { value: 'For Athlete A only.' } });
+  expect(boxA).toHaveValue('For Athlete A only.');
+
+  fireEvent.change(picker, { target: { value: 'ath-b' } });
+  await waitFor(() => expect(athletePicker().value).toBe('ath-b'));
+  expect(await screen.findByLabelText('Message to the athlete')).toHaveValue('');
 });
 
 // Capability #90, scoped to one-directional send: a coach message to the
@@ -788,7 +811,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ post: () => heldPost });
     await openAthleteA();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     switchToB();
     expect(await screen.findByText('No medical administrative status recorded yet.')).toBeTruthy();
 
@@ -841,7 +864,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
     await openAthleteA();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
 
     expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
     expect(within(medicalSection()).queryByText('cleared')).toBeNull();
@@ -1008,7 +1031,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   const WRITES: Array<{ name: string; route: string; submit: () => void; confirmation?: string; draft?: () => string }> = [
     { name: 'Set Status', route: '/shadow/medical-status', submit: () => {
       fireEvent.change(screen.getByLabelText('Source reference (optional)'), { target: { value: 'note for A' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+      pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     }, draft: () => (screen.getByLabelText('Source reference (optional)') as HTMLInputElement).value },
     { name: 'Accept a recommendation', route: '/recommendations/decide', submit: () => {
       fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
@@ -1133,7 +1156,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('switching to no athlete clears the previous athlete’s error line', async () => {
     installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
     await openAthleteA();
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
 
     fireEvent.change(athletePicker(), { target: { value: '' } });
@@ -1266,7 +1289,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         field<HTMLInputElement>('Source reference (optional)').value,
       ],
       defaults: ['pending', ''],
-      press: () => fireEvent.click(screen.getByRole('button', { name: 'Set Status' })),
+      press: () => pressArmed(screen.getByRole('button', { name: 'Set Status' })),
       keptForItsAthlete: false,
     },
     {
@@ -1589,7 +1612,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('no commit has the new athlete selected with the previous athlete’s error line, confirmation or status still up', async () => {
     installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
     await openAthleteA();
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
     committed.length = 0;
 
@@ -2275,7 +2298,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   });
 
   test.each([
-    ['Set Status', () => { type('Source reference (optional)', 'note for A'); fireEvent.click(screen.getByRole('button', { name: 'Set Status' })); },
+    ['Set Status', () => { type('Source reference (optional)', 'note for A'); pressArmed(screen.getByRole('button', { name: 'Set Status' })); },
       () => field<HTMLInputElement>('Source reference (optional)').value],
     ['Record Decision', () => { type('Decision text', 'decision for A'); type('Expected outcome', 'outcome', 'Decisions'); fireEvent.click(screen.getByRole('button', { name: 'Record Decision' })); },
       () => field<HTMLTextAreaElement>('Decision text').value + field<HTMLTextAreaElement>('Expected outcome', 'Decisions').value],
@@ -2371,7 +2394,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     type('Expected outcome', 'outcome for A', 'Decisions');
 
     // A re-read comes back with the recommendation rejected.
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     await screen.findByText('rejected');
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
@@ -2420,7 +2443,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     type('New status', 'cleared');
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
     await waitFor(() => expect(field<HTMLSelectElement>('New status').value).toBe('pending'));
 
     type('Link to recommendation (optional)', 'rec-a');
@@ -2497,7 +2520,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     type('New status', 'restricted');
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
   });
@@ -2538,7 +2561,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await within(medicalSection()).findByText('cleared');
 
     type('New status', 'restricted');
-    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
     expect(await within(medicalSection()).findByText('restricted')).toBeTruthy();
@@ -2762,6 +2785,154 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
+  /* UXB-02: THE SIX WRITES THAT USED TO TAKE A DOUBLE TAP. Each one is pressed,
+     and while its answer is held a second press (or a second submit of its
+     form) is sent; only one request may go. Then each says that it landed,
+     under its own form. */
+  const SIX: Array<{
+    name: string;
+    route: string;
+    fill?: () => void;
+    button: () => HTMLElement;
+    press: (button: HTMLElement) => void;
+    again: (button: HTMLElement) => void;
+    done: string;
+  }> = [
+    { name: 'Set Status', route: '/shadow/medical-status',
+      button: () => screen.getByRole('button', { name: 'Set Status' }),
+      press: pressArmed, again: pressArmed, done: 'Status set.' },
+    { name: 'Accept', route: '/recommendations/decide',
+      button: () => screen.getByRole('button', { name: 'Accept' }),
+      press: (b) => fireEvent.click(b), again: (b) => fireEvent.click(b), done: 'Recommendation accepted.' },
+    { name: 'Reject', route: '/recommendations/decide',
+      button: () => screen.getByRole('button', { name: 'Reject' }),
+      press: (b) => fireEvent.click(b), again: () => fireEvent.click(screen.getByRole('button', { name: 'Accept' })),
+      done: 'Recommendation rejected.' },
+    { name: 'Record Decision', route: '/shadow/decisions',
+      fill: () => {
+        fireEvent.change(screen.getByLabelText('Decision text'), { target: { value: 'decision for A' } });
+        const section = screen.getByRole('heading', { name: 'Decisions' }).closest('section') as HTMLElement;
+        fireEvent.change(within(section).getByLabelText('Expected outcome'), { target: { value: 'outcome for A' } });
+      },
+      button: () => screen.getByRole('button', { name: 'Record Decision' }),
+      press: (b) => fireEvent.click(b), again: (b) => fireEvent.submit(b.closest('form') as HTMLFormElement),
+      done: 'Decision recorded.' },
+    { name: 'Flag Near-Miss', route: '/shadow/near-misses',
+      fill: () => fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'near miss for A' } }),
+      button: () => screen.getByRole('button', { name: 'Flag Near-Miss' }),
+      press: (b) => fireEvent.click(b), again: (b) => fireEvent.submit(b.closest('form') as HTMLFormElement),
+      done: 'Near-miss flagged.' },
+    { name: 'Evaluate Outcome', route: '/shadow/decision-outcomes',
+      fill: () => fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'dec-a' } }),
+      button: () => screen.getByRole('button', { name: 'Evaluate Outcome' }),
+      press: (b) => fireEvent.click(b), again: (b) => fireEvent.submit(b.closest('form') as HTMLFormElement),
+      done: 'Outcome recorded.' },
+  ];
+
+  test.each(SIX)('$name: a second press while the first is out sends nothing more', async ({ route, fill, button, press, again }) => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST' && String(c[0]).includes(route));
+
+    fill?.();
+    const pressed = button();
+    press(pressed);
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    again(pressed);
+    await settle();
+    expect(posts()).toHaveLength(1);
+    expect(pressed).toBeDisabled();
+
+    held.release(ACK);
+    await settle();
+    expect(posts()).toHaveLength(1);
+    // And the lock lets go once it has answered.
+    await waitFor(() => expect(button()).toBeEnabled());
+  });
+
+  test.each(SIX)('$name: the lock is this athlete’s, and lets go after a refusal too', async ({ name, route, fill, button, press }) => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    fill?.();
+    // Held by node: while busy its words change ("Setting…").
+    const pressed = button();
+    press(pressed);
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST' && String(c[0]).includes(route))).toBe(true),
+    );
+    expect(pressed).toBeDisabled();
+    // Another athlete's form is not locked by A's write. (B has no
+    // recommendations, so Accept and Reject are not there to look at.)
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    if (name !== 'Accept' && name !== 'Reject') expect(pressed).toBeEnabled();
+    fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
+    await screen.findByText(/ref-for-athlete-a/);
+    // Accept and Reject are drawn again with A's recommendations: a new node, the same words.
+    const back = name === 'Accept' || name === 'Reject' ? button() : pressed;
+    expect(back).toBeDisabled();
+
+    held.release(jsonResponse({ error: 'Refused.' }, false));
+    await waitFor(() => expect(back).toBeEnabled());
+  });
+
+  test('a success line for one athlete is gone when the coach moves to another', async () => {
+    installSwitchFetch();
+    await openAthleteA();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText('Status set.');
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.queryAllByRole('status').filter((line) => /landed|set\.|recorded\.|flagged\.|accepted\.|rejected\./i.test(line.textContent ?? ''))).toHaveLength(0);
+  });
+
+  test.each(SIX)('$name says it landed, under its own form', async ({ fill, button, press, done }) => {
+    installSwitchFetch();
+    await openAthleteA();
+
+    fill?.();
+    const pressed = button();
+    press(pressed);
+
+    const line = await screen.findByText(done);
+    expect(line).toHaveAttribute('role', 'status');
+    expect(line.closest('section')).toBe(pressed.closest('section'));
+  });
+
+  test('Set Status: one press sends nothing and says what the next press does (UXB-03)', async () => {
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+    const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+
+    fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'cleared' } });
+    armOnly(screen.getByRole('button', { name: 'Set Status' }));
+    await settle();
+
+    expect(posts()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Press again: set Athlete A to Cleared' })).toBeTruthy();
+  });
+
+  test('Set Status: picking another status disarms it, and Enter in the form sends nothing', async () => {
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+    const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+
+    const button = screen.getByRole('button', { name: 'Set Status' });
+    armOnly(button);
+    expect(button).toHaveTextContent('Press again: set Athlete A to Pending');
+    fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'restricted' } });
+    expect(button).toHaveTextContent('Set Status');
+
+    fireEvent.submit(button.closest('form') as HTMLFormElement);
+    await settle();
+    expect(posts()).toHaveLength(0);
   });
 });
 

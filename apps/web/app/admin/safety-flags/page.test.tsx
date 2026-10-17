@@ -12,6 +12,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { usePilotSession } from '@/components/usePilotSession';
+import { clearRoleSession, createPersistentRoleSession, mapPilotRoleToClubRole } from '@/components/roleSession';
 import SafetyFlagsBoardPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
@@ -27,6 +28,9 @@ jest.mock('@/components/usePilotSession', () => ({
 const mockUsePilotSession = usePilotSession as jest.Mock;
 
 function sessionAs(role: string | null) {
+  // The back link reads the cached role session, as the header does.
+  const clubRole = mapPilotRoleToClubRole(role);
+  if (clubRole) createPersistentRoleSession(clubRole); else clearRoleSession();
   mockUsePilotSession.mockReturnValue({
     role,
     organizationId: 'org-punxsy',
@@ -199,9 +203,10 @@ describe('lane N4-02: the copy matches what the queue does', () => {
   });
 
   test.each([
-    ['organization_admin', 'Back to Admin', '/admin'],
-    ['admin', 'Back to Admin', '/admin'],
-    ['coach', 'Back to Workspace', '/coach/environment/intake-router'],
+    // Lane U2: one role-aware back link, to the reader's own home.
+    ['organization_admin', 'Back to Gym Office', '/admin/people'],
+    ['admin', 'Back to Gym Office', '/admin/people'],
+    ['coach', 'Back to Coach Workspace', '/coach/environment/intake-router'],
   ])('a %s is sent back to a page that admits them', async (role, label, href) => {
     sessionAs(role);
     global.fetch = mockFetch({ flags: [] });

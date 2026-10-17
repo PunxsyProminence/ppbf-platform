@@ -7,8 +7,8 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import BackHome from '@/components/BackHome';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -264,6 +264,9 @@ export default function SchedulerPage() {
   const [newClassEndAt, setNewClassEndAt] = useState('');
   const [newClassLocation, setNewClassLocation] = useState('');
   const [newClassCapacity, setNewClassCapacity] = useState<number>(16);
+  // The coach who runs a class an admin schedules (lane L31 P6). A coach's own
+  // class is theirs; an admin is not a coach, so the admin names one.
+  const [newClassCoachId, setNewClassCoachId] = useState('');
 
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
@@ -705,9 +708,7 @@ export default function SchedulerPage() {
                   Attendance Dashboard
                 </Link>
               ) : null}
-              <OperationsLink className="btn btn--ghost btn--tap">
-                Back to Operations
-              </OperationsLink>
+              <BackHome className="btn btn--ghost btn--tap" />
             </div>
           </header>
 
@@ -824,6 +825,36 @@ export default function SchedulerPage() {
                         className="input"
                       />
                     </div>
+                    {roleCanResolveCoachingRequests(role) ? (
+                      <div>
+                        <label htmlFor="new-class-coach" className="t-label">
+                          Class coach
+                        </label>
+                        {/* Picked by name from the gym's active coaches, the
+                            same list the coaching-request picker reads; never
+                            typed as an id. */}
+                        <select
+                          id="new-class-coach"
+                          value={newClassCoachId}
+                          onChange={(e) => setNewClassCoachId(e.target.value)}
+                          disabled={coachesState !== 'loaded' || coachOptions.length === 0}
+                          className="select"
+                        >
+                          <option value="">
+                            {coachesState === 'loading'
+                              ? 'Loading coaches…'
+                              : coachesState === 'unavailable'
+                                ? 'The coach list could not be loaded'
+                                : coachOptions.length === 0
+                                  ? 'No active coaches in this gym'
+                                  : 'Select the coach who runs it'}
+                          </option>
+                          {coachOptions.map((option) => (
+                            <option key={option.account_id} value={option.account_id}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() =>
@@ -835,11 +866,12 @@ export default function SchedulerPage() {
                             end_at: newClassEndAt,
                             location: newClassLocation,
                             capacity: newClassCapacity,
+                            ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
                           },
                           'Class scheduled successfully.',
                         )
                       }
-                      disabled={actionInFlight}
+                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
                       Schedule Class

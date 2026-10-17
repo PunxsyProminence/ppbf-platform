@@ -3,9 +3,10 @@
  */
 
 // F-094: each step of the onboarding wizard wrote at one press. Creating a
-// gym, making someone its admin and setting its features now arm on the first
-// press, and the armed button names the gym before the second press sends
-// anything -- the Cancel Class pattern, as on the platform desk (F-084).
+// gym and making someone its admin now arm on the first press, and the armed
+// button names the gym before the second press sends anything -- the Cancel
+// Class pattern, as on the platform desk (F-084). Lane L31 took the feature
+// step out: it saved checkboxes no feature reads (Overwatch Q2 A).
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
@@ -67,14 +68,14 @@ async function finishStep1() {
   fillGym();
   fireEvent.click(screen.getByRole('button', { name: 'Create Gym & Continue' }));
   fireEvent.click(screen.getByRole('button', { name: /^Press again: save/ }));
-  await screen.findByRole('button', { name: 'Add Gym Admin & Continue' });
+  await screen.findByRole('button', { name: 'Add Gym Admin & Finish' });
 }
 
 async function finishStep2() {
   fireEvent.change(screen.getByPlaceholderText('owner@goldenboxing.org'), { target: { value: 'owner@golden.org' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Continue' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Finish' }));
   fireEvent.click(screen.getByRole('button', { name: /^Press again: make/ }));
-  await screen.findByRole('button', { name: 'Save & Complete Setup' });
+  await screen.findByText('Gym Setup Complete!');
 }
 
 beforeEach(() => {
@@ -127,7 +128,7 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     await finishStep1();
     fireEvent.change(screen.getByPlaceholderText('owner@goldenboxing.org'), { target: { value: 'owner@golden.org' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Finish' }));
 
     expect(screen.getByRole('button', { name: 'Press again: make owner@golden.org admin of Golden Boxing Studio' })).toBeInTheDocument();
     expect(posts.filter((post) => post.url.endsWith('/api/pilot/platform/staff'))).toHaveLength(0);
@@ -143,54 +144,19 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     expect(staff[0].body).toEqual({ organization_id: 'golden_boxing', login_email: 'owner@golden.org', role: 'organization_admin' });
   });
 
-  test('choosing features: the first press sends nothing and names the gym and the count', async () => {
+  test('lane L31: there is no feature step; the admin is the last write and nothing reaches gym-capabilities', async () => {
     const { posts } = await mountWizard();
-    await finishStep1();
-    await finishStep2();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Coach Notes/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Gym Announcements/ }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Complete Setup' }));
-
-    expect(screen.getByRole('button', { name: 'Press again: turn on 2 features for Golden Boxing Studio; the rest stay off' })).toBeInTheDocument();
-    expect(posts.filter((post) => post.url.endsWith('/api/pilot/admin/gym-capabilities'))).toHaveLength(0);
-  });
-
-  test('choosing features: the second press saves them for that gym, once', async () => {
-    const { posts } = await mountWizard();
-    await finishStep1();
-    await finishStep2();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Coach Notes/ }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Complete Setup' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Press again: turn on 1 feature for Golden Boxing Studio; the rest stay off' }));
-
-    await screen.findByText('Gym Setup Complete!');
-    const saved = posts.filter((post) => post.url.endsWith('/api/pilot/admin/gym-capabilities'));
-    expect(saved).toHaveLength(1);
-    expect(saved[0].body).toEqual({
-      organization_id: 'golden_boxing',
-      capabilityAccess: {
-        attendance: false,
-        'coach-notes': true,
-        progression: false,
-        announcements: false,
-        sparring: false,
-        publication: false,
-      },
-    });
-  });
-
-  test('no features chosen is refused at the first press and never armed', async () => {
-    const { posts } = await mountWizard();
+    expect(screen.queryByText(/Choose Your Features/)).toBeNull();
+    expect(screen.getByText(/Follow these 2 simple steps/)).toBeInTheDocument();
     await finishStep1();
     await finishStep2();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Complete Setup' }));
-
-    expect(screen.getByText(/Please select at least one feature for your gym/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Press again/ })).toBeNull();
-    expect(posts.filter((post) => post.url.endsWith('/api/pilot/admin/gym-capabilities'))).toHaveLength(0);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Save & Complete Setup/ })).toBeNull();
+    expect(posts.map((post) => post.url.replace(/^.*\/api\//, '/api/'))).toEqual([
+      '/api/pilot/platform/organizations',
+      '/api/pilot/platform/staff',
+    ]);
   });
 
   test('changing what the step would send disarms it', async () => {
@@ -209,25 +175,12 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     const { posts } = await mountWizard();
     await finishStep1();
     fireEvent.change(screen.getByPlaceholderText('owner@goldenboxing.org'), { target: { value: 'owner@golden.org' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Finish' }));
     fireEvent.change(screen.getByPlaceholderText('owner@goldenboxing.org'), { target: { value: 'other@golden.org' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Gym Admin & Finish' }));
     expect(screen.getByRole('button', { name: 'Press again: make other@golden.org admin of Golden Boxing Studio' })).toBeInTheDocument();
     expect(posts.filter((post) => post.url.endsWith('/api/pilot/platform/staff'))).toHaveLength(0);
-  });
-
-  test('changing the features disarms step 3', async () => {
-    const { posts } = await mountWizard();
-    await finishStep1();
-    await finishStep2();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Coach Notes/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Complete Setup' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Sparring/ }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Complete Setup' }));
-    expect(screen.getByRole('button', { name: 'Press again: turn on 2 features for Golden Boxing Studio; the rest stay off' })).toBeInTheDocument();
-    expect(posts.filter((post) => post.url.endsWith('/api/pilot/admin/gym-capabilities'))).toHaveLength(0);
   });
 
   test('a double-click arms and does not write', async () => {
