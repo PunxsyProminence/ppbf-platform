@@ -41,13 +41,18 @@ function childInSentence(item: Pick<AthleteConsent, 'athlete_name'>): string {
   return item.athlete_name ?? 'your child';
 }
 
-/* What this guardian signed, and on which gym day, from the row the route
-   already sends (UXB-22). A part the row does not carry is left out rather
-   than guessed. Wording PROPOSED. */
+/* What this guardian's consent covers, and since which gym day it has been
+   on file, from the row the route already sends (UXB-22). The route's
+   signed_at is the row's created_at -- when the consent was entered, which
+   for a paper form can be later than the day it was signed -- so it is
+   "on file since", never "you signed". A part the row does not carry is left
+   out rather than guessed. Wording PROPOSED. */
 function signedSummary(row: OwnConsentRow): string {
   const date = formatGymDate(row.signed_at);
   const scope = row.covers_video === true ? 'photos and video' : row.covers_video === false ? 'photos only' : null;
-  return `You signed${date ? ` ${date}` : ''}${scope ? `: ${scope}` : ''}`;
+  const publicUse = row.public_use_allowed === true ? ', public use allowed' : '';
+  const head = date ? `On file since ${date}` : 'On file';
+  return `${head}${scope ? `: ${scope}` : ''}${publicUse}`;
 }
 
 type ActionMessage = { text: string; tone: 'done' | 'failed' };
@@ -85,6 +90,9 @@ export default function GuardianMediaConsentPage() {
   const checkAgain = useCallback(() => {
     setItems(null);
     setErrorMessage('');
+    // An earlier "Consent granted." must not sit above a page that is
+    // re-reading after a failure.
+    setActionMessage(null);
     void load();
   }, [load]);
 

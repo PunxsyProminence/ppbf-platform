@@ -206,15 +206,28 @@ test('a missing name reads "Your child (name not loaded)", never the athlete id'
   expect(message).toContain('your child');
 });
 
-// UXB-22: a guardian can see what they signed, and on which gym day. 02:00 UTC
-// on August 1 is still July 31 at the gym.
-test('a signed consent says when it was signed and that it covers photos and video', async () => {
+// UXB-22: a guardian can see what their consent covers, and since which gym
+// day it has been on file. The route's signed_at is the row's created_at (when
+// it was entered, possibly from a paper form later), so the page never says
+// "You signed". 02:00 UTC on August 1 is still July 31 at the gym.
+test('a signed consent says since when it is on file and that it covers photos and video', async () => {
   const signed = [{ ...ALREADY_SIGNED[0], per_guardian: [{ ...ALREADY_SIGNED[0].per_guardian[0], signed_at: '2026-08-01T02:00:00Z' }] }];
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: signed })) as unknown as typeof fetch;
 
   render(<GuardianMediaConsentPage />);
 
-  expect(await screen.findByText('You signed July 31, 2026: photos and video')).toBeInTheDocument();
+  expect(await screen.findByText('On file since July 31, 2026: photos and video')).toBeInTheDocument();
+  expect(screen.queryByText(/You signed/)).toBeNull();
+  expect(screen.queryByText(/public use/)).toBeNull();
+});
+
+test('a consent on file that allows public use says so', async () => {
+  const publicUse = [{ ...ALREADY_SIGNED[0], per_guardian: [{ ...ALREADY_SIGNED[0].per_guardian[0], signed_at: '2026-08-01T02:00:00Z', public_use_allowed: true }] }];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: publicUse })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  expect(await screen.findByText('On file since July 31, 2026: photos and video, public use allowed')).toBeInTheDocument();
 });
 
 test('a signed photos-only consent says photos only', async () => {
@@ -223,7 +236,7 @@ test('a signed photos-only consent says photos only', async () => {
 
   render(<GuardianMediaConsentPage />);
 
-  expect(await screen.findByText(/^You signed .+: photos only$/)).toBeInTheDocument();
+  expect(await screen.findByText(/^On file since .+: photos only$/)).toBeInTheDocument();
   expect(screen.queryByText(/photos and video/)).toBeNull();
 });
 
@@ -259,6 +272,58 @@ test('a recorded decision reads as a status line, not an alert', async () => {
 
   expect(await screen.findByRole('status')).toHaveTextContent('Consent granted.');
   expect(screen.queryByRole('alert')).toBeNull();
+  // Let the re-read and the pending flag settle inside the test.
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Grant Consent' })).toBeEnabled());
+});
+
+// After a grant the page re-reads; the "On file since" line comes from the
+// server's answer, not from the click.
+test('after a successful grant the re-read shows the consent on file', async () => {
+  let gets = 0;
+  const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return jsonResponse({ ok: true });
+    gets += 1;
+    return jsonResponse({ ok: true, items: gets === 1 ? NEEDS_CONSENT : ALREADY_SIGNED });
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent needed');
+  expect(screen.queryByText(/^On file since/)).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Consent' }));
+
+  expect(await screen.findByText(/^On file since .+: photos and video$/)).toBeInTheDocument();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(screen.getByText('Consent on file')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Withdraw Consent' })).toBeEnabled());
+});
+
+// An old "Consent granted." must not stay on screen through a retry.
+test('Check again clears an earlier decision message', async () => {
+  let gets = 0;
+  const fetchMock = jest.fn((_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return Promise.resolve(jsonResponse({ ok: true }));
+    gets += 1;
+    if (gets === 1) return Promise.resolve(jsonResponse({ ok: true, items: NEEDS_CONSENT }));
+    if (gets === 2) return Promise.resolve(jsonResponse({ error: 'Database unavailable' }, false));
+    return new Promise<Response>(() => undefined);
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent needed');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Consent' }));
+  await screen.findByText('Consent status could not be loaded');
+  expect(screen.getByText('Consent granted.')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(screen.queryByText('Consent granted.')).toBeNull();
+  expect(screen.queryByRole('status')).toBeNull();
 });
 
 // UXB-13: a failed read offers Check again, which re-reads; while it does,
