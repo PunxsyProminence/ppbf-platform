@@ -36,9 +36,10 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * member's own (GET /api/pilot/coach/family-reply-reads); one coach seeing a
  * reply does not make it seen for another. A reply is recorded as seen when at
  * least half of it is on screen here (the FC-05 rule) -- loading the panel is
- * not a read. If the seen read fails, no New is drawn and nothing is said: the
- * panel never claims every reply is new, or none is. A failed write is not
- * shown and is tried again when the panel next reloads.
+ * not a read. If the seen read fails, no New is drawn and one muted line says
+ * it could not be loaded: the panel never claims every reply is new, or none
+ * is. Replies are still recorded as seen. A failed write is not shown and is
+ * tried again when the panel next reloads.
  */
 export interface FamilyNoteRow {
   note_id: string;
@@ -254,6 +255,12 @@ export default function FamilyNotesPosted({
         {shown.opened === null ? (
           <p role="alert" className="t-body mt-[var(--s2)]">
             Whether the family opened these could not be loaded. This is not a statement that they did not. Reload to retry.
+          </p>
+        ) : null}
+        {shown.seen === null && Array.isArray(shown.replies) && shown.replies.length > 0 ? (
+          // PROPOSED copy
+          <p className="t-muted mt-[var(--s2)]">
+            Which replies are new to you could not be loaded. This is not a statement that there are none.
           </p>
         ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
