@@ -56,6 +56,8 @@ export interface PersonalGoalBoardProps {
 }
 
 const TITLE_MAX = 160;
+/** When the Undo line stops being offered. The server's PERSONAL_GOAL_UNDO_WINDOW_MS decides. */
+const UNDO_WINDOW_MS = 10 * 60 * 1000;
 const WHY_MAX = 240;
 
 export default function PersonalGoalBoard({ athleteId, readOnly = false, onChanged }: PersonalGoalBoardProps) {
@@ -71,6 +73,12 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
   // athlete and goal, so the line sits on the goal that was pressed and leaves with its athlete.
   const [reachSave, setReachSave] = useState<Readonly<Record<string, SaveState>>>({});
   const [message, setMessage] = useState('');
+  // "Undo" for a mark made in the last ten minutes (UXB Q1 B). The server
+  // decides the window and the owner (undoPersonalGoalReached); this clock only
+  // decides when to stop offering the line. Ticked in an effect, not read in render.
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const [undoFailed, setUndoFailed] = useState<Readonly<Record<string, string>>>({});
+  const undoingRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!athleteId) return;
@@ -188,6 +196,44 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
       setReachSave((now) => ({ ...now, [key]: 'failed' }));
     } finally {
       reachingRef.current.delete(key);
+    }
+  }, [athleteId, readOnly, load, onChanged]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const undoReached = useCallback(async (goalId: string) => {
+    if (!athleteId || readOnly) return;
+    const key = `${athleteId}:${goalId}`;
+    if (undoingRef.current.has(key)) return;
+    undoingRef.current.add(key);
+    setUndoFailed((now) => {
+      const { [key]: _cleared, ...rest } = now;
+      return rest;
+    });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/goals/personal`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ athlete_id: athleteId, goal_id: goalId, undo: true }),
+      });
+      if (response.ok) {
+        await load();
+        onChanged?.();
+      } else {
+        // 409: past the window, as the server counts it. PROPOSED wording.
+        setUndoFailed((now) => ({
+          ...now,
+          [key]: response.status === 409 ? 'That can no longer be undone.' : 'That did not undo. Try again.',
+        }));
+      }
+    } catch {
+      setUndoFailed((now) => ({ ...now, [key]: 'That did not undo. Try again.' }));
+    } finally {
+      undoingRef.current.delete(key);
     }
   }, [athleteId, readOnly, load, onChanged]);
 
@@ -341,6 +387,22 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
                 <span aria-hidden="true" className="mr-[var(--s2)]">✓</span>
                 {goal.title}
                 <span className="tcard-sub ml-[var(--s3)]">{formatDay(goal.reached_at ?? '')}</span>
+                {/* One tap marks it; a slip can be taken back for ten minutes (UXB Q1 B). */}
+                {!readOnly && goal.reached_at && clockMs - Date.parse(goal.reached_at) < UNDO_WINDOW_MS && (
+                  <p className="mt-[var(--s2)]">
+                    Marked.{' '}
+                    <button
+                      type="button"
+                      onClick={() => void undoReached(goal.goal_id)}
+                      className="btn btn--ghost min-h-[var(--tap)]"
+                    >
+                      Undo
+                    </button>
+                  </p>
+                )}
+                {undoFailed[`${athleteId}:${goal.goal_id}`] && (
+                  <p className="tcard-sub mt-[var(--s2)]" role="status">{undoFailed[`${athleteId}:${goal.goal_id}`]}</p>
+                )}
               </li>
             ))}
           </ul>

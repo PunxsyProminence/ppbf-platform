@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { PATCH } from './route';
-import { markPersonalGoalReached } from '@/src/server/pilot/achievements';
+import { markPersonalGoalReached, undoPersonalGoalReached } from '@/src/server/pilot/achievements';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -9,6 +9,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 jest.mock('@/src/server/pilot/achievements', () => ({
   ...jest.requireActual('@/src/server/pilot/achievements'),
   markPersonalGoalReached: jest.fn(),
+  undoPersonalGoalReached: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/access', () => ({
@@ -28,6 +29,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAssertAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockMarkReached = markPersonalGoalReached as jest.Mock;
+const mockUndo = undoPersonalGoalReached as jest.Mock;
 
 function principal() {
   return {
@@ -56,6 +58,63 @@ beforeEach(() => {
   // branch does ("athlete cannot access another athlete record").
   mockAssertAccess.mockImplementation(async (_p: unknown, athleteId: string) => {
     if (athleteId !== 'ath-attacker') throw new Error('Forbidden: not your athlete');
+  });
+});
+
+describe('PATCH /api/pilot/goals/personal with undo (UXB Q1 B, lane U3 L5b)', () => {
+  test('the athlete takes back their own mark: a reversal with its own audit event carrying the mark it reversed', async () => {
+    mockUndo.mockResolvedValue({
+      goal_id: 'goal_mine_1',
+      athlete_id: 'ath-attacker',
+      reached_at: null,
+      undone_reached_at: '2026-10-17T20:00:00.000Z',
+    });
+
+    const response = await PATCH(request({ athlete_id: 'ath-attacker', goal_id: 'goal_mine_1', undo: true }));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, goal: { goal_id: 'goal_mine_1', reached_at: null } });
+    expect(body.goal.undone_reached_at).toBeUndefined();
+    // The owner the route cleared is what the statement is keyed on.
+    expect(mockUndo).toHaveBeenCalledWith('org-a', 'goal_mine_1', 'ath-attacker');
+    expect(mockMarkReached).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).toHaveBeenCalledTimes(1);
+    expect(writePilotAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      entity_type: 'goal',
+      entity_id: 'goal_mine_1',
+      details: { athlete_id: 'ath-attacker', reached: false, undone_reached_at: '2026-10-17T20:00:00.000Z' },
+    }));
+  });
+
+  test('a mark past the window (or not theirs) is refused in words, and nothing is audited', async () => {
+    mockUndo.mockResolvedValue(null);
+
+    const response = await PATCH(request({ athlete_id: 'ath-attacker', goal_id: 'goal_mine_1', undo: true }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: 'That can no longer be undone.' });
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('an undo naming another athlete is refused before any write', async () => {
+    const response = await PATCH(request({ athlete_id: 'ath-victim', goal_id: 'goal_theirs_1', undo: true }));
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(mockUndo).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot undo an athlete\'s mark', async () => {
+    mockRequirePrincipal.mockResolvedValue({
+      accountId: 'acct-coach', role: 'coach', organizationId: 'org-a', athleteId: null, sessionToken: 'token', authProvider: 'microsoft',
+    });
+    mockAssertAccess.mockResolvedValue(undefined);
+
+    const response = await PATCH(request({ athlete_id: 'ath-mine', goal_id: 'goal_1', undo: true }));
+
+    expect(response.status).toBe(403);
+    expect(mockUndo).not.toHaveBeenCalled();
   });
 });
 

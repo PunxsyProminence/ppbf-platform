@@ -177,10 +177,11 @@ export async function listPersonalGoals(
  * goal_id alone -- as this was -- the row was mutated first and its owner
  * compared afterwards, which can only ever report a write that has already
  * committed: an actor authorized for their own athlete could name any other
- * athlete's goal_id and permanently stamp that child's goal reached. Because
- * there is no un-reach and no route that writes reached_at back to null, the
- * falsified record is not recoverable through the API, and the guardian-facing
- * read shows a linked guardian their child reaching something they did not.
+ * athlete's goal_id and permanently stamp that child's goal reached. The only
+ * un-reach (undoPersonalGoalReached, below) is the athlete's own and lasts ten
+ * minutes, so a falsified record would not be recoverable through the API, and
+ * the guardian-facing read shows a linked guardian their child reaching
+ * something they did not.
  *
  * The read-back carries the same predicate for the same reason -- it returns
  * own_words and why_it_matters, a child's goal in their own language, and an
@@ -217,6 +218,57 @@ export async function markPersonalGoalReached(
        and goal_kind = 'own_words'`,
     [organizationId, goalId, athleteId],
   );
+}
+
+/** How long an athlete may take back their own "I did it" (Overwatch, lane U3 L5b, on the UXB Q1 B ruling). */
+export const PERSONAL_GOAL_UNDO_WINDOW_MS = 10 * 60 * 1000;
+
+export interface UndonePersonalGoal extends PersonalGoal {
+  /** When the mark that was taken back had been made: the audit event carries it. */
+  undone_reached_at: string;
+}
+
+/**
+ * Takes back an athlete's own "I did it" on an own-words goal, within ten
+ * minutes of the mark (UXB Q1 B: "one tap plus a short Undo line").
+ *
+ * Every condition is in the statement, not in the button:
+ *   - THE OWNER. `athleteId` is the athlete the route has cleared, and only an
+ *     athlete may write here (GOAL_WRITER_ROLES); a goal of anyone else's
+ *     matches nothing.
+ *   - THE WINDOW. `reached_at >= cutoff` against the server's clock: a mark older
+ *     than ten minutes stands, whatever the screen still shows.
+ *   - OWN WORDS ONLY. A SMART goal, which a coach may set and track, is never
+ *     reached here and never un-reached here.
+ * It is a reversal, not a delete: the row stays, `reached_at` goes back to null
+ * and `status` to 'active', and the caller writes an audit event that carries
+ * the mark it reversed (undone_reached_at).
+ */
+export async function undoPersonalGoalReached(
+  organizationId: string,
+  goalId: string,
+  athleteId: string,
+  now: Date = new Date(),
+): Promise<UndonePersonalGoal | null> {
+  const cutoff = new Date(now.getTime() - PERSONAL_GOAL_UNDO_WINDOW_MS).toISOString();
+  const rows = await query<UndonePersonalGoal>(
+    `with prior as (
+       select goal_id, reached_at
+       from pilot.goals
+       where organization_id = $1 and goal_id = $2 and athlete_id = $3
+         and goal_kind = 'own_words' and reached_at is not null and reached_at >= $5
+       for update
+     )
+     update pilot.goals g
+     set reached_at = null, status = 'active', updated_at = $4
+     from prior
+     where g.organization_id = $1 and g.goal_id = prior.goal_id and g.athlete_id = $3
+     returning g.goal_id, g.athlete_id, g.title, g.why_it_matters, g.target_date,
+       g.set_by_role, g.reached_at, g.created_at, g.updated_at,
+       prior.reached_at as undone_reached_at`,
+    [organizationId, goalId, athleteId, now.toISOString(), cutoff],
+  );
+  return rows[0] ?? null;
 }
 
 /* ------------------------------------------------------------------------- */
