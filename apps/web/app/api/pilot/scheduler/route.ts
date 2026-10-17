@@ -682,6 +682,8 @@ export async function POST(request: NextRequest) {
       request_id?: string;
       decision?: string;
       assigned_coach_account_id?: string;
+      /** create_class: the coach who runs it (lane L31 P6). */
+      coach_account_id?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
       entries?: Array<{
@@ -708,6 +710,23 @@ export async function POST(request: NextRequest) {
         throw new ValidationError('capacity must be between 1 and 200');
       }
 
+      // WHO RUNS IT (lane L31 P6, Overwatch Q4). An admin is not a coach, and a
+      // class an admin scheduled used to name the admin as its coach until a
+      // coach pressed Cover. The admin now names the class coach, one of the
+      // gym's active coaches (the set review_coaching_request accepts). A
+      // coach schedules the classes they run themselves.
+      const namedCoach = typeof body.coach_account_id === 'string' ? body.coach_account_id.trim() : '';
+      let coachAccountId = actor.accountId;
+      if (canManageAll(actor)) {
+        if (!namedCoach) {
+          throw new ValidationError('coach_account_id must name the coach who runs this class');
+        }
+        await assertActiveCoachAccount(actor.organizationId, namedCoach, 'coach_account_id');
+        coachAccountId = namedCoach;
+      } else if (namedCoach && namedCoach !== actor.accountId) {
+        throw new Error('Forbidden: a coach schedules the classes they run themselves');
+      }
+
       const now = new Date().toISOString();
       const classRecord: SchedulerClass = {
         class_id: randomUUID(),
@@ -717,7 +736,7 @@ export async function POST(request: NextRequest) {
         location,
         capacity,
         scheduled_by_account_id: actor.accountId,
-        coach_account_id: actor.accountId,
+        coach_account_id: coachAccountId,
         status: 'open',
         created_at: now,
         updated_at: now,

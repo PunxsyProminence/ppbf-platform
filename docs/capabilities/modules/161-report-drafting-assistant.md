@@ -3,6 +3,9 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
+| Status note | Was "DRAFT" until 2026-10-16. No report-drafting code found (searched app, src/server, components for draft/report generation); grant-obligations CSV export is a ledger report, not a drafting assistant. |
+| Code | none |
+| Tests | none |
 | Active | false |
 | Promotion required | true |
 | Category | AI / Automation Support (`aiAutomationSupport`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **DRAFT** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

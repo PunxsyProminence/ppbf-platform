@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 /**
  * Loading a gym's roster from a spreadsheet.
@@ -121,12 +122,7 @@ function RosterImportConsole() {
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
-          >
-            Back to admin
-          </Link>
+          <BackHome className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]" />
           {canExport ? (
             <Link
               href="/admin/export"

@@ -72,6 +72,12 @@ jobs:
       - name: Check owner decision ids are unique
         run: node scripts/check-owner-decision-ids.mjs
 
+      # Also above the docs-only fast path: a capability module file is
+      # documentation, so the PR that changes a module's status skips
+      # `npm test`. One status per module, matching the code. No node_modules.
+      - name: Check capability module status
+        run: node scripts/check-capability-status.mjs
+
       - name: Test CI surface classifier
         shell: bash
         run: |

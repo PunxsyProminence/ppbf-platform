@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 // Intervention executions (module 026 slice 2): what was ACTUALLY
 // delivered against a protocol. The planned column is a snapshot from the
@@ -566,7 +567,7 @@ export default function InterventionExecutionsPage() {
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/intervention-protocols" className="btn btn--ghost">Protocols</Link>{' '}
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

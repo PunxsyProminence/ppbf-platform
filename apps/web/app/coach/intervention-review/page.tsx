@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDate } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // Intervention review (module 026 slice 3): the whole loop on one page --
 // DECISION -> PLANNED -> ACTUAL -> WHAT HAPPENED -> WHAT WE LEARNED.
@@ -520,7 +521,7 @@ export default function InterventionReviewPage() {
           <div className="mt-[var(--s5)]">
             <Link href="/coach/intervention-executions" className="btn btn--ghost">The Work</Link>{' '}
             <Link href="/coach/intervention-protocols" className="btn btn--ghost">Protocols</Link>{' '}
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

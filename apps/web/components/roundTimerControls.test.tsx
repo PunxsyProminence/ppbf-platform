@@ -174,7 +174,7 @@ describe('round timer controls', () => {
     await settle();
   });
 
-  test('a refusal shows the server code, and the screen re-reads the timer so it matches the server', async () => {
+  test('a refusal says what happened in words, and the screen re-reads the timer so it matches the server', async () => {
     held = timer();
     answer = () => json({ error: 'ROUND_TIMER_PAUSED' }, 409);
     await renderControls();
@@ -182,7 +182,8 @@ describe('round timer controls', () => {
     held = timer({ state: 'paused', phase: 'work', round: 1, seconds_left: 70, is_paused: true });
     fireEvent.click(screen.getByRole('button', { name: 'Start rounds' }));
     await settle();
-    expect(screen.getByRole('alert')).toHaveTextContent('The server refused: ROUND_TIMER_PAUSED');
+    expect(screen.getByRole('alert')).toHaveTextContent('The rounds are paused. Press Resume to carry on.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('ROUND_TIMER_PAUSED');
     expect(fetchMock.mock.calls.length).toBe(reads + 2);
     expect(screen.getByTestId('round-timer-status')).toHaveTextContent('Paused at 1:10');
     expect(screen.getByRole('button', { name: 'Resume rounds' })).toBeInTheDocument();

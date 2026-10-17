@@ -46,6 +46,8 @@ function installFetch(
 ): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
 
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1' });
@@ -70,6 +72,10 @@ function installFetch(
     if (url.includes('/api/pilot/parent/messages')) {
       return messages();
     }
+    // This guardian's own opens (FC-08): none, so every message is new.
+    if (url.includes('/api/pilot/parent/message-reads')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     if (url.includes('/api/pilot/scheduler')) {
       return scheduler();
     }
@@ -83,6 +89,10 @@ function installFetch(
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // The hub opens on the child remembered last (src/lib/chosenChild.ts); one
+  // test's pick must not choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('parent hub child selector', () => {
@@ -169,6 +179,8 @@ describe('request ordering when the guardian switches child', () => {
     let firstChildCardReads = 0;
     const fetchMock = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
@@ -239,6 +251,8 @@ describe('request ordering when the guardian switches child', () => {
     let secondChildCardReads = 0;
     global.fetch = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
@@ -666,7 +680,7 @@ describe('Messages tab (#90)', () => {
 // default.
 describe('summary tile honesty', () => {
   function tileValue(label: string): string {
-    // 'Messages' is also a tab button; the tile's label is the <p>.
+    // A tile label may also be a tab button; the tile's label is the <p>.
     const labelElement = screen.getAllByText(label).find((element) => element.tagName === 'P');
     const tile = labelElement?.parentElement;
     return tile?.textContent?.replace(label, '').trim() ?? '';
@@ -687,7 +701,7 @@ describe('summary tile honesty', () => {
     expect(tileValue('Upcoming')).toBe('0');
   });
 
-  test('a failed messages read renders the Messages tile as Unavailable, not as 0', async () => {
+  test('a failed messages read renders the New messages tile as Unavailable, not as 0', async () => {
     installFetch(undefined, undefined, undefined, async () => {
       throw new Error('messages offline');
     });
@@ -695,7 +709,7 @@ describe('summary tile honesty', () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('Messages')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
   });
 
   test('a messages read that answered keeps its real count -- including a real zero', async () => {
@@ -706,10 +720,10 @@ describe('summary tile honesty', () => {
 
     // The default mock answers with zero messages; that zero is an
     // observation, not a fabrication, and stays a number.
-    expect(tileValue('Messages')).toBe('0');
+    expect(tileValue('New messages')).toBe('0');
   });
 
-  test('a message that arrived is counted on the tile', async () => {
+  test('a message that arrived, not yet opened, is counted on the tile', async () => {
     installFetch(undefined, undefined, undefined, async () =>
       jsonResponse({
         ok: true,
@@ -722,6 +736,6 @@ describe('summary tile honesty', () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('Messages')).toBe('2');
+    expect(tileValue('New messages')).toBe('2');
   });
 });

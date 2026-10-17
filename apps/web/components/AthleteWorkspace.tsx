@@ -27,6 +27,7 @@ import ShadowChatButton from './ShadowChatButton';
 import { observationsForAthlete, reviewStateLine } from './shadowObservationsForAthlete';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
+import FromYourCoach from './FromYourCoach';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { allTrackIds, trackManifests, type TrackID } from './trackAssignments';
 import { cx } from './uiStyles';
@@ -999,7 +1000,7 @@ function AthleteRabbitHoleLibrary() {
             <article key={lesson.rabbit_hole_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s5)] space-y-[var(--s4)]">
               {/* Provenance before content: who is talking, and on what
                   authority, before the claim itself. */}
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">
+              <p className="t-label">
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
               <h4 className="text-[length:var(--t-md)] font-semibold">{lesson.title}</h4>
@@ -2846,6 +2847,10 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
+              {/* What the athlete's coaches wrote to them (#1542, FC-06): first
+                  on the Dashboard, so a message is not below the fold. */}
+              <FromYourCoach />
+
               {/* The before/after frame from the Phase 2 roadmap, built from
                   the record rather than photographs -- see ThenAndNow.tsx for
                   why photographs cannot do this here. Renders nothing until
@@ -3703,7 +3708,10 @@ export default function AthleteWorkspace() {
               recent={recentCheckIns}
               loading={checkInLoading}
               loadError={checkInLoadError}
+              onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
               onSaved={(row) => {
+                // The server has answered with today's check-in: the failed read is no longer the news.
+                setCheckInLoadError(null);
                 setTodayCheckIn(row);
                 setRecentCheckIns((current) =>
                   current.some((entry) => entry.check_in_id === row.check_in_id)
