@@ -28,6 +28,7 @@ const mockSecondGym: OrganizationProfile = {
   serviceAreaShort: 'Ridgeway and nearby towns',
   physical: { street: '9 Kiln Road', city: 'Ridgeway', region: 'PA', postalCode: '15853' },
   mailing: 'PO Box 7, Ridgeway, PA 15853',
+  headCoachName: 'Morgan Hale',
 };
 
 jest.mock('./organizationProfile', () => {
