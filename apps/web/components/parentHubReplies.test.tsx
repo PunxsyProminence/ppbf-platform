@@ -39,9 +39,13 @@ const MESSAGES = [
 
 type Handler = (init?: RequestInit) => Promise<Response>;
 
-function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler } = {}): jest.Mock {
+function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; athleteMessages?: unknown[] } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none unless a test gives some.
+    if (url.includes('/api/pilot/parent/athlete-messages')) {
+      return jsonResponse({ ok: true, items: options.athleteMessages ?? [], in_scope: 2 });
+    }
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1', role: 'parent' });
     }
@@ -258,4 +262,20 @@ describe('replying to a coach message (FC-03)', () => {
     expect(replyPosts(fetchMock)).toHaveLength(1);
     expect(within(gloves).getByText('Still works.')).toBeInTheDocument();
   });
+});
+
+// FC-06 Q-2 (OD-2026-10-14-002): the parent hub's Messages tab carries the
+// guardian copy of what staff wrote to the child. Fails if ParentHub stops
+// rendering <SentToYourAthlete>.
+test('the Messages tab shows "Sent to your athlete" with what staff wrote to the child', async () => {
+  installFetch({
+    athleteMessages: [
+      { note_id: 'am-1', athlete_id: 'ath_2', note_text: 'Great work on the jab.', created_at: '2026-10-13T22:00:00.000Z', from_name: 'Coach Pat Smith' },
+    ],
+  });
+  await openMessages();
+
+  const section = await screen.findByRole('region', { name: 'Sent to your athlete' });
+  await within(section).findByText('Great work on the jab.');
+  expect(within(section).getByText('To Second Child')).toBeInTheDocument();
 });
