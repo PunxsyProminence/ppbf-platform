@@ -451,7 +451,7 @@ describe('a role the hub no longer admits', () => {
 
     // queryBy*, never getBy*, so a rendered hub fails as an assertion rather
     // than as a thrown lookup.
-    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Operations' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'WORKSPACES' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'THE ROLE SELECTOR' })).toBeNull();
     expect(mockReplace).toHaveBeenCalled();
@@ -467,7 +467,7 @@ describe('a role the hub no longer admits', () => {
     await act(async () => { render(<OperationsHubPage />); });
 
     expect(screen.getByText('Checking access')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Operations' })).toBeNull();
   });
 
   /* A refusal must not spend the refused role's session on requests made for
@@ -492,7 +492,7 @@ describe('a role the hub no longer admits', () => {
 
     await act(async () => { render(<OperationsHubPage />); });
 
-    expect(screen.getByRole('heading', { name: 'The Ring' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Operations' })).toBeTruthy();
     expect(screen.queryByText('Checking access')).toBeNull();
   });
 });

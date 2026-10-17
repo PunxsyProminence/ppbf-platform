@@ -240,7 +240,7 @@ const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; grou
   },
   {
     capabilityId: 'OPS-001',
-    name: 'Mission Control Operations Hub',
+    name: 'Operations',
     group: 'Program Operations',
     status: 'ACTIVE',
     owner: 'Operations',
@@ -1450,7 +1450,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   This is a desk, and .t-eyebrow is the label voice every other
                   office surface uses -- /admin/customize included. */}
               <p className="t-eyebrow">PPBF ADMIN DESK</p>
-              <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">The Capability Room</h1>
+              <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">Capabilities</h1>
               <p className="mt-2 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--bone-300)]">
                 A record of what this gym can do, who gets to do it, and what is still on the bench.
               </p>
@@ -1590,7 +1590,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
               >
-                MISSION CONTROL
+                OPERATIONS
               </Link>
               {/*
                 The "(PLANNED)" that used to be baked into this label is real
@@ -3036,7 +3036,7 @@ function CapabilityRoomWrongRoleNotice() {
     <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
-        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>The Capability Room is set per gym</h1>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Capabilities are set per gym</h1>
         <p className="t-body">
           This room holds one organization&apos;s capabilities and what its admins may switch. As platform owner you
           create organizations and appoint their admins, and they set it from there.

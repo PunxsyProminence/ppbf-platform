@@ -16,6 +16,7 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 // the server signs coaches, staff, volunteers and parents in by emailed link.
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
+import BackHome from '@/components/BackHome';
 
 interface Member {
   account_id: string;
@@ -207,9 +208,7 @@ function WrongRoleNotice() {
           <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link href="/admin" className="btn btn--ghost">
-            Admin Home
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>
@@ -1097,7 +1096,7 @@ function PeopleConsoleContent() {
                 Board Seats
               </Link>
               <Link href="/admin" className="btn btn--ghost">
-                Admin Home
+                Capabilities
               </Link>
             </div>
           </div>

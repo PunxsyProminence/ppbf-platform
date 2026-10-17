@@ -1,10 +1,10 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 interface PendingPortrait {
   account_id: string;
@@ -354,9 +354,7 @@ export default function PortraitReviewPage() {
           )}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

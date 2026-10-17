@@ -13,6 +13,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import BoardSeatsPage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
+import { clearRoleSession, createPersistentRoleSession, mapPilotRoleToClubRole } from '@/components/roleSession';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -103,6 +104,9 @@ async function renderPage(
   accountId?: string,
 ) {
   mockUsePilotSession.mockReturnValue(session(role, accountId));
+  // The shared back link reads the cached role session, as the header does.
+  const clubRole = mapPilotRoleToClubRole(role);
+  if (clubRole) createPersistentRoleSession(clubRole); else clearRoleSession();
   global.fetch = fetchMock as unknown as typeof fetch;
   render(<BoardSeatsPage />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -280,16 +284,17 @@ it('keeps a roster that loaded when only the directory read is rejected', async 
 });
 
 describe('lane N4-02: links and copy that match who is here', () => {
-  it('an organization admin keeps Admin Home', async () => {
+  it('an organization admin goes back to the Gym Office (lane U2)', async () => {
     await renderPage(seatsFetch());
     await screen.findByText('Board Chair');
-    expect(screen.getByRole('link', { name: 'Admin Home' }).getAttribute('href')).toBe('/admin');
+    expect(screen.getByRole('link', { name: 'Back to Gym Office' }).getAttribute('href')).toBe('/admin/people');
   });
 
   it('a board member is not offered Admin Home, which refuses the board role, and keeps the Board Workspace', async () => {
     await renderPage(seatsFetch(), 'board', 'nils');
     await screen.findByText('Board Chair');
-    expect(screen.queryByRole('link', { name: 'Admin Home' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Back to Gym Office' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Back to Board Hub' }).getAttribute('href')).toBe('/board');
     expect(screen.getByRole('link', { name: 'Board Workspace' }).getAttribute('href')).toBe('/board');
   });
 

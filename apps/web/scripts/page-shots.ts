@@ -133,7 +133,6 @@ const SIGNED_OUT_ROUTES = new Set([
   '/',
   '/login',
   '/activate',
-  '/launch',
   '/athlete/sign-in',
   '/change-pin',
 ]);

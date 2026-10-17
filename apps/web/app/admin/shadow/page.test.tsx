@@ -266,7 +266,7 @@ it.each(['organization_admin', 'admin'] as const)('%s keeps every read and every
   expect(screen.getByText('PENDING IMPORT QUEUE')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /show telemetry and authority streams/i }));
   expect(screen.getByText('SHADOW authority read model')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Admin Hub' }).getAttribute('href')).toBe('/admin');
+  expect(screen.getByRole('link', { name: 'Capabilities' }).getAttribute('href')).toBe('/admin');
 });
 
 it('leaves the intake write controls to a gym admin', async () => {

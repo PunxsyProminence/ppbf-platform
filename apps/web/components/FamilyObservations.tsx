@@ -15,7 +15,9 @@ import { OBSERVATION_CATEGORIES, type ParentObservationItem } from '@/src/shared
  * guardian": staff are not told which one, as with a guardian's barrier report.
  *
  * Read from GET /api/pilot/coach/family-observations (staff only). A failed
- * read says so; it is never shown as "nothing recorded". The newest ten show
+ * read says so, with Check again, which re-runs this read only: a reload would
+ * throw away every unsent draft on the page (UXB-05). It is never shown as
+ * "nothing recorded". The newest ten show
  * first and "Show 10 more" reveals older ones: a family that writes nightly
  * would otherwise fill the tablet with a season of cards. Nothing is cut on
  * the server; the count of what is not yet shown is stated.
@@ -30,6 +32,8 @@ type ReadState =
 export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: string }>) {
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
   const [shownCount, setShownCount] = useState(PAGE_SIZE);
+  // Bumped by Check again: the same read, nothing else on the page.
+  const [attempt, setAttempt] = useState(0);
   // Only the newest read lands: switching athletes while a read is slow must
   // not leave one child's observations under another's name.
   const seq = useRef(0);
@@ -57,7 +61,7 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
         if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
     })();
-  }, [athleteId]);
+  }, [athleteId, attempt]);
 
   if (!athleteId) return null;
   // What is on screen belongs to the athlete selected now, or it reads as loading.
@@ -70,10 +74,14 @@ export default function FamilyObservations({ athleteId }: Readonly<{ athleteId: 
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what the family recorded…</p>
       ) : shown.state === 'failed' ? (
-        <p role="alert" className="t-body mt-[var(--s2)]">
-          The family&apos;s observations could not be loaded. This is not a statement that they recorded nothing. Reload to
-          retry.
-        </p>
+        <div role="alert" className="mt-[var(--s2)]">
+          <p className="t-body">
+            The family&apos;s observations could not be loaded. This is not a statement that they recorded nothing.
+          </p>
+          <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setAttempt((n) => n + 1)}>
+            Check again
+          </button>
+        </div>
       ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">No observations from the family yet.</p>
       ) : (
