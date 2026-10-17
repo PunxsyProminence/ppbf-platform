@@ -631,3 +631,22 @@ describe('the coach-notes block', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+// Issue #1527 (OD-2026-10-12-011, "A: Coach and parent (Recommended)"): an
+// athlete's goals show to the coach and the parent, and the "why it matters"
+// line to the coach only. The organization admin is neither, so this page
+// shows no goals block and reads no goal.
+describe('no goals block for the organization admin', () => {
+  test('a selected athlete\'s record shows no goals and reads none', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    await screen.findByRole('heading', { name: 'Coach notes' });
+
+    expect(screen.queryByTestId('athlete-goals')).toBeNull();
+    expect(screen.queryByText(/Goals they have set/)).toBeNull();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/goals/'))).toBe(false);
+  });
+});

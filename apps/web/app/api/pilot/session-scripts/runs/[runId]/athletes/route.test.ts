@@ -5,7 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   listPresentAthletes,
   setRunAthletePresent,
-  staffPermittedAthleteIds,
+  staffPermittedAthletes,
 } from '@/src/server/pilot/sessionRunAthletes';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
@@ -28,13 +28,15 @@ jest.mock('@/src/server/pilot/http', () => ({
 jest.mock('@/src/server/pilot/sessionRunAthletes', () => ({
   listPresentAthletes: jest.fn(),
   setRunAthletePresent: jest.fn(),
-  staffPermittedAthleteIds: jest.fn(),
+  staffPermittedAthletes: jest.fn(),
 }));
 
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockList = listPresentAthletes as jest.Mock;
 const mockSet = setRunAthletePresent as jest.Mock;
-const mockPermitted = staffPermittedAthleteIds as jest.Mock;
+const mockPermitted = staffPermittedAthletes as jest.Mock;
+const ADA = { athlete_id: 'ath-1', full_name: 'Ada Reyes' };
+const BEN = { athlete_id: 'ath-2', full_name: 'Ben Ortiz' };
 
 const { ForbiddenError } = jest.requireActual('@/src/server/pilot/errors');
 const { SessionScriptRunError } = jest.requireActual('@/src/server/pilot/sessionScriptRuns');
@@ -86,7 +88,7 @@ function post(body: unknown, runId = 'ssrun_1') {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrincipal.mockResolvedValue(principal());
-  mockPermitted.mockResolvedValue(['ath-1', 'ath-2']);
+  mockPermitted.mockResolvedValue([ADA, BEN]);
   mockList.mockResolvedValue([]);
   mockSet.mockResolvedValue({ outcome: 'marked' });
 });
@@ -146,7 +148,7 @@ describe('GET', () => {
   it("names the present athletes of the session's own gym, filtered to ids the SERVER computed, and is not cached", async () => {
     const admin = principal({ role: 'organization_admin', accountId: 'acct-admin', organizationId: 'org-9' });
     mockPrincipal.mockResolvedValue(admin);
-    mockPermitted.mockResolvedValue(['ath-1']);
+    mockPermitted.mockResolvedValue([{ ...ADA, dob: '2012-01-01', emergency_contact: 'secret' }]);
     mockList.mockResolvedValue([
       { run_id: 'ssrun_1', athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-10-13T22:05:00.000Z' },
     ]);
@@ -158,8 +160,10 @@ describe('GET', () => {
     expect(mockList).toHaveBeenCalledWith('org-9', ['ssrun_1'], ['ath-1']);
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
+    // The picker is the same server-computed set, id and name only: nothing else from the row passes.
     await expect(response.json()).resolves.toEqual({
       present: [{ athlete_id: 'ath-1', full_name: 'Ada Reyes', marked_at: '2026-10-13T22:05:00.000Z' }],
+      gym: [ADA],
     });
   });
 
@@ -168,7 +172,7 @@ describe('GET', () => {
 
     expect(mockList).toHaveBeenCalledWith('org-1', ['ssrun_other_gym'], ['ath-1', 'ath-2']);
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ present: [] });
+    await expect(response.json()).resolves.toEqual({ present: [], gym: [ADA, BEN] });
   });
 });
 

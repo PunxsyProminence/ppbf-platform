@@ -2388,3 +2388,85 @@ test('the hold scopes say only what the app does', async () => {
   expect(noContact.textContent).not.toMatch(/contact events are refused|raises an alarm/);
   expect(allTraining.textContent).not.toMatch(/STOP/);
 });
+
+describe('past holds are read back on the board, athlete-safe fields only (F-071)', () => {
+  const LIFTED = {
+    hold_id: 'hold-old',
+    athlete_id: 'ath-1',
+    status: 'lifted',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    reason_text: 'STAFF-ONLY reason that the board never shows',
+    athlete_explanation: 'No contact while your wrist heals.',
+    lift_condition_text: 'Grip strength back to normal.',
+    placed_at: '2026-09-01 16:00:00+00',
+    expires_at: null,
+    lifted_by_account_id: 'coach-login@example.org',
+    lifted_at: '2026-09-10 16:00:00+00',
+    lift_note: 'STAFF-ONLY lift note',
+  };
+
+  test('each row offers Past holds; opening it reads every hold of that athlete and lists the ended ones', async () => {
+    const fetchMock = mockFetch({
+      'training-holds?athlete_id=ath-1&status=active': () =>
+        ({ ok: true, json: async () => ({ ok: true, holds: [] }) }) as Response,
+      'training-holds?athlete_id=ath-1': () =>
+        ({ ok: true, json: async () => ({ ok: true, holds: [LIFTED] }) }) as Response,
+    });
+    global.fetch = fetchMock;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    fireEvent.click(screen.getByRole('button', { name: 'Past holds' }));
+
+    const list = await screen.findByRole('list', { name: 'Past holds for Jordan Doe, newest first' });
+    expect(within(list).getByText('No contact while your wrist heals.')).toBeTruthy();
+    expect(within(list).getByText(/Grip strength back to normal\./)).toBeTruthy();
+    expect(within(list).getByText(/Lifted 9\/10\/2026/)).toBeTruthy();
+
+    const urls = (fetchMock as unknown as jest.Mock).mock.calls.map(([url]) => String(url));
+    expect(urls).toContain('/api/pilot/training-holds?athlete_id=ath-1');
+    expect(screen.queryByText(/STAFF-ONLY/)).toBeNull();
+    expect(screen.queryByText(/coach-login@example\.org/)).toBeNull();
+  });
+
+  test('a lift made with the list open reads the list again, and the hold just lifted is in it', async () => {
+    createPersistentRoleSession('coach');
+    let lifted = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        lifted = true;
+        return { ok: true, json: async () => ({ ok: true, hold: { ...HOLD, status: 'lifted' } }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
+      }
+      if (url.includes('training-holds?athlete_id=ath-1&status=active')) {
+        return { ok: true, json: async () => ({ ok: true, holds: lifted ? [] : [{ ...HOLD, placed_by_role: 'coach' }] }) } as Response;
+      }
+      if (url.includes('training-holds?athlete_id=ath-1')) {
+        const holds = lifted
+          ? [{ ...HOLD, status: 'lifted', placed_at: '2026-10-01 16:00:00+00', lifted_at: '2026-10-05 16:00:00+00' }]
+          : [{ ...HOLD, placed_by_role: 'coach', placed_at: '2026-10-01 16:00:00+00' }];
+        return { ok: true, json: async () => ({ ok: true, holds }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    try {
+      render(<SportsMedicinePage />);
+      await screen.findByText(/Active Training Hold — sparring/);
+      fireEvent.click(screen.getByRole('button', { name: 'Past holds' }));
+      await screen.findByText('Jordan Doe has no lifted or expired holds.');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+      const list = await screen.findByRole('list', { name: 'Past holds for Jordan Doe, newest first' });
+      expect(within(list).getByText(HOLD.athlete_explanation)).toBeTruthy();
+      expect(within(list).getByText(/Lifted 10\/5\/2026/)).toBeTruthy();
+    } finally {
+      clearRoleSession();
+    }
+  });
+});

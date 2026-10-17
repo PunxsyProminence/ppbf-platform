@@ -228,25 +228,49 @@ describe('POST /api/pilot/escalations acknowledge', () => {
     expect(mockAcknowledge).toHaveBeenCalledWith('org-a', 'esc-1', 'acct-caller');
   });
 
-  test('a coach can acknowledge an escalation for their own athlete', async () => {
+  // Issue #1480 (OD-2026-10-11-007): a coach reaches every live athlete of
+  // their own gym, so acknowledging is the gate's question, not "my athletes".
+  test('a coach can acknowledge an escalation for an unassigned athlete of their own gym', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
-    mockList.mockResolvedValueOnce([{ escalation_id: 'esc-1' } as never]);
+    mockList.mockResolvedValueOnce([{ escalation_id: 'esc-1', athlete_id: 'ath-gym' } as never]);
+    // accessibleAthleteIds' organization query: the athlete is live in org-a.
+    mockDbQuery.mockResolvedValueOnce([{ athlete_id: 'ath-gym' }] as never);
     mockAcknowledge.mockResolvedValueOnce({ escalation_id: 'esc-1', status: 'acknowledged' } as never);
 
     const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-1' }));
 
     expect(response.status).toBe(200);
-    // The membership check itself must exclude athlete_voice (#198) -- same
-    // rule as GET, or a coach could act on a disclosure-driven escalation
-    // they cannot see.
+    expect(mockAcknowledge).toHaveBeenCalledWith('org-a', 'esc-1', 'acct-caller');
+    // Not narrowed to "my athletes" any more ...
+    expect(mockList.mock.calls[0][1]).not.toHaveProperty('athleteIds');
+    // ... but the membership check itself must still exclude athlete_voice
+    // (#198) -- same rule as GET, or a coach could act on a
+    // disclosure-driven escalation they cannot see.
     expect(mockList.mock.calls[0][1]).toMatchObject({ excludeAthleteVoice: true });
+    // The gate's organization query ran for this coach's own gym.
+    const gateCall = mockDbQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.athletes'));
+    expect(gateCall?.[1]).toEqual(['org-a', ['ath-gym']]);
   });
 
-  test('a coach cannot acknowledge an escalation outside their own athletes', async () => {
+  test('a coach cannot acknowledge an escalation whose athlete the gate does not admit', async () => {
+    // Another gym's or a deleted athlete: the gate's organization query
+    // returns no row, and the answer is the same Missing as a bogus id.
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
-    mockList.mockResolvedValueOnce([]); // no escalations scoped to this coach's athletes
+    mockList.mockResolvedValueOnce([{ escalation_id: 'esc-other', athlete_id: 'ath-elsewhere' } as never]);
+    mockDbQuery.mockResolvedValueOnce([] as never);
 
-    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-not-mine' }));
+    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-other' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Missing escalation record' });
+    expect(mockAcknowledge).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot acknowledge an id that is not in the organization at all', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-not-real' }));
 
     expect(response.status).toBe(400);
     expect(mockAcknowledge).not.toHaveBeenCalled();

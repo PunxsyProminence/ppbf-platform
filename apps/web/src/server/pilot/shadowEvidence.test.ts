@@ -2,11 +2,13 @@ jest.mock('./db', () => ({
   withTransaction: jest.fn(),
 }));
 jest.mock('./shadowLibrary', () => ({
+  // The real constant: PASSAGE_DISPLAY_RIGHTS is read from it.
+  RESEARCH_BRIDGE_EXPORTABLE_RIGHTS: jest.requireActual('./shadowLibrary').RESEARCH_BRIDGE_EXPORTABLE_RIGHTS,
   searchShadowLibrary: jest.fn(),
 }));
 
 import { withTransaction } from './db';
-import { retrieveShadowEvidenceBundle } from './shadowEvidence';
+import { PASSAGE_DISPLAY_RIGHTS, publicEvidenceCitations, retrieveShadowEvidenceBundle } from './shadowEvidence';
 import { searchShadowLibrary } from './shadowLibrary';
 
 const mockWithTransaction = jest.mocked(withTransaction);
@@ -151,5 +153,75 @@ describe('SHADOW evidence bundles', () => {
       actor,
       queryText: 'Find approved policy',
     })).rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+  });
+});
+
+// OD-2026-10-08-005 A-Q11, ruling 4: the passage under each source, within the
+// rights rule. The store reports which passages are within it; only those
+// carry their text out. Real rows: shadowPassageDisplay.pg.test.ts.
+describe('the cited passage goes out only within the rights rule', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function searchRow(chunkId: string, text: string) {
+    return {
+      chunk_id: chunkId,
+      document_id: `doc-${chunkId}`,
+      source_id: `source-${chunkId}`,
+      subject_id: null,
+      ordinal: 0,
+      document_name: `Document ${chunkId}`,
+      source_title: `Source ${chunkId}`,
+      source_publisher: null,
+      source_type: 'peer_reviewed',
+      authority_tier: 1,
+      source_status: 'active',
+      publication_date: null,
+      text_content: text,
+      evidence_class: null,
+      boxing_specificity: null,
+      score: 10,
+    };
+  }
+
+  it('is PPBF-owned and open-licence, the research bridge rule', () => {
+    expect([...PASSAGE_DISPLAY_RIGHTS].sort()).toEqual(['open_licence', 'ppbf_owned']);
+  });
+
+  it('sends the excerpt of a passage the store marks displayable, and no excerpt key for one it does not', async () => {
+    mockSearchShadowLibrary.mockResolvedValue([
+      searchRow('chunk-owned', 'Owned passage text.'),
+      searchRow('chunk-licensed', 'Licensed passage text.'),
+    ] as never);
+    const clientQuery = jest.fn(async (sql: string, params: unknown[]) => ({
+      rows: sql.includes('returning evidence_id')
+        ? [{ evidence_id: params[0], passage_displayable: params[6] === 'chunk-owned' }]
+        : [],
+    }));
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    const bundle = await retrieveShadowEvidenceBundle({ actor, queryText: 'pivot' });
+    const insert = clientQuery.mock.calls.find(([sql]) => sql.includes('returning evidence_id'));
+    expect(insert?.[1][11]).toEqual(PASSAGE_DISPLAY_RIGHTS);
+
+    const citations = publicEvidenceCitations(bundle, bundle.items.map((item) => item.evidenceId));
+    const owned = citations.find((citation) => citation.sourceTitle === 'Source chunk-owned');
+    const licensed = citations.find((citation) => citation.sourceTitle === 'Source chunk-licensed');
+    expect(owned?.excerpt).toBe('Owned passage text.');
+    expect(licensed).toBeDefined();
+    expect(licensed).not.toHaveProperty('excerpt');
+  });
+
+  it('a citation not asked for is not sent, passage or not', async () => {
+    mockSearchShadowLibrary.mockResolvedValue([searchRow('chunk-owned', 'Owned passage text.')] as never);
+    mockWithTransaction.mockImplementation(async (callback) => callback({
+      query: jest.fn(async (sql: string, params: unknown[]) => ({
+        rows: sql.includes('returning evidence_id') ? [{ evidence_id: params[0], passage_displayable: true }] : [],
+      })),
+    } as never));
+
+    const bundle = await retrieveShadowEvidenceBundle({ actor, queryText: 'pivot' });
+    expect(publicEvidenceCitations(bundle, [])).toEqual([]);
   });
 });

@@ -6,7 +6,9 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
+import FinishedSessions from '@/components/FinishedSessions';
 import { apiBase } from '@/lib/apiBase';
+import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type {
@@ -64,6 +66,18 @@ const RETIRE_REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
   403: 'Your account may not retire session scripts, so the plan was not changed.',
 };
 
+// MARKING A PLAN REVIEWED (F-092): the coach's word that a draft is fit to run.
+// The same refusals as retiring, worded for this press.
+const REVIEW_REFUSALS: Readonly<Record<string, string>> = {
+  ...RETIRE_REFUSALS,
+  SESSION_SCRIPT_RETIRED: 'This plan is retired, so it was not marked reviewed. Bring it back first.',
+};
+
+const REVIEW_REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
+  ...RETIRE_REFUSALS_BY_STATUS,
+  403: 'Your account may not mark session scripts reviewed, so the plan was not changed.',
+};
+
 // An ordinary message, so not the medical-stop colour (--locked means a
 // medical stop and nothing else: AGENT_KERNEL.md, OD-2026-09-29-001).
 const PLAIN_ALERT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
@@ -76,7 +90,8 @@ function blockWindow(block: Block): string {
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
     { label: 'Say', value: block.what_to_say ?? '' },
-    { label: 'Explain', value: block.what_to_explain ?? '' },
+    // Template facts are labelled as the template's, and stored codes read as words (F-078).
+    explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
   ].filter((line) => line.value.trim() !== '');
@@ -421,6 +436,53 @@ function CoachSessionScripts() {
     }
   }, [load]);
 
+  // Mark the open draft reviewed. Shares the retire guard: both change where
+  // the plan stands, and one press at a time.
+  const markPlanReviewed = useCallback(async (plan: ScriptDetail) => {
+    if (retireInFlight.current) return;
+    retireInFlight.current = true;
+    setSaving(true);
+    setRetireError('');
+    setEditNotice('');
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/session-scripts`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script_id: plan.script_id, expected_updated_at: plan.updated_at, reviewed: true }),
+        });
+      } catch {
+        setRetireError('No answer arrived, so it is not known whether the plan was marked reviewed. Reload the list to see which.');
+        return;
+      }
+      const payload = (await response.json().catch(() => null)) as { script?: ScriptDetail | null; error?: unknown } | null;
+      if (response.ok) {
+        void load();
+        if (payload?.script) {
+          setDetail(payload.script);
+          setLiveNotice('');
+          setEditNotice(`${plan.name} is marked coach reviewed.`);
+          return;
+        }
+        setOpenScriptId(null);
+        setDetail(null);
+        setLiveNotice('The plan was marked reviewed, but the answer could not be read here. Open it from the list to see it.');
+        return;
+      }
+      if (RETIRE_REFUSAL_STATUSES.includes(response.status)) {
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        setRetireError(REVIEW_REFUSALS[code] ?? REVIEW_REFUSALS_BY_STATUS[response.status] ?? 'The server refused, so the plan was not changed.');
+        return;
+      }
+      setRetireError('The server did not answer properly, so it is not known whether the plan was marked reviewed. Reload the list to see which.');
+    } finally {
+      retireInFlight.current = false;
+      setSaving(false);
+    }
+  }, [load]);
+
   return (
     /* data-surface="kiosk" -- Law 5, the app's one-attribute device for a
        gym-floor surface (as on /coach/floor-groups and /coach/recognition): a
@@ -557,7 +619,7 @@ function CoachSessionScripts() {
               <article key={script.script_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{script.name}</h3>
-                  <span className="plaque">{script.authoring_state.replace(/_/g, ' ')}</span>
+                  <span className="plaque">{authoringStateWords(script.authoring_state)}</span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">
                   {script.discipline}
@@ -666,6 +728,16 @@ function CoachSessionScripts() {
                     >
                       Edit minutes and titles
                     </button>
+                    {detail.authoring_state === 'draft' && (
+                      <button
+                        type="button"
+                        onClick={() => void markPlanReviewed(detail)}
+                        disabled={startBusyScriptId !== null || saving}
+                        className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Mark reviewed
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => void setPlanRetired(detail, true)}
@@ -822,6 +894,10 @@ function CoachSessionScripts() {
             )}
           </section>
         )}
+
+        {/* Every session the gym has ended, plain ones included (F-067). It is not shown over a
+            live session, so it is mounted, and reads, again once a session ends here. */}
+        <FinishedSessions />
         </>)}
 
       {/* The four words, at the foot of the page — the same foot the

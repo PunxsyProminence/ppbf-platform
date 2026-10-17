@@ -1,11 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { attendanceOnDay } from '@/src/server/pilot/attendancePrecedence';
-import {
-  coachAuthorizedRoster,
-  organizationActionableRoster,
-} from '@/src/server/pilot/coachAthleteRoster';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { gymDayIso } from '@/src/lib/gymTime';
 
@@ -40,22 +37,20 @@ export const dynamic = 'force-dynamic';
  * training" are different claims and only one of them has evidence. The
  * surface names that state itself.
  *
- * The roster is the same one the picker uses, through the same contract: a
- * coach gets athleteIdsForCoach (coach of record UNION active, unexpired
- * coverage), an organization admin gets the organization's actionable roster.
- * No role is broadened here, and the athlete ids are never taken from the
- * request -- a caller who could name them could name someone else's child.
+ * The roster is the same one the picker uses, through the same contract. A
+ * coach's reach is the whole gym (OD-2026-10-11-007, issue #1480), so a coach
+ * and an organization admin both get the organization's actionable roster --
+ * every live athlete of their own gym. The athlete ids are never taken from
+ * the request -- a caller who could name them could name another gym's child.
  */
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
-    const roster = principal.role === 'coach'
-      ? await coachAuthorizedRoster(principal.organizationId, principal.accountId)
-      : isOrganizationAdminRole(principal.role)
-        ? await organizationActionableRoster(principal.organizationId)
-        : [];
+    const roster = principal.role === 'coach' || isOrganizationAdminRole(principal.role)
+      ? await organizationActionableRoster(principal.organizationId)
+      : [];
 
     const day = gymDayIso();
     if (!day) {
@@ -73,18 +68,27 @@ export async function GET(request: NextRequest) {
 
     /* `covered` is not decoration and it is not the same list as `marks`.
        The workspace roster comes from /api/pilot/athletes/list, which returns
-       EVERY athlete in the organization to a coach and merely redacts dob and
-       emergency_contact for the ones they are unrelated to -- it is a display
-       projection and says so. This route asks the access contract instead, so
-       it is deliberately NARROWER.
+       every live athlete of the gym to a coach -- a display projection, and it
+       says so. This route asks the access contract instead --
+       for a coach and an admin alike, every live athlete of their own gym.
 
        Without saying which athletes it covered, a caller cannot tell "this
        athlete has no mark today" from "nobody asked about this athlete", and
        the workspace rendered both as "No mark yet" -- a claim that the
        platform looked, about a child it never looked at. Naming the covered
        set is what lets the surface keep those apart. */
+    /* `mine` is the coach's OWN athletes (coach of record UNION live
+       coverage, athleteIdsForCoach) -- the "my athletes" set the ruling keeps
+       (OD-2026-10-11-007: "'my athletes' lists keep working"). Before #1480's
+       PR B the workspace read "Not your athlete" off `covered`, which was that
+       same set; `covered` is now the whole gym, so the marker needs its own
+       field. Absent for an organization admin, who has no "own" athletes. */
+    const mine = principal.role === 'coach'
+      ? await athleteIdsForCoach(principal.organizationId, principal.accountId)
+      : undefined;
+
     return NextResponse.json(
-      { ok: true, day, covered: roster.map((athlete) => athlete.athlete_id), marks },
+      { ok: true, day, covered: roster.map((athlete) => athlete.athlete_id), ...(mine ? { mine } : {}), marks },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

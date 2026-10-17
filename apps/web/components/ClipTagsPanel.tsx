@@ -42,8 +42,8 @@ export async function clipTagRefusal(res: Response, action: 'add' | 'remove'): P
   if (res.status === 401) return 'Your session has ended. Sign in again, then retry.';
   if (res.status === 403) {
     return action === 'add'
-      ? 'You can tag only athletes you coach. Ask an organization admin to tag this athlete.'
-      : 'You can remove tags only for athletes you coach. Ask an organization admin.';
+      ? 'You can tag only athletes of your own gym. Ask an organization admin to tag this athlete.'
+      : 'You can remove tags only for athletes of your own gym. Ask an organization admin.';
   }
   if (res.status === 404) return 'This video or tag is no longer available to you. Refresh the page.';
   if ((res.status === 400 || res.status === 409) && serverText) return serverText;

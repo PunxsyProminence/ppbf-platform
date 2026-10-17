@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   acknowledgeEscalation,
   detectRepeatedPatternEscalations,
@@ -85,20 +85,21 @@ export async function POST(request: NextRequest) {
       const escalationId = body.escalation_id?.trim();
       if (!escalationId) throw new Error('Missing escalation_id');
 
-      // A coach may only acknowledge an escalation filed for one of their
-      // own athletes -- checked by membership in their own scoped list
-      // rather than a separate lookup-by-id, so "not mine" and "not real"
-      // both land on the same Missing error a coach cannot tell apart.
-      // athlete_voice is excluded here exactly as in GET: a coach can
-      // neither see nor act on a disclosure-driven escalation, and probing
-      // this path with a guessed id yields the same Missing as a bogus id.
+      // A coach may acknowledge an escalation filed for any athlete the
+      // access gate admits them to -- since issue #1480 (OD-2026-10-11-007)
+      // every live athlete of their own gym, not only their own. The GET
+      // list above stays "my athletes"; acting on one record is the gate's
+      // question, asked through its batched form (accessibleAthleteIds).
+      // "Not reachable", "no athlete" and "not real" all land on the same
+      // Missing error a coach cannot tell apart. athlete_voice is excluded
+      // here exactly as in GET: a coach can neither see nor act on a
+      // disclosure-driven escalation, and probing this path with a guessed
+      // id yields the same Missing as a bogus id.
       if (isCoach) {
-        const allowedAthleteIds = await athleteIdsForCoach(principal.organizationId, principal.accountId);
-        const ownEscalations = await listEscalations(principal.organizationId, {
-          athleteIds: allowedAthleteIds,
-          excludeAthleteVoice: true,
-        });
-        if (!ownEscalations.some((escalation) => escalation.escalation_id === escalationId)) {
+        const candidates = await listEscalations(principal.organizationId, { excludeAthleteVoice: true });
+        const target = candidates.find((escalation) => escalation.escalation_id === escalationId);
+        const athleteId = target?.athlete_id ?? null;
+        if (!athleteId || !(await accessibleAthleteIds(principal, [athleteId])).has(athleteId)) {
           throw new Error('Missing escalation record');
         }
       }

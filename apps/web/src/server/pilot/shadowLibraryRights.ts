@@ -29,11 +29,15 @@ export const RIGHTS_LOWERED_UNDER_FULL_TEXT_MESSAGE =
 // write: they say a row is the importer's copy of a seed row. A caller-supplied
 // one could read as that provenance to a later backfill or script, so the
 // curator routes refuse them (the source-rights migration itself no longer
-// reads metadata; this keeps the claim off the rows too).
+// reads metadata; this keeps the claim off the rows too). subject_purged_at is
+// the retention purge's mark on a document or chunk it held (F-086): every
+// reader leaves a marked row out, so a caller-supplied one would make a row
+// unservable for good.
 export const RESERVED_PROVENANCE_METADATA_KEYS = [
   'copied_from_source_id',
   'copied_from_document_id',
   'copied_for_scope',
+  'subject_purged_at',
 ] as const;
 
 /** The first reserved provenance key present in caller metadata, or null. */
@@ -43,6 +47,7 @@ export function reservedProvenanceKey(metadata: unknown): string | null {
 }
 
 export function reservedProvenanceMessage(key: string): string {
+  if (key === 'subject_purged_at') return 'metadata.subject_purged_at is set only by the retention purge';
   return `metadata.${key} is set only by the research importer`;
 }
 

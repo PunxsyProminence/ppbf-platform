@@ -97,9 +97,12 @@ function statusWords(raw: string): { glyph: string; label: string } {
 export default function AthleteGoalsReadOnly({
   athleteId,
   audience,
+  athleteName,
 }: {
   readonly athleteId: string;
   readonly audience: GoalsAudience;
+  /** Named on the heading where the screen around it holds more than one athlete's panels. */
+  readonly athleteName?: string;
 }) {
   const headingId = useId();
   const [held, setHeld] = useState<Held | null>(null);
@@ -137,7 +140,7 @@ export default function AthleteGoalsReadOnly({
 
   return (
     <section aria-labelledby={headingId} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]" data-testid="athlete-goals">
-      <h3 id={headingId} className="t-label">Goals they have set</h3>
+      <h3 id={headingId} className="t-label">Goals they have set{athleteName ? ` — ${athleteName}` : ''}</h3>
       {nothingSet ? (
         <p className="t-muted">No goals set yet.</p>
       ) : (

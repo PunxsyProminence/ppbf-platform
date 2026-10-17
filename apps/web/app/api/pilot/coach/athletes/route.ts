@@ -1,10 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import {
-  coachAuthorizedRoster,
-  organizationActionableRoster,
-} from '@/src/server/pilot/coachAthleteRoster';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -14,27 +11,23 @@ export const dynamic = 'force-dynamic';
  * The athletes this staff member may act ON, for a picker.
  *
  * WHY THIS IS NOT /api/pilot/athletes/list. That route answers a coach with
- * getAthletesForCoach, which returns EVERY athlete in the organization and
- * merely redacts dob and emergency_contact for the ones the coach is
- * unrelated to. It is a display projection and it says so. Populating a
- * "which athlete am I logging this for" control from it offers a coach
- * athletes whose writes the server will refuse -- a picker full of options
- * that fail, on a safeguarding surface, with the refusal arriving only after
- * the coach has typed the session in.
+ * getAthletesForCoach, a DISPLAY projection of the gym's live athletes (since
+ * #1480 PR C with every field); it is not an access contract and says so. While a coach's reach was "my athletes", a
+ * picker built on it offered athletes whose writes the server refused. The
+ * picker's membership is decided here, from the same rule the write path
+ * applies, so the two cannot drift apart again.
  *
- * A coach here is bounded by the central access contract
- * (athleteIdsForCoach: coach of record UNION active, unexpired coverage), the
- * same union assertActorCanAccessAthlete applies on every write. An
- * organization admin reads the organization's athletes, matching what
- * assertActorCanAccessAthlete grants that role (assertAthleteBelongsToOrganization)
- * and matching what /api/pilot/coach/intelligence and
- * /api/pilot/coach/readiness-board already do. No role is broadened here.
+ * A COACH'S REACH IS THE WHOLE GYM (OD-2026-10-11-007, issue #1480):
+ * assertActorCanAccessAthlete admits a coach to every live athlete of their
+ * own organization, exactly as it admits an organization admin. So both roles
+ * read the same set here -- the organization's actionable roster -- and the
+ * picker offers what the write path accepts. This was "my athletes" (coach of
+ * record UNION active coverage) until the gate widened; left that way it
+ * hid from a coach the athletes every write route now lets them act on.
+ * "My athletes" digests (intelligence, readiness board) keep their own scope.
  *
- * BOTH BRANCHES EXCLUDE SOFT-DELETED ATHLETES, because the gate does. The
- * coach branch always did (athleteIdsForCoach carries `deleted_at is null` in
- * both halves of its union); the admin branch reads
- * organizationActionableRoster rather than getAthletesByOrganization for the
- * same reason.
+ * SOFT-DELETED ATHLETES ARE EXCLUDED, because the gate does:
+ * organizationActionableRoster rather than getAthletesByOrganization.
  *
  * THIS IS A CONVENIENCE, NOT A GATE. Every write route keeps its own
  * assertActorCanAccessAthlete; a client that ignores this list and posts some
@@ -51,16 +44,14 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['coach', 'organization_admin', 'admin']);
 
-    const roster = principal.role === 'coach'
-      ? await coachAuthorizedRoster(principal.organizationId, principal.accountId)
-      : isOrganizationAdminRole(principal.role)
-        /* NOT getAthletesByOrganization: that read carries no deletion
-           predicate, and assertAthleteBelongsToOrganization -- the gate the
-           writes then pass through -- refuses a soft-deleted athlete. A
-           picker built on the unfiltered read offers archived children whose
-           every write is then refused. */
-        ? await organizationActionableRoster(principal.organizationId)
-        : [];
+    const roster = principal.role === 'coach' || isOrganizationAdminRole(principal.role)
+      /* NOT getAthletesByOrganization: that read carries no deletion
+         predicate, and assertAthleteBelongsToOrganization -- the gate the
+         writes then pass through -- refuses a soft-deleted athlete. A
+         picker built on the unfiltered read offers archived children whose
+         every write is then refused. */
+      ? await organizationActionableRoster(principal.organizationId)
+      : [];
 
     return NextResponse.json({
       ok: true,

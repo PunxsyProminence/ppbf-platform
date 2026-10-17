@@ -24,6 +24,7 @@ import {
   type AthleteWellnessTodayRead,
 } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import { observationsForAthlete, reviewStateLine } from './shadowObservationsForAthlete';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -394,6 +395,12 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
  * planning sessions.
  */
 /** What the athlete reads when an opened drill has been withdrawn since the list loaded. */
+// What a stored check-in tells the athlete, by whether today's wellness is
+// already recorded. Named so the wellness line can be swapped for the floor
+// line once wellness lands (F-042).
+const CHECKED_IN_WELLNESS_NEXT = 'You are checked in. Do your wellness check next -- it opens your floor.';
+const CHECKED_IN_FLOOR_OPEN = "You are checked in. Your coach's work is on your floor.";
+
 const DRILL_WITHDRAWN = "This drill is no longer in your gym's library.";
 
 /** The Learn card's Open button, addressable so Back can return focus to it. */
@@ -1352,6 +1359,13 @@ export default function AthleteWorkspace() {
      encouragement, not a security boundary: it protects no data, and the
      server decides what it will serve regardless of what this renders. */
   const floorLockedPendingCheckIn = !checkInLoading && checkInLoadError === null && todayCheckIn === null;
+  // The check-in line telling the athlete to do wellness next is about the
+  // visit as a whole (tab null), so it stays on every tab. Once today's
+  // wellness is recorded it is no longer true (F-042): say what is. Derived
+  // at render, so a wellness record that lands at any moment is reflected.
+  const shownSyncMessage = backendSyncMessage === CHECKED_IN_WELLNESS_NEXT && todayCheckIn !== null
+    ? CHECKED_IN_FLOOR_OPEN
+    : backendSyncMessage;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
   const loadIdentity = useCallback(async () => {
@@ -2207,9 +2221,7 @@ export default function AthleteWorkspace() {
         // nowhere -- the message is the whole answer, and moving the athlete
         // off the screen they pressed it on would bury it.
         setActiveTab(floorLockedPendingCheckIn ? 'bio-checkin' : 'athlete-floor');
-        setBackendSyncMessage(floorLockedPendingCheckIn
-          ? 'You are checked in. Do your wellness check next -- it opens your floor.'
-          : "You are checked in. Your coach's work is on your floor.");
+        setBackendSyncMessage(floorLockedPendingCheckIn ? CHECKED_IN_WELLNESS_NEXT : CHECKED_IN_FLOOR_OPEN);
         // Accepted — two notes rising a fifth. It confirms the line above; it
         // never carries anything that line does not.
         play('accept');
@@ -3212,7 +3224,7 @@ export default function AthleteWorkspace() {
                         className="textarea input--kiosk h-[89px]"
                       />
                       <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                        Optional. You can leave it empty. Nobody sees this until you check in and choose to share it.
+                        Optional. You can leave it empty. Nobody sees this until you check in and press Share with coach.
                       </p>
                     </div>
                     <button
@@ -4045,15 +4057,17 @@ export default function AthleteWorkspace() {
                     </div>
                   </div>
                 ) : null}
-                {!shadowObservationError && shadowObservations.length === 0 ? (
+                {/* Bare event names (SHADOW_AUDIT_LOGIN_ACCOUNT) are the system's
+                    own log, not something SHADOW noticed: they are left off, and
+                    the state is said in words (F-005). */}
+                {!shadowObservationError && observationsForAthlete(shadowObservations).length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">SHADOW has not noticed anything yet. Keep training and checking in.</p>
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
-                  {shadowObservations.slice(0, 6).map((item) => (
+                  {observationsForAthlete(shadowObservations).slice(0, 6).map((item) => (
                     <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{item.label}</p>
-                      <p>Source: {item.source}</p>
-                      <p>State: {item.review_state}</p>
+                      <p>{reviewStateLine(item.review_state)}</p>
                     </div>
                   ))}
                 </div>
@@ -4080,9 +4094,9 @@ export default function AthleteWorkspace() {
             reserved for a message is still furniture. Read at --t-md rather
             than the --t-xs it used to sit at, because an athlete reads this
             standing up on the floor (Law 5). */}
-        {backendSyncMessage ? (
+        {shownSyncMessage ? (
           <div className={PANEL}>
-            <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{backendSyncMessage}</p>
+            <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{shownSyncMessage}</p>
           </div>
         ) : null}
 
