@@ -41,9 +41,12 @@
  * excerpt hash -- no account id and no text. The dry run prints evidence counts only.
  * The detached set is part of the plan fingerprint, and DETACH_RADIUS_EXCEEDED
  * refuses past DEFAULT_MAX_DETACH_ROWS. Evidence under the safeguarding hold
- * (a session flagged in shadow_human_review_queue, by conversation or by
- * account, or with subject_deleted_at set) is never detached:
- * DETACH_WOULD_BREAK_HOLD refuses, and the case goes to Jason.
+ * is never detached: DETACH_WOULD_BREAK_HOLD refuses. The hold is the one
+ * Jason ruled on 2026-10-17 (OD-2026-10-17-002, "A: Detach + narrow hold
+ * (Recommended)", replacing D22): flagged chats of deleted people, and any
+ * evidence actually shown in a flagged chat. Evidence a flag touches but the
+ * hold does not cover is detached and logged like the rest, and the dry run
+ * counts it (citing_evidence.flagged_detached).
  *
  * Other rows that point AT the moving rows from somewhere else are not moved,
  * and any of them refuses the apply:
@@ -182,6 +185,9 @@ export function planFingerprint(plan) {
     retraction_checks: [...plan.ids.retractionChecks].sort(),
     detach_evidence_items: [...plan.ids.evidenceItems].sort(),
     detach_message_citations: [...plan.ids.messageCitations].sort(),
+    // Which detached items a flag touches: what Jason is told before the
+    // apply. If that set changes after the dry run, the apply stops.
+    detach_flagged_evidence_items: [...plan.ids.flaggedEvidenceItems].sort(),
   });
   return `sha256:${crypto.createHash('sha256').update(material).digest('hex')}`;
 }
@@ -308,25 +314,42 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
   )).rows;
   const citationKey = (row) => `${row.assistant_message_id}:${row.evidence_id}`;
 
-  // The safeguarding hold (Jason 2026-10-07, Q7: a flagged SHADOW chat is kept
-  // two years past the person's deletion). Held evidence is never detached:
-  // any held item or citation refuses the apply (DETACH_WOULD_BREAK_HOLD).
-  // A session counts as held when ANY of:
-  //   - a shadow_human_review_queue row points at it, or names its account --
-  //     the hold actually enforced: the deleted-data purge keeps an account
-  //     with any review-queue row, and its conversations, for two years
-  //     (pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md). A flagged
-  //     person who is not deleted yet counts too: detaching now would empty
-  //     the record the hold keeps once they are;
-  //   - subject_deleted_at is set (the column the account-delete trigger
-  //     spares; nothing writes it yet).
-  // An item is held when its own account is flagged (the purge keeps the whole
-  // account, bundles included), or when its bundle is claimed or cited from a
-  // held session, as the trigger reads it (shadow_rows_follow_account).
+  // The safeguarding hold, as Jason ruled it on 2026-10-17 (OD-2026-10-17-002,
+  // "A: Detach + narrow hold (Recommended)"): "The hold covers flagged chats
+  // of deleted people and any evidence actually shown in a flagged chat". It
+  // protects the record his 2026-10-07 ruling keeps (OD-2026-10-06-027 item 2:
+  // a flagged chat is kept identified two years past the person's deletion).
+  // Held evidence is never detached: any held item or citation refuses the
+  // apply (DETACH_WOULD_BREAK_HOLD).
+  //   flagged chat: a shadow_human_review_queue row points at it or names its
+  //     account (the purge holds every conversation of a flagged account), or
+  //     subject_deleted_at is set (the schema's own hold marker; nothing
+  //     writes it yet).
+  //   deleted person: the asker has no live account (deleted, or purged), or
+  //     the athlete the chat is about is deleted, or subject_deleted_at is set
+  //     (the deletion of the person the chat names).
+  // An item is held when:
+  //   (a) its asker is flagged and deleted (the purge keeps that whole
+  //       account, bundles included), or its bundle is claimed or cited in a
+  //       flagged chat of a deleted person, as the trigger reads a chat's
+  //       evidence (shadow_rows_follow_account); or
+  //   (b) the item itself is cited by an answer in a flagged chat, whoever's.
+  // A citation is held when it is in a flagged chat. Everything else is
+  // detached, including evidence of a flagged person who is not deleted; the
+  // dry run counts those (flagged_detached) and the audit row marks them.
   // On apply, before the count: the citing bundles FOR UPDATE (no new claim
-  // can attach), the review queue in SHARE mode (no new flag), and the
-  // sessions touching the bundles FOR SHARE (no hold set mid-run).
+  // can attach), the review queue in SHARE mode (no new flag), and FOR SHARE
+  // the sessions touching the bundles, those sessions' athletes and the
+  // askers' accounts (no hold or deletion set mid-run). Those locks select a
+  // constant: no account id leaves the database. The count sees what the
+  // locks protect only under READ COMMITTED, which apply pins.
   const citingBundleIds = [...new Set(citingItems.map((row) => row.bundle_id))];
+  const sessionsTouchingBundles = `select c.conversation_id from pilot.shadow_evidence_claims c
+                 where c.bundle_id = any($1::uuid[])
+                union
+                select m.conversation_id from pilot.shadow_message_citations mc
+                  join pilot.shadow_chat_messages m on m.message_id = mc.assistant_message_id
+                 where mc.bundle_id = any($1::uuid[])`;
   if (lock && citingBundleIds.length > 0) {
     await client.query(
       `select bundle_id from pilot.shadow_evidence_bundles
@@ -339,48 +362,104 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
       `select s.conversation_id
          from pilot.shadow_chat_sessions s
         where s.conversation_id in (
-                select c.conversation_id from pilot.shadow_evidence_claims c
-                 where c.bundle_id = any($1::uuid[])
-                union
-                select m.conversation_id from pilot.shadow_message_citations mc
-                  join pilot.shadow_chat_messages m on m.message_id = mc.assistant_message_id
-                 where mc.bundle_id = any($1::uuid[]))
+                ${sessionsTouchingBundles})
         order by s.conversation_id for share`,
       [citingBundleIds],
     );
+    // Athletes before accounts: the order dataDeletion.ts and the purge take
+    // them in, so a concurrent deletion waits rather than deadlocks.
+    await client.query(
+      `select 1 from pilot.athletes t
+        where (t.organization_id, t.athlete_id) in (
+                select s.organization_id, s.athlete_id from pilot.shadow_chat_sessions s
+                 where s.conversation_id in (
+                ${sessionsTouchingBundles}))
+        order by t.organization_id, t.athlete_id for share`,
+      [citingBundleIds],
+    );
+    await client.query(
+      `select 1 from pilot.accounts a
+        where a.account_id in (
+                select e.account_id from pilot.shadow_evidence_items e where e.evidence_id = any($2::uuid[])
+                union
+                select s.account_id from pilot.shadow_chat_sessions s
+                 where s.conversation_id in (
+                ${sessionsTouchingBundles}))
+        order by a.account_id for share`,
+      [citingBundleIds, citingItemIds],
+    );
   }
-  const heldRow = (await client.query(
-    `with held_sessions as (
-       select s.conversation_id
+  const holdRow = (await client.query(
+    `with flagged_sessions as (
+       select s.conversation_id,
+              (s.subject_deleted_at is not null
+               or not exists (
+                    select 1 from pilot.accounts a where a.account_id = s.account_id and a.deleted_at is null)
+               or exists (
+                    select 1 from pilot.athletes t
+                     where t.organization_id = s.organization_id and t.athlete_id = s.athlete_id
+                       and t.deleted_at is not null)) as person_deleted
          from pilot.shadow_chat_sessions s
         where s.subject_deleted_at is not null
            or exists (
                 select 1 from pilot.shadow_human_review_queue q
                  where q.conversation_id = s.conversation_id or q.account_id = s.account_id)
-     )
-     select
-       (select count(*)::int from pilot.shadow_evidence_items e
-         where e.evidence_id = any($1::uuid[])
-           and (exists (
+     ),
+     items as (
+       select e.evidence_id, e.account_id,
+              ((exists (
                   select 1 from pilot.shadow_human_review_queue q where q.account_id = e.account_id)
-                or exists (
+                and not exists (
+                  select 1 from pilot.accounts a where a.account_id = e.account_id and a.deleted_at is null))
+               or exists (
                   select 1 from pilot.shadow_evidence_claims c
-                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
-                     and c.conversation_id in (select conversation_id from held_sessions))
-                or exists (
+                    join flagged_sessions f on f.conversation_id = c.conversation_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id and f.person_deleted)
+               or exists (
                   select 1 from pilot.shadow_message_citations c
                     join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
-                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id
-                     and m.conversation_id in (select conversation_id from held_sessions)))) as held_items,
+                    join flagged_sessions f on f.conversation_id = m.conversation_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id and f.person_deleted)
+               or exists (
+                  select 1 from pilot.shadow_message_citations c
+                    join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+                    join flagged_sessions f on f.conversation_id = m.conversation_id
+                   where c.evidence_id = e.evidence_id)) as held,
+              (exists (
+                  select 1 from pilot.shadow_human_review_queue q where q.account_id = e.account_id)
+               or exists (
+                  select 1 from pilot.shadow_evidence_claims c
+                    join flagged_sessions f on f.conversation_id = c.conversation_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id)
+               or exists (
+                  select 1 from pilot.shadow_message_citations c
+                    join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+                    join flagged_sessions f on f.conversation_id = m.conversation_id
+                   where c.bundle_id = e.bundle_id and c.account_id = e.account_id)) as flagged
+         from pilot.shadow_evidence_items e
+        where e.evidence_id = any($1::uuid[])
+     )
+     select
+       (select count(*)::int from items where held) as held_items,
        (select count(*)::int from pilot.shadow_message_citations c
           join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
-         where c.evidence_id = any($1::uuid[])
-           and m.conversation_id in (select conversation_id from held_sessions)) as held_message_citations`,
+          join flagged_sessions f on f.conversation_id = m.conversation_id
+         where c.evidence_id = any($1::uuid[])) as held_message_citations,
+       (select count(*)::int from items where flagged and not held) as flagged_detached_items,
+       (select count(distinct account_id)::int from items where flagged and not held) as flagged_detached_accounts,
+       (select coalesce(array_agg(evidence_id::text order by evidence_id), '{}'::text[])
+          from items where flagged and not held) as flagged_detached_evidence_ids`,
     [citingItemIds],
   )).rows[0] ?? {};
   const held = {
-    items: Number(heldRow.held_items ?? 0),
-    message_citations: Number(heldRow.held_message_citations ?? 0),
+    items: Number(holdRow.held_items ?? 0),
+    message_citations: Number(holdRow.held_message_citations ?? 0),
+  };
+  const flaggedDetachedIds = holdRow.flagged_detached_evidence_ids ?? [];
+  const flaggedDetachedIdSet = new Set(flaggedDetachedIds);
+  const flaggedDetached = {
+    items: Number(holdRow.flagged_detached_items ?? 0),
+    asking_accounts: Number(holdRow.flagged_detached_accounts ?? 0),
   };
 
   // Why detach and not re-point: the CHECK
@@ -444,6 +523,9 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
     bundles: new Set(citingItems.map((row) => row.bundle_id)).size,
     answers: new Set(messageCitations.map((row) => row.assistant_message_id)).size,
     held,
+    // Detached although a flag touches them (the asker, or a chat that claims
+    // or cites their bundle, is flagged): the hold does not cover them.
+    flagged_detached: flaggedDetached,
     by_asking_organization: evidenceByAskingOrganization,
   };
 
@@ -610,6 +692,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
       retractionChecks: retractionChecks.map((row) => row.retraction_check_id),
       evidenceItems: citingItemIds,
       messageCitations: messageCitations.map(citationKey),
+      flaggedEvidenceItems: flaggedDetachedIds,
     },
     counts,
     total,
@@ -629,6 +712,7 @@ async function buildPlan(client, { from, to, sourceType, maxRows, maxDetachRows,
         library_organization_id: row.library_organization_id,
         ordinal: Number(row.ordinal),
         excerpt_sha256: row.excerpt_sha256,
+        flagged: flaggedDetachedIdSet.has(row.evidence_id),
       })),
       message_citations: messageCitations.map((row) => ({
         assistant_message_id: row.assistant_message_id,
@@ -709,7 +793,10 @@ export async function movePolicyShelf(client, options, { log = defaultLog } = {}
   }
 
   try {
-    await client.query(apply ? 'begin' : 'begin read only');
+    // Apply pins READ COMMITTED: the hold count must read past the row locks
+    // taken just before it, which a snapshot taken at the first statement
+    // (REPEATABLE READ or SERIALIZABLE as a role default) would not.
+    await client.query(apply ? 'begin isolation level read committed' : 'begin read only');
     open = true;
     if (apply) await client.query("set local lock_timeout = '10s'");
 

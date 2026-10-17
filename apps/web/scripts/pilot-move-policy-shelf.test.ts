@@ -58,6 +58,9 @@ type Spec = {
   evidenceGroups?: Row[];
   // Held (safeguarding) counts the hold query returns.
   held?: { items: number; message_citations: number };
+  // Detached items a flag touches that the hold does not cover, as the hold
+  // query returns them.
+  flagged?: { items: number; asking_accounts: number; evidence_ids: string[] };
   // A detach delete that removes one row fewer than planned.
   shortDetach?: 'message_citations' | 'evidence_items';
   submissions?: Row[];
@@ -203,7 +206,7 @@ function runTool(spec: Spec): Outcome {
         const t = text.trim();
         calls.push({ text: t, values });
         if (spec.failOn && new RegExp(spec.failOn, 'i').test(t)) throw new Error('stub: statement failed');
-        if (/^(begin|begin read only|rollback|commit)$/i.test(t)) return ok();
+        if (/^(begin|begin read only|begin isolation level read committed|rollback|commit)$/i.test(t)) return ok();
         if (/^set local lock_timeout/i.test(t)) return ok();
         let match = /^update pilot\\.(\\w+)/i.exec(t);
         if (match) {
@@ -244,8 +247,15 @@ function runTool(spec: Spec): Outcome {
         if (/^select s\\.conversation_id/i.test(t)) return ok([]);
         if (/^select bundle_id from pilot\\.shadow_evidence_bundles/i.test(t)) return ok([]);
         if (/^lock table pilot\\.shadow_human_review_queue in share mode$/i.test(t)) return ok();
-        if (/^with held_sessions as/i.test(t)) {
-          return ok([{ held_items: spec.held?.items ?? 0, held_message_citations: spec.held?.message_citations ?? 0 }]);
+        if (/^select 1 from pilot\\.(accounts a|athletes t)/i.test(t)) return ok([]);
+        if (/^with flagged_sessions as/i.test(t)) {
+          return ok([{
+            held_items: spec.held?.items ?? 0,
+            held_message_citations: spec.held?.message_citations ?? 0,
+            flagged_detached_items: spec.flagged?.items ?? 0,
+            flagged_detached_accounts: spec.flagged?.asking_accounts ?? 0,
+            flagged_detached_evidence_ids: spec.flagged?.evidence_ids ?? [],
+          }]);
         }
         if (/^with citing as/i.test(t)) {
           if (spec.evidenceGroups) return ok(spec.evidenceGroups);
@@ -500,6 +510,7 @@ describe('detaching citing evidence', () => {
       bundles: 2,
       answers: 1,
       held: { items: 0, message_citations: 0 },
+      flagged_detached: { items: 0, asking_accounts: 0 },
       by_asking_organization: [{
         asking_organization_id: FROM, items: 3, bundles: 2, message_citations: 2,
         asking_accounts: 1, asking_accounts_deidentified: 0, asking_accounts_active_in_target: 0,
@@ -534,6 +545,7 @@ describe('detaching citing evidence', () => {
     const dry = runTool({ ...cleanShelf(), options: dryRunOptions() });
     expect(dry.result!.citing_evidence).toEqual({
       items: 0, message_citations: 0, bundles: 0, answers: 0, held: { items: 0, message_citations: 0 },
+      flagged_detached: { items: 0, asking_accounts: 0 },
       by_asking_organization: [],
     });
     const applied = runTool({ ...cleanShelf(), options: applyOptions() });
@@ -608,6 +620,7 @@ describe('detaching citing evidence', () => {
       library_organization_id: FROM,
       ordinal: row.ordinal,
       excerpt_sha256: row.excerpt_sha256,
+      flagged: false,
     })));
     expect(details.detached.message_citations).toEqual(spec.messageCitations);
     expect(JSON.stringify(details)).not.toMatch(/account/);
@@ -645,29 +658,79 @@ describe('detaching citing evidence', () => {
     expectRolledBackWithoutWrites(out);
   });
 
-  test('apply locks bundles, the review queue and the sessions before counting the hold; a dry run takes no lock', () => {
-    const applied = runTool({ ...citedShelf(), options: applyOptions() });
+  test('apply locks bundles, the review queue, the sessions, the athletes and the askers before counting the hold; a dry run takes no lock', () => {
+    const spec = citedShelf();
+    const applied = runTool({ ...spec, options: applyOptions() });
     const all = texts(applied);
     const at = (shape: RegExp) => all.findIndex((t) => shape.test(t));
     const bundlesAt = at(/^select bundle_id from pilot\.shadow_evidence_bundles/i);
     const queueAt = at(/^lock table pilot\.shadow_human_review_queue in share mode$/i);
     const sessionsAt = at(/^select s\.conversation_id/i);
-    const countAt = at(/^with held_sessions as/i);
+    const accountsAt = at(/^select 1 from pilot\.accounts a/i);
+    const athletesAt = at(/^select 1 from pilot\.athletes t/i);
+    const countAt = at(/^with flagged_sessions as/i);
     expect(bundlesAt).toBeGreaterThan(-1);
     expect(bundlesAt).toBeLessThan(queueAt);
     expect(queueAt).toBeLessThan(sessionsAt);
-    expect(sessionsAt).toBeLessThan(countAt);
+    // Athletes before accounts, the order a deletion takes them in.
+    expect(sessionsAt).toBeLessThan(athletesAt);
+    expect(athletesAt).toBeLessThan(accountsAt);
+    expect(accountsAt).toBeLessThan(countAt);
     expect(all[bundlesAt]).toMatch(/for update$/i);
-    expect(all[sessionsAt]).toMatch(/for share$/i);
+    for (const i of [sessionsAt, accountsAt, athletesAt]) expect(all[i]).toMatch(/for share$/i);
     const bundles = ['00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b2'];
     expect(applied.calls[bundlesAt].values).toEqual([bundles]);
     expect(applied.calls[sessionsAt].values).toEqual([bundles]);
-    // A review-queue flag holds a session by conversation or by account.
+    expect(applied.calls[accountsAt].values).toEqual([bundles, spec.citingItems!.map((row) => row.evidence_id)]);
+    expect(applied.calls[athletesAt].values).toEqual([bundles]);
+    // A review-queue flag marks a session by conversation or by account.
     expect(all[countAt]).toMatch(/q\.conversation_id = s\.conversation_id or q\.account_id = s\.account_id/);
 
     const dry = runTool({ ...citedShelf(), options: dryRunOptions() });
-    expect(texts(dry).some((t) => /^lock table|^select s\.conversation_id|^select bundle_id/i.test(t))).toBe(false);
+    expect(texts(dry).some((t) => /^lock table|^select s\.conversation_id|^select bundle_id|^select 1 from/i.test(t))).toBe(false);
     expect(texts(dry).some((t) => /for share|for update/i.test(t))).toBe(false);
+  });
+
+  // OD-2026-10-17-002: evidence a flag touches outside the narrowed hold is
+  // detached, counted in the dry run, and marked in the audit row.
+  const FLAGGED_ITEM = '00000000-0000-4000-8000-000000000003';
+  const flaggedOutsideHold = { items: 1, asking_accounts: 1, evidence_ids: [FLAGGED_ITEM] };
+
+  test('a flagged item outside the hold is counted by the dry run, never named, and does not block', () => {
+    const out = runTool({ ...citedShelf(), flagged: flaggedOutsideHold, options: dryRunOptions() });
+    expect(out.result).toMatchObject({ status: 'dry-run', would_apply: true, blockers: [] });
+    const counted = { items: 1, asking_accounts: 1 };
+    expect((out.result!.citing_evidence as Record<string, unknown>).flagged_detached).toEqual(counted);
+    expect((out.events.find((e) => e.event === 'dry-run')!.payload.citing_evidence as Record<string, unknown>)
+      .flagged_detached).toEqual(counted);
+    expect(JSON.stringify(out.events)).not.toContain(FLAGGED_ITEM);
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('apply detaches a flagged item outside the hold and marks it in the audit row', () => {
+    const out = runTool({ ...citedShelf(), flagged: flaggedOutsideHold, options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'applied', detached: { message_citations: 2, evidence_items: 3 } });
+    const audit = out.calls.find((c) => /^insert into pilot\.audit_events/i.test(c.text))!;
+    const details = JSON.parse(audit.values![1] as string);
+    expect(details.detached.evidence_items.map((row: Record<string, unknown>) => [row.evidence_id, row.flagged])).toEqual([
+      ['00000000-0000-4000-8000-000000000001', false],
+      ['00000000-0000-4000-8000-000000000002', false],
+      [FLAGGED_ITEM, true],
+    ]);
+    expect(JSON.stringify(details)).not.toMatch(/account/);
+  });
+
+  test('a change in which detached items a flag touches, after the reviewed dry run, stops the apply', () => {
+    const reviewed = runTool({ ...citedShelf(), options: dryRunOptions() });
+    const flaggedSince = runTool({ ...citedShelf(), flagged: flaggedOutsideHold, options: dryRunOptions() });
+    expect(flaggedSince.result!.plan_fingerprint).not.toBe(reviewed.result!.plan_fingerprint);
+
+    const out = runTool({
+      ...citedShelf(), flagged: flaggedOutsideHold,
+      options: applyOptions({ expectFingerprint: reviewed.result!.plan_fingerprint }),
+    });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_FINGERPRINT_MISMATCH' });
+    expectRolledBackWithoutWrites(out);
   });
 
   test('DETACH_RADIUS_EXCEEDED past the detach cap, which is separate from the move cap', () => {
@@ -723,12 +786,14 @@ describe('apply', () => {
     expect(out.result!.status).toBe('applied');
     expect(out.exitCode).toBe(0);
     const all = texts(out);
-    expect(all[0]).toBe('begin');
+    // READ COMMITTED, pinned: the hold count must see past the locks taken
+    // just before it.
+    expect(all[0]).toBe('begin isolation level read committed');
     expect(all[all.length - 1]).toBe('commit');
     expect(all.filter((t) => t === 'commit')).toHaveLength(1);
     expect(all).not.toContain('rollback');
 
-    const beginAt = all.indexOf('begin');
+    const beginAt = all.indexOf('begin isolation level read committed');
     const commitAt = all.indexOf('commit');
     all.forEach((t, i) => {
       if (WRITE.test(t)) {
