@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
 // "Scholarship Tracking"). A scholarship is a stored DISCOUNT on a real
@@ -61,6 +61,164 @@ const PROGRAM_BADGE: Record<string, { className: string; glyph: string }> = {
   archived: { className: 'badge badge--filed', glyph: '▣' },
 };
 
+// Support the gym gave a family (PH-12b). What is typed here the family may
+// later see (PH-13); there is no private note. Retired, never edited or deleted.
+interface SupportRow {
+  record_id: string;
+  support_kind: string;
+  provided_on: string;
+  recorded_by_name: string;
+}
+
+async function errorFrom(response: Response, fallback: string): Promise<Error> {
+  const err = (await response.json().catch(() => ({}))) as { error?: string };
+  return new Error(err.error || `${fallback} (${response.status})`);
+}
+
+// Keyed by athlete, so switching athletes starts from a clean read, form and error.
+function SupportRecords({ athleteId }: { athleteId: string }) {
+  const [rows, setRows] = useState<SupportRow[]>([]);
+  const [load, setLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [form, setForm] = useState({ support_kind: '', provided_on: '' });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // A second click lands before React re-renders the disabled button; the ref
+  // is what stops it.
+  const inFlight = useRef(false);
+  const readSeq = useRef(0);
+
+  const read = useCallback(async (id: string) => {
+    const seq = ++readSeq.current;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/family-support?athlete_id=${encodeURIComponent(id)}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('unreadable');
+      const payload = (await response.json()) as { items?: SupportRow[] };
+      if (seq !== readSeq.current) return;
+      setRows(payload.items ?? []);
+      setLoad('loaded');
+    } catch {
+      if (seq !== readSeq.current) return;
+      setLoad('unavailable');
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      await read(athleteId);
+    })();
+  }, [athleteId, read]);
+
+  const send = async (key: string, method: 'POST' | 'PATCH', body: Record<string, unknown>, fallback: string) => {
+    if (inFlight.current) return false;
+    inFlight.current = true;
+    setBusy(key);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/family-support`, {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw await errorFrom(response, fallback);
+      setError(null);
+      await read(athleteId);
+      return true;
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : fallback);
+      return false;
+    } finally {
+      inFlight.current = false;
+      setBusy(null);
+    }
+  };
+
+  const handleRecord = async () => {
+    const saved = await send('new', 'POST', { athlete_id: athleteId, ...form }, 'Could not record the support');
+    if (saved) setForm({ support_kind: '', provided_on: '' });
+  };
+
+  return (
+    <>
+      {error && <p className="t-body mt-[var(--s3)]" role="alert">{error}</p>}
+      {load === 'loading' ? (
+        <p className="working mt-[var(--s3)]">Loading support…</p>
+      ) : load === 'unavailable' ? (
+        <div className="empty">
+          <div className="empty-title">Support could not be read</div>
+          <p className="empty-msg mx-auto">This is not a record of none. Reload the page to try again.</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="t-body mt-[var(--s3)]">No support recorded for this athlete.</p>
+      ) : (
+        <table className="ledger mt-[var(--s3)]">
+          <caption className="text-left">Support provided</caption>
+          <thead>
+            <tr><th scope="col">What was provided</th><th scope="col">Date</th><th scope="col">Recorded by</th><th scope="col">Actions</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.record_id}>
+                <td>{row.support_kind}</td>
+                <td className="ledger-id whitespace-nowrap">{formatGymDay(row.provided_on)}</td>
+                <td>{row.recorded_by_name}</td>
+                <td>
+                  <button type="button" className="btn--lever" disabled={busy !== null}
+                    onClick={() => void send(row.record_id, 'PATCH', { record_id: row.record_id, action: 'retire' }, 'Could not retire the record')}>
+                    {busy === row.record_id ? 'Retiring…' : 'Retire'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
+        <div className="field">
+          <label className="t-label" htmlFor="support-kind">What the gym provided (the family can see this)</label>
+          <input id="support-kind" className="input" maxLength={200} value={form.support_kind}
+            onChange={(e) => setForm((f) => ({ ...f, support_kind: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label className="t-label" htmlFor="support-date">Date provided</label>
+          <input id="support-date" type="date" className="input" max={gymDayIso() ?? undefined} value={form.provided_on}
+            onChange={(e) => setForm((f) => ({ ...f, provided_on: e.target.value }))} />
+        </div>
+      </div>
+      <div className="mt-[var(--s3)]">
+        <button type="button" className="btn" disabled={busy !== null || !form.support_kind.trim() || !form.provided_on}
+          onClick={() => void handleRecord()}>
+          {busy === 'new' ? 'Saving…' : 'Record support'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SupportSection({ athletes, athleteId, onAthlete }: {
+  athletes: AthleteOption[];
+  athleteId: string;
+  onAthlete: (athleteId: string) => void;
+}) {
+  return (
+    <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="support-heading">
+      <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Support provided</h2>
+      <div className="field mt-[var(--s3)]">
+        <label className="t-label" htmlFor="support-athlete">Support for</label>
+        <select id="support-athlete" className="select" value={athleteId} onChange={(e) => onAthlete(e.target.value)}>
+          <option value="">Select an athlete…</option>
+          {athletes.map((athlete) => (
+            <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+          ))}
+        </select>
+      </div>
+      {athleteId && <SupportRecords key={athleteId} athleteId={athleteId} />}
+    </section>
+  );
+}
+
 export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -77,6 +235,7 @@ export default function MembershipsPage() {
   const [showNewProgram, setShowNewProgram] = useState(false);
   const [newProgramName, setNewProgramName] = useState('');
   const [catalogProgramName, setCatalogProgramName] = useState('');
+  const [supportAthleteId, setSupportAthleteId] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -442,6 +601,11 @@ export default function MembershipsPage() {
                                 {action.label}
                               </button>
                             ))}
+                            <button type="button" className="btn--lever"
+                              aria-label={`Support provided to ${row.athlete_name}`}
+                              onClick={() => setSupportAthleteId(row.athlete_id)}>
+                              Support
+                            </button>
                             {row.status !== 'ended' && (
                               <label className="t-label flex items-center gap-[var(--s2)]" htmlFor={`scholarship-${row.membership_id}`}>
                                 Scholarship
@@ -463,6 +627,8 @@ export default function MembershipsPage() {
               </table>
             </section>
           )}
+
+          <SupportSection athletes={athletes} athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
           {/* The catalog itself: every persistent group this gym runs, with
               its live headcount. Archiving retires the name from the enroll

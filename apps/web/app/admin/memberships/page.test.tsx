@@ -291,3 +291,91 @@ test('a failed programs read says so, never "No programs on record. Create the f
   expect(await screen.findByText('Programs could not be read')).toBeTruthy();
   expect(screen.queryByText('No programs on record')).toBeNull();
 });
+
+// PH-12b: support the gym gave a family, recorded on this page.
+const SUPPORT_ROW = {
+  record_id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+  support_kind: 'Transportation to the October 12 tournament',
+  provided_on: '2026-10-12',
+  recorded_by_name: 'Jane Okafor',
+  created_at: '2026-10-12T15:00:00.000Z',
+};
+
+function mockSupportFetch(options: { supportReadFails?: boolean; sent?: Array<{ method: string; body: unknown }> } = {}) {
+  const rest = mockFetch({});
+  return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.includes('/admin/family-support')) return rest(input, init);
+    if (init?.method === 'POST' || init?.method === 'PATCH') {
+      options.sent?.push({ method: init.method, body: JSON.parse(String(init.body)) });
+      // Held open a tick, so a second click lands while the first is in flight.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { ok: true, json: async () => ({ item: { record_id: SUPPORT_ROW.record_id } }) } as Response;
+    }
+    if (options.supportReadFails) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    return { ok: true, json: async () => ({ items: [SUPPORT_ROW] }) } as Response;
+  }) as unknown as typeof fetch;
+}
+
+async function openSupportForJordan() {
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await screen.findByText('Jordan Little');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Support provided to Jordan Little' }));
+  });
+}
+
+test("a membership row opens that athlete's support: what, when and who recorded it, and the label says the family can see it", async () => {
+  global.fetch = mockSupportFetch();
+  await openSupportForJordan();
+
+  expect(await screen.findByText('Transportation to the October 12 tournament')).toBeTruthy();
+  expect(screen.getByText('Jane Okafor')).toBeTruthy();
+  // A calendar day, shown as that day -- not shifted into the day before.
+  expect(screen.getByText('October 12, 2026')).toBeTruthy();
+  expect(screen.getByLabelText('What the gym provided (the family can see this)')).toBeTruthy();
+  expect(String((global.fetch as jest.Mock).mock.calls.map(([url]) => String(url)))).toContain('/api/pilot/admin/family-support?athlete_id=ath-1');
+});
+
+test('recording posts the athlete, what was provided and the date, once however fast it is clicked', async () => {
+  const sent: Array<{ method: string; body: unknown }> = [];
+  global.fetch = mockSupportFetch({ sent });
+  await openSupportForJordan();
+
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('What the gym provided (the family can see this)'), { target: { value: 'Gloves and wraps' } });
+    fireEvent.change(screen.getByLabelText('Date provided'), { target: { value: '2026-09-30' } });
+  });
+  await act(async () => {
+    const button = screen.getByRole('button', { name: 'Record support' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(sent).toEqual([{ method: 'POST', body: { athlete_id: 'ath-1', support_kind: 'Gloves and wraps', provided_on: '2026-09-30' } }]);
+});
+
+test('Retire sends the one change there is -- retire, by record id -- and nothing is deleted', async () => {
+  const sent: Array<{ method: string; body: unknown }> = [];
+  global.fetch = mockSupportFetch({ sent });
+  await openSupportForJordan();
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Retire' }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(sent).toEqual([{ method: 'PATCH', body: { record_id: SUPPORT_ROW.record_id, action: 'retire' } }]);
+  expect((global.fetch as jest.Mock).mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(false);
+});
+
+test('a failed support read says so, never "No support recorded"', async () => {
+  global.fetch = mockSupportFetch({ supportReadFails: true });
+  await openSupportForJordan();
+
+  expect(await screen.findByText('Support could not be read')).toBeTruthy();
+  expect(screen.queryByText('No support recorded for this athlete.')).toBeNull();
+});
