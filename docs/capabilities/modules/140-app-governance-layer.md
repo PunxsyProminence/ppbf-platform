@@ -2,8 +2,12 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** |
+| Status note | Was "DRAFT" until 2026-10-16. Per-gym capability registry (pilot.admin_capability_registry) read/saved by admin-gated GET/POST (admin/capabilities/route.ts,35) and edited from /admin (page.tsx,991). Module file has no slice row; mapping rests on docs/CAPABILITY_BUILD_PLAN_2026-08-03.md ("capability registry + console"). A rev... |
+| Code | `apps/web/app/api/pilot/admin/capabilities/route.ts`, `apps/web/app/admin/page.tsx` |
+| Tests | `apps/web/app/api/pilot/admin/capabilities/route.test.ts`, `apps/web/app/admin/page.test.tsx` |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Governance / Admin / Nonprofit (`governanceAdminNonprofit`) |
 | Source | `2.0.0-draft-merged` |
@@ -37,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification row added: PENDING_SIGN_OFF, built, not yet tried by a person (OD-2026-09-29-002 item 9a). |

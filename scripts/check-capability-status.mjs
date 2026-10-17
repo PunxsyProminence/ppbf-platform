@@ -37,15 +37,15 @@ import { fileURLToPath } from 'node:url';
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const modulesDir = process.argv[2] ?? path.join(repositoryRoot, 'docs/capabilities/modules');
 
-// While modules are moved to the format above (L32, PR 2 of 3), a module
-// without a Code row is reported, not failed. PR 3 sets this to true.
-const REQUIRE_ALL = false;
+// Every module carries the Code and Tests rows (since 2026-10-16, lane L32).
+// A module without them fails. False only while a bulk move is in flight.
+const REQUIRE_ALL = true;
 
 // The modules carrying "claimed, no code" under OD-2026-09-28-010 item 18:
 // recorded DONE, no code behind them. The only way on is that ruling (a DONE
-// found to have no code; 056 joined 2026-10-16). The ways off are Jason's
-// walk-through, or code landing (007, 014 and 037 left 2026-10-16).
-const CLAIMED_NO_CODE = new Set(['022', '028', '056', '064', '065']);
+// found to have no code; 056 and 149 joined 2026-10-16). The ways off are
+// Jason's walk-through, or code landing (007, 014 and 037 left 2026-10-16).
+const CLAIMED_NO_CODE = new Set(['022', '028', '056', '064', '065', '149']);
 
 const STATUSES = ['DONE', 'MAPPED', 'CLAIMED-NO-CODE', 'DRAFT'];
 const TEST_FILE = /\.(test|spec)\.(tsx?|mjs|js)$/;

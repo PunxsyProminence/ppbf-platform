@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (vertical slice — see Implementation notes) |
+| Status | **DONE** |
+| Status note | Was "DONE (vertical slice — see Implementation notes)" until 2026-10-16. Nominate (createNomination onePercentClub.ts) and majority-vote confirmation (castVote :346) behind GET/POST route :55,79 and coach page |
+| Code | `apps/web/app/api/pilot/coach/one-percent-club/route.ts`, `apps/web/app/coach/one-percent-club/page.tsx`, `apps/web/src/server/pilot/onePercentClub.ts` |
+| Tests | `apps/web/app/api/pilot/coach/one-percent-club/route.test.ts`, `apps/web/app/coach/one-percent-club/page.test.tsx`, `apps/web/src/server/pilot/onePercentClub.test.ts` |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
@@ -91,3 +94,4 @@ matrix and both inline coverage loops). Door added to `buildingMap.ts`.
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-16 | Claude | Vertical slice built to owner design (module 127): three nomination paths, majority-vote confirmation, permanent membership. Registered DONE / PENDING_SIGN_OFF. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (vertical slice — see Implementation notes)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
