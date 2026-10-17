@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
 import {
   DEFAULT_PROGRAM,
@@ -271,10 +272,13 @@ export default function AthleteAchievements({
   if (state === 'unavailable') {
     return (
       <section className={SHELL(isFamily)} aria-label="Achievements">
-        <p className={isFamily ? 't-body' : 'text-[length:var(--t-sm)] text-[color:var(--bone-300)]'}>
+        <p className={isFamily ? 't-body' : 'text-[length:var(--t-sm)] text-[color:var(--bone-300)]'} role="alert">
           This did not load. It is a connection problem, not an empty record —
           nothing already earned has gone anywhere.
         </p>
+        <button type="button" onClick={() => void load()} className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+          Try again
+        </button>
       </section>
     );
   }
@@ -476,7 +480,7 @@ export function SaveNote({ state }: { state: SaveState | undefined }) {
   if (!state || state === 'idle') return null;
   return (
     <p className="mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]" role="status">
-      {state === 'saving' ? 'Saving...' : 'That did not save. Try it again.'}
+      {state === 'saving' ? 'Saving...' : 'That did not save. Try again.'}
     </p>
   );
 }
@@ -569,7 +573,7 @@ function TrackPanel({
                 onClick={() => onMark(milestone)}
                 className="btn btn--ghost ml-[var(--s3)] min-h-[var(--tap)]"
               >
-                Did it
+                I did it
               </button>
             )}
             <SaveNote state={saveOf(milestone.key)} />
@@ -590,6 +594,6 @@ function formatDay(raw: string): string {
   const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return raw;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(match[2]) - 1] ?? match[2]} ${Number(match[3])} ${match[1]}`;
+  // One date form across the app (UXB-30): "Oct 16, 2026".
+  return formatCalendarDay(ymd);
 }

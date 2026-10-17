@@ -43,7 +43,10 @@ jest.mock('@/src/server/pilot/externalCompetition', () => {
   return { ...actual, listAthleteCompetitionHistory: jest.fn(async () => []) };
 });
 
-jest.mock('@/src/server/pilot/sessionNotes', () => ({ getTodaySessionNote: jest.fn(async () => null) }));
+jest.mock('@/src/server/pilot/sessionNotes', () => ({
+  getTodaySessionNote: jest.fn(async () => null),
+  isSessionRunningForAthleteToday: jest.fn(async () => false),
+}));
 
 jest.mock('@/src/server/pilot/athleteBodyMass', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteBodyMass');

@@ -208,7 +208,7 @@ describe('what a coach said lands here, reading like a person said it', () => {
     expect(container.textContent).toContain('You showed up on a day it would have been easy not to.');
     expect(container.textContent).toContain('Best round you have had.');
     expect(container.textContent).toContain('Coach Jason');
-    expect(container.textContent).toContain('Jul 30 2026');
+    expect(container.textContent).toContain('Jul 30, 2026');
   });
 
   // F-045. A note sent at 10:52 PM gym time on October 11 is October 12 in
@@ -224,8 +224,8 @@ describe('what a coach said lands here, reading like a person said it', () => {
 
     const { container } = await renderPanel();
 
-    expect(container.textContent).toContain('Oct 11 2026');
-    expect(container.textContent).not.toContain('Oct 12 2026');
+    expect(container.textContent).toContain('Oct 11, 2026');
+    expect(container.textContent).not.toContain('Oct 12, 2026');
   });
 
   it('says it is empty rather than pretending, and never counts it', async () => {
@@ -353,7 +353,7 @@ it('says a load failed rather than showing an empty record', async () => {
 describe('one mark per press (#1529)', () => {
   it('two presses of Did it in the same tick send one mark', async () => {
     await renderPanel();
-    const button = screen.getAllByRole('button', { name: 'Did it' })[0]!;
+    const button = screen.getAllByRole('button', { name: 'I did it' })[0]!;
     const posts = () => (global.fetch as jest.Mock).mock.calls
       .filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
 

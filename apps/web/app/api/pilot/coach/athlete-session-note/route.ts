@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getTodaySessionNote } from '@/src/server/pilot/sessionNotes';
+import { getTodaySessionNote, isSessionRunningForAthleteToday } from '@/src/server/pilot/sessionNotes';
 
 export const runtime = 'nodejs';
 
@@ -61,7 +61,13 @@ export async function GET(request: NextRequest) {
     // that to keep "no session today" apart from "could not read", which are
     // different things to tell someone standing in front of a child.
     const today = await getTodaySessionNote(principal.organizationId, athleteId);
-    return NextResponse.json({ today });
+    // Asked only when the athlete has no session row today: it is the one
+    // answer it changes, "No session started today" said while a coach's run
+    // is under way (F-067). A failed read fails the request, as the note does.
+    const sessionRunning = today === null
+      ? await isSessionRunningForAthleteToday(principal.organizationId, athleteId)
+      : false;
+    return NextResponse.json({ today, session_running: sessionRunning });
   } catch (error) {
     return jsonError(error);
   }

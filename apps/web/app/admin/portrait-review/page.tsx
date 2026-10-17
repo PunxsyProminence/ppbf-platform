@@ -166,7 +166,6 @@ export default function PortraitReviewPage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Portrait Review</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.account_profiles</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every uploaded photo starts here and is visible to nobody but its uploader until an admin decides.
               Approving releases it under the platform&rsquo;s usual visibility rules; rejecting deletes the photo and

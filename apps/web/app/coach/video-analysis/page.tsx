@@ -9,6 +9,7 @@ import OperationsLink from '@/components/OperationsLink';
 import ClipTagsPanel from '@/components/ClipTagsPanel';
 import TaggedClipsList from '@/components/TaggedClipsList';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -773,6 +774,7 @@ export default function CoachVideoAnalysisPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Analysis</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Coach Video Console</h1>
+          <ClusterNav cluster="film" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Upload session footage and review athlete film. An upload is held until you release it, and only then can it
             be played. A released video can be sent for Film Study -- a vision-based observation that waits for your
@@ -1055,7 +1057,7 @@ export default function CoachVideoAnalysisPage() {
                   <p className="t-data text-[color:var(--bone-300)]">
                     {p.origin === 'coach_reported'
                       ? `Athlete: ${athleteLabel(p.athlete_id)} · reported by a coach — the model did not propose this`
-                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
+                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s)`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
                   {/* The model's original is never overwritten, so both readings
@@ -1172,7 +1174,7 @@ export default function CoachVideoAnalysisPage() {
               <label htmlFor="missed-athlete" className="t-data text-[color:var(--bone-400)]">Athlete</label>
               <select id="missed-athlete" className="select" value={missedAthleteId}
                 onChange={(e) => setMissedAthleteId(e.target.value)}>
-                <option value="">Select an athlete…</option>
+                <option value="">Choose an athlete</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                 ))}

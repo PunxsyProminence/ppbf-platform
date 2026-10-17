@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ParentDigest from './ParentDigest';
 
@@ -148,6 +148,47 @@ describe('the parent digest', () => {
     expect(screen.queryByText(/Nothing written up yet/)).toBeNull();
   });
 
+  // UXB-13: "try again in a moment" had nothing to press.
+  it('offers Check again on a failed read, and that re-reads the corner', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (!answering) return jsonResponse({}, false);
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/Nothing written up yet/)).toBeTruthy();
+    expect(screen.queryByText(/could not be read/)).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  // UXB-25: the hub's "milestones earned" also counts ones a session total
+  // reaches; this list is only the ones somebody marked, and says so. Not
+  // "Awarded by a coach": an athlete's own "Did it" is stored here as 'self'.
+  it('labels the milestone list as the marked ones', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 13, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by Alex')).toBeTruthy();
+    expect(screen.getByText(/No milestones sealed yet/)).toBeTruthy();
+  });
+
   it('says which half could not be read when only one read fails, instead of faking it empty', async () => {
     installFetch((url) => {
       if (url.includes('/achievements/recognition')) return jsonResponse({}, false);
@@ -176,6 +217,69 @@ describe('the parent digest', () => {
 
     expect(await screen.findByText(/Milestones could not be loaded/)).toBeTruthy();
     expect(screen.queryByText(/No milestones sealed yet/)).toBeNull();
+  });
+
+  // UXB-13: a half that failed on its own has the same Check again, and it
+  // re-runs the same two reads.
+  it('offers Check again when only the milestones read fails, and that re-reads', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (url.includes('/achievements/milestones') && !answering) return jsonResponse({}, false);
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText('Milestones could not be loaded just now.')).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/No milestones sealed yet/)).toBeTruthy();
+    expect(screen.queryByText(/Milestones could not be loaded/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  it('offers Check again when only the coach’s words fail, and that re-reads', async () => {
+    let answering = false;
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) {
+        return answering ? jsonResponse({ ok: true, items: [] }) : jsonResponse({}, false);
+      }
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+    expect(screen.getByText(/coach’s words could not be loaded/)).toBeTruthy();
+
+    answering = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+
+    expect(await screen.findByText(/Nothing written up yet/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(4);
+  });
+
+  it('says "your child" in the milestone label when no name is given', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({ ok: true, completed_sessions: 0, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName={null} />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by your child')).toBeTruthy();
   });
 
   // F-063: a recognition with a kind and no typed note printed only its

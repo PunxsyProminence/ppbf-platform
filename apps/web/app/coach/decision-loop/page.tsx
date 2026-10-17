@@ -12,6 +12,7 @@ import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 /* What the gates act on, as the route reports it beside the stored row: the
@@ -1326,6 +1327,7 @@ export default function DecisionLoopReviewPage() {
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command text-[length:var(--t-2xl)]">SHADOW Decision Loop</h1>
+            <ClusterNav cluster="who-needs-me" />
             <p className="t-body max-w-4xl text-[color:var(--bone-300)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.
               Every recommendation starts provisional and stays that way until a human accepts or rejects it — silence

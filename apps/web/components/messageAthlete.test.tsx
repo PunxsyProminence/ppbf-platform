@@ -103,6 +103,24 @@ test('a failed read of what was sent says so, never that nothing was sent', asyn
   expect(screen.queryByText('Nothing has been sent to this athlete yet.')).toBeNull();
 });
 
+test('a failed read of what was sent has Check again, which reads it again and shows the list', async () => {
+  let answer: () => Response | Promise<Response> = () => Promise.reject(new TypeError('Failed to fetch'));
+  const fetchMock = routedFetch({ sentList: () => answer() });
+  await renderForm();
+  expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+
+  answer = () => jsonResponse({ items: [SENT] });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+  });
+  expect(sentListReads(fetchMock)).toHaveLength(2);
+  expect(sentListReads(fetchMock)[1]).toContain('athlete_id=ath-1');
+  expect(posts(fetchMock)).toEqual([]);
+  expect(within(screen.getByRole('list', { name: 'Sent to this athlete' })).getByText('Welcome to the gym.')).toBeInTheDocument();
+  expect(screen.queryByText(/could not be loaded/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+});
+
 test('two presses in one tick send one message', async () => {
   let finish: ((value: Response) => void) | null = null;
   const fetchMock = routedFetch({ send: () => new Promise<Response>((resolve) => { finish = resolve; }) });

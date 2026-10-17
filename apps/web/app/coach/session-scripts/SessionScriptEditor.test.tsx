@@ -261,7 +261,7 @@ describe('the plan editor', () => {
       save();
       save();
     });
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     await act(async () => {
       finish?.(answer(200, { outcome: 'updated', script: SCRIPT }));
