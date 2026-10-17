@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **MAPPED** |
+| Status note | Was "DRAFT" until 2026-10-16. Partial: versioned intervention protocols (gym-wide protocols with no athlete are shared doctrine; list/revise/retire at intervention-protocols/route.ts); not a curated library of standard interventions. Same code module 026 cites. |
+| Code | `apps/web/app/api/pilot/coach/intervention-protocols/route.ts`, `apps/web/app/coach/intervention-protocols/page.tsx`, `apps/web/src/server/pilot/interventionProtocols.ts` |
+| Tests | `apps/web/app/api/pilot/coach/intervention-protocols/route.test.ts`, `apps/web/app/coach/intervention-protocols/page.test.tsx` |
 | Active | false |
 | Promotion required | true |
 | Category | Coach System (`coachSystem`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
