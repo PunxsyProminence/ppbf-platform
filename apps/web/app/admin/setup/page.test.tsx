@@ -31,7 +31,7 @@ test('each step shows its state, what the records say, and the screen where it i
     { key: 'admin-sign-in', title: 'Gym admin sign-in', state: 'manual', detail: 'Done outside the app.', href: '/admin/people', linkLabel: 'People' },
     { key: 'coaches', title: 'At least one coach', state: 'done', detail: '2 active coaches.', href: '/admin/people', linkLabel: 'Add a coach' },
     { key: 'class', title: 'A class on the schedule', state: 'to_do', detail: 'No upcoming class yet.', href: '/schedule', linkLabel: 'Schedule a class' },
-    { key: 'tv', title: 'A gym TV paired', state: 'unavailable', detail: 'This could not be read just now.', href: '/coach/environment/intake-router', linkLabel: 'Coach workspace' },
+    { key: 'tv', title: 'A gym TV paired', state: 'unavailable', detail: 'This could not be read just now.', href: null, linkLabel: null },
   ]);
   render(await GymSetupPage());
 
@@ -43,6 +43,8 @@ test('each step shows its state, what the records say, and the screen where it i
   expect(within(steps[2]).getByText('To do')).toBeTruthy();
   expect(within(steps[3]).getByText('Could not read')).toBeTruthy();
   expect(within(steps[2]).getByRole('link', { name: 'Schedule a class' }).getAttribute('href')).toBe('/schedule');
+  // A step with no screen for the gym admin shows no link.
+  expect(within(steps[3]).queryAllByRole('link')).toHaveLength(0);
   // Read-only: nothing on the page writes.
   expect(screen.queryAllByRole('button')).toHaveLength(0);
   expect(document.querySelectorAll('form')).toHaveLength(0);
@@ -52,7 +54,9 @@ test('with every step done or outside the app, it says so', async () => {
   mockReadGymSetupStatus.mockResolvedValue([
     { key: 'admin-sign-in', title: 'Gym admin sign-in', state: 'manual', detail: 'x', href: '/admin/people', linkLabel: 'People' },
     { key: 'coaches', title: 'At least one coach', state: 'done', detail: 'x', href: '/admin/people', linkLabel: 'Add a coach' },
+    { key: 'tv', title: 'A gym TV paired', state: 'optional', detail: 'x', href: null, linkLabel: null },
   ]);
   render(await GymSetupPage());
-  expect(screen.getByText('Every step below is done, or is done outside the app.')).toBeTruthy();
+  expect(screen.getByText('Every step below is done, optional, or done outside the app.')).toBeTruthy();
+  expect(screen.getByText('Optional')).toBeTruthy();
 });

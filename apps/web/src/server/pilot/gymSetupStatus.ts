@@ -12,11 +12,12 @@
  * Microsoft tenant. The checklist states it with its instructions.
  */
 
+import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
 import { queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { readOrganizationWaiverRoster, TRACKED_WAIVER_TYPES } from './waiverCompliance';
 
-export type SetupLineState = 'done' | 'to_do' | 'manual' | 'unavailable';
+export type SetupLineState = 'done' | 'to_do' | 'manual' | 'optional' | 'unavailable';
 
 export interface SetupLine {
   key: string;
@@ -24,9 +25,9 @@ export interface SetupLine {
   state: SetupLineState;
   /** What the records say, in a sentence. */
   detail: string;
-  /** The screen where the step is done. */
-  href: string;
-  linkLabel: string;
+  /** The screen where the step is done, or null when the org admin has none to go to. */
+  href: string | null;
+  linkLabel: string | null;
 }
 
 async function count(sql: string, organizationId: string): Promise<number> {
@@ -56,11 +57,12 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
       title: 'Gym admin sign-in',
       state: 'manual',
       detail:
-        'Done outside the app. A gym admin signs in with Microsoft, so before an admin’s first sign-in the platform '
-        + 'owner adds their email as a guest in the gym’s Microsoft tenant (Microsoft Entra admin center: Users, '
-        + 'then Invite external user). You are signed in, so yours is done.',
-      href: '/admin/people',
-      linkLabel: 'People',
+        'Done outside the app, by the platform owner. A gym admin signs in with Microsoft, in the platform’s '
+        + 'Microsoft tenant, so an admin whose email is not already a member of that tenant is first invited as a '
+        + 'guest (Microsoft Entra admin center: Users, New user, Invite external user). You are signed in, so yours '
+        + 'is done.',
+      href: null,
+      linkLabel: null,
     }),
     line({ key: 'coaches', title: 'At least one coach', href: '/admin/people', linkLabel: 'Add a coach' }, async () => {
       const n = await count(
@@ -87,26 +89,33 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
     line(
       { key: 'athlete-sign-in', title: 'Athletes can sign in', href: '/admin/activation-codes', linkLabel: 'Activation codes' },
       async () => {
-        const waiting = await count(
-          `select count(*)::int as n from pilot.accounts a
-            where a.organization_id = $1 and a.role = 'athlete' and a.pin_hash is null and not ${accountDeletedSql('a')}`,
-          organizationId,
+        // From the roster, so an athlete never issued a code counts too: an
+        // athlete gets a login only when the first code is issued.
+        const row = await queryOne<{ total: number; with_pin: number; waiting: number }>(
+          `select count(*)::int as total,
+                  count(*) filter (where acct.pin_hash is not null and acct.active_flag)::int as with_pin,
+                  count(*) filter (where acct.account_id is not null and acct.pin_hash is null)::int as waiting
+             from pilot.athletes a
+             left join pilot.accounts acct
+               on acct.organization_id = a.organization_id and acct.athlete_id = a.athlete_id
+              and acct.role = 'athlete' and not ${accountDeletedSql('acct')}
+            where a.organization_id = $1 and a.active_flag and a.deleted_at is null`,
+          [organizationId],
         );
-        const withPin = await count(
-          `select count(*)::int as n from pilot.accounts a
-            where a.organization_id = $1 and a.role = 'athlete' and a.pin_hash is not null and a.active_flag
-              and not ${accountDeletedSql('a')}`,
-          organizationId,
-        );
-        if (waiting === 0 && withPin === 0) {
-          return { state: 'to_do', detail: 'No athlete has a sign-in yet. Each one needs a one-time activation code.' };
+        const total = Number(row?.total ?? 0);
+        const withPin = Number(row?.with_pin ?? 0);
+        const waiting = Number(row?.waiting ?? 0);
+        const noCode = Math.max(total - withPin - waiting, 0);
+        if (total === 0) return { state: 'to_do', detail: 'No athlete on the roster yet.' };
+        if (withPin === total) {
+          return { state: 'done', detail: `Every active athlete has set a PIN (${total}).` };
         }
-        return waiting === 0
-          ? { state: 'done', detail: `${plural(withPin, 'athlete has', 'athletes have')} set a PIN.` }
-          : {
-              state: 'to_do',
-              detail: `${plural(withPin, 'athlete has', 'athletes have')} set a PIN; ${plural(waiting, 'is', 'are')} still waiting to redeem an activation code.`,
-            };
+        const parts = [
+          `${plural(withPin, 'athlete has', 'athletes have')} set a PIN`,
+          ...(waiting > 0 ? [`${plural(waiting, 'is', 'are')} waiting to redeem an activation code`] : []),
+          ...(noCode > 0 ? [`${plural(noCode, 'has', 'have')} not been issued a code yet`] : []),
+        ];
+        return { state: 'to_do', detail: `${parts.join('; ')}.` };
       },
     ),
     line(
@@ -115,7 +124,7 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
         const n = await count(
           `select count(*)::int as n from pilot.athletes a
             where a.organization_id = $1 and a.active_flag and a.deleted_at is null
-              and a.dob > (current_date - interval '18 years')
+              and a.dob > ((now() at time zone '${GYM_TIME_ZONE}')::date - interval '18 years')
               and not exists (
                 select 1 from pilot.guardian_links gl
                  where gl.organization_id = a.organization_id and gl.athlete_id = a.athlete_id
@@ -139,7 +148,7 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
           ? { state: 'done', detail: 'Every active athlete has each tracked waiver signed.' }
           : {
               state: 'to_do',
-              detail: `${plural(missing, 'active athlete is', 'active athletes are')} missing at least one tracked waiver or consent.`,
+              detail: `${plural(missing, 'active athlete has', 'active athletes have')} at least one tracked waiver or consent not signed (missing, declined or withdrawn).`,
             };
       },
     ),
@@ -153,7 +162,8 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
         ? { state: 'done', detail: `${plural(n, 'upcoming class', 'upcoming classes')}.` }
         : { state: 'to_do', detail: 'No upcoming class yet.' };
     }),
-    line({ key: 'tv', title: 'A gym TV paired (if the gym uses one)', href: '/coach/environment/intake-router', linkLabel: 'Coach workspace' }, async () => {
+    // No link: the pairing panel is on the coach workspace, which admits coaches only.
+    line({ key: 'tv', title: 'A gym TV paired (if the gym uses one)', href: null, linkLabel: null }, async () => {
       const n = await count(
         `select count(*)::int as n from pilot.gym_tvs
           where organization_id = $1 and paired_at is not null and revoked_at is null`,
@@ -161,7 +171,7 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
       );
       return n > 0
         ? { state: 'done', detail: `${plural(n, 'TV is', 'TVs are')} paired.` }
-        : { state: 'to_do', detail: 'No TV paired. A coach pairs one with a code from the coach workspace.' };
+        : { state: 'optional', detail: 'No TV paired. A coach pairs one with a code from the coach workspace.' };
     }),
   ]);
 }

@@ -23,9 +23,10 @@ function counts(values: Partial<Record<'coaches' | 'athletes' | 'waiting' | 'wit
     const n = (key: keyof typeof values) => ({ n: values[key] ?? 0 });
     if (sql.includes("m.role = 'coach'")) return n('coaches');
     if (sql.includes('pilot.guardian_links')) return n('minors');
+    if (sql.includes('left join pilot.accounts acct')) {
+      return { total: values.athletes ?? 0, with_pin: values.withPin ?? 0, waiting: values.waiting ?? 0 };
+    }
     if (sql.includes('from pilot.athletes')) return n('athletes');
-    if (sql.includes('a.pin_hash is null')) return n('waiting');
-    if (sql.includes('a.pin_hash is not null')) return n('withPin');
     if (sql.includes('pilot.scheduler_classes')) return n('classes');
     if (sql.includes('pilot.gym_tvs')) return n('tvs');
     throw new Error(`unexpected SQL: ${sql}`);
@@ -48,10 +49,15 @@ test('a brand-new gym: every step is to do, and the admin sign-in is the one ste
 
   expect(Object.keys(lines)).toEqual(['admin-sign-in', 'coaches', 'athletes', 'athlete-sign-in', 'guardians', 'waivers', 'class', 'tv']);
   expect(lines['admin-sign-in'].state).toBe('manual');
-  expect(lines['admin-sign-in'].detail).toMatch(/guest in the gym’s Microsoft tenant/);
-  for (const key of ['coaches', 'athletes', 'athlete-sign-in', 'waivers', 'class', 'tv']) {
+  for (const key of ['coaches', 'athletes', 'athlete-sign-in', 'waivers', 'class']) {
     expect(lines[key].state).toBe('to_do');
   }
+  // A TV is optional, and its pairing screen is the coaches', so it links nowhere.
+  expect(lines.tv).toMatchObject({ state: 'optional', href: null });
+  // The guest invite is the platform owner's, in the platform's tenant; no gym screen does it.
+  expect(lines['admin-sign-in']).toMatchObject({ href: null });
+  expect(lines['admin-sign-in'].detail).toMatch(/platform’s Microsoft tenant/);
+  expect(lines['admin-sign-in'].detail).toMatch(/Users, New user, Invite external user/);
   // No minor on the roster means no minor without a guardian.
   expect(lines.guardians.state).toBe('done');
   expect(lines.coaches.href).toBe('/admin/people');
@@ -68,12 +74,12 @@ test('a gym ready for its first class: every step is done, with what the records
     expect(lines[key].state).toBe('done');
   }
   expect(lines.coaches.detail).toBe('2 active coaches.');
-  expect(lines['athlete-sign-in'].detail).toBe('12 athletes have set a PIN.');
+  expect(lines['athlete-sign-in'].detail).toBe('Every active athlete has set a PIN (12).');
   expect(lines.tv.detail).toBe('1 TV is paired.');
 });
 
 test('what is still open is counted', async () => {
-  counts({ coaches: 1, athletes: 3, waiting: 2, withPin: 1, minors: 1, classes: 0, tvs: 0 });
+  counts({ coaches: 1, athletes: 4, waiting: 2, withPin: 1, minors: 1, classes: 0, tvs: 0 });
   mockWaiverRoster.mockResolvedValue([
     { athleteId: 'a1', athleteName: 'A', activeFlag: true, waivers: SIGNED },
     { athleteId: 'a2', athleteName: 'B', activeFlag: true, waivers: { ...SIGNED, photo_media: 'missing' } },
@@ -81,13 +87,17 @@ test('what is still open is counted', async () => {
   ]);
   const lines = byKey(await readGymSetupStatus('gym-1'));
 
+  // From the roster: the athlete never issued a code is counted too.
   expect(lines['athlete-sign-in']).toMatchObject({
     state: 'to_do',
-    detail: '1 athlete has set a PIN; 2 are still waiting to redeem an activation code.',
+    detail: '1 athlete has set a PIN; 2 are waiting to redeem an activation code; 1 has not been issued a code yet.',
   });
   expect(lines.guardians).toMatchObject({ state: 'to_do', detail: '1 athlete under 18 has no guardian on file.' });
   // Only active athletes are counted.
-  expect(lines.waivers).toMatchObject({ state: 'to_do', detail: '1 active athlete is missing at least one tracked waiver or consent.' });
+  expect(lines.waivers).toMatchObject({
+    state: 'to_do',
+    detail: '1 active athlete has at least one tracked waiver or consent not signed (missing, declined or withdrawn).',
+  });
 });
 
 test('a read that fails says so and never claims done; the other lines still answer', async () => {

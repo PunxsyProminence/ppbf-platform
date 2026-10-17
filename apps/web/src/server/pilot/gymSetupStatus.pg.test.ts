@@ -146,9 +146,10 @@ describe('Gym Setup counts against the real schema', () => {
           [account, org],
         );
       }
-      // Two athletes here: a minor with no guardian, and an adult.
+      // Athletes here: a minor with no guardian, and two adults.
       const minorDob = new Date(Date.now() - 12 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-      for (const [athlete, dob] of [['ath-minor', minorDob], ['ath-adult', '1990-01-01']] as const) {
+      // A third, an adult never issued a code: no login at all.
+      for (const [athlete, dob] of [['ath-minor', minorDob], ['ath-adult', '1990-01-01'], ['ath-nocode', '1991-02-02']] as const) {
         await client.query(
           `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
              emergency_contact, active_flag, coach_id, created_at, updated_at)
@@ -183,13 +184,16 @@ describe('Gym Setup counts against the real schema', () => {
       const lines = Object.fromEntries((await readGymSetupStatus(ORG)).map((line) => [line.key, line]));
 
       expect(lines.coaches).toMatchObject({ state: 'done', detail: '1 active coach.' });
-      expect(lines.athletes).toMatchObject({ state: 'done', detail: '2 active athletes.' });
+      expect(lines.athletes).toMatchObject({ state: 'done', detail: '3 active athletes.' });
       expect(lines['athlete-sign-in']).toMatchObject({
         state: 'to_do',
-        detail: '1 athlete has set a PIN; 1 is still waiting to redeem an activation code.',
+        detail: '1 athlete has set a PIN; 1 is waiting to redeem an activation code; 1 has not been issued a code yet.',
       });
       expect(lines.guardians).toMatchObject({ state: 'to_do', detail: '1 athlete under 18 has no guardian on file.' });
-      expect(lines.waivers).toMatchObject({ state: 'to_do', detail: '2 active athletes are missing at least one tracked waiver or consent.' });
+      expect(lines.waivers).toMatchObject({
+        state: 'to_do',
+        detail: '3 active athletes have at least one tracked waiver or consent not signed (missing, declined or withdrawn).',
+      });
       expect(lines.class).toMatchObject({ state: 'done', detail: '1 upcoming class.' });
       expect(lines.tv).toMatchObject({ state: 'done', detail: '1 TV is paired.' });
       for (const line of Object.values(lines)) expect(line.state).not.toBe('unavailable');

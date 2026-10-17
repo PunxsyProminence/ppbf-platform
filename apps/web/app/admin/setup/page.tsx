@@ -16,6 +16,7 @@ const STATE_LABEL: Record<SetupLineState, string> = {
   done: 'Done',
   to_do: 'To do',
   manual: 'Outside the app',
+  optional: 'Optional',
   unavailable: 'Could not read',
 };
 
@@ -23,6 +24,7 @@ const STATE_STAMP: Record<SetupLineState, string> = {
   done: 'stamp stamp--green',
   to_do: 'stamp',
   manual: 'stamp',
+  optional: 'stamp',
   unavailable: 'stamp',
 };
 
@@ -39,7 +41,7 @@ export default async function GymSetupPage() {
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Before The First Class</h1>
           <p className="t-body mt-[var(--s3)] max-w-3xl">
             {left === 0
-              ? 'Every step below is done, or is done outside the app.'
+              ? 'Every step below is done, optional, or done outside the app.'
               : `${left} ${left === 1 ? 'step is' : 'steps are'} left. Each line says what the records show now and links to the screen where it is done.`}
           </p>
         </header>
@@ -58,9 +60,11 @@ export default async function GymSetupPage() {
                 </div>
                 <span className={STATE_STAMP[line.state]}>{STATE_LABEL[line.state]}</span>
               </div>
-              <div className="mt-[var(--s3)]">
-                <Link href={line.href} className="btn btn--ghost">{line.linkLabel}</Link>
-              </div>
+              {line.href && line.linkLabel ? (
+                <div className="mt-[var(--s3)]">
+                  <Link href={line.href} className="btn btn--ghost">{line.linkLabel}</Link>
+                </div>
+              ) : null}
             </li>
           ))}
         </ol>
