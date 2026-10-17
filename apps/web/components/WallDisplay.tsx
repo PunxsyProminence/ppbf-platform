@@ -783,8 +783,8 @@ const HELD = ' ';
  * the motto: "1 and add it to the approved list"). OBSERVE. DECIDE. EXECUTE. REPEAT. is the gym's
  * tagline and egg 01; ADAPT AND OVERCOME is text he gave, which OD-2026-10-02-001 allows ("No no
  * made up text, if I give text thats different"), and it is on the approved list in gymSayings.ts.
- * wallDisplay.test.tsx holds every line here to that list, so the plate cannot carry a line the gym
- * has not approved.
+ * wallHeaderPlate.test.tsx holds every line here to that list, so the plate cannot carry a line the
+ * gym has not approved.
  */
 export const WALL_MOTTO = ['ADAPT AND OVERCOME', 'OBSERVE. DECIDE. EXECUTE. REPEAT.'] as const;
 
@@ -842,11 +842,14 @@ function LiveBoard({
 }) {
   return (
     <>
-      {/* The golden section, not a half. --split-major / --split-minor are the
-          system's own 61.8 / 38.2 tokens (Law 8). While a session is on this TV
-          the walk-through takes the major side and the names shrink to the
-          minor one (the gym TV plan, Q4 A); today's classes come back after. */}
-      <main className="grid min-h-0 flex-1 grid-cols-[var(--split-major)_var(--split-minor)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
+      {/* The golden section, not a half: 1.618 to 1. As fractions rather than
+          the 61.8% / 38.2% tokens, because two percentages that sum to 100%
+          plus the gap overran the board by the gap's width (the right-hand
+          board sat 21px from the edge against 55px on the left). While a
+          session is on this TV the walk-through takes the major side and the
+          names shrink to the minor one (the gym TV plan, Q4 A); today's
+          classes come back after. */}
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
         {live ? (
           <>
             <SessionNow live={live} now={now} />

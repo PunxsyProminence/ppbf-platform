@@ -44,7 +44,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  validate:
+  # NOT `validate`. Branch protection requires a check by NAME, and ci.yml's
+  # `validate` is the required one. Since lane L38 split ci.yml, its `validate`
+  # appears only after every part has finished, so a green job of the same name
+  # here (~40 s on a package.json PR) could satisfy the requirement first.
+  research-bridge:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
