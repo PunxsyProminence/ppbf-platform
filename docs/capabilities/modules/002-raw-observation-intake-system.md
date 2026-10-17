@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation follow-up) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation follow-up)" until 2026-10-16. domain-upsert route calls createCoachObservation (route.ts; intake.ts) for entity_type coach_note into pilot.coach_observations; route.test.ts pins coach_note write and refusals. |
+| Code | `apps/web/app/api/pilot/intake/domain-upsert/route.ts`, `apps/web/src/server/pilot/intake.ts` |
+| Tests | `apps/web/app/api/pilot/intake/domain-upsert/route.test.ts` |
 | Vertical slice | coach/admin free-text athlete observation write via POST /api/pilot/intake/domain-upsert (entity_type=coach_note) into pilot.coach_observations |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -42,3 +45,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — coach/admin free-text athlete observation write via POST /api/pilot/intake/domain-upsert (entity_type=coach_no. Missing: A real write path exists (domain-upsert -> createCoachObservation) with a role gate and organization_id scoping on both insert and audit event, but th. Evidence: apps/web/src/server/pilot/intake.ts; apps/web/app/api/pilot/intake/domain-upsert/route.ts. Status stays DRAFT. |
 | 2026-08-15 | wave9-reconciliation | The audit's one missing DoD element (no test on the coach_note write path) closed: route.test.ts pins the org-scoped attributed write, the parent-role refusal, the athlete-access refusal, and the missing-payload refusal. Promoted DRAFT -> DONE. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation follow-up)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

@@ -12,7 +12,7 @@
  */
 import { query, queryOne } from './db';
 import { NotFoundError } from './errors';
-import { isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -76,6 +76,34 @@ export async function recordFamilyMessageRead(input: {
     throw new Error('Unable to record the read.');
   }
   return { note_id: input.noteId, first_read_at: settled.first_read_at };
+}
+
+export interface OwnMessageRead {
+  note_id: string;
+  first_read_at: string;
+}
+
+/**
+ * This guardian's own opens, for the parent hub's "New" (#1542, FC-08): a
+ * message absent from the list has not been opened by THEM. Only rows they
+ * wrote (reader_account_id = the caller), in this gym, on messages about the
+ * children linked to them now (guardianAthleteIds: an 18+, unlinked or deleted
+ * child's notes drop out). A co-guardian's opens are never here: with two
+ * guardians each sees only their own (OD-2026-10-12-024's principle).
+ */
+export async function listOwnMessageReads(organizationId: string, accountId: string): Promise<OwnMessageRead[]> {
+  const athleteIds = await guardianAthleteIds(organizationId, accountId);
+  if (athleteIds.length === 0) return [];
+  return query<OwnMessageRead>(
+    `select note_id::text as note_id,
+            to_char(first_read_at at time zone 'UTC', ${ISO_UTC}) as first_read_at
+       from pilot.family_message_reads
+      where organization_id = $1
+        and reader_account_id = $2
+        and athlete_id = any($3::text[])
+      order by note_id`,
+    [organizationId, accountId, athleteIds],
+  );
 }
 
 export interface FamilyReadStateForStaff {

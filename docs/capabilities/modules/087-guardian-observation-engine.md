@@ -2,8 +2,12 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** |
+| Status note | Was "DRAFT" until 2026-10-16. A guardian records what they notice at home (energy, motivation, sleep/recovery, development) at POST parent/observations (route.ts), written through createCoachObservation; coaches read them at GET coach/family-observations (route.ts). |
+| Code | `apps/web/app/api/pilot/parent/observations/route.ts`, `apps/web/app/api/pilot/coach/family-observations/route.ts`, `apps/web/src/server/pilot/familyObservations.ts`, `apps/web/components/ParentObservations.tsx`, `apps/web/app/parent/dashboard/page.tsx` |
+| Tests | `apps/web/app/api/pilot/parent/observations/route.test.ts`, `apps/web/app/api/pilot/coach/family-observations/route.test.ts`, `apps/web/src/server/pilot/familyObservations.pg.test.ts` |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | At-Home / Parent / Guardian (`atHomeParentGuardian`) |
 | Source | `2.0.0-draft-merged` |
@@ -37,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification row added: PENDING_SIGN_OFF, built, not yet tried by a person (OD-2026-09-29-002 item 9a). |
