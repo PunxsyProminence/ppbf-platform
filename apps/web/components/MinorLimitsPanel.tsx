@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
@@ -273,7 +274,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
         if (!response.ok || !payload || payload.ok !== true) {
           setRefusal({
             type,
-            message: typeof payload?.error === 'string' && payload.error ? payload.error : `The limit was not saved (${response.status}).`,
+            message: refusalWords({ error: payload?.error, status: response.status }, {}, 'The limit was not saved. Try again.'),
           });
           return;
         }

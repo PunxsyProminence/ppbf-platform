@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /**
  * The queue an administrator works.
@@ -350,9 +350,7 @@ export default function FeedbackTriagePage() {
           {message ? <p className="mt-[var(--s5)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{message}</p> : null}
 
           <div className="mt-[var(--s6)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>
