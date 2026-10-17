@@ -5667,6 +5667,65 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-reply-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-reply-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller's OWN seen guardian replies on one athlete's parent messages (familyReplyReads.ts listOwnReplyReads; #1542 FC-09b). Keyed on the session's organization and account, never another staff member's reads. Scoped by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-reply-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-reply-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the reply's athlete (in familyReplyReads.recordFamilyReplyRead)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller records the first time they saw one guardian reply in their own gym (half of it on screen in the coach panel, FC-05 Q-1 A applied to replies; #1542 FC-09b). A forged id, another gym's reply or an unreachable athlete is the same 404; the database guard also requires an active staff seat. Written on conflict do nothing, so the first time stays (FC-09).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",
