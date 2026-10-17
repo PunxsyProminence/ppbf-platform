@@ -698,10 +698,14 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     expect(list.length).toBeGreaterThan(1);
 
     // Nowhere else: a second, unsharded run would double the suite's time.
+    // Any spelling of it -- from the root, through the workspace, or the
+    // runner itself.
     const elsewhere = jobs
       .filter((job) => job.name !== 'pg')
       .flatMap((job) => job.steps)
-      .filter((step) => /run: npm run test:migrations/.test(step));
+      .filter((step) =>
+        /\bnpm (--workspace web )?run test:migrations(?![:\w-])|\bnode \S*run-migration-suites\.mjs/.test(step),
+      );
     expect(elsewhere).toEqual([]);
   });
 });

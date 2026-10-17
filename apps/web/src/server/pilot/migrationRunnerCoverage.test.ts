@@ -200,6 +200,8 @@ describe('the runner\'s --shard option', () => {
     [['--shard=0/4']],
     [['--shard=5/4']],
     [['--shard=1/0']],
+    // More shards than suites would leave some shards with none to run.
+    [['--shard=1/9999']],
     [['--shard=1/4', '--shard=2/4']],
     [['--shards=1/4']],
     [['--verbose']],
