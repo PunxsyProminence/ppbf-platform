@@ -853,7 +853,14 @@ interface TodaySessionNote {
  */
 type SessionNoteRead =
   | { readonly status: 'loading'; readonly athleteId: string }
-  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: TodaySessionNote | null }
+  | {
+    readonly status: 'loaded';
+    readonly athleteId: string;
+    readonly today: TodaySessionNote | null;
+    /* A coach's run is under way for this athlete on the gym's day (F-067).
+       Read only when `today` is null; false when the server does not say. */
+    readonly sessionRunning: boolean;
+  }
   | { readonly status: 'unavailable'; readonly athleteId: string };
 
 /* The subsection's sentences, named once so the component and its tests agree
@@ -879,6 +886,10 @@ const SESSION_NOTE_LOADING = 'Loading today’s session note...';
    the first says nobody has begun a session, the second that a session is
    under way and carries no message. */
 const SESSION_NOTE_NO_SESSION_TODAY = 'No session started today.';
+/* No session row of the athlete's own, but a coach's run is live in the gym
+   with this athlete in it (or nobody marked yet): "No session started today"
+   would be false on the floor (F-067). */
+const SESSION_NOTE_RUN_NO_NOTE = 'A session is running today. No session note written for this athlete yet.';
 const SESSION_NOTE_NONE_WRITTEN = 'No session note written today.';
 const SESSION_NOTE_READ_FAILED =
   'Today’s session note could not be loaded. This is not a statement that no note was written -- try again.';
@@ -2412,7 +2423,10 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('session note response unreadable');
       }
-      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed });
+      // Only an explicit true says a run is under way; a body without it is
+      // read as before, so an older server keeps the older sentence.
+      const sessionRunning = parsed === null && (payload as { session_running?: unknown }).session_running === true;
+      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed, sessionRunning });
     } catch (error) {
       if (superseded()) {
         return;
@@ -4038,7 +4052,9 @@ export default function CoachWorkspace() {
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today === null && (
-                        <p className="t-muted">{SESSION_NOTE_NO_SESSION_TODAY}</p>
+                        <p className="t-muted">
+                          {sessionNoteShown.sessionRunning ? SESSION_NOTE_RUN_NO_NOTE : SESSION_NOTE_NO_SESSION_TODAY}
+                        </p>
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today !== null && (

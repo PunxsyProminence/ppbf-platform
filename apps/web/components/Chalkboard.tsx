@@ -70,6 +70,14 @@ const CHALK_AUTHOR_ROLES: readonly PilotSessionRole[] = [
 /** One line on a board. Long enough for a sentence, short enough to stay one. */
 export const CHALK_MAX_LENGTH = 180;
 
+/* A visible name over the board where a reader cannot otherwise tell what it
+   is for (F-121: on the parent hub an empty board read only "Nothing on the
+   board." with nothing saying these are the gym's announcements). Wording
+   PROPOSED; other placements keep the bare board. */
+const BOARD_HEADING: Partial<Record<AnnouncementPlacement, string>> = {
+  parent_hub: 'Announcements',
+};
+
 export interface ChalkboardProps {
   readonly placement: AnnouncementPlacement;
   readonly className?: string;
@@ -253,6 +261,7 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
       aria-label="The chalkboard"
       data-state={line ? 'written' : waiting ? (loaded ? 'unreadable' : 'loading') : 'blank'}
     >
+      {BOARD_HEADING[placement] ? <h2 className="t-eyebrow m-0">{BOARD_HEADING[placement]}</h2> : null}
       <div className="chalkboard-face">
         {line ? (
           <p className="chalkboard-line chalk">{line.message.trim()}</p>
