@@ -8,14 +8,10 @@ import ShadowChatButton from '@/components/ShadowChatButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { OPERATIONS_ROLES, canUseOperationsHub } from '@/components/operationsAccess';
 
-const roleSelector = [
-  { role: 'Athlete', href: '/athlete/dashboard', status: 'Ready' },
-  { role: 'Coach', href: '/coach/environment/intake-router', status: 'Ready' },
-  { role: 'Parent', href: '/parent/dashboard', status: 'Ready' },
-  { role: 'Board', href: '/board', status: 'Ready' },
-  { role: 'Admin', href: '/admin', status: 'Ready' },
-  { role: 'Public', href: '/public', status: 'Open' },
-];
+/* No role selector and no cross-role workspace tiles (lane U2, audit UX-A
+   A-5): every one of them opened a page that refuses an admin, so RoleSessionGate
+   bounced the click home with nothing said. Each role reaches its own home from
+   sign-in; this page is administration only (operationsAccess.ts). */
 
 const priorityLanes = [
   {
@@ -32,34 +28,6 @@ const priorityLanes = [
   },
 ];
 
-
-const workspaces = [
-  {
-    label: 'Athlete Workspace',
-    href: '/athlete/dashboard',
-    note: 'Readiness, goals, drills, and session log actions.',
-  },
-  {
-    label: 'Coach Workspace',
-    href: '/coach/environment/intake-router',
-    note: 'Review queue, floor operations, and athlete management actions.',
-  },
-  {
-    label: 'Parent Hub',
-    href: '/parent/dashboard',
-    note: 'Family support tasks, attendance visibility, and check-ins.',
-  },
-  {
-    label: 'Admin Hub',
-    href: '/admin',
-    note: 'Capability controls, assignment matrix, and system posture.',
-  },
-  {
-    label: 'Board Hub',
-    href: '/board',
-    note: 'Oversight, policy trace, and governance routing.',
-  },
-];
 
 /* The OTHER DESKS section below renders only for the admin desks -- see
    showsLabDesks in the component.
@@ -86,7 +54,7 @@ const developmentLab = [
   { label: 'AI/ML Video Analysis', href: '/coach/video-analysis' },
   // No /board/compliance-monitoring desk (F-003): its route serves 'board'
   // alone, and nobody in this page's audience is the board.
-  { label: 'Progression Intelligence', href: '/athlete/progression-intelligence' },
+  // No /athlete/progression-intelligence desk either (lane U2): athlete only.
 ];
 
 const utilityLinks = [
@@ -94,7 +62,6 @@ const utilityLinks = [
   { label: 'Notices & Motivation', href: '/notices' },
   { label: 'Entry Point', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
-  { label: 'The Stands', href: '/guardian' },
 ];
 
 type CapabilityState = 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING';
@@ -129,9 +96,11 @@ const CAPABILITY_STATE_LABEL: Record<CapabilityState, string> = {
    today as evidence it is dead. */
 // href is absent on a roadmap row with no screen: the register keeps the
 // record visible (A-Q15) without a link to a page that does not exist.
+// It is also absent where the screen belongs to another role (an athlete's or
+// a coach's home): this hub's readers are refused there (lane U2, A-5).
 const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: string; record?: string; notes: string; lab?: true }> = [
-  { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
-  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'The coach workspace and the floor controls are open. The review queue is planned and not built yet.' },
+  { name: 'Athlete Readiness', state: 'EXISTS', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
+  { name: 'Coach Intelligence', state: 'EXISTS', notes: 'The coach workspace and the floor controls are open. The review queue is planned and not built yet.' },
   { name: 'Research Intelligence', lab: true, state: 'EXISTS', href: '/research', notes: 'Research intake and the question-and-answer workflow are open.' },
   { name: 'Knowledge Graph', lab: true, state: 'EXISTS', href: '/knowledge-graph', notes: 'The knowledge and relationship view is open.' },
   { name: 'Scenario Simulation', lab: true, state: 'EXISTS', href: '/simulator', notes: 'The what-if simulator and its promotion links are open.' },
@@ -147,7 +116,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Drill Library', state: 'EXISTS', href: '/coach/drills', notes: 'A versioned drill library kept on file.' },
   { name: 'Performance Analytics', state: 'EXISTS', href: '/coach/performance-analytics', notes: 'A read-only roster rollup for coaches and admins: sessions and RPE, readiness check-ins with a trend you can read at a glance, training days from the activity log, and progression work over a window you choose. It adds up records that already exist and collects nothing new.' },
   { name: 'Grant Compliance Intelligence', state: 'PARTIAL', href: '/admin/grants', record: 'pilot.grant_obligations', notes: 'The gym\u2019s own obligation ledger is real: deadlines, deliverables, renewals, and filings, each with a status. It carries no athlete data at all, which is what keeps the question of what a funder may see parked. Building a packet for a funder waits until a real grant says what belongs in one.' },
-  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', href: '/athlete/progression-intelligence', notes: 'The athlete, coach, and parent surfaces read the real gap, drill-assignment, and completion records. A coach names the gaps today; finding them automatically is still planned.' },
+  { name: 'Closed-Loop Progression Intelligence', state: 'PARTIAL', notes: 'The athlete, coach, and parent surfaces read the real gap, drill-assignment, and completion records. A coach names the gaps today; finding them automatically is still planned.' },
   { name: 'Sports Medicine', state: 'PARTIAL', href: '/coach/sports-medicine', notes: 'The clearance board is real: where each athlete stands, and any training hold, written so the athlete can read it — no diagnoses or clinical detail, by owner decision. The coach’s injury record has its own desk, linked from the board, with a return-to-training plan on the record. Treatment records are not built.' },
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'The volunteer roster, their status, and their availability are kept on file.' },
   { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', record: 'pilot.wrestling_league_* · 2026-08-15', notes: 'Season, event, and roster records are real, and deliberately bare by owner decision. Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
@@ -237,8 +206,8 @@ export default function OperationsHubPage() {
                 shade and the pool of light under it; the room supplies the
                 wall behind, and nothing else on the page paints light. */}
             <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
-            <p className="t-eyebrow tracking-[0.35em]">Mission Control</p>
-            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>The Ring</h1>
+            <p className="t-eyebrow tracking-[0.35em]">Gym Administration</p>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Operations</h1>
             <p className="t-body max-w-[80ch]">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
             </p>
@@ -297,22 +266,6 @@ export default function OperationsHubPage() {
 
               page.test.tsx pins the absence. */}
 
-          <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
-            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Role Selector</h2>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {roleSelector.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center justify-between mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] transition hover:border-[color:var(--brass-400)] border border-transparent"
-                >
-                  <span className="t-command">{item.role}</span>
-                  <span className="t-eyebrow">{item.status}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
               <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
@@ -322,26 +275,6 @@ export default function OperationsHubPage() {
                     <article key={lane.lane} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)]">
                       <p className="t-eyebrow">{lane.lane}</p>
                       <p className="t-body mt-[var(--s3)]">{lane.summary}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>WORKSPACES</h2>
-                <div className="grid gap-3">
-                  {workspaces.map((workspace) => (
-                    <article key={workspace.href} className="grid gap-[var(--s4)] mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] md:grid-cols-[1fr_auto_auto] md:items-center">
-                      <div>
-                        <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{workspace.label}</h3>
-                        <p className="t-body mt-[var(--s2)]">{workspace.note}</p>
-                      </div>
-                      <Link
-                        href={workspace.href}
-                        className="btn"
-                      >
-                        Open
-                      </Link>
                     </article>
                   ))}
                 </div>

@@ -52,7 +52,12 @@ test.describe('Coach journey', () => {
     // It names the open surface now (approved board AF-09), so the coach
     // landing's heading is the tab it opens on; the workspace's own name
     // moved to the line under it, which this checks too.
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    //
+    // One h1 on the page (lane U2, audit UX-A A-16): "Coach Workspace", the
+    // name the door and every back link use. The tab masthead is an h2.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1, name: 'Coach Workspace' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Dashboard' })).toBeVisible();
     await expect(page.getByText('Coach workspace · Live session management')).toBeVisible();
 
     // The two live safety reads a coach scans first. Their presence is the
@@ -544,7 +549,7 @@ test.describe('Coach journey', () => {
           effects never fire. This line is the browser-level corroboration of
           it, not the proof itself. */
     await page.goto('/operations');
-    await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'WORKSPACES' })).toHaveCount(0);
     await expect(page).toHaveURL(/\/coach\/environment\/intake-router$/);
 
@@ -563,7 +568,7 @@ test.describe('Coach journey', () => {
     const search = catalog.getByRole('combobox');
     for (const query of ['operations', 'mission control', 'hub']) {
       await search.fill(query);
-      await expect(catalog.getByText('Operations Hub')).toHaveCount(0);
+      await expect(catalog.getByText('Operations', { exact: true })).toHaveCount(0);
     }
     /* The path prefix is not the gate: these two carry their own
        ['coach', 'admin'], and after this change the catalog and the corridor

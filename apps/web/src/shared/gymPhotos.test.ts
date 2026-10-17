@@ -116,3 +116,14 @@ describe('the gym photo manifest', () => {
     }
   });
 });
+
+/* Lane L31: a slot crosses from server pages (the homepage) to browser
+   components (PhotoSlot), so it must be plain data. A function on it made
+   Next refuse the page: "Functions cannot be passed directly to Client
+   Components". */
+test('every slot is plain data that survives the trip from a server page to a browser component', () => {
+  for (const slot of GYM_PHOTO_SLOTS) {
+    expect(JSON.parse(JSON.stringify(slot))).toEqual(slot);
+    for (const value of Object.values(slot)) expect(typeof value).not.toBe('function');
+  }
+});

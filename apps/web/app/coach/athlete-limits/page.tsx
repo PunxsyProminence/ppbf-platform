@@ -6,6 +6,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import MinorLimitsPanel from '@/components/MinorLimitsPanel';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
+import ClusterNav from '@/components/ClusterNav';
 
 // Athlete limits (OD-2026-10-06-024 ruling 2): the limits a coach sets for a
 // minor, as data -- heat exposure in minutes per session, the most weight cut
@@ -71,6 +72,7 @@ export default function AthleteLimitsPage() {
           <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
             Athlete Limits
           </h1>
+          <ClusterNav cluster="sparring" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             The limits you set for each athlete: heat exposure in minutes per session, the most weight cut as a
             percent of body weight, and the supervision you require. The app never picks a limit, and nothing here

@@ -187,9 +187,9 @@ export function AthleteSummaryPanel({
           REQUIRED" until #597), and the "not a clearance" line it carried then
           is kept, because the wellness check is not one either. */}
       <div className={KPI_TILE}>
-        <p className="t-label">Today&apos;s Wellness</p>
+        <p className="t-label">How I feel today</p>
         <p className="t-body mt-[var(--s3)]">{WELLNESS_TODAY_TEXT[wellnessToday.status]}</p>
-        <p className="t-muted mt-[var(--s2)]">Your own check. Not a clearance.</p>
+        <p className="t-muted mt-[var(--s2)]">Your own words. Not a clearance.</p>
       </div>
 
       {/* Open coach work: every assigned or in-progress row a coach set,
@@ -396,15 +396,16 @@ export function ParentSummaryPanel({
         </div>
       )}
 
-      {/* Messages */}
+      {/* New messages: the ones this guardian has not opened yet (FC-08).
+          PROPOSED label, was "Messages". */}
       {unreadMessages === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Messages</p>
+          <p className="t-label">New messages</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={STAT_TILE}>
-          <p className="stat-label">Messages</p>
+          <p className="stat-label">New messages</p>
           <p className="stat-val">{unreadMessages}</p>
         </div>
       )}

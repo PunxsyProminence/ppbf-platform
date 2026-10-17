@@ -13,6 +13,7 @@ import { roleEquals } from '@/src/server/pilot/roleAlias';
 import { getSourceCitationStatus, type SourceCitationReviewSignal } from '@/src/server/pilot/sourceCitationChecks';
 import { getSourceRetractionStatus } from '@/src/server/pilot/sourceRetractionChecks';
 import { buildPilotOpsReadinessReport } from '@/src/server/pilot/pilotOpsReadiness';
+import RoleLink from '@/components/RoleLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -314,7 +315,7 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
             This gym&apos;s local findings and the checks on its research sources, as recorded. Read-only.
           </p>
           <div className="mt-[var(--s4)]">
-            <Link href="/admin" className="btn btn--ghost">Capability Room</Link>
+            <RoleLink href="/admin" roles={['admin']} className="btn btn--ghost">Capabilities</RoleLink>
           </div>
         </header>
 

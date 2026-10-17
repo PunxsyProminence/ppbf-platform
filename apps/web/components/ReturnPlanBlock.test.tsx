@@ -347,10 +347,13 @@ test('a plan with every step advanced says so and offers no Advance', async () =
   expect(within(block).queryByRole('button', { name: 'Advance' })).toBeNull();
 });
 
-test.each(['completed', 'cancelled'])('a %s plan shows its steps and offers neither Advance nor Add step', async (status) => {
+test.each([
+  ['completed', 'This plan is finished.'],
+  ['cancelled', 'This plan was cancelled.'],
+])('a %s plan says so in words, shows its steps and offers neither Advance nor Add step', async (status, said) => {
   serve(plans({ ...PLAN, status }));
   const block = await open();
-  expect(within(block).getByText(`This plan is ${status}. Its steps are shown as recorded.`)).toBeTruthy();
+  expect(within(block).getByText(`${said} Its steps are shown as recorded.`)).toBeTruthy();
   const steps = within(block).getAllByRole('listitem');
   expect(steps).toHaveLength(3);
   expect(within(block).queryByRole('button')).toBeNull();

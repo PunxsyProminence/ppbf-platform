@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
 /*
@@ -99,7 +100,10 @@ export default function ParentVideoPage() {
         const payload = (await response.json()) as { items?: LinkedChild[] };
         const items = payload.items ?? [];
         setChildren(items);
-        setActiveChildId(items.length > 0 ? items[0].athlete_id : null);
+        // The hub's chosen child when it is one of these (src/lib/chosenChild.ts),
+        // otherwise the first; the server checks the link on every read.
+        const chosen = readChosenChild();
+        setActiveChildId(items.find((item) => item.athlete_id === chosen)?.athlete_id ?? items[0]?.athlete_id ?? null);
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setChildren([]);
@@ -189,7 +193,11 @@ export default function ParentVideoPage() {
                   type="button"
                   className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
                   aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => setActiveChildId(child.athlete_id)}
+                  onClick={() => {
+                    setActiveChildId(child.athlete_id);
+                    // A switch here is the child the next family page opens on.
+                    rememberChosenChild(child.athlete_id);
+                  }}
                 >
                   {child.full_name || 'Unknown'}
                 </button>

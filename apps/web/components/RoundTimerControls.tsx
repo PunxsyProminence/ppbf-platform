@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 
 // The coach's round timer controls for a live run (WO-N1-03). Every change is one named action on
 // /api/pilot/session-scripts/runs/[runId]/timer, and the timer the server answers with is what the
@@ -150,7 +151,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
           runGone.current?.();
           return;
         }
-        setError(`The server refused: ${payload.error ?? `HTTP ${response.status}`}`);
+        setError(refusalWords({ error: payload.error, status: response.status }));
         // Another screen may have moved the timer: show the server's state, not this one's guess.
         void read();
         return;
@@ -252,7 +253,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
       )}
 
       {error && (
-        <p role="alert" className="mt-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <p role="alert" className="mt-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           {error}
         </p>
       )}

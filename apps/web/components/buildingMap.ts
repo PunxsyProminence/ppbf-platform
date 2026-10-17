@@ -35,9 +35,6 @@ import type { ClubRole } from './roleRoutes';
  *     You do not navigate to a sign-in from inside the building; you arrive
  *     through it. Listing them would put a door to the front step in every
  *     corridor.
- *   - `/launch`: a one-line re-export of `/operations`, not a second surface.
- *     Two doors onto one room is how a catalog starts lying about the size of
- *     the building.
  *
  * Everything else that exists should have a row. Eight surfaces did not, and
  * `/coach/drills` -- the library a coach assigns drills from -- was one of
@@ -157,10 +154,10 @@ export const BUILDING: readonly Door[] = [
   /* roles: ['admin'], NOT ADMIN_GATE: the capability routes behind this
      console refuse platform_owner (OD-2026-10-10-004 ruling 3), and the page
      shows that role a per-gym notice, so the door would be a dead end. */
-  { href: '/admin', label: 'Capability Console', room: 'office', roles: ['admin'],
+  { href: '/admin', label: 'Capabilities', room: 'office', roles: ['admin'],
     keywords: 'capabilities registry matrix builder admin authority',
     hint: 'Capability definitions, assignments, status and role exposure.' },
-  { href: '/admin/people', label: 'People', room: 'office', roles: ADMIN_GATE,
+  { href: '/admin/people', label: 'Gym Office', room: 'office', roles: ['admin'],
     keywords: 'roster members directory participants' },
   // Lane L31 P5: what is left before the gym's first class, read-only.
   { href: '/admin/setup', label: 'Gym Setup', room: 'office', roles: ['admin'],
@@ -176,9 +173,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/door-register', label: 'Door Register', room: 'office', roles: ADMIN_GATE,
     keywords: 'view as preview role structure navigation tabs doors rooms register map building sitemap routes',
     hint: 'Every door each role holds, by room. Route structure only — never another person’s records.' },
-  { href: '/admin/pin', label: 'PIN Management', room: 'office', roles: ADMIN_GATE,
+  { href: '/admin/pin', label: 'PIN Management', room: 'office', roles: ['admin'],
     keywords: 'pin codes credentials reset kiosk access' },
-  { href: '/admin/activation-codes', label: 'Activation Codes', room: 'office', roles: ADMIN_GATE,
+  { href: '/admin/activation-codes', label: 'Activation Codes', room: 'office', roles: ['admin'],
     keywords: 'activation codes onboarding invite new athlete' },
   { href: '/admin/attendance', label: 'Attendance', room: 'office', roles: ['admin', 'coach'],
     keywords: 'attendance rollup check-in reporting summary class' },
@@ -257,7 +254,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/credentials', label: 'Staff Credentials', room: 'office', roles: ['admin'],
     keywords: 'safesport certification background check cpr first aid credential verify queue expired expiring',
     hint: 'Verify submitted certification documents and confirm issue/expiry dates.' },
-  { href: '/admin/video-review', label: 'Video Scan Review', room: 'office', roles: ADMIN_GATE,
+  { href: '/admin/video-review', label: 'Video Scan Review', room: 'office', roles: ['admin'],
     keywords: 'quarantine scan escalation approve block video safeguarding',
     hint: 'Quarantined footage the automated scanner deferred to a human.' },
   /* roles is ['admin'], not ADMIN_GATE: the queue is gym business and its
@@ -282,7 +279,7 @@ export const BUILDING: readonly Door[] = [
      nothing without it, so OPEN advertised an /admin/* door to every role --
      athlete and parent included -- that all but one of them bounce off. That is
      the exact failure this file's header says `roles` exists to prevent. */
-  { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
   { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
@@ -302,7 +299,7 @@ export const BUILDING: readonly Door[] = [
      The two doors immediately below share the `/operations/` path prefix and
      are NOT affected: each carries its own ['coach', 'admin'], and a coach
      keeps both. A prefix is not a gate in this map; every door states its own. */
-  { href: '/operations', label: 'Operations Hub', room: 'office', roles: OPERATIONS_ROLES,
+  { href: '/operations', label: 'Operations', room: 'office', roles: OPERATIONS_ROLES,
     keywords: 'mission control operations hub', hint: 'Gym administration launcher.' },
   { href: '/operations/external-competition', label: 'External Competition', room: 'office', roles: ['coach', 'admin'],
     keywords: 'meets tournaments away events entries',
@@ -317,11 +314,8 @@ export const BUILDING: readonly Door[] = [
     keywords: 'announcements bulletins posts alerts' },
   { href: '/chalkboard', label: 'Chalkboard', room: 'office', roles: ['coach', 'admin', 'platform_owner', 'board'],
     keywords: 'announcements boards notices chalk', hint: 'Live board editing — from behind the desk.' },
-  { href: '/guardian', label: 'Guardian Portal', room: 'office', roles: ['parent'],
-    keywords: 'waiver consent minor family guardian renewal',
-    hint: 'Minor records and consent, for the person responsible.' },
   { href: '/parent/dashboard', label: 'Parent Hub', room: 'office', roles: ['parent'],
-    keywords: 'family child progress parent' },
+    keywords: 'family child progress parent guardian' },
   { href: '/parent/consent', label: 'Photo & Video Consent', room: 'office', roles: ['parent'],
     keywords: 'guardian media photo video consent grant withdraw',
     hint: 'Grant or withdraw consent for your child’s photos and videos.' },
@@ -483,7 +477,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'The template catalog a session is built from — browse and read, assignment stays in the plan.' },
   { href: '/coach/intelligence', label: 'The Morning Read', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intelligence digest morning read stalled gaps readiness attendance unreviewed holds',
-    hint: 'Five deterministic reads of your athletes\u2019 records, by urgency. No scores, no predictions.' },
+    hint: 'Seven deterministic reads of your athletes\u2019 records, by urgency. No scores, no predictions.' },
   { href: '/coach/attempt-log', label: 'Attempt Log', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'attempts reps time distance load failures misses edge',
     hint: 'Every attempt, made or missed \u2014 the misses are the point. No comparisons.' },

@@ -10,6 +10,7 @@ import { useOrganizationProfile } from '@/components/OrganizationProfileProvider
 import { GYM_PHOTO_SLOTS, gymPhotoSlotText, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
 import { usePilotSession } from '@/components/usePilotSession';
+import BackHome from '@/components/BackHome';
 
 /**
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
@@ -194,7 +195,7 @@ export default function AdminCustomizePage() {
           <p className="t-muted mt-[var(--s3)]">
             Changing how the gym looks is an administrator&apos;s decision. Ask your organization admin.
           </p>
-          <Link href={isPlatformOwner ? '/admin/platform' : '/admin'} className="btn btn--ghost mt-[var(--s4)]">Back to the office</Link>
+          <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </div>
       </main>
     );
@@ -369,7 +370,7 @@ export default function AdminCustomizePage() {
               promising the whole record to get there put the claim back. */}
           <Link href="/notices" className="btn btn--ghost">Notices — recently posted</Link>
           <Link href="/chalkboard" className="btn btn--ghost">The boards&apos; own desk</Link>
-          <Link href="/admin" className="btn btn--ghost">Back to the office</Link>
+          <BackHome />
         </div>
       </section>
     </main>

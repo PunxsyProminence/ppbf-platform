@@ -5,6 +5,8 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
+import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -366,6 +368,8 @@ export default function SparringTelemetryPage() {
               messages. */}
           <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your Corner'}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
+          <ClusterNav cluster="sparring" />
+          <div className="mt-[var(--s3)]"><BackHome /></div>
         </div>
         <span className="plaque">{actor === 'staff' ? 'Athlete training record' : 'Your training record'}</span>
       </header>

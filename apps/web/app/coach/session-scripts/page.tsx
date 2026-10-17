@@ -11,11 +11,13 @@ import { apiBase } from '@/lib/apiBase';
 import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import type {
   SessionScriptBlockRow,
   SessionScriptRow,
   SessionScriptWithDetail,
 } from '@/src/server/pilot/sessionScripts';
+import ClusterNav from '@/components/ClusterNav';
 
 // The session plans the gym actually teaches from, read on the floor.
 //
@@ -496,6 +498,7 @@ function CoachSessionScripts() {
         <header data-surface="kiosk" className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Session Scripts</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The plan for a session, block by block. Times are minutes from the start of the session,
             not clock times -- the same script runs whether the room opens at 4:00 or 6:30.
@@ -856,7 +859,7 @@ function CoachSessionScripts() {
                     className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                      <span className="plaque">{typeof run.delivered_on === 'string' ? run.delivered_on.slice(0, 10) : run.delivered_on}</span>
+                      <span className="plaque">{typeof run.delivered_on === 'string' ? formatCalendarDay(run.delivered_on.slice(0, 10)) : run.delivered_on}</span>
                       <span className="t-label">
                         {run.run_state === 'completed' && 'Completed'}
                         {run.run_state === 'abandoned' && 'Abandoned'}
@@ -885,7 +888,7 @@ function CoachSessionScripts() {
                     )}
                     {(run.what_did_not ?? '').trim() !== '' && (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                        <span className="t-label">Did not: </span>{run.what_did_not}
+                        <span className="t-label">Did not work: </span>{run.what_did_not}
                       </p>
                     )}
                   </li>

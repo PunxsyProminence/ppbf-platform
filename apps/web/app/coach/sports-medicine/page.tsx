@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import PastTrainingHolds from '@/components/PastTrainingHolds';
+import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
@@ -215,6 +217,14 @@ const HOLD_SCOPES: ReadonlyArray<{ value: string; label: string }> = [
 ];
 
 const REASON_CATEGORIES: readonly string[] = ['medical', 'fatigue', 'behavioral', 'administrative', 'other'];
+/* The stored category in words for the picker (UXB-11). PROPOSED. */
+const REASON_CATEGORY_WORDS: Readonly<Record<string, string>> = {
+  medical: 'Medical',
+  fatigue: 'Fatigue',
+  behavioral: 'Behavior',
+  administrative: 'Paperwork or admin',
+  other: 'Other',
+};
 
 const EMPTY_FORM = {
   scope: 'all_training',
@@ -511,7 +521,7 @@ export default function SportsMedicinePage() {
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(payload.error || `The gym’s server refused this (${response.status}).`);
+      throw new Error(refusalWords({ error: payload.error, status: response.status }));
     }
     return (await response.json().catch(() => null)) as { ok?: unknown; hold?: unknown } | null;
   };
@@ -880,15 +890,17 @@ export default function SportsMedicinePage() {
                                   }
                                 />
                               </div>
-                              <button
-                                type="button"
+                              {/* One press used to lift it; the first press now arms (UXB-03). */}
+                              <ArmedButton
                                 className="btn btn--ghost"
-                                disabled={busy}
-                                aria-busy={busy}
-                                onClick={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
+                                armKey={row.hold.hold_id}
+                                busy={busy}
+                                busyLabel="Lifting…"
+                                armedLabel={`Press again: lift ${row.full_name}’s hold`}
+                                onConfirm={() => void liftHold(row.athlete_id, row.hold?.hold_id ?? '')}
                               >
-                                {busy ? 'Lifting…' : 'Lift this hold'}
-                              </button>
+                                Lift this hold
+                              </ArmedButton>
                             </div>
                           ) : null}
                         </div>
@@ -919,7 +931,7 @@ export default function SportsMedicinePage() {
                               onChange={(event) => setForm((f) => ({ ...f, reason_category: event.target.value }))}
                             >
                               {REASON_CATEGORIES.map((category) => (
-                                <option key={category} value={category}>{category}</option>
+                                <option key={category} value={category}>{REASON_CATEGORY_WORDS[category] ?? category}</option>
                               ))}
                             </select>
                           </div>

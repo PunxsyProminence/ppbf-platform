@@ -13,6 +13,7 @@ import {
 } from '@/src/shared/achievementPaths';
 import { apiBase } from '@/lib/apiBase';
 import { readChosenChild } from '@/src/lib/chosenChild';
+import BackHome from './BackHome';
 
 /**
  * /print — the paper the platform makes.
@@ -196,6 +197,7 @@ export default function PrintRoom() {
             Two sheets: the member card, and a certificate for one thing they did. Letter paper. Print it, or save
             it as a PDF from the same dialog.
           </p>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
         </div>
 
         <div className="print-room-controls">

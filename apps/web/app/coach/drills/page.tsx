@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import DrillDetail from '@/components/drills/DrillDetail';
@@ -22,6 +21,7 @@ import type {
 } from '@/src/server/pilot/drillLibraryV3';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
+import BackHome from '@/components/BackHome';
 
 // The gym's drill library: the reference drills it can adopt, and the
 // operational drills -- promoted from the reference library or written here --
@@ -270,7 +270,7 @@ function ReferenceActions({
           disabled={busy}
           className="btn btn--ghost"
         >
-          {changingLifecycle ? 'Saving...' : 'Restore'}
+          {changingLifecycle ? 'Saving…' : 'Restore'}
         </button>
         {restoreCueField}
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
@@ -336,7 +336,7 @@ function ReferenceActions({
           disabled={busy}
           className="btn btn--ghost"
         >
-          {changingLifecycle ? 'Saving...' : restoring ? 'Restore' : 'Retire'}
+          {changingLifecycle ? 'Saving…' : restoring ? 'Restore' : 'Retire'}
         </button>
         {restoring && restoreCueField}
         {/* What the action does, before it is taken -- no confirmation step,
@@ -916,9 +916,7 @@ function CoachDrillLibrary() {
             every coach and every athlete. Athletes can read a drill&apos;s full instructions once this gym
             promotes it from the reference library.
           </p>
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
-            Back to Coach Workspace
-          </Link>
+          <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </header>
 
         <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
@@ -1005,7 +1003,7 @@ function CoachDrillLibrary() {
             disabled={saving}
             className="btn mt-[var(--s5)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? 'Saving...' : 'Add drill'}
+            {saving ? 'Saving…' : 'Add drill'}
           </button>
         </section>
 
