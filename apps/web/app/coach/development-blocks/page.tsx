@@ -1159,15 +1159,15 @@ export default function CoachDevelopmentBlocksPage() {
             <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
               <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                 Your athletes could not be loaded, so there is nobody to choose. This is not a statement
-                that you have none assigned — reload and try again.
+                that your gym has none — reload and try again.
               </p>
             </div>
           )}
 
           {rosterState === 'loaded' && athletes.length === 0 && (
             <p className="t-body text-[color:var(--bone-300)]">
-              You are not the coach of record for any athlete and hold no active coverage, so there is
-              nobody to plan for. An administrator assigns athletes and grants coverage.
+              There are no active athletes in your gym yet, so there is nobody to plan for. An
+              administrator adds athletes to the gym.
             </p>
           )}
         </section>

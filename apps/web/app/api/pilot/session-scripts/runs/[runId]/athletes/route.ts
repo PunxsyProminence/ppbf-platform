@@ -4,7 +4,7 @@ import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/htt
 import {
   listPresentAthletes,
   setRunAthletePresent,
-  staffPermittedAthleteIds,
+  staffPermittedAthletes,
 } from '@/src/server/pilot/sessionRunAthletes';
 import { SessionScriptRunError } from '@/src/server/pilot/sessionScriptRuns';
 
@@ -17,7 +17,8 @@ interface RouteContext {
 
 // Who is in a session (audit finding F-067).
 //
-//   GET                              the athletes marked present in this run, by name
+//   GET                              the athletes marked present in this run, by name, and the
+//                                    gym's athletes the caller may mark (the live screen's picker)
 //   POST { athlete_id, present }     mark one present, or take the mark back
 //
 // STAFF ONLY, like every other route under runs/: coach, organization admin and the legacy admin
@@ -52,10 +53,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { runId } = await context.params;
     if (!runId.trim() || runId.includes(NUL)) return badRequest('RUN_ID_INVALID');
 
-    const permitted = await staffPermittedAthleteIds(principal);
-    const present = await listPresentAthletes(principal.organizationId, [runId], permitted);
+    const gym = await staffPermittedAthletes(principal);
+    const present = await listPresentAthletes(principal.organizationId, [runId], gym.map((athlete) => athlete.athlete_id));
     return NextResponse.json(
-      { present: present.map(({ athlete_id, full_name, marked_at }) => ({ athlete_id, full_name, marked_at })) },
+      {
+        present: present.map(({ athlete_id, full_name, marked_at }) => ({ athlete_id, full_name, marked_at })),
+        // The picker: the same set, id and name only (OD-2026-10-11-007, a coach's reach is the whole gym).
+        gym: gym.map(({ athlete_id, full_name }) => ({ athlete_id, full_name })),
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

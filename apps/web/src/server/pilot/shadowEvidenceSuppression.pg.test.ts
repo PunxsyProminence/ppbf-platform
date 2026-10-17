@@ -101,6 +101,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  // The bundle insert reads rights_status to decide which passages may be shown.
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 const actor = {
@@ -156,10 +158,12 @@ async function freshDatabase(name: string): Promise<Client> {
   );
   await client.query(
     `insert into pilot.shadow_library_sources
-       (source_id, organization_id, title, source_type, authority_tier, status,
+       (source_id, organization_id, title, source_type, authority_tier, status, rights_status,
         approval_state, verification_state,
         approved_by_account_id, approved_at, verified_by_account_id, verified_at)
-     values ($1, $2, $1, 'article', 1, 'active', 'approved', 'verified', $3, now(), $3, now())`,
+     -- PPBF-owned: the chunk below holds full text, which the rights guard
+     -- allows only for an owned or open-licence source.
+     values ($1, $2, $1, 'article', 1, 'active', 'ppbf_owned', 'approved', 'verified', $3, now(), $3, now())`,
     [SOURCE_ID, ORG_ID, ADMIN_ID],
   );
   await client.query(
@@ -189,6 +193,16 @@ async function retractSource(client: Client): Promise<void> {
             suppressed_by_account_id = $3
       where organization_id = $1 and source_id = $2`,
     [ORG_ID, SOURCE_ID, ADMIN_ID],
+  );
+}
+
+/** What the retention purge writes on a row it holds (F-086). */
+async function markHeld(client: Client, table: 'shadow_library_documents' | 'shadow_library_chunks'): Promise<void> {
+  await client.query(
+    `update pilot.${table}
+        set metadata = metadata || jsonb_build_object('subject_purged_at', now())
+      where organization_id = $1`,
+    [ORG_ID],
   );
 }
 
@@ -272,6 +286,94 @@ describe('the evidence-bundle insert re-checks what search checked', () => {
 
     await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
       .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+    expect(await savedItemCount(client)).toBe(0);
+  });
+
+  it.each(['shadow_library_documents', 'shadow_library_chunks'] as const)(
+    'refuses a %s row the retention purge held between search and save (F-086), and saves nothing',
+    async (table) => {
+      activeClient = await freshDatabase(`evidence_held_${table}`);
+      const client = activeClient;
+      afterSearch = () => markHeld(client, table);
+
+      await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
+        .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+      expect(await savedItemCount(client)).toBe(0);
+    },
+  );
+
+  // F-087: the insert read the chunk's subject only. The chunk here has none,
+  // so filing its document against an athlete must still stop a gym-wide
+  // bundle from citing it.
+  it('refuses a chunk whose document was filed against an athlete between search and save, and saves nothing', async () => {
+    activeClient = await freshDatabase('evidence_document_filed');
+    const client = activeClient;
+    afterSearch = async () => {
+      await client.query(
+        `update pilot.shadow_library_documents set subject_id = 'athlete-f087' where organization_id = $1`,
+        [ORG_ID],
+      );
+    };
+
+    await expect(retrieveShadowEvidenceBundle({ actor, queryText: QUERY }))
+      .rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
+    expect(await savedItemCount(client)).toBe(0);
+  });
+
+  // The same rule for a bundle that names an athlete: their own filed
+  // document is citable, another athlete's is not.
+  async function withAthletes(client: Client): Promise<void> {
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, 'athlete-f087-a', 'Athlete A', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $2, now(), now()),
+         ($1, 'athlete-f087-b', 'Athlete B', '2012-05-04', 'youth-60', 'active', 'Guardian', true, $2, now(), now())`,
+      [ORG_ID, ADMIN_ID],
+    );
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
+       values ('acct-f087-a', 'athlete', $1, 'microsoft', 'athlete-f087-a'),
+              ('acct-f087-b', 'athlete', $1, 'microsoft', 'athlete-f087-b')`,
+      [ORG_ID],
+    );
+  }
+
+  it("saves athlete A's evidence from a document filed against A (control: the named subject keeps its own)", async () => {
+    activeClient = await freshDatabase('evidence_document_own_subject');
+    const client = activeClient;
+    await withAthletes(client);
+    await client.query(
+      `update pilot.shadow_library_documents set subject_id = 'athlete-f087-a' where organization_id = $1`,
+      [ORG_ID],
+    );
+
+    const bundle = await retrieveShadowEvidenceBundle({
+      actor: { accountId: 'acct-f087-a', organizationId: ORG_ID, athleteId: 'athlete-f087-a', role: 'athlete' },
+      queryText: QUERY,
+    });
+
+    expect(bundle.availability).toBe('available');
+    expect(bundle.items.map((item) => item.chunkId)).toEqual(['chunk-evidence']);
+    expect(await savedItemCount(client)).toBe(1);
+  });
+
+  it("refuses athlete B's bundle when the document is filed against A between search and save, and saves nothing", async () => {
+    activeClient = await freshDatabase('evidence_document_other_subject');
+    const client = activeClient;
+    await withAthletes(client);
+    afterSearch = async () => {
+      await client.query(
+        `update pilot.shadow_library_documents set subject_id = 'athlete-f087-a' where organization_id = $1`,
+        [ORG_ID],
+      );
+    };
+
+    await expect(retrieveShadowEvidenceBundle({
+      actor: { accountId: 'acct-f087-b', organizationId: ORG_ID, athleteId: 'athlete-f087-b', role: 'athlete' },
+      queryText: QUERY,
+    })).rejects.toThrow('SHADOW_EVIDENCE_QUALIFICATION_CHANGED');
     expect(await savedItemCount(client)).toBe(0);
   });
 });

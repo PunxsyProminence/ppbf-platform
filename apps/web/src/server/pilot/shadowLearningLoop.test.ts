@@ -170,6 +170,11 @@ describe('SHADOW learning-loop trust gates', () => {
       typeof sql === 'string'
       && sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id')
     )).toBe(true);
+    // The proposal re-points the flag at this account; an earlier flagger's
+    // note goes with the earlier account, never shown as this one's.
+    const proposal = mockQuery.mock.calls.find(([sql]) =>
+      typeof sql === 'string' && sql.includes('proposed_action') && sql.includes('ON CONFLICT (organization_id, topic)'));
+    expect(proposal?.[0]).toMatch(/DO UPDATE SET[\s\S]*user_note = NULL/);
   });
 
   test('locked features stay in observation mode -- the path production actually runs', async () => {

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
 import ProfilePortrait from './ProfilePortrait';
@@ -685,9 +686,10 @@ type WellnessCheckInRead =
 /* Latest weigh-in and seven-day change, as GET
    /api/pilot/coach/athlete-body-mass returns it in `body_mass`
    (src/server/pilot/athleteBodyMass.ts). Null when there is no
-   weigh-in in the last month OR when this coach may not see it -- a youth's
-   weight goes only to their assigned or covering coach and the organization
-   admin -- and the screen does not try to tell those apart. The flag sentence
+   weigh-in in the last month OR when this coach may not see it -- since
+   OD-2026-10-12-016 a youth's weight goes to any coach of the athlete's gym
+   and the organization admin -- and the screen does not try to tell those
+   apart. The flag sentence
    is the server's, shown as written. */
 interface CoachBodyMass {
   readonly pounds: number;
@@ -734,7 +736,7 @@ const WELLNESS_READ_FAILED =
    another gym's athlete, a soft-deleted one and an id that names nobody, and
    the panel must not invent a distinction the server withheld. */
 const WELLNESS_NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to the coaches and organization admins of the athlete’s own gym.';
 
 /* A stored answer is a finite number or null. Anything else -- a missing key,
    a string, NaN -- makes the response unreadable, and it is treated as a
@@ -1072,6 +1074,13 @@ export default function CoachWorkspace() {
   const [liveRunState, setLiveRunState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [showOnWallBusy, setShowOnWallBusy] = useState(false);
   const [showOnWallError, setShowOnWallError] = useState('');
+  /* How many athletes the coach has marked here in that live session (F-067):
+     the marks themselves, from /runs/[runId]/athletes. athletes_present is a
+     number the coach STATED (at start, or at End Session), shown beside it as
+     what it is, never as the marks. */
+  const [liveRunMarksRead, setLiveRunMarksRead] = useState<
+    { runId: string; state: 'unavailable' } | { runId: string; state: 'loaded'; count: number } | null
+  >(null);
 
   /* Today's classes, from /api/pilot/scheduler. The route filters to the
      classes this coach teaches, scheduled, or covers; nothing is re-scoped
@@ -1357,9 +1366,9 @@ export default function CoachWorkspace() {
   // rendered with an explicit "not tracked" state instead of a bare number.
   // A bare 0 here would read as "confirmed zero injuries," which is false.
   /* trackedAttendanceCount stood here and fed the old "Today's Session"
-     panel's Athletes Present row. That row now reads athletes_present off the
-     live run, which is a number a coach actually entered when they started
-     the delivery, so the roster-derived count has no reader left.
+     panel's Athletes Present row. That row now reads the athletes the coach
+     marked here in the live session (F-067, liveRunMarks), so the
+     roster-derived count has no reader left.
 
      A count over the attendance column stood here after it too, and is gone
      with this change rather than repointed at the real feed. It had no
@@ -1550,6 +1559,31 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  const liveRunId = liveRun?.run_id ?? null;
+  useEffect(() => {
+    if (!liveRunId) return;
+    let current = true;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(liveRunId)}/athletes`,
+          { method: 'GET', credentials: 'include' },
+        );
+        const payload = (await response.json().catch(() => null)) as { present?: unknown } | null;
+        if (!response.ok || !payload || !Array.isArray(payload.present)) throw new Error('marks');
+        if (current) setLiveRunMarksRead({ runId: liveRunId, state: 'loaded', count: payload.present.length });
+      } catch {
+        // Unknown is shown as unknown, never as "nobody here".
+        if (current) setLiveRunMarksRead({ runId: liveRunId, state: 'unavailable' });
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [liveRunId]);
+  // A read of another run (or none yet) is still loading for this one.
+  const liveRunMarks = liveRunMarksRead && liveRunMarksRead.runId === liveRunId ? liveRunMarksRead : { state: 'loading' as const };
+
   /* The dashboard's copy of the live screen's Show on TV switch (Jason, Q3:
      "it should be a capability in the coaches dashboard"). Same contract as
      SessionScriptLiveDelivery: the button sends the value it wants, never
@@ -1683,14 +1717,20 @@ export default function CoachWorkspace() {
       if (!response.ok) throw new Error('attendance');
       const payload = (await response.json()) as {
         covered?: string[];
+        mine?: string[];
         marks?: Array<{ athlete_id: string; status: 'present' | 'absent' | 'excused' }>;
       };
       const byAthlete = new Map(
         (payload.marks ?? []).map((mark) => [mark.athlete_id, mark.status] as const),
       );
       const covered = new Set(payload.covered ?? []);
+      /* The coach's own athletes, sent only to a coach. Since issue #1480 a
+         coach's register covers the whole gym, so "Not your athlete" comes
+         from here rather than from `covered`; it only ever says false. */
+      const mine = Array.isArray(payload.mine) ? new Set(payload.mine) : null;
       const LABEL = { present: 'Present', absent: 'Absent', excused: 'Excused' } as const;
-      setAthletes((prior) => prior.map((athlete) => {
+      setAthletes((prior) => prior.map((ownedOrNot) => {
+        const athlete = mine && !mine.has(ownedOrNot.id) ? { ...ownedOrNot, isMine: false } : ownedOrNot;
         const mark = byAthlete.get(athlete.id);
         if (mark) return { ...athlete, attendance: LABEL[mark] };
         /* An athlete the register did not cover was never asked about. This
@@ -2207,14 +2247,12 @@ export default function CoachWorkspace() {
   }
 
   /* GET /api/pilot/coach/athlete-check-in decides, server-side, whether this
-     coach may see this athlete at all: the athlete's coach of record, a coach
-     with a live coverage grant, or an organization admin (OD-2026-10-05-024
-     ruling 2, superseding A-FIN-03R1). The roster picker still offers the
-     whole gym, so a coach picking an athlete they are not assigned to gets a
-     refusal.
+     coach may see this athlete at all: since issue #1480 (OD-2026-10-11-007)
+     any coach of the athlete's gym, or an organization admin (that replaced
+     OD-2026-10-05-024 ruling 2).
 
-     A 403 is an expected outcome, not a bug -- not this coach's athlete, an
-     athlete outside this organization, or one who has been deleted -- so it keeps its own plain
+     A 403 is an expected outcome, not a bug -- an athlete outside this
+     organization, or one who has been deleted -- so it keeps its own plain
      sentence and is never softened into "no check-in". The status of any
      other failure goes to the console, not to the coach: a bare "500" tells a
      coach nothing they can act on. */
@@ -2564,12 +2602,13 @@ export default function CoachWorkspace() {
       }
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
-        setReviewSyncMessage(payload.error || 'Coach review persistence failed');
+        const payload = (await response.json().catch(() => ({ error: 'Coach review was not saved.' }))) as { error?: string };
+        setReviewSyncMessage(payload.error || 'Coach review was not saved.');
         return;
       }
 
-      setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+      // The review's id is the database's business, not the coach's (F-072).
+      setReviewSyncMessage('Coach review saved.');
       // Close the loop: the review just written comes back from the server's
       // own read, so the panel shows what was actually stored, not what this
       // tab believes it sent.
@@ -2630,7 +2669,9 @@ export default function CoachWorkspace() {
           { label: 'Recorded', value: painReportTime(report.recordedAt), muted: !report.recordedAt },
         ],
         note: PAIN_PROVENANCE[report.reporter],
-        link: { href: '/coach/decision-loop', label: 'Record what you did' },
+        // The Decision Loop opens on this athlete (#1474 item 5); the id is
+        // handed over in page memory, not put in the address.
+        link: { href: '/coach/decision-loop', label: 'Record what you did', athleteId: report.athleteId },
       });
     }
     for (const report of barrierReports) {
@@ -2642,7 +2683,7 @@ export default function CoachWorkspace() {
         meta: `${BARRIER_TYPE_LABEL[report.note_type] ?? report.note_type} · reported by ${report.reporter_role === 'parent' ? 'a guardian' : report.reporter_role} · ${formatGymDateTimeShort(report.created_at) ?? report.created_at}`,
         details: [],
         body: report.note_text,
-        link: { href: '/coach/decision-loop', label: 'Open Decision Loop to Message Home' },
+        link: { href: '/coach/decision-loop', label: "Open Decision Loop to Post to the Family's Page" },
       });
     }
     return queue;
@@ -3050,14 +3091,14 @@ export default function CoachWorkspace() {
                   </div>
                   <p className="text-sm text-[color:var(--bone-200)]">{report.note_text}</p>
                   <p className="text-xs text-[color:var(--bone-400)]">
-                    Reply through the Message Home panel on the decision loop.
+                    Answer the family through Post to the Family&apos;s Page on the Decision Loop.
                   </p>
                 </article>
               ))}
 
               {!boardShown && (
                 <Link href="/coach/decision-loop" className="btn btn--ghost">
-                  Open Decision Loop to Message Home
+                  Open Decision Loop to Post to the Family&apos;s Page
                 </Link>
               )}
             </div>
@@ -3370,15 +3411,25 @@ export default function CoachWorkspace() {
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
-                        <p className="t-data text-[length:var(--t-sm)]">
-                          {typeof liveRun.athletes_present === 'number' ? liveRun.athletes_present : (
-                            <span className="text-[color:var(--bone-400)]">Not recorded for this run</span>
+                        <p className="t-data text-[length:var(--t-sm)]" data-testid="live-run-marks">
+                          {liveRunMarks.state === 'loaded' && liveRunMarks.count > 0 && `${liveRunMarks.count} marked here`}
+                          {liveRunMarks.state === 'loaded' && liveRunMarks.count === 0 && (
+                            <span className="text-[color:var(--bone-400)]">Nobody marked here yet</span>
+                          )}
+                          {liveRunMarks.state === 'loading' && <span className="text-[color:var(--bone-400)]">Reading…</span>}
+                          {liveRunMarks.state === 'unavailable' && (
+                            <span className="text-[color:var(--bone-400)]">Could not be read just now</span>
                           )}
                         </p>
+                        {typeof liveRun.athletes_present === 'number' && (
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
+                            Count stated at start: <span className="t-data">{liveRun.athletes_present}</span>
+                          </p>
+                        )}
                       </div>
                       {/* The Show on TV switch, the same one the live screen
-                          carries. Off by default on every run. The honest line
-                          below is removed in the slice that makes the TV read it. */}
+                          carries. Off by default on every run. The switch alone puts
+                          nothing on a TV: the coach sends the run from Gym TVs below. */}
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
                         {liveRun.show_on_wall ? (
                           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
@@ -3395,7 +3446,7 @@ export default function CoachWorkspace() {
                         </button>
                       </div>
                       <p className="t-data text-[color:var(--bone-400)]">
-                        The gym TV does not show sessions yet. This switch is saved now and takes effect when it does.
+                        Switching this on lets you send the session to a gym TV from Gym TVs below.
                       </p>
                       {showOnWallError && (
                         <p role="alert" className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
@@ -4045,6 +4096,22 @@ export default function CoachWorkspace() {
                     notes for the selected athlete; the route decides access. */}
                 {athleteChosenByCoach && selectedAthleteId && (
                   <CapacityNotesPanel key={`capacity-${selectedAthleteId}`} athleteId={selectedAthleteId} athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'} />
+                )}
+
+                {/* Issue #1527 (OD-2026-10-12-011): the goals the athlete set,
+                    their reported progress and "I did it", read-only, with
+                    the athlete's "why it matters" line, which is staff's to
+                    read and never the family's. Keyed by athlete; the routes
+                    decide access. */}
+                {athleteChosenByCoach && selectedAthleteId && (
+                  <div className="md:col-span-2">
+                    <AthleteGoalsReadOnly
+                      key={`goals-${selectedAthleteId}`}
+                      athleteId={selectedAthleteId}
+                      audience="coach"
+                      athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}
+                    />
+                  </div>
                 )}
 
                 {/* Open Tasks */}
@@ -4792,9 +4859,6 @@ export default function CoachWorkspace() {
                     </select>
                   </label>
                 )}
-                {reviewSessionId ? (
-                  <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
-                ) : null}
 
                 {/* Lane P5: staff notes on the picked session. Staff only
                     (OD-2026-10-10-003 ruling 3); the route decides access. */}
@@ -4833,7 +4897,7 @@ export default function CoachWorkspace() {
                           {' -- '}
                           {review.coachId === coachAccountId
                             ? 'your review'
-                            : `another coach (${review.coachId || 'account unknown'})`}
+                            : 'another coach'}
                           {formatGymDateTimeShort(review.createdAt) ? ` -- ${formatGymDateTimeShort(review.createdAt)}` : ''}
                         </p>
                         {review.notes.trim() !== '' && (

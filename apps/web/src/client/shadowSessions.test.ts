@@ -208,6 +208,12 @@ describe('restored citations', () => {
     expect(restored.citations).toEqual([citation]);
   });
 
+  test('a stored passage comes back with its citation (A-Q11)', () => {
+    const withPassage = { ...citation, excerpt: 'Pivot off the lead foot.' };
+    const restored = mapStoredShadowMessage({ ...base, citations: [withPassage, citation] });
+    expect(restored.citations).toEqual([withPassage, citation]);
+  });
+
   test('an answer stored without citations restores with none, not an empty block', () => {
     const restored = mapStoredShadowMessage({ ...base, citations: [] });
     expect(restored.citations).toBeUndefined();
@@ -360,5 +366,34 @@ describe('the self-service export', () => {
 
     await expect(fetchOwnShadowDataExport('', undefined, fetchImpl))
       .rejects.toBeInstanceOf(ShadowSessionsRequestError);
+  });
+});
+
+describe('restored passages through the parser (A-Q11)', () => {
+  function storedWith(citations: unknown[]) {
+    return jest.fn().mockResolvedValue(jsonResponse({
+      success: true,
+      messages: [{
+        messageId: '09475aaf-e9d6-43c8-af6f-10181f2917ab',
+        role: 'assistant',
+        content: 'Pivot off the lead foot.',
+        responseState: 'ok',
+        createdAt: '2026-07-24T12:00:01.000Z',
+        citations,
+      }],
+    }));
+  }
+
+  const titleOnly = { evidenceId: 'ev-2', token: '[E:ev-2]', sourceTitle: 'Licensed Text', documentName: 'Excerpt 4' };
+
+  test('a passage the server sends is kept with its citation; a title-only citation stays title-only', async () => {
+    const withPassage = { evidenceId: 'ev-1', token: '[E:ev-1]', sourceTitle: 'PPBF Footwork Manual', documentName: 'Chapter 2', excerpt: 'Pivot off the lead foot.' };
+    const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith([withPassage, titleOnly]));
+    expect(message.citations).toEqual([withPassage, titleOnly]);
+  });
+
+  test('a passage that is not text is malformed, not rendered', async () => {
+    await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith([{ ...titleOnly, excerpt: 42 }])))
+      .rejects.toMatchObject({ status: 502 });
   });
 });

@@ -8,14 +8,14 @@ import {
   assertActorCanAccessAthlete,
   assertActorCanMarkClassAthlete,
   assertAthleteBelongsToOrganization,
-  assertCoachAssignedToAthlete,
-  athleteIdsForCoach,
   isOrganizationAdminRole,
+  requireRole,
 } from '@/src/server/pilot/access';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { gymDayIso, parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
-import { ValidationError } from '@/src/server/pilot/errors';
+import { ForbiddenError, ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -27,6 +27,7 @@ import {
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
   getSchedulerRegistrationById,
+  listLatestClassCoverAudits,
   listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
@@ -42,6 +43,12 @@ import {
   upsertFamilySchedulerAttendance,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
+import {
+  CANCEL_REFUSAL_MESSAGES,
+  classCancelRefusal,
+  coverTakenAtMs,
+  type CancelActor,
+} from '@/src/server/pilot/schedulerCancelRule';
 import {
   readStaffHoldWarning,
   readStaffHoldWarnings,
@@ -190,18 +197,20 @@ function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass):
    parent marks do not come through here. */
 /* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
 
-   The register lets the coach running a class mark athletes they do not
-   otherwise reach (assignment or coverage). Reach for everything else is
-   unchanged (OD-2026-10-07-008 ruling 4, "Everything else stays
-   assigned-coach only"), so a register mark must not carry two things with it:
-   - the hold's reason, explanation and lift condition. The training-holds
-     route refuses those to an unassigned coach; without this, cover_class
-     plus a walk-in mark read any athlete's hold in the gym. The coach is
-     still told the athlete is held and at what scope (OD-2026-10-06-024
-     ruling 1), which is what they need on the floor.
+   The register lets the coach running a class mark athletes registered to
+   it. Since issue #1480 (OD-2026-10-11-007, "lets make it coaches to whole
+   gym", which replaced OD-2026-10-07-008 ruling 4's "Everything else stays
+   assigned-coach only") a coach reaches every live athlete of their own gym,
+   so for a coach "beyond reach" now means an athlete who is not live in the
+   gym (deleted, or another gym's). A register mark must not carry two things
+   to an athlete beyond reach:
+   - the hold's reason, explanation and lift condition, which the
+     training-holds route refuses for such an athlete. The coach is still
+     told the athlete is held and at what scope (OD-2026-10-06-024 ruling 1),
+     which is what they need on the floor.
    - the note. They cannot read it (Overwatch option B), so their mark keeps
      the stored note instead of overwriting it unseen, and a note from them
-     about an athlete they do not coach is refused.
+     about such an athlete is refused.
    Only a coach is narrowed; an organization admin reaches the whole gym. */
 async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly string[]): Promise<Set<string>> {
   if (actor.role !== 'coach') return new Set();
@@ -211,7 +220,7 @@ async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly s
 
 function assertNoNoteBeyondReach(beyondReach: ReadonlySet<string>, athleteId: string, note: string): void {
   if (note && beyondReach.has(athleteId)) {
-    throw new Error("Forbidden: an attendance note on an athlete you do not coach is for that athlete's own coach");
+    throw new Error('Forbidden: an attendance note is only for an athlete of your own gym');
   }
 }
 
@@ -248,9 +257,11 @@ async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
   return guardianAthleteIds(actor.organizationId, actor.accountId);
 }
 
-// The coach-reachable "my athletes" set (coach of record plus active coverage
-// grants), fed into filterStateForActor the way getParentAthleteIds feeds the
-// parent branch. Coaching requests are athlete-linked with no class_id, so
+// The athletes a coach reaches, fed into filterStateForActor the way
+// getParentAthleteIds feeds the parent branch. Since issue #1480
+// (OD-2026-10-11-007) that is every live athlete of the coach's own gym -- the
+// set assertActorCanAccessAthlete admits -- not "my athletes" (coach of record
+// plus coverage). Coaching requests are athlete-linked with no class_id, so
 // class ownership cannot scope them -- athlete-reachability is the dimension
 // that can.
 async function getCoachAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -258,7 +269,8 @@ async function getCoachAthleteIds(actor: SchedulerActor): Promise<string[]> {
     return [];
   }
 
-  return athleteIdsForCoach(actor.organizationId, actor.accountId);
+  const roster = await organizationActionableRoster(actor.organizationId);
+  return roster.map((athlete) => athlete.athlete_id);
 }
 
 async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): Promise<void> {
@@ -397,15 +409,30 @@ type FamilyClass = Omit<
   'scheduled_by_account_id' | 'coach_account_id' | 'covering_coach_account_id'
 > & { registered_count: number };
 
-/* Whether this staff member may cancel this class now (#1536): the same rule
-   cancel_class enforces, sent so the screen offers the button only where the
-   server would accept it. Never sent to a family (familyClass names its
-   fields). */
-function canCancelClass(actor: SchedulerActor, item: SchedulerClass): boolean {
-  if (item.status === 'cancelled') return false;
-  const endsMs = Date.parse(item.end_at);
-  if (Number.isFinite(endsMs) && endsMs < Date.now()) return false;
-  return canManageAll(actor) || (actor.role === 'coach' && actorRunsClass(actor, item));
+function cancelActor(actor: SchedulerActor): CancelActor {
+  return { accountId: actor.accountId, isOffice: canManageAll(actor), isCoach: actor.role === 'coach' };
+}
+
+/* Whether this staff member may cancel each class now (#1536, #1595): the
+   same rule cancel_class enforces (schedulerCancelRule), sent so the screen
+   offers the button only where the server would accept it. Never sent to a
+   family (familyClass names its fields). The cover audit is read only for
+   classes this coach covers and does not otherwise run. */
+async function cancellableClassIds(actor: SchedulerActor, classes: SchedulerClass[]): Promise<Set<string>> {
+  const who = cancelActor(actor);
+  const coverOnly = who.isOffice
+    ? []
+    : classes.filter((item) => item.covering_coach_account_id === actor.accountId
+      && item.coach_account_id !== actor.accountId
+      && item.scheduled_by_account_id !== actor.accountId);
+  const audits = await listLatestClassCoverAudits(actor.organizationId, coverOnly.map((item) => item.class_id));
+  const nowMs = Date.now();
+  const allowed = new Set<string>();
+  for (const item of classes) {
+    const coverMs = coverTakenAtMs(item, audits.get(item.class_id) ?? null);
+    if (classCancelRefusal(who, item, coverMs, nowMs) === null) allowed.add(item.class_id);
+  }
+  return allowed;
 }
 
 /* Built by naming what stays rather than by deleting what goes -- an
@@ -529,16 +556,17 @@ function filterStateForActor(
          run, every registration and every attendance STATUS (names-and-status,
          OD-2026-10-07-011 ruling 1). What a coach wrote about a child -- the
          attendance note -- and the family's account identifiers stay with
-         athletes the reader reaches (CL-A2, #1266). A self-granted cover is now
+         athletes the reader reaches (CL-A2, #1266): since issue #1480, every
+         live athlete of the coach's own gym. A self-granted cover is now
          visible as an audit row (cover_class, route-survey B6). */
       registrations: store.registrations
         .filter((row) => coachOwnedClassIds.has(row.class_id))
         .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyRegistration(row))),
       // Coaching requests carry an athlete_id and no class_id, so they are
       // scoped by athlete-reachability -- the same dimension the parent and
-      // athlete branches use -- not by class ownership. Returning
-      // store.coaching_requests unfiltered leaked every athlete's 1:1 request
-      // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
+      // athlete branches use -- not by class ownership. For a coach that is
+      // the live athletes of their own gym (issue #1480); a deleted athlete's
+      // request, or a row naming no live athlete, is not handed over.
       coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
       attendance: store.attendance
         .filter((row) => coachOwnedClassIds.has(row.class_id))
@@ -586,6 +614,12 @@ export async function GET(request: NextRequest) {
     };
 
     normalizeRole(actor.role);
+    /* Who this read is for, said where the route-gate convention can see it.
+       Until issue #1480 PR B2 the coach branch reached athleteIdsForCoach,
+       which the convention counts as a gate; a coach's reach is now the gym's
+       live roster, so the roles are named here. The specific refusals above
+       (board, normalizeRole) still answer first. */
+    requireRole(principal, ['athlete', 'parent', 'coach', 'organization_admin', 'admin']);
 
     const store = await listSchedulerStore(actor.organizationId);
     const [parentAthleteIds, coachAthleteIds] = await Promise.all([
@@ -600,12 +634,13 @@ export async function GET(request: NextRequest) {
     // covering_coach_account_id to work out which classes it owns. Narrowing
     // earlier would have taken the coach's own ownership test away from it.
     const family = isFamilyReader(actor);
+    const cancellable = family ? new Set<string>() : await cancellableClassIds(actor, classes);
 
     return NextResponse.json({
       ok: true,
       role: actor.role,
       athlete_id: actor.athleteId,
-      classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: canCancelClass(actor, item) })),
+      classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: cancellable.has(item.class_id) })),
       registrations: family ? filtered.registrations.map(familyRegistration) : filtered.registrations,
       coaching_requests: family
         ? filtered.coaching_requests.map(familyCoachingRequest)
@@ -707,13 +742,13 @@ export async function POST(request: NextRequest) {
       if (existingClass.status === 'cancelled') {
         throw new ValidationError('This class was cancelled.');
       }
-      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
-
       // Route-survey B6: any coach can name themselves covering coach with
       // one POST, and covering a class is what hands them its whole register
       // (resolveRegisterMark). No approval step by ruling; the audit row is
       // what makes a self-grant visible, so it records who held cover before.
-      await auditSchedulerEvent({
+      // It is written in the cover's own transaction, not best-effort: the
+      // cancel rule reads it for how long the cover has been held (#1595).
+      await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString(), {
         event_type: 'update',
         actor_account_id: actor.accountId,
         actor_role: actor.role,
@@ -733,32 +768,51 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'cancel_class') {
-      // #1536: the coach who runs the class (teaches, scheduled or covers it:
-      // Overwatch Q1 A, cover hands them the register) or an organization
-      // admin. A soft cancel: registrations, attendance and history are kept,
-      // and families read the class as cancelled.
+      // #1536, #1595 (Jason's rulings on #1550): the class's own coach, its
+      // cover coach once the cover is an hour old, or the office; never after
+      // the class has started. A soft cancel: registrations, attendance and
+      // history are kept, and families read the class as cancelled.
       if (!(actor.role === 'coach' || canManageAll(actor))) {
-        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+        throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
       }
       const classId = requiredString(body.class_id, 'class_id');
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
       }
-      if (actor.role === 'coach' && !actorRunsClass(actor, classItem)) {
-        throw new Error('Forbidden: only the coach running this class or an admin can cancel it');
+      const audits = await listLatestClassCoverAudits(actor.organizationId, [classId]);
+      const refusal = classCancelRefusal(
+        cancelActor(actor),
+        classItem,
+        coverTakenAtMs(classItem, audits.get(classId) ?? null),
+        Date.now(),
+      );
+      if (refusal === 'not_class_coach' || refusal === 'cover_too_recent') {
+        throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES[refusal]);
       }
-      if (classItem.status === 'cancelled') {
-        throw new ValidationError('This class is already cancelled.');
-      }
-      const endsMs = Date.parse(classItem.end_at);
-      if (Number.isFinite(endsMs) && endsMs < Date.now()) {
-        throw new ValidationError('A class that has already ended cannot be cancelled.');
+      if (refusal) {
+        throw new ValidationError(CANCEL_REFUSAL_MESSAGES[refusal]);
       }
 
-      const cancelled = await cancelSchedulerClass(actor.organizationId, classId, new Date().toISOString());
+      // Allowed only as the cover coach: the update re-checks the cover.
+      const coverOnly = !canManageAll(actor)
+        && classItem.coach_account_id !== actor.accountId
+        && classItem.scheduled_by_account_id !== actor.accountId;
+      const cancelled = await cancelSchedulerClass(
+        actor.organizationId,
+        classId,
+        new Date().toISOString(),
+        coverOnly ? actor.accountId : undefined,
+      );
       if (!cancelled) {
-        throw new ValidationError('This class is already cancelled.');
+        // Lost a race (#1595): to another cancel, to the class's start, or
+        // to another coach taking the cover.
+        const now = await getSchedulerClassById(actor.organizationId, classId);
+        if (now?.status === 'cancelled') throw new ValidationError(CANCEL_REFUSAL_MESSAGES.cancelled);
+        if (coverOnly && now?.covering_coach_account_id !== actor.accountId) {
+          throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
+        }
+        throw new ValidationError(CANCEL_REFUSAL_MESSAGES.started);
       }
 
       await auditSchedulerEvent({
@@ -1004,19 +1058,23 @@ export async function POST(request: NextRequest) {
         assignedCoachAccountId = named;
         await assertActiveCoachAccount(actor.organizationId, assignedCoachAccountId, 'assigned_coach_account_id');
 
-        // The assignment must ride the existing coach<->athlete access
-        // model: the athlete's coach of record, or an active bounded
-        // coverage grant. This workflow validates rather than grants -- a
-        // temporary coach gets access through the coach-coverage console
-        // (expiring, revocable, audited), never through a parallel grant
-        // created here, and the permanent coach_id is never changed by an
-        // approval.
+        // The assignment rides the coach<->athlete access model: the named
+        // coach must reach the athlete through assertActorCanAccessAthlete,
+        // asked as that coach. Since issue #1480 (OD-2026-10-11-007; applied
+        // to 1:1 booking by Overwatch, #1480 Q2) a coach reaches every live
+        // athlete of their own gym, so any active coach of the gym may be
+        // named. The admin still chooses and approves. This workflow validates
+        // rather than grants, and the permanent coach_id is never changed by
+        // an approval.
         try {
-          await assertCoachAssignedToAthlete(assignedCoachAccountId, coachingRequest.athlete_id, actor.organizationId);
+          await assertActorCanAccessAthlete(
+            { accountId: assignedCoachAccountId, role: 'coach', organizationId: actor.organizationId, athleteId: null },
+            coachingRequest.athlete_id,
+          );
         } catch {
           throw new Error(
-            'Forbidden: the selected coach has no active relationship with this athlete. '
-            + 'Assign the coach of record, or grant temporary coverage from the coach coverage console first.',
+            'Forbidden: the selected coach cannot reach this athlete. '
+            + 'Choose an active coach of this gym.',
           );
         }
       }

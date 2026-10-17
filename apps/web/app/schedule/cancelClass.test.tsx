@@ -135,6 +135,41 @@ describe('Cancel Class (#1536)', () => {
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
   });
 
+  test('a class that has started is not offered Cancel Class, even with a stale can_cancel (#1595)', async () => {
+    installFetchMock('coach', [
+      classRow('running', 'Running Now', -10 * 60 * 1000, { can_cancel: true }),
+      classRow('soon', 'Starts Soon', 10 * 60 * 1000, { can_cancel: true }),
+    ]);
+    await renderPage();
+
+    expect(within(rowFor('Running Now')).queryByRole('button', { name: 'Cancel Class' })).not.toBeInTheDocument();
+    expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+  });
+
+  test('Cancel Class goes when the class starts while the page is open (#1595)', async () => {
+    // Only the interval and the clock are faked; fetch and findBy keep real timers.
+    jest.useFakeTimers({
+      doNotFake: [
+        'setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask',
+        'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+        'hrtime', 'performance',
+      ],
+    });
+    try {
+      installFetchMock('coach', [classRow('soon', 'Starts Soon', 10_000, { can_cancel: true })]);
+      await renderPage();
+      expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(15_000);
+      });
+
+      expect(within(rowFor('Starts Soon')).queryByRole('button', { name: 'Cancel Class' })).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('a class that has ended offers no Cover Class', async () => {
     installFetchMock('coach', [classRow('ended', 'Last Week', -7 * 24 * HOUR)]);
     await renderPage();
@@ -172,7 +207,7 @@ describe('Cancel Class (#1536)', () => {
     expect(posts(fetchMock).map((body) => body.action)).toEqual(['cover_class']);
   });
 
-  test('staff open the register on a class still running, and a cancelled one is marked in the picker', async () => {
+  test('staff open the register on a class still running, and a cancelled one is not offered in the picker (#1596)', async () => {
     installFetchMock('coach', [
       classRow('gone', 'Called Off', 1 * HOUR, { status: 'cancelled' }),
       classRow('upcoming', 'Still On', 24 * HOUR, { can_cancel: true }),
@@ -182,7 +217,6 @@ describe('Cancel Class (#1536)', () => {
     const picker = screen.getByDisplayValue(/Still On/) as HTMLSelectElement;
     expect(picker.value).toBe('upcoming');
     expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
-      expect.stringMatching(/^Called Off \(.*\) \(cancelled\)$/),
       expect.stringMatching(/^Still On \(.*\)$/),
     ]);
   });

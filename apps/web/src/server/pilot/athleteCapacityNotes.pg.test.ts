@@ -109,9 +109,9 @@ const SHARED_ATHLETE_ID = 'ath-capnotes-shared';
 // Coach of record: the LAPSED coach. Only the membership check refuses them.
 const THIRD_ATHLETE_ID = 'ath-capnotes-3';
 
-// login_email, from which getCoachDisplayName derives the name shown.
+// login_email, from which getStaffAuthorName derives the name shown.
 const COACH_EMAIL = 'jason.neale@example.org'; // -> Coach Jason Neale
-const ADMIN_EMAIL = 'gym-admin@example.org'; // -> Coach Gym Admin
+const ADMIN_EMAIL = 'gym-admin@example.org'; // -> Gym Admin (an admin is not titled Coach, F-058)
 
 function actorFor(
   accountId: string,
@@ -455,10 +455,11 @@ describe('athleteCapacityNotes.ts against real rows', () => {
         author_role: 'coach',
         author_name: 'Coach Jason Neale',
       });
-      expect(byAdmin).toMatchObject({ author_role: 'organization_admin', author_name: 'Coach Gym Admin' });
+      // An admin's note is signed by name without the "Coach" title (F-058).
+      expect(byAdmin).toMatchObject({ author_role: 'organization_admin', author_name: 'Gym Admin' });
 
       const listed = await listCapacityNotes(ADMIN, ATHLETE_ID);
-      expect(listed.map((row) => row.author_name)).toEqual(['Coach Gym Admin', 'Coach Jason Neale']);
+      expect(listed.map((row) => row.author_name)).toEqual(['Gym Admin', 'Coach Jason Neale']);
       for (const row of listed) {
         expect(row.author_name).not.toContain(row.author_account_id);
         expect(row.author_name).not.toMatch(/acct-/);

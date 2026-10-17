@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { setOrganizationStatus } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { isPlatformLibraryOrganization } from '@/src/server/pilot/platformLibraryScope';
 
@@ -33,6 +34,18 @@ export async function POST(request: NextRequest) {
     // and its audit row would be filed where no account can read it.
     if (isPlatformLibraryOrganization(organizationId)) {
       throw new Error('Unsupported organization_id');
+    }
+
+    // F-085: closing, holding or un-opening Root or the gym this session is
+    // signed in to signs out everyone homed there. The platform owner can sign
+    // back in and reopen it; nobody else can. Opening stays allowed.
+    if (
+      status !== 'active'
+      && (organizationId === getPilotDefaultOrganizationId() || organizationId === principal.organizationId)
+    ) {
+      throw new Error(
+        'Unsupported: Root and the gym you are signed in to cannot be closed, put on hold or marked not open yet from this desk',
+      );
     }
 
     await setOrganizationStatus(organizationId, status);

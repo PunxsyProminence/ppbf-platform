@@ -16,6 +16,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 
 import CoachFloorFocus, { type CoachFloorFocusProps, type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import { takeArrivalAthlete } from './decisionLoopArrival';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -530,5 +531,48 @@ describe('an athlete an admin marked inactive', () => {
     expect(within(roster).queryAllByText('Inactive')).toHaveLength(1);
     // Marked, not removed: the count still reads what the roster holds.
     expect(screen.getByLabelText('Today at a glance').textContent).toMatch(/Athletes.*2.*on the roster/);
+  });
+});
+
+// #1474 item 5: "Record what you did" opens the Decision Loop on the athlete
+// the report is about. The athlete is handed over in page memory; the address
+// stays /coach/decision-loop with no athlete in it (Overwatch, #1474 Q2 = C).
+describe('"Record what you did" hands its athlete to the Decision Loop', () => {
+  const PAIN_FOR_ATH_2: FocusItem = { ...PAIN, link: { href: '/coach/decision-loop', label: 'Record what you did', athleteId: 'ath_2' } };
+
+  afterEach(() => {
+    takeArrivalAthlete();
+  });
+
+  function openLink(item: FocusItem): HTMLElement {
+    render(<CoachFloorFocus {...props({ items: [item] })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    return screen.getByRole('link', { name: 'Record what you did' });
+  }
+
+  test('a plain click hands over the athlete, and the address carries none', () => {
+    const link = openLink(PAIN_FOR_ATH_2);
+    expect(link.getAttribute('href')).toBe('/coach/decision-loop');
+    expect(takeArrivalAthlete()).toBeNull();
+
+    fireEvent.click(link);
+    expect(takeArrivalAthlete()).toBe('ath_2');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click, which opens another tab, hands nothing over', (_name, init) => {
+    fireEvent.click(openLink(PAIN_FOR_ATH_2), init);
+    expect(takeArrivalAthlete()).toBeNull();
+  });
+
+  test('a link with no athlete on it hands nothing over', () => {
+    fireEvent.click(openLink(PAIN));
+    expect(takeArrivalAthlete()).toBeNull();
   });
 });

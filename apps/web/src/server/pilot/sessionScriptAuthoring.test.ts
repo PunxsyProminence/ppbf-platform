@@ -38,8 +38,9 @@ describe('blocksFromTemplateSteps', () => {
       step({ drill_id: null, head_drill_name: null, free_text_drill: '  ', block: '' }),
     ]);
 
-    expect(named).toMatchObject({ block_label: 'Jab Drill', what_to_say: 'Chin down.', what_to_explain: 'technical - 8 reps', block_kind: 'drill_round' });
-    expect(typed).toMatchObject({ block_label: 'Rope', what_to_say: null, what_to_explain: 'From workout template: Friday plan', block_kind: 'instruction' });
+    // In words, and said to be the template's (F-078), never a bare section code under "Explain".
+    expect(named).toMatchObject({ block_label: 'Jab Drill', what_to_say: 'Chin down.', what_to_explain: 'From the template: Technical, 8 reps', block_kind: 'drill_round' });
+    expect(typed).toMatchObject({ block_label: 'Rope', what_to_say: null, what_to_explain: 'From the template: Friday plan', block_kind: 'instruction' });
     expect(bare.block_label).toBe('Step 3');
   });
 });

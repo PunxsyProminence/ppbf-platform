@@ -337,6 +337,36 @@ describe('the coach E2E command attends every coach spec on disk', () => {
 });
 
 /**
+ * `classifyPaths([file])` for each file ALONE, in one process. One at a time
+ * for the reason the coach block gives -- a combined list passes as soon as
+ * any path matches -- and one process because spawning the CLI per file
+ * across the whole tree is seconds of fork cost for no added fidelity; the
+ * CLI's flag lines are exercised through `classify()`.
+ *
+ * The list goes in on stdin, not argv, so no file path ever sits in argv[1]
+ * for the classifier's import-time entry check (the `process.argv[1]` test
+ * at the foot of ci-classify-paths.mjs) to read, and the list meets no
+ * command-line length ceiling as the folder grows.
+ */
+function flagsPerFile(files: string[]): Record<string, { migrations: boolean; docsOnly: boolean }> {
+  const script = [
+    "import fs from 'node:fs';",
+    `import { classifyPaths } from ${JSON.stringify(pathToFileURL(classifier).href)};`,
+    "const files = JSON.parse(fs.readFileSync(0, 'utf8'));",
+    'console.log(JSON.stringify(Object.fromEntries(files.map((file) => {',
+    '  const { migrations, docsOnly } = classifyPaths([file]);',
+    '  return [file, { migrations, docsOnly }];',
+    '}))));',
+  ].join('\n');
+  return JSON.parse(
+    execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      input: JSON.stringify(files),
+    }),
+  );
+}
+
+/**
  * A seed-data change runs the PostgreSQL suites that load it.
  *
  * WHY THIS EXISTS. The embedded-Postgres suites load the committed rows of
@@ -367,36 +397,6 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     return walk(root)
       .map((file) => path.relative(repositoryRoot, file).split(path.sep).join('/'))
       .sort();
-  }
-
-  /**
-   * `classifyPaths([file])` for each file ALONE, in one process. One at a time
-   * for the reason the coach block gives -- a combined list passes as soon as
-   * any path matches -- and one process because spawning the CLI per file
-   * across the whole tree is seconds of fork cost for no added fidelity; the
-   * CLI's flag lines are exercised through `classify()`.
-   *
-   * The list goes in on stdin, not argv, so no file path ever sits in argv[1]
-   * for the classifier's import-time entry check (the `process.argv[1]` test
-   * at the foot of ci-classify-paths.mjs) to read, and the list meets no
-   * command-line length ceiling as the folder grows.
-   */
-  function flagsPerFile(files: string[]): Record<string, { migrations: boolean; docsOnly: boolean }> {
-    const script = [
-      "import fs from 'node:fs';",
-      `import { classifyPaths } from ${JSON.stringify(pathToFileURL(classifier).href)};`,
-      "const files = JSON.parse(fs.readFileSync(0, 'utf8'));",
-      'console.log(JSON.stringify(Object.fromEntries(files.map((file) => {',
-      '  const { migrations, docsOnly } = classifyPaths([file]);',
-      '  return [file, { migrations, docsOnly }];',
-      '}))));',
-    ].join('\n');
-    return JSON.parse(
-      execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-        encoding: 'utf8',
-        input: JSON.stringify(files),
-      }),
-    );
   }
 
   // Through the CLI, because its `migrations=` line is what the step's `if:`
@@ -501,5 +501,115 @@ describe('the shared chrome components run the journeys that render them (lane N
     // The button is not on the sign-in door, so it must not pull those suites in.
     const button = classify(['apps/web/components/ShadowChatButton.tsx']);
     expect([button.homepage_e2e, button.board_e2e, button.migrations]).toEqual(['false', 'false', 'false']);
+  });
+});
+
+/**
+ * A change to anything a PostgreSQL suite imports runs the PostgreSQL suites
+ * (F-039).
+ *
+ * WHY THIS EXISTS. The migration predicate matched the suites' own folders
+ * (src/server/pilot/, app/api/) but not what they import from elsewhere:
+ * src/lib/gymTime.ts sits under 210 of them, lib/calendarDay.ts under 133, and
+ * 20 more shared files likewise, and a PR changing only one of those ran no pg
+ * suite. Listing what was missed fixes today; this walk keeps it fixed, by
+ * following every suite's imports on disk and naming each file reached that
+ * the classifier would not send to the suite.
+ *
+ * The walk follows relative and "@/" specifiers (the alias resolved as
+ * tsconfig and jest.config resolve it: src/ first, then the app root) through
+ * static imports, re-exports, dynamic import(), require() and jest.mock().
+ * Package imports are not followed; a dependency bump changes package.json,
+ * which already runs the suite.
+ */
+describe('a change to anything a PostgreSQL suite imports runs the PostgreSQL suites', () => {
+  const webRoot = path.join(repositoryRoot, 'apps/web');
+  const extensions = ['', '.ts', '.tsx', '.mjs', '.js', '.json', '/index.ts', '/index.tsx', '/index.js'];
+  const specifier = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bjest\.mock\(\s*|\bimport\s+)['"]([^'"]+)['"]/g;
+
+  function resolveImport(fromFile: string, spec: string): string | null {
+    const bases = spec.startsWith('.')
+      ? [path.resolve(path.dirname(fromFile), spec)]
+      : spec.startsWith('@/')
+        ? [path.join(webRoot, 'src', spec.slice(2)), path.join(webRoot, spec.slice(2))]
+        : [];
+    for (const base of bases) {
+      for (const extension of extensions) {
+        const candidate = base + extension;
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+      }
+    }
+    return null;
+  }
+
+  function pgSuitesOnDisk(): string[] {
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith('.pg.test.ts') ? [full] : [];
+      });
+    return walk(webRoot);
+  }
+
+  /** Every file any pg suite reaches, repo-relative with forward slashes. */
+  function filesThePgSuitesReach(suites: string[]): string[] {
+    const reached = new Set<string>(suites);
+    const queue = [...suites];
+    while (queue.length > 0) {
+      const file = queue.pop() as string;
+      for (const match of fs.readFileSync(file, 'utf8').matchAll(specifier)) {
+        const target = resolveImport(file, match[1]);
+        if (target && !reached.has(target)) {
+          reached.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    return [...reached]
+      .map((file) => path.relative(repositoryRoot, file).split(path.sep).join('/'))
+      .sort();
+  }
+
+  it('sends every file a pg suite reaches to the PostgreSQL suite on its own', () => {
+    const suites = pgSuitesOnDisk();
+    const reached = filesThePgSuitesReach(suites);
+    // Floors, so a walk that finds nothing or follows no import cannot pass.
+    expect(suites.length).toBeGreaterThan(250);
+    expect(reached.length).toBeGreaterThan(suites.length + 100);
+    expect(reached).toContain('apps/web/src/lib/gymTime.ts');
+
+    const flags = flagsPerFile(reached);
+    // Naming the absentees: add each one to PG_SUITE_DEPENDENCIES in
+    // scripts/ci-classify-paths.mjs (or a prefix there, if a whole folder is
+    // server-only).
+    expect(reached.filter((file) => flags[file].migrations !== true)).toEqual([]);
+  });
+
+  it('through the CLI too, for the two files most suites import', () => {
+    for (const file of ['apps/web/src/lib/gymTime.ts', 'apps/web/lib/calendarDay.ts']) {
+      const flags = classify([file]);
+      expect([file, flags.migrations, flags.docs_only, flags.unknown_code]).toEqual([file, 'true', 'false', 'false']);
+    }
+  });
+
+  it('lists no file that is gone, so the list cannot rot into a false record', () => {
+    const script = [
+      `import { PG_SUITE_DEPENDENCIES } from ${JSON.stringify(pathToFileURL(classifier).href)};`,
+      'console.log(JSON.stringify(PG_SUITE_DEPENDENCIES));',
+    ].join('\n');
+    const listed: string[] = JSON.parse(
+      execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }),
+    );
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.filter((file) => !fs.existsSync(path.join(repositoryRoot, file)))).toEqual([]);
+  });
+
+  it('stays exact: a sibling client file in the same folders does not run the suite', () => {
+    // The reason for exact paths over folder prefixes. A made-up name, so a
+    // suite that later imports a real sibling needs only the list edited.
+    const sibling = 'apps/web/lib/notAPgDependency.ts';
+    expect(flagsPerFile([sibling])[sibling].migrations).toBe(false);
   });
 });
