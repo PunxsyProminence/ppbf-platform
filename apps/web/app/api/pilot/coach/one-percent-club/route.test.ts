@@ -114,6 +114,26 @@ test('coaches, admins, and athletes can all nominate; the source is never taken 
   }));
 });
 
+// F-119: the nominator's own account id goes back to staff, not to an athlete.
+test("an athlete's nomination comes back without their account id; staff keep it", async () => {
+  const row = {
+    nomination_id: 'nom-1', athlete_id: 'a1', source: 'athlete_nomination',
+    nominated_by_account_id: 'acct-1', nominated_by_role: 'athlete', nominated_by_display_name: 'An athlete',
+  };
+  mockCreate.mockResolvedValue(row);
+
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ath-self' }));
+  const athleteRaw = await (await POST(post({ action: 'nominate', athlete_id: 'a1' }))).text();
+  const athleteItem = JSON.parse(athleteRaw).item;
+  expect(athleteItem).not.toHaveProperty('nominated_by_account_id');
+  expect(athleteItem).toMatchObject({ nomination_id: 'nom-1', nominated_by_display_name: 'An athlete' });
+  expect(athleteRaw).not.toContain('acct-1');
+
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+  const staff = await (await POST(post({ action: 'nominate', athlete_id: 'a1' }))).json();
+  expect(staff.item).toEqual(row);
+});
+
 test('nominate needs an athlete_id', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
   expect((await POST(post({ action: 'nominate' }))).status).toBe(400);
