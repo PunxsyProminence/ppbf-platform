@@ -133,3 +133,67 @@ export async function getTodaySessionNote(
   // breaks are the athlete's own.
   return { note: stored };
 }
+
+/**
+ * Whether a session run is under way for this athlete on the gym's day, for
+ * the coach's "Session note" panel (audit finding F-067).
+ *
+ * getTodaySessionNote reads pilot.sessions, the athlete's OWN check-in rows.
+ * A coach can run a session (plain or scripted, pilot.session_script_runs)
+ * that nobody checks in to, and the panel then said "No session started
+ * today" in the middle of it. This read is the other half: is a run LIVE in
+ * the athlete's gym, started on today's gym day. Any coach's run counts, not
+ * only the reader's: the panel is about the athlete's day.
+ *
+ * WHO WAS THERE. A run whose coach has marked anyone present
+ * (pilot.session_run_athletes, a mark that stands) counts only for the
+ * athletes marked in it; a run with no marks counts for the whole gym, because
+ * nothing says who is in the room. A run with marks that do not include this
+ * athlete is somebody else's session.
+ *
+ * READ ONLY, AND NOT ATTENDANCE. Nothing is written, and the answer is a
+ * yes/no about this one athlete: it names no other athlete and no run. A mark
+ * read here stays session detail (OD-2026-10-13-016; sessionRunAthletes.ts),
+ * never attendance. The only caller is the staff-only
+ * /api/pilot/coach/athlete-session-note route, after
+ * assertActorCanAccessAthlete.
+ *
+ * "Today" is the gym's day of started_at, the instant the run went live, on
+ * the same GYM_TIME_ZONE as getTodaySessionNote. A run left open from an
+ * earlier day is not today's session.
+ */
+export async function isSessionRunningForAthleteToday(
+  organizationId: string,
+  athleteId: string,
+  now?: GymTimeInput,
+): Promise<boolean> {
+  const gymDay = gymDayIso(now ?? new Date());
+  if (!gymDay) throw new Error('SESSION_NOTE_GYM_DAY_UNRESOLVED');
+
+  const row = await queryOne<{ running: boolean }>(
+    `select exists (
+       select 1
+         from pilot.session_script_runs r
+        where r.organization_id = $1
+          and r.run_state = 'in_progress'
+          and (r.started_at at time zone '${GYM_TIME_ZONE}')::date = $3::date
+          and (
+            not exists (
+              select 1 from pilot.session_run_athletes m
+               where m.organization_id = r.organization_id
+                 and m.run_id = r.run_id
+                 and m.removed_at is null
+            )
+            or exists (
+              select 1 from pilot.session_run_athletes m
+               where m.organization_id = r.organization_id
+                 and m.run_id = r.run_id
+                 and m.athlete_id = $2
+                 and m.removed_at is null
+            )
+          )
+     ) as running`,
+    [organizationId, athleteId, gymDay],
+  );
+  return row?.running === true;
+}

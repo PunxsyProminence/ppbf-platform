@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
+import BackHome from '@/components/BackHome';
 
 interface PendingPublication {
   publication_id: string;
@@ -622,9 +622,7 @@ export default function VideoCompliancePage() {
           ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

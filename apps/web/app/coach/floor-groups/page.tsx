@@ -309,7 +309,7 @@ export default function FloorGroupsPage() {
                       <label className="t-label" htmlFor="place-athlete">Athlete to place</label>
                       <select id="place-athlete" className="select" value={placeAthleteId}
                         onChange={(e) => setPlaceAthleteId(e.target.value)}>
-                        <option value="">Select an athlete…</option>
+                        <option value="">Choose an athlete</option>
                         {athletes.map((athlete) => (
                           <option key={athlete.athlete_id} value={athlete.athlete_id}>
                             {athlete.full_name}{placed.has(athlete.athlete_id) ? ' (placed)' : ''}

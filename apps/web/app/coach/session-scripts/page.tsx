@@ -11,6 +11,7 @@ import { apiBase } from '@/lib/apiBase';
 import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import type {
   SessionScriptBlockRow,
   SessionScriptRow,
@@ -858,7 +859,7 @@ function CoachSessionScripts() {
                     className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                      <span className="plaque">{typeof run.delivered_on === 'string' ? run.delivered_on.slice(0, 10) : run.delivered_on}</span>
+                      <span className="plaque">{typeof run.delivered_on === 'string' ? formatCalendarDay(run.delivered_on.slice(0, 10)) : run.delivered_on}</span>
                       <span className="t-label">
                         {run.run_state === 'completed' && 'Completed'}
                         {run.run_state === 'abandoned' && 'Abandoned'}
@@ -887,7 +888,7 @@ function CoachSessionScripts() {
                     )}
                     {(run.what_did_not ?? '').trim() !== '' && (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                        <span className="t-label">Did not: </span>{run.what_did_not}
+                        <span className="t-label">Did not work: </span>{run.what_did_not}
                       </p>
                     )}
                   </li>

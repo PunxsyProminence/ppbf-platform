@@ -460,7 +460,7 @@ export default function TeachShadowHomePage() {
               statement about what nobody has filmed and labelled much of.
             </p>
             {!loaded ? (
-              <p className="t-body mt-[var(--s3)]">Reading the corpus&hellip;</p>
+              <p className="t-body mt-[var(--s3)]">Loading footage&hellip;</p>
             ) : thinnest.length === 0 ? (
               <p className="t-body mt-[var(--s3)]">No coverage figures are available.</p>
             ) : (
@@ -739,7 +739,7 @@ export default function TeachShadowHomePage() {
                 </div>
               </dl>
             ) : (
-              <p className="t-body mt-[var(--s3)]">{loaded ? 'No coverage figures are available.' : 'Reading the corpus…'}</p>
+              <p className="t-body mt-[var(--s3)]">{loaded ? 'No coverage figures are available.' : 'Loading footage…'}</p>
             )}
           </section>
 

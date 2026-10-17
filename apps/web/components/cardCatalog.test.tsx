@@ -222,7 +222,7 @@ describe('CardCatalog', () => {
       openCatalog();
       fireEvent.change(screen.getByRole('combobox'), { target: { value: query } });
 
-      expect(screen.queryByText('Operations Hub')).toBeNull();
+      expect(screen.queryByText('Operations')).toBeNull();
     },
   );
 
@@ -232,7 +232,7 @@ describe('CardCatalog', () => {
     openCatalog();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'mission control' } });
 
-    expect(screen.getByText('Operations Hub')).toBeTruthy();
+    expect(screen.getByText('Operations')).toBeTruthy();
   });
 
   it('still offers a coach the two surfaces under the same path prefix', () => {
@@ -269,7 +269,7 @@ describe('Corridor', () => {
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
 
-    expect(screen.queryByRole('link', { name: 'Operations Hub' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Operations' })).toBeNull();
     // The rest of the Front Office is untouched -- this narrows one door, not
     // a room. A coach still reaches the two surfaces under the same prefix
     // here, and the corridor is now their main route to both.
@@ -282,7 +282,7 @@ describe('Corridor', () => {
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
 
-    expect(screen.getByRole('link', { name: 'Operations Hub' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Operations' })).toBeTruthy();
   });
 
   it('marks the current room as where you are', () => {
@@ -314,6 +314,6 @@ describe('Corridor', () => {
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByRole('link', { name: 'Treasurer' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Capability Console' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Capabilities' })).toBeNull();
   });
 });

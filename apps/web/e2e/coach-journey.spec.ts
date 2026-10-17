@@ -549,7 +549,7 @@ test.describe('Coach journey', () => {
           effects never fire. This line is the browser-level corroboration of
           it, not the proof itself. */
     await page.goto('/operations');
-    await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'WORKSPACES' })).toHaveCount(0);
     await expect(page).toHaveURL(/\/coach\/environment\/intake-router$/);
 
@@ -568,7 +568,7 @@ test.describe('Coach journey', () => {
     const search = catalog.getByRole('combobox');
     for (const query of ['operations', 'mission control', 'hub']) {
       await search.fill(query);
-      await expect(catalog.getByText('Operations Hub')).toHaveCount(0);
+      await expect(catalog.getByText('Operations', { exact: true })).toHaveCount(0);
     }
     /* The path prefix is not the gate: these two carry their own
        ['coach', 'admin'], and after this change the catalog and the corridor

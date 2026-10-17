@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDate } from '@/src/lib/gymTime';
+import { formatGymDate, formatGymDateShort } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
 
@@ -329,7 +329,7 @@ export default function InterventionReviewPage() {
                         {execution.protocol_title ?? execution.protocol_id} (v{execution.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {execution.created_at.slice(0, 10)}
+                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
                       </span>
                     </div>
 

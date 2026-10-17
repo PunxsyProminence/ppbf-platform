@@ -72,6 +72,13 @@ function words(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A plan that is no longer active, in words rather than its stored status (UXB-11). PROPOSED. */
+function endedPlanWords(status: string): string {
+  if (status === 'completed') return 'This plan is finished.';
+  if (status === 'cancelled') return 'This plan was cancelled.';
+  return `This plan is ${words(status).toLowerCase()}.`;
+}
+
 /** A date-only value (YYYY-MM-DD), shown as that calendar day. */
 function day(value: string): string {
   return formatGymDateNumeric(`${value.slice(0, 10)}T12:00:00Z`) ?? value;
@@ -422,7 +429,7 @@ export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
 
       {plan && (
         <>
-          {!active && <p className="t-body mt-[var(--s2)]">This plan is {plan.status}. Its steps are shown as recorded.</p>}
+          {!active && <p className="t-body mt-[var(--s2)]">{endedPlanWords(plan.status)} Its steps are shown as recorded.</p>}
           {plan.steps.length === 0 ? (
             <p className="t-body mt-[var(--s2)]">No steps on this plan yet.</p>
           ) : (

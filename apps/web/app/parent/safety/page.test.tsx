@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import GuardianSafetyPage from './page';
 
@@ -507,4 +507,43 @@ test('a failed load shows the error state, never a false empty state', async () 
 
   await screen.findByText('Database unavailable');
   expect(screen.queryByText('No linked children found')).not.toBeInTheDocument();
+});
+
+// UXB-12: a missing name says so; the athlete id is never shown to a family.
+test('a missing name reads "Your child (name not loaded)", never the athlete id', async () => {
+  const unnamed = [{ ...CLEAR_ATHLETE[0], athlete_name: null }];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: unnamed })) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  await screen.findByText('Your child (name not loaded)');
+  expect(screen.queryByText(/ath-2/)).toBeNull();
+});
+
+// UXB-13: a failed read offers Check again, which re-reads; while it does,
+// the page reads Loading, not the failure.
+test('a failed load offers Check again, which reads Loading and then the answer', async () => {
+  let answer: (value: Response) => void = () => undefined;
+  const fetchMock = jest
+    .fn()
+    .mockResolvedValueOnce(jsonResponse({ error: 'Database unavailable' }, false))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }))
+    .mockResolvedValue(jsonResponse({ ok: true, items: [] }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+  await screen.findByText('Safety status could not be loaded');
+  // A failed read is a warning, not a safety state (critical is kept for those).
+  expect(screen.getByRole('alert')).toHaveClass('alert--warning');
+  expect(screen.getByRole('alert')).not.toHaveClass('alert--critical');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(screen.queryByText('Safety status could not be loaded')).toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  answer(jsonResponse({ ok: true, items: CLEAR_ATHLETE }));
+  expect(await screen.findByText('Sam R.')).toBeInTheDocument();
+  expect(screen.queryByText('Database unavailable')).toBeNull();
 });
