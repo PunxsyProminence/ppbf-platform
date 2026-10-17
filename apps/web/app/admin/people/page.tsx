@@ -17,6 +17,7 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import BackHome from '@/components/BackHome';
+import GymOfficeSafetyStrip from '@/components/GymOfficeSafetyStrip';
 
 interface Member {
   account_id: string;
@@ -1083,6 +1084,9 @@ function PeopleConsoleContent() {
             </div>
           </div>
         </header>
+
+        {/* The admin's morning safety check, from home (lane U2, audit UX-A A-2). */}
+        <GymOfficeSafetyStrip />
 
         {/* The plaintext code is intentionally shown once. */}
         {createdAthlete && (
