@@ -10,7 +10,7 @@
 import '@testing-library/jest-dom';
 
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -130,7 +130,8 @@ describe('the coaching-request coach picker (#1536)', () => {
 
     const picker = await screen.findByLabelText(/Coach to assign/);
     expect(picker).toBeDisabled();
-    expect(await screen.findByText('The coach list could not be loaded')).toBeInTheDocument();
+    // Scoped to this picker: the class form's coach picker (lane L31 P6) says the same.
+    expect(within(picker).getByText('The coach list could not be loaded')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Coach to assign/ })).not.toBeInTheDocument();
   });
 

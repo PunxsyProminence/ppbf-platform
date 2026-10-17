@@ -166,6 +166,46 @@ test('a missing payload is a 400-class refusal, not a write of empty strings', a
   expect(mockCreate).not.toHaveBeenCalled();
 });
 
+// FC-06: a message to the athlete is read on their Dashboard (and, under 18,
+// by their guardians), so an empty one or one past 4000 characters -- the
+// limit parent/observations holds a guardian's note to -- is refused before
+// anything is written.
+describe('a message to the athlete is held to some text, up to 4000 characters', () => {
+  const athleteMessage = (noteText: string) => ({
+    entity_type: 'coach_note',
+    athlete_id: 'ath-1',
+    payload: { note_type: 'athlete_message', note_text: noteText },
+  });
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockResolvedValue(undefined);
+    mockCreate.mockResolvedValue('note-1');
+  });
+
+  test.each([
+    ['empty', ''],
+    ['whitespace only', '   \n\t  '],
+    ['4001 characters', 'a'.repeat(4001)],
+  ])('%s is a 400 and nothing is written', async (_label, noteText) => {
+    const response = await POST(postRequest(athleteMessage(noteText)));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('exactly 4000 characters is written', async () => {
+    const response = await POST(postRequest(athleteMessage('a'.repeat(4000))));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+      noteType: 'athlete_message',
+      noteText: 'a'.repeat(4000),
+    }), TX_CLIENT);
+  });
+});
+
 // A guardian_link write attaches an account to an athlete's guardian_links,
 // which grants that account ongoing read access to the athlete's training
 // holds, safety-gate outcomes, and staff messages (via guardianAthleteIds).
