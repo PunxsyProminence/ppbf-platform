@@ -54,7 +54,7 @@ export interface ShadowResearchRequirementFilter {
 }
 
 export async function createShadowResearchRequirement(input: ShadowResearchRequirementInput): Promise<number> {
-  const row = await queryOne<{ research_requirement_id: string | number }>(
+  const row = await queryOne<{ research_requirement_id: number }>(
     `insert into pilot.shadow_research_requirements
      (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement, knowledge_gap, evidence_label, source_status, source_confidence_tier, source_verification_state, created_by_account_id, created_by_role, metadata, subject_id)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14)
@@ -84,9 +84,7 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
     throw new Error('Unable to create SHADOW research requirement.');
   }
 
-  // A bigserial: node-postgres returns it as a string. Callers, and the
-  // route's JSON (/shadow checks typeof === 'number'), get the number.
-  return Number(row.research_requirement_id);
+  return row.research_requirement_id;
 }
 
 // Every column of a requirement row, in the order ShadowResearchRequirementRow

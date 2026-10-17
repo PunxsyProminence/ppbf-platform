@@ -9,7 +9,8 @@
 // string, so a batch keyed by the raw column and looked up by number found
 // nothing and every open requirement read "needs evidence" whatever had been
 // submitted or reviewed. The same string id made /shadow's "file as research"
-// report a failure after the row was written (the create case below).
+// report a failure after the row was written (the create case below; fixed in
+// the route, which answers that page).
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
