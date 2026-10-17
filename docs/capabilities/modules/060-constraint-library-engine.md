@@ -3,6 +3,9 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
+| Status note | Was "DRAFT" until 2026-10-16. No code serves it; drill scale levels carry a per-drill constraint_applied text (apps/web/src/server/pilot/drillLibraryV3.ts) but there is no constraint library entity or route. |
+| Code | none |
+| Tests | none |
 | Active | false |
 | Promotion required | true |
 | Category | Learning / Skill Acquisition (`learningSkillAcquisition`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **DRAFT** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
