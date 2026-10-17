@@ -3,10 +3,7 @@ import type { PilotRole } from './contracts';
 import { requiredCredentialFor } from './credentialPolicy';
 import { isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { createOpaqueToken, hashToken } from './security';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
-
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
+import type { OrganizationProfile } from '@/src/shared/organizationProfile';
 
 /**
  * Single-use sign-in links for coaches, staff, volunteers and parents.
@@ -69,6 +66,12 @@ export interface MagicLinkDependencies {
   createToken: () => string;
   /** Absolute base for the link, e.g. https://app.example.org -- see magicLinkOrigin. */
   appOrigin: string;
+  /**
+   * The gym's stored profile, for its name in the email (lane L31). null, or
+   * absent, sends the email without the gym's name: a sign-in link never waits
+   * on the profile.
+   */
+  gymProfile?: () => Promise<OrganizationProfile | null>;
 }
 
 /**
@@ -240,12 +243,13 @@ export async function issueMagicLink(
   // is the ceiling, as it always was. Serial requests still end with one live
   // link per account, so a parent who requests three links because the first
   // was slow is not left with three working credentials in an inbox.
+  const gym = dependencies.gymProfile ? await dependencies.gymProfile().catch(() => null) : null;
   try {
     await dependencies.sendMail({
       to: email,
-      subject: `Your ${GYM.shortName} sign-in link`,
+      subject: gym ? `Your ${gym.shortName} sign-in link` : 'Your sign-in link',
       body: [
-        `Someone asked to sign in to ${GYM.legalName} with this address.`,
+        gym ? `Someone asked to sign in to ${gym.legalName} with this address.` : 'Someone asked to sign in with this address.',
         '',
         link,
         '',

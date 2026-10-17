@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
-import { GYM_ADDRESS, GYM_NAME } from '@/components/PrintSheet';
+import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -616,11 +616,9 @@ export default function SparringTelemetryPage() {
         </div>
       </form>
 
-      {/* Reuses PrintSheet's GYM_NAME/GYM_ADDRESS -- same fix as
+      {/* Reuses PrintSheet's gym identity -- same fix as
           coach/environment/passbook-check/page.tsx, same reason. */}
-      <footer className="t-muted px-[var(--s5)] pb-[var(--s6)]">
-        {GYM_NAME}, Registered Office: {GYM_ADDRESS}
-      </footer>
+      <GymRegisteredOfficeLine className="t-muted px-[var(--s5)] pb-[var(--s6)]" />
     </RoleStandaloneView>
   );
 }
