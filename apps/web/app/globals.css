@@ -2050,9 +2050,10 @@ h6 {
         for more than a moment. It is far below the threshold at which a person
         notices anything moved.
      2. The marquee travels continuously, which covers the brightest band.
-     3. No large flat field of maximum luminance anywhere: the ground is the
-        brick room, the type is bone rather than white, and the panels have no
-        filled backgrounds at all.
+     3. No large flat field of maximum luminance anywhere: the type is bone
+        rather than white, the boards' fields are dark steel over the room,
+        and the only light fill is the small cream enamel caps (the wall-board
+        kit, design-system/current/ppbf-golden-era.css section 011).
    All of it stands down under prefers-reduced-motion, which also covers the
    accessibility case where the drift itself would be the problem. */
 
@@ -2090,6 +2091,29 @@ h6 {
 }
 
 /* --- Masthead ------------------------------------------------------------ */
+
+/* The header plate: Jason's two lines on the engraved plate (.ge-plate). One
+   line, centred, at a screen-title rung so the back of the room can read it. */
+[data-surface="wall"] .wall-motto {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s5);
+  margin: 0;
+  padding: var(--s2) var(--s7);
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-motto-mark {
+  font-size: var(--t-lg);
+  color: var(--brass-400);
+}
 
 [data-surface="wall"] .wall-eyebrow {
   margin: 0;
@@ -2132,30 +2156,60 @@ h6 {
   text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
+/* The round clock hangs in a bezel: brass ring, dark face. */
+[data-surface="wall"] .wall-round {
+  padding: var(--s2) var(--s6);
+  border: 3px solid var(--brass-600);
+  border-radius: 10px;
+  background-color: rgb(var(--frame-field-rgb) / .88);
+  box-shadow:
+    var(--shadow-contact),
+    inset 0 0 0 1px rgba(0, 0, 0, .6),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .22);
+}
+
+/* Set leading, so the bezel is no taller than the day and date beside it and
+   the boards below keep their rows. */
+[data-surface="wall"] .wall-round__label,
+[data-surface="wall"] .wall-round__time {
+  margin: 0;
+  line-height: 1.05;
+}
+
 /* --- Panels -------------------------------------------------------------- */
+
+/* Each panel is a board hung on the wall (.ge-frame); this is its inside. */
+[data-surface="wall"] .wall-panel {
+  padding: var(--s3) var(--s5);
+}
 
 [data-surface="wall"] .wall-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s4);
   margin: 0 0 var(--s4);
-  padding-bottom: var(--s3);
-  border-bottom: 3px solid var(--wall-rule);
-  font-family: var(--font-mono, var(--font-data));
+}
+
+/* The panel's name on a cream enamel cap (.ge-enamel). */
+[data-surface="wall"] .wall-heading-cap {
+  padding: var(--s2) var(--s5);
+  font-family: var(--font-ui);
   font-size: var(--t-xl);
   font-weight: 600;
-  letter-spacing: .26em;
+  line-height: 1.15;
+  letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--brass-300);
 }
 
 [data-surface="wall"] .wall-count {
   margin-left: auto;
   font-family: var(--font-display);
-  font-size: var(--t-2xl);
+  font-size: var(--t-3xl);
+  line-height: 1;
   letter-spacing: 0;
-  color: var(--bone-200);
+  color: var(--brass-200);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
 [data-surface="wall"] .wall-quiet {
@@ -2253,6 +2307,7 @@ h6 {
   grid-area: meta;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
+  line-height: 1.2;
   letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--bone-400);

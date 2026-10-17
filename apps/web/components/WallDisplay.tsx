@@ -456,7 +456,7 @@ export default function WallDisplay() {
   });
 
   return (
-    <div className="wall-board flex h-screen w-screen flex-col overflow-hidden">
+    <div className="wall-board ge-wallboard flex h-screen w-screen flex-col overflow-hidden">
       <Masthead
         now={now}
         zone={zone}
@@ -680,24 +680,49 @@ function WallSound() {
 /** A held space, so the masthead's geometry does not jump when the clock lands. */
 const HELD = ' ';
 
+/**
+ * THE HEADER PLATE: Jason's own two lines, in his order (2026-10-17, Overwatch question card on
+ * the motto: "1 and add it to the approved list"). OBSERVE. DECIDE. EXECUTE. REPEAT. is the gym's
+ * tagline and egg 01; ADAPT AND OVERCOME is text he gave, which OD-2026-10-02-001 allows ("No no
+ * made up text, if I give text thats different"), and it is on the approved list in gymSayings.ts.
+ * wallDisplay.test.tsx holds every line here to that list, so the plate cannot carry a line the gym
+ * has not approved.
+ */
+export const WALL_MOTTO = ['ADAPT AND OVERCOME', 'OBSERVE. DECIDE. EXECUTE. REPEAT.'] as const;
+
+function MottoPlate() {
+  return (
+    <p className="wall-motto ge-plate">
+      <span>{WALL_MOTTO[0]}</span>
+      <span className="wall-motto-mark" aria-hidden="true">
+        ★
+      </span>
+      <span>{WALL_MOTTO[1]}</span>
+    </p>
+  );
+}
+
 function Masthead({ now, zone, round }: { now: number | null; zone?: string; round?: ReactNode }) {
   const stamp = now === null ? null : new Date(now);
   return (
-    <header className="flex shrink-0 items-end justify-between gap-[var(--s6)] px-[var(--s7)] pt-[var(--s5)]">
-      <div>
-        <p className="wall-eyebrow">{GYM.brand}</p>
-        <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
-        <p className="wall-date text-4xl">
-          {stamp ? formatIn(stamp, zone, { month: 'long', day: 'numeric', year: 'numeric' }) : HELD}
+    <header className="flex shrink-0 flex-col gap-[var(--s3)] px-[var(--s7)] pt-[var(--s4)]">
+      <MottoPlate />
+      <div className="flex items-end justify-between gap-[var(--s6)]">
+        <div>
+          <p className="wall-eyebrow">{GYM.brand}</p>
+          <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
+          <p className="wall-date text-4xl">
+            {stamp ? formatIn(stamp, zone, { month: 'long', day: 'numeric', year: 'numeric' }) : HELD}
+          </p>
+        </div>
+        {round}
+        {/* aria-hidden: a clock that announces itself every minute is hostile to
+            anyone running a reader near this screen, and the time is not the
+            reason a person would be listening to a wall. */}
+        <p className="wall-clock text-8xl" aria-hidden="true">
+          {stamp ? formatIn(stamp, zone, { hour: 'numeric', minute: '2-digit' }) : HELD}
         </p>
       </div>
-      {round}
-      {/* aria-hidden: a clock that announces itself every minute is hostile to
-          anyone running a reader near this screen, and the time is not the
-          reason a person would be listening to a wall. */}
-      <p className="wall-clock text-8xl" aria-hidden="true">
-        {stamp ? formatIn(stamp, zone, { hour: 'numeric', minute: '2-digit' }) : HELD}
-      </p>
     </header>
   );
 }
@@ -709,7 +734,7 @@ function LiveBoard({ board, zone, daily }: { board: WallBoard; zone?: string; da
     <>
       {/* The golden section, not a half. --split-major / --split-minor are the
           system's own 61.8 / 38.2 tokens (Law 8). */}
-      <main className="grid min-h-0 flex-1 grid-cols-[var(--split-major)_var(--split-minor)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s5)]">
+      <main className="grid min-h-0 flex-1 grid-cols-[var(--split-major)_var(--split-minor)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
         <OnTheFloor board={board} />
         <Today sessions={board.sessions} zone={zone} />
       </main>
@@ -734,9 +759,9 @@ function OnTheFloor({ board }: { board: WallBoard }) {
   const overflow = board.on_floor_total - board.on_floor.length;
 
   return (
-    <section className="flex min-h-0 flex-col" aria-label="On the floor">
+    <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="On the floor">
       <h2 className="wall-heading">
-        On the floor
+        <span className="wall-heading-cap ge-enamel">On the floor</span>
         {board.on_floor_total > 0 && <span className="wall-count">{board.on_floor_total}</span>}
       </h2>
 
@@ -773,8 +798,10 @@ function OnTheFloor({ board }: { board: WallBoard }) {
    screen that can disagree with the first one. */
 function Today({ sessions, zone }: { sessions: readonly WallSession[]; zone?: string }) {
   return (
-    <section className="flex min-h-0 flex-col" aria-label="Today">
-      <h2 className="wall-heading">Today</h2>
+    <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="Today">
+      <h2 className="wall-heading">
+        <span className="wall-heading-cap ge-enamel">Today</span>
+      </h2>
 
       {sessions.length === 0 ? (
         <p className="wall-quiet text-4xl">Nothing on the schedule.</p>

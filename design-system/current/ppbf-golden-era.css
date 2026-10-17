@@ -5538,3 +5538,151 @@
     padding: var(--s2) var(--s3);
   }
 }
+
+/* ==========================================================================
+   GOLDEN ERA 011 — THE WALL BOARD (the gym TV, /wall)
+
+   Jason 2026-10-17: "Can we start a lane to try and get the look and feel of
+   the pages shifting towards these styles" (a vintage gym wall-board), "A" =
+   the gym TV first. The references are a STYLE reference only: a board in a
+   dark wood surround with brass corner brackets, an engraved header plate,
+   cream enamel labels. Their names, numbers and signs are invented and none of
+   them is drawn here; the TV prints only what its payload carries.
+
+   SCOPE. Everything is under `.ge-wallboard`, one class on the board's root,
+   and the bronze ramp is redefined on it the way `.ge-floorboard` does (each
+   rung WITH its -rgb triple, for the alpha rules). The pieces are written for
+   the TV first and are meant for the coach's own floor screen next, which is
+   why they are not inside the [data-surface="wall"] block in globals.css.
+
+   BURN-IN, AND WHY THE ENAMEL IS SMALL. A television showing one layout for
+   twelve hours keeps it. The pictures hang big cream panels; a lit cream field
+   held still all evening is exactly what the wall's third defence exists to
+   prevent. So the board's field stays DARK (blackened steel over the room),
+   the header plate is dark bronze with polished letters rather than bright
+   brass with dark ones, and cream enamel appears only on small label caps.
+   wallBoardKit.test.ts holds the enamel fill to the .ge-enamel rule.
+
+   Pieces, each drawn rather than imaged:
+     .ge-frame   a board: dark field, aged-wood surround, four brass corner
+                 brackets with a rivet in each
+     .ge-plate   the engraved header plate: dark bronze, two rivets
+     .ge-enamel  a cream enamel label cap with a pinstripe, dark ink */
+
+.ge-wallboard {
+  --brass-200: #E7C88A;
+  --brass-200-rgb: 231 200 138;
+  --brass-300: #D6B063;
+  --brass-300-rgb: 214 176  99;
+  --brass-400: #BE9440;
+  --brass-400-rgb: 190 148  64;
+  --brass-500: #9F7A30;
+  --brass-500-rgb: 159 122  48;
+  --brass-600: #896628;
+  --brass-600-rgb: 137 102  40;
+  --brass-700: #6E5220;
+  --brass-700-rgb: 110  82  32;
+  --brass-800: #533D18;
+  --brass-800-rgb:  83  61  24;
+  --brass-900: #392910;
+  --brass-900-rgb:  57  41  16;
+
+  /* Enamel at aged-paper luminance, below the bone the type uses, so the
+     brightest flat fill on the screen is still not a white field. Ink is the
+     early look set's near-black (Canva DAHQv6NIUUY, #191919). */
+  --enamel: #E2D5B5;
+  --enamel-ink: #191919;
+  --enamel-ink-rgb: 25 25 25;
+
+  --frame-band: 10px;
+  --frame-field: #121517;
+  --frame-field-rgb: 18 21 23;
+
+  --ge-rivet: radial-gradient(circle,
+    var(--brass-200) 0 1.4px, var(--brass-500) 1.4px 2.8px,
+    rgb(0 0 0 / .5) 2.8px 3.4px, transparent 3.8px);
+  --ge-bracket: linear-gradient(180deg, var(--brass-400), var(--brass-700));
+}
+
+/* A board on the wall. The surround is painted in the border box with a
+   transparent border, the field in the padding box (the Clinic's recipe), so
+   the wood is part of the element and a child can never cover it. */
+.ge-wallboard .ge-frame {
+  position: relative;
+  border: var(--frame-band) solid transparent;
+  border-radius: 4px;
+  background-image:
+    radial-gradient(90% 60% at 18% 0%, rgb(var(--brass-300-rgb) / .05), transparent 70%),
+    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .90), rgb(var(--frame-field-rgb) / .94)),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, .18) 0 3px, transparent 3px 11px),
+    linear-gradient(160deg, #4E3624 0%, #2E1F14 34%, #432E1F 62%, #24180F 100%);
+  background-clip: padding-box, padding-box, border-box, border-box;
+  background-origin: padding-box, padding-box, border-box, border-box;
+  box-shadow:
+    var(--shadow-contact),
+    0 8px 22px rgba(0, 0, 0, .38),
+    inset 0 0 0 1px rgba(0, 0, 0, .7),
+    inset 0 2px 0 rgb(var(--brass-300-rgb) / .07);
+}
+
+/* The four brackets: an L of brass at each corner of the surround, a rivet
+   at the bend. One pseudo-element, twelve layers, first on top. Decorative
+   and never a target. */
+.ge-wallboard .ge-frame::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--frame-band));
+  pointer-events: none;
+  background-image:
+    var(--ge-rivet), var(--ge-rivet), var(--ge-rivet), var(--ge-rivet),
+    var(--ge-bracket), var(--ge-bracket), var(--ge-bracket), var(--ge-bracket),
+    var(--ge-bracket), var(--ge-bracket), var(--ge-bracket), var(--ge-bracket);
+  background-repeat: no-repeat;
+  background-size:
+    14px 14px, 14px 14px, 14px 14px, 14px 14px,
+    46px 10px, 10px 46px, 46px 10px, 10px 46px,
+    46px 10px, 10px 46px, 46px 10px, 10px 46px;
+  background-position:
+    left -2px top -2px, right -2px top -2px, left -2px bottom -2px, right -2px bottom -2px,
+    left top, left top, right top, right top,
+    left bottom, left bottom, right bottom, right bottom;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .55));
+}
+
+/* The engraved plate. Dark bronze, letters polished and struck in. */
+.ge-wallboard .ge-plate {
+  position: relative;
+  border: 1px solid var(--brass-900);
+  border-radius: 3px;
+  background-image:
+    var(--ge-rivet), var(--ge-rivet),
+    linear-gradient(180deg, rgb(var(--brass-200-rgb) / .10), transparent 30%),
+    linear-gradient(180deg, var(--brass-700) 0%, var(--brass-800) 52%, var(--brass-900) 100%);
+  background-repeat: no-repeat;
+  background-size: 14px 14px, 14px 14px, auto, auto;
+  background-position: left 14px center, right 14px center, 0 0, 0 0;
+  box-shadow:
+    var(--shadow-contact),
+    inset 0 1px 0 rgb(var(--brass-200-rgb) / .30),
+    inset 0 -1px 0 rgba(0, 0, 0, .45);
+  color: var(--brass-200);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, .55), 0 1px 0 rgb(var(--brass-300-rgb) / .18);
+}
+
+/* A cream enamel cap: the one light fill on the board, kept to label size. */
+.ge-wallboard .ge-enamel {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+  background-color: var(--enamel);
+  background-image:
+    radial-gradient(130% 160% at 30% 0%, rgba(255, 255, 255, .12), transparent 62%),
+    linear-gradient(180deg, transparent 66%, rgb(var(--enamel-ink-rgb) / .10));
+  color: var(--enamel-ink);
+  box-shadow:
+    inset 0 0 0 3px var(--enamel),
+    inset 0 0 0 4px rgb(var(--enamel-ink-rgb) / .62),
+    0 1px 0 rgba(0, 0, 0, .55),
+    var(--shadow-contact);
+  text-shadow: none;
+}
