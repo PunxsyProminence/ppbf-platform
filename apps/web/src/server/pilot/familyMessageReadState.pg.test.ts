@@ -3,7 +3,8 @@
 // read only on a parent message about a child linked to them now, in their own
 // gym; a second open keeps the first time; staff see, per note, that the family
 // opened it and the earliest time -- never which guardian, and nothing from
-// another gym. Same seeded gym as familyMessageReplyReads.pg.test.ts.
+// another gym; and a guardian reads back only their own opens (FC-08). Same
+// seeded gym as familyMessageReplyReads.pg.test.ts.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -328,5 +329,47 @@ describe('what staff see (listFamilyReadStateForStaff)', () => {
     expect(await reads.listFamilyReadStateForStaff(ORG_ID, ATHLETE)).toEqual([]);
     expect(await reads.listFamilyReadStateForStaff(ORG_ID, SIBLING)).toEqual([]);
     expect((await reads.listFamilyReadStateForStaff(OTHER_ORG_ID, ATHLETE)).map((row) => row.note_id)).toEqual([OTHER_GYM_MESSAGE]);
+  });
+});
+
+describe("a guardian's own opens (listOwnMessageReads, FC-08)", () => {
+  test("each guardian gets their own opens and first time, never the other guardian's", async () => {
+    const mine = await read(GUARDIAN_A, MESSAGE);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // B has not opened it: B's list is empty although A's open is stored.
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_B)).toEqual([]);
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_A)).toEqual([{ note_id: MESSAGE, first_read_at: mine.first_read_at }]);
+
+    const theirs = await read(GUARDIAN_B, MESSAGE);
+    expect(theirs.first_read_at > mine.first_read_at).toBe(true);
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_B)).toEqual([{ note_id: MESSAGE, first_read_at: theirs.first_read_at }]);
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_A)).toEqual([{ note_id: MESSAGE, first_read_at: mine.first_read_at }]);
+  });
+
+  test("another gym's opens and an 18+ child's are not in the list", async () => {
+    await read(GUARDIAN_A, MESSAGE);
+    await read(GUARDIAN_OTHER_GYM, OTHER_GYM_MESSAGE, OTHER_ORG_ID);
+    // An open stored before the child turned 18: the link has ended since, so
+    // it drops out with the child's notes.
+    await activeClient!.query(
+      `insert into pilot.family_message_reads (organization_id, note_id, athlete_id, reader_account_id, reader_role)
+       values ($1, $2::uuid, $3, $4, 'parent')`,
+      [ORG_ID, ADULT_MESSAGE, ADULT, GUARDIAN_A],
+    );
+    // A row under this guardian's account in the other gym, on that gym's
+    // athlete of the same id: a read keyed on account and athlete alone would
+    // bring it in.
+    await activeClient!.query(
+      `insert into pilot.family_message_reads (organization_id, note_id, athlete_id, reader_account_id, reader_role)
+       values ($1, $2::uuid, $3, $4, 'parent')`,
+      [OTHER_ORG_ID, OTHER_GYM_MESSAGE, ATHLETE, GUARDIAN_A],
+    );
+
+    expect((await reads.listOwnMessageReads(ORG_ID, GUARDIAN_A)).map((row) => row.note_id)).toEqual([MESSAGE]);
+    // This gym's guardian asking as the other gym holds no link there.
+    expect(await reads.listOwnMessageReads(OTHER_ORG_ID, GUARDIAN_A)).toEqual([]);
+    expect((await reads.listOwnMessageReads(OTHER_ORG_ID, GUARDIAN_OTHER_GYM)).map((row) => row.note_id)).toEqual([OTHER_GYM_MESSAGE]);
+    expect(await reads.listOwnMessageReads(ORG_ID, GUARDIAN_UNLINKED)).toEqual([]);
   });
 });

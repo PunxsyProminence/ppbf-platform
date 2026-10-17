@@ -8736,6 +8736,33 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/message-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/message-reads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads only their own opens (reader_account_id = caller), on parent messages about children in guardianAthleteIds now; a co-guardian's opens are never returned. The hub marks the rest New (familyMessageReads.ts listOwnMessageReads; #1542 FC-08).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/message-reads/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/parent/message-reads",
