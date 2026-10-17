@@ -9,6 +9,7 @@ import {
 } from '@/src/server/pilot/http';
 import {
   ORG_ADMIN_INVITABLE_ROLES,
+  RoleChangeUnconfirmedError,
   createOrUpdateMicrosoftStaffAccount,
   getOrganizationName,
   listOrganizationGuardianLinks,
@@ -87,6 +88,8 @@ export async function POST(request: NextRequest) {
       login_email?: string;
       role?: string;
       account_id?: string;
+      /** The role this invite is confirmed to change the account from (lane L31). */
+      confirm_role_change_from?: string | null;
       guardian?: {
         athlete_id?: string;
         full_name?: string;
@@ -148,6 +151,8 @@ export async function POST(request: NextRequest) {
       accountIdHint: body.account_id?.trim() || undefined,
       guardian,
       volunteer,
+      // A role change from this route needs the confirmation; null means "none given".
+      roleChangeConfirmedFrom: body.confirm_role_change_from?.trim() || null,
     });
 
     await writePilotAuditEvent({
@@ -188,6 +193,13 @@ export async function POST(request: NextRequest) {
       requires_entra_guest_invite: true,
     });
   } catch (error) {
+    // The role it would change from goes back with the refusal, so the page can name it and send it.
+    if (error instanceof RoleChangeUnconfirmedError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, current_role: error.currentRole },
+        { status: 409 },
+      );
+    }
     return jsonError(error);
   }
 }

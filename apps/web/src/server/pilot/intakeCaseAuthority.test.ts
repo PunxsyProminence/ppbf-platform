@@ -457,3 +457,12 @@ describe('emergencyContactColumnsForReader', () => {
     }
   });
 });
+
+// FC-06 (#1542): a coach's message to the athlete is read through its own
+// inbox only. No generic reader -- domain-get, the intake aggregate, the
+// passbook -- hands it to an athlete or a guardian.
+test("athlete_message reaches neither an athlete nor a guardian through the generic readers or the passbook", () => {
+  expect(coachObservationNoteTypesForReader('athlete')).not.toContain('athlete_message');
+  expect(coachObservationNoteTypesForReader('parent')).not.toContain('athlete_message');
+  expect(PASSBOOK_ATHLETE_NOTE_TYPES).not.toContain('athlete_message');
+});
