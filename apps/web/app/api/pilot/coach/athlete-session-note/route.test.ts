@@ -92,9 +92,27 @@ interface FakeSession {
   date: string;
 }
 
+/** A coach's session run (pilot.session_script_runs), plain or scripted. */
+interface FakeRun {
+  organization_id: string;
+  run_id: string;
+  run_state: 'in_progress' | 'completed' | 'abandoned';
+  started_at: string;
+}
+
+/** A present mark on a run (pilot.session_run_athletes); removed_at set = taken back. */
+interface FakeMark {
+  organization_id: string;
+  run_id: string;
+  athlete_id: string;
+  removed_at: string | null;
+}
+
 let athletes: FakeAthlete[];
 let coverage: FakeCoverage[];
 let sessions: FakeSession[];
+let runs: FakeRun[];
+let marks: FakeMark[];
 let statements: string[];
 
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim();
@@ -190,6 +208,10 @@ beforeEach(() => {
     },
   ];
 
+  // No run anywhere unless a case below starts one.
+  runs = [];
+  marks = [];
+
   statements = [];
 
   mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
@@ -261,6 +283,30 @@ beforeEach(() => {
       return matches[0] ? { notes: matches[0].notes } : null;
     }
 
+    /* The run read (F-067). Every predicate is honoured only when the SQL
+       carries it, as for the session read: drop the organization, the live
+       state, the gym day or the taken-back filter and the cases below go red. */
+    if (text.includes('from pilot.session_script_runs')) {
+      const [organizationId, athleteId, day] = params as string[];
+      if (/current_date|now\(\)/i.test(text)) {
+        throw new Error('run read used the database clock: ' + text);
+      }
+      if (!text.includes("(r.started_at at time zone 'America/New_York')::date = $3::date")) {
+        throw new Error('run read did not reduce started_at in the gym zone: ' + text);
+      }
+      const scoped = text.includes('r.organization_id = $1');
+      const liveOnly = text.includes("r.run_state = 'in_progress'");
+      const standingOnly = text.includes('m.removed_at is null');
+      const marksOn = (run: FakeRun) => marks.filter((mark) => mark.organization_id === run.organization_id
+        && mark.run_id === run.run_id
+        && (!standingOnly || mark.removed_at === null));
+      const running = runs.some((run) => (!scoped || run.organization_id === organizationId)
+        && (!liveOnly || run.run_state === 'in_progress')
+        && gymDayOf(run.started_at) === day
+        && (marksOn(run).length === 0 || marksOn(run).some((mark) => mark.athlete_id === athleteId)));
+      return { running };
+    }
+
     throw new Error('unexpected statement: ' + text);
   });
 });
@@ -305,7 +351,7 @@ describe('who may read it', () => {
   ])('%s reads the note', async (_label, caller) => {
     const { status, body } = await readAs(caller as Partial<PilotPrincipal>);
     expect(status).toBe(200);
-    expect(body).toEqual({ today: { note: MARISOL_NOTE } });
+    expect(body).toEqual({ today: { note: MARISOL_NOTE }, session_running: false });
   });
 
   it.each([
@@ -315,7 +361,7 @@ describe('who may read it', () => {
     // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     const { status, body } = await readAs(caller as Partial<PilotPrincipal>);
     expect(status).toBe(200);
-    expect(body).toEqual({ today: { note: MARISOL_NOTE } });
+    expect(body).toEqual({ today: { note: MARISOL_NOTE }, session_running: false });
   });
 
   it("a same-organization coach asking for another gym's athlete is refused before any session is read", async () => {
@@ -431,7 +477,7 @@ describe('which day it reads', () => {
     const { body } = await readAs({ role: 'coach' });
     // ath-marisol's newest row is stamped 00:20 UTC on UTC_DAY. Only a read
     // on the gym day finds it.
-    expect(body).toEqual({ today: { note: MARISOL_NOTE } });
+    expect(body).toEqual({ today: { note: MARISOL_NOTE }, session_running: false });
     expect(GYM_DAY).not.toBe(UTC_DAY);
   });
 
@@ -444,7 +490,7 @@ describe('which day it reads', () => {
   it('does not let yesterday become today through the drifting date column', async () => {
     const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
     expect(status).toBe(200);
-    expect(body).toEqual({ today: null });
+    expect(body).toEqual({ today: null, session_running: false });
   });
 });
 
@@ -452,7 +498,7 @@ describe('what a coach is told', () => {
   it('says plainly when no session was started today', async () => {
     const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
     expect(status).toBe(200);
-    expect(body).toEqual({ today: null });
+    expect(body).toEqual({ today: null, session_running: false });
   });
 
   it('returns the athlete own words exactly, including line breaks', async () => {
@@ -463,14 +509,14 @@ describe('what a coach is told', () => {
   it('never sends the no-note placeholder as something a child wrote', async () => {
     const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-devon');
     expect(status).toBe(200);
-    expect(body).toEqual({ today: { note: null } });
+    expect(body).toEqual({ today: { note: null }, session_running: false });
     expect(JSON.stringify(body)).not.toContain('No athlete note provided');
   });
 
   it('never sends the historical Auto check-in readiness text', async () => {
     const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-auto');
     expect(status).toBe(200);
-    expect(body).toEqual({ today: { note: null } });
+    expect(body).toEqual({ today: { note: null }, session_running: false });
     expect(JSON.stringify(body)).not.toContain('Auto check-in readiness');
   });
 
@@ -479,14 +525,151 @@ describe('what a coach is told', () => {
   it('keeps "no session" and "session with no note" apart', async () => {
     const noSession = await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
     const noNote = await readAs({ role: 'coach' }, 'athlete_id=ath-devon');
-    expect(noSession.body).toEqual({ today: null });
-    expect(noNote.body).toEqual({ today: { note: null } });
+    expect(noSession.body).toEqual({ today: null, session_running: false });
+    expect(noNote.body).toEqual({ today: { note: null }, session_running: false });
     expect(noSession.body).not.toEqual(noNote.body);
   });
 
-  it('carries nothing but the note off the session row', async () => {
+  it('carries nothing but the note off the session row, and the yes/no about a run', async () => {
     const { body } = await readAs({ role: 'coach' });
-    expect(Object.keys(body)).toEqual(['today']);
+    expect(Object.keys(body)).toEqual(['today', 'session_running']);
     expect(Object.keys(body.today)).toEqual(['note']);
+  });
+});
+
+/* F-067: a coach running a session (plain or scripted) that the athlete never
+   checked in to used to leave this panel saying "No session started today".
+   The route now also says whether a run is under way for this athlete on the
+   gym's day. ath-rosa has no session row today throughout. */
+const TODAY_AT_THE_GYM = '2026-09-25T23:00:00.000Z'; // 19:00 at the gym
+const runReads = () => statements.filter((sql) => sql.includes('pilot.session_script_runs'));
+
+function startRun(overrides: Partial<FakeRun> = {}): FakeRun {
+  const run: FakeRun = {
+    organization_id: 'org-1',
+    run_id: `run-${runs.length + 1}`,
+    run_state: 'in_progress',
+    started_at: TODAY_AT_THE_GYM,
+    ...overrides,
+  };
+  runs.push(run);
+  return run;
+}
+
+function mark(run: FakeRun, athleteId: string, removedAt: string | null = null) {
+  marks.push({ organization_id: run.organization_id, run_id: run.run_id, athlete_id: athleteId, removed_at: removedAt });
+}
+
+describe('a session run under way (F-067)', () => {
+  it('a live run today with nobody marked yet counts for the athlete', async () => {
+    startRun();
+    const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
+    expect(status).toBe(200);
+    expect(body).toEqual({ today: null, session_running: true });
+  });
+
+  it("another coach's run counts: it is the athlete's day, not the reader's run", async () => {
+    startRun();
+    const { body } = await readAs({ accountId: 'coach-stranger', role: 'coach' }, 'athlete_id=ath-rosa');
+    expect(body.session_running).toBe(true);
+  });
+
+  it('a run with the athlete marked present counts', async () => {
+    const run = startRun();
+    mark(run, 'ath-devon');
+    mark(run, 'ath-rosa');
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(true);
+  });
+
+  it("a run whose marks name only other athletes is somebody else's session", async () => {
+    const run = startRun();
+    mark(run, 'ath-devon');
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body).toEqual({ today: null, session_running: false });
+  });
+
+  it('a mark taken back does not put the athlete in the run', async () => {
+    const run = startRun();
+    mark(run, 'ath-devon');
+    mark(run, 'ath-rosa', '2026-09-25T23:10:00.000Z');
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(false);
+  });
+
+  it('a run whose only marks were taken back has nobody marked, so it counts', async () => {
+    const run = startRun();
+    mark(run, 'ath-devon', '2026-09-25T23:10:00.000Z');
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(true);
+  });
+
+  it("a run left open from yesterday is not today's session", async () => {
+    startRun({ started_at: '2026-09-24T22:00:00.000Z' });
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(false);
+  });
+
+  it('a run started this gym evening counts after UTC midnight', async () => {
+    // 20:10 at the gym = 00:10 UTC on UTC_DAY; the clock is 20:30 gym time.
+    startRun({ started_at: '2026-09-26T00:10:00.000Z' });
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(true);
+  });
+
+  it.each(['completed', 'abandoned'] as const)('a %s run today is not under way', async (runState) => {
+    startRun({ run_state: runState });
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(false);
+  });
+
+  it("another gym's live run does not count", async () => {
+    startRun({ organization_id: 'org-2' });
+    expect((await readAs({ role: 'coach' }, 'athlete_id=ath-rosa')).body.session_running).toBe(false);
+  });
+
+  it('is not asked when the athlete has a session row today; the note answers as before', async () => {
+    startRun();
+    const { body } = await readAs({ role: 'coach' });
+    expect(body).toEqual({ today: { note: MARISOL_NOTE }, session_running: false });
+    expect(runReads()).toEqual([]);
+  });
+
+  it('counts plain and scripted runs alike: the read does not filter on a script', async () => {
+    startRun();
+    await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
+    expect(runReads()).toHaveLength(1);
+    expect(runReads()[0]).not.toContain('script_id');
+  });
+
+  it('writes nothing', async () => {
+    const run = startRun();
+    mark(run, 'ath-rosa');
+    await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
+    expect(statements.filter((sql) => /^(insert|update|delete)\b/i.test(sql))).toEqual([]);
+  });
+
+  it.each([
+    ['an athlete', { role: 'athlete', athleteId: 'ath-rosa' }],
+    ['a parent', { role: 'parent' }],
+    ['the board', { role: 'board' }],
+    ['a platform owner', { role: 'platform_owner' }],
+  ])('%s is refused before any run is read', async (_label, caller) => {
+    startRun();
+    const { status } = await readAs(caller as Partial<PilotPrincipal>, 'athlete_id=ath-rosa');
+    expect(status).toBe(403);
+    expect(runReads()).toEqual([]);
+  });
+
+  it("a coach asking for another gym's athlete is refused before any run is read", async () => {
+    startRun({ organization_id: 'org-2' });
+    const { status } = await readAs({ accountId: 'coach-stranger', role: 'coach' }, 'athlete_id=ath-othergym');
+    expect(status).toBe(403);
+    expect(runReads()).toEqual([]);
+  });
+
+  it('a failed run read fails the request; it is not read as "no session"', async () => {
+    const real = mockQueryOne.getMockImplementation()!;
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (normalize(sql).includes('from pilot.session_script_runs')) throw new Error('connection reset');
+      return real(sql, params);
+    });
+    const { status, body } = await readAs({ role: 'coach' }, 'athlete_id=ath-rosa');
+    expect(status).toBeGreaterThanOrEqual(500);
+    expect(body.today).toBeUndefined();
+    expect(body.session_running).toBeUndefined();
   });
 });

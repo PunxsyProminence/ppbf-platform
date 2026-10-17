@@ -11,6 +11,7 @@ import {
   ADULT_PATHWAY_SCOPE,
   ADULT_PATHWAY_STAGES,
 } from '@/src/shared/adultPathwayStages';
+import BackHome from '@/components/BackHome';
 
 // The adult pathway: four stages, their rough time ranges, and the goals a
 // coach checks off in each.
@@ -72,6 +73,7 @@ function CoachAdultPathway() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Adult Pathway</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">{ADULT_PATHWAY_SCOPE}</p>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-200)]">{ADULT_PATHWAY_CAVEAT}</p>
           <Link href="/coach/cohorts" className="btn btn--ghost mt-[var(--s4)]">

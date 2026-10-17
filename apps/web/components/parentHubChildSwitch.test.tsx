@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import ParentHub from './ParentHub';
@@ -72,6 +72,10 @@ function installFetch(
     if (url.includes('/api/pilot/parent/messages')) {
       return messages();
     }
+    // This guardian's own opens (FC-08): none, so every message is new.
+    if (url.includes('/api/pilot/parent/message-reads')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     if (url.includes('/api/pilot/scheduler')) {
       return scheduler();
     }
@@ -85,6 +89,10 @@ function installFetch(
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // The hub opens on the child remembered last (src/lib/chosenChild.ts); one
+  // test's pick must not choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('parent hub child selector', () => {
@@ -448,7 +456,9 @@ describe('Safety & Consent card on the parent hub', () => {
     expect(screen.queryByText('Taking a short break.')).toBeNull();
   });
 
-  test('a failed safety read leaves the rest of the hub working, card falls back to plain links', async () => {
+  // UXB-24: a failed read used to print the same neutral prompt as a read that
+  // answered with nothing to flag. It now says the check did not answer.
+  test('a failed safety read leaves the rest of the hub working and says the check did not answer', async () => {
     installFetch(undefined, async () => {
       throw new Error('safety summary offline');
     });
@@ -458,6 +468,29 @@ describe('Safety & Consent card on the parent hub', () => {
 
     expect(screen.getByRole('link', { name: 'View Safety Status' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+    expect(screen.getByText("Couldn't check right now. Use View Safety Status to see it.")).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+  });
+
+  test('a refused safety read says the check did not answer, not the all-quiet prompt', async () => {
+    installFetch(undefined, async () => jsonResponse({ error: 'nope' }, false));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText("Couldn't check right now. Use View Safety Status to see it.")).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+  });
+
+  test('a safety read still in flight reads as checking, not as nothing to report', async () => {
+    installFetch(undefined, () => new Promise<Response>(() => {}));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText('Checking safety status')).toBeDefined();
+    expect(screen.queryByText(/Check your child.s active training-hold and safety-gate status/)).toBeNull();
+    expect(screen.queryByText(/Couldn.t check right now/)).toBeNull();
   });
 });
 
@@ -564,6 +597,27 @@ describe('Report a Barrier (#95/#96)', () => {
     await screen.findByText('Forbidden');
     expect(screen.queryByText("Sent to your child's coach.")).toBeNull();
   });
+
+  // UXB-23: success and failure used to share one unmarked line.
+  test('a sent report is a status line and a failed one is an alert', async () => {
+    let answer = jsonResponse({ ok: true, note_id: 'note-1' });
+    installFetch(undefined, undefined, async () => answer);
+    await openParentFloor();
+
+    // Scoped to the barrier card: a status or alert elsewhere on the hub must
+    // neither break nor satisfy this.
+    const card = within(screen.getByText('Report a Barrier').closest('div') as HTMLElement);
+
+    fireEvent.change(card.getByLabelText("What's going on"), { target: { value: 'Something.' } });
+    fireEvent.click(card.getByRole('button', { name: 'Send to Coach' }));
+    expect((await card.findByRole('status')).textContent).toBe("Sent to your child's coach.");
+
+    answer = jsonResponse({ error: 'Forbidden' }, false);
+    fireEvent.change(card.getByLabelText("What's going on"), { target: { value: 'Again.' } });
+    fireEvent.click(card.getByRole('button', { name: 'Send to Coach' }));
+    expect((await card.findByRole('alert')).textContent).toBe('Forbidden');
+    expect(card.queryByRole('status')).toBeNull();
+  });
 });
 
 // Capability #90, read side: the Messages tab previously showed hardcoded
@@ -643,6 +697,17 @@ describe('Messages tab (#90)', () => {
     expect(screen.getByText(/This is not an empty inbox\./i)).toBeDefined();
   });
 
+  // UXB-13: a read still in flight used to print "Unavailable - your messages
+  // have not loaded", which claims a failure nobody has observed.
+  test('a messages read still in flight reads as loading, not as unavailable or empty', async () => {
+    installFetch(undefined, undefined, undefined, () => new Promise<Response>(() => {}));
+    await openMessages();
+
+    expect(screen.getByText('Reading your messages')).toBeDefined();
+    expect(screen.queryByText(/your messages have not loaded/i)).toBeNull();
+    expect(screen.queryByText('No messages yet.')).toBeNull();
+  });
+
   // A refusal is a failed read too: the effect returns early on !response.ok
   // without setting messagesLoaded, so the tab must not call that empty
   // either.
@@ -672,7 +737,7 @@ describe('Messages tab (#90)', () => {
 // default.
 describe('summary tile honesty', () => {
   function tileValue(label: string): string {
-    // 'Messages' is also a tab button; the tile's label is the <p>.
+    // A tile label may also be a tab button; the tile's label is the <p>.
     const labelElement = screen.getAllByText(label).find((element) => element.tagName === 'P');
     const tile = labelElement?.parentElement;
     return tile?.textContent?.replace(label, '').trim() ?? '';
@@ -693,7 +758,7 @@ describe('summary tile honesty', () => {
     expect(tileValue('Upcoming')).toBe('0');
   });
 
-  test('a failed messages read renders the Messages tile as Unavailable, not as 0', async () => {
+  test('a failed messages read renders the New messages tile as Unavailable, not as 0', async () => {
     installFetch(undefined, undefined, undefined, async () => {
       throw new Error('messages offline');
     });
@@ -701,7 +766,7 @@ describe('summary tile honesty', () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('Messages')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
   });
 
   test('a messages read that answered keeps its real count -- including a real zero', async () => {
@@ -712,10 +777,10 @@ describe('summary tile honesty', () => {
 
     // The default mock answers with zero messages; that zero is an
     // observation, not a fabrication, and stays a number.
-    expect(tileValue('Messages')).toBe('0');
+    expect(tileValue('New messages')).toBe('0');
   });
 
-  test('a message that arrived is counted on the tile', async () => {
+  test('a message that arrived, not yet opened, is counted on the tile', async () => {
     installFetch(undefined, undefined, undefined, async () =>
       jsonResponse({
         ok: true,
@@ -728,6 +793,6 @@ describe('summary tile honesty', () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('Messages')).toBe('2');
+    expect(tileValue('New messages')).toBe('2');
   });
 });

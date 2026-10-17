@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import type { GymTvListItem, MintedPairCode } from '@/src/server/pilot/gymTvs';
 
@@ -53,7 +54,7 @@ interface GymTvPanelProps {
 
 type ListState = 'closed' | 'loading' | 'loaded' | 'unavailable';
 
-/** Server refusal codes this panel names in plain words. Anything else is shown as the code. */
+/** Server refusal codes this panel names in plain words. Anything else becomes plain words too (UXB-09). */
 const REFUSALS: Record<string, string> = {
   TV_IN_USE: 'This TV is in use by another coach. Ask them, or pick another TV.',
   TV_NOT_PAIRED: 'This TV is not paired yet. Type its code on the TV first.',
@@ -75,8 +76,8 @@ export function describeRefusal(code: string | undefined, status: number): strin
   // not as a GymTvError code; the status is the reliable key.
   if (status === 401) return 'Your sign-in has expired. Sign in again, then retry.';
   if (status === 403) return 'Your account is not allowed to manage gym TVs.';
-  if (code && code.trim() !== '') return `The server refused: ${code}`;
-  return `The server refused the request (${status}).`;
+  // Any other code or status becomes plain words, never "refused: CODE" or a number (UXB-09).
+  return refusalWords({ error: code, status });
 }
 
 const STATUS_LABEL: Record<GymTvListItem['status'], { glyph: string; label: string; badge: string }> = {

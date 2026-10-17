@@ -13,6 +13,7 @@ import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
@@ -852,7 +853,14 @@ interface TodaySessionNote {
  */
 type SessionNoteRead =
   | { readonly status: 'loading'; readonly athleteId: string }
-  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: TodaySessionNote | null }
+  | {
+    readonly status: 'loaded';
+    readonly athleteId: string;
+    readonly today: TodaySessionNote | null;
+    /* A coach's run is under way for this athlete on the gym's day (F-067).
+       Read only when `today` is null; false when the server does not say. */
+    readonly sessionRunning: boolean;
+  }
   | { readonly status: 'unavailable'; readonly athleteId: string };
 
 /* The subsection's sentences, named once so the component and its tests agree
@@ -878,6 +886,10 @@ const SESSION_NOTE_LOADING = 'Loading today’s session note...';
    the first says nobody has begun a session, the second that a session is
    under way and carries no message. */
 const SESSION_NOTE_NO_SESSION_TODAY = 'No session started today.';
+/* No session row of the athlete's own, but a coach's run is live in the gym
+   with this athlete in it (or nobody marked yet): "No session started today"
+   would be false on the floor (F-067). */
+const SESSION_NOTE_RUN_NO_NOTE = 'A session is running today. No session note written for this athlete yet.';
 const SESSION_NOTE_NONE_WRITTEN = 'No session note written today.';
 const SESSION_NOTE_READ_FAILED =
   'Today’s session note could not be loaded. This is not a statement that no note was written -- try again.';
@@ -1442,7 +1454,7 @@ export default function CoachWorkspace() {
   // reproduce the exact false-reassurance failure this file guards against
   // elsewhere (see the readiness/injuryFlag handling).
   const reviewQueueBadge: CoachTabBadge | undefined = shadowQueueUnavailable
-    ? { tone: 'locked', label: 'unavailable' }
+    ? { tone: 'restricted', label: 'unavailable' }
     : assignmentsDue > 0
       ? { tone: 'monitor', label: `${assignmentsDue} pending` }
       : undefined;
@@ -1620,11 +1632,7 @@ export default function CoachWorkspace() {
             await loadLiveRun();
             return;
           }
-          setShowOnWallError(
-            typeof payload.error === 'string' && payload.error.trim() !== ''
-              ? `The server refused: ${payload.error}`
-              : 'The server refused the request.',
-          );
+          setShowOnWallError(refusalWords({ error: payload.error, status: response.status }));
           return;
         }
         if (payload.run && typeof payload.run.show_on_wall === 'boolean') {
@@ -2116,7 +2124,7 @@ export default function CoachWorkspace() {
       if (!response.ok || !payload.ok || !payload.escalation) {
         setEscalationAckErrors((prev) => ({
           ...prev,
-          [escalationId]: payload.error || 'The escalation could not be acknowledged.',
+          [escalationId]: refusalWords({ error: payload.error }, {}, 'The escalation could not be acknowledged. Try again.'),
         }));
         return;
       }
@@ -2153,7 +2161,7 @@ export default function CoachWorkspace() {
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; status?: string; error?: string };
 
       if (!response.ok || !payload.ok) {
-        setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: payload.error || 'Action failed.' }));
+        setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: refusalWords({ error: payload.error, status: response.status }) }));
         return;
       }
 
@@ -2216,7 +2224,7 @@ export default function CoachWorkspace() {
            one of those is true. */
         setNicknameClearErrors((prev) => ({
           ...prev,
-          [athleteId]: payload.error || 'The ring name was not cleared. Ask an organization admin.',
+          [athleteId]: refusalWords({ error: payload.error }, {}, 'The ring name was not cleared. Ask an organization admin.'),
         }));
         return;
       }
@@ -2405,7 +2413,10 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('session note response unreadable');
       }
-      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed });
+      // Only an explicit true says a run is under way; a body without it is
+      // read as before, so an older server keeps the older sentence.
+      const sessionRunning = parsed === null && (payload as { session_running?: unknown }).session_running === true;
+      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed, sessionRunning });
     } catch (error) {
       if (superseded()) {
         return;
@@ -2456,7 +2467,7 @@ export default function CoachWorkspace() {
         if (reviewAthleteRef.current !== athleteId) {
           return;
         }
-        setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
+        setReviewSessionsError(refusalWords({ error: payload.error }, {}, 'Sessions could not be loaded.'));
         setReviewSessionsState('unavailable');
         return;
       }
@@ -2603,7 +2614,7 @@ export default function CoachWorkspace() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({ error: 'Coach review was not saved.' }))) as { error?: string };
-        setReviewSyncMessage(payload.error || 'Coach review was not saved.');
+        setReviewSyncMessage(refusalWords({ error: payload.error }, {}, 'Coach review was not saved.'));
         return;
       }
 
@@ -2810,10 +2821,12 @@ export default function CoachWorkspace() {
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
-            they have to know to open. */}
-        <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+            they have to know to open. Drawn --restricted, not --locked: "A pain
+            report is not a medical stop at any severity" (OD-2026-10-03-017), and
+            --locked is the medical stop (UXB-10). */}
+        <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
               Athlete Pain Reports
             </h2>
             <button
@@ -2831,9 +2844,9 @@ export default function CoachWorkspace() {
           )}
 
           {!painReportsLoading && painReportsError && (
-            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
-              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{painReportsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
+            <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
+              <p className="text-sm font-semibold text-[color:var(--restricted-ink)]">{painReportsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--restricted-ink)]">
                 Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
                 reported pain&quot; -- ask the floor.
               </p>
@@ -2851,14 +2864,14 @@ export default function CoachWorkspace() {
           {!painReportsLoading && !painReportsError && painReports.length > 0 && (
             <div className="space-y-3">
               {painReportsTruncated && (
-                <p className="text-xs text-[var(--locked-ink)]">
+                <p className="text-xs text-[var(--restricted-ink)]">
                   More reports matched than are listed here. The highest-severity ones are shown first;
                   the rest are in each athlete&apos;s near-miss history on the decision loop.
                 </p>
               )}
 
               {painReports.map((report) => (
-                <article key={report.nearMissId} className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s3)]">
+                <article key={report.nearMissId} className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s3)] space-y-[var(--s3)]">
                   <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                     <div>
                       <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
@@ -2918,7 +2931,7 @@ export default function CoachWorkspace() {
                     Record What You Did
                   </Link>
                 )}
-                <p className="text-[11px] text-[color:var(--bone-400)]">
+                <p className="t-muted">
                   There is no clear button: a report stays here until it ages out of the window, and the
                   permanent record is the athlete&apos;s near-miss history, which nothing on this screen
                   can remove.
@@ -2929,7 +2942,7 @@ export default function CoachWorkspace() {
         </section>
 
         {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
-            the pain reports and wearing the same locked band: an escalation is
+            the pain reports and wearing the locked band: an escalation is
             what a near miss, pain report, or safety-gate flag becomes when it
             is severe enough to auto-escalate, and this pull surface is the
             platform's only alarm. The coach acknowledges ("I have seen this");
@@ -2954,9 +2967,9 @@ export default function CoachWorkspace() {
           )}
 
           {!escalationsLoading && escalationsError && (
-            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
-              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{escalationsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
+            <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
+              <p className="text-sm font-semibold text-[color:var(--restricted-ink)]">{escalationsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--restricted-ink)]">
                 Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
               </p>
             </div>
@@ -3015,7 +3028,7 @@ export default function CoachWorkspace() {
                     )}
 
                     {escalationAckErrors[escalation.escalation_id] && (
-                      <p role="alert" className="t-data text-[var(--locked-ink)]">
+                      <p role="alert" className="t-data text-[var(--restricted-ink)]">
                         {escalationAckErrors[escalation.escalation_id]}
                       </p>
                     )}
@@ -3533,9 +3546,9 @@ export default function CoachWorkspace() {
                   )}
 
                   {athletesError && !athletesLoading && (
-                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                       <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
-                        <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athletes</p>
+                        <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athletes</p>
                         <button
                           onClick={() => void loadAthletes()}
                           className="btn btn--ghost"
@@ -3544,7 +3557,7 @@ export default function CoachWorkspace() {
                           Retry
                         </button>
                       </div>
-                      <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{athletesError}</p>
+                      <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-xs)]">{athletesError}</p>
                     </div>
                   )}
 
@@ -4028,7 +4041,9 @@ export default function CoachWorkspace() {
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today === null && (
-                        <p className="t-muted">{SESSION_NOTE_NO_SESSION_TODAY}</p>
+                        <p className="t-muted">
+                          {sessionNoteShown.sessionRunning ? SESSION_NOTE_RUN_NO_NOTE : SESSION_NOTE_NO_SESSION_TODAY}
+                        </p>
                       )}
 
                       {sessionNoteShown.status === 'loaded' && sessionNoteShown.today !== null && (
@@ -4564,9 +4579,9 @@ export default function CoachWorkspace() {
               />
 
               {shadowQueueUnavailable && (
-                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                   <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
-                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Unable to load the SHADOW review queue</p>
+                    <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)] font-semibold">Unable to load the SHADOW review queue</p>
                     <button
                       onClick={() => void loadShadowData()}
                       className="btn btn--ghost flex-shrink-0"
@@ -4575,7 +4590,7 @@ export default function CoachWorkspace() {
                       Retry
                     </button>
                   </div>
-                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">This board is incomplete. Open review items may exist that are not listed below.</p>
+                  <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-xs)]">This board is incomplete. Open review items may exist that are not listed below.</p>
                 </div>
               )}
 
@@ -4647,7 +4662,7 @@ export default function CoachWorkspace() {
                       {shadowQueue.map((item) => (
                         <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
-                          <p>Status: {item.status}</p>
+                          <p>Status: {shadowObservationStateLabel(item.status)}</p>
                           <p>Documents: {item.document_count}</p>
                           {item.status === 'pending_review' && (
                             <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
@@ -4670,7 +4685,7 @@ export default function CoachWorkspace() {
                             </div>
                           )}
                           {intakeActionErrors[item.intake_case_id] && (
-                            <p className="mt-[var(--s2)] text-[color:var(--locked-ink)]">{intakeActionErrors[item.intake_case_id]}</p>
+                            <p className="mt-[var(--s2)] text-[color:var(--restricted-ink)]">{intakeActionErrors[item.intake_case_id]}</p>
                           )}
                         </div>
                       ))}
@@ -4708,9 +4723,9 @@ export default function CoachWorkspace() {
               </div>
 
               {shadowReadError ? (
-                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                   <div className="flex items-center justify-between gap-[var(--s3)]">
-                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">{shadowReadError}</p>
+                    <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)] font-semibold">{shadowReadError}</p>
                     <button
                       onClick={() => void loadShadowData()}
                       className="btn btn--ghost flex-shrink-0"
@@ -4815,7 +4830,7 @@ export default function CoachWorkspace() {
                   <p className="t-data text-[color:var(--bone-400)]">Loading your athlete roster...</p>
                 )}
                 {!athletesLoading && athletesError && (
-                  <p className="t-data text-[color:var(--locked-ink)]">
+                  <p className="t-data text-[color:var(--restricted-ink)]">
                     The athlete roster could not be loaded, so sessions cannot be picked. Athletes and
                     sessions may exist that are not shown here.
                   </p>
@@ -4831,7 +4846,7 @@ export default function CoachWorkspace() {
                   <p className="t-data text-[color:var(--bone-400)]">Loading sessions...</p>
                 )}
                 {reviewSessionsState === 'unavailable' && (
-                  <p className="t-data text-[color:var(--locked-ink)]">
+                  <p className="t-data text-[color:var(--restricted-ink)]">
                     {reviewSessionsError} Sessions may exist that are not listed here -- do not read
                     this as &quot;no sessions&quot;.
                   </p>
@@ -4877,7 +4892,7 @@ export default function CoachWorkspace() {
                   <p className="t-data text-[color:var(--bone-400)]">Checking for existing reviews...</p>
                 )}
                 {sessionReviewsState === 'unavailable' && (
-                  <p className="t-data text-[color:var(--locked-ink)]">
+                  <p className="t-data text-[color:var(--restricted-ink)]">
                     Existing reviews could not be loaded. Reviews may exist on this session that are
                     not shown here.
                   </p>

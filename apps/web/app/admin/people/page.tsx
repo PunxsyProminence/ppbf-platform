@@ -16,6 +16,7 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 // the server signs coaches, staff, volunteers and parents in by emailed link.
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
+import BackHome from '@/components/BackHome';
 
 interface Member {
   account_id: string;
@@ -207,9 +208,7 @@ function WrongRoleNotice() {
           <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link href="/admin" className="btn btn--ghost">
-            Admin Home
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>
@@ -452,6 +451,9 @@ function PeopleConsoleContent() {
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
+  // The athlete's roster name for a login row, else the login id (F-110).
+  const athleteNameFor = (member: Member): string =>
+    (member.athlete_id ? rosterById.get(member.athlete_id)?.full_name?.trim() : '') || member.account_id;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1060,7 +1062,7 @@ function PeopleConsoleContent() {
           <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
               <p className="t-eyebrow">People</p>
-              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Manage Your Gym</h1>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Office</h1>
               <p className="t-body mt-[var(--s3)]">
                 Add coaches and staff, and create athlete sign-ins.
                 {organizationName && (
@@ -1079,7 +1081,7 @@ function PeopleConsoleContent() {
                 Board Seats
               </Link>
               <Link href="/admin" className="btn btn--ghost">
-                Admin Home
+                Capabilities
               </Link>
             </div>
           </div>
@@ -1446,9 +1448,11 @@ function PeopleConsoleContent() {
                             {isPinAthlete && (codeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
+                                  {/* Named as the office knows them: the roster's name for
+                                      the athlete record this login holds, else the login id. */}
                                   {member.has_pin
-                                    ? `Issues ${member.account_id} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
-                                    : `Issues ${member.account_id} a new one-time activation code now. The code issued before stops working.`}
+                                    ? `Issues ${athleteNameFor(member)} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
+                                    : `Issues ${athleteNameFor(member)} a new one-time activation code now. The code issued before stops working.`}
                                 </p>
                                 <div className="flex flex-wrap gap-[var(--s2)]">
                                   <button

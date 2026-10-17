@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 /*
  * The published video library, read-only (work order N7-02).
@@ -117,6 +118,7 @@ export default function VideoLibraryPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Library</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Published Clips</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Every clip published to the gym&apos;s library, newest first.
           </p>

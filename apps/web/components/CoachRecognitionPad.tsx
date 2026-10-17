@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { RECOGNITION_NOTE_MAX, RECOGNITION_PHRASES } from '@/src/shared/achievementPaths';
 
 /**
@@ -139,7 +140,7 @@ export default function CoachRecognitionPad({ onSent }: { onSent?: (athleteId: s
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        setSend({ kind: 'failed', message: payload.error || 'That did not send. Try it again.' });
+        setSend({ kind: 'failed', message: refusalWords({ error: payload.error, status: response.status }, {}, 'That did not send. Try it again.') });
         return;
       }
 
@@ -189,7 +190,7 @@ export default function CoachRecognitionPad({ onSent }: { onSent?: (athleteId: s
       {send.kind === 'failed' && (
         <p
           role="alert"
-          className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]"
+          className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]"
         >
           {send.message}
         </p>

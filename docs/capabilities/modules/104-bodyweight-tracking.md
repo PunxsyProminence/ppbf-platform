@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 slice promotion) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. Body weight enters via sparring form (sparring/page.tsx pushes body_weight observation) and check-in; athleteBodyMass.ts feeds calculateSevenDayWeightChange with a >5%/7-day flag; staff read at coach/athlete-body-mass/route.ts. No trend UI. |
+| Code | `apps/web/app/api/pilot/coach/athlete-body-mass/route.ts`, `apps/web/app/athlete/dashboard/sparring/page.tsx`, `apps/web/app/api/pilot/shadow/formulas/observations/route.ts`, `apps/web/src/server/pilot/athleteBodyMass.ts` |
+| Tests | `apps/web/app/api/pilot/coach/athlete-body-mass/route.test.ts`, `apps/web/src/server/pilot/athleteBodyMass.test.ts`, `apps/web/src/server/pilot/formulas/mvpFormulaEngine.test.ts` |
 | Vertical slice | sparring-form body-weight intake -> tested MVP-12 7-day weight-change calculation, org/role-scoped; trend UI is future work |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -42,3 +45,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — sparring form optional body-weight field -> generic formula-observations intake -> MVP-12 7-day weight-change . Missing: A real intake path (sparring form), storage, org-scoped/role-gated API, and a tested 7-day weight-change calculation all exist and are exercised by te. Evidence: apps/web/app/athlete/dashboard/sparring/page.tsx; apps/web/app/api/pilot/shadow/formulas/observations/route.ts. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/app/athlete/dashboard/sparring/page.tsx; apps/web/app/api/pilot/shadow/formulas/observations/route.ts. Test: apps/web/src/server/pilot/formulas/mvpFormulaEngine.test.ts (MVP-12 test, line ~406) pins the 7-day weight-cha |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 slice promotion)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

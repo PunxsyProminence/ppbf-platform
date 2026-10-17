@@ -9,6 +9,7 @@ import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/us
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import BackHome from '@/components/BackHome';
 
 /** A row of pilot.athletes as GET /api/pilot/athletes/list returns it. */
 interface RosterAthlete {
@@ -543,9 +544,7 @@ function AthleteRecordsConsoleContent() {
               <Link href="/admin/people" className="btn btn--ghost">
                 People
               </Link>
-              <Link href="/admin" className="btn btn--ghost">
-                Admin Home
-              </Link>
+              <BackHome />
             </div>
           </div>
         </header>

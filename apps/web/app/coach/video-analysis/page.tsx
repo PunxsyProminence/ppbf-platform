@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
@@ -9,6 +8,7 @@ import { formatGymStamp } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
 import ClipTagsPanel from '@/components/ClipTagsPanel';
 import TaggedClipsList from '@/components/TaggedClipsList';
+import BackHome from '@/components/BackHome';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -1246,11 +1246,9 @@ export default function CoachVideoAnalysisPage() {
         </section>
 
         <div className="flex flex-wrap gap-[var(--s3)]">
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost">
-            Back to Coach Workspace
-          </Link>
+          <BackHome />
           <OperationsLink className="btn btn--ghost">
-            Mission Control
+            Operations
           </OperationsLink>
         </div>
       </div>
