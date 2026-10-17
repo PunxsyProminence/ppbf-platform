@@ -4693,6 +4693,55 @@ describe('the summary says whether today\'s wellness is on record, never a score
     expect(within(wellnessTile()).queryByText('Not recorded today')).toBeNull();
   });
 
+  // UXB-06: the panel used to be one line with no way back, and the Floor opens on it.
+  test('a failed read keeps the Wellness form with Try again, and Try again reads it again', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+    const reads = () => fetchCalls.filter((call) => call.url.includes('/api/pilot/athlete/check-in') && call.method === 'GET').length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+    const before = reads();
+
+    checkInReadFails = false;
+    storedCheckIn = null;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(reads()).toBe(before + 1));
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+  });
+
+  test('a check-in saved from the kept form clears the failed read: no alert, and the tile says recorded', async () => {
+    checkInReadFails = true;
+    storedCheckIn = null;
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await screen.findByText('check-in offline');
+
+    checkInReadFails = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Save wellness' }));
+
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+  });
+
+  test('what is typed in the kept form survives Try again', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
+    fireEvent.change(screen.getByLabelText('How many hours did you sleep?'), { target: { value: '7' } });
+
+    checkInReadFails = false;
+    storedCheckIn = null;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+
+    expect((screen.getByLabelText('How many hours did you sleep?') as HTMLInputElement).value).toBe('7');
+  });
+
   test('an account with no athlete record is Unavailable, not "not recorded"', async () => {
     authenticated = false;
     await renderWorkspace();

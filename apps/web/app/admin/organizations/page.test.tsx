@@ -218,3 +218,36 @@ describe('F-094: no onboarding write without the gym named at the press', () => 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Create Gym & Continue' })).toBeEnabled());
   });
 });
+
+// Lane U2 (audit UX-A A-6): the refusal's way back is the reader's own home,
+// except for a platform owner not signed in with Microsoft, whose home (Omega)
+// refuses the same session -- Sign In is their way forward.
+describe('the refusal sends each visitor somewhere that admits them', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const roleSession = require('@/components/roleSession') as typeof import('@/components/roleSession');
+  afterEach(() => roleSession.clearRoleSession());
+
+  async function refusalLinks(session: Partial<PilotSessionState>, clubRole: 'admin' | 'platform_owner' | 'coach') {
+    mockUsePilotSession.mockReturnValue({ ...OWNER, ...session });
+    roleSession.createPersistentRoleSession(clubRole);
+    global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+    await act(async () => {
+      render(<SetupWizard />);
+    });
+    expect(screen.getByText('Platform Owner Access Required')).toBeTruthy();
+    return screen.getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')]);
+  }
+
+  test('a gym admin goes back to the Gym Office', async () => {
+    expect(await refusalLinks({ role: 'organization_admin', authProvider: 'microsoft' }, 'admin')).toEqual([
+      ['Sign In With Microsoft', '/login'],
+      ['Back to Gym Office', '/admin/people'],
+    ]);
+  });
+
+  test('a platform owner signed in locally is offered Sign In only', async () => {
+    expect(await refusalLinks({ role: 'platform_owner', authProvider: 'ppbf_local' }, 'platform_owner')).toEqual([
+      ['Sign In With Microsoft', '/login'],
+    ]);
+  });
+});

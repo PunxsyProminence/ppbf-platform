@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
@@ -576,9 +577,7 @@ export default function WaiverComplianceAuditPage() {
             <Link href="/admin/athlete-consent" className="btn btn--ghost">
               Photo &amp; Media Consent Audit
             </Link>
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>
