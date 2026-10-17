@@ -213,6 +213,25 @@ export function requireGuardianLinkForParentInvite(
  * a side effect of promoting a child's intake form. Intake refuses instead and
  * leaves the account exactly as it was.
  */
+/**
+ * An invite that would change an existing account's role, sent without the
+ * confirmation that names the role it is changing from (lane L31). The People
+ * page names the change before it is made; the server holds the same line, so
+ * an account the page did not list, or a role that changed since the page
+ * loaded, is named too instead of being changed on one press.
+ */
+export class RoleChangeUnconfirmedError extends ConflictError {
+  readonly currentRole: PilotRole;
+
+  constructor(loginEmail: string, currentRole: PilotRole, role: InvitableStaffRole) {
+    super(
+      `${loginEmail} is a ${currentRole} in this organization. Inviting them as a ${role} would change their role, so nothing was changed. The People page names the change and can make it.`,
+      'ROLE_CHANGE_UNCONFIRMED',
+    );
+    this.currentRole = currentRole;
+  }
+}
+
 function existingRoleConflict(
   named: { email: string } | { accountId: string },
   existingRole: PilotRole,
@@ -340,6 +359,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   volunteer?: VolunteerRosterAssignment;
   refuseRoleChange?: boolean;
   refuseDeactivatedLogin?: boolean;
+  /**
+   * The People page's invite (lane L31): a role change goes through only when
+   * the caller names the role it is changing from. undefined leaves every
+   * other caller as it was.
+   */
+  roleChangeConfirmedFrom?: string | null;
 }, client?: PoolClient): Promise<StaffProvisionResult> {
   // On the caller's transaction when given. A pooled read there could not see
   // the caller's own uncommitted rows, and a pooled write could wait on a row
@@ -453,6 +478,16 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // stays allowed: that only reactivates the account.
     if (existing.role !== role && !callerInvitableRoles.includes(existing.role)) {
       throw new Error('Forbidden: this account holds a role you cannot assign, so its role cannot be changed by an invite');
+    }
+
+    // After every refusal above, so it is only ever asked of a change that
+    // would otherwise be made.
+    if (
+      params.roleChangeConfirmedFrom !== undefined
+      && existing.role !== role
+      && params.roleChangeConfirmedFrom !== existing.role
+    ) {
+      throw new RoleChangeUnconfirmedError(loginEmail, existing.role, role);
     }
   }
 

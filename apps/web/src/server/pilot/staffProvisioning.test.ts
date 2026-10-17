@@ -40,6 +40,7 @@ import {
   listOrganizationMembers,
   removeGuardianLink,
   requireGuardianLinkForParentInvite,
+  RoleChangeUnconfirmedError,
 } from './staffProvisioning';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
@@ -295,6 +296,83 @@ describe('takeover and escalation guards', () => {
 
     expect(result.role).toBe('board');
     expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  describe('lane L31: a role change from the People page needs its confirmation', () => {
+    const COACH = {
+      account_id: 'coach-1',
+      organization_id: 'org-1',
+      role: 'coach',
+      auth_provider: 'microsoft',
+      is_platform_owner: false,
+    };
+
+    test('with no confirmation, a change is refused naming the current role, and nothing is written', async () => {
+      stubLookups({ existingByEmail: COACH });
+      const refusal = createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'coach@example.com',
+        organizationId: 'org-1',
+        role: 'volunteer',
+        roleChangeConfirmedFrom: null,
+      });
+      await expect(refusal).rejects.toBeInstanceOf(RoleChangeUnconfirmedError);
+      await expect(refusal).rejects.toMatchObject({ status: 409, code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'coach' });
+      expect(accountUpsertCalls()).toHaveLength(0);
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('a confirmation naming a different role than the account holds is refused', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'coach@example.com',
+          organizationId: 'org-1',
+          role: 'volunteer',
+          roleChangeConfirmedFrom: 'staff',
+        }),
+      ).rejects.toMatchObject({ code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'coach' });
+      expect(accountUpsertCalls()).toHaveLength(0);
+    });
+
+    test('confirmed from the role it holds, the change is made', async () => {
+      stubLookups({ existingByEmail: COACH });
+      const result = await createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'coach@example.com',
+        organizationId: 'org-1',
+        role: 'volunteer',
+        roleChangeConfirmedFrom: 'coach',
+      });
+      expect(result.role).toBe('volunteer');
+      expect(accountUpsertCalls()).toHaveLength(1);
+    });
+
+    test('the same role needs no confirmation', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'coach@example.com', organizationId: 'org-1', role: 'coach', roleChangeConfirmedFrom: null }),
+      ).resolves.toMatchObject({ role: 'coach' });
+    });
+
+    test('a new address needs no confirmation', async () => {
+      stubLookups({ existingByEmail: null });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'new@example.com', organizationId: 'org-1', role: 'staff', roleChangeConfirmedFrom: null }),
+      ).resolves.toMatchObject({ role: 'staff' });
+    });
+
+    test('peer protection still refuses first: a gym admin is not offered a confirmation', async () => {
+      stubLookups({ existingByEmail: { ...COACH, role: 'organization_admin' } });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'admin@example.com', organizationId: 'org-1', role: 'coach', roleChangeConfirmedFrom: null }),
+      ).rejects.toThrow('Forbidden: this account holds a role you cannot assign');
+    });
+
+    test('callers that do not pass it are unchanged', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'coach@example.com', organizationId: 'org-1', role: 'volunteer' }),
+      ).resolves.toMatchObject({ role: 'volunteer' });
+    });
   });
 
   test('a caller holding the wider set may still re-role a board member', async () => {
