@@ -270,7 +270,7 @@ function ReferenceActions({
           disabled={busy}
           className="btn btn--ghost"
         >
-          {changingLifecycle ? 'Saving...' : 'Restore'}
+          {changingLifecycle ? 'Saving…' : 'Restore'}
         </button>
         {restoreCueField}
         <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
@@ -336,7 +336,7 @@ function ReferenceActions({
           disabled={busy}
           className="btn btn--ghost"
         >
-          {changingLifecycle ? 'Saving...' : restoring ? 'Restore' : 'Retire'}
+          {changingLifecycle ? 'Saving…' : restoring ? 'Restore' : 'Retire'}
         </button>
         {restoring && restoreCueField}
         {/* What the action does, before it is taken -- no confirmation step,
@@ -1003,7 +1003,7 @@ function CoachDrillLibrary() {
             disabled={saving}
             className="btn mt-[var(--s5)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? 'Saving...' : 'Add drill'}
+            {saving ? 'Saving…' : 'Add drill'}
           </button>
         </section>
 

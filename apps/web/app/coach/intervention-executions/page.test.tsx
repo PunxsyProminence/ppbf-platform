@@ -660,7 +660,7 @@ describe('the version the form was opened on travels with the save', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
     });
     await change('Athlete', 'ath-1');
-    await change('Protocol (its intended exposure becomes the frozen plan)', 'p-1');
+    await change('Protocol', 'p-1');
     await press('Start execution');
     await change('What was wrong? (required)', 'logged three rounds; it was four');
     await press('Record correction');

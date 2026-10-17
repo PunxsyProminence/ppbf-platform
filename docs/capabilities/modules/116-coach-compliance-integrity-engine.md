@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. compliance routes (violations GET at violations/route.ts, rules, escalate) over compliance.ts createComplianceViolation/escalateViolation with role gates and org scoping. |
+| Code | `apps/web/app/api/pilot/compliance/violations/route.ts`, `apps/web/app/api/pilot/compliance/rules/route.ts`, `apps/web/app/api/pilot/compliance/escalate/route.ts`, `apps/web/src/server/pilot/compliance.ts` |
+| Tests | `apps/web/app/api/pilot/compliance/violations/route.test.ts`, `apps/web/app/api/pilot/compliance/rules/route.test.ts`, `apps/web/src/server/pilot/compliance.test.ts` |
 | Vertical slice | compliance rule/violation tracking with severity, escalation ladder, coach/admin role gates, org- and athlete-scoped access |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -41,3 +44,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/compliance.ts; apps/web/app/api/pilot/compliance/violations/route.ts; apps/web/app/api/pilot/compliance/violations/route.test.ts. Test: apps/web/app/api/pilot/compliance/violations/route.test.ts: '403 for a role that cannot view violations', '403 when coac |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

@@ -249,6 +249,22 @@ test('an empty note does not submit', async () => {
   expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'))).toBe(false);
 });
 
+// UXB-38: a 200 that does not carry the roster is not an empty roster, and an
+// empty roster is said.
+test('a roster answer without the list is a failed read with Check again, not an empty picker', async () => {
+  global.fetch = jest.fn(async () => jsonResponse({ ok: true })) as unknown as typeof fetch;
+  render(<DecisionLoopReviewPage />);
+  expect(await screen.findByText("Couldn't load your athletes.")).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Check again' })).toBeInTheDocument();
+  expect(screen.queryByText('No athletes on your roster.')).toBeNull();
+});
+
+test('an empty roster says so', async () => {
+  global.fetch = jest.fn(async () => jsonResponse({ items: [] })) as unknown as typeof fetch;
+  render(<DecisionLoopReviewPage />);
+  expect(await screen.findByText('No athletes on your roster.')).toBeInTheDocument();
+});
+
 test('a failed log shows the error, not a false success message', async () => {
   installFetch({ domainUpsert: () => jsonResponse({ error: 'Forbidden' }, false) });
   await selectAthlete();
@@ -2785,6 +2801,137 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
+  /* UXB-15: AN ERROR SHOWS UNDER THE FORM IT CAME FROM. It used to print in
+     the picker header, several panels above, where a coach scrolled down to
+     Report Incident could not see that it had not gone in. */
+  const FORM_HEADING: Record<string, string> = {
+    'Set Status': 'Medical Administrative Status',
+    'Accept a recommendation': 'Recommendations',
+    'Record Decision': 'Decisions',
+    'Flag Near-Miss': 'Near-Misses',
+    'Report Incident': 'Report Incident',
+    'Behavior Note': 'Behavior & Habit Note',
+    'Message Home': "Post to the Family's Page",
+    'Evaluate Outcome': 'Evaluate a Decision Outcome',
+  };
+
+  test.each(WRITES)('$name: a refusal shows under its own form, not at the top of the page', async ({ name, submit }) => {
+    installSwitchFetch({ post: () => jsonResponse({ error: 'REFUSED-HERE' }, false) });
+    await openAthleteA();
+
+    submit();
+
+    const line = await screen.findByText('REFUSED-HERE');
+    expect(line).toHaveAttribute('role', 'alert');
+    expect(athletePicker().closest('section')).not.toContainElement(line);
+    const heading = within(line.closest('section') as HTMLElement).getByRole('heading', { level: 2 });
+    expect(heading).toHaveTextContent(FORM_HEADING[name]!);
+  });
+
+  test('records that would not read offer Check again, which reads them again and keeps what was typed (UXB-13)', async () => {
+    let fail = true;
+    installSwitchFetch({ readA: () => (fail ? Promise.reject(new Error('Network down')) : Promise.resolve(jsonResponse({}))) });
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-a' } });
+    await screen.findByText(/medical administrative status could not be read/);
+    fireEvent.change(screen.getByLabelText('Decision text'), { target: { value: 'typed before the retry' } });
+
+    fail = false;
+    fireEvent.click(within(athletePicker().closest('section') as HTMLElement).getByRole('button', { name: 'Check again' }));
+
+    await screen.findByText(/ref-for-athlete-a/);
+    expect(screen.queryByText(/could not be read/)).toBeNull();
+    expect(screen.getByLabelText('Decision text')).toHaveValue('typed before the retry');
+  });
+
+  test('Load Outcomes says it is reading, and a failed read shows under that decision (UXB-38, UXB-15)', async () => {
+    const base = installSwitchFetch();
+    const held = heldResponse();
+    global.fetch = jest.fn((url: string, init?: RequestInit) =>
+      (String(url).includes('/decision-outcomes?') ? held.promise : base(url, init))) as unknown as typeof fetch;
+    await openAthleteA();
+
+    const load = screen.getByRole('button', { name: 'Load Outcomes' });
+    fireEvent.click(load);
+    expect(load).toHaveTextContent('Loading outcomes…');
+    expect(load).toBeDisabled();
+
+    held.release(jsonResponse({ error: 'OUTCOMES-DOWN' }, false));
+    const line = await screen.findByText('OUTCOMES-DOWN');
+    expect(line.closest('article')).toHaveTextContent('Athlete A: cleared for pad work.');
+    expect(load).toHaveTextContent('Load Outcomes');
+  });
+
+  test('Load Outcomes that fails and then works: the failure is gone from that decision', async () => {
+    const base = installSwitchFetch();
+    let fail = true;
+    global.fetch = jest.fn((url: string, init?: RequestInit) => {
+      if (!String(url).includes('/decision-outcomes?')) return base(url, init);
+      return Promise.resolve(fail ? jsonResponse({ error: 'OUTCOMES-DOWN' }, false) : jsonResponse({ outcomes: [] }));
+    }) as unknown as typeof fetch;
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('OUTCOMES-DOWN');
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('No outcomes evaluated yet.');
+    expect(screen.queryByText('OUTCOMES-DOWN')).toBeNull();
+  });
+
+  test('a refused incident, sent again and filed: the refusal is gone from under it', async () => {
+    let refuse = true;
+    installSwitchFetch({ post: (url, init) => (url.includes('/api/pilot/incidents') && refuse
+      ? jsonResponse({ error: 'INCIDENT-REFUSED' }, false)
+      : acknowledge(url, init)) });
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('INCIDENT-REFUSED');
+    refuse = false;
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+    expect(screen.queryByText('INCIDENT-REFUSED')).toBeNull();
+  });
+
+  test('an incident not-confirmed line is not erased by another form write or by a failed outcomes read', async () => {
+    const base = installSwitchFetch({ post: (url, init) => (url.includes('/api/pilot/incidents')
+      // A 200 that is not the route's acknowledgement: not confirmed.
+      ? jsonResponse({ ok: true })
+      : acknowledge(url, init)) });
+    global.fetch = jest.fn((url: string, init?: RequestInit) =>
+      (String(url).includes('/decision-outcomes?') ? Promise.resolve(jsonResponse({ error: 'OUTCOMES-DOWN' }, false)) : base(url, init))) as unknown as typeof fetch;
+    await openAthleteA();
+    const incidentSection = () => screen.getByRole('heading', { name: 'Report Incident' }).closest('section') as HTMLElement;
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await waitFor(() => expect(within(incidentSection()).getByText(/The server did not confirm this/)).toBeInTheDocument());
+
+    // Another form's write lands; another read fails.
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'near miss for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await screen.findByText('Near-miss flagged.');
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    await screen.findByText('OUTCOMES-DOWN');
+
+    expect(within(incidentSection()).getByText(/The server did not confirm this/)).toBeInTheDocument();
+    expect(screen.getByLabelText('What happened')).toHaveValue('incident for A');
+  });
+
+  test('with every read failing, the page offers Check again and never says Reload (UXB-05)', async () => {
+    installSwitchFetch({ readA: () => Promise.reject(new Error('Network down')) });
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-a' } });
+    await screen.findByText(/medical administrative status could not be read/);
+    await screen.findByText(/Posted notes could not be loaded/);
+    await screen.findByText(/observations could not be loaded/);
+
+    expect(document.body.textContent).not.toMatch(/reload/i);
+    expect(screen.getAllByRole('button', { name: 'Check again' }).length).toBeGreaterThanOrEqual(3);
   });
 
   /* UXB-02: THE SIX WRITES THAT USED TO TAKE A DOUBLE TAP. Each one is pressed,

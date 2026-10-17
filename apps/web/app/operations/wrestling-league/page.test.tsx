@@ -479,7 +479,7 @@ test('the picker leaves out athletes already on the roster, active or inactive',
 
   const picker = await screen.findByLabelText('Add athlete');
   const options = within(picker).getAllByRole('option').map((option) => option.textContent);
-  expect(options).toEqual(['Select an athlete…', 'Casey Stone']);
+  expect(options).toEqual(['Choose an athlete', 'Casey Stone']);
 });
 
 test('a choice made under one season is not carried into a season where that athlete is rostered', async () => {
@@ -534,5 +534,5 @@ test('after a failed season-detail read the picker offers every athlete and no I
   expect(await screen.findAllByText('Unable to load the season detail.')).not.toHaveLength(0);
   expect(screen.queryByRole('list', { name: 'Inactive' })).toBeNull();
   const options = within(screen.getByLabelText('Add athlete')).getAllByRole('option').map((option) => option.textContent);
-  expect(options).toEqual(['Select an athlete…', 'Jordan Little', 'Riley Shaw']);
+  expect(options).toEqual(['Choose an athlete', 'Jordan Little', 'Riley Shaw']);
 });

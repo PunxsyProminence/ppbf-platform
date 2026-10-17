@@ -146,7 +146,7 @@ describe('ATH-02: a failed identity read is a failed read, not endless loading',
     // The connection comes back; the athlete presses Retry.
     identity = 'ok';
     const readsBefore = identityReads;
-    fireEvent.click(screen.getByRole('button', { name: 'Retry loading goals' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try loading your goals again' }));
 
     await waitFor(() => expect(identityReads).toBeGreaterThan(readsBefore));
     await waitFor(() => expect(calls.some((call) => call.url.includes('/api/pilot/goals/list'))).toBe(true));

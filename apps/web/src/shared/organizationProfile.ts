@@ -52,6 +52,8 @@ export interface OrganizationProfile {
     postalCode: string;
   };
   mailing: string;
+  /** The head coach, as the homepage and its staff card name them. */
+  headCoachName: string;
 }
 
 const PPBF: OrganizationProfile = {
@@ -76,9 +78,19 @@ const PPBF: OrganizationProfile = {
     postalCode: '15767',
   },
   mailing: 'PO Box 54, Big Run, PA 15715',
+  headCoachName: 'Jason Neale',
 };
 
-/** The current gym's profile. One gym today (A-Q22 ruling 8). */
+/**
+ * The current gym's profile. One gym today (A-Q22 ruling 8).
+ *
+ * BEING RETIRED (lane L31). The stored profile (pilot.organization_profiles,
+ * read by src/server/pilot/organizationProfileStore.ts) is the source now; the
+ * homepage, privacy page, site metadata, robots and sitemap read it. The
+ * remaining callers (print sheets, interest form, wall, names board, sign-in
+ * email, SHADOW, photo captions) move in the next pull request, which deletes
+ * this constant.
+ */
 export function currentOrganizationProfile(): OrganizationProfile {
   return PPBF;
 }

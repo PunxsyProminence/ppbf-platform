@@ -12,16 +12,19 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import HomePage, { metadata } from '@/app/page';
+import HomePage, { generateMetadata } from '@/app/page';
 import PrintSheet, { GYM_ADDRESS, GYM_NAME } from '@/components/PrintSheet';
 import PublicInterestForm from '@/components/PublicInterestForm';
 import { GYM_PHOTO_SLOTS } from './gymPhotos';
 
+jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
+  getOperatingOrganizationProfile: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
+}));
 jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
-function homeText(): { text: string; ld: Record<string, unknown> } {
-  const { container } = render(<HomePage />);
+async function homeText(): Promise<{ text: string; ld: Record<string, unknown> }> {
+  const { container } = render(await HomePage());
   const script = container.querySelector('script[type="application/ld+json"]');
   const ld = JSON.parse(script?.innerHTML ?? '{}') as Record<string, unknown>;
   const visible = container.cloneNode(true) as HTMLElement;
@@ -29,15 +32,16 @@ function homeText(): { text: string; ld: Record<string, unknown> } {
   return { text: (visible.textContent ?? '').replace(/\s+/g, ' '), ld };
 }
 
-test('the homepage metadata reads as it did', () => {
+test('the homepage metadata reads as it did', async () => {
+  const metadata = await generateMetadata();
   expect(metadata.title).toBe('Punxsy Prominence Boxing & Fitness');
   expect(metadata.description).toBe(
     'Punxsy Prominence Boxing and Fitness is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in Punxsutawney and surrounding rural western Pennsylvania communities. Youth participate at no charge.',
   );
 });
 
-test('the homepage copy and structured data read as they did', () => {
-  const { text, ld } = homeText();
+test('the homepage copy and structured data read as they did', async () => {
+  const { text, ld } = await homeText();
 
   for (const sentence of [
     'Punxsy Prominence Boxing & Fitness is a veteran-led, IRS-recognized 501(c)(3) nonprofit serving youth in Punxsutawney and surrounding rural western Pennsylvania communities.',

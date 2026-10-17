@@ -37,6 +37,15 @@ let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
 let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
+/* The athlete's own bookings the scheduler answers with (UXB-17's Next Session tile). */
+let schedulerRegistrations: Array<Record<string, unknown>> = [];
+
+/* Two buttons say "Check in" on Today and do the same thing: the corner's and the
+   Session Log's (UXB-19, one verb). Each test names the one it means. */
+const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
+const sessionLog = () => within(screen.getByRole('region', { name: 'Session log' }));
+const sessionLogCheckIn = async () =>
+  within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Check in' });
 // The session read never answers: the workspace stays on 'loading'.
 let sessionListHangs = false;
 let sessionUpdateFails = false;
@@ -223,6 +232,7 @@ beforeEach(() => {
   rabbitHolesFail = false;
   storedSessions = [];
   sessionListFails = false;
+  schedulerRegistrations = [];
   sessionListHangs = false;
   sessionUpdateFails = false;
   persistSessionUpdates = false;
@@ -305,7 +315,7 @@ beforeEach(() => {
           class_id: 'cls_far', title: 'Saturday Footwork', start_at: '2099-01-03T15:00:00.000Z',
           end_at: '2099-01-03T16:00:00.000Z', location: 'Main ring', capacity: 10, status: 'open', registered_count: 2,
         }],
-        registrations: [],
+        registrations: schedulerRegistrations,
       });
     }
     if (url.includes('/api/pilot/auth/session')) {
@@ -533,9 +543,20 @@ describe('athlete workspace honesty', () => {
     await renderWorkspace();
 
     expect(screen.queryByText(/Youth Class 4:00 PM/)).toBeNull();
-    // The tile refuses to invent a class. What it says instead is the floor's
-    // own honest-empty grammar rather than a field status read out to a child.
-    expect(screen.getByText('Nothing posted yet.')).toBeTruthy();
+    // The scheduler answered with a class the athlete has not booked, and no
+    // bookings: the tile says so, and does not name the unbooked class (UXB-17).
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    await waitFor(() => expect(tile.textContent).toBe('Next SessionNothing booked.'));
+    expect(screen.queryByText('Nothing posted yet.')).toBeNull();
+  });
+
+  test('the Next Session tile names the athlete\'s own booked class, from the scheduler read (UXB-17)', async () => {
+    schedulerRegistrations = [{ registration_id: 'reg_1', class_id: 'cls_far', status: 'registered' }];
+    await renderWorkspace();
+
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    await waitFor(() => expect(tile.textContent).toContain('Saturday Footwork'));
+    expect(tile.textContent).not.toContain('Nothing booked.');
   });
 
   test('the Schedule tab offers the real scheduler instead of unbookable class rows', async () => {
@@ -2316,9 +2337,9 @@ describe('an issued workout keeps its shape on the Floor', () => {
       // The server listed this work first; it stays first.
       'h4: Shadowbox',
       'h4: Technical Tuesday',
-      'h5: warmup',
+      'h5: Warm-up',
       'h6: Skip Rope',
-      'h5: main work',
+      'h5: Main work',
       'h6: Jab Ladder',
       'h6: Body Sparring',
       // The work the server listed between two of the workout's steps is not
@@ -2397,7 +2418,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(headings(grid)).toEqual([
       'h4: Shadowbox',
       'h4: Technical Tuesday',
-      'h5: main work',
+      'h5: Main work',
       'h6: Jab Ladder',
       'h6: Body Sparring',
       'h4: Heavy Bag',
@@ -2430,7 +2451,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     await openFloorWith(work, [WORKOUT]);
     const grid = await floorGrid('Technical Tuesday');
 
-    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag', 'h4: Technical Tuesday', 'h5: main work', 'h6: Jab Ladder']);
+    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag', 'h4: Technical Tuesday', 'h5: Main work', 'h6: Jab Ladder']);
     expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday1 of 3 steps still to do, in this order');
   });
 
@@ -2445,7 +2466,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(panel.className.split(' ')).toEqual(expect.arrayContaining(['mat-leather', 'md:col-span-2']));
     // Inside it: the heading, both block names, and the three steps -- only those.
     expect(within(panel).getByTestId('floor-issued-workout')).toBeTruthy();
-    expect(headings(panel)).toEqual(['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring']);
+    expect(headings(panel)).toEqual(['h4: Technical Tuesday', 'h5: Warm-up', 'h6: Skip Rope', 'h5: Main work', 'h6: Jab Ladder', 'h6: Body Sparring']);
     expect(within(panel).getAllByRole('link', { name: /^Log completion: / })).toHaveLength(3);
     // The work in no workout stands on the grid itself, before and after the
     // panel, so the panel's edge is where the workout ends.
@@ -2466,8 +2487,8 @@ describe('an issued workout keeps its shape on the Floor', () => {
     const panels = within(grid).getAllByTestId('floor-issued-workout-panel');
 
     expect(panels.map((panel) => headings(panel))).toEqual([
-      ['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring'],
-      ['h4: Friday Rounds', 'h5: main work', 'h6: Heavy Bag'],
+      ['h4: Technical Tuesday', 'h5: Warm-up', 'h6: Skip Rope', 'h5: Main work', 'h6: Jab Ladder', 'h6: Body Sparring'],
+      ['h4: Friday Rounds', 'h5: Main work', 'h6: Heavy Bag'],
     ]);
     expect(cardsDirectlyIn(grid)).toEqual(['Shadowbox']);
   });
@@ -2521,7 +2542,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
 
     // And Retry reads again and draws the workout once it can be read.
     storedWorkouts = [WORKOUT];
-    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    fireEvent.click(screen.getByRole('button', { name: "Try loading your coach's work again" }));
     const grid = await floorGrid('Technical Tuesday');
     expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
   });
@@ -2630,7 +2651,7 @@ describe('the Floor is the work a coach assigned', () => {
 
     assignmentsFail = false;
     storedAssignments = [assignment({ drill_display_name: 'Jab-cross on the bag' })];
-    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    fireEvent.click(screen.getByRole('button', { name: "Try loading your coach's work again" }));
     expect(await screen.findByRole('heading', { level: 4, name: 'Jab-cross on the bag' })).toBeTruthy();
   });
 
@@ -4672,6 +4693,55 @@ describe('the summary says whether today\'s wellness is on record, never a score
 
     await waitFor(() => expect(within(wellnessTile()).getByText('Unavailable')).toBeTruthy());
     expect(within(wellnessTile()).queryByText('Not recorded today')).toBeNull();
+  });
+
+  // UXB-06: the panel used to be one line with no way back, and the Floor opens on it.
+  test('a failed read keeps the Wellness form with Try again, and Try again reads it again', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+    const reads = () => fetchCalls.filter((call) => call.url.includes('/api/pilot/athlete/check-in') && call.method === 'GET').length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+    const before = reads();
+
+    checkInReadFails = false;
+    storedCheckIn = null;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(reads()).toBe(before + 1));
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Save wellness' })).toBeTruthy();
+  });
+
+  test('a check-in saved from the kept form clears the failed read: no alert, and the tile says recorded', async () => {
+    checkInReadFails = true;
+    storedCheckIn = null;
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await screen.findByText('check-in offline');
+
+    checkInReadFails = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Save wellness' }));
+
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+  });
+
+  test('what is typed in the kept form survives Try again', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    const alert = (await screen.findByText('check-in offline')).closest('[role="alert"]') as HTMLElement;
+    fireEvent.change(screen.getByLabelText('How many hours did you sleep?'), { target: { value: '7' } });
+
+    checkInReadFails = false;
+    storedCheckIn = null;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText('check-in offline')).toBeNull());
+
+    expect((screen.getByLabelText('How many hours did you sleep?') as HTMLInputElement).value).toBe('7');
   });
 
   test('an account with no athlete record is Unavailable, not "not recorded"', async () => {

@@ -1,10 +1,10 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 interface PendingPortrait {
   account_id: string;
@@ -166,7 +166,6 @@ export default function PortraitReviewPage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Portrait Review</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.account_profiles</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every uploaded photo starts here and is visible to nobody but its uploader until an admin decides.
               Approving releases it under the platform&rsquo;s usual visibility rules; rejecting deletes the photo and
@@ -355,9 +354,7 @@ export default function PortraitReviewPage() {
           )}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

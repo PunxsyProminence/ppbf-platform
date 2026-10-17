@@ -19,7 +19,7 @@ import SentToYourAthlete from './SentToYourAthlete';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { rememberChosenChild } from '@/src/lib/chosenChild';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
@@ -223,6 +223,9 @@ export default function ParentHub() {
   // The child on screen is the one other pages mean (print; #1596 item 2b):
   // kept in this tab whenever the selection changes, so a link opened in any
   // way -- clicked, middle-clicked, from the building map -- prints this child.
+  // Nothing is written until the roster read has made the first selection
+  // (null is a no-op), and that selection starts from the remembered child, so
+  // opening the hub never replaces a pick made on another page.
   useEffect(() => {
     rememberChosenChild(activeChildId);
   }, [activeChildId]);
@@ -286,8 +289,8 @@ export default function ParentHub() {
         setFloorClockMs(Date.now());
         setMessagesLoaded(true);
       } catch {
-        // Messages tab falls back to its empty state; the summary tile shows
-        // Unavailable because messagesLoaded stays false.
+        // The Messages tab and the summary tile both show Unavailable:
+        // messagesLoaded stays false and messagesFailed is set.
         setMessagesFailed(true);
       }
     })();
@@ -618,6 +621,9 @@ export default function ParentHub() {
   // own effect, own state -- a failure here must never block the rest of
   // this page, same doctrine as every other secondary read on this hub.
   const [safetySummary, setSafetySummary] = useState<SafetySummary | null>(null);
+  // UXB-24: a refused or broken read is not "nothing to report". Until the
+  // read answers the card says it is checking; if it fails, it says so.
+  const [safetyFailed, setSafetyFailed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -626,7 +632,10 @@ export default function ParentHub() {
           method: 'GET',
           credentials: 'include',
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setSafetyFailed(true);
+          return;
+        }
         const payload = (await response.json()) as {
           items?: Array<{ hold: unknown; gates?: Array<{ outcome: string }> }>;
         };
@@ -638,7 +647,8 @@ export default function ParentHub() {
         );
         setSafetySummary({ activeHolds, flaggedGates });
       } catch {
-        // Card falls back to plain links with no summary line.
+        // The links still work; the card says the check did not answer.
+        setSafetyFailed(true);
       }
     })();
   }, []);
@@ -650,7 +660,8 @@ export default function ParentHub() {
   // why this is its own route rather than widening intake/domain-upsert.
   const [barrierType, setBarrierType] = useState<'home' | 'transportation'>('home');
   const [barrierDescription, setBarrierDescription] = useState('');
-  const [barrierMessage, setBarrierMessage] = useState('');
+  // UXB-23: a sent report and a failed one must not look alike.
+  const [barrierMessage, setBarrierMessage] = useState<{ tone: 'sent' | 'failed'; text: string } | null>(null);
   const [barrierSubmitting, setBarrierSubmitting] = useState(false);
   // One report per press (#1529): a ref, because two presses in one tick both
   // read the same `barrierSubmitting` and both got through.
@@ -660,7 +671,7 @@ export default function ParentHub() {
     event.preventDefault();
     if (!activeChildId || !barrierDescription.trim() || barrierSubmitting || barrierSubmittingRef.current) return;
     barrierSubmittingRef.current = true;
-    setBarrierMessage('');
+    setBarrierMessage(null);
     setBarrierSubmitting(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent/barrier-report`, {
@@ -678,9 +689,9 @@ export default function ParentHub() {
         throw new Error(payload.error || 'Failed to send the report.');
       }
       setBarrierDescription('');
-      setBarrierMessage('Sent to your child\'s coach.');
+      setBarrierMessage({ tone: 'sent', text: 'Sent to your child\'s coach.' });
     } catch (error) {
-      setBarrierMessage(error instanceof Error ? error.message : 'Failed to send the report.');
+      setBarrierMessage({ tone: 'failed', text: error instanceof Error ? error.message : 'Failed to send the report.' });
     } finally {
       barrierSubmittingRef.current = false;
       setBarrierSubmitting(false);
@@ -758,8 +769,12 @@ export default function ParentHub() {
         setChildren(childList);
         // Functional update so the default selection does not read activeChildId
         // here: depending on it would refetch the whole roster and re-show the
-        // loading spinner every time the parent switches child.
-        setActiveChildId((current) => current || childList[0]?.id || current);
+        // loading spinner every time the parent switches child. The first
+        // selection is the child last chosen on any family page when that child
+        // is one of these (src/lib/chosenChild.ts), otherwise the first child.
+        const chosen = readChosenChild();
+        const opening = childList.find((child) => child.id === chosen)?.id ?? childList[0]?.id;
+        setActiveChildId((current) => current || opening || current);
       } catch (error) {
         // A cancelled roster read is not a failed one -- it says nothing about
         // whether this guardian has children, so it must not empty the list or
@@ -1275,7 +1290,13 @@ export default function ParentHub() {
                   the guardian who never sees the room, and the first thing
                   they should meet is the coach's own words, not a button
                   grid. */}
-              <ParentDigest athleteId={activeChildId || null} childName={activeChild?.name ?? null} />
+              {/* The roster maps a missing name to 'Unknown' for the selector;
+                  the digest gets null instead, so its lines read "your child"
+                  rather than "Marked by a coach or by Unknown". */}
+              <ParentDigest
+                athleteId={activeChildId || null}
+                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
+              />
 
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Quick Actions</h3>
@@ -1332,8 +1353,12 @@ export default function ParentHub() {
                     {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
                     {' '}across your children. This is not a punishment -- see the Safety page for details.
                   </p>
-                ) : (
+                ) : safetySummary ? (
                   <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
+                ) : safetyFailed ? (
+                  <p className="t-body mt-[var(--s2)]">Couldn&apos;t check right now. Use View Safety Status to see it.</p>
+                ) : (
+                  <p className="working mt-[var(--s2)]">Checking safety status</p>
                 )}
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
                   <Link href="/parent/safety" className="btn w-full">
@@ -1515,7 +1540,12 @@ export default function ParentHub() {
                 </p>
 
                 {barrierMessage && (
-                  <p className="t-body text-[color:var(--brass-300)]">{barrierMessage}</p>
+                  <p
+                    role={barrierMessage.tone === 'failed' ? 'alert' : 'status'}
+                    className={barrierMessage.tone === 'failed' ? 't-body font-bold text-[var(--restricted-ink)]' : 't-body'}
+                  >
+                    {barrierMessage.text}
+                  </p>
                 )}
 
                 <form onSubmit={handleReportBarrier} className="space-y-[var(--s3)]">
@@ -1710,13 +1740,11 @@ export default function ParentHub() {
                   Unavailable); the tab did not, and the tab is what a guardian
                   opens to read their messages.
 
-                  Worded to be true in BOTH unanswered states. This flag does
-                  not separate "still in flight" from "refused", and the fetch
-                  starts when the hub mounts rather than when this tab opens,
-                  so a guardian who taps Messages quickly is looking at a read
-                  that has not come back yet -- "could not be loaded" would
-                  claim a failure nobody has observed either. "Unavailable" is
-                  the tile's own word for exactly this, and it covers both. */}
+                  UXB-13: a read still in flight is not a failed one either.
+                  The fetch starts when the hub mounts, so a guardian who taps
+                  Messages quickly is looking at a read that has not come back
+                  yet: that reads as loading. "Unavailable" is only for a read
+                  that was refused or broke (`messagesFailed`). */}
               {taskNotice && (
                 <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
               )}
@@ -1725,7 +1753,9 @@ export default function ParentHub() {
                 <p className="t-muted">Your earlier replies have not loaded. This is not a statement that you have not replied.</p>
               )}
 
-              {!messagesLoaded ? (
+              {!messagesLoaded && !messagesFailed ? (
+                <p className="working">Reading your messages</p>
+              ) : !messagesLoaded ? (
                 <p className="t-muted">Unavailable - your messages have not loaded. This is not an empty inbox.</p>
               ) : messages.length === 0 ? (
                 <p className="t-muted">No messages yet.</p>
@@ -1950,6 +1980,26 @@ export default function ParentHub() {
                   </Link>
                 </>
               )}
+
+              {/* The coach's multi-week plan and the mental-skills log, for the
+                  child on screen: those pages open on the child chosen here
+                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental Skills
+                </Link>
+              </div>
             </div>
           )}
 

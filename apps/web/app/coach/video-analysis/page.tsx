@@ -1055,7 +1055,7 @@ export default function CoachVideoAnalysisPage() {
                   <p className="t-data text-[color:var(--bone-300)]">
                     {p.origin === 'coach_reported'
                       ? `Athlete: ${athleteLabel(p.athlete_id)} · reported by a coach — the model did not propose this`
-                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s) · ${p.model_deployment}`}
+                      : `Athlete: ${athleteLabel(p.athlete_id)} · ${p.frames_analyzed} frame(s)`}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
                   {/* The model's original is never overwritten, so both readings
@@ -1172,7 +1172,7 @@ export default function CoachVideoAnalysisPage() {
               <label htmlFor="missed-athlete" className="t-data text-[color:var(--bone-400)]">Athlete</label>
               <select id="missed-athlete" className="select" value={missedAthleteId}
                 onChange={(e) => setMissedAthleteId(e.target.value)}>
-                <option value="">Select an athlete…</option>
+                <option value="">Choose an athlete</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                 ))}
@@ -1248,7 +1248,7 @@ export default function CoachVideoAnalysisPage() {
         <div className="flex flex-wrap gap-[var(--s3)]">
           <BackHome />
           <OperationsLink className="btn btn--ghost">
-            Mission Control
+            Operations
           </OperationsLink>
         </div>
       </div>
