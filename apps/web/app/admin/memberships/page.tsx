@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
 // "Scholarship Tracking"). A scholarship is a stored DISCOUNT on a real
@@ -699,7 +699,7 @@ export default function MembershipsPage() {
           </section>
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            <BackHome />
           </div>
         </div>
       </main>
