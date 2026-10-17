@@ -115,6 +115,8 @@ async function freshDatabase(name: string): Promise<Client> {
     [GUARDIAN_X, 'parent', OTHER_ORG_ID],
   ] as const) {
     await client.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`, [accountId, role, org]);
+    // Authority is an active seat in the gym, as sign-in grants it (PH-10's guard).
+    await client.query(`insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, $3)`, [accountId, org, role]);
   }
   for (const [org, athleteId, dob] of [
     [ORG_ID, MEMBER, '2012-03-04'],
@@ -160,7 +162,7 @@ async function freshDatabase(name: string): Promise<Client> {
       [ORG_ID, membershipId, athleteId, programName, status, COACH],
     );
   }
-  for (const [org, title, program, state, destination, publishedAt] of [
+  for (const [org, title, program, state, destination, publishedAt] of [...[
     [ORG_ID, 'Everyone: hydration guide', null, 'published', '/help', '2026-10-10T12:00:00Z'],
     [ORG_ID, 'Junior: sparring policy', JUNIOR, 'published', 'https://example.org/policy.pdf', '2026-10-12T12:00:00Z'],
     [ORG_ID, 'Fitness: home circuit', FITNESS, 'published', '/help', '2026-10-11T12:00:00Z'],
@@ -170,7 +172,9 @@ async function freshDatabase(name: string): Promise<Client> {
     [ORG_ID, 'Staff page link', null, 'published', '/admin', '2026-10-13T12:00:00Z'],
     [ORG_ID, 'Parent page link', null, 'published', '/parent/safety?tab=holds', '2026-10-08T12:00:00Z'],
     [OTHER_ORG_ID, 'Other gym for everyone', null, 'published', '/help', '2026-10-14T12:00:00Z'],
-  ] as const) {
+  ] as const].sort((a, b) => String(a[5] ?? '').localeCompare(String(b[5] ?? '')))) {
+    // The database stamps published_at itself (PH-10), so the rows are written
+    // in the order the dates above give: oldest first, newest last.
     await client.query(
       `insert into pilot.parent_resources
          (organization_id, title, summary, resource_type, destination_kind, destination, program_id, state, published_at,
