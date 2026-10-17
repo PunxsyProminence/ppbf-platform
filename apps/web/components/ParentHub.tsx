@@ -18,6 +18,7 @@ import ShadowChatButton from './ShadowChatButton';
 import SentToYourAthlete from './SentToYourAthlete';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
+import ParentFamilyGoals from './ParentFamilyGoals';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
@@ -37,14 +38,6 @@ interface Child {
   accountId: string | null;
   initials: string;
   photoAvailable: boolean;
-}
-
-interface FamilyGoal {
-  id: string;
-  title: string;
-  supportAction: string;
-  progress: number;
-  targetDate: string;
 }
 
 /* The task on a message: present when a coach gave the message a due date
@@ -186,11 +179,6 @@ const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
-/* Progress on canvas: a brass fill on a recessed paper track — chrome, not a
-   status claim. The percent is always printed next to it. */
-const TRACK_CLASS = 'h-[8px] w-full rounded-[var(--r-pill)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)]';
-const FILL_CLASS = 'h-full rounded-[var(--r-pill)] bg-[var(--brass-600)]';
-
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
 
@@ -219,8 +207,6 @@ export default function ParentHub() {
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
-
-  const [familyGoals] = useState<FamilyGoal[]>([]);
 
   // Capability #90, scoped to one-directional read: /api/pilot/parent/messages
   // reads pilot.coach_observations rows a coach/admin filed with
@@ -1574,47 +1560,28 @@ export default function ParentHub() {
           {/* FAMILY GOALS */}
           {activeTab === 'family-goals' && (
             <div className="space-y-6 panel-settle">
+              {/* PROPOSED copy: the gym-set goal clause (PH-06 Q-2 A). */}
               <HelpPanel
                 title="Family Goals"
-                description="Collaborative family goals that support your child's boxing journey."
+                description="Goals your family sets to support your child. Each says what the family will do; it shows Done with the date it was ticked, or In progress. Goals the gym sets show here too; only the gym can change them."
                 usage={[
-                  'Review family support goals',
-                  'Track progress toward goals',
-                  'Work together as a family',
-                  'Celebrate achievements'
+                  'Add a goal: what you are aiming for and what the family will do',
+                  'Tick Done when it is done; untick it if it was ticked by mistake',
+                  'Edit or retire a goal you set'
                 ]}
                 mistakes={[
-                  'Setting unrealistic goals',
-                  'Not reviewing progress regularly',
-                  'Not involving the whole family'
+                  'Writing a goal without what the family will actually do',
+                  'Leaving a finished goal unticked'
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
-                is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)]">
-                {familyGoals.map(goal => (
-                  <div key={goal.id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s4)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)]">
-                      <h4 className="t-body font-semibold">{goal.title}</h4>
-                      <span className="t-muted">{goal.targetDate}</span>
-                    </div>
-                    <p className="t-body">{goal.supportAction}</p>
-                    <div>
-                      <div className="flex justify-between mb-[var(--s2)]">
-                        <span className="t-label">Progress</span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{goal.progress}%</span>
-                      </div>
-                      <div className={TRACK_CLASS}>
-                        <div className={FILL_CLASS} style={{width: `${goal.progress}%`}}></div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* #1593 PH-06: built, so F-019's "not built yet" note goes.
+                  Per child (key), like Observations. */}
+              {activeChildId ? (
+                <ParentFamilyGoals key={activeChildId} athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 
