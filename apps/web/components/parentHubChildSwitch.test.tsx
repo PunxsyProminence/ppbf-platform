@@ -89,6 +89,10 @@ function installFetch(
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // The hub opens on the child remembered last (src/lib/chosenChild.ts); one
+  // test's pick must not choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('parent hub child selector', () => {
