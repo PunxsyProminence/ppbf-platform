@@ -215,7 +215,7 @@ export default function ChangePinPage() {
                 disabled={busy || !currentPin || !newPin || !confirmPin}
                 className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60 disabled:grayscale"
               >
-                {busy ? 'Saving...' : 'Save My PIN'}
+                {busy ? 'Saving…' : 'Save My PIN'}
               </button>
             </form>
 

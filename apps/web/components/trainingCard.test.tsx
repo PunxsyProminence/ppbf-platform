@@ -64,8 +64,8 @@ describe('TrainingCard', () => {
       />,
     );
     const items = screen.getAllByRole('listitem');
-    expect(items[0].getAttribute('title')).toMatch(/Jul 1 2026/);
-    expect(items[1].getAttribute('title')).toMatch(/Jul 20 2026/);
+    expect(items[0].getAttribute('title')).toMatch(/Jul 1, 2026/);
+    expect(items[1].getAttribute('title')).toMatch(/Jul 20, 2026/);
   });
 
   it('dates the card from the earliest session', () => {
@@ -77,7 +77,7 @@ describe('TrainingCard', () => {
         ]}
       />,
     );
-    expect(screen.getByText(/since Feb 3 2026/)).toBeTruthy();
+    expect(screen.getByText(/since Feb 3, 2026/)).toBeTruthy();
   });
 
   // Law 3: a stamp must not be colour-only. Every one carries its own text.
@@ -85,7 +85,7 @@ describe('TrainingCard', () => {
     render(
       <TrainingCard sessions={[session({ session_id: 'a', date: '2026-07-04', rpe: 8 })]} />,
     );
-    expect(screen.getByText('Session Jul 4 2026, effort 8 of 10')).toBeTruthy();
+    expect(screen.getByText('Session Jul 4, 2026, effort 8 of 10')).toBeTruthy();
   });
 
   it('labels a booked session as not completed rather than implying training', () => {
@@ -96,8 +96,8 @@ describe('TrainingCard', () => {
     );
     // The phrase also appears in the legend, so assert on the stamp itself.
     expect(screen.getByRole('listitem').getAttribute('title'))
-      .toBe('Session Jul 4 2026, booked, not completed');
-    expect(screen.getByText('Session Jul 4 2026, booked, not completed')).toBeTruthy();
+      .toBe('Session Jul 4, 2026, booked, not completed');
+    expect(screen.getByText('Session Jul 4, 2026, booked, not completed')).toBeTruthy();
   });
 
   // Law 2: effort is ink density, never hue. A red stamp would read as a safety
@@ -213,10 +213,10 @@ describe('a session nobody rated is not a session rated zero', () => {
     render(<TrainingCard sessions={[session({ session_id: 'a', rpe: null })]} />);
 
     const [stamp] = stamps();
-    expect(stamp.getAttribute('title')).toBe('Session Jul 1 2026, completed, effort not recorded');
+    expect(stamp.getAttribute('title')).toBe('Session Jul 1, 2026, completed, effort not recorded');
     expect(stamp.getAttribute('title')).not.toMatch(/effort 0/);
     // The same words reach a screen reader, not just the tooltip.
-    expect(screen.getByText('Session Jul 1 2026, completed, effort not recorded')).toBeTruthy();
+    expect(screen.getByText('Session Jul 1, 2026, completed, effort not recorded')).toBeTruthy();
   });
 
   test('an unrated session is given no ink value at all, rather than a zero one', () => {
@@ -230,7 +230,7 @@ describe('a session nobody rated is not a session rated zero', () => {
     render(<TrainingCard sessions={[session({ session_id: 'a', rpe: 0 })]} />);
 
     const [stamp] = stamps();
-    expect(stamp.getAttribute('title')).toBe('Session Jul 1 2026, effort 0 of 10');
+    expect(stamp.getAttribute('title')).toBe('Session Jul 1, 2026, effort 0 of 10');
     expect(stamp.getAttribute('style') ?? '').toContain('--ink');
   });
 
@@ -271,7 +271,7 @@ describe('a session nobody rated is not a session rated zero', () => {
     expect(done.className).toContain('tcard-stamp--done');
     expect(done.className).not.toContain('tcard-stamp--open');
     expect(booked.className).toContain('tcard-stamp--open');
-    expect(booked.getAttribute('title')).toBe('Session Jul 2 2026, booked, not completed');
+    expect(booked.getAttribute('title')).toBe('Session Jul 2, 2026, booked, not completed');
   });
 
   test('unrated sessions still count as sessions logged', () => {

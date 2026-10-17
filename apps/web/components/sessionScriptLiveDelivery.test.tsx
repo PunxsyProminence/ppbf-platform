@@ -208,7 +208,7 @@ describe('live surface renders the real script and run', () => {
     // 125 seconds from the SERVER, formatted -- not computed from started_at.
     expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('2:05');
     expect(screen.getByText('RUNNING')).toBeInTheDocument();
-    expect(screen.getByText(/Pinned at version 3/)).toBeInTheDocument();
+    expect(screen.getByText(/the plan as it was when the session started \(version 3\)/)).toBeInTheDocument();
 
     // The current block is first-class and its authored fields render.
     expect(screen.getByText('Current block')).toBeInTheDocument();
@@ -675,7 +675,7 @@ describe('logging an intervention against this run', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
-    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+    fireEvent.change(screen.getByLabelText('Protocol'), {
       target: { value: 'proto-1' },
     });
 
@@ -717,7 +717,7 @@ describe('logging an intervention against this run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
 
-    const protocolSelect = screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)');
+    const protocolSelect = screen.getByLabelText('Protocol');
     expect(within(protocolSelect).getByText('For Jordan only (v1)')).toBeInTheDocument();
     expect(within(protocolSelect).getByText('Org-wide protocol (v1)')).toBeInTheDocument();
     expect(within(protocolSelect).queryByText('For someone else (v1)')).not.toBeInTheDocument();
@@ -730,7 +730,7 @@ describe('logging an intervention against this run', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
     fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
-    fireEvent.change(screen.getByLabelText('Protocol (its intended exposure becomes the frozen plan)'), {
+    fireEvent.change(screen.getByLabelText('Protocol'), {
       target: { value: 'proto-1' },
     });
     await act(async () => {

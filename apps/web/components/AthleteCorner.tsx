@@ -145,7 +145,7 @@ export default function AthleteCorner({
               disabled={checkingIn}
               className="btn athlete-corner__btn disabled:opacity-50 disabled:grayscale"
             >
-              {checkingIn ? 'Checking in...' : 'Start check-in'}
+              {checkingIn ? 'Checking in…' : 'Check in'}
             </button>
           )}
           {identityState === 'resolved' && sessionState === 'unavailable' && (

@@ -464,7 +464,7 @@ test('a check-in today keeps the Readiness Alerts tile from saying there are no 
     readinessBoard: () => jsonResponse({ items: [], checked_in_today: ['ath_1'] }),
   });
   expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
-  expect(screen.getByText(/0 RED, 0 YELLOW, 1 unknown/)).toBeTruthy();
+  expect(screen.getByText(/0 to adjust the plan, 0 to check in with, 1 not tracked/)).toBeTruthy();
 });
 
 // F-057. The roster answer carries active_flag; the workspace dropped it, so an

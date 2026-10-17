@@ -84,6 +84,13 @@ export default function EscalationsPage() {
   const [items, setItems] = useState<SafetyEscalation[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<EscalationStatus | 'all'>('open');
   const [errorMessage, setErrorMessage] = useState('');
+  // Athlete names for the Athlete column, from the roster this page's readers
+  // already have (UXB-12): an escalation names a child, never an id.
+  const [athleteNames, setAthleteNames] = useState<ReadonlyMap<string, string>>(new Map());
+  // A failed name read is said once above the queue, with a way back, so rows
+  // that all read "name not loaded" are not mistaken for one athlete (L8 review).
+  const [namesState, setNamesState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [namesAttempt, setNamesAttempt] = useState(0);
   const [actionMessage, setActionMessage] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   // The resolution note used to be collected in window.prompt(): a decision
@@ -107,6 +114,37 @@ export default function EscalationsPage() {
   });
 
   const isAdmin = role === 'admin' || role === 'organization_admin';
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        const payload = (await response.json().catch(() => ({}))) as { items?: Array<{ athlete_id?: unknown; full_name?: unknown }> };
+        if (!live) return;
+        if (!response.ok || !Array.isArray(payload.items)) {
+          setNamesState('failed');
+          return;
+        }
+        setNamesState('loaded');
+        setAthleteNames(new Map(payload.items.flatMap((row) => (
+          typeof row.athlete_id === 'string' && typeof row.full_name === 'string' && row.full_name.trim() !== ''
+            ? [[row.athlete_id, row.full_name] as [string, string]]
+            : []
+        ))));
+      } catch {
+        // The column falls back to words; the queue itself is unaffected.
+        if (live) setNamesState('failed');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [namesAttempt]);
+
+  const athleteCell = (athleteId: string): string => (
+    athleteNames.get(athleteId) ?? (namesState === 'loading' ? '…' : 'Athlete (name not loaded)')
+  );
 
   const load = useCallback(async (status: EscalationStatus | 'all') => {
     try {
@@ -272,7 +310,6 @@ export default function EscalationsPage() {
             >
               Escalations
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.safety_escalations</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               This platform sends no email or push notification -- a near miss, pain report, or safety-gate flag
               severe enough to escalate lands here, and only here. Nothing auto-resolves; a human closes every row.
@@ -364,6 +401,27 @@ export default function EscalationsPage() {
               <div className="empty-msg">No {statusFilter === 'all' ? '' : statusFilter} escalations right now.</div>
             </div>
           ) : (
+            <>
+            {namesState === 'failed' ? (
+              <div className="alert alert--warning mt-[var(--s5)]" role="status">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-msg">Athlete names could not be loaded, so the Athlete column cannot tell these apart.</p>
+                  <div className="alert-action">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNamesState('loading');
+                        setNamesAttempt((n) => n + 1);
+                      }}
+                      className="btn btn--ghost"
+                    >
+                      Check again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
               <table className="w-full text-left">
                 <thead>
@@ -385,7 +443,7 @@ export default function EscalationsPage() {
                           <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{severityText(item)}</span>
                         </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
-                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_id}</td>
+                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{athleteCell(item.athlete_id)}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">{item.reason}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.created_at)}</td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
@@ -414,6 +472,7 @@ export default function EscalationsPage() {
                 </tbody>
               </table>
             </section>
+            </>
           )}
 
           {/* The durable record of why a red flag about a child was closed.

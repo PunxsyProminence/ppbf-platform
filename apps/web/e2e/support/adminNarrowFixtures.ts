@@ -568,8 +568,13 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
       // overrides HEADER_ROUTES and answers every status at once, so all three
       // action states and all nine source labels render in one view.
       '/api/pilot/escalations': { ok: true, escalations: escalationRows() },
+      // The Athlete column names the athlete (UXB-12): the long names are
+      // what this width check is for.
+      '/api/pilot/athletes/list': {
+        items: ESCALATION_SOURCES.map((_, i) => ({ athlete_id: athleteId(i), full_name: NAMES[i % NAMES.length] })),
+      },
     },
-    expectText: athleteId(0),
+    expectText: NAMES[0],
   },
   {
     page: 'feedback',
