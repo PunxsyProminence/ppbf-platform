@@ -186,7 +186,8 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
                 Latest seal: <span>{milestoneName(latestMilestone.milestone_key)}</span>
               </p>
             )}
-            {latestRecognition && (
+            {/* No quote marks around nothing (F-118: a blank note drew “”). */}
+            {latestRecognition && latestRecognition.note?.trim() && (
               <p className="t-muted mt-[var(--s2)]">
                 &ldquo;{latestRecognition.note}&rdquo; — {latestRecognition.coach_display_name}
               </p>

@@ -218,3 +218,35 @@ describe('what sits at the top of the room', () => {
     expect(screen.queryByText(PLAIN)).toBeNull();
   });
 });
+
+/* F-122 / F-118 (LIVE-AUDIT 2026-10-17): the staff header read
+   "ROLE: PLATFORM_OWNER" and a saved session was dated 10/12/2026. */
+describe('the staff header and the saved-session list speak in words', () => {
+  test('names the role in plain words, never the raw role', async () => {
+    mockServerSaying('platform_owner');
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(screen.getByText(/Role: PLATFORM OWNER/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/platform_owner/i);
+  });
+
+  test('dates a saved session in words, in gym time', async () => {
+    mockServerSaying('coach');
+    mockListSessions.mockResolvedValue([
+      {
+        conversationId: 'c-1',
+        title: 'Footwork questions',
+        athleteId: null,
+        sessionType: 'quick_round',
+        createdAt: '2026-10-12T15:00:00.000Z',
+        updatedAt: '2026-10-12T15:00:00.000Z',
+      },
+    ]);
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(await screen.findByText(/Oct 12, 2026/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
+  });
+});
