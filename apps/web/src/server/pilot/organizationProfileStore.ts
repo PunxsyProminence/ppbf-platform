@@ -126,6 +126,12 @@ export function clearOrganizationProfileCache(): void {
   inFlight.clear();
 }
 
+/** After a save (organizationProfileWrite.ts): the next read of this gym goes to the database. */
+export function forgetOrganizationProfile(organizationId: string): void {
+  cache.delete(organizationId);
+  inFlight.delete(organizationId);
+}
+
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {

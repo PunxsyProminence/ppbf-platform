@@ -297,6 +297,66 @@ describe('organization profiles migration (#1469)', () => {
     }
   });
 
+  test('the gym admin save writes the row and its audit row together, and the next read shows it (lane L31 P3)', async () => {
+    const client = await freshDatabase('orgprof_save');
+    const saved = {
+      url: process.env.AZURE_POSTGRES_CONNECTION_STRING,
+      ssl: process.env.PPBF_POSTGRES_DISABLE_SSL,
+    };
+    try {
+      await addOrganization(client, OPERATING_ORG, PPBF_PROFILE.legalName);
+      await applyRunner(client, migrationSql);
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ('acct-admin', 'organization_admin', $1, 'microsoft')`,
+        [OPERATING_ORG],
+      );
+
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('orgprof_save');
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      const store = await import('./organizationProfileStore');
+      const write = await import('./organizationProfileWrite');
+      store.clearOrganizationProfileCache();
+      expect((await store.getOrganizationProfile(OPERATING_ORG, { production: true })).email).toBe('admin@punxsyprominence.org');
+
+      const before = await write.readStoredProfileInput(OPERATING_ORG);
+      await write.saveOrganizationProfile(
+        OPERATING_ORG,
+        { ...before, contact_email: 'office@example.org', mailing_address: '' },
+        { accountId: 'acct-admin', role: 'organization_admin' },
+      );
+
+      // The cached row was dropped, so the very next read is the saved one.
+      const after = await store.getOrganizationProfile(OPERATING_ORG, { production: true });
+      expect(after.email).toBe('office@example.org');
+      expect(after.mailing).toBe('');
+      expect(after.legalName).toBe(PPBF_PROFILE.legalName);
+      const audit = await client.query(
+        `select actor_account_id, entity_type, entity_id from pilot.audit_events where entity_type = 'organization_profile'`,
+      );
+      expect(audit.rows).toEqual([{ actor_account_id: 'acct-admin', entity_type: 'organization_profile', entity_id: OPERATING_ORG }]);
+
+      // Whatever the module's rules admit, the table's rules admit too: the longest of every field saves.
+      const longest = Object.fromEntries(write.PROFILE_FIELDS.map(([field, limit]) => [field, 'x'.repeat(limit)]));
+      await write.saveOrganizationProfile(
+        OPERATING_ORG,
+        { ...longest, website_url: `https://${'a'.repeat(185)}.org`, domain: `${'a'.repeat(196)}.org` },
+        { accountId: 'acct-admin', role: 'organization_admin' },
+      );
+      // And a save the module refuses writes nothing.
+      await expect(write.saveOrganizationProfile(OPERATING_ORG, { ...longest, brand: '' }, { accountId: 'acct-admin', role: 'organization_admin' }))
+        .rejects.toThrow('brand is required');
+      expect((await client.query(`select count(*)::int as n from pilot.audit_events where entity_type = 'organization_profile'`)).rows[0].n).toBe(2);
+    } finally {
+      const { closePool } = await import('./db');
+      await closePool();
+      for (const [name, value] of [['AZURE_POSTGRES_CONNECTION_STRING', saved.url], ['PPBF_POSTGRES_DISABLE_SSL', saved.ssl]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await client.end();
+    }
+  });
+
   test('where the operating gym does not exist, nothing is seeded and the runner still passes', async () => {
     const client = await freshDatabase('orgprof_noorg');
     try {
