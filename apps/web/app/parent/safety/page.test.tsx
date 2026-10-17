@@ -533,6 +533,9 @@ test('a failed load offers Check again, which reads Loading and then the answer'
 
   render(<GuardianSafetyPage />);
   await screen.findByText('Safety status could not be loaded');
+  // A failed read is a warning, not a safety state (critical is kept for those).
+  expect(screen.getByRole('alert')).toHaveClass('alert--warning');
+  expect(screen.getByRole('alert')).not.toHaveClass('alert--critical');
 
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
 

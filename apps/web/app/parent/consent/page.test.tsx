@@ -256,6 +256,9 @@ test('a decision the server refuses reads as an alert, not a status line', async
 
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('Unable to record your decision.');
+  // A refused decision is a warning, not a safety state (critical is kept for those).
+  expect(alert).toHaveClass('alert--warning');
+  expect(alert).not.toHaveClass('alert--critical');
   expect(screen.queryByRole('status')).toBeNull();
 });
 

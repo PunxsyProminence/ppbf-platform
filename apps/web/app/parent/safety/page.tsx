@@ -283,8 +283,8 @@ export default function GuardianSafetyPage() {
               the gym has no signed waiver of that kind yet, and the row says what to do.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}

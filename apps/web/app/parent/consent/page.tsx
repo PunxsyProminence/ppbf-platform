@@ -162,16 +162,16 @@ export default function GuardianMediaConsentPage() {
               has more than one guardian, every guardian must consent before anything is published.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
             {/* A refused decision reads as an alert, a recorded one as a
                 status line (UXB-23), as ParentObservations does. */}
             {actionMessage?.tone === 'failed' ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">▲</span>
                 <span className="alert-msg">{actionMessage.text}</span>
               </p>
             ) : actionMessage ? (
