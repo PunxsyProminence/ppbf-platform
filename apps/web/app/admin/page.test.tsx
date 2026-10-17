@@ -119,6 +119,21 @@ describe('the platform owner', () => {
   });
 });
 
+/* Lane L31 (Overwatch Q2 A): no feature reads these switches, so the screen
+   says so instead of promising to turn features on or off. */
+it('the switchboard says it is a record only and promises no feature switching', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'The Switchboard' });
+
+  expect(screen.getByText('Record Only')).toBeTruthy();
+  expect(screen.getByText(/These switches are a record only: no feature reads them, and switching one off does not turn that feature off\./)).toBeTruthy();
+  const page = document.body.textContent ?? '';
+  expect(page).not.toMatch(/Turn platform capabilities on or off/);
+  expect(page).not.toMatch(/Decide what this gym can do/);
+  expect(page).not.toMatch(/let them flip it on or off/);
+});
+
 it('reports a refused capability load and stops saving over the stored registry', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {

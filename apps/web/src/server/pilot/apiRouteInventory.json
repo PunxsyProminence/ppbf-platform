@@ -9286,7 +9286,7 @@
     "id": "app/api/pilot/platform/organizations/transfer-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/transfer-admin",
-    "gate": "requirePrincipal + requireRole([platform_owner])",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([platform_owner])",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9296,10 +9296,10 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Moves the organization_admin seat from one account to another and demotes the old one (route.ts:19-42). No athlete data; membership/role writes only, audited.",
+    "notes": "Moves the organization_admin seat from one account to another and demotes the old one to coach, staff or volunteer; the old one must hold the seat (lane L31). Microsoft-authenticated platform owner only. No athlete data; membership/role writes only, audited.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"

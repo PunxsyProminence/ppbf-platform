@@ -1653,7 +1653,9 @@ export async function transferOrganizationAdmin(
 
     // The demoted side carries the same platform-owner exclusion (audit
     // CL-A6): named as from_account_id in its own organization, the owner
-    // used to be demoted with is_platform_owner = false.
+    // used to be demoted with is_platform_owner = false. It must also hold the
+    // seat being handed over (lane L31): a "transfer" from a coach was a
+    // promotion with nobody stepping down.
     const demotedRows = await client.query<{ account_id: string }>(
       `update pilot.accounts a
        set role = $3,
@@ -1662,6 +1664,7 @@ export async function transferOrganizationAdmin(
        where account_id = $1 and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and role in ('organization_admin', 'admin')
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [fromAccountId, organizationId, demoteRole],
