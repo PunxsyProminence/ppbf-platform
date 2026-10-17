@@ -822,6 +822,40 @@ describe('privilege to a deleted login', () => {
     expect(await accountRow('acct-gone-admin')).toMatchObject({ role: 'organization_admin', active_flag: false });
   });
 
+  // Lane L31: the outgoing side must hold the seat being handed over. A
+  // "transfer" from a coach was a promotion with nobody stepping down.
+  test('transfer-admin from an account that is not the gym admin is refused and nothing changes', async () => {
+    await insertAccount('acct-coach-a', 'coach', { microsoft: true });
+    await insertAccount('acct-coach-b', 'coach', { microsoft: true });
+
+    await expect(auth.transferOrganizationAdmin('acct-coach-a', 'acct-coach-b', ORG, 'coach')).rejects.toThrow(
+      'Missing source admin in organization',
+    );
+    expect((await accountRow('acct-coach-a'))?.role).toBe('coach');
+    expect((await accountRow('acct-coach-b'))?.role).toBe('coach');
+  });
+
+  test('transfer-admin to the same account is refused and the gym keeps its admin', async () => {
+    await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
+    await expect(auth.transferOrganizationAdmin('acct-admin', 'acct-admin', ORG, 'coach')).rejects.toThrow(
+      'from_account_id and to_account_id must be different accounts',
+    );
+    expect((await accountRow('acct-admin'))?.role).toBe('organization_admin');
+  });
+
+  test('transfer-admin from an account whose membership here is not the admin seat is refused', async () => {
+    await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
+    await insertAccount('acct-coach', 'coach', { microsoft: true });
+    await db.query(
+      `update pilot.organization_memberships set role = 'coach' where account_id = 'acct-admin' and organization_id = $1`,
+      [ORG],
+    );
+    await expect(auth.transferOrganizationAdmin('acct-admin', 'acct-coach', ORG, 'coach')).rejects.toThrow(
+      'Missing source admin in organization',
+    );
+    expect((await accountRow('acct-coach'))?.role).toBe('coach');
+  });
+
   test('assign-admin and transfer-admin still work between logins that are not deleted', async () => {
     await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
     await insertAccount('acct-coach', 'coach', { microsoft: true });

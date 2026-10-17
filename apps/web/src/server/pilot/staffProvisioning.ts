@@ -203,6 +203,25 @@ export function requireGuardianLinkForParentInvite(
 }
 
 /**
+ * An invite that would change an existing account's role, sent without the
+ * confirmation that names the role it is changing from (lane L31). The People
+ * page names the change before it is made; the server holds the same line, so
+ * an account the page did not list, or a role that changed since the page
+ * loaded, is named too instead of being changed on one press.
+ */
+export class RoleChangeUnconfirmedError extends ConflictError {
+  readonly currentRole: PilotRole;
+
+  constructor(loginEmail: string, currentRole: PilotRole, role: InvitableStaffRole) {
+    super(
+      `${loginEmail} is a ${currentRole} in this organization. Inviting them as a ${role} would change their role, so nothing was changed. The People page names the change and can make it.`,
+      'ROLE_CHANGE_UNCONFIRMED',
+    );
+    this.currentRole = currentRole;
+  }
+}
+
+/**
  * The refusal for naming an existing non-parent login as a guardian during
  * intake (Jason 2026-09-29, R5 "A": intake refuses it).
  *
@@ -340,6 +359,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   volunteer?: VolunteerRosterAssignment;
   refuseRoleChange?: boolean;
   refuseDeactivatedLogin?: boolean;
+  /**
+   * The People page's invite (lane L31): a role change goes through only when
+   * the caller names the role it is changing from. undefined leaves every
+   * other caller as it was.
+   */
+  roleChangeConfirmedFrom?: string | null;
 }, client?: PoolClient): Promise<StaffProvisionResult> {
   // On the caller's transaction when given. A pooled read there could not see
   // the caller's own uncommitted rows, and a pooled write could wait on a row
@@ -454,6 +479,16 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     if (existing.role !== role && !callerInvitableRoles.includes(existing.role)) {
       throw new Error('Forbidden: this account holds a role you cannot assign, so its role cannot be changed by an invite');
     }
+
+    // After every refusal above, so it is only ever asked of a change that
+    // would otherwise be made.
+    if (
+      params.roleChangeConfirmedFrom !== undefined
+      && existing.role !== role
+      && params.roleChangeConfirmedFrom !== existing.role
+    ) {
+      throw new RoleChangeUnconfirmedError(loginEmail, existing.role, role);
+    }
   }
 
   const accountId = existing?.account_id || params.accountIdHint?.trim() || loginEmail;
@@ -517,6 +552,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          and acct.organization_id = excluded.organization_id
          and (not $5::boolean or acct.active_flag)
          and (not $6::boolean or acct.role = excluded.role)
+         and (not $7::boolean or acct.role = excluded.role or acct.role = $8::text)
        returning account_id`,
       [
         accountId,
@@ -525,6 +561,10 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
         organizationId,
         params.refuseDeactivatedLogin === true,
         params.refuseRoleChange === true,
+        // The confirmed change holds in the write too, so a role another admin
+        // changed between the read above and here is named, not overwritten.
+        params.roleChangeConfirmedFrom !== undefined,
+        params.roleChangeConfirmedFrom ?? null,
       ],
     );
 
@@ -547,6 +587,13 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       }
       if (params.refuseRoleChange && row.role !== role) {
         throw existingRoleConflict({ email: loginEmail }, row.role, role);
+      }
+      if (
+        params.roleChangeConfirmedFrom !== undefined
+        && row.role !== role
+        && row.role !== params.roleChangeConfirmedFrom
+      ) {
+        throw new RoleChangeUnconfirmedError(loginEmail, row.role, role);
       }
       throw deactivatedGuardianLoginConflict(loginEmail);
     }
