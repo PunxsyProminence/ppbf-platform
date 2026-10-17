@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (slice shipped 2026-08-16) |
+| Status | **DONE** |
+| Status note | Was "DONE (slice shipped 2026-08-16)" until 2026-10-16. classifyTransfer (falseProgress.ts) flags strong-in-drills/weak-in-sparring from the attempts ledger; GET transfer-check route (route.ts, role-gated at :27) and a coach page serve it; code self-identifies as module 053. |
+| Code | `apps/web/app/api/pilot/coach/transfer-check/route.ts`, `apps/web/app/coach/transfer-check/page.tsx`, `apps/web/src/server/pilot/falseProgress.ts` |
+| Tests | `apps/web/app/api/pilot/coach/transfer-check/route.test.ts`, `apps/web/src/server/pilot/falseProgress.test.ts` |
 | Vertical slice | Deterministic per-metric transfer readout over targeted attempts: controlled contexts (session, drill assignment, assessment) vs live contexts (the four sparring kinds), 60-day window, flags not_transferring / untested_live / transferring / insufficient_evidence with raw counts attached; `/coach/transfer-check` + read-only route. No stored verdicts, no scores, no cross-athlete reads. Future work: competition-result contradiction signals, retention-over-time windows. |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -41,3 +44,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-16 | claude-session | Slice shipped: pure classification (`classifyTransfer`, boundaries pinned in tests -- default insufficient_evidence, thin records never flag, zero live attempts is `untested_live` not failure) over the attempts ledger; open_floor and film_study deliberately excluded from both context classes. Read-only: detection stores nothing and decides nothing. Promoted per playbook rule with ManualVerification PENDING_SIGN_OFF. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (slice shipped 2026-08-16)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

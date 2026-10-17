@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **MAPPED** |
+| Status note | Was "DRAFT" until 2026-10-16. Coach-authored development blocks with objectives: development-blocks/route.ts GET, :231 POST, :277 PATCH plus coach page. The module's audit log names these as its slices, but the code explicitly derives no periodization label/taper/volume curve (route.ts), so it plans blocks, not a periodizatio... |
+| Code | `apps/web/app/api/pilot/coach/development-blocks/route.ts`, `apps/web/app/coach/development-blocks/page.tsx`, `apps/web/src/server/pilot/athleteDevelopmentBlocks.ts` |
+| Tests | `apps/web/app/api/pilot/coach/development-blocks/route.test.ts`, `apps/web/app/coach/development-blocks/page.test.tsx`, `apps/web/src/server/pilot/athleteDevelopmentBlocks.pg.test.ts` |
 | Active | false |
 | Promotion required | true |
 | Category | Physical Training System (`physicalTrainingSystem`) |
@@ -41,3 +44,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-28 | objectives slice | `pilot.athlete_development_block_objectives` shipped: the Full Spectrum child rows, nine of ten domains. `nutrition_body_composition` withheld pending an owner decision (proposal Open Question 6). Still no comparison surface, no API, no UI. Status stays **DRAFT**, Active stays **false**. |
 | 2026-08-28 | owner decision | Jason: "admit nutrition_body_composition — module 200 is done." Vocabulary is now all ten; the field is registered in `FIELD_TIERS`. `pilot.goals.category` and SHADOW's `weight_cut` refusal are unchanged. Owed: narrow the field to `athlete_record` in the slice that builds the first read surface. Status stays **DRAFT**, Active stays **false**. |
 | 2026-08-28 | owner decision | Jason: "Admin and coaches" may author blocks and objectives (proposal Open Question 5). Enforced as `DEVELOPMENT_BLOCK_WRITE_ROLES` in the data layer, shared by both modules; `platform_owner`, `athlete`, `parent` and `volunteer` excluded. Closed a real gap: the shipped floor accepted any active membership. READ access for athlete/guardian remains open. Status stays **DRAFT**, Active stays **false**. |
+| 2026-10-16 | Claude (lane L32) | Status set to **MAPPED** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

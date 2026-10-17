@@ -78,11 +78,14 @@ const MODULE_DIR = path.join(REPO, 'docs/capabilities/modules');
  * same day (51 -> 48) after module 022 was relabelled and modules 070 and 082
  * cited their code. Unchanged 2026-09-29: module 084 became DONE citing its
  * route, page and tests, so it did not join the unevidenced pile.
+ * Lowered 2026-10-16 (48 -> 28, lane L32): modules 001-100 now carry Code
+ * and Tests rows checked by scripts/check-capability-status.mjs; the 28 left
+ * are DONE modules in 101-201, which get the same rows next.
  * This is a floor-to-not-exceed, not a target. Lowering it as modules get
  * evidenced is the point; raising it is an admission that has to be argued
  * for in the same change.
  */
-const CEILING_UNEVIDENCED_DONE = 48;
+const CEILING_UNEVIDENCED_DONE = 28;
 
 interface Module {
   file: string;

@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 slice promotion) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 slice promotion)" until 2026-10-16. data-collection-requests/route.ts GET queue, :90 POST, :153 PATCH one-tap capture, DELETE decline, over assessmentProtocols.ts (retest_interval_days :29, listDueAssessments :130, captureDataCollectionRequest :245, declineDataCollectionRequest :266); queue shown on coach/assessments page. |
+| Code | `apps/web/app/api/pilot/data-collection-requests/route.ts`, `apps/web/app/coach/assessments/page.tsx`, `apps/web/src/server/pilot/assessmentProtocols.ts` |
+| Tests | `apps/web/app/api/pilot/data-collection-requests/route.test.ts`, `apps/web/src/server/pilot/assessmentProtocols.pg.test.ts`, `apps/web/app/coach/assessments/page.test.tsx` |
 | Vertical slice | protocol retest_interval config + due-assessment queue + one-tap capture/decline API |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -42,3 +45,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — protocol retest_interval config + due-assessment queue + one-tap capture/decline API. Missing: Real, tested, role-gated, org-scoped code implements retest-interval scheduling and a due-assessment/capture workflow, matching the testing/retest con. Evidence: apps/web/src/server/pilot/assessmentProtocols.ts; infra/azure/pilot_slice_postgres_assessment_protocols_migration.sql. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/src/server/pilot/assessmentProtocols.ts; infra/azure/pilot_slice_postgres_assessment_protocols_migration.sql. Test: apps/web/src/server/pilot/assessmentProtocols.pg.test.ts pins protocol FK enforcement, due-assessment index be |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 slice promotion)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

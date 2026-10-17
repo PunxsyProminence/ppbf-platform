@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`) |
+| Status | **DONE** |
+| Status note | Was "DONE (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`)" until 2026-10-16. Three coach routes (intervention-executions/route.ts GET, :87 POST, :131 PATCH) plus protocols/review routes and three coach pages over interventionProtocols/Executions/Evidence server modules. |
+| Code | `apps/web/app/api/pilot/coach/intervention-protocols/route.ts`, `apps/web/app/api/pilot/coach/intervention-executions/route.ts`, `apps/web/app/api/pilot/coach/intervention-review/route.ts`, `apps/web/app/coach/intervention-executions/page.tsx`, `apps/web/src/server/pilot/interventionExecutions.ts` |
+| Tests | `apps/web/app/api/pilot/coach/intervention-executions/route.test.ts`, `apps/web/app/coach/intervention-review/page.test.tsx`, `apps/web/src/server/pilot/interventionExecutions.pg.test.ts` |
 | Vertical slice | Three-table ledger + three coach surfaces: protocols (versioned intent), executions (planned-vs-actual, adherence, corrections), evidence links + outcome reviews (typed evidence, three-answer human verdicts). Migrations registered but **not yet applied to staging/production** — ships with the next release wave. |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -93,3 +96,4 @@ Fifteen pg contract tests across three embedded-Postgres suites (`interventionPr
 | 2026-08-16 | claude-session | Slice 2 of 3 shipped: `pilot.intervention_executions` (planned-vs-actual snapshots, explicit adherence states, named deviations, correction lineage, org-bound decision links). |
 | 2026-08-16 | claude-session | Slice 3 of 3 shipped: `pilot.intervention_evidence_links` + `pilot.intervention_outcome_reviews` (typed semantic evidence, three-answer human review, miss-cannot-validate-success and confound-cannot-strengthen as database constraints), the What We Learned loop view, and this document rewritten from scaffold. Status promoted to DONE per the playbook rule (slice shipped in code) with ManualVerification PENDING_SIGN_OFF; migrations await the next release wave. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |
