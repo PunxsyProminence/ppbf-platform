@@ -8,6 +8,7 @@ import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
 import ArmedButton from '@/components/ArmedButton';
 
@@ -206,17 +207,6 @@ function roleCanResolveCoachingRequests(role: SchedulerRole | null): boolean {
   return role === 'admin' || role === 'organization_admin';
 }
 
-/* A role in words for the header (UXB-31), never the stored code. PROPOSED. */
-const SCHEDULER_ROLE_WORDS: Readonly<Record<string, string>> = {
-  athlete: 'an athlete',
-  parent: 'a parent',
-  coach: 'a coach',
-  organization_admin: 'the gym admin',
-  admin: 'an admin',
-  volunteer: 'a volunteer',
-  staff: 'staff',
-};
-
 /* A training hold's stored category in words (UXB-11). PROPOSED; the same
    words Sports Medicine's picker uses. */
 const HOLD_REASON_WORDS: Readonly<Record<string, string>> = {
@@ -262,6 +252,9 @@ export default function SchedulerPage() {
   const [role, setRole] = useState<SchedulerRole | null>(null);
   const [athleteId, setAthleteId] = useState<string>('');
   const [athletes, setAthletes] = useState<AthleteRow[]>([]);
+  // An athlete reads no roster (F-117): only their own record, so their own
+  // rows carry their name and every other id stays as it is.
+  const [ownAthlete, setOwnAthlete] = useState<AthleteRow | null>(null);
 
   const [classes, setClasses] = useState<SchedulerClass[]>([]);
   const [registrations, setRegistrations] = useState<SchedulerRegistration[]>([]);
@@ -330,11 +323,11 @@ export default function SchedulerPage() {
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const athlete of athletes) {
-      map.set(athlete.athlete_id, athlete.full_name?.trim() || 'Athlete (name not loaded)');
+    for (const athlete of ownAthlete ? [...athletes, ownAthlete] : athletes) {
+      map.set(athlete.athlete_id, athlete.full_name ?? athlete.athlete_id);
     }
     return map;
-  }, [athletes]);
+  }, [athletes, ownAthlete]);
 
   // Default selections are applied functionally rather than read out of a
   // closure so this loader keeps a stable identity: depending on the current
@@ -408,6 +401,28 @@ export default function SchedulerPage() {
         }
       } else {
         setAthletes([]);
+      }
+
+      if (auth.role === 'athlete' && auth.athlete_id) {
+        // Its own try: a record that cannot be read leaves the roster code
+        // on the athlete's rows, and the rest of the page as it is.
+        const ownId = auth.athlete_id;
+        try {
+          const ownRes = await fetch(`${apiBase()}/api/pilot/athletes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ athlete_id: ownId }),
+          });
+          const own = (await ownRes.json()) as { found?: boolean; athlete?: { full_name?: unknown } };
+          const fullName = typeof own.athlete?.full_name === 'string' ? own.athlete.full_name.trim() : '';
+          // Keyed on the caller's own id, never on what came back.
+          setOwnAthlete(ownRes.ok && own.found && fullName ? { athlete_id: ownId, full_name: fullName } : null);
+        } catch {
+          setOwnAthlete(null);
+        }
+      } else {
+        setOwnAthlete(null);
       }
 
       if (roleCanResolveCoachingRequests(auth.role)) {
@@ -607,11 +622,11 @@ export default function SchedulerPage() {
      parent or staff it is the athlete selected in the picker above, which
      the button used to leave unnamed: a coach's tap on a class row
      registered whoever that picker happened to show. The button now says
-     who, as the picker does: the name, or words when there is no name (UXB-12). */
+     who, as the picker does: the name, or the id when there is no name. */
   const registerTarget = athletes.find((item) => item.athlete_id === targetAthlete);
   const registerTargetName = role === 'athlete' || !targetAthlete
     ? null
-    : registerTarget?.full_name?.trim() || 'Athlete (name not loaded)';
+    : registerTarget?.full_name?.trim() || targetAthlete;
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
@@ -745,7 +760,7 @@ export default function SchedulerPage() {
               {/* Role is identity, not a safety claim, so it wears patina brass
                   rather than any rung of the status ladder (Laws 1 and 2). */}
               <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
-                {role ? `Signed in as ${SCHEDULER_ROLE_WORDS[role] ?? 'a member'}` : 'Signing in…'}
+                Role: {role ? roleWords(role) : 'loading'}
               </span>
               {roleCanOverrideAttendance(role) ? (
                 <Link href="/admin/attendance" className="btn btn--ghost btn--tap">
@@ -955,7 +970,7 @@ export default function SchedulerPage() {
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
-                          {item.full_name?.trim() || 'Athlete (name not loaded)'}
+                          {item.full_name || item.athlete_id}
                         </option>
                       ))}
                     </select>
@@ -1054,14 +1069,14 @@ export default function SchedulerPage() {
                       <optgroup label="Registered for this class">
                         {athletes.filter((item) => registeredForSelectedClass.has(item.athlete_id)).map((item) => (
                           <option key={item.athlete_id} value={item.athlete_id}>
-                            {item.full_name?.trim() || 'Athlete (name not loaded)'}
+                            {item.full_name || item.athlete_id}
                           </option>
                         ))}
                       </optgroup>
                       <optgroup label="Walk-in (marks present only)">
                         {athletes.filter((item) => !registeredForSelectedClass.has(item.athlete_id)).map((item) => (
                           <option key={item.athlete_id} value={item.athlete_id}>
-                            {item.full_name?.trim() || 'Athlete (name not loaded)'}
+                            {item.full_name || item.athlete_id}
                           </option>
                         ))}
                       </optgroup>
@@ -1075,7 +1090,7 @@ export default function SchedulerPage() {
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
-                          {item.full_name?.trim() || 'Athlete (name not loaded)'}
+                          {item.full_name || item.athlete_id}
                         </option>
                       ))}
                     </select>
@@ -1183,7 +1198,7 @@ export default function SchedulerPage() {
                     {registrations.map((item) => (
                       <div key={item.registration_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Registration: {athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || 'Class (not listed)'}
+                          Registration: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
                         <p className="text-[color:var(--bone-300)]">Status: {item.status} | Parent Reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
                         {roleCanManageParents(role) && !item.parent_reviewed ? (
@@ -1207,7 +1222,7 @@ export default function SchedulerPage() {
                     {attendance.map((item) => (
                       <div key={item.attendance_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Attendance: {athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || 'Class (not listed)'}
+                          Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
                         <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
@@ -1225,14 +1240,14 @@ export default function SchedulerPage() {
                   ) : coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
-                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || 'Athlete (name not loaded)'}</p>
+                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
                       <p className="text-[color:var(--bone-300)]">
                         Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
                           ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
                           : ''}
                       </p>
-                      <p className="text-[color:var(--bone-400)]">{item.goals}</p>
+                      <p className="text-[color:var(--bone-400)]">Goals: <span>{item.goals}</span></p>
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">

@@ -1388,3 +1388,72 @@ describe('an active training hold is shown beside the wellness check-in and bloc
     expect(holdNotice()).toBeUndefined();
   });
 });
+
+/* F-067: a coach's run under way, with no session row of the athlete's own,
+   used to read "No session started today". The route now says so in
+   `session_running`; the panel says a session is running instead. */
+const SESSION_RUNNING_NO_NOTE = 'A session is running today. No session note written for this athlete yet.';
+
+describe('a session run under way is not "no session started today" (F-067)', () => {
+  it('says a session is running when the route says so and there is no session row', async () => {
+    await renderWorkspace(
+      () => jsonResponse({ today: checkInRow('ath_1') }),
+      () => jsonResponse({ today: null, session_running: true }),
+    );
+    await pickAthlete('Jordan P.');
+
+    expect(within(notePanel()).getByText(SESSION_RUNNING_NO_NOTE)).not.toBeNull();
+    expect(within(notePanel()).queryByText(NO_SESSION_TODAY)).toBeNull();
+    expect(within(notePanel()).queryByText(NOTE_READ_FAILED)).toBeNull();
+    expect(within(notePanel()).queryByText(NOTE_ATTRIBUTION)).toBeNull();
+  });
+
+  it('keeps "No session started today" when no run is under way', async () => {
+    await renderWorkspace(
+      () => jsonResponse({ today: checkInRow('ath_1') }),
+      () => jsonResponse({ today: null, session_running: false }),
+    );
+    await pickAthlete('Jordan P.');
+
+    expect(within(notePanel()).getByText(NO_SESSION_TODAY)).not.toBeNull();
+    expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+  });
+
+  it('reads only an explicit true: a missing or odd value keeps the older sentence', async () => {
+    await renderWorkspace(
+      () => jsonResponse({ today: checkInRow('ath_1') }),
+      (athleteId) => jsonResponse(athleteId === 'ath_1' ? { today: null, session_running: 'yes' } : { today: null }),
+    );
+    await pickAthlete('Jordan P.');
+    expect(within(notePanel()).getByText(NO_SESSION_TODAY)).not.toBeNull();
+    expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+
+    await pickAthlete('Sam R.');
+    await within(notePanel()).findByText(NO_SESSION_TODAY);
+    expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+  });
+
+  it('a session row of the athlete\'s own still answers as before, whatever the run says', async () => {
+    await renderWorkspace(
+      () => jsonResponse({ today: checkInRow('ath_1') }),
+      () => jsonResponse({ today: { note: null }, session_running: true }),
+    );
+    await pickAthlete('Jordan P.');
+
+    expect(within(notePanel()).getByText(NO_NOTE_WRITTEN)).not.toBeNull();
+    expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+  });
+
+  it('the running sentence belongs to the athlete it was read for', async () => {
+    await renderWorkspace(
+      () => jsonResponse({ today: checkInRow('ath_1') }),
+      (athleteId) => jsonResponse({ today: null, session_running: athleteId === 'ath_1' }),
+    );
+    await pickAthlete('Jordan P.');
+    expect(within(notePanel()).getByText(SESSION_RUNNING_NO_NOTE)).not.toBeNull();
+
+    await pickAthlete('Sam R.');
+    await within(notePanel()).findByText(NO_SESSION_TODAY);
+    expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+  });
+});

@@ -191,8 +191,9 @@ describe('the header says who is signed in, in words (UXB-31)', () => {
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
 
-    expect(screen.getByText('Signed in as the gym admin')).toBeTruthy();
-    expect(screen.queryByText(/Role: /)).toBeNull();
+    // The role in words through the shared roleWords (#1696), never the code.
+    expect(screen.getByText('Role: Gym Admin')).toBeTruthy();
+    expect(screen.queryByText(/organization_admin/)).toBeNull();
     expect(screen.queryByText('Unified Scheduler')).toBeNull();
     expect(screen.queryByText(/coach\/admin override/)).toBeNull();
   });
