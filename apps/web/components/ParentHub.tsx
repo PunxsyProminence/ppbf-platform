@@ -18,6 +18,7 @@ import ShadowChatButton from './ShadowChatButton';
 import SentToYourAthlete from './SentToYourAthlete';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
+import ParentResources from './ParentResources';
 import { apiBase } from '@/lib/apiBase';
 import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
@@ -157,14 +158,6 @@ interface SchedulerFeedAttendance {
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
   checked_in_at: string;
-}
-
-interface ParentResource {
-  id: string;
-  title: string;
-  type: 'Guide' | 'Checklist' | 'Video' | 'Policy';
-  summary: string;
-  actionLabel: string;
 }
 
 interface SafetySummary {
@@ -613,7 +606,6 @@ export default function ParentHub() {
     return () => controller.abort();
   }, []);
 
-  const [parentResources] = useState<ParentResource[]>([]);
 
   // Capabilities #93/#167: this hub links to /parent/safety and
   // /parent/consent (both already built, #84/T-008) but never surfaced
@@ -2008,22 +2000,13 @@ export default function ParentHub() {
             <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Parent Support Resources</h3>
               <p className="t-body">Guides, videos, and tips for supporting young athletes.</p>
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
-                list is always empty.
-              </p>
-              <div className="space-y-[var(--s3)]">
-                {parentResources.map((resource) => (
-                  <div key={resource.id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
-                    <p className="t-body font-semibold">{resource.title}</p>
-                    <p className="t-muted mt-[var(--s2)]">Type: {resource.type}</p>
-                    <p className="t-body mt-[var(--s2)]">{resource.summary}</p>
-                    <button className="btn mt-[var(--s3)]">
-                      {resource.actionLabel}
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {/* #1593 PH-11: built, so F-019's "not built yet" note goes.
+                  Per child (key): program resources follow the child. */}
+              {activeChildId ? (
+                <ParentResources key={activeChildId} athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 
