@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { formatCalendarDay } from '@/lib/calendarDay';
+import { gymDayIso } from '@/src/lib/gymTime';
+
 import { useMilestoneCeremony } from './milestoneCeremony';
 import { anniversaryMark } from './gymNotices';
 import useGymSound from './useGymSound';
@@ -396,11 +399,11 @@ function Seal({ count, earned }: { count: number; earned: boolean }) {
   );
 }
 
-/** Dates arrive as ISO or YYYY-MM-DD; render without inventing a timezone. */
+/** Dates arrive as an instant or YYYY-MM-DD. A bare day is printed as it is; an
+    instant is reduced to the gym's day first, since slicing the ISO text names
+    the UTC day, which is tomorrow after 8 PM gym time (UXB-30). */
 function formatDate(raw: string): string {
-  const ymd = raw.slice(0, 10);
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-  if (!m) return raw;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])} ${m[1]}`;
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return raw;
+  return formatCalendarDay(ymd);
 }

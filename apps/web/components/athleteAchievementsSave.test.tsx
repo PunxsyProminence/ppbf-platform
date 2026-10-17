@@ -3,7 +3,7 @@
  */
 
 // Save truth on the achievements panel (WO-N5-02): choosing a programme and marking a milestone
-// say "Saving..." while the server has not answered, and "That did not save. Try it again." when it
+// say "Saving..." while the server has not answered, and "That did not save. Try again." when it
 // did not keep the press. Success is the screen itself changing after the server answers; no extra
 // line appears for it.
 
@@ -81,7 +81,7 @@ describe('choosing what you came here for', () => {
     });
     await waitFor(() => expect(programButton(/youth programme/i)).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.queryByText('Saving...')).toBeNull();
-    expect(screen.queryByText('That did not save. Try it again.')).toBeNull();
+    expect(screen.queryByText('That did not save. Try again.')).toBeNull();
   });
 
   test.each(['refused', 'offline'] as const)('a %s save says it did not save, and the old choice stays', async (outcome) => {
@@ -90,7 +90,7 @@ describe('choosing what you came here for', () => {
     await act(async () => {
       fireEvent.click(programButton(/youth programme/i));
     });
-    expect(screen.getByRole('status')).toHaveTextContent('That did not save. Try it again.');
+    expect(screen.getByRole('status')).toHaveTextContent('That did not save. Try again.');
     expect(programButton(/fitness/i)).toHaveAttribute('aria-pressed', 'true');
     expect(programButton(/youth programme/i)).toHaveAttribute('aria-pressed', 'false');
   });
@@ -100,53 +100,53 @@ describe('marking a milestone yourself', () => {
   test.each(['refused', 'offline'] as const)('a %s mark says it did not save', async (outcome) => {
     write = outcome;
     await renderPanel();
-    const didIt = screen.getAllByRole('button', { name: 'Did it' })[0];
+    const didIt = screen.getAllByRole('button', { name: 'I did it' })[0];
     await act(async () => {
       fireEvent.click(didIt);
     });
-    expect(screen.getByRole('status')).toHaveTextContent('That did not save. Try it again.');
+    expect(screen.getByRole('status')).toHaveTextContent('That did not save. Try again.');
   });
 
   test('a mark in flight says "Saving...", and a kept one leaves no line', async () => {
     write = 'pending';
     await renderPanel();
     await act(async () => {
-      fireEvent.click(screen.getAllByRole('button', { name: 'Did it' })[0]);
+      fireEvent.click(screen.getAllByRole('button', { name: 'I did it' })[0]);
     });
     expect(screen.getByRole('status')).toHaveTextContent('Saving...');
     await act(async () => {
       release();
     });
     await waitFor(() => expect(screen.queryByText('Saving...')).toBeNull());
-    expect(screen.queryByText('That did not save. Try it again.')).toBeNull();
+    expect(screen.queryByText('That did not save. Try again.')).toBeNull();
   });
 
   test('the line sits on the milestone that was pressed, at floor size', async () => {
     write = 'refused';
     await renderPanel();
-    const buttons = screen.getAllByRole('button', { name: 'Did it' });
+    const buttons = screen.getAllByRole('button', { name: 'I did it' });
     const pressed = buttons[buttons.length - 1];
     await act(async () => {
       fireEvent.click(pressed);
     });
     const card = pressed.closest('li') as HTMLElement;
-    const note = within(card).getByText('That did not save. Try it again.');
+    const note = within(card).getByText('That did not save. Try again.');
     expect(note.className).toContain('text-[length:var(--t-md)]');
-    expect(screen.getAllByText('That did not save. Try it again.')).toHaveLength(1);
+    expect(screen.getAllByText('That did not save. Try again.')).toHaveLength(1);
   });
 
   test('a kept retry clears the line', async () => {
     write = 'refused';
     await renderPanel();
-    const didIt = screen.getAllByRole('button', { name: 'Did it' })[0];
+    const didIt = screen.getAllByRole('button', { name: 'I did it' })[0];
     await act(async () => {
       fireEvent.click(didIt);
     });
-    expect(screen.getByText('That did not save. Try it again.')).toBeInTheDocument();
+    expect(screen.getByText('That did not save. Try again.')).toBeInTheDocument();
     write = 'ok';
     await act(async () => {
       fireEvent.click(didIt);
     });
-    await waitFor(() => expect(screen.queryByText('That did not save. Try it again.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('That did not save. Try again.')).toBeNull());
   });
 });

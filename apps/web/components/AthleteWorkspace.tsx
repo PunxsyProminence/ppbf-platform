@@ -38,6 +38,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateTime, formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
+import { templateSectionWords } from '@/src/lib/sessionScriptWords';
 import {
   readIssuedWorkouts,
   sectionAssignedWork,
@@ -569,22 +570,60 @@ function classWhen(item: ScheduleClassRow): string {
   return formatGymDateTime(item.start_at) ?? item.start_at;
 }
 
-/** The Schedule tab's lists. Reads once when mounted -- the tab mounts it only while open. */
+type ScheduleReadPayload = { ok?: boolean; classes?: ScheduleClassRow[]; registrations?: ScheduleRegistrationRow[] } | null;
+
+/**
+ * The dashboard's Next Session tile (UXB-17): the athlete's first booked class
+ * that is not cancelled, from the same scheduler read the Schedule tab makes.
+ * It said "Nothing posted yet." always, while Schedule listed real bookings.
+ * Words only, never a number that did not come from a read. PROPOSED wording.
+ */
+function useNextSessionLine(enabled: boolean): string {
+  const [line, setLine] = useState('Checking...');
+
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
+        const payload = (await response.json().catch(() => null)) as ScheduleReadPayload;
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
+          throw new Error('unreadable');
+        }
+        const next = scheduleLists(payload.classes, payload.registrations, Date.now())
+          .booked.find(({ item }) => item.status !== 'cancelled');
+        if (!live) return;
+        setLine(next
+          ? `${next.item.title} · ${classWhen(next.item)}${next.registration.status === 'waitlisted' ? ' (waitlist)' : ''}`
+          : 'Nothing booked.');
+      } catch {
+        if (live) setLine('Unavailable');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+
+  return line;
+}
+
+/** The Schedule tab's lists. Reads when mounted -- the tab mounts it only while open -- and again on Try again. */
 export function AthleteScheduleView() {
   const [read, setRead] = useState<
     | { state: 'loading' }
     | { state: 'failed' }
     | { state: 'ready'; classes: ScheduleClassRow[]; registrations: ScheduleRegistrationRow[]; readAt: number }
   >({ state: 'loading' });
+  const [readAttempt, setReadAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
-        const payload = (await response.json().catch(() => null)) as
-          | { ok?: boolean; classes?: ScheduleClassRow[]; registrations?: ScheduleRegistrationRow[] }
-          | null;
+        const payload = (await response.json().catch(() => null)) as ScheduleReadPayload;
         if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
           throw new Error('unreadable');
         }
@@ -597,14 +636,28 @@ export function AthleteScheduleView() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [readAttempt]);
 
   if (read.state === 'loading') {
     return <p className="t-body text-[color:var(--bone-300)]" role="status">Loading your schedule...</p>;
   }
   if (read.state === 'failed') {
     // Never an empty list: an unread schedule and an empty one mean opposite things.
-    return <p className="t-body" role="status">Your schedule could not be loaded.</p>;
+    return (
+      <div className="space-y-[var(--s3)]">
+        <p className="t-body" role="alert">Your schedule could not be loaded.</p>
+        <button
+          type="button"
+          onClick={() => {
+            setRead({ state: 'loading' });
+            setReadAttempt((n) => n + 1);
+          }}
+          className="btn btn--kiosk"
+        >
+          Try again
+        </button>
+      </div>
+    );
   }
 
   const { booked, available } = scheduleLists(read.classes, read.registrations, read.readAt);
@@ -904,6 +957,7 @@ function AthleteRabbitHoleLibrary() {
   const [topics, setTopics] = useState<RabbitHoleTopic[]>([]);
   const [loadState, setLoadState] = useState<RabbitHoleLoadState>('loading');
   const [isPartial, setIsPartial] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -960,7 +1014,7 @@ function AthleteRabbitHoleLibrary() {
     })();
 
     return () => controller.abort();
-  }, []);
+  }, [readAttempt]);
 
   if (loadState === 'loading') {
     return <span className="working">Loading the gym&apos;s rabbit holes...</span>;
@@ -968,10 +1022,22 @@ function AthleteRabbitHoleLibrary() {
 
   if (loadState === 'unavailable') {
     return (
-      <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-        The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
-        that none have been written.
-      </p>
+      <div className="space-y-[var(--s3)]">
+        <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]" role="alert">
+          The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
+          that none have been written.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoadState('loading');
+            setReadAttempt((n) => n + 1);
+          }}
+          className="btn btn--kiosk"
+        >
+          Try again
+        </button>
+      </div>
     );
   }
 
@@ -1107,6 +1173,13 @@ export default function AthleteWorkspace() {
 
   // Goals State - Real API data
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
+  /* Own-words goals still being worked on. They have their own board, so they
+     are not SMART cards, but "Active Goals" counts them too (UXB-18; Overwatch
+     Q2 A: the number matches the Goals tab). */
+  const [ownWordsActive, setOwnWordsActive] = useState(0);
+  // Every own-words goal, reached or not: the Goals tab's empty line must not
+  // say "Nothing on the board yet" under a board that lists some (L5a review).
+  const [ownWordsCount, setOwnWordsCount] = useState(0);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
   const [trainingSessions, setTrainingSessions] = useState<TrainingSession[]>([]);
@@ -1133,6 +1206,8 @@ export default function AthleteWorkspace() {
   // The gym's own drill library, written by its coaches.
   const [drills, setDrills] = useState<ReferenceDrill[]>([]);
   const [drillsLoading, setDrillsLoading] = useState(true);
+  // Bumped by "Try again" to run the reference-library read once more (UXB-13).
+  const [drillsReadAttempt, setDrillsReadAttempt] = useState(0);
   const [drillsError, setDrillsError] = useState<string | null>(null);
   // LEVEL 2 of OD-2026-09-19-001: the one drill an athlete has opened. Read
   // from the athlete detail endpoint, which is the server's constructive,
@@ -1367,7 +1442,12 @@ export default function AthleteWorkspace() {
   const shownSyncMessage = backendSyncMessage === CHECKED_IN_WELLNESS_NEXT && todayCheckIn !== null
     ? CHECKED_IN_FLOOR_OPEN
     : backendSyncMessage;
-  const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
+  const goalsActive = smartGoals.filter(g => g.status === 'Active').length + ownWordsActive;
+  const nextSessionRead = useNextSessionLine(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const nextSessionLine = athleteIdentityState === 'unavailable'
+    || (athleteIdentityState === 'resolved' && backendAthleteId === null)
+    ? 'Unavailable'
+    : nextSessionRead;
 
   const loadIdentity = useCallback(async () => {
     try {
@@ -1446,7 +1526,7 @@ export default function AthleteWorkspace() {
     })();
 
     return () => controller.abort();
-  }, []);
+  }, [drillsReadAttempt]);
 
   // The opened drill's full detail. Keyed to the drill id and abortable, so a
   // slow answer for a drill the athlete has already left cannot land on the
@@ -1531,8 +1611,14 @@ export default function AthleteWorkspace() {
       );
       if (!response.ok) throw new Error('Your goals did not load. Try again.');
 
-      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string | null; target_date?: string; metric?: string; progress_percent?: number | null; status?: string; created_at?: string }> };
-      const items = data.items || [];
+      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string | null; target_date?: string; metric?: string; progress_percent?: number | null; status?: string; created_at?: string; goal_kind?: string | null }> };
+      const allItems = data.items || [];
+      // The full list carries own-words goals too (goals/list sends athletes
+      // every row); those live on PersonalGoalBoard, never as a SMART card.
+      const items = allItems.filter((item) => item.goal_kind !== 'own_words');
+      const ownWordsStillOpen = allItems.filter(
+        (item) => item.goal_kind === 'own_words' && (item.status ?? '').toLowerCase() === 'active',
+      ).length;
 
       // Convert PilotGoal to SMARTGoal format.
       //
@@ -1558,6 +1644,8 @@ export default function AthleteWorkspace() {
         timeBound: ''
       }));
       setSmartGoals(goals);
+      setOwnWordsActive(ownWordsStillOpen);
+      setOwnWordsCount(allItems.length - items.length);
     } catch (error) {
       setGoalsError(error instanceof Error ? error.message : 'Your goals did not load. Try again.');
     } finally {
@@ -1674,7 +1762,7 @@ export default function AthleteWorkspace() {
          whether this person checked in, and a floor locked on an unknown is
          the failure mode the gate is written to avoid. */
       setCheckInLoading(false);
-      setCheckInLoadError('This account is not linked to an athlete record, so there is no check-in to show.');
+      setCheckInLoadError('This account is not linked to an athlete record, so there is no wellness record to show.');
       return;
     }
 
@@ -1685,7 +1773,7 @@ export default function AthleteWorkspace() {
         method: 'GET',
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Your check-in did not load.');
+      if (!response.ok) throw new Error('Your wellness did not load.');
 
       const data = (await response.json()) as {
         today?: AthleteCheckInRecord | null;
@@ -1694,7 +1782,7 @@ export default function AthleteWorkspace() {
       setTodayCheckIn(data.today ?? null);
       setRecentCheckIns(data.recent ?? []);
     } catch (error) {
-      setCheckInLoadError(error instanceof Error ? error.message : 'Your check-in did not load.');
+      setCheckInLoadError(error instanceof Error ? error.message : 'Your wellness did not load.');
     } finally {
       setCheckInLoading(false);
     }
@@ -3018,7 +3106,7 @@ export default function AthleteWorkspace() {
               {/* Session Check-In/Out. The open session comes from the server
                   on every load, so a reload, a new tab, or a different device
                   all find the same session still open. */}
-              <div className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
+              <div role="region" aria-label="Session log" className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
                 <h3 className="t-label">Session Log</h3>
 
                 {athleteIdentityState === 'loading' ? (
@@ -3238,7 +3326,7 @@ export default function AthleteWorkspace() {
                       disabled={isCheckingIn}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
-                      {isCheckingIn ? 'Checking in...' : 'Check In'}
+                      {isCheckingIn ? 'Checking in…' : 'Check in'}
                     </button>
                   </div>
                 )}
@@ -3253,7 +3341,7 @@ export default function AthleteWorkspace() {
                     <ul className="space-y-[var(--s3)]">
                       {recentSessions.map((session) => (
                         <li key={session.sessionId} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                          <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{session.date}</span>
+                          <span className="t-data">{formatCalendarDay(session.date)}</span>
                           {' - '}
                           {/* The system's words -- the no-note placeholder,
                               or the old readiness marker on an older row --
@@ -3275,9 +3363,9 @@ export default function AthleteWorkspace() {
           {activeTab === 'athlete-floor' && floorLockedPendingCheckIn && (
             <div className="space-y-6 panel-settle">
               <div className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
-                <h3 className="t-label">Check in first</h3>
+                <h3 className="t-label">Wellness first</h3>
                 <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                  Your work for today opens once you have checked in. It takes a few
+                  Your work for today opens once you have saved your wellness. It takes a few
                   seconds, and every question is optional.
                 </p>
                 <button
@@ -3285,7 +3373,7 @@ export default function AthleteWorkspace() {
                   onClick={() => setActiveTab('bio-checkin')}
                   className="btn btn--kiosk"
                 >
-                  Go to check in
+                  Go to Wellness
                 </button>
                 <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
                   Everything else stays open — goals, drills, messages, and telling a
@@ -3331,9 +3419,9 @@ export default function AthleteWorkspace() {
                       <button
                         onClick={() => void loadAssignedWork()}
                         className="btn btn--ghost min-h-[var(--tap)]"
-                        aria-label="Retry loading your coach's work"
+                        aria-label="Try loading your coach's work again"
                       >
-                        Retry
+                        Try again
                       </button>
                     </div>
                   </div>
@@ -3384,7 +3472,7 @@ export default function AthleteWorkspace() {
                         <div className="mt-[var(--s4)] grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
                           {section.parts.map((part) => (part.kind === 'block' ? (
                             <h5 key={part.key} className="t-label md:col-span-2">
-                              {part.block.replace(/_/g, ' ')}
+                              {templateSectionWords(part.block)}
                             </h5>
                           ) : (
                             <FloorWorkCard key={part.key} work={part.assignment} step={part.step} />
@@ -3457,7 +3545,7 @@ export default function AthleteWorkspace() {
                   board asks for a sentence, and it extends the same pilot.goals
                   table rather than replacing it, so the measurable conditioning
                   target a coach wants still has its form. */}
-              <PersonalGoalBoard athleteId={backendAthleteId} />
+              <PersonalGoalBoard athleteId={backendAthleteId} onChanged={() => void loadGoals()} />
 
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}
@@ -3565,16 +3653,16 @@ export default function AthleteWorkspace() {
                           void loadGoals();
                         }}
                         className="btn btn--ghost min-h-[var(--tap)]"
-                        aria-label="Retry loading goals"
+                        aria-label="Try loading your goals again"
                       >
-                        Retry
+                        Try again
                       </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {!goalsLoading && smartGoals.length === 0 && !goalsError && (
+              {!goalsLoading && smartGoals.length === 0 && ownWordsCount === 0 && !goalsError && (
                 <div className={`${PANEL} text-center`}>
                   <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on the board yet. Put up one goal and we&apos;ll track it.</p>
                 </div>
@@ -3766,6 +3854,19 @@ export default function AthleteWorkspace() {
                     <p className="alert-title">Could not load the reference library</p>
                     <p className="alert-msg">{drillsError}</p>
                     <p className="alert-msg mt-[var(--s2)]">The gym&apos;s reference material is still there. This screen just could not reach them.</p>
+                    <div className="alert-action">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrillsError(null);
+                          setDrillsLoading(true);
+                          setDrillsReadAttempt((n) => n + 1);
+                        }}
+                        className="btn btn--ghost min-h-[var(--tap)]"
+                      >
+                        Try again
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3814,7 +3915,7 @@ export default function AthleteWorkspace() {
                     <div className="flex justify-between items-start gap-[var(--s3)]">
                       <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{drill.name}</h4>
                       {drill.requiresCoachAuthorization && (
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Coach authorization required</span>
+                        <span className="t-data">Coach authorization required</span>
                       )}
                     </div>
                     <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
@@ -4057,9 +4158,9 @@ export default function AthleteWorkspace() {
                             void loadShadowObservations();
                           }}
                           className="btn btn--ghost min-h-[var(--tap)]"
-                          aria-label="Retry loading SHADOW observations"
+                          aria-label="Try loading SHADOW's notes again"
                         >
-                          Retry
+                          Try again
                         </button>
                       </div>
                     </div>
@@ -4108,15 +4209,14 @@ export default function AthleteWorkspace() {
           </div>
         ) : null}
 
-        {/* ROLE SUMMARY PANEL */}
-        {/* Class times and registrations live behind the unified scheduler;
-            this workspace has no feed for the athlete's next class, so the
-            tile must not name one. */}
+        {/* ROLE SUMMARY PANEL. Next Session comes from the scheduler read the
+            Schedule tab makes (UXB-17): a booked class, "Nothing booked." on an
+            answered empty read, "Unavailable" on a failed one. */}
         <AthleteSummaryPanel
           wellnessToday={wellnessTodayRead}
           openCoachWork={openCoachWorkRead}
           goalsActive={goalsRead}
-          upcomingSession="Nothing posted yet."
+          upcomingSession={nextSessionLine}
         />
 
         {/* The training card. One stamp per session row from the ledger -- a
