@@ -1,6 +1,9 @@
 'use client';
 
-import Link from 'next/link';
+// ChromeLink, not next/link: this line sits on /teach-shadow/capture, a camera
+// document, where a soft navigation would carry the camera grant off the page
+// (cameraDocumentNavigation.test.ts).
+import ChromeLink from './ChromeLink';
 import { usePathname } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 import { visibleDoors } from './buildingMap';
@@ -82,9 +85,9 @@ export default function ClusterNav({ cluster }: { readonly cluster: CoachCluster
             </li>
           ) : (
             <li key={door!.href}>
-              <Link href={door!.href} className="underline">
+              <ChromeLink href={door!.href} className="underline">
                 {door!.label}
-              </Link>
+              </ChromeLink>
             </li>
           ),
         )}
