@@ -17,7 +17,7 @@ can check that.
 Result column. Claude changes a module file's ManualVerification to
 `SIGNED_OFF` only when Jason says so for that module.
 
-**How many: 53** (2026-10-16: 038, 087, 140, 158 and 159 added when they became DONE; 135 is no longer DONE, so 52 are DONE modules). **On 2026-09-29: 48.** The 47 DONE modules that had no ManualVerification row on
+**How many: 54** (2026-10-16/17: 038, 087, 094, 140, 158 and 159 added when they became DONE; 135 is no longer DONE, so 53 are DONE modules). **On 2026-09-29: 48.** The 47 DONE modules that had no ManualVerification row on
 2026-09-29, plus module 084, marked DONE the same day (Jason's "11A"). The
 earlier figure, 36, is the count in `docs/current/SIGN_OFF_GUIDE.md`, which
 only covers modules the 2026-08-03 CSV marked `PENDING_SIGN_OFF`. The other 11:
@@ -69,6 +69,7 @@ disagree, this file is the later check.
 | 084 | Guardian Safety Report Engine | `/parent/safety` | Guardian | Open it as the parent of a test athlete who has a hold. Expect "Safety Status" for each linked child: the hold and gate standing in the words the child sees; no coach reason text; and a "Waivers" list (General, Medical release, Photo & media, Travel), each marked Signed, Declined, Withdrawn or Missing, or Unknown for a value the page does not recognise. Photo & media should match the "Photo & Video Consent" page: Signed only when that page says "Consent on file". Production's waiver rows are all of type `program_consent` (OD-2026-09-29-002 item 8a), which the route does not read, so expect Missing on all four unless the test athlete has waivers of these types. | |
 | 087 | Guardian Observation Engine | `/parent/dashboard`, "Write down what you notice", then `/coach/decision-loop`, "From the family" | Guardian, then Coach | As the guardian, write an observation about the child. As that child's coach, pick the athlete and expect it under "From the family". (DONE since 2026-10-16.) | |
 | 090 | Family Communication Engine | `/coach/decision-loop`, "Message Home", then `/parent/dashboard` | Coach, then Guardian | Send a message home. Expect "Sent to the family." Then expect it on the guardian's dashboard. One-way: no replies. | |
+| 094 | Parent Confirmation System | `/schedule` | Guardian | With the child registered for a class, find the registration showing "Parent Reviewed: No" and press Mark Parent Reviewed. Expect it to show "Parent Reviewed: Yes". (DONE since 2026-10-17.) | |
 | 095 | Home Barrier Reporting System | `/parent/dashboard`, "Report a Barrier", then `/coach/environment/intake-router` | Guardian, then Coach | Choose Home, describe it, press "Send to Coach". Expect it under "Family Barrier Reports" for that athlete's coach only. | |
 | 096 | Transportation / Attendance Barrier Tracker | Same as 095 | Guardian, then Coach | As 095 with Type "Transportation". Expect it in the same list. | |
 | 104 | Bodyweight Tracking | `/athlete/dashboard/sparring`, then `/coach/athlete-intelligence` | Athlete, then Coach | Enter "Your weight (kg, if you want)" on two logs about seven days apart. After the second, expect a seven-day weight change for that athlete on the coach page. | |

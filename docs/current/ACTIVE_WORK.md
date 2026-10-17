@@ -318,9 +318,9 @@ application layers, and its migration is applied: `apply-migrations` runs
 `PILOT SPARRING ATTEMPT CONTEXTS MIGRATION PASS` (logs read 2026-09-28).
 
 DONE modules nobody has tried (added 2026-09-29; "9a. B", OD-2026-09-29-002
-item 9a): 53 module files carry `ManualVerification | PENDING_SIGN_OFF`
-(48 on 2026-09-29; 038, 087, 140, 158 and 159 joined 2026-10-16 when they
-became DONE),
+item 9a): 54 module files carry `ManualVerification | PENDING_SIGN_OFF`
+(48 on 2026-09-29; 038, 087, 094, 140, 158 and 159 joined 2026-10-16/17 when
+they became DONE),
 labelled "built, not yet tried by a person", and
 `docs/capabilities/SIGN_OFF_WALKTHROUGH.md` gives one way to try each on the
 tablet. Tests do not show whether a screen works; Jason or a coach trying it
