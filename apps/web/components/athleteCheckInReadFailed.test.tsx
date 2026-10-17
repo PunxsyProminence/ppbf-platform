@@ -70,7 +70,10 @@ test('already checked in earlier: the athlete is told what they just entered was
 
   expect(screen.getByRole('heading', { name: 'Already checked in today' })).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('what you just entered was not saved');
+  // The morning's answers, not the ones just typed (5 hours).
   expect(screen.getByText('Note: from this morning')).toBeInTheDocument();
+  expect(screen.getByText('Sleep: 8 hours')).toBeInTheDocument();
+  expect(screen.queryByText('Sleep: 5 hours')).toBeNull();
   expect(screen.queryByText('Your check-in did not load.')).toBeNull();
 });
 
