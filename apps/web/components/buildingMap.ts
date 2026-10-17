@@ -281,7 +281,7 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
-  { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/system', label: 'System', room: 'office', roles: ['admin', 'platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
     hint: 'The routes and jobs the platform is built from. Read-only; no row says a route or job is working.' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
