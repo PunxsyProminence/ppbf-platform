@@ -1870,7 +1870,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   </div>
 
                   <div className="space-y-3">
-                    <p className="t-eyebrow">What Gym Admins Can Flip</p>
+                    <p className="t-eyebrow">What The Record Says Gym Admins May Mark</p>
                     <p className="text-[length:var(--t-sm)] leading-6 text-[var(--bone-400)]">
                       Record whether a gym admin may mark the same capability inside their organization.
                     </p>
@@ -1880,8 +1880,8 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                         <div className="empty-title">Nothing to hand over yet</div>
                         <p className="empty-msg mx-auto">
                           {switchboardEmptiedByArchive
-                            ? 'There is no live capability to grant. Bring one back from Archived and it becomes grantable again.'
-                            : 'Once this gym has a capability on file, you decide here whether its admins get to flip it themselves.'}
+                            ? 'There is no live capability to record. Bring one back from Archived and it can be marked again.'
+                            : 'Once this gym has a capability on file, you can record here whether its admins may mark it.'}
                         </p>
                       </div>
                     )}
@@ -1900,7 +1900,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                                 ? gymCapabilityStoreError
                                   ? 'Gym admin access could not be read.'
                                   : 'Reading gym admin access...'
-                                : `Gym admins can ${allowed ? 'toggle this capability' : 'not yet toggle this capability'}.`}
+                                : `Recorded as ${allowed ? 'one gym admins may mark' : 'not marked for gym admins'}.`}
                             </p>
                           </div>
                           <button
@@ -1913,7 +1913,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                                 : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
-                            {accessUnread ? 'Unknown' : allowed ? 'Enabled' : 'Disabled'}
+                            {accessUnread ? 'Unknown' : allowed ? 'Marked' : 'Not Marked'}
                           </button>
                         </div>
                       );

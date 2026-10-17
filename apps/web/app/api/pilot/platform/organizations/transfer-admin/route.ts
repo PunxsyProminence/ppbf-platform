@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { transferOrganizationAdmin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ValidationError } from '@/src/server/pilot/errors';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
@@ -47,6 +48,12 @@ export async function POST(request: NextRequest) {
 
     if (!isSupportedDemoteRole(demoteRole)) {
       throw new Error('Unsupported demote_role');
+    }
+
+    // Handing the seat to the account that holds it promoted and then demoted
+    // the same row, leaving the gym with no admin (lane L31 review).
+    if (fromAccountId === toAccountId) {
+      throw new ValidationError('from_account_id and to_account_id must be different accounts');
     }
 
     await transferOrganizationAdmin(fromAccountId, toAccountId, organizationId, demoteRole);

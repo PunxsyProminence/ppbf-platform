@@ -90,3 +90,11 @@ test.each(['organization_admin', 'coach'])('a %s is refused', async (role) => {
   expect(response.status).toBe(403);
   expect(mockTransfer).not.toHaveBeenCalled();
 });
+
+test('handing the seat to the account that holds it is refused: it would leave the gym with no admin', async () => {
+  const response = await POST(post({ ...BODY, to_account_id: 'old-admin' }));
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toBe('from_account_id and to_account_id must be different accounts');
+  expect(mockTransfer).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
