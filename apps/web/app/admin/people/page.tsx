@@ -451,6 +451,9 @@ function PeopleConsoleContent() {
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
+  // The athlete's roster name for a login row, else the login id (F-110).
+  const athleteNameFor = (member: Member): string =>
+    (member.athlete_id ? rosterById.get(member.athlete_id)?.full_name?.trim() : '') || member.account_id;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1445,9 +1448,11 @@ function PeopleConsoleContent() {
                             {isPinAthlete && (codeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
+                                  {/* Named as the office knows them: the roster's name for
+                                      the athlete record this login holds, else the login id. */}
                                   {member.has_pin
-                                    ? `Issues ${member.account_id} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
-                                    : `Issues ${member.account_id} a new one-time activation code now. The code issued before stops working.`}
+                                    ? `Issues ${athleteNameFor(member)} a new one-time activation code now. Their PIN stops working and they are signed out on every device until they redeem the new code.`
+                                    : `Issues ${athleteNameFor(member)} a new one-time activation code now. The code issued before stops working.`}
                                 </p>
                                 <div className="flex flex-wrap gap-[var(--s2)]">
                                   <button
