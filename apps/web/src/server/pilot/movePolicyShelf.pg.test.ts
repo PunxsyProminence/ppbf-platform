@@ -474,6 +474,7 @@ describe('citing evidence report (real database)', () => {
         bundles: 2,
         answers: 1,
         held: { items: 0, message_citations: 0 },
+        flagged_detached: { items: 0, asking_accounts: 0 },
         by_asking_organization: [{
           asking_organization_id: FROM,
           items: 3,
@@ -654,6 +655,7 @@ describe('citing evidence report (real database)', () => {
         library_organization_id: FROM,
         ordinal: 2,
         excerpt_sha256: 'b'.repeat(64),
+        flagged: false,
       });
       expect(details.detached.message_citations).toEqual([
         { assistant_message_id: ANSWER, evidence_id: E(1), bundle_id: B(1), ordinal: 1 },
@@ -733,25 +735,193 @@ describe('citing evidence report (real database)', () => {
     );
   }
 
-  test('a review-queue flag on a conversation that cites the shelf: DETACH_WOULD_BREAK_HOLD', async () => {
+  /** A review entry that names only the conversation, under an anon_<uuid>
+   * token of its own (the table's check needs deidentified_at with it). SHADOW
+   * always files an entry under the asker, so this isolates the conversation
+   * clause: no account-level flag can also match. */
+  async function flagConversationOnly(client: Client, reviewId: string, conversationId: string) {
+    await client.query(
+      `insert into pilot.shadow_human_review_queue
+         (review_id, organization_id, conversation_id, account_id, category, severity, summary, deidentified_at)
+       values ($1, $2, $3, $4, 'safeguarding', 'high', 'flagged', now())`,
+      [reviewId, FROM, conversationId, `anon_${reviewId}`],
+    );
+  }
+
+  async function deleteAccount(client: Client, accountId: string) {
+    await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [accountId]);
+  }
+
+  const C1 = '00000000-0000-4000-8000-0000000000c1';
+
+  /** One more citing item, alone in its own bundle, in no conversation: the
+   * hold of a chat must not reach the asker's other bundles. */
+  async function seedOtherBundle(client: Client, bundle: string, accountId: string, evidence: string) {
+    await seedEvidence(client, bundle, accountId, [[evidence, 'pol-b', 'doc-copy-2', 'pol-b-chunk']]);
+  }
+
+  /** The narrowed hold (OD-2026-10-17-002) leaves nothing held: the dry run is
+   * clean and reports what a flag touches. */
+  async function expectNoHold(client: Client, flaggedDetached: { items: number; asking_accounts: number }) {
+    const dry = await movePolicyShelf(client, options(), { log: silent });
+    expect(dry).toMatchObject({ status: 'dry-run', would_apply: true, blockers: [] });
+    expect(dry.citing_evidence).toMatchObject({
+      held: { items: 0, message_citations: 0 }, flagged_detached: flaggedDetached,
+    });
+    return dry;
+  }
+
+  test('a flagged asker who is NOT deleted, nothing shown (production\'s case): detached, logged, and the shelf moves', async () => {
     const client = await freshDatabase();
     try {
       await seedCitations(client);
-      // Flags ADMIN's conversation, which cites E1 from bundle B1 (E1, E2).
-      await flag(client, '00000000-0000-4000-8000-0000000000a1', ADMIN, '00000000-0000-4000-8000-0000000000c1');
-      await expectHoldRefuses(client, { items: 2, message_citations: 1 });
+      // Production's shape: one flagged asker, two items in one bundle, no
+      // answer citing either. COACH's bundle B2 (E3, and E5 added here) is in
+      // no conversation; the flag names the account. Before OD-2026-10-17-002
+      // this refused DETACH_WOULD_BREAK_HOLD.
+      await client.query(
+        `insert into pilot.shadow_evidence_items
+           (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id,
+            ordinal, excerpt_sha256, library_organization_id)
+         values ($1, $2, $3, $4, 'pol-b', 'doc-copy-2', 'pol-b-chunk', 2, $5, $3)`,
+        [E(5), B(2), FROM, COACH, 'c'.repeat(64)],
+      );
+      await flag(client, '00000000-0000-4000-8000-0000000000a2', COACH, null);
+      // Two items, ONE person: what Jason is told before the apply.
+      const dry = await expectNoHold(client, { items: 2, asking_accounts: 1 });
+      const printed = JSON.stringify(dry.citing_evidence);
+      expect(printed).not.toContain(COACH);
+      expect(printed).not.toContain(E(3));
+
+      const result = await movePolicyShelf(
+        client,
+        options({ apply: true, confirm: PHRASE, expectFingerprint: dry.plan_fingerprint }),
+        { log: silent },
+      );
+      expect(result).toMatchObject({ status: 'applied', detached: { message_citations: 1, evidence_items: 4 } });
+      expect(await orgOf(client, 'shadow_library_chunks', 'chunk_id', 'auth-chunk-2')).toBe(TO);
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_evidence_items where evidence_id = any($1::uuid[])',
+        [[E(3), E(5)]])).toBe(0);
+      // The flag itself is untouched.
+      expect(await count(client, 'select count(*)::int as n from pilot.shadow_human_review_queue')).toBe(1);
+
+      const audit = await client.query<{ details: { detached: { evidence_items: Array<Record<string, unknown>> } } }>(
+        `select details from pilot.audit_events where entity_type = 'shadow_library_policy_move'`,
+      );
+      expect(audit.rows[0].details.detached.evidence_items
+        .map((row) => [row.evidence_id, row.flagged]).sort()).toEqual([
+        [E(1), false], [E(2), false], [E(3), true], [E(5), true],
+      ]);
+      expect(JSON.stringify(audit.rows[0].details)).not.toContain(COACH);
     } finally {
       await client.end();
     }
   });
 
-  test('a review-queue flag naming an asker, with no conversation: DETACH_WOULD_BREAK_HOLD', async () => {
+  test('a flagged asker who IS deleted (the purge holds the whole account): DETACH_WOULD_BREAK_HOLD', async () => {
     const client = await freshDatabase();
     try {
       await seedCitations(client);
-      // COACH's bundle B2 (E3) is in no conversation; the flag names the account.
       await flag(client, '00000000-0000-4000-8000-0000000000a2', COACH, null);
+      await deleteAccount(client, COACH);
       await expectHoldRefuses(client, { items: 1, message_citations: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a person with no account row at all (purged) counts as deleted', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // Person A: item E6, and a review entry naming A, under one anon token.
+      const personA = 'anon_00000000-0000-4000-8000-0000000000aa';
+      await seedEvidence(client, B(6), personA, [[E(6), 'pol-b', 'doc-copy-2', 'pol-b-chunk']]);
+      await client.query(
+        `insert into pilot.shadow_human_review_queue
+           (review_id, organization_id, conversation_id, account_id, category, severity, summary, deidentified_at)
+         values ($1, $2, null, $3, 'safeguarding', 'high', 'flagged', now())`,
+        ['00000000-0000-4000-8000-0000000000a8', FROM, personA],
+      );
+      // Person B: item E7, claimed in B's own chat, which is flagged.
+      const personB = 'anon_00000000-0000-4000-8000-0000000000ab';
+      const chat = '00000000-0000-4000-8000-0000000000c9';
+      const answer = '00000000-0000-4000-8000-0000000000d9';
+      await seedEvidence(client, B(7), personB, [[E(7), 'pol-b', 'doc-copy-2', 'pol-b-chunk']]);
+      await client.query(
+        `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id, deidentified_at)
+         values ($1, $2, $3, now())`,
+        [chat, FROM, personB],
+      );
+      await client.query(
+        `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content)
+         values ($1, $2, $3, $4, 'assistant', 'answer')`,
+        [answer, chat, FROM, personB],
+      );
+      await client.query(
+        `insert into pilot.shadow_evidence_claims
+           (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+         values ($1, $2, $3, $4, $5, $6, 'supported')`,
+        ['00000000-0000-4000-8000-0000000000f9', FROM, personB, chat, answer, B(7)],
+      );
+      await flagConversationOnly(client, '00000000-0000-4000-8000-0000000000a9', chat);
+      // E6 by the flagged deleted asker; E7 by the flagged chat of a deleted person.
+      await expectHoldRefuses(client, { items: 2, message_citations: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('deleted askers with no flag: nothing is held', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // ADMIN's chat C1 shows E1; neither the chat nor either asker is flagged.
+      await deleteAccount(client, ADMIN);
+      await deleteAccount(client, COACH);
+      await expectNoHold(client, { items: 0, asking_accounts: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('evidence SHOWN in a flagged chat of a live asker is held; its unshown bundle-mate is not', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // Flags ADMIN's chat C1, which shows E1 from bundle B1 (E1, E2).
+      await flag(client, '00000000-0000-4000-8000-0000000000a1', ADMIN, C1);
+      await expectHoldRefuses(client, { items: 1, message_citations: 1 });
+      const dry = await movePolicyShelf(client, options(), { log: silent });
+      // E2: ADMIN is flagged, but E2 was never shown and ADMIN is not deleted.
+      expect(dry.citing_evidence).toMatchObject({ flagged_detached: { items: 1, asking_accounts: 1 } });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a flag on the conversation alone still covers what that chat showed', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      await seedOtherBundle(client, B(8), ADMIN, E(8));
+      await flagConversationOnly(client, '00000000-0000-4000-8000-0000000000a3', C1);
+      await expectHoldRefuses(client, { items: 1, message_citations: 1 });
+      const dry = await movePolicyShelf(client, options(), { log: silent });
+      // E2 is flagged only through its bundle being cited in the flagged chat;
+      // E8, in ADMIN's other bundle, is not touched by the flag.
+      expect(dry.citing_evidence).toMatchObject({ flagged_detached: { items: 1, asking_accounts: 1 } });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a flag on the account alone covers what that account\'s chats showed', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      await flag(client, '00000000-0000-4000-8000-0000000000a4', ADMIN, null);
+      await expectHoldRefuses(client, { items: 1, message_citations: 1 });
     } finally {
       await client.end();
     }
@@ -779,6 +949,92 @@ describe('citing evidence report (real database)', () => {
            (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
          values ($1, $2, $3, $4, $5, $6, 'supported')`,
         ['00000000-0000-4000-8000-0000000000f2', FROM, COACH, heldConversation, heldAnswer, B(2)],
+      );
+      await expectHoldRefuses(client, { items: 1, message_citations: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  /** COACH's chat C3, optionally about an athlete, whose answer claims bundle
+   * B2 (item E3) without showing it. */
+  async function coachChatClaimingB2(client: Client, athleteId: string | null = null): Promise<string> {
+    const conversation = '00000000-0000-4000-8000-0000000000c3';
+    const answer = '00000000-0000-4000-8000-0000000000d3';
+    await client.query(
+      `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id, athlete_id)
+       values ($1, $2, $3, $4)`,
+      [conversation, FROM, COACH, athleteId],
+    );
+    await client.query(
+      `insert into pilot.shadow_chat_messages (message_id, conversation_id, organization_id, account_id, role, content)
+       values ($1, $2, $3, $4, 'assistant', 'answer')`,
+      [answer, conversation, FROM, COACH],
+    );
+    await client.query(
+      `insert into pilot.shadow_evidence_claims
+         (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+       values ($1, $2, $3, $4, $5, $6, 'supported')`,
+      ['00000000-0000-4000-8000-0000000000f3', FROM, COACH, conversation, answer, B(2)],
+    );
+    return conversation;
+  }
+
+  test('a flagged chat of a DELETED asker that only claims a citing bundle: DETACH_WOULD_BREAK_HOLD', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // COACH's other bundle B5 (E5) is in no chat: neither held nor flagged.
+      await seedOtherBundle(client, B(5), COACH, E(5));
+      const conversation = await coachChatClaimingB2(client);
+      await flagConversationOnly(client, '00000000-0000-4000-8000-0000000000a5', conversation);
+      // Live asker: the chat is flagged but its person is not deleted.
+      await expectNoHold(client, { items: 1, asking_accounts: 1 });
+      await deleteAccount(client, COACH);
+      await expectHoldRefuses(client, { items: 1, message_citations: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a flagged chat of a DELETED asker holds every item of the bundle it cites, shown or not', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // C1 shows E1 from bundle B1 (E1, E2). ADMIN's other bundle B8 (E8) is
+      // in no chat and stays detachable.
+      await seedOtherBundle(client, B(8), ADMIN, E(8));
+      await flagConversationOnly(client, '00000000-0000-4000-8000-0000000000a6', C1);
+      await deleteAccount(client, ADMIN);
+      await expectHoldRefuses(client, { items: 2, message_citations: 1 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a flagged chat about a DELETED athlete, asked by a live account: DETACH_WOULD_BREAK_HOLD', async () => {
+    const client = await freshDatabase();
+    try {
+      await seedCitations(client);
+      // COACH's other bundle B5 (E5) is in no chat: neither held nor flagged.
+      await seedOtherBundle(client, B(5), COACH, E(5));
+      const athlete = 'ath-move-subject';
+      // Another athlete of the gym, already deleted, whom the chat is not about.
+      for (const [id, deleted] of [[athlete, false], ['ath-move-other', true]] as const) {
+        await client.query(
+          `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+             emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+           values ($1, $2, 'Test Athlete', '2012-01-01', 'open', 'active', 'n/a', true, $3, now(), now(),
+             case when $4::boolean then now() else null end)`,
+          [FROM, id, COACH, deleted],
+        );
+      }
+      const conversation = await coachChatClaimingB2(client, athlete);
+      await flagConversationOnly(client, '00000000-0000-4000-8000-0000000000a7', conversation);
+      await expectNoHold(client, { items: 1, asking_accounts: 1 });
+      await client.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [FROM, athlete],
       );
       await expectHoldRefuses(client, { items: 1, message_citations: 0 });
     } finally {

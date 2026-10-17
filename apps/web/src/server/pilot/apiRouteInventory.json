@@ -9689,6 +9689,31 @@
     }
   },
   {
+    "id": "app/api/pilot/profile/card/photo/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/profile/card/photo",
+    "gate": "requirePrincipal + assertViewerMayReachSubject + resolveRelationship (none -> 404) + decidePortrait",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Streams the portrait of a fight card's own subject, addressed by the card's handle (account_id or athlete_id, or none for the caller's own card; resolveCardSubjectAccountId), so a family's card needs no account id (F-119). Calls the same gates as profile/photo/[accountId] in the same order (assertViewerMayReachSubject, resolveRelationship, decidePortrait), plus the card's relationship none -> 404. All refusals hiddenNotFound.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertViewerMayReachSubject"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/profile/me/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/profile/me",
