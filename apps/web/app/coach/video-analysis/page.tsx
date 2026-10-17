@@ -9,6 +9,7 @@ import OperationsLink from '@/components/OperationsLink';
 import ClipTagsPanel from '@/components/ClipTagsPanel';
 import TaggedClipsList from '@/components/TaggedClipsList';
 import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -773,6 +774,7 @@ export default function CoachVideoAnalysisPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Analysis</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Coach Video Console</h1>
+          <ClusterNav cluster="film" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Upload session footage and review athlete film. An upload is held until you release it, and only then can it
             be played. A released video can be sent for Film Study -- a vision-based observation that waits for your
