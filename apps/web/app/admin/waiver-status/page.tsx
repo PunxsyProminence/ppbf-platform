@@ -392,7 +392,6 @@ export default function WaiverComplianceAuditPage() {
             >
               Waiver Compliance
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.waivers</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every athlete in the organization against every tracked waiver type -- general, medical release,
               photo &amp; media, travel -- so a missing waiver is visible without looking up athletes one at a
