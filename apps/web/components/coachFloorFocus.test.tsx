@@ -13,7 +13,7 @@
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { pressArmed } from '@/src/testing/pressArmed';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import React from 'react';
 
 import CoachFloorFocus, { type CoachFloorFocusProps, type FocusFeed, type FocusItem } from './CoachFloorFocus';
@@ -102,7 +102,7 @@ test('shows one thing at a time, and Next moves to the next without fetching or 
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 
-test('a double tap on Open does not acknowledge: Acknowledge, drawn under the same finger, only arms (UXB-01)', () => {
+test('a double tap on Open does not acknowledge: the tap that lands on Acknowledge does not even arm it (UXB-01)', () => {
   const onAcknowledge = jest.fn();
   render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
 
@@ -110,8 +110,19 @@ test('a double tap on Open does not acknowledge: Acknowledge, drawn under the sa
   fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
 
   expect(onAcknowledge).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Press again: acknowledge Ada Rivera' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeTruthy();
   expect(screen.getByText('Took a hard shot and kept going.')).toBeTruthy();
+});
+
+test('a deliberate press arms Acknowledge and names who; only the next press acknowledges', () => {
+  const onAcknowledge = jest.fn();
+  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  armOnly(screen.getByRole('button', { name: 'Acknowledge' }));
+  expect(onAcknowledge).not.toHaveBeenCalled();
+  pressArmed(screen.getByRole('button', { name: 'Press again: acknowledge Ada Rivera' }));
+  expect(onAcknowledge).toHaveBeenCalledTimes(1);
 });
 
 test('the only write it can reach is the acknowledge it is handed, and only for an escalation', () => {

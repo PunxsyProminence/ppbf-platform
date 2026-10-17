@@ -17,7 +17,7 @@
 // from the write's own response.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { pressArmed } from '@/src/testing/pressArmed';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
@@ -508,11 +508,11 @@ test('one press on Lift this hold lifts nothing; it says whose hold the next pre
   render(<SportsMedicinePage />);
   await screen.findByText(/Active Training Hold — sparring/);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+  armOnly(screen.getByRole('button', { name: 'Lift this hold' }));
   await act(async () => {});
 
   expect(harness.posted).toEqual([]);
-  expect(screen.getByRole('button', { name: /^Press again: lift .+’s hold$/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Press again: lift Jordan Doe’s hold' })).toBeTruthy();
   expect(screen.getByText(/Active Training Hold — sparring/)).toBeTruthy();
 });
 

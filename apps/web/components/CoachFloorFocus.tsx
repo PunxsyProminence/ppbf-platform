@@ -485,8 +485,9 @@ export default function CoachFloorFocus({
                     Open
                   </button>
                 )}
-                {/* Drawn in the slot Open just left, so a double tap on Open
-                    lands here: the first press only arms it (UXB-01). */}
+                {/* Drawn in the row where Open was. A double tap on Open that
+                    lands here does not even arm it, and an armed one needs a
+                    second, deliberate press (UXB-01). */}
                 {open && currentItem.acknowledge && (
                   <ArmedButton
                     className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
