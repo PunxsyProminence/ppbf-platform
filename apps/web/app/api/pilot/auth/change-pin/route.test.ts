@@ -33,6 +33,8 @@ jest.mock('@/src/server/pilot/auth', () => ({
   changeOwnPin: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+
 // Left unmocked everywhere else in this file: PPBF_DURABLE_RATE_LIMIT is
 // unset in the test env, so checkDurableRateLimit short-circuits to
 // isLimited:false with no DB touch (rateLimit.ts's own withDurableClient
@@ -79,6 +81,27 @@ beforeEach(() => {
     validatePinPolicy(next);
     assertChosenPinAllowed(next);
   });
+});
+
+// F-119: a parent's account id is email-shaped, and nothing reads it back.
+test("a successful change answers without the caller's account id", async () => {
+  mockRequirePrincipal.mockResolvedValue({
+    accountId: 'dana.vance@example.test',
+    role: 'parent' as const,
+    organizationId: 'org-1',
+    athleteId: null,
+    sessionToken: 'token',
+    authProvider: 'ppbf_local' as const,
+    mustChangePin: false,
+  } as never);
+  mockChangeOwnPin.mockResolvedValue(undefined as never);
+
+  const res = await post({ current_pin: '481902', new_pin: '730415' });
+  const raw = await res.text();
+
+  expect(res.status).toBe(200);
+  expect(JSON.parse(raw)).toEqual({ ok: true, next_step: 'Sign in again with your new PIN.' });
+  expect(raw).not.toContain('@');
 });
 
 describe('POST /api/pilot/auth/change-pin weak-PIN handling', () => {

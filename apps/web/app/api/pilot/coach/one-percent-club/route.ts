@@ -113,6 +113,13 @@ export async function POST(request: NextRequest) {
         source: item.source,
         athlete_id: athleteId,
       });
+      if (principal.role === 'athlete') {
+        // The athlete's own account id back is nothing they need, and nothing
+        // reads it (F-119). Staff keep the row as it was.
+        const athleteItem: Partial<typeof item> = { ...item };
+        delete athleteItem.nominated_by_account_id;
+        return NextResponse.json({ item: athleteItem });
+      }
       return NextResponse.json({ item });
     }
 
