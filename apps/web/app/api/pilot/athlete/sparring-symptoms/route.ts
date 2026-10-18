@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       after_sparring: today.afterSparring,
       next_day: today.nextDay,
+      after_sparring_due: today.afterSparringDue,
       next_day_due: today.nextDayDue,
       protocol_text: settings.protocolText,
       recipient_role: settings.recipientRole,
@@ -60,12 +61,12 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['athlete']);
     const athleteId = await requireOwnAthleteId(principal);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
     if (!isSparringSymptomContext(body.context)) {
       throw new ValidationError(`context must be one of ${SPARRING_SYMPTOM_CONTEXTS.join(', ')}.`);
     }
     // An empty list is a real answer: "None of these".
-    if (!Array.isArray(body.symptoms) || !body.symptoms.every(isSparringSymptom)) {
+    if (!Array.isArray(body.symptoms) || body.symptoms.length > 50 || !body.symptoms.every(isSparringSymptom)) {
       throw new ValidationError(`symptoms must be a list of ${SPARRING_SYMPTOM_KEYS.join(', ')} (empty for none).`);
     }
 

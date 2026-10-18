@@ -278,7 +278,7 @@ describe('the sparring symptom flag', () => {
     }
   });
 
-  test("the gym's recipient setting routes the flag and the sent line; its protocol words come back", async () => {
+  test("the gym's recipient setting is the role filed and the sent line; its protocol words come back", async () => {
     const client = await freshDatabase('symptoms_recipient');
     try {
       await client.query(
@@ -294,27 +294,90 @@ describe('the sparring symptom flag', () => {
     }
   });
 
-  test('the next-day check is due after an own sparring session or a sparring log the previous gym day, not otherwise', async () => {
+  // 2026-10-20T03:30Z is 23:30 on Monday 2026-10-19 at the gym: the GYM's today is 2026-10-19, so a
+  // UTC reading (2026-10-20) would move every window below by a day.
+  const MONDAY_NIGHT = new Date('2026-10-20T03:30:00Z');
+
+  async function session(client: Client, id: string, athleteId: string, date: string, type: string) {
+    await client.query(
+      `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag,
+         created_at, updated_at, session_type)
+       values ($1, $2, $3, $4::date, 7, 'athlete_post_session_self_report', '', true, now(), now(), $5)`,
+      [ORG, id, athleteId, date, type],
+    );
+  }
+
+  test('the next-day check: due after sparring in the last 3 gym days, by own tag or a log; not after 4, not twice', async () => {
     const client = await freshDatabase('symptoms_next_day');
     try {
-      // 2026-10-20 16:00Z is noon on 2026-10-20 at the gym; the previous gym day is 2026-10-19.
-      const now = new Date('2026-10-20T16:00:00Z');
+      const dueFor = async (athleteId: string) => (await getSparringSymptomToday(ORG, athleteId, MONDAY_NIGHT)).nextDayDue;
+
+      // Friday sparring, back Monday: still asked.
+      await session(client, 's-fri', ATHLETE, '2026-10-16', 'sparring');
+      expect(await dueFor(ATHLETE)).toBe(true);
+      // A technique night yesterday does not count; sparring four days ago is too long ago.
+      await session(client, 's-tech', OTHER_ATHLETE, '2026-10-18', 'technique');
+      await session(client, 's-old', OTHER_ATHLETE, '2026-10-15', 'sparring');
+      expect(await dueFor(OTHER_ATHLETE)).toBe(false);
+      // A coach's sparring log, linked to an activity (its occurred_on is the day), counts too.
       await client.query(
-        `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag,
-           created_at, updated_at, session_type)
-         values ($1, 's-1', $2, '2026-10-19', 7, 'athlete_post_session_self_report', '', true, now(), now(), 'sparring'),
-                ($1, 's-2', $3, '2026-10-19', 5, 'athlete_post_session_self_report', '', true, now(), now(), 'technique'),
-                ($1, 's-3', $3, '2026-10-17', 8, 'athlete_post_session_self_report', '', true, now(), now(), 'sparring')`,
-        [ORG, ATHLETE, OTHER_ATHLETE],
+        `insert into pilot.activity_log (organization_id, activity_id, person_account_id, athlete_id, activity_domain,
+           activity_type, occurred_on, duration_minutes, capture_method, recorded_by_role, recorded_by_account_id)
+         values ($1, 'act-1', $2, $3, 'boxing_training', 'sparring', '2026-10-18', 60, 'coach_override', 'coach', $2)`,
+        [ORG, COACH, THIRD_ATHLETE],
       );
       await client.query(
         `insert into pilot.sparring_exposure (organization_id, exposure_id, activity_id, athlete_id, segment_number, sparring_type,
-           time_under_impact_sec, coach_observed_intensity, coach_observed_head_contact, supervising_coach_account_id, session_date)
-         values ($1, 'x-1', null, $2, 1, 'technical', 60, 'light', 'incidental', $3, '2026-10-19')`,
+           time_under_impact_sec, coach_observed_intensity, coach_observed_head_contact, supervising_coach_account_id)
+         values ($1, 'x-1', 'act-1', $2, 1, 'technical', 60, 'light', 'incidental', $3)`,
         [ORG, THIRD_ATHLETE, COACH],
       );
-      const due = await Promise.all(ATHLETES.map(async (athleteId) => (await getSparringSymptomToday(ORG, athleteId, now)).nextDayDue));
-      expect(due).toEqual([true, false, true]);
+      expect(await dueFor(THIRD_ATHLETE)).toBe(true);
+
+      // Answered on Saturday (after Friday's sparring, before today): not asked again on Monday.
+      await client.query(
+        `insert into pilot.sparring_symptom_reports (organization_id, report_id, athlete_id, reported_on, context, symptoms)
+         values ($1, 'r-sat', $2, '2026-10-17', 'next_day', '{}')`,
+        [ORG, ATHLETE],
+      );
+      expect(await dueFor(ATHLETE)).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("the after-sparring check stays due after a sparring check-out today until it is answered", async () => {
+    const client = await freshDatabase('symptoms_after_due');
+    try {
+      const after = async (athleteId: string) => (await getSparringSymptomToday(ORG, athleteId, MONDAY_NIGHT)).afterSparringDue;
+      await session(client, 's-today', ATHLETE, '2026-10-19', 'sparring');
+      await session(client, 's-today-2', OTHER_ATHLETE, '2026-10-19', 'conditioning');
+      expect([await after(ATHLETE), await after(OTHER_ATHLETE)]).toEqual([true, false]);
+      await client.query(
+        `insert into pilot.sparring_symptom_reports (organization_id, report_id, athlete_id, reported_on, context, symptoms)
+         values ($1, 'r-now', $2, '2026-10-19', 'after_sparring', '{}')`,
+        [ORG, ATHLETE],
+      );
+      expect(await after(ATHLETE)).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('if the flag cannot be filed, nothing is kept: the report and the flag go together', async () => {
+    const client = await freshDatabase('symptoms_rollback');
+    try {
+      // A database whose escalation check predates 'sparring_symptom'.
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations add constraint safety_escalations_source_type_check
+           check (source_type in ('near_miss', 'pain_report'))`,
+      );
+      const sent = await send(ATHLETE, 'after_sparring', ['headache']);
+      expect(sent.status).toBe(500);
+      const kept = await client.query('select count(*)::int as n from pilot.sparring_symptom_reports');
+      const audited = await client.query(`select count(*)::int as n from pilot.audit_events where entity_type = 'sparring_symptom_report'`);
+      expect({ reports: kept.rows[0].n, audit: audited.rows[0].n }).toEqual({ reports: 0, audit: 0 });
     } finally {
       await client.end();
     }
@@ -351,11 +414,17 @@ describe('the sparring symptom flag', () => {
         ['after_sparring', ['concussion'], 'symptoms'],
         ['after_sparring', 'headache', 'symptoms'],
         ['after_sparring', [3], 'symptoms'],
+        ['after_sparring', Array.from({ length: 51 }, () => 'headache'), 'symptoms'],
       ] as const) {
         const refused = await send(ATHLETE, context, symptoms);
         expect({ field, status: refused.status, mentions: String(refused.body.error).includes(field) })
           .toEqual({ field, status: 400, mentions: true });
       }
+      mockRequirePrincipal.mockResolvedValue(principal('athlete', ATHLETE));
+      const nullBody = await POST(new NextRequest('http://localhost/api/pilot/athlete/sparring-symptoms', {
+        method: 'POST', body: 'null', headers: { 'content-type': 'application/json' },
+      }));
+      expect(nullBody.status).toBe(400);
       const stored = await client.query('select count(*)::int as n from pilot.sparring_symptom_reports');
       expect(stored.rows[0].n).toBe(0);
     } finally {

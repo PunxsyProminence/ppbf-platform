@@ -17,13 +17,14 @@ const NEXT_Q = 'You sparred last time. Do you have any of these today?';
 interface Today {
   after_sparring: { symptoms: string[] } | null;
   next_day: { symptoms: string[] } | null;
+  after_sparring_due: boolean;
   next_day_due: boolean;
   protocol_text: string;
   recipient_role: string;
 }
 
 function today(overrides: Partial<Today> = {}): Today {
-  return { after_sparring: null, next_day: null, next_day_due: false, protocol_text: '', recipient_role: 'coach', ...overrides };
+  return { after_sparring: null, next_day: null, after_sparring_due: true, next_day_due: false, protocol_text: '', recipient_role: 'coach', ...overrides };
 }
 
 function respond(body: unknown, ok = true): Response {
@@ -44,9 +45,9 @@ function posted(fetchMock: jest.Mock): Array<Record<string, unknown>> {
     .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
 }
 
-async function renderCheck(context: 'after_sparring' | 'next_day') {
+async function renderCheck(context: 'after_sparring' | 'next_day', justCheckedOut = false) {
   await act(async () => {
-    render(<SparringSymptomCheck context={context} />);
+    render(<SparringSymptomCheck context={context} justCheckedOut={justCheckedOut} />);
   });
 }
 
@@ -93,13 +94,35 @@ test('"None of these" sends an empty list and shows no message', async () => {
 });
 
 test('a saved tick is said back with the message; the gym-staff line follows a non-coach recipient', async () => {
-  installFetch(today({ after_sparring: { symptoms: ['ringing'] }, recipient_role: 'organization_admin' }));
+  installFetch(today({ after_sparring: { symptoms: ['ringing'] }, after_sparring_due: false, recipient_role: 'organization_admin' }));
   await renderCheck('after_sparring');
   expect(await screen.findByText('You said: Ringing in your ears.')).toBeInTheDocument();
   expect(screen.getByText('Gym staff have been sent this.')).toBeInTheDocument();
-  // A tick already sent is not offered again.
+  // A tick already sent is not offered again; what was said stays on screen; Back closes the list.
   fireEvent.click(screen.getByRole('button', { name: 'Something else now?' }));
   expect(screen.queryByRole('button', { name: `${AFTER_Q} Ringing in your ears` })).toBeNull();
+  expect(screen.getByText('You said: Ringing in your ears.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(screen.getByRole('button', { name: 'Something else now?' })).toBeInTheDocument();
+});
+
+test('the after-sparring check shows nothing when nothing is due and nothing was said today', async () => {
+  installFetch(today({ after_sparring_due: false }));
+  await renderCheck('after_sparring');
+  expect(screen.queryByText(AFTER_Q)).toBeNull();
+});
+
+test('right after a sparring check-out, a failed status read still asks the question', async () => {
+  global.fetch = jest.fn(async () => respond({ error: 'offline' }, false)) as unknown as typeof fetch;
+  await renderCheck('after_sparring', true);
+  expect(await screen.findByText(AFTER_Q)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: `${AFTER_Q} Headache` })).toBeInTheDocument();
+});
+
+test('a failed status read on "How I feel today" shows nothing (nothing says the athlete sparred)', async () => {
+  global.fetch = jest.fn(async () => respond({ error: 'offline' }, false)) as unknown as typeof fetch;
+  await renderCheck('next_day');
+  expect(screen.queryByText(NEXT_Q)).toBeNull();
 });
 
 test('a send that fails says so, and still says to tell the coach', async () => {

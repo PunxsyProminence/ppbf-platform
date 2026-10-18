@@ -17,7 +17,7 @@ export const SPARRING_SYMPTOMS = [
   { key: 'foggy', label: 'Foggy or slow' },
   { key: 'vision', label: 'Blurry or double vision' },
   { key: 'ringing', label: 'Ringing in your ears' },
-  { key: 'hard_head_shot', label: 'Took a hard shot to the head' },
+  { key: 'hard_head_shot', label: 'Took a hard hit to the head' },
 ] as const;
 
 export type SparringSymptom = (typeof SPARRING_SYMPTOMS)[number]['key'];

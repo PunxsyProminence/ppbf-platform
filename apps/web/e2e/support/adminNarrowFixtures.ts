@@ -198,6 +198,7 @@ const ESCALATION_SOURCES = [
   'video_scan',
   'compliance_violation',
   'shadow_disclosure',
+  'sparring_symptom',
 ] as const;
 const ESCALATION_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as const;
 const ESCALATION_STATUSES = ['open', 'open', 'acknowledged', 'open', 'resolved', 'acknowledged', 'open', 'resolved'] as const;

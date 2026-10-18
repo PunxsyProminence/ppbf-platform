@@ -1255,8 +1255,9 @@ export default function AthleteWorkspace() {
   const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
   // The session-type tag (Jason 2026-10-18), keyed to the session the same way.
   const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
-  // Set when a session tagged Sparring is checked out: the after-sparring
-  // symptom check shows until the page is left (Jason 2026-10-18).
+  // True after a check-out of a session tagged Sparring, so the after-sparring
+  // symptom check asks even if its status read fails. After a refresh the
+  // server's after_sparring_due brings it back until it is answered.
   const [afterSparringCheck, setAfterSparringCheck] = useState(false);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
@@ -2427,7 +2428,7 @@ export default function AthleteWorkspace() {
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
       setPostSessionType(null);
-      if (sessionType === 'sparring') setAfterSparringCheck(true);
+      setAfterSparringCheck(sessionType === 'sparring');
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
       const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
@@ -3350,6 +3351,10 @@ export default function AthleteWorkspace() {
                 ) : (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Your training has not started.</p>
+                    {/* The after-sparring symptom check (OD-2026-10-17-023,
+                        -029), where the check-out block was. Renders nothing
+                        unless a sparring check-out today is unanswered. */}
+                    <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
                     {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
                         readiness slider used to be the only pre-session input.
                         Optional and empty until the athlete writes in it.
@@ -4266,12 +4271,6 @@ export default function AthleteWorkspace() {
         {shownSyncMessage ? (
           <div className={PANEL}>
             <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{shownSyncMessage}</p>
-          </div>
-        ) : null}
-
-        {afterSparringCheck ? (
-          <div className={PANEL}>
-            <SparringSymptomCheck context="after_sparring" />
           </div>
         ) : null}
 

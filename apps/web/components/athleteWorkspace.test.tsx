@@ -272,7 +272,7 @@ beforeEach(() => {
     }
     // The sparring symptom check (L58 PR-3): nothing saved, not due, unless a test says otherwise.
     if (url.includes('/api/pilot/athlete/sparring-symptoms')) {
-      return jsonResponse({ after_sparring: null, next_day: null, next_day_due: false, protocol_text: '', recipient_role: 'coach' });
+      return jsonResponse({ after_sparring: null, next_day: null, after_sparring_due: false, next_day_due: false, protocol_text: '', recipient_role: 'coach' });
     }
     // "From your coach" on the Dashboard (#1542, FC-06): none unless a test gives some.
     if (url.includes('/api/pilot/athlete/coach-messages')) {
@@ -4066,13 +4066,19 @@ describe("the session-type tag is the athlete's pick at check-out, or nothing", 
 
   test('checking out of a Sparring session opens the after-sparring symptom check; another tag does not', async () => {
     const AFTER_Q = 'After sparring: do you have any of these right now?';
+    // The check sits where the check-out block was, so the session has to actually close.
+    persistSessionUpdates = true;
     await openSession();
     fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Technique` }));
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    // The check reads its status once mounted, and the server says nothing is due.
+    await waitFor(() => expect(fetchCalls.some((call) => call.url.includes('/api/pilot/athlete/sparring-symptoms'))).toBe(true));
+    await act(async () => { await Promise.resolve(); });
     expect(screen.queryByText(AFTER_Q)).toBeNull();
     cleanup();
 
+    persistSessionUpdates = true;
     await openSession();
     fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Sparring` }));
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));

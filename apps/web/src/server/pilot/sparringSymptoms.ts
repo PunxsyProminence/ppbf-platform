@@ -27,13 +27,16 @@ import { fileEscalation, type SafetyEscalationTargetRole } from './escalationLad
 // ticks.
 //
 // WHO IS TOLD (OD-2026-10-17-029). By default "Their coach": the escalation
-// is filed to role 'coach', which the escalation list shows to the athlete's
-// coach of record and any covering coach (their roster scope), and which the
-// organization admin sees on the full list. The card said each gym can change
-// that later, so the role is read from the gym's
-// pilot.organization_symptom_flag_settings row when it has one. Not parents,
-// not the gym TV, not SHADOW: no reader here or on those surfaces names the
-// table.
+// is filed to role 'coach', and the escalation list shows it to the athlete's
+// coach of record and any covering coach (their roster scope); the
+// organization admin sees it on the full list. The card said each gym can
+// change that later, so the role filed is read from the gym's
+// pilot.organization_symptom_flag_settings row when it has one. Today that
+// role is a label: the coach list does not filter on it, so a gym set to
+// 'organization_admin' still shows the flag to the coach. Making the setting
+// mean "not the coach" belongs with the settings editor (lane L58 PR-3b), the
+// first thing that can change it. Not parents, not the gym TV, not SHADOW: no
+// reader on those surfaces names the table.
 //
 // ONE REPORT PER ATHLETE, PER GYM DAY, PER CONTEXT. A second submission the
 // same day ADDS its new ticks to the report (the table's guard refuses taking
@@ -175,22 +178,37 @@ export async function recordSparringSymptomReport(input: {
   });
 }
 
+/** How far back a sparring day still brings the next-day question: Friday
+ * sparring is still asked about on Monday. PROPOSED. */
+export const NEXT_DAY_LOOKBACK_DAYS = 3;
+
 /**
- * What the athlete's screens need today: their own two reports for the gym's
- * today, and whether the next-day question is due -- they sparred on the
- * previous gym day, by their own session tag or by a coach's sparring log.
- * Their own record only; nothing here reads another athlete.
+ * What the athlete's screens need today, their own record only:
+ *   * their two reports for the gym's today;
+ *   * afterSparringDue -- they checked out of a session tagged Sparring today
+ *     and have not answered the after-sparring question yet (so a refresh or
+ *     a sign-out does not lose it);
+ *   * nextDayDue -- they sparred (their own session tag, or a coach's
+ *     sparring log) on one of the last NEXT_DAY_LOOKBACK_DAYS gym days before
+ *     today, and have not answered the next-day question on a day since.
  */
 export async function getSparringSymptomToday(
   organizationId: string,
   athleteId: string,
   now?: GymTimeInput,
-): Promise<{ afterSparring: SparringSymptomReportRow | null; nextDay: SparringSymptomReportRow | null; nextDayDue: boolean }> {
+): Promise<{
+  afterSparring: SparringSymptomReportRow | null;
+  nextDay: SparringSymptomReportRow | null;
+  afterSparringDue: boolean;
+  nextDayDue: boolean;
+}> {
   const day = requireGymDay(now);
   const row = await queryOne<{
     after_sparring: SparringSymptomReportRow | null;
     next_day: SparringSymptomReportRow | null;
-    sparred_yesterday: boolean;
+    sparred_today: boolean;
+    sparred_on: string | null;
+    answered_since: boolean;
   }>(
     `select
        (select row_to_json(r) from (
@@ -199,21 +217,34 @@ export async function getSparringSymptomToday(
        (select row_to_json(r) from (
           select ${REPORT_COLUMNS} from pilot.sparring_symptom_reports
           where organization_id = $1 and athlete_id = $2 and reported_on = $3::date and context = 'next_day') r) as next_day,
-       (exists (
+       exists (
           select 1 from pilot.sessions s
           where s.organization_id = $1 and s.athlete_id = $2
-            and s.date = $3::date - 1 and s.session_type = 'sparring')
-        or exists (
-          select 1 from pilot.sparring_exposure e
-          left join pilot.activity_log a on a.organization_id = e.organization_id and a.activity_id = e.activity_id
-          where e.organization_id = $1 and e.athlete_id = $2
-            and coalesce(e.session_date, a.occurred_on) = $3::date - 1)) as sparred_yesterday`,
-    [organizationId, athleteId, day],
+            and s.date = $3::date and s.session_type = 'sparring' and s.completed_flag) as sparred_today,
+       sparred.sparred_on::text as sparred_on,
+       exists (
+          select 1 from pilot.sparring_symptom_reports r
+          where r.organization_id = $1 and r.athlete_id = $2 and r.context = 'next_day'
+            and r.reported_on > sparred.sparred_on and r.reported_on < $3::date) as answered_since
+     from (
+       select max(d) as sparred_on from (
+         select s.date as d from pilot.sessions s
+         where s.organization_id = $1 and s.athlete_id = $2 and s.session_type = 'sparring'
+           and s.date between $3::date - $4::int and $3::date - 1
+         union all
+         select coalesce(e.session_date, a.occurred_on) from pilot.sparring_exposure e
+         left join pilot.activity_log a on a.organization_id = e.organization_id and a.activity_id = e.activity_id
+         where e.organization_id = $1 and e.athlete_id = $2
+           and coalesce(e.session_date, a.occurred_on) between $3::date - $4::int and $3::date - 1
+       ) days
+     ) sparred`,
+    [organizationId, athleteId, day, NEXT_DAY_LOOKBACK_DAYS],
   );
   return {
     afterSparring: row?.after_sparring ?? null,
     nextDay: row?.next_day ?? null,
-    nextDayDue: row?.sparred_yesterday === true,
+    afterSparringDue: row?.sparred_today === true && !row?.after_sparring,
+    nextDayDue: row?.sparred_on != null && row?.answered_since !== true,
   };
 }
 
