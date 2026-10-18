@@ -131,6 +131,9 @@ export default function FamilyNotesPosted({
   // came in between). If that read fails, the reply is watched afresh, so a
   // reply still on screen is sent again without waiting for it to move.
   const seenWhileSendingRef = useRef<Set<string>>(new Set());
+  // Which watch sent each read in flight: only a newer watch's sighting counts
+  // above, so one batch naming a reply twice never re-arms it.
+  const sentByRef = useRef<Map<string, IntersectionObserver>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
   // What this staff member had seen when they opened this athlete: a reload
   // after a post keeps it, so New stays for the visit.
@@ -145,6 +148,7 @@ export default function FamilyNotesPosted({
       visitRef.current = { athleteId, seen: null };
       readsSentRef.current = new Set();
       seenWhileSendingRef.current = new Set();
+      sentByRef.current = new Map();
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRead({ state: 'loading' });
@@ -228,15 +232,18 @@ export default function FamilyNotesPosted({
         const replyId = (entry.target as HTMLElement).dataset.readReply;
         if (!replyId) continue;
         if (readsSentRef.current.has(replyId)) {
-          seenWhileSendingRef.current.add(replyId);
+          if (sentByRef.current.get(replyId) !== observer) seenWhileSendingRef.current.add(replyId);
           continue;
         }
         readsSentRef.current.add(replyId);
+        sentByRef.current.set(replyId, observer);
         observer.unobserve(entry.target);
         const sent = readsSentRef.current;
         const seenWhileSending = seenWhileSendingRef.current;
+        const sentBy = sentByRef.current;
         const failed = () => {
           sent.delete(replyId);
+          sentBy.delete(replyId);
           if (!seenWhileSending.delete(replyId) || sent !== readsSentRef.current) return;
           // Watched afresh: observing again hands the watch the reply's place on screen now.
           const watching = observerRef.current;

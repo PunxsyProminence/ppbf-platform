@@ -359,22 +359,25 @@ describe('new replies for this staff member (FC-09b)', () => {
       FakeObserver.instances.push(this);
     }
     observeCalls: Element[] = [];
-    observe(element: Element) { this.observed.add(element); this.observeCalls.push(element); }
+    // As the browser does: observing a target already watched registers nothing new.
+    observe(element: Element) {
+      if (this.observed.has(element)) return;
+      this.observed.add(element);
+      this.observeCalls.push(element);
+    }
     unobserve(element: Element) { this.observed.delete(element); }
     disconnect() { this.disconnects += 1; this.observed.clear(); }
-    show(replyId: string, ratio: number, visibleHeight: number, screenHeight: number) {
+    show(replyId: string, ratio: number, visibleHeight: number, screenHeight: number, times = 1) {
       const target = [...this.observed].find((element) => (element as HTMLElement).dataset.readReply === replyId);
       if (!target) return;
-      this.callback(
-        [{
-          target,
-          isIntersecting: ratio > 0,
-          intersectionRatio: ratio,
-          intersectionRect: { height: visibleHeight },
-          rootBounds: { height: screenHeight },
-        } as unknown as IntersectionObserverEntry],
-        this as unknown as IntersectionObserver,
-      );
+      const entry = {
+        target,
+        isIntersecting: ratio > 0,
+        intersectionRatio: ratio,
+        intersectionRect: { height: visibleHeight },
+        rootBounds: { height: screenHeight },
+      } as unknown as IntersectionObserverEntry;
+      this.callback(Array.from({ length: times }, () => entry), this as unknown as IntersectionObserver);
     }
   }
 
@@ -618,6 +621,24 @@ describe('new replies for this staff member (FC-09b)', () => {
     expect(watching.observeCalls.slice(observedBefore)).toEqual([reply]);
     await act(async () => { watching.show('r1', 1, 0, 800); });
     expect(readPosts(fetchMock)).toEqual(['r1', 'r1']);
+  });
+
+  test('one batch naming a reply twice sends it once, and a failed send is not taken up again until a reload', async () => {
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/family-reply-reads') && init?.method === 'POST'
+        ? jsonResponse({ error: 'boom' }, false)
+        : base(input, init));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    const watching = FakeObserver.instances[FakeObserver.instances.length - 1];
+    const observedBefore = watching.observeCalls.length;
+    await act(async () => { watching.show('r1', 1, 0, 800, 2); });
+
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+    expect(watching.observeCalls.length).toBe(observedBefore);
   });
 
   test('a reload after a post keeps New on a reply seen on this visit', async () => {
