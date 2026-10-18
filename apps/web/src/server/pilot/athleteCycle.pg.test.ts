@@ -46,7 +46,7 @@ jest.mock('./http', () => {
 
 import { GET, POST } from '@/app/api/pilot/athlete/cycle/route';
 
-import { cycleDayError } from './athleteCycle';
+import { addCycleEntry, cycleDayError } from './athleteCycle';
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
 
@@ -62,6 +62,8 @@ const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 const ORG = 'org-cycle';
+/** A second gym holding an athlete with the SAME id: every statement must be bound by gym too. */
+const OTHER_ORG = 'org-cycle-other';
 const COACH = 'acct-cycle-coach';
 const ATHLETE = 'ATH-CYCLE-1';
 const OTHER_ATHLETE = 'ATH-CYCLE-2';
@@ -71,9 +73,9 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 
-function principal(role: PilotPrincipal['role'], athleteId: string | null): PilotPrincipal {
-  const accountId = `acct-${athleteId ?? role}`;
-  return { accountId, role, organizationId: ORG, athleteId, sessionToken: `token-${accountId}`, authProvider: 'ppbf_local' };
+function principal(role: PilotPrincipal['role'], athleteId: string | null, organizationId = ORG): PilotPrincipal {
+  const accountId = `acct-${organizationId}-${athleteId ?? role}`;
+  return { accountId, role, organizationId, athleteId, sessionToken: `token-${accountId}`, authProvider: 'ppbf_local' };
 }
 
 async function call(actor: PilotPrincipal, method: 'GET' | 'POST', body?: Record<string, unknown>) {
@@ -83,14 +85,21 @@ async function call(actor: PilotPrincipal, method: 'GET' | 'POST', body?: Record
     ...(body ? { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } } : {}),
   });
   const response = method === 'GET' ? await GET(request) : await POST(request);
-  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  return {
+    status: response.status,
+    cache: response.headers.get('cache-control'),
+    body: (await response.json()) as Record<string, unknown>,
+  };
 }
 
 const athlete = (athleteId = ATHLETE) => principal('athlete', athleteId);
 const act = (body: Record<string, unknown>, athleteId = ATHLETE) => call(athlete(athleteId), 'POST', body);
 
-async function rows(table: 'athlete_cycle_tracking' | 'athlete_cycle_entries') {
-  const result = await activeClient!.query(`select athlete_id from pilot.${table} order by athlete_id`);
+async function rows(table: 'athlete_cycle_tracking' | 'athlete_cycle_entries', organizationId = ORG) {
+  const result = await activeClient!.query(
+    `select athlete_id from pilot.${table} where organization_id = $1 order by athlete_id`,
+    [organizationId],
+  );
   return result.rows.map((row) => row.athlete_id);
 }
 
@@ -120,14 +129,16 @@ async function freshDatabase(name: string): Promise<Client> {
   const client = new Client({ connectionString: `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${name}` });
   await client.connect();
   await applyFullSchema(client, { infraDir: INFRA_DIR });
-  await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [ORG]);
+  for (const org of [ORG, OTHER_ORG]) {
+    await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [org]);
+  }
   await client.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`, [COACH, ORG]);
-  for (const id of [ATHLETE, OTHER_ATHLETE]) {
+  for (const [org, id] of [[ORG, ATHLETE], [ORG, OTHER_ATHLETE], [OTHER_ORG, ATHLETE]]) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
          emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, $2, 'Cycle Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
-      [ORG, id, COACH],
+      [org, id, COACH],
     );
   }
   activeClient = client;
@@ -197,13 +208,48 @@ describe('cycle tracking is opt-in and the athlete own', () => {
     }
   });
 
-  test("'add' with no day logs the gym's today", async () => {
+  test("'add' with no day logs the gym's today, not the UTC day", async () => {
     const client = await freshDatabase('cycle_today');
     try {
       await act({ action: 'turn_on' });
-      const today = await act({ action: 'add' });
-      expect(today.status).toBe(200);
-      expect((today.body.entries as unknown[]).length).toBe(1);
+      // 2026-10-19T02:00Z is 22:00 on 2026-10-18 at the gym.
+      const lateEvening = new Date('2026-10-19T02:00:00Z');
+      const entry = await addCycleEntry(ORG, ATHLETE, undefined, lateEvening);
+      expect(entry).toMatchObject({ period_started_on: '2026-10-18' });
+      expect(cycleDayError('2026-10-19', lateEvening)).toBe('day cannot be after today.');
+      expect(cycleDayError('2026-10-18', lateEvening)).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every read and write is bound by gym as well as athlete: the same athlete id in another gym is untouched', async () => {
+    const client = await freshDatabase('cycle_gym_bound');
+    try {
+      const elsewhere = principal('athlete', ATHLETE, OTHER_ORG);
+      await call(elsewhere, 'POST', { action: 'turn_on' });
+      const theirs = await call(elsewhere, 'POST', { action: 'add', day: '2026-10-02' });
+      const theirId = (theirs.body.entries as Array<{ entry_id: string }>)[0].entry_id;
+
+      expect((await call(athlete(), 'GET')).body).toEqual({ opted_in: false, entries: [] });
+      await act({ action: 'turn_on' });
+      expect((await act({ action: 'remove', entry_id: theirId })).status).toBe(404);
+      await act({ action: 'add', day: '2026-10-01' });
+      await act({ action: 'turn_off' });
+
+      expect(await rows('athlete_cycle_tracking', OTHER_ORG)).toEqual([ATHLETE]);
+      expect(await rows('athlete_cycle_entries', OTHER_ORG)).toEqual([ATHLETE]);
+      expect(await rows('athlete_cycle_entries', ORG)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('responses are never cached', async () => {
+    const client = await freshDatabase('cycle_no_store');
+    try {
+      expect((await call(athlete(), 'GET')).cache).toBe('private, no-store');
+      expect((await act({ action: 'turn_on' })).cache).toBe('private, no-store');
     } finally {
       await client.end();
     }

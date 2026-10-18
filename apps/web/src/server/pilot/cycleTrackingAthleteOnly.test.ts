@@ -12,8 +12,9 @@
  *      privacy denylist, and the athlete-only module and route. A coach read, a parent hub, an
  *      export, a research or de-identification job, a SHADOW context builder, a wall or TV query
  *      or another migration (a view, a join) that names them fails here.
- *   2. The module that reads them (src/server/pilot/athleteCycle.ts, when it exists) is imported
- *      only by the athlete's own route under app/api/pilot/athlete/cycle/, and by tests.
+ *   2. The module that reads them (src/server/pilot/athleteCycle.ts) is imported only by the
+ *      athlete's own route, app/api/pilot/athlete/cycle/route.ts exactly (not a sibling route), and
+ *      by tests.
  *
  * Widening either list is a change somebody makes on purpose, in review, and it needs a separate
  * ruling from Jason. Not caught: a table name assembled at run time.
@@ -46,8 +47,8 @@ const MAY_NAME_THE_TABLES = new Set([
   'apps/web/src/server/pilot/athleteCycle.pg.test.ts',
 ]);
 
-/** Where the athlete's own cycle route lives; nothing else may import the module. */
-const ATHLETE_CYCLE_ROUTE_DIR = 'apps/web/app/api/pilot/athlete/cycle/';
+/** The athlete's own cycle route; nothing else may import the module (not even a sibling route). */
+const ATHLETE_CYCLE_ROUTE = 'apps/web/app/api/pilot/athlete/cycle/route.ts';
 
 function sourcesUnder(dir: string): string[] {
   const out: string[] = [];
@@ -81,7 +82,7 @@ describe('cycle tracking is reachable only through the athlete', () => {
   test("only the athlete's own cycle route (and tests) import the cycle module", () => {
     const importing = files
       .filter((file) => !TEST.test(file.relative))
-      .filter((file) => !file.relative.startsWith(ATHLETE_CYCLE_ROUTE_DIR))
+      .filter((file) => file.relative !== ATHLETE_CYCLE_ROUTE)
       .filter((file) => CYCLE_MODULE_IMPORT.test(fs.readFileSync(file.full, 'utf8')))
       .map((file) => file.relative);
     expect(importing).toEqual([]);

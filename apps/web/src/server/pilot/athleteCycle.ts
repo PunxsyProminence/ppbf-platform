@@ -34,9 +34,6 @@ export interface CycleTracking {
   entries: CycleEntry[];
 }
 
-/** How many past dates the athlete's screen lists. */
-export const CYCLE_ENTRIES_SHOWN = 24;
-
 async function athleteIsLive(organizationId: string, athleteId: string): Promise<boolean> {
   const row = await queryOne<{ live: boolean }>(
     `select true as live from pilot.athletes where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
@@ -55,9 +52,8 @@ export async function getCycleTracking(organizationId: string, athleteId: string
     `select entry_id, period_started_on::text as period_started_on
      from pilot.athlete_cycle_entries
      where organization_id = $1 and athlete_id = $2
-     order by period_started_on desc
-     limit $3`,
-    [organizationId, athleteId, CYCLE_ENTRIES_SHOWN],
+     order by period_started_on desc`,
+    [organizationId, athleteId],
   );
   return { optedIn: true, entries };
 }
@@ -108,12 +104,19 @@ export async function addCycleEntry(
   if (!tracking.optedIn) return 'off';
   const startedOn = day ?? gymDayIso(now);
   if (!startedOn) throw new Error('CYCLE_GYM_DAY_UNRESOLVED');
-  await query(
-    `insert into pilot.athlete_cycle_entries (organization_id, entry_id, athlete_id, period_started_on)
-     values ($1, $2, $3, $4::date)
-     on conflict (organization_id, athlete_id, period_started_on) do nothing`,
-    [organizationId, randomUUID(), athleteId, startedOn],
-  );
+  try {
+    await query(
+      `insert into pilot.athlete_cycle_entries (organization_id, entry_id, athlete_id, period_started_on)
+       values ($1, $2, $3, $4::date)
+       on conflict (organization_id, athlete_id, period_started_on) do nothing`,
+      [organizationId, randomUUID(), athleteId, startedOn],
+    );
+  } catch (error) {
+    // Turned off on another device between the read above and this insert:
+    // the entries' foreign key to the opt-in row refuses it.
+    if ((error as { code?: unknown }).code === '23503') return 'off';
+    throw error;
+  }
   return queryOne<CycleEntry>(
     `select entry_id, period_started_on::text as period_started_on from pilot.athlete_cycle_entries
      where organization_id = $1 and athlete_id = $2 and period_started_on = $3::date`,

@@ -28,8 +28,11 @@ async function requireOwnAthleteId(principal: { organizationId: string; athleteI
   return principal.athleteId;
 }
 
+// Never cached: these are a child's health dates, often on a shared tablet.
+const NO_STORE = { 'Cache-Control': 'private, no-store' };
+
 function view(tracking: Awaited<ReturnType<typeof getCycleTracking>>) {
-  return { opted_in: tracking.optedIn, entries: tracking.entries };
+  return NextResponse.json({ opted_in: tracking.optedIn, entries: tracking.entries }, { headers: NO_STORE });
 }
 
 export async function GET(request: NextRequest) {
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
     const athleteId = await requireOwnAthleteId(principal);
-    return NextResponse.json(view(await getCycleTracking(principal.organizationId, athleteId)));
+    return view(await getCycleTracking(principal.organizationId, athleteId));
   } catch (error) {
     return jsonError(error);
   }
@@ -51,7 +54,7 @@ export async function POST(request: NextRequest) {
     const athleteId = await requireOwnAthleteId(principal);
     const organizationId = principal.organizationId;
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
     switch (body.action) {
       case 'turn_on':
         if (!(await turnOnCycleTracking(organizationId, athleteId))) return hiddenNotFound();
@@ -76,7 +79,7 @@ export async function POST(request: NextRequest) {
       default:
         throw new ValidationError('action must be turn_on, turn_off, add or remove.');
     }
-    return NextResponse.json(view(await getCycleTracking(organizationId, athleteId)));
+    return view(await getCycleTracking(organizationId, athleteId));
   } catch (error) {
     return jsonError(error);
   }
