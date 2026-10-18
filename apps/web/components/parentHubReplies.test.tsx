@@ -120,6 +120,14 @@ describe('a message card names who sent it', () => {
     expect(within(card('Bring gloves Thursday.')).getByText('From Coach Rivera')).toBeInTheDocument();
     expect(within(card('Medical form is due.')).getByText('From Admin')).toBeInTheDocument();
   });
+
+  test('a coach the server cannot name reads "From Coach", not "From Your coach"', async () => {
+    installFetch({ messages: [{ ...MESSAGES[0]!, sender_name: 'Your coach' }] });
+    await openMessages();
+
+    expect(within(card('Bring gloves Thursday.')).getByText('From Coach')).toBeInTheDocument();
+    expect(screen.queryByText('From Your coach')).toBeNull();
+  });
 });
 
 describe('replying to a coach message (FC-03)', () => {

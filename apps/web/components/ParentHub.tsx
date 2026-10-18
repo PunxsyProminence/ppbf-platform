@@ -76,7 +76,9 @@ interface ParentMessage {
 /** "Coach Rivera" when the server names the sender; the role word otherwise (F-120). */
 function senderLabel(message: ParentMessage): string {
   const name = message.sender_name?.trim();
-  if (name) return name;
+  // "Your coach" is the server's floor for a coach it cannot name
+  // (deriveCoachDisplayName); "From Your coach" misreads, so the role word stands.
+  if (name && name !== 'Your coach') return name;
   return message.sender_role === 'coach' ? 'Coach' : 'Admin';
 }
 
