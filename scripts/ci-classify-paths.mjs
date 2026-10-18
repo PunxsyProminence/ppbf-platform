@@ -93,6 +93,8 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/components/roleRoutes.ts',
   'apps/web/lib/calendarDay.ts',
   'apps/web/lib/feedbackWording.ts',
+  // libraryIntakeRecovery.pg.test.ts (L54) drives the intake client against the routes.
+  'apps/web/src/client/libraryTextIntake.ts',
   'apps/web/src/lib/drillAdoptionReadiness.ts',
   'apps/web/src/lib/drillCueRule.ts',
   'apps/web/src/lib/drillFloorValidation.ts',
