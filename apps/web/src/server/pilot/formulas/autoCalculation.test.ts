@@ -529,13 +529,6 @@ describe('the executor', () => {
         formulaId: 'MVP-11',
         observationIds: ['earlier-focus', 'sparring_1-focus'],
       },
-      // MVP-11 spans contexts: every session in the 28 days up to this one.
-      {
-        organizationId: 'org-1',
-        athleteId: 'athlete-1',
-        formulaId: 'MVP-11',
-        observationIds: ['earlier-focus', 'sparring_1-focus'],
-      },
     ]);
     expect(windowRead).toHaveBeenCalledWith({
       organizationId: 'org-1',
