@@ -61,7 +61,7 @@ async function renderBandAs(role: ClubRole) {
   render(
     <RoleStandaloneView
       roleLabel="Coach"
-      routeLabel="Session Scripts"
+      routeLabel="Session Plans"
       allowedRoles={['coach', 'admin', 'platform_owner', 'athlete', 'parent', 'staff', 'volunteer', 'board']}
     >
       <p>the page itself</p>
@@ -127,7 +127,7 @@ it.each(REFUSED)('does not offer %s a control that would only bounce them', asyn
 it.each(REFUSED)('leaves %s the rest of the band, with Bell from 640px up', async (role) => {
   await renderBandAs(role);
 
-  const bell = screen.getByRole('link', { name: 'Bell' });
+  const bell = screen.getByRole('link', { name: 'Home' });
   expect(bell.getAttribute('href')).toBe('/dashboard');
 
   const wrapper = bell.closest('div');
@@ -136,7 +136,7 @@ it.each(REFUSED)('leaves %s the rest of the band, with Bell from 640px up', asyn
   expect(visibility).toContain('hidden');
   expect(visibility).toContain('sm:flex');
 
-  expect(screen.getByText('Session Scripts')).toBeTruthy();
+  expect(screen.getByText('Session Plans')).toBeTruthy();
 });
 
 /* The viewer's role decides, not the page's. A coach on a page that also

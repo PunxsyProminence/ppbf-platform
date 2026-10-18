@@ -61,7 +61,7 @@ export default function AthleteDevelopmentBlocksPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Your Plan</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">My Development Plan</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             What your coach is working on with you over the next several weeks, in their words.
             Your guardian can see this too. If something here does not match what you understood,
@@ -79,7 +79,7 @@ export default function AthleteDevelopmentBlocksPage() {
             blocks={blocks}
             state={state}
             subjectLabel="your plan"
-            emptyMessage="Your coach has not written a development block for you yet. That is normal — blocks are written when a coach is planning a stretch of weeks, not for every session."
+            emptyMessage="Your coach has not written a development plan for you yet. That is normal — plans are written when a coach is planning a stretch of weeks, not for every session."
           />
         </section>
       </div>

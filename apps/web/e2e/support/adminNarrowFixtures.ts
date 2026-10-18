@@ -337,6 +337,17 @@ function safetyReview() {
       status: (['new', 'acknowledged', 'escalated'] as const)[i % 3],
       created_at: iso(i),
     })),
+    // Lane U2 (A-2): the fifth feed. Long codes and an account subject
+    // (athlete_id null) are the rows most likely to push the page sideways.
+    openFlags: Array.from({ length: 8 }, (_, i) => ({
+      flag_id: id('flag', 6300 + i),
+      athlete_id: i === 5 ? null : athleteId(i + 4),
+      athlete_name: i === 5 ? null : nameAt(i, 4),
+      flag_code: (['medical_clearance_missing_for_contact_sparring', 'concussion_rest_period_not_elapsed', 'guardian_consent_expired'] as const)[i % 3],
+      flag_class: i % 2 === 0 ? 'external_rule' : 'system_guidance',
+      severity: (['blocking_display', 'attention', 'advisory'] as const)[i % 3],
+      created_at: iso(i),
+    })),
     violationsReadLimit: 200,
     // True renders the "read from the N most recently filed only" notice.
     violationsTruncated: true,

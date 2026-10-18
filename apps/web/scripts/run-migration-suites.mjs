@@ -26,16 +26,19 @@
 // not just claimed here.
 //
 // This matters more than a test script usually would: `npm run test:migrations`
-// runs inside deploy-production.yml and pre-release-migrations.yml. A runner
-// that quietly skipped a suite would drop a migration guard immediately before
-// a production deploy.
+// is ci.yml's pg job (one --shard per matrix leg), and pre-release-migrations.yml
+// runs the same suites, found by discoverSuiteScripts below, one at a time so
+// it can report every failure. deploy-production.yml runs neither. A runner
+// that quietly skipped a suite would drop a migration guard from every PR the
+// classifier sends to the pg job, and from the nightly pre-release check.
 //
 // ORDER is package.json definition order -- deterministic, and no list anybody
 // has to maintain. Each suite provisions its own disposable database, so no
 // suite depends on another having run first.
 //
 // FAIL-FAST, like the `&&` chain it replaces. Stopping at the first failure is
-// the behaviour CI and the deploy workflows already depend on.
+// the behaviour ci.yml's pg job depends on (pre-release-migrations.yml runs the
+// suites itself so that it can report every failure).
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -50,18 +53,45 @@ export function discoverSuiteScripts(scripts) {
   return Object.keys(scripts).filter((name) => /^test:migrations:[a-z0-9-]+$/.test(name));
 }
 
+/**
+ * The suites one CI shard runs: `--shard=N/M` takes every M-th suite starting
+ * at the N-th, in definition order. No argument runs every suite, which is
+ * what every caller but ci.yml's `pg` matrix passes.
+ *
+ * ROUND-ROBIN, NOT TIMED. Measured on #1685 (314 suites, 2427 s): round-robin
+ * over 4 shards gave a slowest shard of 10.5 min against 10.1 for a split
+ * balanced on the measured durations, so a timing file would buy 0.4 min and
+ * need maintaining.
+ *
+ * Any other argument is refused rather than ignored: `--shard 1/4` (a space)
+ * or a misspelling would otherwise run every suite in every shard, or none.
+ */
+export function selectShard(suites, argv) {
+  if (argv.length === 0) return suites;
+  const match = argv.length === 1 ? /^--shard=([1-9]\d*)\/([1-9]\d*)$/.exec(argv[0]) : null;
+  if (!match) {
+    throw new Error(`expected no arguments or one --shard=N/M, got: ${argv.join(' ')}`);
+  }
+  const index = Number(match[1]);
+  const total = Number(match[2]);
+  if (index > total || total > suites.length) {
+    throw new Error(`--shard=${index}/${total} is out of range for ${suites.length} suites`);
+  }
+  return suites.filter((_, position) => position % total === index - 1);
+}
+
 function main() {
   const { scripts } = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
-  const suites = discoverSuiteScripts(scripts);
+  const discovered = discoverSuiteScripts(scripts);
 
   // A floor, not decoration. If the regex or the manifest shape ever changed,
   // discovery could return nothing -- and a runner that runs zero suites and
   // exits 0 would report every migration guarded while guarding none. That is
   // the failure mode a chain cannot have and a discovery runner can, so it is
   // refused explicitly.
-  if (suites.length < 50) {
+  if (discovered.length < 50) {
     console.error(
-      `run-migration-suites: discovered only ${suites.length} suite scripts, which cannot be right.\n`
+      `run-migration-suites: discovered only ${discovered.length} suite scripts, which cannot be right.\n`
       + 'Expected 100+. Either package.json is truncated (see scripts/verify-package-integrity.mjs\n'
       + 'for why that is a real failure mode here) or the naming convention changed. Refusing to\n'
       + 'report success while running almost nothing.',
@@ -69,7 +99,19 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`run-migration-suites: ${suites.length} suites discovered\n`);
+  let suites;
+  try {
+    suites = selectShard(discovered, process.argv.slice(2));
+  } catch (error) {
+    console.error(`run-migration-suites: ${error.message}`);
+    process.exit(1);
+  }
+
+  console.log(
+    suites === discovered
+      ? `run-migration-suites: ${discovered.length} suites discovered\n`
+      : `run-migration-suites: ${discovered.length} suites discovered; ${process.argv[2]} runs ${suites.length}\n`,
+  );
 
   let index = 0;
   for (const suite of suites) {
