@@ -127,6 +127,11 @@ export default function FamilyNotesPosted({
   const listRef = useRef<HTMLDivElement>(null);
   // Replies whose read was sent on this visit; a failed write leaves the set.
   const readsSentRef = useRef<Set<string>>(new Set());
+  // Replies a newer watch saw while their read was still on its way (a reload
+  // came in between). If that read fails, the reply is watched afresh, so a
+  // reply still on screen is sent again without waiting for it to move.
+  const seenWhileSendingRef = useRef<Set<string>>(new Set());
+  const observerRef = useRef<IntersectionObserver | null>(null);
   // What this staff member had seen when they opened this athlete: a reload
   // after a post keeps it, so New stays for the visit.
   const visitRef = useRef<{ athleteId: string; seen: Set<string> | null }>({ athleteId: '', seen: null });
@@ -139,6 +144,7 @@ export default function FamilyNotesPosted({
     if (visitRef.current.athleteId !== athleteId) {
       visitRef.current = { athleteId, seen: null };
       readsSentRef.current = new Set();
+      seenWhileSendingRef.current = new Set();
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRead({ state: 'loading' });
@@ -220,10 +226,26 @@ export default function FamilyNotesPosted({
           && entry.intersectionRect.height >= 0.5 * entry.rootBounds.height;
         if (!entry.isIntersecting || (entry.intersectionRatio < 0.5 && !fillsHalfTheScreen)) continue;
         const replyId = (entry.target as HTMLElement).dataset.readReply;
-        if (!replyId || readsSentRef.current.has(replyId)) continue;
+        if (!replyId) continue;
+        if (readsSentRef.current.has(replyId)) {
+          seenWhileSendingRef.current.add(replyId);
+          continue;
+        }
         readsSentRef.current.add(replyId);
         observer.unobserve(entry.target);
         const sent = readsSentRef.current;
+        const seenWhileSending = seenWhileSendingRef.current;
+        const failed = () => {
+          sent.delete(replyId);
+          if (!seenWhileSending.delete(replyId) || sent !== readsSentRef.current) return;
+          // Watched afresh: observing again hands the watch the reply's place on screen now.
+          const watching = observerRef.current;
+          const element = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-read-reply]') ?? [])]
+            .find((candidate) => candidate.dataset.readReply === replyId);
+          if (!watching || !element) return;
+          watching.unobserve(element);
+          watching.observe(element);
+        };
         void fetch(`${apiBase()}/api/pilot/coach/family-reply-reads`, {
           method: 'POST',
           credentials: 'include',
@@ -231,11 +253,9 @@ export default function FamilyNotesPosted({
           body: JSON.stringify({ reply_id: replyId }),
         })
           .then((response) => {
-            if (!response.ok) sent.delete(replyId);
+            if (!response.ok) failed();
           })
-          .catch(() => {
-            sent.delete(replyId);
-          });
+          .catch(failed);
       }
     // Every 1%: a tall reply changes its visible share only a little as it
     // scrolls, so coarse steps could miss it filling half the screen.
@@ -244,7 +264,11 @@ export default function FamilyNotesPosted({
       if (seenAtLoad instanceof Set && seenAtLoad.has(element.dataset.readReply ?? '')) return;
       observer.observe(element);
     });
-    return () => observer.disconnect();
+    observerRef.current = observer;
+    return () => {
+      observer.disconnect();
+      if (observerRef.current === observer) observerRef.current = null;
+    };
   }, [read, athleteId]);
 
   if (!athleteId) return null;

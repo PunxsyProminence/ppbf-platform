@@ -358,7 +358,8 @@ describe('new replies for this staff member (FC-09b)', () => {
     constructor(private readonly callback: IntersectionObserverCallback) {
       FakeObserver.instances.push(this);
     }
-    observe(element: Element) { this.observed.add(element); }
+    observeCalls: Element[] = [];
+    observe(element: Element) { this.observed.add(element); this.observeCalls.push(element); }
     unobserve(element: Element) { this.observed.delete(element); }
     disconnect() { this.disconnects += 1; this.observed.clear(); }
     show(replyId: string, ratio: number, visibleHeight: number, screenHeight: number) {
@@ -575,6 +576,47 @@ describe('new replies for this staff member (FC-09b)', () => {
       view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
     });
     await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1', 'r1']);
+  });
+
+  test('a read that fails after a reload saw its reply is watched afresh, so a reply still on screen is sent again', async () => {
+    let failFirst: (() => void) | null = null;
+    let posts = 0;
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/family-reply-reads') && init?.method === 'POST') {
+        posts += 1;
+        if (posts === 1) {
+          await new Promise<void>((resolve) => { failFirst = resolve; });
+          return jsonResponse({ error: 'boom' }, false);
+        }
+        return jsonResponse({ ok: true });
+      }
+      return base(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+
+    // A post reloads the panel while that read is still on its way; the new
+    // watch sees the reply at once, and the read in flight is not sent twice.
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
+    });
+    const watching = FakeObserver.instances[FakeObserver.instances.length - 1];
+    await act(async () => { watching.show('r1', 1, 0, 800); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+    const observedBefore = watching.observeCalls.length;
+
+    await act(async () => { failFirst?.(); });
+
+    // The reply has not moved, so no new crossing comes: the watch takes it up again.
+    const reply = document.querySelector('[data-read-reply="r1"]');
+    expect(watching.observeCalls.slice(observedBefore)).toEqual([reply]);
+    await act(async () => { watching.show('r1', 1, 0, 800); });
     expect(readPosts(fetchMock)).toEqual(['r1', 'r1']);
   });
 
