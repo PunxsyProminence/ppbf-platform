@@ -192,7 +192,7 @@ test('nothing renders without an athlete identity', async () => {
 });
 
 describe('todaysClassesFor', () => {
-  const reg = [{ class_id: 'a', athlete_id: 'ath_1', status: 'registered' as const }];
+  const reg = [{ registration_id: 'reg_a', class_id: 'a', athlete_id: 'ath_1', status: 'registered' as const }];
   test('today only, registered only; a cancelled class is kept so the card can say so', () => {
     expect(todaysClassesFor('ath_1', [klass({ class_id: 'a', start_at: '2099-01-03T15:00:00.000Z' }) as never], reg, NOW)).toEqual([]);
     expect(todaysClassesFor('ath_1', [klass({ class_id: 'a' }) as never], [{ ...reg[0], status: 'waitlisted' as never }], NOW)).toEqual([]);
