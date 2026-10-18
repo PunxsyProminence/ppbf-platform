@@ -59,6 +59,10 @@ const OTHER_ORG = 'org-pt-2';
 const ATHLETE = 'ath-pt-1';
 const ADMIN = 'acct-pt-admin';
 const QUERY = 'southpaw footwork pivot';
+const DEEP_ANSWER = 'Novices should spar two-minute rounds at first.';
+const DEEP_QUALIFIER = 'Only after six weeks of supervised work should those rounds reach three minutes.';
+const DEEP_FILLER = 'Wrap both hands before the bell and check the tape at the wrist. '.repeat(15);
+const DEEP_PASSAGE = `${DEEP_FILLER}${DEEP_ANSWER} ${DEEP_QUALIFIER} ${DEEP_FILLER}`.trim();
 
 const actor = { accountId: ADMIN, organizationId: ORG, athleteId: null, role: 'organization_admin' as const };
 
@@ -222,6 +226,9 @@ beforeAll(async () => {
       `Hook counter drill ${index}: ${'keep the elbow level and turn the hip through. '.repeat(25)}`);
   }
 
+  // An owned passage whose answer sits past character 900.
+  await chunk('chunk-deep', 'doc-owned', 'src-owned', 3, true, DEEP_PASSAGE);
+
   // An owned passage filed against one athlete: a title only, live.
   await document('doc-athlete', 'src-owned', ATHLETE);
   await chunk('chunk-athlete', 'doc-athlete', 'src-owned', 1, true, 'Jab feint drill: passage chunk-athlete.', ATHLETE);
@@ -339,13 +346,14 @@ describe('the passage rule holds at its edges (review findings)', () => {
     expect(citations.every((citation) => citation.excerpt === undefined)).toBe(true);
   });
 
-  test('a reopened conversation replays the exact passage given, even one the bundle budget cut short', async () => {
+  test('a reopened conversation replays the exact passage given, each of four long ones whole within the budget', async () => {
     const bundle = await evidence.retrieveShadowEvidenceBundle({ actor, queryText: 'hook counter drill' });
     expect(bundle.items).toHaveLength(4);
     const live = evidence.publicEvidenceCitations(bundle, bundle.items.map((item) => item.evidenceId));
-    const shortest = Math.min(...live.map((citation) => citation.excerpt?.length ?? 0));
-    expect(shortest).toBeGreaterThan(0);
-    expect(shortest).toBeLessThan(evidence.MAX_EXCERPT_CHARS);
+    // The budget used to cut the fourth short; it now holds every full excerpt.
+    const lengths = live.map((citation) => citation.excerpt?.length ?? 0);
+    expect(Math.min(...lengths)).toBeGreaterThan(evidence.MAX_EXCERPT_CHARS / 2);
+    expect(Math.max(...lengths)).toBeLessThanOrEqual(evidence.MAX_EXCERPT_CHARS);
 
     const restored = await reopened(await conversationCiting(bundle));
     for (const citation of live) {
@@ -355,6 +363,20 @@ describe('the passage rule holds at its edges (review findings)', () => {
       expect(entry).not.toHaveProperty('passageSource');
       expect(entry).not.toHaveProperty('passageSha');
     }
+  });
+
+  // Item 4 of the 2026-10-17 non-video ML audit: the answer sits past
+  // character 900, so the passage given is a window from inside the text.
+  test('a reopened conversation replays a window from inside a long passage', async () => {
+    const bundle = await evidence.retrieveShadowEvidenceBundle({ actor, queryText: 'novice sparring rounds' });
+    const deep = bundle.items.find((item) => item.chunkId === 'chunk-deep');
+    expect(deep?.excerpt).toContain(DEEP_ANSWER);
+    expect(deep?.excerpt).toContain(DEEP_QUALIFIER);
+    expect(DEEP_PASSAGE.startsWith(deep!.excerpt)).toBe(false);
+    expect(bundle.context).toContain(DEEP_QUALIFIER);
+
+    const restored = await reopened(await conversationCiting(bundle));
+    expect(restored.find((entry) => entry.evidenceId === deep?.evidenceId)?.excerpt).toBe(deep?.excerpt);
   });
 
   test('a reopened conversation shows no passage once its source is suppressed or its text has changed', async () => {

@@ -4,11 +4,20 @@ import type { ActorIdentity } from './access';
 import { queryOne, withTransaction } from './db';
 import { SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
-import { RESEARCH_BRIDGE_EXPORTABLE_RIGHTS, searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
+import {
+  RESEARCH_BRIDGE_EXPORTABLE_RIGHTS,
+  searchShadowLibrary,
+  tokenizeQuery,
+  type ShadowLibrarySearchResult,
+} from './shadowLibrary';
 
-const MAX_EVIDENCE_ITEMS = 4;
+export const MAX_EVIDENCE_ITEMS = 4;
 export const MAX_EXCERPT_CHARS = 900;
-const MAX_BUNDLE_CHARS = 3_200;
+// Room for every item's full excerpt. A window from inside a passage
+// (selectExcerpt) is found again on replay only because its length cap is the
+// same for every item, so the bundle budget must never cut one short. It was
+// 3,200, which cut the fourth. shadowEvidence.test.ts pins the relation.
+export const MAX_BUNDLE_CHARS = 3_600;
 
 export type ShadowEvidenceAvailability = 'available' | 'unavailable';
 
@@ -34,19 +43,159 @@ export const PASSAGE_DISPLAY_RIGHTS = RESEARCH_BRIDGE_EXPORTABLE_RIGHTS;
 
 /**
  * The passage a reopened conversation may show again: the exact text the
- * answer was given, found as the prefix of the chunk's current text (with the
- * live answer's whitespace rule) whose sha256 is the one stored with the
- * evidence. The live excerpt may have been cut short by the bundle budget;
- * this finds that length. A chunk whose text has since changed matches no
- * prefix, and its citation stays a title.
+ * answer was given, found in the chunk's current text (with the live answer's
+ * whitespace rule) by the sha256 stored with the evidence. Two shapes are
+ * tried. A prefix, of any length: every bundle before excerpt windows was one,
+ * sometimes cut short by the old 3,200 budget. Then each window selectExcerpt
+ * can produce -- one per start in excerptWindowStarts -- so the cost is a few
+ * hundred hashes on the longest chunk the Library accepts. A chunk whose text
+ * has since changed matches neither, and its citation stays a title.
  */
 export function replayCitedPassage(currentText: string, excerptSha256: string): string | undefined {
-  const normalized = currentText.replace(/\s+/g, ' ').trim();
+  const normalized = normalizePassage(currentText);
   for (let length = Math.min(MAX_EXCERPT_CHARS, normalized.length); length > 0; length -= 1) {
     const candidate = normalized.slice(0, length);
     if (sha256(candidate) === excerptSha256) return candidate;
   }
+  for (const start of excerptWindowStarts(normalized)) {
+    const candidate = excerptWindow(normalized, start);
+    if (sha256(candidate) === excerptSha256) return candidate;
+  }
   return undefined;
+}
+
+function normalizePassage(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+// A sentence ends at . ! or ?, with any closing quote or bracket, before a space.
+const SENTENCE_END = /[.!?]["'’”)\]]*(?= )/g;
+// Long text with no sentence ends still gets a start every so often.
+const WINDOW_GRID_CHARS = 200;
+// How far before the first matching word a start is placed in a sentence too
+// long to show whole, so the window still carries what leads into it.
+const WINDOW_LEAD_CHARS = 200;
+
+/** Index just past each sentence end (the end of the sentence's own text). */
+function sentenceEnds(normalized: string): number[] {
+  return [...normalized.matchAll(SENTENCE_END)].map((match) => match.index + match[0].length);
+}
+
+/** Where each sentence begins: 0, and just past the space after each sentence end. */
+function sentenceStarts(normalized: string): number[] {
+  return [0, ...sentenceEnds(normalized).map((end) => end + 1).filter((start) => start < normalized.length)];
+}
+
+/**
+ * Every place an excerpt window may begin, ascending: each sentence start, and
+ * the first word start at or after each multiple of WINDOW_GRID_CHARS. A
+ * function of the text alone, so replay enumerates exactly the windows that
+ * selection can choose from.
+ */
+export function excerptWindowStarts(normalized: string): number[] {
+  const starts = new Set(sentenceStarts(normalized));
+  for (let at = WINDOW_GRID_CHARS; at < normalized.length; at += WINDOW_GRID_CHARS) {
+    const space = normalized.indexOf(' ', at - 1);
+    if (space === -1 || space + 1 >= normalized.length) break;
+    starts.add(space + 1);
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
+/**
+ * The window that begins at `start`: up to MAX_EXCERPT_CHARS, ending at the
+ * last sentence end past the window's midpoint, else at the last space, else
+ * at the cap. Runs to the end of the text when the rest fits.
+ */
+function excerptWindow(normalized: string, start: number): string {
+  return normalized.slice(start, excerptWindowEnd(normalized, start));
+}
+
+function excerptWindowEnd(normalized: string, start: number): number {
+  const cap = start + MAX_EXCERPT_CHARS;
+  if (cap >= normalized.length) return normalized.length;
+  // The character at `cap` is read too: a sentence ending exactly at the cap
+  // is recognized by the space after it.
+  const sentenceEnd = sentenceEnds(normalized.slice(start, cap + 1))
+    .map((end) => start + end)
+    .filter((end) => end > start + MAX_EXCERPT_CHARS / 2 && end <= cap)
+    .pop();
+  if (sentenceEnd !== undefined) return sentenceEnd;
+  const space = normalized.lastIndexOf(' ', cap);
+  return space > start ? space : cap;
+}
+
+/** Each place one of the question's words appears, matched as search matches them, in text order. */
+function termHits(normalized: string, terms: string[]): Array<{ index: number; term: string }> {
+  // Case-insensitive on the text itself: lowercasing it first can change its
+  // length (a dotted capital I becomes two code units) and shift every index.
+  return terms
+    .flatMap((term) => [...normalized.matchAll(new RegExp(`(?<![a-z0-9_])${term}(?:s|es)?(?![a-z0-9_])`, 'gi'))]
+      .map((match) => ({ index: match.index, term })))
+    .sort((a, b) => a.index - b.index);
+}
+
+/**
+ * The part of a passage the model is given (item 4 of the 2026-10-17 audit).
+ * It used to be the first 900 characters, so an answer later in a long passage,
+ * and the qualification after it, never reached the model.
+ *
+ * A passage that fits is given whole. One that shares no word with the
+ * question (a match by meaning alone) is given from its start, as before.
+ * Otherwise the anchor is the sentence holding the most of the question's
+ * words (then the most hits, then the earliest); the window begins one
+ * sentence before it, or at it when that would not fit, and runs on as far as
+ * the cap allows -- the text after an answer is where its qualification sits.
+ * Near the end of the passage the window reaches back instead of running short.
+ */
+export function selectExcerpt(text: string, terms: string[]): string {
+  const normalized = normalizePassage(text);
+  const { start, end } = selectExcerptSpan(normalized, terms);
+  return normalized.slice(start, end);
+}
+
+/** selectExcerpt's window as indexes into the already-normalized passage. */
+function selectExcerptSpan(normalized: string, terms: string[]): { start: number; end: number } {
+  if (normalized.length <= MAX_EXCERPT_CHARS) return { start: 0, end: normalized.length };
+  const hits = termHits(normalized, terms);
+  if (hits.length === 0) return { start: 0, end: MAX_EXCERPT_CHARS };
+
+  const sentences = sentenceStarts(normalized).map((start, index, all) => ({
+    start,
+    end: all[index + 1] ?? normalized.length,
+  }));
+  // One pass: hits and sentences are both in text order.
+  let anchor = 0;
+  let anchorScore = [-1, -1];
+  let next = 0;
+  sentences.forEach((sentence, index) => {
+    const words = new Set<string>();
+    let count = 0;
+    for (; next < hits.length && hits[next].index < sentence.end; next += 1) {
+      words.add(hits[next].term);
+      count += 1;
+    }
+    if (words.size > anchorScore[0] || (words.size === anchorScore[0] && count > anchorScore[1])) {
+      anchor = index;
+      anchorScore = [words.size, count];
+    }
+  });
+
+  const starts = excerptWindowStarts(normalized);
+  const { start: anchorStart, end: anchorEnd } = sentences[anchor];
+  // The anchor holds at least one hit, so this finds one.
+  const firstHit = hits.find((hit) => hit.index >= anchorStart)!.index;
+  let start = anchorStart;
+  if (anchor > 0 && anchorEnd - sentences[anchor - 1].start <= MAX_EXCERPT_CHARS) {
+    start = sentences[anchor - 1].start;
+  } else if (firstHit - anchorStart > MAX_EXCERPT_CHARS - WINDOW_LEAD_CHARS) {
+    // A sentence too long to show whole: begin a little before its first match.
+    start = starts.filter((at) => at >= anchorStart && at <= firstHit - WINDOW_LEAD_CHARS).pop() ?? anchorStart;
+  }
+  if (normalized.length - start <= MAX_EXCERPT_CHARS) {
+    start = starts.find((at) => normalized.length - at <= MAX_EXCERPT_CHARS) ?? start;
+  }
+  return { start, end: excerptWindowEnd(normalized, start) };
 }
 
 /** A citation as the chat API sends it; `excerpt` only within the rights rule. */
@@ -67,6 +216,11 @@ export interface ShadowEvidenceItem extends ShadowEvidenceCitation {
   authorityTier: number;
   evidenceClass: string | null;
   boxingSpecificity: string | null;
+  /** Where in the source the passage is (page, section or timestamp), when the curator gave one. */
+  excerptLocator?: string | null;
+  /** Whether the excerpt leaves out text before / after it in the passage (selectExcerpt). */
+  excerptCutBefore?: boolean;
+  excerptCutAfter?: boolean;
   /** Set when the bundle is stored: may this passage be shown (PASSAGE_DISPLAY_RIGHTS)? */
   passageDisplayable?: boolean;
 }
@@ -90,7 +244,7 @@ function sha256(value: string): string {
 }
 
 function boundedText(value: string, maximum: number): string {
-  return value.replace(/\s+/g, ' ').trim().slice(0, maximum);
+  return normalizePassage(value).slice(0, maximum);
 }
 
 function buildUnavailableContext(): string {
@@ -175,9 +329,11 @@ export function degradedShadowEvidenceBundle(): ShadowEvidenceBundle {
 
 function buildEvidenceItems(
   rows: ShadowLibrarySearchResult[],
+  queryText: string,
 ): ShadowEvidenceItem[] {
   const seenChunks = new Set<string>();
   const items: ShadowEvidenceItem[] = [];
+  const terms = tokenizeQuery(queryText);
   let remainingChars = MAX_BUNDLE_CHARS;
 
   for (const row of rows) {
@@ -185,8 +341,12 @@ function buildEvidenceItems(
       continue;
     }
     seenChunks.add(row.chunk_id);
-    const excerpt = boundedText(row.text_content, Math.min(MAX_EXCERPT_CHARS, remainingChars));
-    if (!excerpt) continue;
+    const passage = normalizePassage(row.text_content);
+    const span = selectExcerptSpan(passage, terms);
+    const excerpt = passage.slice(span.start, span.end);
+    // Never cut to fit: a shortened window could not be replayed. The budget
+    // holds every item's full excerpt (MAX_BUNDLE_CHARS), so this never skips.
+    if (!excerpt || excerpt.length > remainingChars) continue;
 
     const evidenceId = randomUUID();
     items.push({
@@ -202,6 +362,8 @@ function buildEvidenceItems(
       authorityTier: row.authority_tier,
       evidenceClass: row.evidence_class,
       boxingSpecificity: row.boxing_specificity,
+      excerptCutBefore: span.start > 0,
+      excerptCutAfter: span.end < passage.length,
     });
     remainingChars -= excerpt.length;
   }
@@ -210,9 +372,13 @@ function buildEvidenceItems(
 }
 
 function buildAvailableContext(bundleId: string, items: ShadowEvidenceItem[]): string {
+  // "…" marks text the excerpt leaves out, so the model reads a window as part
+  // of a longer passage, not as the whole of it.
   const entries = items.map((item) => (
     `${item.token} Source: ${item.sourceTitle || 'Approved source'}; `
-    + `Document: ${item.documentName || 'Approved document'}; Excerpt: ${item.excerpt}`
+    + `Document: ${item.documentName || 'Approved document'}; `
+    + (item.excerptLocator ? `Location: ${item.excerptLocator}; ` : '')
+    + `Excerpt: ${item.excerptCutBefore ? '… ' : ''}${item.excerpt}${item.excerptCutAfter ? ' …' : ''}`
   ));
   return `## VERIFIED EVIDENCE BUNDLE
 Bundle ID: ${bundleId}
@@ -245,11 +411,12 @@ async function persistEvidenceBundle(input: {
   queryText: string;
   bundleId: string;
   items: ShadowEvidenceItem[];
-}): Promise<Set<string>> {
+}): Promise<{ displayable: Set<string>; locators: Map<string, string> }> {
   // Evidence ids whose passage is within PASSAGE_DISPLAY_RIGHTS, read by the
   // same statement that stores the item, so the rights and the stored row
-  // are one snapshot.
+  // are one snapshot. The chunk's locator is read there too.
   const displayable = new Set<string>();
+  const locators = new Map<string, string>();
   const availability: ShadowEvidenceAvailability = input.items.length > 0 ? 'available' : 'unavailable';
   await withTransaction(async (client) => {
     await client.query(
@@ -268,7 +435,7 @@ async function persistEvidenceBundle(input: {
     );
 
     for (const [index, item] of input.items.entries()) {
-      const inserted = await client.query<{ evidence_id: string; passage_displayable: boolean }>(
+      const inserted = await client.query<{ evidence_id: string; passage_displayable: boolean; excerpt_locator?: string | null }>(
         `with stored as (
          insert into pilot.shadow_evidence_items
            (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id, ordinal, excerpt_sha256, library_organization_id)
@@ -312,7 +479,8 @@ async function persistEvidenceBundle(input: {
                          -- Gym-wide text only, as the research bridge: a
                          -- passage filed against one athlete stays a title.
                          and c.subject_id is null
-                         and d.subject_id is null, false) as passage_displayable
+                         and d.subject_id is null, false) as passage_displayable,
+                c.excerpt_locator
            from stored
            left join pilot.shadow_library_sources s
              on s.source_id = stored.source_id
@@ -349,9 +517,11 @@ async function persistEvidenceBundle(input: {
       if (inserted.rows[0].passage_displayable === true) {
         displayable.add(inserted.rows[0].evidence_id);
       }
+      const locator = inserted.rows[0].excerpt_locator?.trim();
+      if (locator) locators.set(inserted.rows[0].evidence_id, boundedText(locator, 160));
     }
   });
-  return displayable;
+  return { displayable, locators };
 }
 
 export async function retrieveShadowEvidenceBundle(input: {
@@ -377,10 +547,10 @@ export async function retrieveShadowEvidenceBundle(input: {
     queryText,
     limit: MAX_EVIDENCE_ITEMS,
   });
-  const items = buildEvidenceItems(rows);
+  const items = buildEvidenceItems(rows, queryText);
   const bundleId = randomUUID();
 
-  const displayable = await persistEvidenceBundle({
+  const { displayable, locators } = await persistEvidenceBundle({
     actor: input.actor,
     subjectId,
     queryText,
@@ -389,6 +559,7 @@ export async function retrieveShadowEvidenceBundle(input: {
   });
   for (const item of items) {
     item.passageDisplayable = displayable.has(item.evidenceId);
+    item.excerptLocator = locators.get(item.evidenceId) ?? null;
   }
 
   if (items.length === 0) {

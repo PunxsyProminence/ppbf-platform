@@ -1126,15 +1126,15 @@ export default function CoachDevelopmentBlocksPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">The Next Several Weeks</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Development Plans</h1>
           <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            A development block is what you intend for one athlete over a window you choose, in your own
+            A development plan is what you intend for one athlete over a window you choose, in your own
             words. The platform stores it and reads it back. It does not score it, grade it, or move it
             along on its own.
           </p>
           <Link href="/coach/session-scripts" className="btn btn--ghost mt-[var(--s4)]">
-            Session Scripts
+            Session Plans
           </Link>
         </header>
 
@@ -1176,7 +1176,7 @@ export default function CoachDevelopmentBlocksPage() {
 
         {athleteId && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-            <h2 className="t-eyebrow">New block{athleteName ? ` for ${athleteName}` : ''}</h2>
+            <h2 className="t-eyebrow">New plan{athleteName ? ` for ${athleteName}` : ''}</h2>
 
             <div className="space-y-[var(--s3)]">
               {((templatesState === 'loaded' && !templateAthleteIsAdult) || minorOptIn) && (
@@ -1303,7 +1303,7 @@ export default function CoachDevelopmentBlocksPage() {
               </div>
 
               <button type="submit" disabled={submitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
-                {submitting ? 'Saving…' : 'Save block'}
+                {submitting ? 'Saving…' : 'Save plan'}
               </button>
             </form>
 
@@ -1318,9 +1318,9 @@ export default function CoachDevelopmentBlocksPage() {
 
         {athleteId && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-            <h2 className="t-eyebrow">Blocks on record</h2>
+            <h2 className="t-eyebrow">Plans on record</h2>
 
-            {blocksState === 'loading' && <p className="t-muted">Loading blocks...</p>}
+            {blocksState === 'loading' && <p className="t-muted">Loading plans...</p>}
 
             {blocksState === 'unavailable' && (
               <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
@@ -1332,7 +1332,7 @@ export default function CoachDevelopmentBlocksPage() {
             )}
 
             {blocksState === 'loaded' && blocks.length === 0 && (
-              <p className="t-muted">No development block has been written for this athlete yet.</p>
+              <p className="t-muted">No development plan has been written for this athlete yet.</p>
             )}
 
             {blocksState === 'loaded' && blocks.length > 0 && (
@@ -1470,7 +1470,7 @@ export default function CoachDevelopmentBlocksPage() {
 
                     {openSessionsId === block.block_id && (
                     <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
-                      <p className="t-label m-0">Sessions that worked this block</p>
+                      <p className="t-label m-0">Sessions that worked this plan</p>
 
                       {sessionsStateByBlock[block.block_id] === 'loading' && (
                         <p className="t-muted m-0">Loading linked sessions...</p>

@@ -48,10 +48,9 @@ test('public interest submissions are described as saved, not front-end only', (
   expect(guide('public-portal-guide').placeholderOrPlanned).toMatch(/saved/);
 });
 
-test('the parent guide names the live task feed and still lists every Parent Hub section stamped PLANNED', () => {
-  // ParentHub.tsx stamps family goals PLANNED | NOT YET IMPLEMENTED (A-Q15:
-  // roadmap; F-019 "C: Keep all": the note stays until the thing is built --
-  // PH-06). Resources are built (#1593, PH-11), so their stamp is gone.
+test('the parent guide names the live task feed and lists no Parent Hub section as planned', () => {
+  // Family goals (PH-06) and resources (PH-11) are built (#1593), so ParentHub.tsx
+  // stamps neither PLANNED | NOT YET IMPLEMENTED and the guide lists no feed still to come.
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
   // The weekly list on the Parent Floor is built (WO-PH-02); it is not planned.
@@ -65,9 +64,12 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   // Parent observations are built (WO-PH-04).
   expect(parent).toMatch(/Parent observations are written down and read back on the Observations tab/);
   expect(parent).not.toMatch(/feed yet: [^.]*parent observations/);
-  expect(parent).toMatch(/feed yet: family goals/);
+  expect(parent).toMatch(/Family goals are on the Family Goals tab/);
+  // PH-06 Q-2 A: a goal the gym sets is read-only to the family.
+  expect(parent).toMatch(/goals the gym sets show there too, and only the gym can change them/);
   expect(parent).toMatch(/Resources are on the Resources tab/);
-  expect(parent).not.toMatch(/feed yet: [^.]*resources/);
+  expect(parent).not.toMatch(/Planned, with no feed yet/);
+  expect(guide('parent-guide').doNotTestYet).not.toMatch(/stamped PLANNED/);
   // FC-05: the coaches read observations (F-073).
   expect(parent).toMatch(/Observations tab, and the coaches can read them/);
   // Replies to coach messages are built (#1542, FC-03).

@@ -1329,7 +1329,7 @@ describe('an active training hold is shown beside the wellness check-in and bloc
 
     const notice = holdNotice();
     expect(notice).toBeDefined();
-    expect(notice?.textContent).toContain('CONTACT WORK is currently paused for this athlete (medical).');
+    expect(notice?.textContent).toContain('CONTACT WORK for this athlete (medical).');
     expect(notice?.textContent).toContain('Your knee needs a rest from contact.');
     expect(notice?.textContent).toContain('To lift it: Cleared by the doctor.');
     // The check-in is untouched by the warning.

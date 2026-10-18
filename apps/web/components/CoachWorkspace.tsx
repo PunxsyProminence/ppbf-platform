@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
@@ -107,7 +108,7 @@ interface CoachTab {
 const COACH_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'floor', label: 'Floor' },
-  { id: 'development', label: 'Development' },
+  { id: 'development', label: 'Your Growth' },
   { id: 'goals', label: 'Goals' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'assessments', label: 'Assessments' },
@@ -1383,7 +1384,7 @@ export default function CoachWorkspace() {
         ? `Session in progress, paused at ${formatElapsed(liveRun.elapsed_seconds)}.`
         : `Session in progress -- running ${formatElapsed(liveRun.elapsed_seconds)}.`;
     }
-    return 'No session in progress. Session Scripts is where a live delivery starts.';
+    return 'No session in progress. Session Plans is where a live delivery starts.';
   }, [liveRun, liveRunState]);
 
   // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
@@ -3031,14 +3032,18 @@ export default function CoachWorkspace() {
                         Open. Acknowledge it from Needs You Now on the floor board above.
                       </p>
                     ) : escalation.status === 'open' ? (
-                      <button
-                        type="button"
-                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
-                        disabled={escalationAckBusyId !== null}
+                      // The armed second press, as on the board (#1678, F-129).
+                      <ArmedButton
                         className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                        armKey={escalation.escalation_id}
+                        disabled={escalationAckBusyId !== null && escalationAckBusyId !== escalation.escalation_id}
+                        busy={escalationAckBusyId === escalation.escalation_id}
+                        busyLabel="Acknowledging..."
+                        armedLabel={`Press again: acknowledge ${athleteName ?? `Athlete ID ${escalation.athlete_id}`}`}
+                        onConfirm={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
                       >
-                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
-                      </button>
+                        Acknowledge
+                      </ArmedButton>
                     ) : (
                       <p className="t-data text-[color:var(--bone-400)]">
                         Acknowledged. Closing it out is an admin decision and happens on the admin
@@ -3914,7 +3919,7 @@ export default function CoachWorkspace() {
                     <div role="status" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s3)] space-y-[var(--s2)]">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body font-semibold">
-                        {COACH_HOLD_SCOPE_LABEL[wellnessShown.holdWarning.scope]} is currently paused for this athlete ({wellnessShown.holdWarning.reasonCategory}).
+                        Training Hold on {COACH_HOLD_SCOPE_LABEL[wellnessShown.holdWarning.scope]} for this athlete ({wellnessShown.holdWarning.reasonCategory}).
                       </p>
                       <p className="t-body">{wellnessShown.holdWarning.athleteExplanation}</p>
                       <p className="t-body">
@@ -4253,14 +4258,14 @@ export default function CoachWorkspace() {
                   run state, and nothing here records what was delivered.
                 </p>
                 <p className="t-muted">
-                  Live delivery of an authored session script is real and runs on its own surface: the
+                  Live delivery of an authored session plan is real and runs on its own surface: the
                   server holds the clock, the block cursor, pauses, and the settled record of the night.
                   {liveRunState === 'loaded' && liveRun
                     ? ' You have a session in progress right now.'
                     : ''}
                 </p>
                 <Link href="/coach/session-scripts" className="btn">
-                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Scripts'}
+                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Plans'}
                 </Link>
 
                 <div className="space-y-[var(--s3)]">
@@ -4302,7 +4307,7 @@ export default function CoachWorkspace() {
           {activeTab === 'development' && (
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
-                title="Coach Development"
+                title="Your Coaching Growth"
                 description="Your personal coaching growth path. Track certifications, skills, and professional development."
                 usage={[
                   'Review your current coaching level',
@@ -4422,7 +4427,7 @@ export default function CoachWorkspace() {
                     did, in their own words, and shows up in the list below
                     like any other. */}
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-eyebrow">Your Development Work</h3>
+                  <h3 className="t-eyebrow">Your Growth Work</h3>
 
                   {developmentState === 'loading' && (
                     <p className="t-muted">Loading your development record...</p>
