@@ -10,6 +10,7 @@ import {
   getShadowResearchRequirementById,
   mayReadSubjectlessResearchRow,
   subjectAthleteIdOf,
+  type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { roleEquals } from '@/src/server/pilot/roleAlias';
 import {
@@ -77,23 +78,26 @@ export const runtime = 'nodejs';
  * (mayReadSubjectlessResearchRow; CL-A3, Jason 2026-10-06 "Staff only").
  * Organization admins administer the whole gym, so the organization predicate
  * the queries already carry is their reach.
+ *
+ * Answers the stored requirement when the actor may read it, null when not:
+ * the read shapes what it returns by that row (an asker's question, F-054).
  */
-async function mayReadRequirement(
+async function readableRequirement(
   actor: { accountId: string; role: PilotRole; organizationId: string; athleteId: string | null },
   requirementId: number,
   onPlatformShelf: boolean,
-): Promise<boolean> {
+): Promise<ShadowResearchRequirementRow | null> {
   // The row is read for the organization admin too: a marked-deleted asker's
   // question is unreachable by id for everyone (getShadowResearchRequirementById
   // answers null for it, F-054), and an id that names nothing is refused the
   // same way a missing row always was (hiddenNotFound).
   const requirement = await getShadowResearchRequirementById(actor.organizationId, requirementId);
   if (!requirement) {
-    return false;
+    return null;
   }
 
   if (isOrganizationAdminRole(actor.role)) {
-    return true;
+    return requirement;
   }
 
   const subjectAthleteId = subjectAthleteIdOf(requirement);
@@ -101,11 +105,11 @@ async function mayReadRequirement(
     // The platform shelf is the platform owner's own Library, where it is the
     // curator (OD-2026-10-02-015 D3); resolveLibraryShelf has already refused
     // that shelf to everyone else, and no gym member's words are on it.
-    return onPlatformShelf || mayReadSubjectlessResearchRow(actor, requirement);
+    return onPlatformShelf || mayReadSubjectlessResearchRow(actor, requirement) ? requirement : null;
   }
 
   const reachable = await accessibleAthleteIds(actor, [subjectAthleteId]);
-  return reachable.has(subjectAthleteId);
+  return reachable.has(subjectAthleteId) ? requirement : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -133,7 +137,7 @@ export async function GET(request: NextRequest) {
          if existence leaks. */
       const readable: number[] = [];
       for (const id of ids) {
-        if (await mayReadRequirement(actor, id, onPlatformShelf)) {
+        if (await readableRequirement(actor, id, onPlatformShelf)) {
           readable.push(id);
         }
       }
@@ -153,7 +157,8 @@ export async function GET(request: NextRequest) {
     /* One refusal for "does not exist", "another organization" and "a child
        you may not reach". research_requirement_id is a bigserial, so telling
        those apart is exactly what an enumerating caller wants. */
-    if (!(await mayReadRequirement(actor, requirementId, onPlatformShelf))) return hiddenNotFound();
+    const requirement = await readableRequirement(actor, requirementId, onPlatformShelf);
+    if (!requirement) return hiddenNotFound();
 
     const status = await getRequirementStatusInOrg(organizationId, requirementId);
     if (status === null) return hiddenNotFound();
@@ -161,9 +166,10 @@ export async function GET(request: NextRequest) {
     const items = await listSubmissionsForRequirement(organizationId, requirementId);
     // The ladder is computed from the stored rows; what the reader is sent
     // of them is the named family fields unless they are research staff or
-    // the platform shelf's curator (#1475 Part F, researchFamilyView.ts).
+    // the platform shelf's curator (#1475 Part F, researchFamilyView.ts), and
+    // a coach gets no note on an asker's question (F-054).
     return NextResponse.json({
-      items: researchSubmissionsForReader(principal, items, onPlatformShelf),
+      items: researchSubmissionsForReader(principal, items, onPlatformShelf, requirement),
       answer_state: deriveAnswerState(status, items),
     });
   } catch (error) {
@@ -227,7 +233,7 @@ export async function POST(request: NextRequest) {
     }
     // A coach attaches only to a requirement they may read: one about a child
     // they cannot reach is the same not-found as one that does not exist.
-    if (!isCurator && !(await mayReadRequirement({ ...principal, organizationId }, requirementId, false))) {
+    if (!isCurator && !(await readableRequirement({ ...principal, organizationId }, requirementId, false))) {
       return hiddenNotFound();
     }
     if (!(await sourceExistsInOrg(organizationId, sourceId))) {

@@ -705,6 +705,17 @@ describe('the add-athlete form', () => {
     expect(await screen.findByText('CDEF-3456-GHJK')).toBeTruthy();
   });
 
+  // F-102, Jason: "B: Change the guidance (Recommended)". The sign-in ID
+  // outlives the athlete's record, so the form steers away from a real name.
+  test('the sign-in ID guidance asks for a ring name or a number, not the athlete\'s real name', async () => {
+    await openAddAthlete();
+
+    const field = screen.getByLabelText('Sign-in ID') as HTMLInputElement;
+    expect(field.placeholder).toBe('southpaw12');
+    expect(screen.getByText(/Use their ring name or a number, not their real name/)).toBeTruthy();
+    expect(screen.queryByText(/jsmith/)).toBeNull();
+  });
+
   test('names every field still holding the submit button down', async () => {
     await openAddAthlete();
 

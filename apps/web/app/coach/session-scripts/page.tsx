@@ -8,7 +8,7 @@ import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import FinishedSessions from '@/components/FinishedSessions';
 import { apiBase } from '@/lib/apiBase';
-import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
+import { authoringStateWords, explainLine, renderingFormatWords, renderingOriginWords } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import { formatCalendarDay } from '@/lib/calendarDay';
@@ -819,10 +819,36 @@ function CoachSessionScripts() {
                 </ol>
                 )}
 
+                {/* The plan's other formats, each opened in place (audit
+                    2026-10-17 item 8), and said plainly whether an edit to the
+                    blocks above reaches it (sessionScriptAuthoring.ts,
+                    RENDERINGS FOLLOW THE BLOCKS). */}
                 {detail.renderings.length > 0 && (
-                  <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">
-                    Also authored for: {detail.renderings.map((r) => r.format.replace(/_/g, ' ')).join(', ')}.
-                  </p>
+                  <section aria-labelledby="session-plan-other-formats" className="mt-[var(--s5)] space-y-[var(--s2)]">
+                    <h4 id="session-plan-other-formats" className="t-label">Other formats of this plan</h4>
+                    {detail.renderings.map((rendering) => (
+                      <details
+                        key={rendering.rendering_id}
+                        className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.2)] px-[var(--s3)] py-[var(--s2)]"
+                      >
+                        <summary className="t-label min-h-[44px] cursor-pointer py-[var(--s3)]">
+                          {renderingFormatWords(rendering.format)}
+                        </summary>
+                        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                          {renderingOriginWords(rendering.format, rendering.generated_from_blocks)}
+                        </p>
+                        {(rendering.audience_note ?? '').trim() !== '' && (
+                          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                            <span className="t-label">For: </span>
+                            {rendering.audience_note}
+                          </p>
+                        )}
+                        {(rendering.body ?? '').trim() !== '' && (
+                          <p className="t-body mt-[var(--s2)] whitespace-pre-wrap text-[color:var(--bone-200)]">{rendering.body}</p>
+                        )}
+                      </details>
+                    ))}
+                  </section>
                 )}
               </>
             )}
