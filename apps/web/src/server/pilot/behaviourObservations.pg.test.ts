@@ -443,9 +443,9 @@ describe('a report filed under a session run is about an athlete marked present 
       [ORG, COACH],
     );
     await expect(writer.recordBehaviourObservation({ ...base, session: { runId: 'run-bw-3' } }))
-      .rejects.toThrow('That athlete is not marked present in that session run.');
+      .rejects.toThrow('That athlete is not marked present in that session run. Presence is marked on the live run screen.');
     await expect(writer.recordBehaviourObservation({ ...base, athleteId: TEAMMATE, session: { runId: 'run-bw-2' } }))
-      .rejects.toThrow('That athlete is not marked present in that session run.');
+      .rejects.toThrow('That athlete is not marked present in that session run. Presence is marked on the live run screen.');
     await expect(writer.recordBehaviourObservation({ ...base, athleteId: TEAMMATE, session: { runId: 'run-bw-1' } }))
       .resolves.toEqual(expect.objectContaining({ athlete_id: TEAMMATE, session_key: 'run:run-bw-1' }));
     await expect(writer.recordBehaviourObservation({

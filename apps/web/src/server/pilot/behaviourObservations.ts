@@ -248,17 +248,22 @@ async function sessionFor(
 ): Promise<{ sessionKey: string; run: { scriptId: string | null } | null }> {
   if ('runId' in session) {
     const runId = plainId(session.runId, 'session run');
-    const run = await client.query<{ script_id: string | null; present: boolean }>(
-      `select r.script_id,
-              exists (select 1 from pilot.session_run_athletes a
-                       where a.organization_id = r.organization_id and a.run_id = r.run_id
-                         and a.athlete_id = $3 and a.removed_at is null) as present
-         from pilot.session_script_runs r
-        where r.organization_id = $1 and r.run_id = $2`,
-      [organizationId, runId, athleteId],
+    const run = await client.query<{ script_id: string | null }>(
+      'select script_id from pilot.session_script_runs where organization_id = $1 and run_id = $2',
+      [organizationId, runId],
     );
     if (run.rows.length === 0) throw new ValidationError('That session run is not in this gym.');
-    if (!run.rows[0].present) throw new ValidationError('That athlete is not marked present in that session run.');
+    // The mark is held (for share) until this report commits: a mark taken
+    // back at the same moment waits, so it cannot pass a report for a child
+    // it has just recorded as not there.
+    const present = await exists(
+      client,
+      `select 1 from pilot.session_run_athletes
+        where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null
+        for share`,
+      [organizationId, runId, athleteId],
+    );
+    if (!present) throw new ValidationError('That athlete is not marked present in that session run. Presence is marked on the live run screen.');
     return { sessionKey: `run:${runId}`, run: { scriptId: run.rows[0].script_id } };
   }
   // Round-tripped, so 2026-02-31 (which Date.parse rolls into March) is refused.
