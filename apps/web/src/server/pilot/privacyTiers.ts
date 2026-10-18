@@ -627,6 +627,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
   'pilot.athlete_pathway_stages',
+  // A coach's report of what a child did in a drill, and why (lane L49). Staff only.
+  'pilot.behaviour_observations',
 ];
 
 /**

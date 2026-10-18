@@ -1,0 +1,491 @@
+// Real PostgreSQL proof of the learning-loop migration (lane L49,
+// infra/azure/pilot_slice_postgres_learning_loop_migration.sql) and of the
+// retention purge's step for it (scripts/pilot-cleanup-deleted-data.mjs,
+// deidentifyBehaviourObservations): behaviour reports are append-only, one
+// episode is one athlete/behaviour/session/drill, a bar is stored only with a
+// citation and a gym admin's name (Jason 2026-10-18 Q3, "Needs to be backed by
+// research"), and a purged child's reports stay under a token with the
+// coach's note gone (Jason 2026-10-06).
+//
+// Spins up the disposable local-only embedded Postgres the other suites use.
+// It NEVER connects to production or staging.
+
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
+
+import { Client } from 'pg';
+
+jest.setTimeout(240_000);
+
+const PG_USER = 'postgres';
+const PG_PASSWORD = 'postgres';
+const DATA_DIR = path.join(os.tmpdir(), `ppbf-learning-loop-pg-test-${Date.now()}`);
+const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
+const APPLY_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-apply-learning-loop-migration.mjs');
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+const MIGRATION_FILE = path.join(INFRA_DIR, 'pilot_slice_postgres_learning_loop_migration.sql');
+const TEST_DB_NAME = 'ppbf_test_learning_loop';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const ORG = 'org-ll-1';
+const OTHER_ORG = 'org-ll-2';
+const ATHLETE_A = 'ath-ll-a'; // purged: deleted three years ago (after its reports were made)
+const ATHLETE_B = 'ath-ll-b'; // live
+const ATHLETE_X = 'ath-ll-x'; // the other gym's
+const COACH = 'acct-ll-coach';
+const SECOND_COACH = 'acct-ll-coach-2';
+const OFFICE = 'acct-ll-office'; // organization_admin
+const LAPSED_COACH = 'acct-ll-lapsed'; // membership inactive
+const LEAVING_COACH = 'acct-ll-leaving'; // account deleted mid-suite
+const OTHER_GYM_COACH = 'acct-ll-other';
+const KEY = 'drops_lead_hand_after_jab';
+const RETIRED_KEY = 'old_name_for_it';
+const NOTE_A = 'NOTE-LL-A-5521 Rosa dropped it again after the double jab';
+
+let PG_PORT: number;
+let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
+let db: Client;
+
+function connectionStringFor(database: string): string {
+  return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        const { port } = address;
+        server.close(() => resolve(port));
+        return;
+      }
+      server.close(() => reject(new Error('Could not determine a free port')));
+    });
+  });
+}
+
+function runCleanupScript(extraEnv: Record<string, string>) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(TEST_DB_NAME),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: TEST_DB_NAME,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          PPBF_RETENTION_STORAGE_ACCOUNT_URL: '',
+          ...extraEnv,
+        },
+      },
+      (_error, stdout, stderr) => {
+        const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+        if (!line) {
+          reject(new Error(`No JSON output. stdout=${stdout} stderr=${stderr}`));
+          return;
+        }
+        resolve(JSON.parse(line) as Record<string, unknown>);
+      },
+    );
+  });
+}
+
+interface Report {
+  organizationId?: string;
+  athleteId?: string;
+  behaviourKey?: string;
+  episodeId?: string;
+  sessionKey?: string;
+  taskContextKey?: string;
+  polarity?: string;
+  observer?: string;
+  authorRole?: string;
+  supersedes?: string | null;
+  note?: string;
+  sourceType?: string;
+  interpretation?: string;
+}
+
+const EPISODE_1 = 'ep:11111111-1111-4111-8111-111111111111';
+const EPISODE_2 = 'ep:22222222-2222-4222-8222-222222222222';
+
+async function report(r: Report = {}): Promise<string> {
+  const result = await db.query<{ observation_id: string }>(
+    `insert into pilot.behaviour_observations
+       (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key,
+        task_constraint, polarity, attribution_target, attribution_certainty, source_type,
+        source_quality, interpretation, observer_account_id, author_role, supersedes_observation_id,
+        note, observed_at)
+     values ($1, $2, $3, $4, $5, $6, 'controlled', $7, 'athlete', 'probable', $8, 'moderate', $9,
+             $10, $11, $12, $13, now())
+     returning observation_id`,
+    [
+      r.organizationId ?? ORG, r.athleteId ?? ATHLETE_B, r.behaviourKey ?? KEY, r.episodeId ?? EPISODE_1,
+      r.sessionKey ?? 'run:run-ll-1', r.taskContextKey ?? 'drill:drill-ll-1', r.polarity ?? 'occurrence',
+      r.sourceType ?? 'coach_tag', r.interpretation ?? 'human_observed', r.observer ?? COACH,
+      r.authorRole ?? 'coach', r.supersedes ?? null, r.note ?? '',
+    ],
+  );
+  return result.rows[0].observation_id;
+}
+
+/** The refusal a statement raises: its SQLSTATE and the constraint it names. */
+async function refusal(run: () => Promise<unknown>): Promise<{ code?: string; constraint?: string }> {
+  try {
+    await run();
+  } catch (error) {
+    const pgError = error as { code?: string; constraint?: string };
+    return { code: pgError.code, constraint: pgError.constraint };
+  }
+  return { code: 'NO_REFUSAL' };
+}
+
+async function policy(input: {
+  kind?: string; version?: number; citations?: unknown; by?: string; role?: string; supersedes?: string | null;
+}): Promise<string> {
+  const result = await db.query<{ policy_id: string }>(
+    `insert into pilot.learning_policies
+       (organization_id, policy_kind, version, parameters, citations, ratified_by_account_id, ratified_by_role,
+        supersedes_policy_id)
+     values ($1, $2, $3, '{"minimumOccurrences": 3}'::jsonb, $4::jsonb, $5, $6, $7)
+     returning policy_id`,
+    [
+      ORG, input.kind ?? 'pattern_formation', input.version ?? 1,
+      JSON.stringify(input.citations ?? [{ source: 'Kratochwill et al. 2013, single-case design standards', note: 'phase length' }]),
+      input.by ?? OFFICE, input.role ?? 'organization_admin', input.supersedes ?? null,
+    ],
+  );
+  return result.rows[0].policy_id;
+}
+
+beforeAll(async () => {
+  PG_PORT = await freePort();
+
+  serverProcess = spawn(
+    process.execPath,
+    [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  ) as ChildProcessByStdio<null, Readable, Readable>;
+  let stderrOutput = '';
+  serverProcess.stderr.on('data', (chunk) => {
+    stderrOutput += String(chunk);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const rl = readline.createInterface({ input: serverProcess.stdout });
+    const timeout = setTimeout(() => {
+      rl.close();
+      reject(new Error(`Embedded Postgres did not become ready in time. stderr:\n${stderrOutput}`));
+    }, 120_000);
+    rl.on('line', (line) => {
+      if (line.includes('EMBEDDED_PG_READY')) {
+        clearTimeout(timeout);
+        rl.close();
+        resolve();
+      }
+    });
+    serverProcess.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Embedded Postgres exited early (code ${code}). stderr:\n${stderrOutput}`));
+    });
+  });
+
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${TEST_DB_NAME}`);
+  await admin.query(`create database ${TEST_DB_NAME}`);
+  await admin.end();
+
+  db = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await db.connect();
+  // The schema production runs, this migration included through the workflow's `all` list.
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  await (helper.applyFullSchema as (client: Client, opts?: { infraDir?: string }) => Promise<unknown>)(db, {
+    infraDir: INFRA_DIR,
+  });
+
+  await db.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, 'Punxsy Prominence', 'active'), ($2, 'Other Gym', 'active')`,
+    [ORG, OTHER_ORG],
+  );
+  for (const [accountId, role, organizationId] of [
+    [COACH, 'coach', ORG], [SECOND_COACH, 'coach', ORG], [OFFICE, 'organization_admin', ORG],
+    [LAPSED_COACH, 'coach', ORG], [LEAVING_COACH, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
+  ]) {
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
+      [accountId, role, organizationId],
+    );
+  }
+  await db.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $7, 'coach', true), ($2, $7, 'coach', true), ($3, $7, 'organization_admin', true),
+            ($4, $7, 'coach', false), ($5, $7, 'coach', true), ($6, $8, 'coach', true)`,
+    [COACH, SECOND_COACH, OFFICE, LAPSED_COACH, LEAVING_COACH, OTHER_GYM_COACH, ORG, OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.athletes
+       (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+        emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+     values
+       ($1, $2, 'Rosa Ortiz', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $4, now(), now(), null),
+       ($1, $3, 'Sam Rivera', '2011-02-09', 'youth-65', 'active', 'Guardian', true, $4, now(), now(), null)`,
+    [ORG, ATHLETE_A, ATHLETE_B, COACH],
+  );
+  await db.query(
+    `insert into pilot.athletes
+       (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+        emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+     values ($1, $2, 'Other Kid', '2012-01-01', 'youth-60', 'active', 'Guardian', true, $3, now(), now(), null)`,
+    [OTHER_ORG, ATHLETE_X, OTHER_GYM_COACH],
+  );
+  await db.query(
+    `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, status, created_by_account_id)
+     values ($1, $3, 'Drops lead hand after the jab', 'SK-JAB-01', 'active', $4),
+            ($1, $5, 'Old name for it', 'SK-JAB-01', 'retired', $4),
+            ($2, $3, 'Drops lead hand after the jab', 'SK-JAB-01', 'active', null)`,
+    [ORG, OTHER_ORG, KEY, COACH, RETIRED_KEY],
+  );
+});
+
+afterAll(async () => {
+  await db?.end().catch(() => {});
+
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+    const safetyTimer = setTimeout(finish, 15_000);
+    safetyTimer.unref();
+    serverProcess.once('exit', finish);
+    serverProcess.kill('SIGTERM');
+  });
+});
+
+describe('the learning-loop migration', () => {
+  test('re-applies cleanly through its runner, readiness included', async () => {
+    const runner = await nativeDynamicImport(pathToFileURL(APPLY_SCRIPT).href);
+    const sql = await fs.readFile(MIGRATION_FILE, 'utf8');
+    await expect(
+      (runner.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>)(db, sql),
+    ).resolves.toBeUndefined();
+  });
+
+  test('a behaviour name is a slug under one skill code', async () => {
+    const insertKey = (key: string, skill: string) => () => db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id) values ($1, $2, 'A name', $3)`,
+      [ORG, key, skill],
+    );
+    expect(await refusal(insertKey('Drops Hand', 'SK-JAB-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_key_check' });
+    expect(await refusal(insertKey('drops_hand', 'SKILL-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_skill_check' });
+  });
+
+  test('two coaches report one rep as one episode; the same coach revises their own call', async () => {
+    const first = await report({ athleteId: ATHLETE_A, observer: COACH, note: NOTE_A });
+    await report({ athleteId: ATHLETE_A, observer: SECOND_COACH, polarity: 'counterexample' });
+    const revision = await report({ athleteId: ATHLETE_A, observer: COACH, supersedes: first, polarity: 'counterexample' });
+    expect(revision).toEqual(expect.any(String));
+    const rows = await db.query(
+      `select count(*)::int as n from pilot.behaviour_observations where organization_id = $1 and episode_id = $2`,
+      [ORG, EPISODE_1],
+    );
+    expect(rows.rows[0].n).toBe(3);
+  });
+
+  test('each refusal names itself', async () => {
+    const cases: [string, Report, { code: string; constraint: string }][] = [
+      ["another gym's athlete", { athleteId: ATHLETE_X, episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_live_athlete' }],
+      ['an observer from another gym', { observer: OTHER_GYM_COACH, episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_observer_of_this_gym' }],
+      ['a lapsed membership', { observer: LAPSED_COACH, episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_observer_of_this_gym' }],
+      ['a role the observer does not hold', { observer: COACH, authorRole: 'organization_admin', episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_observer_of_this_gym' }],
+      ['a retired behaviour name', { behaviourKey: RETIRED_KEY, episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_active_key' }],
+      ['one episode, two sessions', { athleteId: ATHLETE_A, sessionKey: 'day:2026-10-18' }, { code: '23514', constraint: 'pilot_behaviour_observations_one_episode' }],
+      ['one episode, two athletes', { athleteId: ATHLETE_B }, { code: '23514', constraint: 'pilot_behaviour_observations_one_episode' }],
+      ['a session key of no known shape', { sessionKey: 'tuesday', episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_session_check' }],
+      ['a model proposal', { interpretation: 'ai_proposed', episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_interpretation_check' }],
+      ['film as the source', { sourceType: 'computer_vision', episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_source_check' }],
+      ['a new row under a token', { athleteId: 'anon_123', episodeId: EPISODE_2 }, { code: '23514', constraint: 'pilot_behaviour_observations_live_athlete' }],
+    ];
+    for (const [label, input, expected] of cases) {
+      expect({ label, ...(await refusal(() => report(input))) }).toEqual({ label, ...expected });
+    }
+  });
+
+  test("a revision is the observer's own, and a report is revised once", async () => {
+    const original = await report({ athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH });
+    expect(await refusal(() => report({
+      athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: SECOND_COACH, supersedes: original,
+    }))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_own_revision' });
+    await report({ athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: original });
+    expect(await refusal(() => report({
+      athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: original,
+    }))).toEqual({ code: '23505', constraint: 'idx_behaviour_observations_one_successor' });
+  });
+
+  test('a report is never edited or deleted by hand, nor de-identified with anything else moved', async () => {
+    const id = await report({ athleteId: ATHLETE_B, episodeId: 'attempt:att-ll-1', observer: COACH });
+    const appendOnly = { code: '23514', constraint: 'pilot_behaviour_observations_append_only' };
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_observations set polarity = 'counterexample' where observation_id = $1`, [id],
+    ))).toEqual(appendOnly);
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_observations
+          set athlete_id = 'anon_x', note = '', deidentified_at = now(), polarity = 'counterexample'
+        where observation_id = $1`, [id],
+    ))).toEqual(appendOnly);
+    expect(await refusal(() => db.query(
+      `delete from pilot.behaviour_observations where observation_id = $1`, [id],
+    ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_no_delete' });
+  });
+
+  test("an observer's account going leaves the report, without the observer", async () => {
+    const id = await report({ athleteId: ATHLETE_B, episodeId: 'attempt:att-ll-2', observer: LEAVING_COACH });
+    await db.query('delete from pilot.organization_memberships where account_id = $1', [LEAVING_COACH]);
+    await db.query('delete from pilot.accounts where account_id = $1', [LEAVING_COACH]);
+    const row = await db.query(
+      'select observer_account_id, author_role from pilot.behaviour_observations where observation_id = $1', [id],
+    );
+    expect(row.rows).toEqual([{ observer_account_id: null, author_role: 'coach' }]);
+  });
+
+  test('a bar needs a cited source, a gym admin, and a clean version chain', async () => {
+    expect(await refusal(() => policy({ citations: [] })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citations_check' });
+    expect(await refusal(() => policy({ citations: [{ note: 'no source' }] })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citation_source' });
+    expect(await refusal(() => policy({ by: COACH, role: 'coach' })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_role_check' });
+    expect(await refusal(() => policy({ by: COACH, role: 'organization_admin' })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_ratifier_of_this_gym' });
+
+    const v1 = await policy({});
+    expect(await refusal(() => policy({ version: 2 })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_version_chain' });
+    expect(await refusal(() => policy({ version: 2, supersedes: v1 })))
+      .toEqual({ code: '23505', constraint: 'idx_learning_policies_one_active' });
+    await db.query(`update pilot.learning_policies set status = 'superseded' where policy_id = $1`, [v1]);
+    const v2 = await policy({ version: 2, supersedes: v1 });
+
+    expect(await refusal(() => db.query(
+      `update pilot.learning_policies set parameters = '{}'::jsonb where policy_id = $1`, [v2],
+    ))).toEqual({ code: '23514', constraint: 'pilot_learning_policies_versioned' });
+    expect(await refusal(() => db.query('delete from pilot.learning_policies where policy_id = $1', [v2])))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_no_delete' });
+    // The other kind has its own chain and its own bar in force.
+    await expect(policy({ kind: 'athlete_lesson' })).resolves.toEqual(expect.any(String));
+  });
+
+  test('the new intervention columns hold real behaviour names and the observation context shape', async () => {
+    const shape = await db.query(
+      `select
+         (select confrelid::regclass::text from pg_constraint
+           where conname = 'pilot_intervention_protocols_behaviour_key_fk') as fk_target,
+         (select pg_get_constraintdef(oid) from pg_constraint
+           where conname = 'pilot_intervention_executions_trained_context_key_check') as context_check`,
+    );
+    expect(shape.rows[0].fk_target).toBe('pilot.behaviour_keys');
+    expect(shape.rows[0].context_check).toContain('(drill|block|context)');
+  });
+});
+
+describe('the retention purge and a purged child\'s behaviour reports', () => {
+  const namingA = async () => Number((await db.query(
+    `select count(*) as n from pilot.behaviour_observations where organization_id = $1 and athlete_id = $2`,
+    [ORG, ATHLETE_A],
+  )).rows[0].n);
+
+  beforeAll(async () => {
+    // A coach's chat turn about A, so A's two tokens can be compared.
+    await db.query(
+      `insert into pilot.shadow_chat_audit (organization_id, user_id, user_role, athlete_id, user_message, shadow_response)
+       values ($1, $2, 'coach', $3, 'what should Rosa work on', 'Her guard after the jab.')`,
+      [ORG, COACH, ATHLETE_A],
+    );
+    // A was deleted three years ago, after the reports above were made.
+    await db.query(
+      `update pilot.athletes set active_flag = false, deleted_at = now() - interval '3 years'
+        where organization_id = $1 and athlete_id = $2`,
+      [ORG, ATHLETE_A],
+    );
+  });
+
+  test('a dry run counts the reports it would de-identify and changes nothing', async () => {
+    const dry = await runCleanupScript({ PPBF_RETENTION_APPLY: 'false' });
+    expect(dry.event).toBe('retention.cleanup.dry-run');
+    expect(dry.blocked_by ?? {}).toEqual({});
+    expect(dry.would_deidentify_behaviour_observations).toBe(3);
+    expect(await namingA()).toBe(3);
+  });
+
+  test("the purge keeps A's reports under A's one token, without the coach's note", async () => {
+    const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.blocked_by ?? {}).toEqual({});
+    expect(event.athletes).toBe(1);
+    expect(event.behaviour_observations_deidentified).toBe(3);
+    expect(await namingA()).toBe(0);
+
+    const kept = await db.query(
+      `select distinct athlete_id, behaviour_key, episode_id, note, deidentified_at is not null as stamped
+         from pilot.behaviour_observations where organization_id = $1 and episode_id = $2`,
+      [ORG, EPISODE_1],
+    );
+    expect(kept.rows).toHaveLength(1);
+    expect(kept.rows[0]).toEqual({
+      athlete_id: expect.stringMatching(/^anon_/), behaviour_key: KEY, episode_id: EPISODE_1, note: '', stamped: true,
+    });
+    const audit = await db.query(
+      `select athlete_id from pilot.shadow_chat_audit where organization_id = $1 and user_id = $2`, [ORG, COACH],
+    );
+    expect(audit.rows.map((row) => row.athlete_id)).toEqual([kept.rows[0].athlete_id]);
+    const anywhere = await db.query(
+      `select count(*)::int as n from pilot.behaviour_observations where note like '%NOTE-LL-A-5521%'`,
+    );
+    expect(anywhere.rows[0].n).toBe(0);
+    // B's reports, and the other gym's names, are untouched.
+    const others = await db.query(
+      `select count(*)::int as n from pilot.behaviour_observations where organization_id = $1 and athlete_id = $2`,
+      [ORG, ATHLETE_B],
+    );
+    expect(others.rows[0].n).toBe(4);
+  });
+
+  test('an athlete deleted without the purge takes their reports with them', async () => {
+    await db.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, ATHLETE_B]);
+    const left = await db.query(
+      `select count(*)::int as n from pilot.behaviour_observations where organization_id = $1 and athlete_id = $2`,
+      [ORG, ATHLETE_B],
+    );
+    expect(left.rows[0].n).toBe(0);
+    // The de-identified rows were never the athlete's to take.
+    const kept = await db.query(
+      `select count(*)::int as n from pilot.behaviour_observations where organization_id = $1 and deidentified_at is not null`,
+      [ORG],
+    );
+    expect(kept.rows[0].n).toBe(3);
+  });
+});

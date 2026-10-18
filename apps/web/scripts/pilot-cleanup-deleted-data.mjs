@@ -327,7 +327,7 @@ function emptyShadowCounts() {
     shadowFlaggedConversations: 0, shadowFlaggedMessagesDeleted: 0,
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowEventsDeleted: 0,
+    shadowEventsDeleted: 0, behaviourObservations: 0,
   };
 }
 
@@ -969,6 +969,24 @@ async function deidentifyShadowChatAudit(client, tables, people) {
  * others, and the constraint that blocked it has to reach the log by name or
  * nobody can act on it.
  */
+/* A COACH'S BEHAVIOUR REPORTS ABOUT THE CHILD (pilot.behaviour_observations, lane
+   L49) are coaching records the learning loop keeps de-identified (Jason
+   2026-10-06; Q5 "Keep coaching, delete medical"): the athlete key becomes
+   the person's token -- the same one the chat log gets -- and the coach's
+   typed note goes; the behaviour, context and timing stay. Runs before the
+   athlete row goes, whose follow trigger deletes any report still naming the
+   child, so a purge that rolls back leaves every report as it was. */
+async function deidentifyBehaviourObservations(client, tables, athlete, token) {
+  if (!tables.behaviourObservations) return 0;
+  const result = await client.query(
+    `update pilot.behaviour_observations
+        set athlete_id = $3, note = '', deidentified_at = now()
+      where organization_id = $1 and athlete_id = $2`,
+    [athlete.organization_id, athlete.athlete_id, token],
+  );
+  return result.rowCount ?? 0;
+}
+
 async function attemptPurge(client, athletes, accountIds, { tables, blobStore }) {
   const blocked = {};
   const record = (error) => {
@@ -1201,6 +1219,10 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       const flaggedHere = await deidentifyFlaggedConversations(
         client, tables, athleteLogins, athlete.organization_id, receiptToken, knownNames,
       );
+      // One token for the person (SHADOW_OPERATIONAL_TABLES), minted before
+      // the athlete row goes so their behaviour reports can carry it too.
+      const token = anonymousToken();
+      const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token);
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -1220,6 +1242,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let retiredHere = 0;
       let correctionsHere = 0;
       const shadowHere = emptyShadowCounts();
+      shadowHere.behaviourObservations = behaviourHere;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           await client.query(
@@ -1259,8 +1282,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           }
         }
         /* The same athlete-role logins as the corrections above, and the
-           athlete's own record: one token for the person (SHADOW_OPERATIONAL_TABLES). */
-        const token = anonymousToken();
+           athlete's own record: the person's one token, minted above. */
         const subject = { organizationId: athlete.organization_id, athleteId: athlete.athlete_id };
         Object.assign(shadowHere, await deleteShadowOperationalRows(client, tables, athleteLogins));
         shadowHere.shadowProfileMentions = await clearShadowProfileMentions(client, tables, [subject]);
@@ -1772,6 +1794,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
+    [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
   };
 }
 
@@ -1866,6 +1889,7 @@ async function main() {
               exists (select 1 from information_schema.columns
                        where table_schema = 'pilot' and table_name = 'shadow_human_review_queue'
                          and column_name = 'deidentified_at') as "deidentifyKeys",
+              to_regclass('pilot.behaviour_observations') is not null as "behaviourObservations",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
