@@ -6,6 +6,9 @@ import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { explainLine } from '@/src/lib/sessionScriptWords';
 import RoundTimerControls from '@/components/RoundTimerControls';
+import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
+import { readReferenceInstruction } from '@/components/drills/drillInstructionRead';
+import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
@@ -234,6 +237,29 @@ export default function SessionScriptLiveDelivery({
   const currentBlock = currentIndex >= 0 ? blocks[currentIndex] : null;
   const previousBlock = currentIndex > 0 ? blocks[currentIndex - 1] : null;
   const nextBlock = currentIndex >= 0 && currentIndex < blocks.length - 1 ? blocks[currentIndex + 1] : null;
+
+  // THE DRILL BEHIND THE CURRENT BLOCK (audit 2026-10-17 item 1). A plan made
+  // from a template copies a step's name, minutes, scale, contact and note, not
+  // the drill's setup, execution, cues or corrections. The coach opens the drill
+  // the block links -- that version, through the drill library's own read
+  // (readReferenceInstruction, as the Coach Cards page does) and its own
+  // DrillDetail, with the block's scale level opened -- in place under the
+  // block, so the session keeps running, and closes it to return to the block.
+  // Opening writes nothing. The panel belongs to the block it was opened from:
+  // when the session moves on, it is no longer shown.
+  const drill = useDrillOpener();
+  const drillOpen = currentBlock !== null && drill.openKey === currentBlock.block_id;
+  function toggleDrill(block: Block) {
+    if (drill.openKey === block.block_id) {
+      drill.close();
+      return;
+    }
+    const referenceDrillId = block.drill_id;
+    if (referenceDrillId === null) return;
+    drill.open(block.block_id, `live-block-instructions-${block.block_id}`, (signal) =>
+      readReferenceInstruction(referenceDrillId, signal),
+    );
+  }
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
@@ -733,6 +759,28 @@ export default function SessionScriptLiveDelivery({
                   {line.value}
                 </p>
               ))}
+              {currentBlock.drill_id !== null && (
+                <div className="mt-[var(--s3)]">
+                  <button
+                    type="button"
+                    id={`live-block-instructions-${currentBlock.block_id}`}
+                    className="btn btn--ghost"
+                    aria-expanded={drillOpen}
+                    aria-label={`${drillOpen ? 'Hide' : 'View'} instructions: ${currentBlock.block_label}`}
+                    onClick={() => toggleDrill(currentBlock)}
+                  >
+                    {drillOpen ? 'Hide instructions' : 'View instructions'}
+                  </button>
+                  {drillOpen && (
+                    <CoachInstructionPanel
+                      loading={drill.loading}
+                      failed={drill.failed}
+                      opened={drill.opened}
+                      chosenScale={currentBlock.scale_level}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <p className="mt-[var(--s4)] text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
