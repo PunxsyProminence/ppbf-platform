@@ -4414,6 +4414,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-attendance/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-attendance",
+    "gate": "requirePrincipal + requireRole(ATTENDANCE_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "One athlete's attendance over the last 28 days (present / (present + absent) marked days, excused not counted, null with no register) and days since the last present day, from pilot.attendance_reconciled via attendancePrecedence.ts getAttendanceLast28Days. Coaches only = coach + organization_admin + admin (OD-2026-10-17-026 (c)). Read-only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-body-mass/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-body-mass",

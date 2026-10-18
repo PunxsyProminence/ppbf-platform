@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { type AttendanceWindowView, attendanceRateWords, daysSinceWords, isAttendanceWindow } from '@/src/lib/attendanceWords';
 import ClusterNav from '@/components/ClusterNav';
 
 // Read-only rollup over data the gym already records: session logs and RPE
@@ -12,6 +13,8 @@ import ClusterNav from '@/components/ClusterNav';
 // pilot.attendance_reconciled), and the progression loop.
 // Numbers are labeled by their actual source -- "training days" counts
 // present days in that register, deliberately NOT an attendance percentage.
+// The attendance figure beside it (OD-2026-10-17-026 (c)) is a percentage of
+// the days the register MARKED in the last 28 days, said with its counts.
 interface PerformanceItem {
   athlete_id: string;
   full_name: string;
@@ -30,6 +33,8 @@ interface PerformanceItem {
   open_gaps: number;
   active_assignments: number;
   avg_assignment_completion: number | null;
+  /** Always the last 28 days from the register (OD-2026-10-17-026 (c)), whatever the window. */
+  attendance_28d?: AttendanceWindowView | null;
 }
 
 const WINDOW_CHOICES = [7, 28, 90] as const;
@@ -299,6 +304,14 @@ export default function PerformanceAnalyticsPage() {
                     </Figure>
                     <Figure label="Training days">
                       {item.training_days_recorded === 0 ? '—' : item.training_days}
+                    </Figure>
+                    {/* Present / (present + absent) days the register marked,
+                        with the counts beside it; always the last 28 days. */}
+                    <Figure label="Attendance, last 28 days">
+                      {isAttendanceWindow(item.attendance_28d) ? attendanceRateWords(item.attendance_28d) : '—'}
+                    </Figure>
+                    <Figure label="Last session">
+                      {isAttendanceWindow(item.attendance_28d) ? daysSinceWords(item.attendance_28d) : '—'}
                     </Figure>
                     <Figure label="Readiness">
                       {formatNumber(item.avg_readiness)}

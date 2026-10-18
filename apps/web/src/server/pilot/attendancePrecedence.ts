@@ -190,6 +190,102 @@ export async function getAthleteAttendanceTotals(
   };
 }
 
+/** The attendance window coaches read (OD-2026-10-17-026 (c), Jason: "A: All three (Rec.)"). */
+export const ATTENDANCE_RATE_WINDOW_DAYS = 28;
+
+export interface AthleteAttendanceWindow {
+  athlete_id: string;
+  /** Gym-local days, inclusive: the last ATTENDANCE_RATE_WINDOW_DAYS days up to today. */
+  window_from: string;
+  window_to: string;
+  days_present: number;
+  days_absent: number;
+  days_excused: number;
+  /**
+   * present / (present + absent) over the window, 3 decimals. Excused days
+   * are not counted against the rate. NULL when the window has no present or
+   * absent mark at all: nobody took the register, which is not 0%.
+   */
+  attendance_rate: number | null;
+  /** The latest gym-local day marked PRESENT, up to today, however long ago. */
+  last_present_day: string | null;
+  /** Whole days from last_present_day to today (0 = today); null = never marked present. */
+  days_since_last_present: number | null;
+}
+
+function dayNumber(isoDay: string): number {
+  return Math.round(Date.parse(`${isoDay}T00:00:00Z`) / 86_400_000);
+}
+
+function dayFromNumber(day: number): string {
+  return new Date(day * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The last 28 days' attendance and the days since the last session, for a
+ * NAMED SET of athletes the caller has already cleared through the
+ * athlete-access contract (no "all" mode, as attendanceOnDay). One row per
+ * athlete-day from the view, so two classes on one day are one day.
+ *
+ * THE DENOMINATOR IS THE REGISTER. A day counts against the rate only when
+ * someone marked the athlete absent that day; a day with no mark is not an
+ * absence (see attendanceOnDay), and an excused day is neither. So the rate
+ * reads "present on N of the M days the register marked", and the counts are
+ * returned beside it for the screen to say exactly that.
+ *
+ * `today` is the gym-local day (gymDayIso), passed in so tests are fixed.
+ */
+export async function getAttendanceLast28Days(
+  organizationId: string,
+  athleteIds: readonly string[],
+  today: string,
+): Promise<Map<string, AthleteAttendanceWindow>> {
+  const result = new Map<string, AthleteAttendanceWindow>();
+  if (athleteIds.length === 0) return result;
+  const todayNumber = dayNumber(today);
+  const windowFrom = dayFromNumber(todayNumber - (ATTENDANCE_RATE_WINDOW_DAYS - 1));
+
+  const rows = await query<{
+    athlete_id: string;
+    days_present: number;
+    days_absent: number;
+    days_excused: number;
+    last_present_day: string | null;
+  }>(
+    `select athlete_id,
+            (count(*) filter (where status = 'present' and attendance_date >= $3::date))::int as days_present,
+            (count(*) filter (where status = 'absent' and attendance_date >= $3::date))::int as days_absent,
+            (count(*) filter (where status = 'excused' and attendance_date >= $3::date))::int as days_excused,
+            (max(attendance_date) filter (where status = 'present'))::text as last_present_day
+     from pilot.attendance_reconciled
+     where organization_id = $1
+       and athlete_id = any($2::text[])
+       and attendance_date <= $4::date
+     group by athlete_id`,
+    [organizationId, [...athleteIds], windowFrom, today],
+  );
+  const byAthlete = new Map(rows.map((row) => [row.athlete_id, row]));
+
+  for (const athleteId of athleteIds) {
+    const row = byAthlete.get(athleteId);
+    const present = Number(row?.days_present ?? 0);
+    const absent = Number(row?.days_absent ?? 0);
+    const lastPresent = row?.last_present_day ?? null;
+    result.set(athleteId, {
+      athlete_id: athleteId,
+      window_from: windowFrom,
+      window_to: today,
+      days_present: present,
+      days_absent: absent,
+      days_excused: Number(row?.days_excused ?? 0),
+      attendance_rate: present + absent === 0 ? null : Math.round((present / (present + absent)) * 1000) / 1000,
+      last_present_day: lastPresent,
+      days_since_last_present: lastPresent === null ? null : todayNumber - dayNumber(lastPresent),
+    });
+  }
+  return result;
+}
+
 export interface OrganizationParticipationTotals {
   /** Distinct athletes with at least one PRESENT day in the window. This is
    * the unduplicated participant count a funder report actually asks for. */
