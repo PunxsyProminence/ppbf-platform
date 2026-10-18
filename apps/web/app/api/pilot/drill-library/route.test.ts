@@ -684,6 +684,22 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
     expect(mockGrounding.mock.calls).toEqual([['org-1', ['A2-063', 'Z9-999']]]);
   });
 
+  it('answers the drill with grounding_evidence null when the Library read fails, rather than failing the drill', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9', grounding_claim_ids: ['A2-063'] });
+    mockGrounding.mockRejectedValue(Object.assign(new Error('library down'), { code: '57P01' }));
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await GET(getRequest('drill_id=drl-9'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.drill).toEqual({ drill_id: 'drl-9', grounding_claim_ids: ['A2-063'] });
+    expect(body.grounding_evidence).toBeNull();
+    expect(logged).toHaveBeenCalledWith({ event: 'drill-grounding-evidence-read-failed', drill_id: 'drl-9', code: '57P01' });
+    logged.mockRestore();
+  });
+
   it('asks about no claim ids for a drill that cites none', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockDetail.mockResolvedValue({ drill_id: 'drl-9' });

@@ -1,5 +1,6 @@
 import { query } from './db';
-import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
+import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
+import { libraryRetrievalOrganizationIds, PLATFORM_LIBRARY_ORGANIZATION_ID } from './platformLibraryScope';
 
 // WHAT A DRILL'S GROUNDING CLAIM IDS POINT AT (audit 2026-10-17 item 11).
 //
@@ -11,15 +12,14 @@ import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 // resolves to nothing. An id is never shown as if it were verification.
 //
 // THREE ANSWERS PER ID, never a fourth:
-//   found        a chunk SHADOW itself would serve. The predicate below is the
-//                one the Library's retrieval queries apply
-//                (shadowLibrary.ts searchShadowLibrary, keyword and semantic
-//                paths): source active, approved, verified and not suppressed;
-//                document indexed, approved and verified.
+//   found        a chunk SHADOW itself would serve: libraryServability.ts's
+//                two predicates, the bar searchShadowLibrary sets (source
+//                active, approved, verified and not suppressed; document
+//                indexed, approved and verified), written once there.
 //   not_cleared  the claim is in the Library but not cleared for use --
-//                awaiting review, rejected, suppressed or retracted. Its text
-//                is not returned: what SHADOW will not serve, a drill screen
-//                does not serve either.
+//                awaiting review, rejected, archived, suppressed, not yet
+//                indexed. Its text is not returned: what SHADOW will not
+//                serve, a drill screen does not serve either.
 //   not_found    no chunk carries the id.
 //
 // ATHLETE-SCOPED MATERIAL IS NEVER A CANDIDATE. A chunk or document with a
@@ -151,18 +151,13 @@ export async function resolveDrillGroundingEvidence(
   const ids = [...new Set(claimIds.map((id) => id.trim()).filter(Boolean))];
   if (ids.length === 0) return [];
 
-  // Cleared rows first, then the most authoritative, so the first row per id
-  // is the one to show.
+  // Cleared rows first, then the platform baseline -- the research program's
+  // own copy of the claim -- over a gym shelf carrying the same id, then the
+  // most authoritative, so the first row per id is the one to show.
   const rows = await query<ChunkRow>(
     `select c.metadata->>'claim_id' as claim_id,
-            (s.status = 'active'
-              and s.approval_state = 'approved'
-              and s.verification_state = 'verified'
-              and not coalesce(s.retrieval_suppressed, false)
-              and d.ingest_state = 'indexed'
-              and d.index_completed_at is not null
-              and d.approval_state = 'approved'
-              and d.verification_state = 'verified') as cleared,
+            (${SERVABLE_LIBRARY_SOURCE_SQL}
+              and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}) as cleared,
             c.text_content, c.metadata,
             s.title as source_title, s.publisher as source_publisher, s.source_type,
             s.publication_date::text as publication_date, s.url as source_url, s.authority_tier
@@ -175,8 +170,8 @@ export async function resolveDrillGroundingEvidence(
         and d.subject_id is null
         and not (d.metadata ? 'subject_purged_at')
         and not (c.metadata ? 'subject_purged_at')
-      order by claim_id, cleared desc, s.authority_tier asc, c.chunk_id asc`,
-    [libraryRetrievalOrganizationIds(organizationId), ids],
+      order by claim_id, cleared desc, (c.organization_id = $3) desc, s.authority_tier asc, c.chunk_id asc`,
+    [libraryRetrievalOrganizationIds(organizationId), ids, PLATFORM_LIBRARY_ORGANIZATION_ID],
   );
 
   const firstById = new Map<string, ChunkRow>();

@@ -351,7 +351,7 @@ function CoachContext({ view }: { view: DrillDetailView }) {
  * Population and limitations are always shown with the claim, so evidence from
  * adults does not read as established for children.
  */
-function CitedEvidence({ claimIds, evidence }: { claimIds: string[]; evidence: GroundingEvidence[] | null }) {
+function CitedEvidence({ claimIds, evidence }: { claimIds: string[]; evidence: GroundingEvidence[] | null | undefined }) {
   const byId = new Map((evidence ?? []).map((entry) => [entry.claimId, entry]));
   return (
     <details className={EXPANDER}>
@@ -360,13 +360,19 @@ function CitedEvidence({ claimIds, evidence }: { claimIds: string[]; evidence: G
         <p className={BODY}>
           This drill cites these research claims as a whole. The Library does not record which step each one supports.
         </p>
-        <ul className="space-y-[var(--s2)]">
-          {claimIds.map((claimId) => (
-            <li key={claimId}>
-              <CitedClaim claimId={claimId} entry={byId.get(claimId)} loaded={evidence !== null} />
-            </li>
-          ))}
-        </ul>
+        {evidence === undefined ? (
+          <p className={BODY}>
+            Open this drill in the Drill Library to read the {claimIds.length === 1 ? 'research claim' : `${claimIds.length} research claims`} it cites.
+          </p>
+        ) : (
+          <ul className="space-y-[var(--s2)]">
+            {claimIds.map((claimId) => (
+              <li key={claimId}>
+                <CitedClaim claimId={claimId} entry={byId.get(claimId)} loaded={evidence !== null} />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </details>
   );
@@ -382,7 +388,7 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
   if (entry.status === 'not_cleared') {
     return (
       <p className={BODY}>
-        {claimId}: in the Library but not cleared for use (awaiting review, suppressed or retracted), so it is not shown.
+        {claimId}: in the Library but not cleared for use (for example awaiting review or withdrawn), so it is not shown.
       </p>
     );
   }
@@ -431,7 +437,7 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
         )}
         {strength && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">Evidence</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)]">Research program class</dt>
             <dd>{strength}</dd>
           </>
         )}
@@ -442,7 +448,15 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
           {r.sourceUrl && (
             <>
               {' '}
-              <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">Open the source</a>
+              <a
+                href={r.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open the source for ${claimId}`}
+                className="underline"
+              >
+                Open the source
+              </a>
             </>
           )}
         </dd>

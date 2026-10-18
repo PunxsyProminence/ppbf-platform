@@ -600,7 +600,7 @@ describe('the reference drill detail', () => {
     expect(within(detail).getByText('Coach the hand home on every jab.')).toBeInTheDocument();
     expect(within(detail).getByText('Elite male amateur boxers · elite amateur · male · age adult')).toBeInTheDocument();
     expect(within(detail).getByText('Single tournament; association, not cause.')).toBeInTheDocument();
-    expect(within(detail).getByRole('link', { name: 'Open the source' })).toHaveAttribute('href', 'https://doi.org/10.1000/example');
+    expect(within(detail).getByRole('link', { name: 'Open the source for A2-070' })).toHaveAttribute('href', 'https://doi.org/10.1000/example');
     expect(within(detail).getByText('A9-404: reference not found in the Library.')).toBeInTheDocument();
     expect(within(detail).getByText(/^A5-777: in the Library but not cleared for use/)).toBeInTheDocument();
     // Never the bare id list.

@@ -79,13 +79,15 @@ export interface DrillCoachContext {
   fieldProvenance: string;
   contentClass: string;
   sourceRef: string | null;
+  /** Trimmed and de-duplicated, in the drill's own order. */
   groundingClaimIds: string[];
   /**
    * What each grounding claim id points at in the Library: found, not cleared
-   * for use, or not found (audit 2026-10-17 item 11). null when the payload
-   * carried no answer, which the screen says rather than showing bare ids.
+   * for use, or not found (audit 2026-10-17 item 11). null when the read
+   * failed; undefined when this surface does not read it (the assignment
+   * instruction). The screen says which, rather than showing bare ids.
    */
-  groundingEvidence: GroundingEvidence[] | null;
+  groundingEvidence: GroundingEvidence[] | null | undefined;
 }
 
 export interface DrillDetailView {
@@ -138,7 +140,7 @@ export function fromAthleteDrillDetail(drill: AthleteDrillDetail): DrillDetailVi
 
 export function fromCoachDrillDetail(
   drill: DrillWithDetail,
-  groundingEvidence: GroundingEvidence[] | null = null,
+  groundingEvidence?: GroundingEvidence[] | null,
 ): DrillDetailView {
   // The coach cue read has no ORDER BY, so its order is whatever Postgres
   // returns. Sorted the way the athlete read is, so the two audiences see one
@@ -187,7 +189,7 @@ export function fromCoachDrillDetail(
       fieldProvenance: drill.field_provenance,
       contentClass: drill.content_class,
       sourceRef: drill.source_ref,
-      groundingClaimIds: drill.grounding_claim_ids ?? [],
+      groundingClaimIds: [...new Set((drill.grounding_claim_ids ?? []).map((id) => id.trim()).filter(Boolean))],
       groundingEvidence,
     },
   };

@@ -116,19 +116,27 @@ async function freePort(): Promise<number> {
 interface SourceOptions {
   approved?: boolean;
   suppressed?: boolean;
-  status?: 'active' | 'retracted';
+  status?: 'active' | 'archived';
   url?: string;
+  /** The document holding the claim chunk is still awaiting review. */
+  documentPending?: boolean;
 }
+
+let nextOrdinal = 0;
 
 async function source(sourceId: string, organizationId: string, options: SourceOptions = {}) {
   const approved = options.approved ?? true;
   await requireClient().query(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status,
-        rights_status, retrieval_suppressed, approval_state, verification_state,
-        approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+        rights_status, retrieval_suppressed, suppression_reason, suppressed_at, suppressed_by_account_id,
+        approval_state, verification_state, approved_by_account_id, approved_at, verified_by_account_id, verified_at)
      values ($1, $2, 'Effects of Sparring Load', 'J Strength Cond Res', 'peer_reviewed', 3, $3, '2017-01-01', $4,
-             'ppbf_owned', $5, $6, $7, $8, $9, $8, $9)`,
+             'ppbf_owned', $5,
+             case when $5 then 'Retracted by the journal (test).' end,
+             case when $5 then now() end,
+             case when $5 then $10 end,
+             $6, $7, $8, $9, $8, $9)`,
     [
       sourceId,
       organizationId,
@@ -140,18 +148,35 @@ async function source(sourceId: string, organizationId: string, options: SourceO
       approved ? 'verified' : 'unverified',
       approved ? ADMIN : null,
       approved ? new Date().toISOString() : null,
+      ADMIN,
     ],
   );
 }
 
-async function document(documentId: string, sourceId: string, organizationId: string, subjectId: string | null = null, marked = false) {
+async function document(
+  documentId: string,
+  sourceId: string,
+  organizationId: string,
+  options: { subjectId?: string | null; marked?: boolean; pending?: boolean } = {},
+) {
+  const approved = !options.pending;
   await requireClient().query(
     `insert into pilot.shadow_library_documents
        (document_id, source_id, organization_id, subject_id, document_name, ingest_state, index_completed_at,
         approval_state, verification_state, approved_by_account_id, approved_at, verified_by_account_id, verified_at,
         metadata)
-     values ($1, $2, $3, $4, $1, 'indexed', now(), 'approved', 'verified', $5, now(), $5, now(), $6::jsonb)`,
-    [documentId, sourceId, organizationId, subjectId, ADMIN, marked ? JSON.stringify({ subject_purged_at: '2026-10-15T00:00:00Z' }) : '{}'],
+     values ($1, $2, $3, $4, $1, 'indexed', now(), $5, $6, $7, $8, $7, $8, $9::jsonb)`,
+    [
+      documentId,
+      sourceId,
+      organizationId,
+      options.subjectId ?? null,
+      approved ? 'approved' : 'pending_review',
+      approved ? 'verified' : 'unverified',
+      approved ? ADMIN : null,
+      approved ? new Date().toISOString() : null,
+      options.marked ? JSON.stringify({ subject_purged_at: '2026-10-15T00:00:00Z' }) : '{}',
+    ],
   );
 }
 
@@ -167,8 +192,18 @@ async function chunk(
   await requireClient().query(
     `insert into pilot.shadow_library_chunks
        (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, text_kind, metadata)
-     values ($1, $2, $3, $4, $5, 0, $6, 'full_text', $7::jsonb)`,
-    [chunkId, documentId, sourceId, organizationId, options.subjectId ?? null, options.text ?? CLAIM_TEXT, JSON.stringify(metadata)],
+     values ($1, $2, $3, $4, $5, $6, $7, 'full_text', $8::jsonb)`,
+    [
+      chunkId,
+      documentId,
+      sourceId,
+      organizationId,
+      options.subjectId ?? null,
+      // unique (document_id, ordinal): every chunk gets its own.
+      (nextOrdinal += 1),
+      options.text ?? CLAIM_TEXT,
+      JSON.stringify(metadata),
+    ],
   );
 }
 
@@ -176,7 +211,7 @@ async function chunk(
 async function claim(claimId: string, organizationId: string, options: SourceOptions = {}) {
   const key = `${claimId}-${organizationId}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   await source(`src-${key}`, organizationId, options);
-  await document(`doc-${key}`, `src-${key}`, organizationId);
+  await document(`doc-${key}`, `src-${key}`, organizationId, { pending: options.documentPending });
   await chunk(`chk-${key}`, `doc-${key}`, `src-${key}`, organizationId, claimId);
 }
 
@@ -247,26 +282,34 @@ beforeAll(async () => {
   await claim('B1-001', ORG, { url: 'javascript:alert(1)' }); // the gym's own shelf
   await claim('C1-001', PLATFORM, { approved: false }); // awaiting review
   await claim('D1-001', PLATFORM, { suppressed: true });
-  await claim('E1-001', PLATFORM, { status: 'retracted' });
+  await claim('E1-001', PLATFORM, { status: 'archived' });
+  await claim('F1-001', PLATFORM, { documentPending: true }); // source cleared, document not
   await claim('G1-001', OTHER_ORG); // another gym's, approved
   // Pending on the baseline AND approved on the gym's shelf: the cleared one wins.
   await claim('J1-001', PLATFORM, { approved: false });
   await claim('J1-001', ORG);
+  // Cleared on both shelves: the baseline's copy is the one shown.
+  await claim('L1-001', PLATFORM, { url: 'https://doi.org/10.0000/baseline-copy' });
+  await claim('L1-001', ORG);
 
   // Athlete-scoped: the chunk names a subject, then the document does.
   await source('src-subject', ORG);
   await document('doc-subject-chunk', 'src-subject', ORG);
   await chunk('chk-subject', 'doc-subject-chunk', 'src-subject', ORG, 'S1-001', { subjectId: ATHLETE });
-  await document('doc-subject-doc', 'src-subject', ORG, ATHLETE);
+  await document('doc-subject-doc', 'src-subject', ORG, { subjectId: ATHLETE });
   await chunk('chk-subject-doc', 'doc-subject-doc', 'src-subject', ORG, 'S2-001');
   // Held by the retention purge: on the chunk alone, then on the document alone.
   await chunk('chk-purged', 'doc-subject-chunk', 'src-subject', ORG, 'P1-001', { marked: true });
-  await document('doc-purged', 'src-subject', ORG, null, true);
+  await document('doc-purged', 'src-subject', ORG, { marked: true });
   await chunk('chk-purged-doc', 'doc-purged', 'src-subject', ORG, 'P2-001');
   // A chunk written without the labelled lines.
   await source('src-plain', ORG);
   await document('doc-plain', 'src-plain', ORG);
   await chunk('chk-plain', 'doc-plain', 'src-plain', ORG, 'K1-001', { text: 'A curator excerpt\nwith two lines.' });
+  // A chunk on the gym's shelf citing ANOTHER gym's cleared source: the
+  // source join is by organization, so it serves nothing.
+  await source('src-other-gym', OTHER_ORG);
+  await chunk('chk-cross-org', 'doc-plain', 'src-other-gym', ORG, 'X1-001');
 });
 
 afterAll(async () => {
@@ -326,7 +369,12 @@ describe('resolveDrillGroundingEvidence', () => {
     expect(entry.status === 'found' && entry.record.sourceUrl).toBeNull();
   });
 
-  it.each(['C1-001', 'D1-001', 'E1-001'])('answers %s (pending, suppressed or retracted) as not cleared, with no text', async (claimId) => {
+  it.each([
+    ['C1-001', 'a source awaiting review'],
+    ['D1-001', 'a source suppressed for retraction'],
+    ['E1-001', 'an archived source'],
+    ['F1-001', 'a cleared source in a document awaiting review'],
+  ])('answers %s (%s) as not cleared, with no text', async (claimId) => {
     expect(await resolveDrillGroundingEvidence(ORG, [claimId])).toEqual([{ claimId, status: 'not_cleared' }]);
   });
 
@@ -336,6 +384,7 @@ describe('resolveDrillGroundingEvidence', () => {
     ['S2-001', 'a chunk under an athlete-scoped document'],
     ['P1-001', 'a chunk the purge held'],
     ['P2-001', 'a chunk under a document the purge held'],
+    ['X1-001', "a gym chunk citing another gym's source"],
     ['Z9-999', 'an id no chunk carries'],
   ])('answers %s (%s) as not found', async (claimId) => {
     expect(await resolveDrillGroundingEvidence(ORG, [claimId])).toEqual([{ claimId, status: 'not_found' }]);
@@ -344,6 +393,11 @@ describe('resolveDrillGroundingEvidence', () => {
   it('prefers a cleared copy over a pending one of the same claim', async () => {
     const [entry] = await resolveDrillGroundingEvidence(ORG, ['J1-001']);
     expect(entry.status).toBe('found');
+  });
+
+  it("shows the baseline's copy when both shelves hold the claim cleared", async () => {
+    const [entry] = await resolveDrillGroundingEvidence(ORG, ['L1-001']);
+    expect(entry.status === 'found' && entry.record.sourceUrl).toBe('https://doi.org/10.0000/baseline-copy');
   });
 
   it('keeps a chunk without labelled lines whole, as the claim', async () => {

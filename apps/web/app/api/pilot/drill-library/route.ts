@@ -108,14 +108,20 @@ export async function GET(request: NextRequest) {
       // And what each grounding claim id points at in the Library (audit
       // 2026-10-17 item 11) -- found, not cleared for use, or not found -- so
       // the coach opens the evidence rather than reading a bare id. Authors
-      // only, like the ids themselves.
+      // only, like the ids themselves. A failed Library read answers null
+      // (the screen says the evidence could not be loaded) rather than
+      // failing the drill itself.
       const [lifecycles, floorTested, groundingEvidence] = await Promise.all([
         listReferenceLifecycles(principal.organizationId, [drillId]),
         listFloorValidations(principal.organizationId, [drillId]),
         resolveDrillGroundingEvidence(
           principal.organizationId,
           'grounding_claim_ids' in detail ? detail.grounding_claim_ids ?? [] : [],
-        ),
+        ).catch((error: unknown) => {
+          const code = (error as { code?: unknown } | null)?.code;
+          console.error({ event: 'drill-grounding-evidence-read-failed', drill_id: drillId, ...(typeof code === 'string' ? { code } : {}) });
+          return null;
+        }),
       ]);
       return NextResponse.json({
         drill: detail,
