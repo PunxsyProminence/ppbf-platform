@@ -136,6 +136,12 @@ async function recordWithSweep(
 // Never cached: a consent decision on what may be a shared tablet.
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
 
+// Refusals too: "you are under 18" is still about the person holding the tablet.
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'private, no-store');
+  return response;
+}
+
 async function view(organizationId: string, athleteId: string, extra: Record<string, unknown> = {}) {
   const athlete = await queryOne<{ dob: string | null }>(
     `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
@@ -167,7 +173,7 @@ export async function GET(request: NextRequest) {
     const athleteId = await requireOwnAthleteId(principal);
     return await view(principal.organizationId, athleteId);
   } catch (error) {
-    return jsonError(error);
+    return noStore(jsonError(error));
   }
 }
 
@@ -218,6 +224,6 @@ export async function POST(request: NextRequest) {
     }
     throw new ValidationError('decision must be grant or withdraw.');
   } catch (error) {
-    return jsonError(error);
+    return noStore(jsonError(error));
   }
 }

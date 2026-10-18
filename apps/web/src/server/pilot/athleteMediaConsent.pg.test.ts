@@ -404,6 +404,59 @@ describe("the adult's withdrawal takes published video down, and is never outrun
   });
 
   /*
+   * THE SWEEP TAKES THE EXCLUSIVE LOCK BEFORE ITS LINK LOCKS. A publish that
+   * already holds the consent-set lock shared (its age gate ran) and is about
+   * to read the guardian links must not deadlock against a withdrawal sweep:
+   * if the sweep locked the links FOR UPDATE first and only then asked for the
+   * exclusive lock, each would wait on the other (40P01). With the exclusive
+   * lock first, the sweep simply waits for the publish to commit, then
+   * retracts what it published.
+   */
+  test('a publish holding the shared lock and a withdrawal sweep do not deadlock; the sweep retracts what the publish committed', async () => {
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: true, publicUseAllowed: false });
+    const publicationId = await seedApprovedPublication();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => { reachedGate = resolve; });
+    // A minor-shaped claim order, forced: the age gate (shared lock), then a
+    // pause, then the guardian link read -- the read a sweep holding the links
+    // FOR UPDATE would block.
+    const publishing = outcomeOf(publication.publishToResearchLibrary({
+      organizationId: ORG_ID,
+      publicationId,
+      videoSessionId: VIDEO_SESSION_ID,
+      title: 'Jab mechanics',
+      description: 'Six rounds.',
+      verifyBeforeCommit: async (c) => {
+        await consent.assertNewPublicationConsentPath(ORG_ID, ADULT_ID, c);
+        reachedGate();
+        await gate;
+        await consent.checkGuardianMediaConsent(ORG_ID, ADULT_ID, c);
+      },
+    }));
+    await atGate;
+
+    const sweeping = outcomeOf(publication.recordMediaConsentAndSuppress({
+      organizationId: ORG_ID,
+      athleteId: ADULT_ID,
+      suppressedByAccountId: ADULT_LOGIN,
+      reason: 'athlete_consent_withdrawn',
+      write: (tx) => own.withdrawOwnMediaConsent(adult, tx),
+      exclusiveConsentSet: true,
+    }));
+    const sweepWaited = await someoneWaitsOnALock([], 80);
+    release();
+
+    const [published, swept] = await Promise.all([publishing, sweeping]);
+    expect(sweepWaited).toBe(true);
+    expect(published).toBe('ok');
+    expect(swept).toBe('ok');
+    expect(await publicationStatus(publicationId)).toBe('retracted');
+  });
+
+  /*
    * Nothing is asserted while a transaction is held open (consentSetPhantom's
    * lesson): values are captured, everything released in a finally, then
    * asserted.

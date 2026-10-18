@@ -162,6 +162,7 @@ describe('grant and withdraw', () => {
     const res = await POST(post({ decision: 'withdraw' }));
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toMatchObject({ code: 'ATHLETE_NOT_ADULT' });
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
