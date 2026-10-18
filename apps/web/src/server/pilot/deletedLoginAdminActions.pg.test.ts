@@ -951,6 +951,18 @@ describe('an athlete\'s login is never made the gym\'s admin', () => {
     expect(await adminMembershipCount('acct-minor')).toBe(0);
   });
 
+  test('transfer-admin to a login still linked to an athlete record is refused whatever its role', async () => {
+    await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
+    await insertAthlete('ath-linked');
+    await insertAccount('acct-linked', 'volunteer', { athleteId: 'ath-linked', microsoft: true });
+
+    await expect(auth.transferOrganizationAdmin('acct-admin', 'acct-linked', ORG, 'coach')).rejects.toThrow(
+      ATHLETE_REFUSAL,
+    );
+    expect((await accountRow('acct-linked'))?.role).toBe('volunteer');
+    expect((await accountRow('acct-admin'))?.role).toBe('organization_admin');
+  });
+
   test('a deleted athlete login still answers as deleted, not as an athlete', async () => {
     await insertAccount('acct-gone-athlete', 'athlete', { deleted: true });
 
@@ -958,6 +970,17 @@ describe('an athlete\'s login is never made the gym\'s admin', () => {
       status: 409,
       code: 'DELETED_LOGIN',
     });
+  });
+
+  test('transfer-admin to a deleted athlete login still answers as deleted, and the gym keeps its admin', async () => {
+    await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
+    await insertAccount('acct-gone-athlete', 'athlete', { deleted: true });
+
+    await expect(auth.transferOrganizationAdmin('acct-admin', 'acct-gone-athlete', ORG, 'coach')).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+    });
+    expect((await accountRow('acct-admin'))?.role).toBe('organization_admin');
   });
 
   test('an athlete login in another gym gets the not-found answer, not the athlete one', async () => {
