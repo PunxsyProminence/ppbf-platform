@@ -183,6 +183,7 @@
     "test:migrations:athlete-self-deletion-mark": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteSelfDeletionMark.pg.test.ts --testTimeout=180000",
     "test:migrations:platform-library-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/platformLibraryScope.pg.test.ts --testTimeout=180000",
     "test:migrations:platform-shelf-writes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/platformShelfWrites.pg.test.ts --testTimeout=180000",
+    "test:migrations:library-intake-recovery": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryIntakeRecovery.pg.test.ts --testTimeout=180000",
     "test:migrations:library-scope-check": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryScopeCheck.pg.test.ts --testTimeout=180000",
     "test:migrations:move-policy-shelf": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/movePolicyShelf.pg.test.ts --testTimeout=600000",
     "test:migrations:licensed-excerpts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/licensedExcerptLoader.pg.test.ts --testTimeout=600000",
