@@ -165,6 +165,16 @@ function admitOutcome(
   excluded: LessonExclusion[],
 ): InterventionOutcomeReview | null {
   if (!outcome) return null;
+  // First, as for the intervention itself: an outcome of an intervention that
+  // had not started by asOf did not exist yet, so nothing else about it --
+  // not even an unreadable review time -- is reported.
+  if (
+    supplied
+    && Date.parse(supplied.startedAt) > asOfMs
+    && outcome.interventionId === supplied.interventionId
+  ) {
+    return null;
+  }
   if (outcome.reviewedAt) {
     const reviewedMs = Date.parse(outcome.reviewedAt);
     if (!Number.isFinite(reviewedMs)) {
@@ -172,13 +182,6 @@ function admitOutcome(
       return null;
     }
     if (reviewedMs > asOfMs) return null;
-  }
-  if (
-    supplied
-    && Date.parse(supplied.startedAt) > asOfMs
-    && outcome.interventionId === supplied.interventionId
-  ) {
-    return null;
   }
   if (!intervention || outcome.interventionId !== intervention.interventionId) {
     excluded.push(Object.freeze({

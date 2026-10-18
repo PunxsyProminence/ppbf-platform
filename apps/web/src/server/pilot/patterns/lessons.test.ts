@@ -326,6 +326,16 @@ describe('validated athlete lesson evaluation', () => {
     expect(result).toEqual(evaluate({ intervention: null, outcome: null, postObservations }));
   });
 
+  test('an outcome of a not-yet-started intervention is not reported, even with an unreadable review time', () => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    const result = evaluate({
+      intervention: { ...intervention, startedAt: '2026-07-15T00:00:00.000Z' },
+      outcome: { ...reviewedOutcome, reviewedAt: 'not-a-date' },
+      postObservations,
+    });
+    expect(result).toEqual(evaluate({ intervention: null, outcome: null, postObservations }));
+  });
+
   test('an intervention whose start nobody can place is absent and reported', () => {
     const result = evaluate({
       intervention: { ...intervention, startedAt: 'not-a-date' },
