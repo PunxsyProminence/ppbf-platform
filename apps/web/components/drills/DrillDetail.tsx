@@ -47,14 +47,23 @@ export interface DrillDetailProps {
    * keyboard and screen-reader users are left on <body>.
    */
   focusOnMount?: boolean;
+  /**
+   * The scale level a plan chose for this drill (a session plan block's
+   * scale_level). That level opens and says so; without one, the starting
+   * level opens as before.
+   */
+  chosenScale?: string | null;
 }
 
-export default function DrillDetail({ view, audience, actions, focusOnMount = false }: DrillDetailProps) {
+export default function DrillDetail({ view, audience, actions, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
   const headingId = `drill-detail-${view.id}`;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
     if (focusOnMount) headingRef.current?.focus();
   }, [focusOnMount, view.id]);
+
+  // A chosen level the drill has no row for opens nothing of its own: the starting level opens as usual.
+  const openLevel = chosenScale !== null && view.scaleLevels.some((level) => level.level === chosenScale) ? chosenScale : null;
 
   const steps = executionSteps(view.execution);
   // Three groups, because they are three different instructions. A readiness
@@ -216,10 +225,16 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           <div className="space-y-[var(--s2)]">
             {view.scaleLevels.map((level) => (
               // LEVEL 3: each level expands. The starting level opens by default,
-              // so the ordinary way to run the drill is visible without a click.
-              <details key={`${view.id}-scale-${level.level}`} className={EXPANDER} open={level.isStartingPoint}>
+              // so the ordinary way to run the drill is visible without a click;
+              // a level the plan chose opens instead.
+              <details
+                key={`${view.id}-scale-${level.level}`}
+                className={EXPANDER}
+                open={openLevel ? level.level === openLevel : level.isStartingPoint}
+              >
                 <summary className={EXPANDER_SUMMARY}>
                   {scaleLevelName(level.level)}
+                  {level.level === openLevel ? ' · chosen for this block' : ''}
                   {level.isStartingPoint ? ' · where to start' : ''}
                   {level.contactLevel && level.contactLevel !== view.contactLevel
                     ? ` · ${humanizeContactLevel(level.contactLevel)}`
