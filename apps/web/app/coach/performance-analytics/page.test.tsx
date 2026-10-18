@@ -302,9 +302,9 @@ test('the 28-day attendance figures say their source, their denominator and thei
     'Attendance, last 28 days75% (present 3 of 4 days marked on the class register)(9/21/2026 to 10/18/2026)',
     'Attendance, last 28 days—',
   ]);
-  const last = screen.getAllByText('Last session').map((l) => (l.parentElement as HTMLElement).textContent);
+  const last = screen.getAllByText('Last marked present').map((l) => (l.parentElement as HTMLElement).textContent);
   expect([...last].sort()).toEqual([
-    'Last sessionLast marked present on the class register 12 days ago (10/6/2026)',
-    'Last session—',
+    'Last marked presentLast marked present on the class register 12 days ago (10/6/2026)',
+    'Last marked present—',
   ]);
 });

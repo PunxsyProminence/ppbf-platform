@@ -324,7 +324,7 @@ export default function PerformanceAnalyticsPage() {
                         </>
                       ) : '—'}
                     </Figure>
-                    <Figure label="Last session">
+                    <Figure label="Last marked present">
                       {isAttendanceWindow(item.attendance_28d) ? daysSinceWords(item.attendance_28d) : '—'}
                     </Figure>
                     <Figure label="Readiness">
