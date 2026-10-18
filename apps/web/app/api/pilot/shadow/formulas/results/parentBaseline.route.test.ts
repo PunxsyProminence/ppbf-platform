@@ -4,7 +4,7 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { listActiveFormulaResults } from '@/src/server/pilot/formulas/repository';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { GET } from './route';
+import { GET, POST } from './route';
 
 /**
  * A parent reads no personal baseline (MVP-09): it is derived from the child's
@@ -59,4 +59,21 @@ test.each(['athlete', 'coach', 'organization_admin', 'admin'] as const)('a %s re
   mockPrincipal.mockResolvedValue(principal(role));
   expect((await GET(request())).status).toBe(200);
   expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ excludeFormulaIds: [] }));
+});
+
+test('a hand-run MVP-09 for a check-in item is refused before anything runs', async () => {
+  mockPrincipal.mockResolvedValue(principal('coach'));
+  const response = await POST(new NextRequest('http://localhost/api/pilot/shadow/formulas/results', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      athleteId: 'ath-1',
+      formulaId: 'MVP-09',
+      observationIds: ['a', 'b'],
+      parameters: { metricKey: ' sleep_hours ', windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 },
+      policyVersion: 'check-in-baseline-2026-10-17',
+    }),
+  }));
+  expect(response.status).toBe(409);
+  expect(jest.mocked(assertActorCanAccessAthlete)).not.toHaveBeenCalled();
 });
