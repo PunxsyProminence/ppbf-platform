@@ -162,7 +162,7 @@ afterEach(() => {
 /* ============================================================== coverage === */
 
 describe('every line the owner wrote reaches a real screen', () => {
-  it('paints all twelve, each on a surface that really renders it', async () => {
+  it('paints all thirteen, each on a surface that really renders it', async () => {
     const painted = new Set<string>();
 
     for (const line of ALL_LINES) {
@@ -206,15 +206,16 @@ describe('every line the owner wrote reaches a real screen', () => {
     expect(await paintedOnTheWall(day as string)).toContain(tagline);
   });
 
-  it('renders the three after-hard-session lines, which no other surface can', () => {
-    // These three are tagged for one moment only. Until the card learned to
+  it('renders the four after-hard-session lines, which no other surface can', () => {
+    // These are tagged for one moment only. Until the card learned to
     // ask for that moment, no caller anywhere in the application passed
     // 'after-hard-session', so they were unreachable by construction -- the
     // most invisible way for a feature to be missing.
     const exclusive = GYM_SAYINGS
       .filter((saying) => saying.shown.length === 1 && saying.shown[0] === 'after-hard-session')
       .map((saying) => saying.line);
-    expect(exclusive).toHaveLength(3);
+    // Four since the owner's 2026-10-17 line, ADAPT AND OVERCOME (gymSayings.ts).
+    expect(exclusive).toHaveLength(4);
 
     for (const line of exclusive) {
       expect(milestoneShowing(line)).toBeNull();
