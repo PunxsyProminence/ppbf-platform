@@ -155,7 +155,7 @@ export default function GymProfileForm() {
     }
   }
 
-  if (state === 'loading') return <p className="t-muted">Reading the gym profile...</p>;
+  if (state === 'loading') return <p className="t-muted">Reading the gym profile…</p>;
   if (state === 'unavailable') return <p className="t-muted">The gym profile could not be read just now.</p>;
   if (state === 'sign_in') return <p className="t-muted">Sign in again with Microsoft to edit the gym profile.</p>;
 
@@ -201,7 +201,7 @@ export default function GymProfileForm() {
           <p className="t-body">{reachSentence(publicPages, gymName)}</p>
           <div className="flex flex-wrap gap-[var(--s2)]">
             <button type="button" className="btn" disabled={busy} onClick={() => void save()}>
-              {busy ? 'Saving...' : `Save ${gymName}'s Profile`}
+              {busy ? 'Saving…' : `Save ${gymName}'s Profile`}
             </button>
             <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setArmed(false)}>
               Keep Editing
