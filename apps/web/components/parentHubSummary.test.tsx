@@ -22,6 +22,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
+import { BUILDING } from './buildingMap';
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as unknown as Response;
@@ -160,6 +161,16 @@ afterEach(() => {
   // test's pick must not choose the next test's opening child.
   window.sessionStorage.clear();
   window.localStorage.clear();
+});
+
+// Each menu label equals its page title (Jason's ruling): the hub's heading is
+// the name its door carries in the building map.
+test('the page heading is the door name, Parent Hub', async () => {
+  installFetch();
+  await renderHub();
+  const door = BUILDING.find((entry) => entry.href === '/parent/dashboard');
+  expect(door?.label).toBe('Parent Hub');
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(door!.label);
 });
 
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
