@@ -22,33 +22,42 @@ function sslConfig() {
 export const EXPECTED_EFFECTS_CHECK =
   "CHECK ((learning_effects_done <@ ARRAY['library_flag'::text, 'facts'::text, 'complete'::text]))";
 
-// Every clause is false on a database this migration has not reached
+// Every clause is false on a database this migration has not reached, and
+// each one alone refuses, with its name in the error
 // (shadowLearningEffectsMigration.pg.test.ts).
 const READINESS_QUERY = `
+  with effects_column as (
+    select data_type, udt_name, is_nullable, column_default
+      from information_schema.columns
+     where table_schema = 'pilot' and table_name = 'shadow_feedback'
+       and column_name = 'learning_effects_done'
+  )
   select
-    exists (
-      select 1 from information_schema.columns
-      where table_schema = 'pilot' and table_name = 'shadow_feedback'
-        and column_name = 'learning_effects_done' and data_type = 'ARRAY' and udt_name = '_text'
-        and is_nullable = 'NO' and column_default like '''{}''::text[]%'
-    ) as effects_column_ready,
+    exists (select 1 from effects_column where data_type = 'ARRAY' and udt_name = '_text') as effects_column_text_array,
+    exists (select 1 from effects_column where is_nullable = 'NO') as effects_column_not_null,
+    exists (select 1 from effects_column where column_default like '''{}''::text[]%') as effects_column_default_empty,
     exists (
       select 1 from pg_constraint
       where conname = 'shadow_feedback_learning_effects_done_check'
         and conrelid = to_regclass('pilot.shadow_feedback') and contype = 'c'
         and convalidated
-        and regexp_replace(pg_get_constraintdef(oid), '\\s+', ' ', 'g') = $1
+        and regexp_replace(pg_get_constraintdef(oid), '[[:space:]]+', ' ', 'g') = $1
     ) as effects_check_ready
 `;
 
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // The first apply takes an exclusive lock on pilot.shadow_feedback for the
+    // column and its backfill; wait at most this long for it rather than queue
+    // every feedback read and write behind a long-open transaction.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY, [EXPECTED_EFFECTS_CHECK]);
     const row = readiness.rows[0];
-    if (!row || Object.values(row).some((value) => value !== true)) {
-      throw new Error('SHADOW_LEARNING_EFFECTS_NOT_READY');
+    const missing = row ? Object.entries(row).filter(([, value]) => value !== true).map(([key]) => key) : ['readiness'];
+    if (missing.length > 0) {
+      throw new Error(`SHADOW_LEARNING_EFFECTS_NOT_READY: ${missing.join(', ')}`);
     }
     await client.query('COMMIT');
   } catch (error) {

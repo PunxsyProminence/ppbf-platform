@@ -5,14 +5,17 @@
 //
 // What needs a real database to prove:
 //   * the column arrives NOT NULL and empty from nothing, and a re-apply
-//     changes nothing (no duplicate marks);
+//     changes nothing (no duplicate marks) -- including for an approval
+//     logged AFTER the first apply, which a release must never stamp complete;
 //   * the backfill marks 'complete' exactly where a human_reviewed learning
-//     event exists, and 'library_flag' exactly where a logged action says this
-//     feedback's flag or proposal write succeeded -- and a non-array
-//     actions_taken does not break it;
+//     event logs no failure, 'facts' where it logs facts extracted, and
+//     'library_flag' exactly where a logged action says this feedback's flag
+//     or proposal write succeeded -- and a non-array actions_taken does not
+//     break it;
 //   * the CHECK admits the three effect names and refuses anything else;
 //   * the runner refuses a database it never reached, the column without its
-//     check, and a same-named check that admits more values.
+//     check, a same-named check that admits more values, and each column
+//     property (type, NOT NULL, empty default) on its own.
 //
 // Disposable, local-only embedded Postgres. It NEVER connects to production
 // or staging.
@@ -231,6 +234,27 @@ describe('shadow-learning-effects migration', () => {
       await insertLearningEvent(client, approvedProposal, 'human_reviewed', [
         "Library 'promote' proposal queued for human review",
       ]);
+      // Approved, but the log records a failed write: left repairable.
+      const approvedFactsFailed = await insertFeedback(client, 'm-approved-facts-failed', { outcome: 'thumbs_up', reviewed: true });
+      await insertLearningEvent(client, approvedFactsFailed, 'human_reviewed', [
+        'Effectiveness recorded: improved (1)',
+        'Fact extraction failed',
+      ]);
+      const approvedUnlockUnavailable = await insertFeedback(client, 'm-approved-unlock', { outcome: 'thumbs_up', reviewed: true });
+      await insertLearningEvent(client, approvedUnlockUnavailable, 'human_reviewed', ['Unlock state unavailable']);
+      // Approved with facts counted: complete, and the facts are never re-counted.
+      const approvedFacts = await insertFeedback(client, 'm-approved-facts', { outcome: 'thumbs_up', reviewed: true });
+      await insertLearningEvent(client, approvedFacts, 'human_reviewed', [
+        'Effectiveness recorded: improved (1)',
+        'Extracted 1 fact(s) from positive signal',
+      ]);
+      // Approved, facts counted, research failed: facts marked, not complete.
+      const approvedFactsResearchFailed = await insertFeedback(client, 'm-approved-facts-research', { outcome: 'thumbs_down', reviewed: true });
+      await insertLearningEvent(client, approvedFactsResearchFailed, 'human_reviewed', [
+        'Extracted 2 fact(s) from positive signal',
+        'Library entry flagged for review (topic: footwork)',
+        'Research requirement creation failed',
+      ]);
       // Pending praise: metrics only, no flag.
       const pendingPraise = await insertFeedback(client, 'm-pending-praise', { outcome: 'thumbs_up', reviewed: false });
       await insertLearningEvent(client, pendingPraise, 'durable_client', [
@@ -244,9 +268,21 @@ describe('shadow-learning-effects migration', () => {
       });
 
       await applyMigrationTransaction(client, migrationSql);
+      // Logged after the first apply, the way PR B leaves an approval whose
+      // facts write failed: a release re-applying this migration must not
+      // stamp it complete or flagged.
+      const laterApproval = await insertFeedback(client, 'm-later', { outcome: 'thumbs_down', reviewed: true });
+      await insertLearningEvent(client, laterApproval, 'human_reviewed', [
+        'Library entry flagged for review (topic: footwork)',
+      ]);
       await applyMigrationTransaction(client, migrationSql);
 
       expect(await effectsOf(client, approved)).toEqual(['complete']);
+      expect(await effectsOf(client, approvedFactsFailed)).toEqual([]);
+      expect(await effectsOf(client, approvedUnlockUnavailable)).toEqual([]);
+      expect(await effectsOf(client, approvedFacts)).toEqual(['complete', 'facts']);
+      expect(await effectsOf(client, approvedFactsResearchFailed)).toEqual(['facts', 'library_flag']);
+      expect(await effectsOf(client, laterApproval)).toEqual([]);
       expect(await effectsOf(client, pendingFlagged)).toEqual(['library_flag']);
       expect(await effectsOf(client, pendingFlagFailed)).toEqual([]);
       expect(await effectsOf(client, approvedNegative)).toEqual(['complete', 'library_flag']);
@@ -302,7 +338,7 @@ describe('shadow-learning-effects migration', () => {
       await client.query(
         "alter table pilot.shadow_feedback add column learning_effects_done text[] not null default '{}'::text[]",
       );
-      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(/SHADOW_LEARNING_EFFECTS_NOT_READY/);
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(/NOT_READY: effects_check_ready$/);
 
       await client.query(
         `alter table pilot.shadow_feedback add constraint shadow_feedback_learning_effects_done_check
@@ -310,7 +346,21 @@ describe('shadow-learning-effects migration', () => {
       );
       // The migration leaves a same-named check alone, so the runner must
       // catch the widened one itself.
-      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow(/SHADOW_LEARNING_EFFECTS_NOT_READY/);
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow(/NOT_READY: effects_check_ready$/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['nullable', "text[] null default '{}'::text[]", 'effects_column_not_null'],
+    ['without the empty default', 'text[] not null', 'effects_column_default_empty'],
+    ['of the wrong element type', "varchar[] not null default '{}'::varchar[]", 'effects_column_text_array'],
+  ])('the real runner REFUSES the column %s, naming that clause', async (_label, columnType, clause) => {
+    const client = await preMigrationDatabase(`effects_col_${clause}`);
+    try {
+      await client.query(`alter table pilot.shadow_feedback add column learning_effects_done ${columnType}`);
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(new RegExp(clause));
     } finally {
       await client.end();
     }
