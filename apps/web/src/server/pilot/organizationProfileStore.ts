@@ -27,7 +27,11 @@
  * database never holds a page render; it is kept if that read fails. Every
  * read gives up after READ_TIMEOUT_MS (db.ts sets no connect timeout, so a
  * black-holed database would otherwise wait forever), and concurrent callers
- * share one read in flight. It is the same source, held briefly, not a second.
+ * share one read in flight until the query itself settles, not just until the
+ * caller stopped waiting. A failed or empty read is remembered for
+ * FAILURE_HOLD_MS, so with no row or no database every page answers at once
+ * instead of each starting a query that waits out the timeout. It is the same
+ * source, held briefly, not a second.
  */
 
 import { queryOne } from '@/src/server/pilot/db';
@@ -37,6 +41,7 @@ export const OPERATING_ORGANIZATION_ID = 'punxsy_prominence';
 
 const CACHE_MS = 60_000;
 const READ_TIMEOUT_MS = 2_500;
+const FAILURE_HOLD_MS = 20_000;
 
 export class OrganizationProfileUnavailableError extends Error {
   constructor(organizationId: string, cause?: unknown) {
@@ -119,11 +124,13 @@ function toProfile(row: ProfileRow): OrganizationProfile {
 
 const cache = new Map<string, { profile: OrganizationProfile; readAt: number }>();
 const inFlight = new Map<string, Promise<OrganizationProfile | null>>();
+const failedAt = new Map<string, number>();
 
-/** Test seam: forget every cached row and every read in flight. */
+/** Test seam: forget every cached row, every read in flight and every remembered failure. */
 export function clearOrganizationProfileCache(): void {
   cache.clear();
   inFlight.clear();
+  failedAt.clear();
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
@@ -135,18 +142,34 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** One read per organization at a time; a found row is cached when it lands. */
+/**
+ * One query per organization at a time, held until it settles; each caller
+ * waits for it at most timeoutMs. A found row is cached when it lands; a
+ * failed or empty one is remembered.
+ */
 function sharedRead(organizationId: string, now: () => number, timeoutMs: number): Promise<OrganizationProfile | null> {
-  const pending = inFlight.get(organizationId);
-  if (pending) return pending;
-  const read = withTimeout(readRow(organizationId), timeoutMs)
-    .then((profile) => {
-      if (profile) cache.set(organizationId, { profile, readAt: now() });
-      return profile;
-    })
-    .finally(() => inFlight.delete(organizationId));
-  inFlight.set(organizationId, read);
-  return read;
+  let pending = inFlight.get(organizationId);
+  if (!pending) {
+    pending = readRow(organizationId)
+      .then(
+        (profile) => {
+          if (profile) {
+            cache.set(organizationId, { profile, readAt: now() });
+            failedAt.delete(organizationId);
+          } else {
+            failedAt.set(organizationId, now());
+          }
+          return profile;
+        },
+        (error: unknown) => {
+          failedAt.set(organizationId, now());
+          throw error;
+        },
+      )
+      .finally(() => inFlight.delete(organizationId));
+    inFlight.set(organizationId, pending);
+  }
+  return withTimeout(pending, timeoutMs);
 }
 
 async function readRow(organizationId: string): Promise<OrganizationProfile | null> {
@@ -187,10 +210,19 @@ export async function getOrganizationProfile(
     return cached.profile;
   }
 
+  // A read that just failed, or found no row, is not tried again for a while.
+  const failed = failedAt.get(organizationId);
+  if (failed !== undefined && now() - failed < FAILURE_HOLD_MS && !inFlight.has(organizationId)) {
+    if (!production) return DEVELOPMENT_PROFILE;
+    throw new OrganizationProfileUnavailableError(organizationId);
+  }
+
   let profile: OrganizationProfile | null;
   try {
     profile = await sharedRead(organizationId, now, timeoutMs);
   } catch (error) {
+    // A caller that stopped waiting still counts as a failure for the hold.
+    failedAt.set(organizationId, now());
     if (!production) return DEVELOPMENT_PROFILE;
     throw new OrganizationProfileUnavailableError(organizationId, error);
   }
@@ -204,4 +236,19 @@ export async function getOrganizationProfile(
 /** The operating gym's profile, for the surfaces no signed-in person resolves (OD-2026-09-28-007). */
 export function getOperatingOrganizationProfile(): Promise<OrganizationProfile> {
   return getOrganizationProfile(OPERATING_ORGANIZATION_ID);
+}
+
+/**
+ * The same, or null when it cannot be read. For the surfaces that must keep
+ * working without it -- every page's layout, the sign-in email, SHADOW -- which
+ * then leave the gym's name out rather than invent one. Any other failure
+ * still throws.
+ */
+export async function getOperatingOrganizationProfileOrNull(): Promise<OrganizationProfile | null> {
+  try {
+    return await getOperatingOrganizationProfile();
+  } catch (error) {
+    if (error instanceof OrganizationProfileUnavailableError) return null;
+    throw error;
+  }
 }
