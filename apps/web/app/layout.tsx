@@ -65,7 +65,9 @@ export async function generateMetadata(): Promise<Metadata> {
     throw error;
   }
   return {
-    metadataBase: new URL(gym.url),
+    // Validated on save (organizationProfileWrite.ts); if a stored value still cannot be
+    // parsed, the pages go on without a metadata base rather than fail.
+    ...(URL.canParse(gym.url) ? { metadataBase: new URL(gym.url) } : {}),
     title: {
       default: `${gym.shortName} Platform`,
       template: `%s | ${gym.shortName} Platform`,
