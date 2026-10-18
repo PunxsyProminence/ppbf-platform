@@ -2,10 +2,7 @@ import type { Metadata } from 'next';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WallOfNames from '@/components/WallOfNames';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
-
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
+import { getOperatingOrganizationProfileOrNull } from '@/src/server/pilot/organizationProfileStore';
 
 /**
  * /names -- the Wall of Names.
@@ -19,12 +16,16 @@ const GYM = currentOrganizationProfile();
  * because the payload is initials and years and carries no per-person fact at
  * all -- see app/api/pilot/wall-of-names/route.ts.
  */
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  // The gym's legal name, from its stored profile (lane L31); left out if it cannot be read.
+  const gym = await getOperatingOrganizationProfileOrNull();
+  return {
   title: 'The Wall of Names',
-  description: `Everyone who has come through ${GYM.legalName}.`,
+  ...(gym ? { description: `Everyone who has come through ${gym.legalName}.` } : {}),
   // A record for the people in this gym, not a document for a search engine.
   robots: { index: false, follow: false },
-};
+  };
+}
 
 export default function WallOfNamesPage() {
   return (
