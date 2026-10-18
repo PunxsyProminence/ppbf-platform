@@ -13,7 +13,8 @@
  * WHAT THIS IS NOT. It is not a scheduler, a queue, a debounce, or a rules
  * engine. It reads one context, matches it against
  * FORMULA_INPUT_REQUIREMENTS, and calls the existing runStoredMvpFormula for
- * each complete match. Every guarantee it relies on already existed:
+ * each complete match -- plus MVP-11, whose sessions span contexts and are
+ * read from a 28-day window (focusAttainmentWindow below). Every guarantee it relies on already existed:
  *
  *   - Idempotency. `calculationKey` is a sha256 over formula identity, scope
  *     and ordered input observation ids and EXCLUDES computedAt; the insert is
@@ -37,7 +38,10 @@
  * owed and absent, in exchange for nothing.
  */
 
-import { getActiveObservationsForContext } from './repository';
+import {
+  getActiveObservationsForContext,
+  getActiveObservationsOfKindInWindow,
+} from './repository';
 import {
   FORMULA_INPUT_REQUIREMENTS,
   runStoredMvpFormula,
@@ -212,7 +216,24 @@ export async function autoCalculateForObservationContext(input: {
   contextId: string;
 }): Promise<readonly FormulaResult[]> {
   const observations = await getActiveObservationsForContext(input);
-  const detected = detectSatisfiedFormulaInputs(observations);
+  const detected: DetectedFormulaCalculation[] = [...detectSatisfiedFormulaInputs(observations)];
+
+  const window = focusAttainmentWindow(observations);
+  if (window) {
+    const sessions = await getActiveObservationsOfKindInWindow({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      kind: 'focus_achieved',
+      ...window,
+    });
+    const observationIds = sessions
+      .filter((session) => session.unit === 'boolean_0_1')
+      .map((session) => session.observationId)
+      .sort();
+    if (observationIds.length > 0) {
+      detected.push(Object.freeze({ formulaId: 'MVP-11' as const, observationIds: Object.freeze(observationIds) }));
+    }
+  }
 
   const results: FormulaResult[] = [];
   for (const calculation of detected) {
@@ -225,4 +246,32 @@ export async function autoCalculateForObservationContext(input: {
     results.push(...output.results);
   }
   return Object.freeze(results);
+}
+
+/** Jason 2026-10-17, focus rate: "A: Last 28 days (Recommended)". */
+export const FOCUS_ATTAINMENT_WINDOW_DAYS = 28;
+
+/**
+ * MVP-11 (focus attainment) is the one formula here whose input set spans
+ * contexts: the share of sparring sessions in the last 28 days where the
+ * athlete ticked "I did the thing we were working on". A context with exactly
+ * one focus_achieved observation in the formula's unit is a session that
+ * completes a window; the window ends at that session and reaches back 28
+ * days, so the same sessions always give the same calculationKey however many
+ * of the session's observations race to trigger it.
+ *
+ * Exactly one, for the reason detectSatisfiedFormulaInputs gives: with two
+ * there is no rule for which session time ends the window. Pure.
+ */
+export function focusAttainmentWindow(
+  observations: readonly NumericObservation[],
+): { observedAfter: string; observedAtOrBefore: string } | null {
+  const focus = observations.filter((observation) => observation.kind === 'focus_achieved');
+  if (focus.length !== 1 || focus[0].unit !== 'boolean_0_1') return null;
+  const endsAt = Date.parse(focus[0].observedAt);
+  if (!Number.isFinite(endsAt)) return null;
+  return {
+    observedAfter: new Date(endsAt - FOCUS_ATTAINMENT_WINDOW_DAYS * 24 * 60 * 60 * 1_000).toISOString(),
+    observedAtOrBefore: new Date(endsAt).toISOString(),
+  };
 }
