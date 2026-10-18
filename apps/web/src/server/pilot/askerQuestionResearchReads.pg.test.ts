@@ -11,7 +11,10 @@
 //   - a coach receives the row (it exists, it is open) with a fixed sentence
 //     in place of the words, and no asker id and no key;
 //   - another athlete, the asker's guardians, another guardian of the same
-//     child, and the other gym read nothing of it.
+//     child, and the other gym read nothing of it;
+//   - the free text staff write on the row (its closing note, a submission's
+//     note, review note and provenance) reaches the organization admin whole,
+//     and a coach as one fixed sentence (lane L52).
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
@@ -63,6 +66,15 @@ const PARENT_WORDS = 'QUOKKA-PARENT-4419 my son says an adult at the gym touched
 const ATHLETE_FRAGMENT = 'ZEBRA-ATHLETE-7731';
 const PARENT_FRAGMENT = 'QUOKKA-PARENT-4419';
 const COACH_SENTENCE = 'A question from an athlete or parent that SHADOW could not answer. The gym administrator can read it.';
+const NOTE_SENTENCE = 'The gym administrator can read this note.';
+/* Staff free text on the athlete's row, each findable by its tag. */
+const CLOSING_NOTE = 'OKAPI-CLOSING-5521 answered with the family about her coach.';
+const STAFF_TEXT = {
+  submission_note: 'OKAPI-SUBMISSION-5522 what to do when a coach hits a kid',
+  review_note: 'OKAPI-REVIEW-5523 covers what she asked',
+  provenance: 'OKAPI-PROVENANCE-5524 searched for coach hitting',
+};
+const STAFF_TAG = 'OKAPI-';
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 
@@ -71,6 +83,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let listGet: (request: NextRequest) => Promise<Response>;
 let requirementsPost: (request: NextRequest) => Promise<Response>;
+let submissionsGet: (request: NextRequest) => Promise<Response>;
 let fileQuestion: typeof import('./shadowResearchFiling').fileUnansweredShadowQuestion;
 const ids: { athleteRow?: number; parentRow?: number } = {};
 
@@ -138,6 +151,21 @@ async function listAs(actor: PilotPrincipal): Promise<Listed> {
 }
 
 const idsOf = (listed: Listed): number[] => listed.items.map((item) => Number(item.research_requirement_id));
+
+async function submissionsAs(actor: PilotPrincipal, requirementId: number): Promise<Listed> {
+  mockRequirePrincipal.mockResolvedValue(actor);
+  const response = await submissionsGet(new NextRequest(
+    `http://localhost/api/pilot/shadow/research-submissions?research_requirement_id=${requirementId}`,
+  ));
+  const text = await response.text();
+  let items: Array<Record<string, unknown>> = [];
+  try {
+    items = (JSON.parse(text) as { items?: Array<Record<string, unknown>> }).items ?? [];
+  } catch {
+    items = [];
+  }
+  return { status: response.status, text, items };
+}
 
 beforeAll(async () => {
   PG_PORT = await freePort();
@@ -239,6 +267,7 @@ beforeAll(async () => {
 
   listGet = (await import('@/app/api/pilot/shadow/research-requirements/route')).GET;
   requirementsPost = (await import('@/app/api/pilot/shadow/research-requirements/route')).POST;
+  submissionsGet = (await import('@/app/api/pilot/shadow/research-submissions/route')).GET;
   fileQuestion = (await import('./shadowResearchFiling')).fileUnansweredShadowQuestion;
 
   // Filed by the real function, as the chat route calls it. The athlete is
@@ -257,6 +286,21 @@ beforeAll(async () => {
   );
   ids.athleteRow = Number(rows.rows.find((row) => row.created_by_account_id === 'acct-aq-athlete-a')?.research_requirement_id);
   ids.parentRow = Number(rows.rows.find((row) => row.created_by_account_id === 'acct-aq-guardian-b1')?.research_requirement_id);
+
+  // A source a coach submitted against the athlete's question and the
+  // organization admin reviewed, with staff free text in every note.
+  await db.query(
+    `insert into pilot.shadow_library_sources (source_id, organization_id, title, source_type, authority_tier)
+     values ('src-aq-1', $1, 'Coach conduct guidance', 'peer_reviewed', 2)`,
+    [ORG],
+  );
+  await db.query(
+    `insert into pilot.shadow_research_submissions
+       (organization_id, submission_id, research_requirement_id, source_id, provenance, submission_note,
+        applicability_state, reviewed_by_account_id, reviewed_at, review_note, submitted_by_account_id)
+     values ($1, 'sub-aq-1', $2, 'src-aq-1', $3::jsonb, $4, 'responsive', 'acct-aq-admin', now(), $5, 'acct-aq-coach')`,
+    [ORG, ids.athleteRow, JSON.stringify({ found_via: STAFF_TEXT.provenance }), STAFF_TEXT.submission_note, STAFF_TEXT.review_note],
+  );
 });
 
 afterAll(async () => {
@@ -327,7 +371,7 @@ describe('who reads an athlete\'s or parent\'s unanswered question', () => {
       body: JSON.stringify({
         action: 'resolve',
         research_requirement_id: ids.athleteRow,
-        closing_note: 'Answered with the family.',
+        closing_note: CLOSING_NOTE,
       }),
     }));
     const text = await response.text();
@@ -386,7 +430,19 @@ describe('after a coach closes one, and the other ways in', () => {
     const asker = await listAs(AS.athleteA());
     const own = asker.items.find((item) => Number(item.research_requirement_id) === ids.athleteRow);
     expect(own).toMatchObject({ status: 'resolved', is_mine: true });
-    expect((own?.metadata as { closing_note?: string }).closing_note).toBe('Answered with the family.');
+    expect((own?.metadata as { closing_note?: string }).closing_note).toBe(CLOSING_NOTE);
+  });
+
+  // Lane L52: the closing note is staff free text about the question.
+  test('the coach list carries the note sentence in place of the closing note; the organization admin reads it', async () => {
+    const coach = await listAs(AS.coach());
+    const row = coach.items.find((item) => Number(item.research_requirement_id) === ids.athleteRow);
+    expect((row?.metadata as { closing_note?: string }).closing_note).toBe(NOTE_SENTENCE);
+    expect(coach.text).not.toContain(STAFF_TAG);
+
+    const admin = await listAs(AS.admin());
+    const whole = admin.items.find((item) => Number(item.research_requirement_id) === ids.athleteRow);
+    expect((whole?.metadata as { closing_note?: string }).closing_note).toBe(CLOSING_NOTE);
   });
 
   test('asking the same words again reaches the same row; another asker of them gets their own', async () => {
@@ -478,6 +534,50 @@ describe('after a coach closes one, and the other ways in', () => {
     );
     expect(row.rows[0].a).toBe(ATHLETE_B);
     expect(row.rows[0].status).toBe('open');
+  });
+});
+
+// Lane L52: GET research-submissions?research_requirement_id= through the real
+// route, scope gate and table.
+describe('the submissions on the question, read by id', () => {
+  test('a coach reads the source and the verdict, the note sentence and none of the staff text', async () => {
+    const coach = await submissionsAs(AS.coach(), ids.athleteRow as number);
+    expect(coach.status).toBe(200);
+    expect(coach.items).toHaveLength(1);
+    expect(coach.items[0]).toMatchObject({
+      submission_id: 'sub-aq-1',
+      source_id: 'src-aq-1',
+      applicability_state: 'responsive',
+      submission_note: NOTE_SENTENCE,
+      review_note: NOTE_SENTENCE,
+      provenance: {},
+    });
+    for (const leak of [STAFF_TAG, ATHLETE_FRAGMENT, 'acct-aq-athlete-a', 'acct:']) {
+      expect(coach.text).not.toContain(leak);
+    }
+  });
+
+  test('the organization admin reads every note whole', async () => {
+    const admin = await submissionsAs(AS.admin(), ids.athleteRow as number);
+    expect(admin.status).toBe(200);
+    for (const text of Object.values(STAFF_TEXT)) {
+      expect(admin.text).toContain(text);
+    }
+  });
+
+  test('the asker reads the family fields and no staff text', async () => {
+    const asker = await submissionsAs(AS.athleteA(), ids.athleteRow as number);
+    expect(asker.status).toBe(200);
+    expect(asker.items.map((item) => item.submission_id)).toEqual(['sub-aq-1']);
+    expect(asker.text).not.toContain(STAFF_TAG);
+  });
+
+  test('another athlete and the other gym get the not-found', async () => {
+    for (const actor of [AS.athleteB(), AS.otherOrgCoach()]) {
+      const read = await submissionsAs(actor, ids.athleteRow as number);
+      expect(read.status).toBe(404);
+      expect(read.text).not.toContain(STAFF_TAG);
+    }
   });
 });
 

@@ -653,6 +653,11 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
   'pilot.athlete_pathway_stages',
+  // A child's own period start dates: athlete-only (Jason 2026-10-18, cycle
+  // tracking "C: Now"). Prefix: covers athlete_cycle_tracking and _entries.
+  'pilot.athlete_cycle',
+  // What a child ticked after sparring (head symptoms): a safety record.
+  'pilot.sparring_symptom_reports',
   // A coach's report of what a child did in a drill, and why (lane L49). Staff only.
   'pilot.behaviour_observations',
 ];

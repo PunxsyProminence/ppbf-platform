@@ -68,7 +68,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { attendanceOnDay } from './attendancePrecedence';
+import { attendanceOnDay, getAttendanceLast28Days } from './attendancePrecedence';
 import { getCoachPassbookGapQueue } from './passbook';
 
 const ORG_ID = 'org-attend';
@@ -770,6 +770,103 @@ describe('coach passbook gap queue reads the reconciled view (LC-07)', () => {
       expect(byAthlete[ATHLETE_ID].recorded_absences_since_last_visit).toBe(0);
       expect(byAthlete[ATHLETE_TWO].last_attended_on).toBe('2026-03-10');
       expect(byAthlete[ATHLETE_TWO].recorded_absences_since_last_visit).toBe(2);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+describe('the last 28 days and the days since the last session (OD-2026-10-17-026 (c))', () => {
+  // Today is 2026-03-28 at the gym, so the window is 2026-03-01 .. 2026-03-28 inclusive.
+  const TODAY = '2026-03-28';
+
+  test('present over marked days, excused not counted, two classes one day are one day, and the edges hold', async () => {
+    const client = await freshDatabase('attend_window_rate');
+    activeClient = client;
+    try {
+      await addClass(client, 'c-feb28', '2026-02-28');
+      await addClass(client, 'c-mar01', '2026-03-01');
+      await addClass(client, 'c-mar10a', '2026-03-10', '16:00');
+      await addClass(client, 'c-mar10b', '2026-03-10', '18:00');
+      await addClass(client, 'c-mar12', '2026-03-12');
+      await addClass(client, 'c-mar14', '2026-03-14');
+      await addClass(client, 'c-mar29', '2026-03-29');
+      await markClass(client, 'c-feb28', ATHLETE_ID, 'absent'); // the day before the window: not counted
+      await markClass(client, 'c-mar01', ATHLETE_ID, 'present'); // the first day of the window: counted
+      await markClass(client, 'c-mar10a', ATHLETE_ID, 'present');
+      await markClass(client, 'c-mar10b', ATHLETE_ID, 'present'); // same day: still one day
+      await markClass(client, 'c-mar12', ATHLETE_ID, 'absent');
+      await markClass(client, 'c-mar14', ATHLETE_ID, 'excused');
+      await markClass(client, 'c-mar29', ATHLETE_ID, 'present'); // after today: not counted, not "last"
+
+      const window = (await getAttendanceLast28Days(ORG_ID, [ATHLETE_ID], TODAY)).get(ATHLETE_ID);
+
+      expect(window).toEqual({
+        athlete_id: ATHLETE_ID,
+        window_from: '2026-03-01',
+        window_to: TODAY,
+        days_present: 2,
+        days_absent: 1,
+        days_excused: 1,
+        attendance_rate: 0.667,
+        last_present_day: '2026-03-10',
+        days_since_last_present: 18,
+      });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('no register is a null rate, not 0%; excused-only is null too; never present has no last day', async () => {
+    const client = await freshDatabase('attend_window_null');
+    activeClient = client;
+    try {
+      await addClass(client, 'c-mar05', '2026-03-05');
+      await markClass(client, 'c-mar05', ATHLETE_TWO, 'excused');
+
+      const windows = await getAttendanceLast28Days(ORG_ID, [ATHLETE_ID, ATHLETE_TWO], TODAY);
+
+      expect(windows.get(ATHLETE_ID)).toMatchObject({
+        days_present: 0, days_absent: 0, days_excused: 0, attendance_rate: null,
+        last_present_day: null, days_since_last_present: null,
+      });
+      expect(windows.get(ATHLETE_TWO)).toMatchObject({ days_excused: 1, attendance_rate: null, last_present_day: null });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('all absent is a real 0%, and the last session can be long before the window', async () => {
+    const client = await freshDatabase('attend_window_zero');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_ID, '2026-01-15', 'present');
+      await addClass(client, 'c-mar20', '2026-03-20');
+      await markClass(client, 'c-mar20', ATHLETE_ID, 'absent');
+
+      const window = (await getAttendanceLast28Days(ORG_ID, [ATHLETE_ID], TODAY)).get(ATHLETE_ID);
+
+      expect(window).toMatchObject({ days_present: 0, days_absent: 1, attendance_rate: 0, last_present_day: '2026-01-15', days_since_last_present: 72 });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('only the named athletes, only this organization; an empty list reads nothing', async () => {
+    const client = await freshDatabase('attend_window_scope');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_TWO, '2026-03-20', 'present', 'boxing_training', ADMIN_ID);
+      const windows = await getAttendanceLast28Days(ORG_ID, [ATHLETE_ID], TODAY);
+      expect([...windows.keys()]).toEqual([ATHLETE_ID]);
+      expect(windows.get(ATHLETE_ID)?.days_present).toBe(0);
+      const elsewhere = await getAttendanceLast28Days('org-somewhere-else', [ATHLETE_TWO], TODAY);
+      expect(elsewhere.get(ATHLETE_TWO)?.days_present).toBe(0);
+      expect((await getAttendanceLast28Days(ORG_ID, [], TODAY)).size).toBe(0);
     } finally {
       activeClient = null;
       await client.end();

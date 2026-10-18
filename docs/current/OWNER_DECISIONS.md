@@ -164,6 +164,102 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-033 -- Cycle tracking data when an athlete's account is deleted: "A: Delete at once (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 18893, 2026-10-18T03:29:53.807Z; answered at line 18903, 2026-10-18T03:36:41.200Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-023 item 4 (cycle tracking is built now). New; edits no earlier entry.
+
+**Question "Cycle data".** Overwatch, as written: "Cycle tracking data when an athlete's account is deleted. Today the purge removes an athlete's cycle entries with the rest of their records, 2 years after the account is soft-deleted (the athlete can delete their own entries any time; nobody else can ever read them). A: delete cycle entries immediately when the account is deleted. B: keep the standard 2-year purge like everything else." Options as written: "A: Delete at once (Rec.)": "Only the athlete could ever read it, so holding it 2 years serves no one and is the most sensitive data in the app."; "B: Standard 2 years": "Same timing as the rest of the athlete's records.". Jason: *"A: Delete at once (Rec.)"*
+
+**Ruling:** an athlete's cycle entries are deleted immediately when the athlete's account is deleted, not at the standard 2-year purge. "B: Standard 2 years" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L58 (line 18913): "An athlete's cycle tracking row and its entries are deleted immediately when the athlete's account is deleted (soft delete), not at the 2-year purge." It asked for the delete in the same transaction as the soft delete, with a test.
+
+**Status:** ruled; not checked as built by this records pass.
+
+---
+
+## OD-2026-10-17-032 -- The +30 SEC false-bell edge case: "A: Keep 30 sec (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 18326, 2026-10-18T03:02:33.125Z; answered at line 18327, 2026-10-18T03:04:33.704Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-030 (+30 SEC from 30 seconds, no migration). New; edits no earlier entry.
+
+**Question "+30 bell".** Overwatch, as written: "Gym TV +30 SEC edge case: pressed 30-37 seconds into a round, it can ring the TV's start bell once, because the TV can't tell it from a restart. A: keep +30 available from 30 seconds and accept that rare extra bell. B: make +30 available from 38 seconds, so the TV never rings a false bell." Options as written: "A: Keep 30 sec (Rec.)": "As you picked. Rarely, a coach adding time right at the 30-second mark gets one extra bell on the TV."; "B: Open at 38 sec": "No false bell; coaches wait 8 more seconds before +30 works.". Jason: *"A: Keep 30 sec (Rec.)"*
+
+**Ruling:** +30 SEC stays available from 30 seconds into a round. The rare extra start bell on the TV, when +30 is pressed 30-37 seconds in, is accepted. "B: Open at 38 sec" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 18330): "#1742 stays as built, and the rare extra bell is documented in its body."
+
+**Status:** ruled; whether #1742 merged was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-031 -- CI is backed up: "A: I'll check + upgrade (Rec.)"
+
+**Provenance: PRIMARY.** The second question of a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 17252, 2026-10-18T02:11:40.258Z; answered at line 17253, 2026-10-18T02:12:39.637Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "CI speed".** Overwatch, as written: "CI is backed up: 48 test runs queued, only 2-3 running at once (GitHub status is normal). INFERRED cause: the GitHub organization's concurrent-job limit (Free plan 20 jobs; Team plan 60, about $4 per member per month). I can't see the plan (needs org-admin access). Will you check github.com/organizations/PunxsyProminence/settings/billing and upgrade to Team if it's on Free?" Options as written: "A: I'll check + upgrade (Rec.)": "About 3x more test runs at once, so lanes' PRs merge in minutes instead of waiting hours. Small monthly cost."; "B: Keep current plan": "Lanes push less often; the queue drains slowly (hours at current load).". Jason: *"A: I'll check + upgrade (Rec.)"*
+
+**Ruling:** Jason checks the GitHub organization's plan himself and upgrades it to Team if it is on Free. "B: Keep current plan" was not chosen. The cause, the organization's concurrent-job limit, is INFERRED by Overwatch, as the card says; the plan, the limit and the price on the card were not checked by this records pass.
+
+**Acted on:** the card asks Jason to make the check and any upgrade himself. Overwatch also changed the lane rules so lanes post GREEN without waiting for CI (LANE-COMMON-RULES rule 9, dated "~02:15Z" in that file); that is Overwatch's call, not his ruling.
+
+**Status:** ruled; whether the plan was checked or upgraded was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-030 -- The gym TV coach screen's +30 SEC button: "A: After 30 sec (Rec.)"
+
+**Provenance: PRIMARY.** The first question of a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 17252, 2026-10-18T02:11:40.258Z; answered at line 17253, 2026-10-18T02:12:39.637Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-010 (the +30 SEC and REPEAT buttons, after the restyle). New; edits no earlier entry.
+
+**Question "+30 SEC".** Overwatch, as written: "Gym TV coach screen, +30 SEC button timing. A: no database change; +30 SEC becomes available once a round or rest is 30 seconds old (greyed out with a reason before that), and REPEAT works any time. B: a database change (migration, 2 reviewers, applied by a release) so +30 SEC works from the first second." Options as written: "A: After 30 sec (Rec.)": "A coach can add 30 seconds any time after a round's first 30 seconds, which is when it's normally wanted. Small build, ships sooner."; "B: From first second": "Works instantly, but needs a database change and takes longer.". Jason: *"A: After 30 sec (Rec.)"*
+
+**Ruling:** no database change. +30 SEC becomes available once a round or rest is 30 seconds old, greyed out with a reason before that; REPEAT works any time. "B: From first second" (a migration) was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed the pick to lane L39 (line 17257) with "Build PR 4 first."
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-029 -- The sparring symptom flag's defaults: "A: Their coach (Rec.)"; "A: Not yet, leave blank (Rec.)"; then his typed "Approve the rest"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16927, 2026-10-18T01:59:24.102Z; answered at line 16937, 2026-10-18T02:04:26.569Z), and his typed message (queued at line 16936, 2026-10-18T02:04:25.558Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-023 item 1 (the post-sparring symptom flag is added to the check-in). The question came from lane L58 (Overwatch, line 16926). New; edits no earlier entry.
+
+**Question "Flag goes to".** Overwatch, as written: "Sparring symptom flag: when an athlete ticks a symptom after sparring (headache, dizzy, foggy, etc.), who gets the alert by default? It files a high-priority escalation; each gym can change the setting later." Options as written: "A: Their coach (Rec.)": "The athlete's coach of record (and covering coach) gets it; the gym admin can still see it on the escalation list."; "B: Coach + gym admin": "Both are alerted directly."; "C: Gym admin only": "The office handles it, not the coach.". Jason: *"A: Their coach (Rec.)"*
+
+**Question "Protocol text".** Overwatch, as written: "After a tick, the athlete sees: "Tell your coach now, and follow the gym's rules for head knocks." The gym can add its own protocol text underneath. Does PPBF have written head-knock rules to put there?" Options as written: "A: Not yet, leave blank (Rec.)": "Ships with the one sentence; you (or the gym admin) add text later in gym settings."; "B: Yes, I'll send it": "Paste or upload it and it goes in as PPBF's text.". Jason: *"A: Not yet, leave blank (Rec.)"*
+
+**His typed message.** *"Approve the rest"*
+
+**Ruling:**
+
+1. By default a sparring symptom flag alerts the athlete's coach of record and covering coach; the gym admin can still see it on the escalation list. Per the card, it files a high-priority escalation and each gym can change the setting later. "B: Coach + gym admin" and "C: Gym admin only" were not chosen.
+2. The flag ships with the one sentence the card names ("Tell your coach now, and follow the gym's rules for head knocks."), with no PPBF protocol text yet; Jason or the gym admin adds text later in gym settings. "B: Yes, I'll send it" was not chosen.
+3. His *"Approve the rest"* names no question. Overwatch's reading, not his words (line 16946): "Taking "approve the rest" as yes to my recommended answers on the open lane questions: GO for L58 and L50, and the register adds."
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L58 (line 16947) the two defaults and "So build PR-3 with those defaults." It gave L58 and L50 (line 16948) its other answers under its reading of item 3; those answers are Overwatch's.
+
+**Status:** ruled; not built at the time of writing.
+
+**Status (2026-10-17), build note (lane L58's and Overwatch's, not a ruling):** the default recipient of the sparring symptom flag is the coach, and the setting is stored per gym so a gym can change it once L58's PR-3b editor exists. Lane L58's database change (#1750, still open, head `b5f8b96541b2b7af725cf38a8f146464b2fa13a9`) stores `recipient_role` with default 'coach' and allowed values coach, organization_admin and admin (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:104` and `:113` at that head). L58 had dropped the setting after its reviewers' advice (line 18870; Overwatch accepted it at line 18913) and restored it at that head (line 19154, 2026-10-18T03:50:07.175Z): "recipient_role is BACK (default 'coach'). The recorded ruling OD-2026-10-17-029 quotes your card "each gym can change the setting later", so the reviewers' advice to drop it would have contradicted it." and "PR-3b's editor will edit both recipient and protocol text." PR-3b was not built at the time of writing.
+
+---
+
+## OD-2026-10-17-028 -- The gym TV look B is approved for merge: "A: Approve B (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16809, 2026-10-18T01:48:06.755Z; answered at line 16814, 2026-10-18T01:57:45.640Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-011 (look B, with its screenshots sent before anything merges). New; edits no earlier entry.
+
+**What was sent first.** Overwatch sent four screenshots (line 16805, 2026-10-18T01:47:58.182Z): `3-paired-live-session.png`, `2-paired-idle.png`, `1-unpaired-public.png`, `4-standing.png`, from `Documents\PPBF-overwatch\lane-inbox\L39-shots\option-b-with-2b\`, captioned "Gym TV, look B ("push further"): live session, idle, public, standing. The test gym's name shows here; production shows the real one."
+
+**Question "TV look B".** Overwatch, as written: "Gym TV look B (in the 4 screenshots I just sent): cream enamel title bands, a wood and steel frame with the motto on the top rail, and the clock on an enamel plate. Cream covers about 9-11% of the screen and the board bodies stay dark. Approve B so the TV PRs (#1705, #1706, #1708) can go to merge?" Options as written: "A: Approve B (Rec.)": "The TV restyle goes into the next release. The coach-screen top row and the +30 SEC / REPEAT buttons follow as the next PRs."; "B: Changes first": "Say what to change in Other; the lane re-shoots."; "C: Go back to look A": "The milder version from the earlier shots.". Jason: *"A: Approve B (Rec.)"*
+
+**Ruling:** look B, as in those four screenshots, is approved, and the TV PRs #1705, #1706 and #1708 can go to merge. "B: Changes first" and "C: Go back to look A" were not chosen. Per the option text, the coach-screen top row and the +30 SEC / REPEAT buttons follow as the next PRs.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 16833): "Mark #1705 ready and post GREEN on its current head." and to bring #1706 and #1708 to GREEN in order as each base merges.
+
+**Status:** ruled; whether #1705, #1706 and #1708 merged was not checked by this records pass.
+
+---
+
 ## OD-2026-10-17-027 -- Habit and lesson thresholds from the research report: "A: Adopt as written (Rec.)"; "A: Those three (Rec.)"; "A: Not until calibrated (Rec.)"
 
 **Provenance: PRIMARY.** Questions 2 to 4 of a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16689, 2026-10-18T01:23:28.742Z; answered at line 16707, 2026-10-18T01:46:02.698Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The card rests on overwatch's research report `Documents\PPBF-overwatch\research\HABIT-AND-LESSON-THRESHOLDS-2026-10-18.md` (section 8 per Overwatch; not read by this records pass). It follows OD-2026-10-17-022 item 3 (the bar must be backed by research). New; edits no earlier entry.
@@ -617,6 +713,8 @@ Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Op
 **Acted on:** Overwatch offered lane L37 ("Narrow the policy-shelf hold to Jason's ruling", lane brief at line 12556, chip at line 12557) to change the hold check in the move tool. Not built at the time of writing.
 
 **Status:** ruled; whether it is built was not checked by this records pass.
+
+**Status (2026-10-18), applied (OBSERVED from the run, housekeeping lane HK):** the move ran in production. `move-policy-shelf` run 39077227359 (workflow_dispatch, TARGET production, mode apply, conclusion success, completed 2026-10-17T23:30:21Z) logged `library.policy_move.completed`: moved 22 sources, 7 documents and 49 chunks from `ppbf-default-org` to `punxsy_prominence`; detached 2 evidence items and 0 message citations; after the move `ppbf-default-org` holds 0 of each and `punxsy_prominence` 22 / 7 / 49. The hold narrowing it needed was #1694.
 
 ---
 
@@ -8878,6 +8976,8 @@ own answer to each. Times UTC.
 Not decisions: the defaults and the questions in the session's 16:57Z report.
 Jason has not answered them; they are open questions in
 `docs/current/ACTIVE_WORK.md`.
+
+**Status (2026-10-17), citation (housekeeping lane HK):** R3's `.github/workflows/seed-reference-data.yml:65` was that line at `f597a4a5`; on main `ab0224e2` the same comment ("universal-stop-rules is loadable but has no committed file yet") is at `:69`. His quoted words are unchanged.
 
 ---
 
