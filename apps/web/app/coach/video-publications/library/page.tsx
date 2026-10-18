@@ -118,7 +118,7 @@ export default function VideoLibraryPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Library</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Published Clips</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Video Library</h1>
           <ClusterNav cluster="film" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">

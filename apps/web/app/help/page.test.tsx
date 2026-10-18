@@ -86,7 +86,7 @@ test.each([
 const OTHER_ROLE_MARKERS = [
   'Coach Workspace Guide', 'Board Workspace Guide', 'Capabilities Guide', 'Revenue & Funding Guide',
   'Development Lab Guide', 'Tester Guide', 'Coach Guide', 'Board Guide', 'Admin Guide', 'Revenue Guide', 'Parent Guide', 'Athlete Guide', 'FRONT-END SAFE', 'MIXED LIVE + PLACEHOLDER',
-  'owner decision on 2026-08-26', 'PPBF MASTER TUTORIAL',
+  'owner decision on 2026-08-26', 'Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.',
 ];
 
 test.each(['parent', 'athlete', 'coach', 'staff', 'board', 'volunteer'] as const)(
@@ -120,7 +120,7 @@ test.each(['organization_admin', 'admin'] as const)('a gym administrator (%s) ge
   const { container } = render(await HelpCenterPage());
   expect(screen.getByText('Help for gym administrators')).toBeTruthy();
   for (const marker of ['Tester Guide', 'Development Lab Guide', 'Board Workspace Guide', 'FRONT-END SAFE',
-    'owner decision on 2026-08-26', 'PPBF MASTER TUTORIAL']) {
+    'owner decision on 2026-08-26', 'Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.']) {
     expect(container.innerHTML).not.toContain(marker);
   }
 });

@@ -206,7 +206,7 @@ export default function AdminCustomizePage() {
       <header className="mat-leather max-w-[1000px] p-[var(--s5)]">
         <p className="t-eyebrow">Customize the gym</p>
         <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
-          The gym&apos;s look and voice, one desk
+          Customize the Gym
         </h1>
         <p className="t-body mt-[var(--s3)] max-w-[68ch]">
           Photographs on the wall, the chalk on the boards, and the notices — everything the gym shows
