@@ -152,6 +152,26 @@ async function programIsActive(organizationId: string, programId: string): Promi
   return program !== null;
 }
 
+// The whole link as a browser reads it: the shape check above passes a port
+// outside 1-65535, which no browser opens.
+function parsesAsHttps(destination: string): boolean {
+  try {
+    const url = new URL(destination);
+    return url.protocol === 'https:' && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// A program this write needs to be active, judged again at the write itself:
+// FOR SHARE waits out an archive in flight and reads the row again, so a
+// program archived between the check above and the write is not written to.
+const PROGRAM_STILL_ACTIVE = (organization: string, program: string) =>
+  `exists (select 1 from pilot.programs p
+            where p.organization_id = ${organization} and p.program_id = ${program} and p.status = 'active'
+            for share)`;
+const NOT_ACTIVE_PROGRAM_MESSAGE = "That program is not one of this gym's active programs.";
+
 // Characters as Postgres counts them (char_length): code points, not UTF-16 units.
 const characters = (text: string) => [...text].length;
 
@@ -170,7 +190,7 @@ async function checkedFields(
   }
   let destinationKind: 'internal' | 'external';
   if (destination.startsWith('https://')) {
-    if (destination.length > 2000 || /[\s\\]/.test(destination) || !HTTPS_LINK.test(destination)) {
+    if (destination.length > 2000 || /[\s\\]/.test(destination) || !HTTPS_LINK.test(destination) || !parsesAsHttps(destination)) {
       throw new ValidationError('That link is not a full https address.');
     }
     destinationKind = 'external';
@@ -187,20 +207,22 @@ async function checkedFields(
     throw new ValidationError('The link is an app page starting with / or an https address.');
   }
   const programId = input.program_id?.trim() || null;
+  let activeProgram: { programId: string; message: string } | null = null;
   if (programId !== null) {
     if (kept === undefined || programId !== kept.programId) {
       // A new program must be this gym's and active.
-      if (!(await programIsActive(organizationId, programId))) {
-        throw new ValidationError("That program is not one of this gym's active programs.");
-      }
-    } else if (kept.published && !(await programIsActive(organizationId, programId))) {
+      activeProgram = { programId, message: NOT_ACTIVE_PROGRAM_MESSAGE };
+    } else if (kept.published) {
       // A program kept as it was is judged again only while the resource is
       // published. A draft or an archived one may keep an archived program;
       // publishing judges it then.
-      throw new ValidationError(PROGRAM_ARCHIVED_MESSAGE);
+      activeProgram = { programId, message: PROGRAM_ARCHIVED_MESSAGE };
+    }
+    if (activeProgram && !(await programIsActive(organizationId, programId))) {
+      throw new ValidationError(activeProgram.message);
     }
   }
-  return { title, summary, resourceType: input.resource_type, destinationKind, destination, programId };
+  return { title, summary, resourceType: input.resource_type, destinationKind, destination, programId, activeProgram };
 }
 
 // The database's own refusals, in words. Its seat check is the authority on
@@ -232,7 +254,9 @@ export async function createResource(writer: Writer, input: ResourceFields, publ
       `insert into pilot.parent_resources
          (organization_id, title, summary, resource_type, destination_kind, destination, program_id, state, published_at,
           created_by_account_id, created_by_role)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, case when $8 = 'published' then now() end, $9, $10)
+       select $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::text,
+              case when $8::text = 'published' then now() end, $9::text, $10::text
+        where $7::text is null or ${PROGRAM_STILL_ACTIVE('$1::text', '$7::text')}
        returning resource_id::text as resource_id`,
       [writer.organizationId, fields.title, fields.summary, fields.resourceType, fields.destinationKind, fields.destination,
         fields.programId, publish ? 'published' : 'draft', writer.accountId, writer.role],
@@ -240,7 +264,8 @@ export async function createResource(writer: Writer, input: ResourceFields, publ
   } catch (error) {
     rethrowWrite(error);
   }
-  if (!id) throw new Error('parent resource insert returned no row');
+  // Checked active a moment ago: no row means the program was archived since.
+  if (!id) throw new ValidationError(NOT_ACTIVE_PROGRAM_MESSAGE);
   return present(writer.organizationId, await readOne(writer.organizationId, id.resource_id));
 }
 
@@ -261,7 +286,8 @@ export async function editResource(
   }, { programId: current.program_id, published: current.state === 'published' });
   return write(writer, resourceId, version,
     `title = $4, summary = $5, resource_type = $6, destination_kind = $7, destination = $8, program_id = $9`,
-    [fields.title, fields.summary, fields.resourceType, fields.destinationKind, fields.destination, fields.programId]);
+    [fields.title, fields.summary, fields.resourceType, fields.destinationKind, fields.destination, fields.programId],
+    fields.activeProgram);
 }
 
 /**
@@ -286,27 +312,46 @@ export async function setResourceState(
     }
   }
   return write(writer, resourceId, version,
-    state === 'published' ? `state = 'published', published_at = coalesce(published_at, now())` : `state = 'archived'`, []);
+    state === 'published' ? `state = 'published', published_at = coalesce(published_at, now())` : `state = 'archived'`, [],
+    state === 'published' && current.program_id !== null
+      ? { programId: current.program_id, message: PROGRAM_ARCHIVED_MESSAGE }
+      : null);
 }
 
 // One change, made only to the version the caller read. No row means another
 // change came first (nothing is deleted or moves gyms, and readOne has just
 // found it): that change is kept and the caller reloads.
-async function write(writer: Writer, resourceId: string, version: string, set: string, values: unknown[]): Promise<StaffParentResource> {
+async function write(
+  writer: Writer,
+  resourceId: string,
+  version: string,
+  set: string,
+  values: unknown[],
+  activeProgram: { programId: string; message: string } | null = null,
+): Promise<StaffParentResource> {
   if (!VERSION.test(version)) throw new ValidationError(VERSION_MESSAGE);
   const editor = values.length + 4;
+  const program = editor + 2;
   let rows: { resource_id: string }[] = [];
   try {
     rows = await query<{ resource_id: string }>(
       `update pilot.parent_resources
           set ${set}, updated_by_account_id = $${editor}, updated_by_role = $${editor + 1}
         where organization_id = $1 and resource_id = $2::uuid and updated_at = $3::timestamptz
+          ${activeProgram ? `and ${PROGRAM_STILL_ACTIVE('$1', `$${program}::text`)}` : ''}
         returning resource_id::text as resource_id`,
-      [writer.organizationId, resourceId, version, ...values, writer.accountId, writer.role],
+      [writer.organizationId, resourceId, version, ...values, writer.accountId, writer.role,
+        ...(activeProgram ? [activeProgram.programId] : [])],
     );
   } catch (error) {
     rethrowWrite(error);
   }
-  if (rows.length !== 1) throw new ConflictError(STALE_MESSAGE);
+  if (rows.length !== 1) {
+    // Checked active a moment ago: an archive since then is the program's words, not a stale version.
+    if (activeProgram && !(await programIsActive(writer.organizationId, activeProgram.programId))) {
+      throw new ValidationError(activeProgram.message);
+    }
+    throw new ConflictError(STALE_MESSAGE);
+  }
   return present(writer.organizationId, await readOne(writer.organizationId, resourceId));
 }

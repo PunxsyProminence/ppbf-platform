@@ -421,7 +421,8 @@ describe('parent resources, staff publish (PH-11b)', () => {
   });
 
   test('an internal link parents cannot open is refused, and a link that is not a full https address', async () => {
-    for (const destination of ['/admin', '/coach/drills', '/dashboard/../admin', 'help', 'https://usaboxing.org@evil', 'http://usaboxing.org']) {
+    for (const destination of ['/admin', '/coach/drills', '/dashboard/../admin', 'help', 'https://usaboxing.org@evil', 'http://usaboxing.org',
+      'https://usaboxing.org:65536/path', 'https://usaboxing.org:99999']) {
       await expect(staff.createResource(coach, fields({ destination }), true)).rejects.toMatchObject({ status: 400 });
     }
     const mine = await staff.createResource(coach, fields({ destination: '/parent/safety' }), false);
@@ -479,6 +480,54 @@ describe('parent resources, staff publish (PH-11b)', () => {
     expect((await staff.createResource(coach, fields({ title, summary: '\u{1F94A}'.repeat(1000) }), false)).title).toBe(title);
     await expect(staff.createResource(coach, fields({ title: '\u{1F94A}'.repeat(201) }), false))
       .rejects.toMatchObject({ status: 400, message: 'A title is 1 to 200 characters.' });
+  });
+
+  // A program archived on another connection while a write that needs it active
+  // is under way: the write waits for that archive and then refuses, never
+  // writing a resource the family read would hide.
+  async function whileArchiving<T>(run: () => Promise<T>): Promise<{ outcome: PromiseSettledResult<T>; settledEarly: boolean }> {
+    const archiver = new Client({ connectionString: connectionStringFor('ppbf_test_parent_resources_staff') });
+    await archiver.connect();
+    let running: Promise<T> | null = null;
+    try {
+      await archiver.query('begin');
+      await archiver.query(`update pilot.programs set status = 'archived' where organization_id = $1 and program_id = $2`, [ORG_ID, JUNIOR]);
+      running = run();
+      const settledEarly = await Promise.race([
+        running.then(() => true, () => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ]);
+      await archiver.query('commit');
+      const [outcome] = await Promise.allSettled([running]);
+      return { outcome, settledEarly };
+    } finally {
+      running?.catch(() => {});
+      await archiver.query('rollback').catch(() => {});
+      await archiver.end();
+    }
+  }
+
+  test('a program archived while a resource is being added to it: the add waits, then is refused, and nothing is stored', async () => {
+    const { outcome, settledEarly } = await whileArchiving(() => staff.createResource(coach, fields({ program_id: JUNIOR }), true));
+    expect(settledEarly).toBe(false);
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400 } });
+    expect((await staff.listResourcesForStaff(ORG_ID)).items).toEqual([]);
+  });
+
+  test('a program archived while a resource is being moved to it: the edit waits, then is refused, and the resource is unchanged', async () => {
+    const draft = await staff.createResource(coach, fields(), false);
+    const { outcome, settledEarly } = await whileArchiving(() => edit(coach, draft.resource_id, { program_id: JUNIOR }));
+    expect(settledEarly).toBe(false);
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400 } });
+    expect(await stored(draft.resource_id)).toMatchObject({ program_id: null, updated_by_account_id: null });
+  });
+
+  test('a program archived while its resource is being published: the publish waits, then is refused, and it stays a draft', async () => {
+    const draft = await staff.createResource(coach, fields({ program_id: JUNIOR }), false);
+    const { outcome, settledEarly } = await whileArchiving(() => publish(coach, draft.resource_id));
+    expect(settledEarly).toBe(false);
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400, message: staff.PROGRAM_ARCHIVED_MESSAGE } });
+    expect(await stored(draft.resource_id)).toMatchObject({ state: 'draft', updated_by_account_id: null });
   });
 
   test("another gym's program, an archived program and an unknown one are refused", async () => {
