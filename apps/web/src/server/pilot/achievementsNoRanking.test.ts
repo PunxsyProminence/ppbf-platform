@@ -152,8 +152,11 @@ describe('recognition cannot be ranked between athletes', () => {
     expect(migration).toMatch(
       /primary key \(organization_id, athlete_id, milestone_key\)/i,
     );
+    // A second mark never adds a row: the conflict rewrites only a row the
+    // athlete took back (OD-2026-10-17-003, undoSelfMilestone), or makes the
+    // athlete's own standing award a coach's when a coach marks it.
     expect(codeOnly(moduleSource)).toMatch(
-      /on conflict \(organization_id, athlete_id, milestone_key\) do nothing/i,
+      /on conflict \(organization_id, athlete_id, milestone_key\) do update[\s\S]{0,800}?where pilot\.athlete_milestones\.undone_at is not null/i,
     );
   });
 

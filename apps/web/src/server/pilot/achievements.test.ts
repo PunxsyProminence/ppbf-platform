@@ -162,10 +162,12 @@ describe('milestones', () => {
       awardedByRole: 'self',
     });
 
-    // `do nothing`, so a second tap does not move the day it happened -- and
-    // one row per milestone per athlete means no countable quantity ever
-    // accumulates that two athletes could be compared on.
-    expect(lastSql()).toContain('on conflict (organization_id, athlete_id, milestone_key) do nothing');
+    // A second tap on a standing award changes nothing, so it does not move the
+    // day it happened -- only an award the athlete took back (undone_at set) is
+    // rewritten -- and one row per milestone per athlete means no countable
+    // quantity ever accumulates that two athletes could be compared on.
+    expect(lastSql()).toContain('on conflict (organization_id, athlete_id, milestone_key) do update');
+    expect(lastSql()).toContain('where pilot.athlete_milestones.undone_at is not null');
     expect(award?.awarded_at).toBe('2026-05-01T00:00:00.000Z');
   });
 

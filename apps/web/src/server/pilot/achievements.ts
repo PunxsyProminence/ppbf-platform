@@ -51,8 +51,11 @@ import { accountDeletedSql } from './deletedAccountSignIn';
  * for why that is load-bearing rather than merely kind.
  *
  * IT CANNOT UN-SAY SOMETHING. There is no update and no delete for a
- * recognition or a milestone award. A rescindable compliment is a lever, and
- * the platform should not hand anybody one.
+ * recognition, and no delete for a milestone award. A rescindable compliment
+ * is a lever, and the platform should not hand anybody one. The one take-back
+ * is an athlete's own "I did it", for ten minutes (undoSelfMilestone, and
+ * undoPersonalGoalReached for goals): a slip of their own hand, never a
+ * coach's word.
  */
 
 /* ------------------------------------------------------------------------- */
@@ -496,6 +499,23 @@ function isAwarderRole(value: unknown): value is AwarderRole {
  *
  * That idempotence is also what keeps the table from ever holding a per-athlete
  * count worth ranking — one row per milestone per athlete, maximum.
+ *
+ * AN UNDONE ROW COMES BACK. When the athlete took their own mark back
+ * (undoSelfMilestone), the row stays with undone_at set; marking it again --
+ * the real reach, or a coach's award -- brings that same row back with this
+ * mark's role, account, note and date.
+ *
+ * A COACH'S MARK ON THE ATHLETE'S OWN AWARD MAKES IT THE COACH'S. A coach whose
+ * screen was read before the athlete tapped "I did it" can mark the same
+ * milestone a minute later. Left as the athlete's, the athlete's Undo would
+ * then take away a milestone the coach marked (OD-2026-10-17-003: "never
+ * touches a coach's mark"). So it becomes the coach's award -- the FIRST date
+ * kept, the coach's note only if one was given -- and the database refuses any
+ * undo of it (pilot_athlete_milestones_undo_self_only).
+ *
+ * Nothing else is rewritten: the `where` on the conflict leaves every other
+ * standing award, and its first date, alone. An athlete marking a coach's
+ * award changes nothing.
  */
 export async function awardMilestone(params: {
   organizationId: string;
@@ -517,7 +537,16 @@ export async function awardMilestone(params: {
        organization_id, athlete_id, milestone_key, awarded_by_role,
        awarded_by_account_id, note
      ) values ($1,$2,$3,$4,$5,$6)
-     on conflict (organization_id, athlete_id, milestone_key) do nothing`,
+     on conflict (organization_id, athlete_id, milestone_key) do update
+       set awarded_by_role = excluded.awarded_by_role,
+           awarded_by_account_id = excluded.awarded_by_account_id,
+           note = case when pilot.athlete_milestones.undone_at is not null then excluded.note
+                       else coalesce(nullif(excluded.note, ''), pilot.athlete_milestones.note) end,
+           awarded_at = case when pilot.athlete_milestones.undone_at is not null then now()
+                             else pilot.athlete_milestones.awarded_at end,
+           undone_at = null
+       where pilot.athlete_milestones.undone_at is not null
+          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self')`,
     [
       params.organizationId,
       params.athleteId,
@@ -533,9 +562,70 @@ export async function awardMilestone(params: {
   return queryOne<MilestoneAward>(
     `select ${MILESTONE_FIELDS}
      from pilot.athlete_milestones
-     where organization_id = $1 and athlete_id = $2 and milestone_key = $3`,
+     where organization_id = $1 and athlete_id = $2 and milestone_key = $3
+       and undone_at is null`,
     [params.organizationId, params.athleteId, params.milestoneKey],
   );
+}
+
+/** How long an athlete may take back their own milestone "I did it" (OD-2026-10-17-003). */
+export const MILESTONE_UNDO_WINDOW_MINUTES = 10;
+
+export interface UndoneMilestone {
+  athlete_id: string;
+  milestone_key: string;
+  /** When the mark that was taken back had been made: the audit event carries it. */
+  undone_awarded_at: string;
+  undone_at: string;
+}
+
+/**
+ * Takes back an athlete's own "I did it" on a milestone, within ten minutes of
+ * the mark (OD-2026-10-17-003: "10-minute undo of their own mark; never touches
+ * a coach's mark; history kept").
+ *
+ * Every condition is in the statement, not in the button:
+ *   - THE OWNER. `athleteId` is the athlete the route has cleared, and only an
+ *     athlete may undo; `actorAccountId` must be the account that made the
+ *     mark. Another athlete's award, or one made from another account,
+ *     matches nothing.
+ *   - THEIR OWN MARK ONLY. `awarded_by_role = 'self'`: a coach's award is never
+ *     taken back here -- and the database refuses it too
+ *     (pilot_athlete_milestones_undo_self_only).
+ *   - THE WINDOW, BY THE DATABASE'S CLOCK. awarded_at was written by the
+ *     database's now(), so the window is measured on the same clock: a mark
+ *     older than ten minutes stands, whatever the screen still shows.
+ *   - ONCE. An award already undone matches nothing.
+ * It is a reversal, not a delete: the row stays with undone_at set, every read
+ * that shows or counts awards leaves it out, and the caller writes an audit
+ * event carrying the mark it reversed (undone_awarded_at).
+ */
+export async function undoSelfMilestone(params: {
+  organizationId: string;
+  athleteId: string;
+  milestoneKey: string;
+  actorAccountId: string;
+  /** The caller's transaction, so the reversal and its audit event commit together. */
+  client?: PoolClient;
+}): Promise<UndoneMilestone | null> {
+  const text = `update pilot.athlete_milestones
+     set undone_at = now()
+     where organization_id = $1 and athlete_id = $2 and milestone_key = $3
+       and awarded_by_role = 'self' and awarded_by_account_id = $4
+       and undone_at is null
+       and awarded_at >= now() - $5 * interval '1 minute'
+     returning athlete_id, milestone_key, awarded_at as undone_awarded_at, undone_at`;
+  const values = [
+    params.organizationId,
+    params.athleteId,
+    params.milestoneKey,
+    params.actorAccountId,
+    MILESTONE_UNDO_WINDOW_MINUTES,
+  ];
+  const rows = params.client
+    ? (await params.client.query(text, values)).rows as UndoneMilestone[]
+    : await query<UndoneMilestone>(text, values);
+  return rows[0] ?? null;
 }
 
 /**
@@ -573,7 +663,7 @@ export async function listMilestoneAwards(
   return query<MilestoneAward>(
     `select ${MILESTONE_FIELDS}
      from pilot.athlete_milestones
-     where organization_id = $1 and athlete_id = $2
+     where organization_id = $1 and athlete_id = $2 and undone_at is null
      order by awarded_at desc`,
     [organizationId, athleteId],
   );
