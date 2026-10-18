@@ -323,18 +323,20 @@ export async function POST(request: NextRequest) {
     // set in the first place -- replacing a wrong-unit punch_absorbed, say -- there is
     // no prior result to re-run, `recalculated` comes back empty, and treating
     // "this superseded something" as a blanket skip meant the newly valid set
-    // was never calculated at all. So detection is skipped only when
-    // recalculation actually handled the context.
-    //
+    // was never calculated at all.
     // Running both is safe rather than merely tolerable: calculationKey is a
     // sha256 over formula identity and scope, persisted under
     // `on conflict (organization_id, calculation_key) do nothing`, so a
     // duplicate computation cannot become a duplicate row.
-    const recalculationHandledContext =
-      observation.supersedesObservationId !== null && recalculated.length > 0;
-
-    const autoCalculated = recalculationHandledContext
-      || !canTriggerStoredCalculation(principal.role)
+    //
+    // DETECTION NOW ALSO RUNS AFTER A CORRECTION THAT RE-RAN SOMETHING (lane
+    // L50). Filling a blank "Whole session" box re-runs data completeness
+    // (MVP-10, which counted the blank) AND newly satisfies MVP-02/04/05,
+    // which never ran on the blank -- skipping detection whenever
+    // recalculation found work left those uncomputed. Detection is
+    // idempotent by calculationKey, so a set recalculation already re-ran
+    // comes back as the same row.
+    const autoCalculated = !canTriggerStoredCalculation(principal.role)
       ? []
       : await autoCalculateForObservationContext({
           organizationId: principal.organizationId,

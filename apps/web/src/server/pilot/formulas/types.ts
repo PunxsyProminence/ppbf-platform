@@ -61,6 +61,18 @@ export const SESSION_TOTAL_DIMENSIONS: Readonly<Record<string, string>> = Object
   scope: 'session_total',
 });
 
+/**
+ * The sparring log's three optional "Whole session" boxes, as the `fieldKey`
+ * data completeness (MVP-10) counts them (Overwatch QD3, 2026-10-17: the three
+ * optional boxes, blanks sent as null). The page always sends all three, so
+ * the set is complete the moment it lands and a blank is a counted gap.
+ */
+export const SPARRING_LOG_FIELD_KEYS = Object.freeze({
+  allThrown: 'all_thrown',
+  allLanded: 'all_landed',
+  minutesWorked: 'minutes_worked',
+} as const);
+
 export const OBSERVATION_KINDS = [
   'session_rpe',
   'duration',
