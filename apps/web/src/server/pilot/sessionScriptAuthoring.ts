@@ -5,8 +5,8 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
-import { FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
-import type { SessionScriptBlockRow, SessionScriptRenderingFormat, SessionScriptRow } from './sessionScripts';
+import { BLOCK_RENDERED_FORMATS, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
+import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
 // A COACH WRITES A SESSION SCRIPT. sessionScripts.ts reads the plan and
@@ -166,14 +166,6 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
     };
   });
 }
-
-/** The coach formats re-rendered from a plan's blocks when it is edited. Never a family format. */
-export const BLOCK_RENDERED_FORMATS: readonly SessionScriptRenderingFormat[] = [
-  'cheat_sheet',
-  'class_plan',
-  'instructor_script',
-  'class_flow',
-];
 
 type RenderedBlock = Pick<
   SessionScriptBlockRow,
