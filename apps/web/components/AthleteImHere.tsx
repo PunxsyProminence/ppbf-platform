@@ -66,8 +66,12 @@ export function useTodaySchedulerRead(enabled: boolean): {
   reload: () => Promise<void>;
 } {
   const [read, setRead] = useState<TodaySchedulerRead>({ state: 'loading' });
+  // Only the newest read may land: a slow earlier reply must not put back an
+  // "I'm here" the press after it already answered.
+  const latest = useRef(0);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const mine = ++latest.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include', signal });
       const payload = (await response.json().catch(() => ({}))) as {
@@ -76,7 +80,7 @@ export function useTodaySchedulerRead(enabled: boolean): {
         registrations?: RegistrationRow[];
         attendance?: AttendanceRow[];
       };
-      if (signal?.aborted) return;
+      if (signal?.aborted || mine !== latest.current) return;
       if (!response.ok || !payload.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
         setRead({ state: 'failed' });
         return;
@@ -89,7 +93,7 @@ export function useTodaySchedulerRead(enabled: boolean): {
         readAt: Date.now(),
       });
     } catch (error) {
-      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError') || mine !== latest.current) return;
       setRead({ state: 'failed' });
     }
   }, []);
@@ -103,7 +107,10 @@ export function useTodaySchedulerRead(enabled: boolean): {
     return () => controller.abort();
   }, [enabled, load]);
 
-  const reload = useCallback(() => load(), [load]);
+  // No read without an athlete, whoever asks for one.
+  const reload = useCallback(async () => {
+    if (enabled) await load();
+  }, [enabled, load]);
   return { read, reload };
 }
 

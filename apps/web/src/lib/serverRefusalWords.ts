@@ -44,21 +44,24 @@ export const SESSION_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   ROUND_TIMER_NOT_SET: 'Set up the rounds first, then start them.',
 };
 
-/** Field names a coach-screen refusal carries, in the words of the label
- *  above that field (ContactCapPanel). PROPOSED. */
+/** Field names a coach-screen refusal carries in a sentence, in the words of
+ *  the label above that field (ContactCapPanel). PROPOSED. */
 const FIELD_WORDS: Readonly<Record<string, string>> = {
   max_hard_open_sessions_per_7_days: 'Most hard or open sparring sessions in any 7 days',
-  highest_allowed_stage: 'Highest contact stage allowed',
 };
 
 const FIELD_NAME = /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/;
 
 /** The text with each field name a screen labels replaced by that label's
- *  words. A bare field name is left a code: it carries no reason. */
+ *  words, capitalised only where it starts the sentence. A bare field name is
+ *  left a code: it carries no reason. */
 function withFieldWords(text: string): string {
   if (!/\s/.test(text.trim())) return text;
-  return text.replace(new RegExp(FIELD_NAME.source, 'g'), (name) =>
-    (Object.prototype.hasOwnProperty.call(FIELD_WORDS, name) ? FIELD_WORDS[name] : name));
+  return text.replace(new RegExp(FIELD_NAME.source, 'g'), (name: string, at: number) => {
+    if (!Object.prototype.hasOwnProperty.call(FIELD_WORDS, name)) return name;
+    const words = FIELD_WORDS[name];
+    return text.slice(0, at).trim() === '' ? words : `${words.charAt(0).toLowerCase()}${words.slice(1)}`;
+  });
 }
 
 /** True when the text reads as a stored code rather than words for a person. */
@@ -116,13 +119,14 @@ export function refusalWords(
   if (/^forbidden\b/i.test(raw)) {
     // "Forbidden: only an organization admin can lift a hold an admin placed"
     // carries the reason a coach needs; keep it when it reads as words.
-    const reason = withFieldWords(raw.replace(/^forbidden\s*:?\s*/i, ''));
+    const reason = raw.replace(/^forbidden\s*:?\s*/i, '');
     if (reason !== '' && !looksLikeCode(reason) && !CODE_PREFIX.test(reason) && !BUILDER_TEXT.test(reason)) {
       return `${NOT_ALLOWED} ${sentenceCase(withoutTrailingCode(reason))}`;
     }
     return NOT_ALLOWED;
   }
-  const worded = withFieldWords(raw);
+  // Builder text is judged on what the server sent, before any field is put into words.
+  const worded = CODE_PREFIX.test(raw) || BUILDER_TEXT.test(raw) ? '' : withFieldWords(raw);
   if (worded !== '' && !looksLikeCode(worded) && !CODE_PREFIX.test(worded) && !BUILDER_TEXT.test(worded)) {
     const sentence = withoutTrailingCode(worded);
     if (sentence !== '' && !looksLikeCode(sentence)) return sentence;

@@ -17,7 +17,7 @@ describe('refusalWords (UXB-09)', () => {
       { error: 'UNEXPECTED_FIELD: note', status: 400 },
       { error: 'action:expected one of start, pause', status: 400 },
       { error: 'Missing athlete_id', status: 400 },
-      // A labelled field next to codes that are not words is still builder text.
+      // A field no screen labels, next to codes that are not words, is builder text.
       { error: 'highest_allowed_stage must be one of: none, light_technical, open_sparring', status: 400 },
     ]) {
       expect(refusalWords(input)).toBe(NOTHING_CHANGED);
@@ -32,8 +32,11 @@ describe('refusalWords (UXB-09)', () => {
       {},
       'The cap was not saved. Try again.',
     )).toBe('Most hard or open sparring sessions in any 7 days must be a whole number, 0 or more');
-    expect(refusalWords({ error: 'Forbidden: max_hard_open_sessions_per_7_days is set by an organization admin', status: 403 }))
-      .toBe('Your account cannot do this here. Most hard or open sparring sessions in any 7 days is set by an organization admin.');
+    // Mid-sentence the label's words are not capitalised.
+    expect(refusalWords({ error: 'Send a whole number for max_hard_open_sessions_per_7_days.', status: 400 }))
+      .toBe('Send a whole number for most hard or open sparring sessions in any 7 days.');
+    // Builder text stays builder text, whatever field it names.
+    expect(refusalWords({ error: 'UNEXPECTED_FIELD: max_hard_open_sessions_per_7_days', status: 400 })).toBe(NOTHING_CHANGED);
     // The field name alone is still not a sentence.
     expect(refusalWords({ error: 'max_hard_open_sessions_per_7_days', status: 400 })).toBe(NOTHING_CHANGED);
   });
