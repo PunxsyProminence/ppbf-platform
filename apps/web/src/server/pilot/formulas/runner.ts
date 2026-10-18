@@ -28,7 +28,11 @@ import {
   getActiveFormulaObservationsByIds,
   saveFormulaResultsWithClient,
 } from './repository';
-import { SESSION_TOTAL_DIMENSIONS } from './types';
+import {
+  CHECK_IN_BASELINE_METRIC_KEYS,
+  CHECK_IN_CONTEXT_PREFIX,
+  SESSION_TOTAL_DIMENSIONS,
+} from './types';
 import type {
   FormulaBaselineSnapshot,
   FormulaResult,
@@ -613,6 +617,19 @@ function calculateStoredFormula(
         executionError('Personal baseline accepts only numeric observations.');
       }
       const { policy, policyVersion } = parseBaselinePolicy(input);
+      // A check-in item's baseline is the check-in's own (Jason 2026-10-17,
+      // OD-2026-10-17-020): only its day-window policy, only over check-in
+      // answers. Without this a hand-picked numeric observation run through
+      // POST /results would become the coach's "latest" sleep baseline.
+      if (
+        (CHECK_IN_BASELINE_METRIC_KEYS as readonly string[]).includes(policy.metricKey)
+        && (
+          !('windowDays' in policy)
+          || observations.some((observation) => !observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX))
+        )
+      ) {
+        executionError('A check-in baseline is calculated from check-in answers only.');
+      }
       const ordered = sortChronologically(observationsOfKind(observations, 'numeric'));
       if (ordered.length === 0) {
         executionError('Personal baseline requires a current numeric observation.');

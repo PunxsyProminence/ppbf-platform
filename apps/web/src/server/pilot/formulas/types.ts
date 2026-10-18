@@ -53,6 +53,17 @@ export type FormulaId = (typeof FORMULA_IDS)[number];
 export type FormulaSupport = 'implemented' | 'primitive_only' | 'unsupported' | 'experimental_unsupported';
 
 /**
+ * The context every check-in observation is filed under (`check-in:<id>`, also
+ * used by athleteBodyMass.ts), and the check-in items that have a personal
+ * baseline (MVP-09; metricKey = the check-in column). A check-in baseline is
+ * computed from check-in answers only: the observations route refuses numeric
+ * writes into these contexts, and the runner refuses an MVP-09 for one of these
+ * items built from anything else (lane L50).
+ */
+export const CHECK_IN_CONTEXT_PREFIX = 'check-in:';
+export const CHECK_IN_BASELINE_METRIC_KEYS = Object.freeze(['sleep_hours', 'energy', 'soreness'] as const);
+
+/**
  * The tag on the sparring page's whole-session counts ("Whole session" boxes).
  * Shared by the page that writes it and the detector that reads it
  * (runner.ts FORMULA_INPUT_REQUIREMENTS), so the two cannot spell it apart.

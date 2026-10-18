@@ -4,7 +4,8 @@ jest.mock('./repository', () => ({
 }));
 jest.mock('./runner', () => ({ runStoredMvpFormula: jest.fn() }));
 
-import { recordCheckInBaselines } from './checkInBaseline';
+import { CHECK_IN_BASELINE_METRICS, recordCheckInBaselines } from './checkInBaseline';
+import { CHECK_IN_BASELINE_METRIC_KEYS } from './types';
 import { getActiveObservationsOfKindInWindow, saveFormulaObservation } from './repository';
 import { runStoredMvpFormula } from './runner';
 import type { NumericObservation } from './types';
@@ -85,4 +86,22 @@ test('MVP-09 runs per item over the same item\'s earlier values in the window, c
     parameters: { metricKey: 'sleep_hours', windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 },
     policyVersion: 'check-in-baseline-2026-10-17',
   });
+});
+
+test('one item failing does not cost the other items; the failure is still reported', async () => {
+  mockWindow.mockResolvedValue([]);
+  mockRun.mockRejectedValueOnce(new Error('sleep failed')).mockResolvedValue({ results: [] });
+  await expect(recordCheckInBaselines({
+    organizationId: 'org-1',
+    athleteId: 'athlete-1',
+    checkInId: 'ci-1',
+    observedAt: AT,
+    accountId: 'acct-1',
+    values: { sleep_hours: 7, energy: 3, soreness: 2 },
+  })).rejects.toThrow('sleep failed');
+  expect(mockRun).toHaveBeenCalledTimes(3);
+});
+
+test('the items written here are exactly the items the runner protects', () => {
+  expect(CHECK_IN_BASELINE_METRICS.map((metric) => metric.metricKey)).toEqual([...CHECK_IN_BASELINE_METRIC_KEYS]);
 });
