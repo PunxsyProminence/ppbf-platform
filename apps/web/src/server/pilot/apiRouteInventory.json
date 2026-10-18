@@ -12179,6 +12179,37 @@
     }
   },
   {
+    "id": "app/api/pilot/shadow/formulas/observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/shadow/formulas/observations",
+    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "athlete",
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed only (no body weight, notes or source reference), enumerated projection.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/shadow/formulas/observations/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/formulas/observations",
