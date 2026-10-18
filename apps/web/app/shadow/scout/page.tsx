@@ -59,7 +59,7 @@ interface ScoreboardResponse {
   };
   readonly growth: {
     readonly totalInteractions: number;
-    readonly positiveOutcomeRate: number | null;
+    readonly reviewedHelpfulRate: number | null;
   };
 }
 
@@ -380,8 +380,8 @@ function ScoutReportView() {
                 <p className="t-label mb-[var(--s3)]">Outcome Readings</p>
                 <div className="flex flex-wrap gap-[var(--s4)]">
                   <RateGauge
-                    caption="Positive Outcome"
-                    percent={scoreboard.growth.positiveOutcomeRate == null ? null : scoreboard.growth.positiveOutcomeRate * 100}
+                    caption="Rated Helpful (Reviewed)"
+                    percent={scoreboard.growth.reviewedHelpfulRate == null ? null : scoreboard.growth.reviewedHelpfulRate * 100}
                   />
                   <RateGauge
                     caption="Reviewed Score"
@@ -445,8 +445,8 @@ function ScoutReportView() {
                 </div>
               ))}
               <RateGauge
-                caption="Positive Rate"
-                percent={scoreboard.growth.positiveOutcomeRate == null ? null : scoreboard.growth.positiveOutcomeRate * 100}
+                caption="Rated Helpful (Reviewed)"
+                percent={scoreboard.growth.reviewedHelpfulRate == null ? null : scoreboard.growth.reviewedHelpfulRate * 100}
               />
             </div>
             <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s4)]">

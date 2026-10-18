@@ -31,6 +31,7 @@ jest.mock('@/src/server/pilot/shadowMetrics', () => ({
   getGrowthMetrics: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/shadowUnlocks', () => ({
+  ...jest.requireActual('@/src/server/pilot/shadowUnlocks'),
   evaluateShadowUnlockState: jest.fn(),
 }));
 
@@ -56,17 +57,22 @@ function answerOrgMetrics() {
     period: '30d',
     avgEffectiveness: null,
     totalInteractions: 0,
-    positiveOutcomeRate: null,
+    reviewedHelpfulRate: null,
     filterRate: null,
     avgSatisfaction: null,
     reviewedOutcomes: 0,
     researchRequirementsCreated: 0,
     researchRequirementsClosed: 0,
-    newLibraryPatterns: 0,
+    newLibrarySources: 0,
     unavailableReasons: {},
   } as never);
   mockUnlockState.mockResolvedValue({
-    features: { strong_personalization: { unlocked: true } },
+    features: {
+      strong_personalization: { unlocked: true, satisfied: true, measuredPerformance: null },
+      // An admin has switched the pipeline on and the counter is met; there is
+      // still no fine-tuning code, so it must not read as on.
+      fine_tuning_pipeline: { unlocked: true, satisfied: true, measuredPerformance: null },
+    },
   } as never);
   mockQueryOne.mockResolvedValue(null);
   mockQuery.mockResolvedValue([] as never);
@@ -89,13 +95,13 @@ test('concerned topics exclude pending promote and retain proposals, so praise a
     period: '30d',
     avgEffectiveness: null,
     totalInteractions: 0,
-    positiveOutcomeRate: null,
+    reviewedHelpfulRate: null,
     filterRate: null,
     avgSatisfaction: null,
     reviewedOutcomes: 0,
     researchRequirementsCreated: 0,
     researchRequirementsClosed: 0,
-    newLibraryPatterns: 0,
+    newLibrarySources: 0,
     unavailableReasons: {},
   });
   const { evaluateShadowUnlockState } = jest.requireMock('@/src/server/pilot/shadowUnlocks') as {
@@ -165,15 +171,42 @@ describe('the platform owner is refused on every shape of the read', () => {
     expect(response.status).toBe(200);
     const body = await response.json() as {
       ok: boolean;
-      metrics: { period: string; viewerUnlocks: Record<string, boolean> };
+      metrics: { period: string; viewerUnlocks: Record<string, unknown> };
     };
     expect(body.ok).toBe(true);
+    const notEvaluated = {
+      dataSufficient: false,
+      implemented: true,
+      activated: false,
+      measuredPerformance: null,
+      unavailableReasons: {
+        dataSufficient: 'UNLOCK_STATE_UNAVAILABLE',
+        activated: 'UNLOCK_STATE_UNAVAILABLE',
+        measuredPerformance: 'NOT_MEASURED',
+      },
+    };
     expect(body.metrics.viewerUnlocks).toEqual({
-      strongPersonalization: true,
-      autoLibraryUpdates: false,
-      aggressiveResearchGeneration: false,
-      fineTuningPipelineReady: false,
+      strongPersonalization: {
+        dataSufficient: true,
+        implemented: true,
+        activated: true,
+        measuredPerformance: null,
+        unavailableReasons: { measuredPerformance: 'NOT_MEASURED' },
+      },
+      autoLibraryUpdates: notEvaluated,
+      // Its only effect widens outcomes nothing in the app sends.
+      aggressiveResearchGeneration: { ...notEvaluated, implemented: false },
+      // Enough data and switched on, but nothing to switch on: four facts,
+      // not one "ready" flag.
+      fineTuningPipeline: {
+        dataSufficient: true,
+        implemented: false,
+        activated: false,
+        measuredPerformance: null,
+        unavailableReasons: { measuredPerformance: 'NOT_MEASURED' },
+      },
     });
+    expect(body.metrics.viewerUnlocks).not.toHaveProperty('fineTuningPipelineReady');
     expect(mockGrowth).toHaveBeenCalledWith('org-a', 7);
     expect(mockUnlockState).toHaveBeenCalledWith({ organizationId: 'org-a', accountId: `acct-${role}` });
   });

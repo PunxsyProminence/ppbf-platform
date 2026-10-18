@@ -28,6 +28,7 @@ import {
   getActiveFormulaObservationsByIds,
   saveFormulaResultsWithClient,
 } from './repository';
+import { SESSION_TOTAL_DIMENSIONS } from './types';
 import type {
   FormulaBaselineSnapshot,
   FormulaResult,
@@ -86,7 +87,19 @@ export interface FormulaInputRequirement {
    * `groupKey` argument the switch below passes to `groupPairs`.
    */
   readonly groupByDimensionKey: string | null;
+  /**
+   * Dimension values an observation of a kind must carry to count toward this
+   * requirement at all. An observation of the kind without them is not a
+   * candidate, so it neither satisfies nor spoils the exact count. Empty when
+   * every observation of the kind is a candidate.
+   *
+   * This is what lets one sparring context hold two punch_landed numbers -- the
+   * per-type one MVP-03 reads and the whole-session total MVP-04 and MVP-05
+   * read -- without either formula having to pick between them.
+   */
+  readonly dimensionValues: Readonly<Partial<Record<ObservationKind, Readonly<Record<string, string>>>>>;
 }
+
 
 /**
  * WHY THIS EXISTS, AND WHY IT IS NOT `registry.ts`.
@@ -106,17 +119,19 @@ export interface FormulaInputRequirement {
  * entry here back through `calculateStoredFormula` so the two cannot drift
  * apart without a test going red.
  *
- * SCOPE: MVP-03 and MVP-04, and the others are absent for stated reasons
- * (traced by lane L50, 2026-10-17):
+ * SCOPE: MVP-02, MVP-03, MVP-04 and MVP-05; the others are absent for
+ * stated reasons (traced by lane L50, 2026-10-17):
  *   - MVP-01 and MVP-12 are already calculated where they are read, not
  *     stored here: session load as rpe x duration_minutes over pilot.sessions
  *     (performanceAnalytics.ts, weeklySessionLoad.ts; the load migration
  *     keeps derived load unstored on purpose), and the seven-day weight change
  *     under Jason's 2026-10-04 policy in athleteBodyMass.ts#summarizeBodyMass.
  *     Running them here too would be a second copy of each.
- *   - MVP-02/05/07/08 consume kinds nothing in this application emits
- *     (`punch_count`, `active_time`, `round_output`); autoCalculation.test.ts
- *     measures that from the source tree rather than asserting it.
+ *   - MVP-07/08 consume per-round `round_output`, which nothing in this
+ *     application emits; autoCalculation.test.ts measures that from the
+ *     source tree rather than asserting it. (MVP-02/05's inputs come from the
+ *     sparring page's optional "Whole session" boxes, Jason 2026-10-17, "B:
+ *     Longer sparring form".)
  *   - MVP-06 is not run: contact stays counts-only (Jason, 2026-10-17, "A:
  *     Counts only").
  *   - MVP-09/MVP-10 wait on a named metric and named cut-offs.
@@ -125,6 +140,19 @@ export interface FormulaInputRequirement {
  *     autoCalculation.ts#focusAttainmentWindow.
  */
 export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Object.freeze([
+  Object.freeze({
+    formulaId: 'MVP-02' as const,
+    // exactObservationSet({ punch_count: 1, round_count: 1, active_time: 1 }).
+    kinds: Object.freeze({ punch_count: 1, round_count: 1, active_time: 1 }),
+    units: Object.freeze({
+      punch_count: 'count' as const,
+      round_count: 'count' as const,
+      active_time: 'minutes' as const,
+    }),
+    requiredDimensionKeys: Object.freeze([]),
+    groupByDimensionKey: null,
+    dimensionValues: Object.freeze({}),
+  }),
   Object.freeze({
     formulaId: 'MVP-03' as const,
     // groupPairs(observations, 'punch_landed', 'punch_attempted', ...) demands
@@ -136,15 +164,30 @@ export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Ob
     // there is no accuracy "by punch type" without the punch type.
     requiredDimensionKeys: Object.freeze(['punchType']),
     groupByDimensionKey: 'punchType',
+    dimensionValues: Object.freeze({}),
   }),
   Object.freeze({
     formulaId: 'MVP-04' as const,
     kinds: Object.freeze({ punch_landed: 1, punch_absorbed: 1 }),
     units: Object.freeze({ punch_landed: 'count' as const, punch_absorbed: 'count' as const }),
     // calculateConnectDifferential reads no dimensions: landed minus absorbed
-    // is a whole-session figure, not a per-punch-type one.
+    // is a whole-session figure, not a per-punch-type one -- so the landed
+    // half is the whole-session total, never one punch type's count against
+    // every punch taken. Results computed the old way before this stay as
+    // they are (Overwatch, 2026-10-17).
     requiredDimensionKeys: Object.freeze([]),
     groupByDimensionKey: null,
+    dimensionValues: Object.freeze({ punch_landed: SESSION_TOTAL_DIMENSIONS }),
+  }),
+  Object.freeze({
+    formulaId: 'MVP-05' as const,
+    // exactObservationSet({ punch_landed: 1, active_time: 1 }): landed per
+    // working minute, so again the whole-session landed total.
+    kinds: Object.freeze({ punch_landed: 1, active_time: 1 }),
+    units: Object.freeze({ punch_landed: 'count' as const, active_time: 'minutes' as const }),
+    requiredDimensionKeys: Object.freeze([]),
+    groupByDimensionKey: null,
+    dimensionValues: Object.freeze({ punch_landed: SESSION_TOTAL_DIMENSIONS }),
   }),
 ]);
 
