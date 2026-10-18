@@ -127,6 +127,8 @@ export interface ShadowLibraryDocumentRow {
   document_name: string;
   blob_path: string | null;
   content_sha256: string | null;
+  /** The filed Research Archive original this excerpt was read from (research-archive-originals migration). */
+  archived_original_id?: string | null;
   ingest_state: ShadowLibraryIngestState;
   index_completed_at: string | null;
   approval_state: ShadowLibraryApprovalState;
@@ -1000,6 +1002,8 @@ export async function createShadowLibraryDocument(input: {
   contentSha256?: string | null;
   ingestState?: ShadowLibraryIngestState;
   metadata?: Record<string, unknown>;
+  /** Set only for an excerpt read from a PDF filed in the Research Archive; the database holds it to the same source and shelf. */
+  archivedOriginalId?: string | null;
 }): Promise<ShadowLibraryDocumentRow> {
   assertNoReservedProvenance(input.metadata);
   const source = await queryOne<{ source_id: string }>(
@@ -1014,10 +1018,13 @@ export async function createShadowLibraryDocument(input: {
   }
 
   const documentId = `doc_${randomUUID()}`;
+  // The link column is named only when there is a link, so every other write is
+  // the statement it always was (and does not depend on that migration).
+  const archivedOriginalId = input.archivedOriginalId?.trim() || null;
   const row = await queryOne<ShadowLibraryDocumentRow>(
     `insert into pilot.shadow_library_documents
-      (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+      (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role${archivedOriginalId ? ', archived_original_id' : ''})
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11${archivedOriginalId ? ',$12' : ''})
      returning *`,
     [
       documentId,
@@ -1031,6 +1038,7 @@ export async function createShadowLibraryDocument(input: {
       JSON.stringify(input.metadata ?? {}),
       input.actorAccountId,
       input.actorRole,
+      ...(archivedOriginalId ? [archivedOriginalId] : []),
     ],
   );
 

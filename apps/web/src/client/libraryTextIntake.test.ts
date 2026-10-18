@@ -447,6 +447,8 @@ describe('readLibraryPdf', () => {
       ok: true,
       pages: [{ num: 1, text: 'one' }, { num: 2, text: '' }],
       emptyPageCount: 1,
+      // The route sent no hash, so none is claimed.
+      contentSha256: null,
     });
     expect(seen).toHaveLength(1);
     expect(seen[0].url).toBe('https://app.test/api/pilot/shadow/library/pdf-text');
