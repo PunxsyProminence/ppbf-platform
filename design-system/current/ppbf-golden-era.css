@@ -1417,8 +1417,9 @@
 .ge-scripts article h3 { min-width: 0; overflow-wrap: anywhere; }
 
 /* THE LIVE RUN (screen 3b). The console a coach runs a session from stays a
-   dark leather panel -- it carries the failure panels, and its ground does
-   not flip -- and takes the same stitched edge as the board it sits on.
+   dark panel -- it carries the failure panels, and its ground does not flip.
+   Since look B (lane L39 PR 3) it is a board in the wall-board kit's frame
+   (section 011) rather than leather with a stitched edge.
    Sizes come from data-surface="kiosk" on its wrapper; what is stated here is
    only what that device does not get right on this console. The rules hang
    on a class the section carries (.ge-scripts-live), not on its aria-label,
@@ -5824,7 +5825,17 @@
 }
 
 /* The coach's console in the board frame: the frame is its edge now, so the
-   stitched outline it wore as a leather panel stands down. */
+   stitched outline it wore as a leather panel stands down, and the label voice
+   keeps the lift it had on the leather (bone-200: 4.5:1 and more on this field). */
 .ge-scripts .ge-scripts-live.ge-frame {
   outline: none;
+}
+.ge-scripts .ge-scripts-live.ge-frame .t-label {
+  color: var(--bone-200);
+}
+/* On a phone the band thins, so the frame does not take the content's width. */
+@media (max-width: 640px) {
+  .ge-wallboard {
+    --frame-band: 8px;
+  }
 }

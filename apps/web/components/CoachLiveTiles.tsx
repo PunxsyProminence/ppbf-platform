@@ -1,8 +1,9 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 /**
  * THE COACH'S TOP ROW (lane L39 PR 3). Jason 2026-10-17, "A: Coach screen only"
@@ -16,16 +17,23 @@ import { apiBase } from '@/lib/apiBase';
  *               absence, so the athletes without one are counted as "Not
  *               marked", never as absent. It is the gym day, not this session,
  *               and the tiles say "today".
- *   attention   GET  /api/pilot/escalations?status=open -- open escalations the
- *               coach may see, counted by their own severity.
- *   queue       POST /api/pilot/shadow/review-projection -- the SHADOW review
- *               queue's total, the number the coach workspace shows.
+ *   attention   GET  /api/pilot/escalations?status=open -- open escalations on
+ *               the coach's OWN athletes (the route scopes a coach to them), by
+ *               their own severity. A pain report is counted on its own, as a
+ *               number with no severity word (OD-2026-10-12-005, "Show the
+ *               number only"), as the header badge does.
+ *   queue       POST /api/pilot/shadow/review-projection -- how many SHADOW
+ *               cases are in the queue, every status (the number the coach
+ *               workspace calls "in the queue"), not only those awaiting review.
+ *
+ * Read every two minutes, the header badge's pace: the escalations read also
+ * closes hold notices whose hold has ended, so a faster poll is only load.
  *
  * A read that fails says so in words. It never shows 0: "nothing here" and "we
  * could not look" are different claims (the #991 class).
  */
 
-export const COACH_TILES_REFRESH_MS = 60_000;
+export const COACH_TILES_REFRESH_MS = 120_000;
 
 export interface AttendanceCounts {
   present: number;
@@ -39,6 +47,8 @@ export interface AttentionCounts {
   high: number;
   moderate: number;
   low: number;
+  /** Pain reports, counted apart: a number, never a severity word (OD-2026-10-12-005). */
+  painReports: number;
 }
 
 type Read<T> = { state: 'loading' } | { state: 'failed' } | { state: 'ok'; value: T };
@@ -67,8 +77,12 @@ export function attendanceCounts(payload: unknown): AttendanceCounts | null {
 export function attentionCounts(payload: unknown): AttentionCounts | null {
   const body = payload as { ok?: unknown; escalations?: unknown } | null;
   if (!body || body.ok !== true || !Array.isArray(body.escalations)) return null;
-  const counts: AttentionCounts = { critical: 0, high: 0, moderate: 0, low: 0 };
-  for (const row of body.escalations as Array<{ severity?: unknown }>) {
+  const counts: AttentionCounts = { critical: 0, high: 0, moderate: 0, low: 0, painReports: 0 };
+  for (const row of body.escalations as Array<{ severity?: unknown; metadata?: unknown }>) {
+    if (isPainReportEscalation(row?.metadata)) {
+      counts.painReports += 1;
+      continue;
+    }
     const severity = row?.severity;
     if (severity === 'critical' || severity === 'high' || severity === 'moderate' || severity === 'low') {
       counts[severity] += 1;
@@ -122,7 +136,18 @@ export default function CoachLiveTiles() {
   const [attention, setAttention] = useState<Read<AttentionCounts>>({ state: 'loading' });
   const [queue, setQueue] = useState<Read<number>>({ state: 'loading' });
 
+  // A read slower than the next one must not overwrite it, and nothing is set after unmount.
+  const sequence = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
+    const mine = ++sequence.current;
     const base = apiBase();
     const [a, b, c] = await Promise.allSettled([
       readJson(`${base}/api/pilot/coach/attendance-today`),
@@ -133,6 +158,7 @@ export default function CoachLiveTiles() {
         body: JSON.stringify({ limit: 1 }),
       }),
     ]);
+    if (!mounted.current || mine !== sequence.current) return;
     const counted = a.status === 'fulfilled' ? attendanceCounts(a.value) : null;
     setAttendance(counted ? { state: 'ok', value: counted } : { state: 'failed' });
     const levels = b.status === 'fulfilled' ? attentionCounts(b.value) : null;
@@ -163,7 +189,7 @@ export default function CoachLiveTiles() {
           )
         }
       </Group>
-      <Group title="Need attention" read={attention}>
+      <Group title="Need attention · your athletes" read={attention}>
         {() =>
           attention.state === 'ok' && (
             <>
@@ -171,12 +197,13 @@ export default function CoachLiveTiles() {
               <Tile value={attention.value.high} label="High" badge={{ tone: 'restricted', glyph: '▲' }} />
               <Tile value={attention.value.moderate} label="Moderate" badge={{ tone: 'monitor', glyph: '◉' }} />
               <Tile value={attention.value.low} label="Low" />
+              <Tile value={attention.value.painReports} label="Pain reports" />
             </>
           )
         }
       </Group>
       <Group title="SHADOW queue" read={queue}>
-        {() => queue.state === 'ok' && <Tile value={queue.value} label="To review" />}
+        {() => queue.state === 'ok' && <Tile value={queue.value} label="In the queue" />}
       </Group>
     </div>
   );

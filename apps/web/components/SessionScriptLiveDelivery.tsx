@@ -597,7 +597,9 @@ export default function SessionScriptLiveDelivery({
   return (
     // Look B (OD-2026-10-17-011, carried to the coach's screen by lane L39 PR 3): the console is a
     // board in the wall-board kit's frame, its top row the coach's tiles, its controls brass plates.
-    <section aria-label="Live session delivery" className="ge-scripts-live ge-wallboard ge-frame coach-live rounded-[var(--r-lg)] p-[var(--s5)]">
+    // The kit's rules are `.ge-wallboard .ge-frame`, so the scope is the wrapper, not the board.
+    <div className="ge-wallboard">
+    <section aria-label="Live session delivery" className="ge-scripts-live ge-frame coach-live rounded-[var(--r-lg)] p-[var(--s5)]">
       <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
         <div>
           <p className="t-eyebrow">Delivering now</p>
@@ -1018,5 +1020,6 @@ export default function SessionScriptLiveDelivery({
         )}
       </div>
     </section>
+    </div>
   );
 }

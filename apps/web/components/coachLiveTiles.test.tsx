@@ -11,6 +11,7 @@ import '@testing-library/jest-dom';
 import { act, render, screen, within } from '@testing-library/react';
 
 import CoachLiveTiles, { attendanceCounts, attentionCounts, queueTotal } from './CoachLiveTiles';
+import { PAIN_REPORT_TRIGGER } from '@/src/shared/painScoreLabel';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -33,7 +34,15 @@ const ATTENDANCE = {
 };
 const ESCALATIONS = {
   ok: true,
-  escalations: [{ severity: 'critical' }, { severity: 'high' }, { severity: 'high' }, { severity: 'moderate' }, { severity: 'odd' }],
+  escalations: [
+    { severity: 'critical' },
+    { severity: 'high' },
+    { severity: 'high' },
+    { severity: 'moderate' },
+    { severity: 'odd' },
+    // A 7/10 pain report is stored as critical; the board shows it as a number, never a word.
+    { severity: 'critical', metadata: { trigger: PAIN_REPORT_TRIGGER } },
+  ],
 };
 const QUEUE = { ok: true, queue: [], total: 7 };
 
@@ -82,8 +91,8 @@ describe('the counts', () => {
     });
   });
 
-  test('need attention counts open escalations by their own severity', () => {
-    expect(attentionCounts(ESCALATIONS)).toEqual({ critical: 1, high: 2, moderate: 1, low: 0 });
+  test('need attention counts open escalations by their own severity, and pain reports apart, with no word', () => {
+    expect(attentionCounts(ESCALATIONS)).toEqual({ critical: 1, high: 2, moderate: 1, low: 0, painReports: 1 });
   });
 
   test('a payload that is not what the route sends counts as unread, not as zero', () => {
@@ -101,14 +110,16 @@ describe('the tiles', () => {
     render(<CoachLiveTiles />);
     await settle();
     const attendance = group('Attendance today');
-    expect(attendance.getByText('Present').previousSibling).toHaveTextContent('2');
-    expect(attendance.getByText('Not marked').previousSibling).toHaveTextContent('2');
-    const attention = group('Need attention');
+    expect(attendance.getByText('Present').previousSibling).toHaveTextContent(/^2$/);
+    expect(attendance.getByText('Not marked').previousSibling).toHaveTextContent(/^2$/);
+    const attention = group('Need attention · your athletes');
     expect(attention.getByText('Critical').closest('li')).toHaveTextContent('1');
     expect(attention.getByText('High').closest('li')).toHaveTextContent('2');
     expect(attention.getByText('High').closest('.badge')?.textContent).toBe('▲High');
     expect(attention.getByText('Moderate').closest('.badge')?.textContent).toBe('◉Moderate');
-    expect(group('SHADOW queue').getByText('To review').previousSibling).toHaveTextContent('7');
+    expect(attention.getByText('Pain reports').closest('li')).toHaveTextContent('1');
+    expect(attention.getByText('Pain reports').closest('.badge')).toBeNull();
+    expect(group('SHADOW queue').getByText('In the queue').previousSibling).toHaveTextContent(/^7$/);
   });
 
   test('a read that fails says "Could not read" and shows no number at all', async () => {
@@ -118,15 +129,15 @@ describe('the tiles', () => {
     };
     render(<CoachLiveTiles />);
     await settle();
-    expect(group('Need attention').getByText('Could not read')).toBeInTheDocument();
-    expect(group('Need attention').queryByRole('listitem')).toBeNull();
+    expect(group('Need attention · your athletes').getByText('Could not read')).toBeInTheDocument();
+    expect(group('Need attention · your athletes').queryByRole('listitem')).toBeNull();
     expect(group('SHADOW queue').getByText('Could not read')).toBeInTheDocument();
     expect(group('SHADOW queue').queryByText('0')).toBeNull();
     // The read that worked still shows.
     expect(group('Attendance today').getByText('Present')).toBeInTheDocument();
   });
 
-  test('reads the three routes coaches already read, and again every minute', async () => {
+  test('reads the three routes coaches already read, and again every two minutes', async () => {
     render(<CoachLiveTiles />);
     await settle();
     const calls = () => (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]));
@@ -139,13 +150,23 @@ describe('the tiles', () => {
       jest.advanceTimersByTime(60_000);
     });
     await settle();
+    expect(calls()).toHaveLength(3);
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+    await settle();
     expect(calls()).toHaveLength(6);
   });
 
-  test('carries no names: nothing an athlete id or name could be is on the tiles', async () => {
+  test('carries no names: whatever else the reads carry, only counts reach the tiles', async () => {
+    routes['/api/pilot/coach/attendance-today'] = () =>
+      json({ ...ATTENDANCE, marks: ATTENDANCE.marks.map((mark) => ({ ...mark, full_name: 'Jordan Fixture' })) });
+    routes['/api/pilot/escalations?status=open'] = () =>
+      json({ ok: true, escalations: [{ severity: 'high', athlete_id: 'a1', reason: 'Jordan Fixture reported a fall' }] });
     render(<CoachLiveTiles />);
     await settle();
     const text = screen.getByRole('group', { name: 'The gym at a glance' }).textContent ?? '';
-    for (const id of ['a1', 'a2', 'a3', 'zz']) expect(text).not.toContain(id);
+    expect(text).toContain('Present');
+    for (const leak of ['a1', 'a2', 'a3', 'zz', 'Jordan', 'fall']) expect(text).not.toContain(leak);
   });
 });
