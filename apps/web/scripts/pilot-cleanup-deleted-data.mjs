@@ -808,8 +808,10 @@ async function deleteShadowEvents(client, tables, { organizationId, accountIds, 
 
 /* THE PERSON'S SHADOW METRIC ROWS GO TOO (F-106). pilot.shadow_telemetry_events
    is SHADOW's metric log: who did it (actor_account_id) and what it was about
-   (dimensions: athlete_id, entity_type/entity_id, owner_entity_id,
-   intake_case_id, correlation_id). Its one reader, listShadowTelemetry
+   (dimensions; today's writers put an athlete_id (intake) or a
+   video_session_id (video upload) there, and the reader also filters on
+   entity_id, owner_entity_id and intake_case_id, so those shapes are covered
+   too). Its one reader, listShadowTelemetry
    (shadowReadModels.ts), shows a row tied to no athlete to every role that
    sees unscoped rows, the same as the event log, so the event log's ruling
    applies (Overwatch 2026-10-16, option A, under Jason 2026-10-06: "delete

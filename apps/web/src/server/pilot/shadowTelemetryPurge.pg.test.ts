@@ -290,7 +290,8 @@ beforeAll(async () => {
   await metric(ORG, KEPT_IN_ORG[3], COACH, 'coach', { feature: 'library' });
   await metric(ORG, KEPT_IN_ORG[4], COACH, 'coach', { entity_type: 'athlete_milestone', entity_id: 'athXa:first_bout' });
 
-  // The other gym: A's login is active there too; the guardian's account is deleted everywhere.
+  // The other gym. A control: sign-in opens sessions only in A's home gym, so no writer
+  // puts A's login here today; the athlete purge is per gym. The guardian's account is deleted everywhere.
   await metric(OTHER_ORG, 'OTHER-KEEP A in the other gym', LOGIN_A, 'athlete');
   await metric(OTHER_ORG, 'OTHER-PURGED the guardian in the other gym', GUARDIAN, 'parent');
   // A guardian record id is unique only within its gym: the other gym's own record stays.

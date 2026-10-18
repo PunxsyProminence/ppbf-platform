@@ -515,7 +515,7 @@ way, under the same ruling and for the same reason (its one reader, `listShadowT
 row tied to no athlete to every role that sees unscoped rows): in the purged gym (a guardian's
 everywhere), every row whose actor is their login, or whose dimensions name their login or athlete
 id anywhere, an entity id built from them, their guardian record, or one of the child's records
-(`shadow_telemetry_events_deleted`). A row tied to a conversation or review entry still under the
+(today's writers put an athlete id or a video id there) (`shadow_telemetry_events_deleted`). A row tied to a conversation or review entry still under the
 safeguarding hold stays. Pinned by `shadowTelemetryPurge.pg.test.ts`. The
 script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
