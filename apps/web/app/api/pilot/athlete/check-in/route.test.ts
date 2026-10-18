@@ -314,9 +314,10 @@ describe('personal baseline inputs', () => {
     energy: 4,
     soreness: 2,
     stress: 3,
+    mood: 4,
   };
 
-  test('sleep, energy, soreness and stress are recorded from the STORED check-in, keyed by it', async () => {
+  test('sleep, energy, soreness, stress and mood are recorded from the STORED check-in, keyed by it', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     // A repeat submission the same day: the body differs, the stored row wins.
     mockCheckIn.mockResolvedValue({ row: storedRow, created: false });
@@ -330,7 +331,7 @@ describe('personal baseline inputs', () => {
       checkInId: 'ci-9',
       observedAt: '2026-10-17T12:00:00.000Z',
       accountId: 'acct-1',
-      values: { sleep_hours: 7.5, energy: 4, soreness: 2, stress: 3 },
+      values: { sleep_hours: 7.5, energy: 4, soreness: 2, stress: 3, mood: 4 },
     });
   });
 

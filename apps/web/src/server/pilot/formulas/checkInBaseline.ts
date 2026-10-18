@@ -1,8 +1,8 @@
 /**
  * Personal baseline (MVP-09) from the daily check-in.
  *
- * Jason 2026-10-17 (OD-2026-10-17-020): sleep, energy and soreness (and stress,
- * on his later "Mood + stress (Rec.)") from the daily check-in, each compared with the athlete's own last 28 days, starting
+ * Jason 2026-10-17 (OD-2026-10-17-020): sleep, energy and soreness (and stress
+ * and mood, on his later "Mood + stress (Rec.)") from the daily check-in, each compared with the athlete's own last 28 days, starting
  * once they have 7 check-ins; "provisional" until about 14; an SD floor
  * ("Yes, all three (Rec.)"). Floors relayed by Overwatch: 0.5 point for the
  * 1-5 ratings, 0.5 h for sleep.

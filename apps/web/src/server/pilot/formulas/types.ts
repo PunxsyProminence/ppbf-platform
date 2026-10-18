@@ -77,14 +77,15 @@ export const CHECK_IN_BASELINE_POLICY = Object.freeze({
 /**
  * The check-in items with a personal baseline, by check-in column. SD floors
  * relayed by Overwatch (QD1): 0.5 point for the 1-5 ratings, 0.5 h for sleep.
- * Stress added on Jason's "Mood + stress (Rec.)" (relayed by Overwatch
- * 2026-10-18); mood follows once its check-in column exists (lane L58).
+ * Stress and mood added on Jason's "Mood + stress (Rec.)" (relayed by
+ * Overwatch 2026-10-18); mood's check-in column came with lane L58 (#1750).
  */
 export const CHECK_IN_BASELINE_METRICS = Object.freeze([
   Object.freeze({ metricKey: 'sleep_hours', unit: 'hours', sdFloor: 0.5 }),
   Object.freeze({ metricKey: 'energy', unit: 'rating_1_5', sdFloor: 0.5 }),
   Object.freeze({ metricKey: 'soreness', unit: 'rating_1_5', sdFloor: 0.5 }),
   Object.freeze({ metricKey: 'stress', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'mood', unit: 'rating_1_5', sdFloor: 0.5 }),
 ] as const);
 
 export const CHECK_IN_BASELINE_METRIC_KEYS: readonly string[] = Object.freeze(
