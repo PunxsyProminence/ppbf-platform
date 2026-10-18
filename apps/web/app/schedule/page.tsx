@@ -1158,7 +1158,7 @@ export default function SchedulerPage() {
                     <div className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]" role="status">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">
-                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete
+                        Training Hold on {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} for this athlete
                         {shownCheckInHold.details_withheld ? '.' : ` (${HOLD_REASON_WORDS[shownCheckInHold.reason_category] ?? 'reason on file'}).`}
                         {' '}The check-in was NOT blocked.
                       </p>

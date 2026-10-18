@@ -691,12 +691,12 @@ function CoachWorkoutTemplates() {
           <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The reusable session shapes behind the plans: what a session of each type looks like,
-            block by block. Open one to issue it to an athlete, or to make a session script from
-            it. Delivering a session live happens from Session Scripts.
+            block by block. Open one to issue it to an athlete, or to make a session plan from
+            it. Delivering a session live happens from Session Plans.
           </p>
           <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/coach/session-scripts" className="btn btn--ghost">
-              Go to session scripts
+              Go to Session Plans
             </Link>
             <Link href="/coach/drills" className="btn btn--ghost">
               Back to drill library

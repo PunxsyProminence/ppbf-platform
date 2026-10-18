@@ -539,7 +539,7 @@ describe("today's schedule comes from the scheduler, and a failed read is not an
 describe("the Development tab shows the coach's real credential record", () => {
   test('the certification panel no longer denies that a credential backend exists', async () => {
     await renderWorkspace({ credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }) });
-    openTab('Development');
+    openTab('Your Growth');
 
     expect(screen.queryByText(/no backend feed for coach certifications/i)).toBeNull();
     expect(screen.queryByText('SafeSport Training')).not.toBeNull();
@@ -556,7 +556,7 @@ describe("the Development tab shows the coach's real credential record", () => {
         items: [credentialRow({ status: 'expired', band: 'expired', expires_on: '2025-01-01' })],
       }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     expect(screen.queryByText('Expired')).not.toBeNull();
     expect(screen.queryByText(/Expired Jan 1, 2025/)).not.toBeNull();
@@ -569,7 +569,7 @@ describe("the Development tab shows the coach's real credential record", () => {
         items: [credentialRow({ status: 'submitted', band: 'submitted', issued_on: null, expires_on: '2027-02-01' })],
       }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     expect(screen.queryByText('Awaiting review')).not.toBeNull();
     expect(screen.queryByText(/Expires Feb 1, 2027/)).toBeNull();
@@ -579,7 +579,7 @@ describe("the Development tab shows the coach's real credential record", () => {
     await renderWorkspace({
       credentials: () => jsonResponse({ ok: true, items: [credentialRow({ band: 'some_future_band' })] }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     expect(screen.queryByText('Not on file')).not.toBeNull();
     expect(screen.queryByText('Current')).toBeNull();
@@ -587,7 +587,7 @@ describe("the Development tab shows the coach's real credential record", () => {
 
   test('a failed credential read is UNAVAILABLE, not "nothing on file"', async () => {
     await renderWorkspace({ credentials: () => jsonResponse({}, { ok: false, status: 503 }) });
-    openTab('Development');
+    openTab('Your Growth');
 
     // Named specifically. The development panel beside this one has its own
     // "could not be read" box, and a bare /could not be read/ match would go
@@ -602,7 +602,7 @@ describe("the Development tab shows the coach's real credential record", () => {
     // panel ever starts rendering a link to a file, that decision gets made
     // deliberately rather than by a spread of the row.
     await renderWorkspace({ credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }) });
-    openTab('Development');
+    openTab('Your Growth');
 
     const documentLinks = screen.queryAllByRole('link').filter((node) =>
       (node.getAttribute('href') ?? '').includes('/credentials/document'),
@@ -612,7 +612,7 @@ describe("the Development tab shows the coach's real credential record", () => {
 
   test('Development topics are a reference list, not a checklist', async () => {
     await renderWorkspace();
-    openTab('Development');
+    openTab('Your Growth');
 
     // Still named, and still nothing to tick. Ticking one off would need this
     // platform to decide what "completed Adaptive Coaching" means, which is
@@ -693,7 +693,7 @@ describe('floor tab presents a plan template, not a running session', () => {
     openTab('Floor');
 
     expect(screen.queryByText(/completion and session progress are not tracked yet/i)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href'))
+    expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href'))
       .toBe('/coach/session-scripts');
   });
 
@@ -701,7 +701,7 @@ describe('floor tab presents a plan template, not a running session', () => {
     await renderWorkspace({ liveRun: () => jsonResponse({ run: liveRunRow() }) });
     openTab('Floor');
 
-    expect(screen.queryByRole('link', { name: 'Open Session Scripts' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open Session Plans' })).toBeNull();
     expect(screen.queryAllByRole('link', { name: 'Return to live delivery' }).length).toBeGreaterThan(0);
   });
 });
@@ -1758,7 +1758,7 @@ describe('the hub links to the session-delivery surfaces', () => {
   // scripts page, floor groups, the drill library, the cue library and the
   // template catalog were all reachable only by typing the URL. These pin
   // the Quick Actions links that make that loop part of the coach's day.
-  // Session Scripts left this row on 2026-10-03: the floor board's Run the
+  // Session Plans left this row on 2026-10-03: the floor board's Run the
   // Room is the one door to it on the Dashboard (coachFloorFocus.test.tsx).
   test.each([
     ["Today's Floor Groups", '/coach/floor-groups'],
@@ -1906,7 +1906,7 @@ describe("the hub reads the coach's own development record", () => {
         ok: true, goals: [], activities: [developmentActivityRow()],
       }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     expect(screen.queryByText(/no backend store for completion/i)).toBeNull();
     expect(screen.queryByText('Youth coaching clinic')).not.toBeNull();
@@ -1987,7 +1987,7 @@ describe("the hub reads the coach's own development record", () => {
       development: () => jsonResponse({}, { ok: false, status: 503 }),
       credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     // Two records of very different standing on one tab. One read failing
     // must not take the other down with it -- the credential panel is the
@@ -2007,7 +2007,7 @@ describe("the hub reads the coach's own development record", () => {
         })],
       }),
     });
-    openTab('Development');
+    openTab('Your Growth');
 
     // A coach may well log this. What must never appear with it is a band, an
     // expiry or the word verified -- that record lives in
