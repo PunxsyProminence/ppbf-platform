@@ -678,16 +678,26 @@ export async function loadConversationMessages(input: {
     // weaker source than one it cited. Answered ('ok') rows only: a withheld
     // answer keeps its stored grade, whatever it cites.
     const strongest = selectStrongestEvidence(gradeable);
-    const headline = row.role === 'assistant' && row.response_state === 'ok' && row.evidence_tier && strongest
-      ? higherTier(row.evidence_tier, gradeCitedEvidence(strongest))
+    const current = strongest ? gradeCitedEvidence(strongest) : null;
+    const headline = row.role === 'assistant' && row.response_state === 'ok' && row.evidence_tier && current
+      ? higherTier(row.evidence_tier, current)
       : row.evidence_tier;
+    // Both lines from one grading snapshot (Codex review of #1736): when today's
+    // best grade is the headline, "Also cites" lists today's grades below it.
+    // When a cited source was re-tiered down since, the headline is the stored
+    // grade, today's grades describe another snapshot, and listing them could
+    // put the same source on both lines ("Strongest source: Proven / Also cites:
+    // Emerging"), so there is no line.
+    const alsoCites = row.role === 'assistant' && headline && current === headline
+      ? alsoCitedTiers(headline, gradeable)
+      : [];
     return {
       messageId: row.message_id,
       role: row.role,
       content: row.content,
       responseState: row.response_state,
       evidenceTier: headline,
-      evidenceAlsoCites: row.role === 'assistant' && headline ? alsoCitedTiers(headline, gradeable) : [],
+      evidenceAlsoCites: alsoCites,
       handoff: row.handoff,
       createdAt: row.created_at.toISOString(),
       // Named fields only: the passage source, its hash and the grading

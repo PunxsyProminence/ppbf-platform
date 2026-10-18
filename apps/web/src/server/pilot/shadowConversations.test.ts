@@ -275,7 +275,8 @@ describe('SHADOW durable conversation isolation', () => {
     const [withheld, retiered] = await loadConversationMessages({ actor, conversationId: 'conversation-a' });
 
     expect(retiered.evidenceTier).toBe('PROVEN');
-    expect(retiered.evidenceAlsoCites).toEqual(['EMERGING']);
+    // Today's grade of the same source is not listed under the stored headline.
+    expect(retiered.evidenceAlsoCites).toEqual([]);
     expect(withheld.evidenceTier).toBe('RESEARCH_NEEDED');
     expect(withheld.evidenceAlsoCites).toEqual([]);
   });
