@@ -5,7 +5,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { explainLine } from '@/src/lib/sessionScriptWords';
+import CoachLiveTiles from '@/components/CoachLiveTiles';
 import RoundTimerControls from '@/components/RoundTimerControls';
+import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
+import { readReferenceInstruction } from '@/components/drills/drillInstructionRead';
+import { useDrillOpener } from '@/components/drills/useDrillOpener';
+import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
@@ -237,6 +242,38 @@ export default function SessionScriptLiveDelivery({
   const currentBlock = currentIndex >= 0 ? blocks[currentIndex] : null;
   const previousBlock = currentIndex > 0 ? blocks[currentIndex - 1] : null;
   const nextBlock = currentIndex >= 0 && currentIndex < blocks.length - 1 ? blocks[currentIndex + 1] : null;
+
+  // THE DRILL BEHIND THE CURRENT BLOCK (audit 2026-10-17 item 1). A plan made
+  // from a template copies a step's name, minutes, scale, contact and note, not
+  // the drill's setup, execution, cues or corrections. The coach opens the drill
+  // the block links -- that version, through the drill library's own read
+  // (readReferenceInstruction, as the Coach Cards page does) and its own
+  // DrillDetail, with the block's scale level opened -- in place under the
+  // block, so the session keeps running, and closes it to return to the block.
+  // Opening writes nothing. The panel belongs to the block it was opened from:
+  // when the session moves on it is closed (a read still loading is cancelled),
+  // so going back to that block does not reopen it, and focus stays with the
+  // control the coach used to move -- the Coach Cards page's rule.
+  const drill = useDrillOpener();
+  const { openKey: openDrillKey, close: closeDrill } = drill;
+  const drillOpen = currentBlock !== null && openDrillKey === currentBlock.block_id;
+  useEffect(() => {
+    if (openDrillKey !== null && openDrillKey !== run.current_block_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      closeDrill({ returnFocus: false });
+    }
+  }, [openDrillKey, run.current_block_id, closeDrill]);
+  function toggleDrill(block: Block) {
+    if (drill.openKey === block.block_id) {
+      drill.close();
+      return;
+    }
+    const referenceDrillId = block.drill_id;
+    if (referenceDrillId === null) return;
+    drill.open(block.block_id, `live-block-instructions-${block.block_id}`, (signal) =>
+      readReferenceInstruction(referenceDrillId, signal),
+    );
+  }
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
@@ -617,7 +654,11 @@ export default function SessionScriptLiveDelivery({
   }
 
   return (
-    <section aria-label="Live session delivery" className="ge-scripts-live mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+    // Look B (OD-2026-10-17-011, carried to the coach's screen by lane L39 PR 3): the console is a
+    // board in the wall-board kit's frame, its top row the coach's tiles, its controls brass plates.
+    // The kit's rules are `.ge-wallboard .ge-frame`, so the scope is the wrapper, not the board.
+    <div className="ge-wallboard">
+    <section aria-label="Live session delivery" className="ge-scripts-live ge-frame coach-live rounded-[var(--r-lg)] p-[var(--s5)]">
       <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
         <div>
           <p className="t-eyebrow">Delivering now</p>
@@ -647,8 +688,11 @@ export default function SessionScriptLiveDelivery({
         </div>
       </div>
 
+      {/* The top row: attendance, need attention and the SHADOW queue, counts only. */}
+      <CoachLiveTiles />
+
       {/* The floor controls: big, few, and above the fold. */}
-      <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+      <div className="coach-live-controls mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
         <button
           type="button"
           onClick={() => void mutateRun({ action: run.is_paused ? 'resume' : 'pause' }, 'pause-resume')}
@@ -706,7 +750,9 @@ export default function SessionScriptLiveDelivery({
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
           reads as a refused session action. */}
-      <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
+      <div className="coach-live-timer">
+        <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
+      </div>
 
       {actionError && (
         <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
@@ -757,6 +803,28 @@ export default function SessionScriptLiveDelivery({
                   {line.value}
                 </p>
               ))}
+              {currentBlock.drill_id !== null && (
+                <div className="mt-[var(--s3)]">
+                  <button
+                    type="button"
+                    id={`live-block-instructions-${currentBlock.block_id}`}
+                    className="btn btn--ghost"
+                    aria-expanded={drillOpen}
+                    aria-label={`${drillOpen ? 'Hide' : 'View'} instructions: ${currentBlock.block_label}`}
+                    onClick={() => toggleDrill(currentBlock)}
+                  >
+                    {drillOpen ? 'Hide instructions' : 'View instructions'}
+                  </button>
+                  {drillOpen && (
+                    <CoachInstructionPanel
+                      loading={drill.loading}
+                      failed={drill.failed}
+                      opened={drill.opened}
+                      chosenScale={currentBlock.scale_level}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <p className="mt-[var(--s4)] text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
@@ -781,6 +849,14 @@ export default function SessionScriptLiveDelivery({
                 >
                   <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                     <span className="plaque">{block.start_offset_min}-{block.end_offset_min} min</span>
+                    {blockKindWord(block.block_kind) && (
+                      <span className="coach-live-kind">
+                        <span className="ge-pictogram">
+                          <BlockKindIcon kind={block.block_kind} />
+                        </span>
+                        <span className="t-label">{blockKindWord(block.block_kind)}</span>
+                      </span>
+                    )}
                     <span className="t-body text-[color:var(--bone-200)]">{block.block_label}</span>
                     {isCurrent && <span className="t-label text-[color:var(--brass-300)]">Current</span>}
                     {!isCurrent && currentIndex >= 0 && (
@@ -1025,5 +1101,6 @@ export default function SessionScriptLiveDelivery({
         )}
       </div>
     </section>
+    </div>
   );
 }

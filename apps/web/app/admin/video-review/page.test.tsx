@@ -92,7 +92,7 @@ describe('VideoReviewManagementPage', () => {
       ),
     );
 
-    expect(screen.getByText('Quarantined Video Review Escalation')).toBeTruthy();
+    expect(screen.getByText('Video Scan Review')).toBeTruthy();
     expect(await screen.findByText('Sparring Drill 1')).toBeTruthy();
     expect(screen.getByText('ID: vid-101')).toBeTruthy();
   });

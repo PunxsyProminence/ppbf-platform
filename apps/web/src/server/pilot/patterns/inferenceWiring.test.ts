@@ -217,6 +217,20 @@ describe('Phase A wiring', () => {
     expect(result).not.toHaveProperty('inferenceState');
   });
 
+  test('recurrence, attribution strata and drift ignore observations recorded after asOf', () => {
+    // Counterexamples dated after AS_OF would widen the trial count, shift the
+    // strata and chart a decline that had not happened yet.
+    const later = Array.from({ length: 6 }, (_, i) => obs(i + 40, {
+      sessionId: `late${i}`,
+      polarity: 'counterexample',
+      taskContextKey: i % 2 === 0 ? 'task-mitts' : 'task-sparring',
+      taskConstraint: i % 2 === 0 ? 'controlled' : 'live',
+      observerAccountId: i % 2 === 0 ? 'coach-a' : 'coach-b',
+      observedAt: `2026-08-${String(i + 1).padStart(2, '0')}T10:00:00.000Z`,
+    }));
+    expect(evaluate([...overwhelmingEvidence(), ...later], true)).toEqual(evaluate(overwhelmingEvidence(), true));
+  });
+
   test('every evaluation still requires human review', () => {
     for (const withInference of [false, true]) {
       expect(evaluate(overwhelmingEvidence(), withInference).humanReviewRequired).toBe(true);

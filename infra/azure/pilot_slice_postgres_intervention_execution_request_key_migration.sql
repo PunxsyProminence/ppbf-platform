@@ -27,9 +27,11 @@
 -- (pilot_slice_postgres_intervention_executions_migration.sql); the `all` chain
 -- runs it first.
 --
--- Idempotent: add column if not exists; the check is dropped and re-added on
--- every run; create index if not exists (the runner's readiness check refuses a
--- same-named index with any other definition). Additive only. No
+-- Idempotent: add column if not exists; the check is added only when this table
+-- has no check of that name, so a re-run (the `all` chain) does not re-scan the
+-- table under an exclusive lock; create index if not exists. A same-named check
+-- or index with any other definition is left for the runner's readiness check to
+-- refuse. Additive only: nothing is dropped. No
 -- `begin;`/`commit;` here: the runner
 -- (apps/web/scripts/pilot-apply-intervention-execution-request-key-migration.mjs)
 -- opens the transaction.
@@ -37,12 +39,20 @@
 alter table pilot.intervention_executions
   add column if not exists request_key text null;
 
-alter table pilot.intervention_executions
-  drop constraint if exists pilot_intervention_executions_request_key_check;
-alter table pilot.intervention_executions
-  add constraint pilot_intervention_executions_request_key_check check (
-    request_key is null or (length(btrim(request_key)) > 0 and length(request_key) <= 200)
-  );
+do $pilot_intervention_executions_request_key_check$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pilot_intervention_executions_request_key_check'
+      and conrelid = to_regclass('pilot.intervention_executions')
+  ) then
+    alter table pilot.intervention_executions
+      add constraint pilot_intervention_executions_request_key_check check (
+        request_key is null or (length(btrim(request_key)) > 0 and length(request_key) <= 200)
+      );
+  end if;
+end
+$pilot_intervention_executions_request_key_check$;
 
 create unique index if not exists pilot_intervention_executions_one_per_request_key
   on pilot.intervention_executions(organization_id, request_key)

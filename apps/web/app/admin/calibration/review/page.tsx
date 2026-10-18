@@ -234,7 +234,7 @@ function CalibrationReviewTable() {
         <header className="mb-[var(--s5)]">
           <p className="t-eyebrow">Front Office · Calibration</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-            Where the two coaches disagreed
+            Calibration Review
           </h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Both independent readings of one study clip, side by side. Read-only: nothing on this
