@@ -24,6 +24,7 @@ import { renderHook } from '@testing-library/react';
 import {
   achievementCeremonyKey,
   decideAchievementCeremony,
+  forgetCelebrated,
   readCelebrated,
   resetAchievementCeremonyMemory,
   useAchievementCeremony,
@@ -269,5 +270,36 @@ describe('the hook hands the rule the list it was given', () => {
     mount({ earned: [withNul, 'goal:plain'], active: true, athleteId: 'ath_h' });
 
     expect(readCelebrated(KEY)).toEqual([withNul, 'goal:plain'].sort());
+  });
+});
+
+describe("forgetCelebrated: only the athlete's own accepted Undo takes a key off (F-134)", () => {
+  afterEach(() => {
+    resetAchievementCeremonyMemory();
+    window.localStorage.clear();
+  });
+
+  test('takes exactly that key off, in memory and in storage, for that athlete only', () => {
+    writeCelebrated(achievementCeremonyKey('ath_f'), ['goal:a', 'goal:b']);
+    writeCelebrated(achievementCeremonyKey('ath_g'), ['goal:a']);
+
+    forgetCelebrated('ath_f', 'goal:a');
+
+    expect(readCelebrated(achievementCeremonyKey('ath_f'))).toEqual(['goal:b']);
+    expect(JSON.parse(window.localStorage.getItem(achievementCeremonyKey('ath_f')) ?? 'null')).toEqual(['goal:b']);
+    expect(readCelebrated(achievementCeremonyKey('ath_g'))).toEqual(['goal:a']);
+  });
+
+  test('a forgotten key that is reached again is a crossing; one never forgotten is not', () => {
+    writeCelebrated(achievementCeremonyKey('ath_f'), ['goal:a', 'goal:b']);
+    forgetCelebrated('ath_f', 'goal:a');
+
+    const decision = decideAchievementCeremony(['goal:a', 'goal:b'], readCelebrated(achievementCeremonyKey('ath_f')));
+    expect(decision.celebrate).toBe('goal:a');
+  });
+
+  test('a device that never saw the athlete is left unseen, so it still seeds rather than rings', () => {
+    forgetCelebrated('ath_new', 'goal:a');
+    expect(readCelebrated(achievementCeremonyKey('ath_new'))).toBeNull();
   });
 });

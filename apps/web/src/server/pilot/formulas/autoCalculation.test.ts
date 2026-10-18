@@ -126,14 +126,18 @@ function sparringContext(contextId = 'sparring_1'): NumericObservation[] {
   ];
 }
 
-/** The sparring page's optional "Whole session" boxes, all filled in. */
-function wholeSession(contextId = 'sparring_1'): NumericObservation[] {
-  const dimensions = { ...SESSION_TOTAL_DIMENSIONS };
+/** The sparring page's "Whole session" boxes as it sends them: always all
+ *  three, tagged with their fieldKey; `blank` ones carry null. */
+function wholeSession(contextId = 'sparring_1', blank: readonly string[] = []): NumericObservation[] {
+  const box = (fieldKey: string) => ({ ...SESSION_TOTAL_DIMENSIONS, fieldKey });
+  const value = (fieldKey: string, filled: number) => (blank.includes(fieldKey) ? null : filled);
   return [
-    observation({ id: `${contextId}-all-thrown`, kind: 'punch_count', unit: 'count', value: 90, contextId, dimensions }),
-    observation({ id: `${contextId}-rounds`, kind: 'round_count', unit: 'count', value: 6, contextId, dimensions }),
-    observation({ id: `${contextId}-all-landed`, kind: 'punch_landed', unit: 'count', value: 30, contextId, dimensions }),
-    observation({ id: `${contextId}-minutes`, kind: 'active_time', unit: 'minutes', value: 12, contextId, dimensions }),
+    observation({ id: `${contextId}-all-thrown`, kind: 'punch_count', unit: 'count', value: value('all_thrown', 90), contextId, dimensions: box('all_thrown') }),
+    ...(blank.includes('all_thrown')
+      ? []
+      : [observation({ id: `${contextId}-rounds`, kind: 'round_count', unit: 'count', value: 6, contextId, dimensions: { ...SESSION_TOTAL_DIMENSIONS } })]),
+    observation({ id: `${contextId}-all-landed`, kind: 'punch_landed', unit: 'count', value: value('all_landed', 30), contextId, dimensions: box('all_landed') }),
+    observation({ id: `${contextId}-minutes`, kind: 'active_time', unit: 'minutes', value: value('minutes_worked', 12), contextId, dimensions: box('minutes_worked') }),
   ];
 }
 
@@ -149,14 +153,46 @@ describe('satisfied formula input detection', () => {
     ]);
   });
 
-  test('with the whole-session boxes it yields MVP-02, MVP-03, MVP-04 and MVP-05', () => {
+  test('with the whole-session boxes filled it yields MVP-02, MVP-03, MVP-04, MVP-05 and MVP-10', () => {
     expect(detectSatisfiedFormulaInputs([...sparringContext(), ...wholeSession()])).toEqual([
       { formulaId: 'MVP-02', observationIds: ['sparring_1-all-thrown', 'sparring_1-minutes', 'sparring_1-rounds'] },
       // The per-type pair, never the whole-session landed count.
       { formulaId: 'MVP-03', observationIds: ['sparring_1-attempted', 'sparring_1-landed'] },
       { formulaId: 'MVP-04', observationIds: ['sparring_1-absorbed', 'sparring_1-all-landed'] },
       { formulaId: 'MVP-05', observationIds: ['sparring_1-all-landed', 'sparring_1-minutes'] },
+      {
+        formulaId: 'MVP-10',
+        observationIds: ['sparring_1-all-landed', 'sparring_1-all-thrown', 'sparring_1-minutes'],
+        policy: {
+          parameters: {
+            expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'],
+            highAt: 0.8,
+            moderateAt: 0.5,
+            lowAt: 0,
+          },
+          policyVersion: 'sparring-log-completeness-2026-10-17',
+        },
+      },
     ]);
+  });
+
+  test('blank boxes (null) still complete MVP-10, and never run MVP-02/04/05', () => {
+    const detected = detectSatisfiedFormulaInputs([
+      ...sparringContext(),
+      ...wholeSession('sparring_1', ['all_thrown', 'all_landed', 'minutes_worked']),
+    ]);
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-03', 'MVP-10']);
+  });
+
+  test('one blank box: MVP-10 runs, and only the formulas whose boxes were filled', () => {
+    const detected = detectSatisfiedFormulaInputs([...sparringContext(), ...wholeSession('sparring_1', ['minutes_worked'])]);
+    // MVP-02 and MVP-05 need minutes; MVP-04 needs only all landed.
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-03', 'MVP-04', 'MVP-10']);
+  });
+
+  test('MVP-10 waits for all three boxes: a submission still arriving computes nothing early', () => {
+    const partial = wholeSession().filter((item) => item.kind !== 'active_time');
+    expect(detectSatisfiedFormulaInputs(partial).map((item) => item.formulaId)).not.toContain('MVP-10');
   });
 
   test('two whole-session landed counts in one context run neither MVP-04 nor MVP-05', () => {
@@ -171,7 +207,33 @@ describe('satisfied formula input detection', () => {
         dimensions: { ...SESSION_TOTAL_DIMENSIONS },
       }),
     ]);
-    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-02', 'MVP-03']);
+    // MVP-10 still runs: it reads the boxes by fieldKey, and the extra count
+    // carries none.
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-02', 'MVP-03', 'MVP-10']);
+  });
+
+  test('MVP-10 runs with its policy; the executor passes it through', async () => {
+    const repository = await import('./repository');
+    const runner = await import('./runner');
+    jest.spyOn(repository, 'getActiveObservationsForContext').mockResolvedValue(wholeSession('sparring_1', ['all_thrown', 'all_landed', 'minutes_worked']));
+    const run = jest.spyOn(runner, 'runStoredMvpFormula').mockResolvedValue({ results: [] });
+
+    await autoCalculateForObservationContext({ organizationId: 'org-1', athleteId: 'athlete-1', contextId: 'sparring_1' });
+
+    expect(run.mock.calls.map(([input]) => input)).toEqual([{
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      formulaId: 'MVP-10',
+      observationIds: ['sparring_1-all-landed', 'sparring_1-all-thrown', 'sparring_1-minutes'],
+      parameters: {
+        expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'],
+        highAt: 0.8,
+        moderateAt: 0.5,
+        lowAt: 0,
+      },
+      policyVersion: 'sparring-log-completeness-2026-10-17',
+    }]);
+    jest.restoreAllMocks();
   });
 
   test('returns nothing until the last observation of the set has landed', () => {
@@ -329,12 +391,13 @@ describe('satisfied formula input detection', () => {
 });
 
 describe('declared input requirements match the executable contract', () => {
-  test('covers MVP-02, MVP-03, MVP-04 and MVP-05 and nothing else', () => {
+  test('covers MVP-02, MVP-03, MVP-04, MVP-05 and MVP-10 and nothing else', () => {
     expect(FORMULA_INPUT_REQUIREMENTS.map((item) => item.formulaId)).toEqual([
       'MVP-02',
       'MVP-03',
       'MVP-04',
       'MVP-05',
+      'MVP-10',
     ]);
   });
 
@@ -382,6 +445,9 @@ describe('declared input requirements match the executable contract', () => {
         athleteId: 'athlete-1',
         formulaId: formulaId as MvpFormulaId,
         observationIds: built.map((item) => item.observationId),
+        ...(requirement.policy
+          ? { parameters: requirement.policy.parameters, policyVersion: requirement.policy.policyVersion }
+          : {}),
       });
 
       // Not throwing is only half of it. A wrong unit or a dropped dimension
