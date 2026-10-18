@@ -95,18 +95,37 @@ function availabilityLine(availability: IntelligenceSourceAvailability, count: n
     : 'Nothing recorded — which is not the same as nothing wrong';
 }
 
+/* Personal baseline (MVP-09) items, by check-in column. Copy PROPOSED (L50). */
+const BASELINE_ITEM_LABELS: Record<string, string> = {
+  sleep_hours: 'Sleep (hours)',
+  energy: 'Energy (1-5)',
+  soreness: 'Soreness (1-5)',
+};
+
 function FormulaOutputCard({ entry }: { entry: FormulaOutputEntry }) {
   const { result } = entry;
   const display = validationDisplay(result.validation.state);
   const computed = formatGymStamp(result.computedAt);
+  const metricKey = typeof result.parameters.metricKey === 'string' ? result.parameters.metricKey : null;
+  const baselineItem = result.formulaId === 'MVP-09' && metricKey
+    ? BASELINE_ITEM_LABELS[metricKey] ?? metricKey
+    : null;
+  // 7-13 entries: the engine's SHORT_BASELINE warning (Jason: "provisional"
+  // until about 14). Under 7 the result carries no value and says why below.
+  const provisional = result.formulaId === 'MVP-09' && result.validation.warnings.includes('SHORT_BASELINE');
 
   return (
     <li className="mat-leather rounded-[var(--r-md)] p-[var(--s3)]">
       <div className="flex flex-wrap items-center gap-[var(--s3)]">
         <span className={display.className}><i aria-hidden="true">{display.glyph}</i>{display.label}</span>
         <span className="t-body font-semibold text-[color:var(--bone-100)]">
-          {result.formulaId} · {result.outputKey}
+          {result.formulaId}{baselineItem ? ` · ${baselineItem}` : ''} · {result.outputKey}
         </span>
+        {provisional && (
+          <span className="badge badge--filed" data-testid="baseline-provisional">
+            <i aria-hidden="true">▣</i>Provisional: fewer than 14 check-ins in the last 28 days
+          </span>
+        )}
         <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
           formula v{result.formulaVersion} · policy {result.policyVersion}
         </span>
@@ -117,9 +136,11 @@ function FormulaOutputCard({ entry }: { entry: FormulaOutputEntry }) {
           different facts about an athlete's training. */}
       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-lg)' }}>
         {result.value === null
-          ? <span data-testid="no-value">No value — {result.unavailableReason
-              ? `${readableCode(result.unavailableReason)} (${result.unavailableReason})`
-              : 'no reason recorded'}</span>
+          ? <span data-testid="no-value">No value — {baselineItem && result.unavailableReason === 'INSUFFICIENT_HISTORY'
+              ? 'Needs 7 check-ins in the last 28 days'
+              : result.unavailableReason
+                ? `${readableCode(result.unavailableReason)} (${result.unavailableReason})`
+                : 'no reason recorded'}</span>
           : <span data-testid="value">{result.value} <span style={{ fontSize: 'var(--t-sm)' }}>{result.unit}</span></span>}
       </p>
 

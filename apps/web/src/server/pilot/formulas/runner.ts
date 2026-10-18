@@ -11,9 +11,9 @@ import {
   calculateSessionLoad,
   calculateSevenDayWeightChange,
   calculateWorkRateConsistency,
+  dayWindowBaselinePolicyIsValid,
   type CompletenessPolicy,
   type ContactExposurePolicy,
-  type PersonalBaselinePolicy,
   type WeightChangePolicy,
 } from './engine';
 import {
@@ -327,10 +327,35 @@ function parseContactPolicy(input: RunStoredMvpFormulaInput): {
 }
 
 function parseBaselinePolicy(input: RunStoredMvpFormulaInput): {
-  policy: PersonalBaselinePolicy & BaselinePolicy;
+  policy: BaselinePolicy;
   policyVersion: string;
 } {
   const parameters = parameterObject(input);
+  if ('windowDays' in parameters) {
+    assertExactParameterKeys(parameters, [
+      'metricKey',
+      'windowDays',
+      'minimumHistory',
+      'adequateHistory',
+      'sdFloor',
+    ]);
+    const candidate = {
+      metricKey: typeof parameters.metricKey === 'string' ? parameters.metricKey.trim() : '',
+      windowDays: parameters.windowDays as number,
+      minimumHistory: parameters.minimumHistory as number,
+      adequateHistory: parameters.adequateHistory as number,
+      sdFloor: parameters.sdFloor as number,
+    };
+    if (
+      typeof parameters.metricKey !== 'string'
+      || parameters.metricKey.length > 120
+      || !dayWindowBaselinePolicyIsValid(candidate)
+    ) {
+      executionError('Personal-baseline parameters are invalid.', 'INVALID_PARAMETERS');
+    }
+    const policyVersion = requirePolicyVersion(input);
+    return { policy: { ...candidate, policyVersion }, policyVersion };
+  }
   assertExactParameterKeys(parameters, [
     'metricKey',
     'windowSize',

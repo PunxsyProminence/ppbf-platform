@@ -26,7 +26,7 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
-import { SESSION_TOTAL_DIMENSIONS, type ObservationKind } from './types';
+import { SESSION_TOTAL_DIMENSIONS, type FormulaResult, type ObservationKind } from './types';
 
 jest.setTimeout(180_000);
 
@@ -50,6 +50,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let repository: typeof import('./repository');
 let runner: typeof import('./runner');
 let autoCalculation: typeof import('./autoCalculation');
+let checkInBaseline: typeof import('./checkInBaseline');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -111,7 +112,9 @@ async function truncateAll(): Promise<void> {
   const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await client.connect();
   try {
-    await client.query('truncate pilot.shadow_formula_results, pilot.shadow_formula_observations');
+    await client.query(
+      'truncate pilot.shadow_formula_baseline_snapshots, pilot.shadow_formula_results, pilot.shadow_formula_observations',
+    );
   } finally {
     await client.end();
   }
@@ -247,6 +250,7 @@ beforeAll(async () => {
   repository = await import('./repository');
   runner = await import('./runner');
   autoCalculation = await import('./autoCalculation');
+  checkInBaseline = await import('./checkInBaseline');
 });
 
 afterAll(async () => {
@@ -449,5 +453,86 @@ describe('the whole-session boxes (Jason 2026-10-17, "B: Longer sparring form")'
     const after = await latestValues();
     expect(after['MVP-02:punches_per_active_minute']).toBe(9);
     expect(after['MVP-05:value']).toBe(3);
+  });
+});
+
+describe('personal baseline from the daily check-in (MVP-09; OD-2026-10-17-020)', () => {
+  const checkInOn = (day: number, values: { sleep_hours?: number; energy?: number; soreness?: number }) => (
+    checkInBaseline.recordCheckInBaselines({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      checkInId: `ci-${day}`,
+      observedAt: new Date(Date.parse('2026-10-01T12:00:00.000Z') + day * 24 * 60 * 60 * 1_000).toISOString(),
+      accountId: ACCOUNT_ID,
+      values,
+    })
+  );
+
+  test('from the eighth daily check-in each item has a provisional value, kept apart on the coach read', async () => {
+    for (let day = 0; day < 7; day += 1) {
+      await checkInOn(day, { sleep_hours: 8, energy: day % 2 === 0 ? 3 : 4, soreness: 2 });
+    }
+    // The seventh check-in had six before it: no value yet.
+    const seventh = await repository.listLatestFormulaResultsPerOutput({ organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-09' });
+    expect(seventh.every((result) => result.value === null)).toBe(true);
+
+    const eighth = await checkInOn(7, { sleep_hours: 6, energy: 2, soreness: 4 });
+    const raw: Record<string, FormulaResult> = Object.fromEntries(eighth
+      .filter((result) => result.outputKey === 'raw_change')
+      .map((result) => [String(result.parameters.metricKey), result]));
+    expect(raw.sleep_hours.value).toBe(-2);
+    // Always 8 hours before: the 0.5 h floor, not a divide-by-zero.
+    const sleepStandardized = eighth.find((result) => result.outputKey === 'standardized_change' && result.parameters.metricKey === 'sleep_hours');
+    expect(sleepStandardized?.value).toBe(-4);
+    for (const result of Object.values(raw)) {
+      expect(result.validation.warnings).toContain('SHORT_BASELINE');
+      expect(result.inputObservationIds).toHaveLength(8);
+    }
+
+    const latest = await repository.listLatestFormulaResultsPerOutput({ organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-09' });
+    expect(latest
+      .filter((result) => result.outputKey === 'raw_change')
+      .map((result) => [result.parameters.metricKey, result.value])
+      .sort()).toEqual([['energy', expect.any(Number)], ['sleep_hours', -2], ['soreness', 2]]);
+
+    // A parent's read (results route) excludes MVP-09 in SQL.
+    const forParent = await repository.listActiveFormulaResults({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, excludeFormulaIds: ['MVP-09'],
+    });
+    expect(forParent.some((result) => result.formulaId === 'MVP-09')).toBe(false);
+
+    // The snapshot is stored with the day window (window_size 28, building).
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      const snapshots = await client.query(
+        `select metric_key, window_size, history_status from pilot.shadow_formula_baseline_snapshots
+         where organization_id = $1 and athlete_id = $2 and history_status = 'building' order by metric_key`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(snapshots.rows).toEqual([
+        { metric_key: 'energy', window_size: 28, history_status: 'building' },
+        { metric_key: 'sleep_hours', window_size: 28, history_status: 'building' },
+        { metric_key: 'soreness', window_size: 28, history_status: 'building' },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a repeated check-in writes nothing new', async () => {
+    await checkInOn(0, { energy: 3 });
+    await checkInOn(0, { energy: 3 });
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      const count = await client.query(
+        `select count(*)::int as n from pilot.shadow_formula_observations where organization_id = $1 and observation_kind = 'numeric'`,
+        [ORG_ID],
+      );
+      expect(count.rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
   });
 });

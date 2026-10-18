@@ -85,6 +85,11 @@ export async function GET(request: NextRequest) {
       organizationId: principal.organizationId,
       athleteId,
       formulaId: formulaId == null ? undefined : formulaId as FormulaId,
+      // A parent reads no personal baseline (MVP-09): it is derived from the
+      // child's check-in answers, which have no parent surface, and a derived
+      // number must not open one (Overwatch QD2, 2026-10-17; a parent view
+      // needs its own ruling from Jason).
+      excludeFormulaIds: principal.role === 'parent' ? ['MVP-09'] : [],
       limit,
     });
     return NextResponse.json({ ok: true, results });

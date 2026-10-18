@@ -108,6 +108,10 @@ export const FORMULA_UNITS = [
   // computable.
   'text_present_0_1',
   'unitless',
+  // Check-in self-reports read by the personal baseline (MVP-09): sleep is a
+  // quantity in hours, energy and soreness a 1-5 rating (wellnessScales.ts).
+  'hours',
+  'rating_1_5',
 ] as const;
 
 export type FormulaUnit = (typeof FORMULA_UNITS)[number];

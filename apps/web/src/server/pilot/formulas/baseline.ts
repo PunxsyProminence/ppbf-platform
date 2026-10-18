@@ -4,19 +4,18 @@ import { query, withTransaction } from '../db';
 import { mean, sampleStandardDeviation } from './primitives';
 import { deterministicKey, stableJson } from './identity';
 import { getFormulaDefinition } from './registry';
+import {
+  dayWindowBaselinePolicyIsValid,
+  isDayWindowBaselinePolicy,
+  type PersonalBaselinePolicy,
+} from './engine';
 import type {
   FormulaBaselineSnapshot,
   FormulaUnit,
   NumericObservation,
 } from './types';
 
-export interface BaselinePolicy {
-  metricKey: string;
-  windowSize: number;
-  minimumHistory: 4;
-  adequateHistory: number;
-  policyVersion: string;
-}
+export type BaselinePolicy = PersonalBaselinePolicy & { readonly policyVersion: string };
 
 export type BaselineClient = Pick<PoolClient, 'query'>;
 
@@ -75,19 +74,25 @@ export function buildPersonalBaselineSnapshot(input: {
   effectiveAt?: string;
 }): FormulaBaselineSnapshot {
   const { policy } = input;
+  const dayWindow = isDayWindowBaselinePolicy(policy) ? policy : null;
+  const policyIsValid = isDayWindowBaselinePolicy(policy)
+    ? dayWindowBaselinePolicyIsValid(policy)
+      && input.effectiveAt != null
+      && Number.isFinite(Date.parse(input.effectiveAt))
+    : Boolean(policy.metricKey.trim())
+      && Number.isInteger(policy.windowSize)
+      && policy.windowSize >= 8
+      && policy.windowSize <= 12
+      && policy.minimumHistory === 4
+      && Number.isInteger(policy.adequateHistory)
+      && policy.adequateHistory >= 8
+      && policy.adequateHistory <= policy.windowSize;
   if (
     !input.organizationId.trim()
     || !input.athleteId.trim()
     || !input.unit
-    || !policy.metricKey.trim()
     || !policy.policyVersion.trim()
-    || !Number.isInteger(policy.windowSize)
-    || policy.windowSize < 8
-    || policy.windowSize > 12
-    || policy.minimumHistory !== 4
-    || !Number.isInteger(policy.adequateHistory)
-    || policy.adequateHistory < 8
-    || policy.adequateHistory > policy.windowSize
+    || !policyIsValid
   ) {
     throw new TypeError('Invalid personal baseline policy.');
   }
@@ -95,7 +100,14 @@ export function buildPersonalBaselineSnapshot(input: {
   const sorted = [...input.history].sort(
     (left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt),
   );
-  const selected = sorted.slice(-policy.windowSize);
+  // The same selection calculatePersonalBaselineComparison makes, so the
+  // snapshot and the result describe the same entries.
+  const windowStartMs = dayWindow
+    ? Date.parse(input.effectiveAt!) - dayWindow.windowDays * 24 * 60 * 60 * 1_000
+    : 0;
+  const selected = isDayWindowBaselinePolicy(policy)
+    ? sorted.filter((observation) => Date.parse(observation.observedAt) > windowStartMs)
+    : sorted.slice(-policy.windowSize);
   const unit = input.unit;
   for (const observation of selected) {
     if (
@@ -126,12 +138,20 @@ export function buildPersonalBaselineSnapshot(input: {
   if (sampleSd && !sampleSd.ok) throw new TypeError(`Unable to calculate baseline sample SD: ${sampleSd.reason}`);
 
   const formula = getFormulaDefinition('MVP-09');
-  const parameters = Object.freeze({
-    metricKey: policy.metricKey,
-    windowSize: policy.windowSize,
-    minimumHistory: policy.minimumHistory,
-    adequateHistory: policy.adequateHistory,
-  });
+  const parameters = Object.freeze(isDayWindowBaselinePolicy(policy)
+    ? {
+      metricKey: policy.metricKey,
+      windowDays: policy.windowDays,
+      minimumHistory: policy.minimumHistory,
+      adequateHistory: policy.adequateHistory,
+      sdFloor: policy.sdFloor,
+    }
+    : {
+      metricKey: policy.metricKey,
+      windowSize: policy.windowSize,
+      minimumHistory: policy.minimumHistory,
+      adequateHistory: policy.adequateHistory,
+    });
   const observationIds = selected.map((observation) => observation.observationId);
   const calculationKey = deterministicKey('baseline', {
     formulaId: 'MVP-09',
@@ -161,7 +181,9 @@ export function buildPersonalBaselineSnapshot(input: {
     unit,
     policyVersion: policy.policyVersion,
     parameters,
-    windowSize: policy.windowSize,
+    // A day window stores its length in days here (parameters say which); the
+    // column's check is 1-1000 and a short history can select zero entries.
+    windowSize: isDayWindowBaselinePolicy(policy) ? policy.windowDays : policy.windowSize,
     historyStatus,
     baselineMean: average?.ok ? average.value : null,
     baselineSampleSd: sampleSd?.ok ? sampleSd.value : null,
