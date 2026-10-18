@@ -29,34 +29,6 @@
     }
   },
   {
-    "id": "app/api/admin/volunteers/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/admin/volunteers",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "requireRole at route.ts:59 org admin only; updates volunteer status (validated against VOLUNTEER_STATUSES). Volunteer roster (names, certification and background-check status), not athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/admin/volunteers/route.ts#POST",
     "method": "POST",
     "path": "/api/admin/volunteers",
@@ -85,32 +57,30 @@
     }
   },
   {
-    "id": "app/api/pilot/achievements/mentorships/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/achievements/mentorships",
-    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
+    "id": "app/api/admin/volunteers/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/admin/volunteers",
+    "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "coach",
       "organization_admin",
       "admin"
     ],
-    "athleteData": true,
+    "athleteData": false,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
-    "confidence": "medium",
-    "notes": "requireRole :109; resolves both athlete ids via getMentorshipAthleteIds then assertActorCanAccessAthlete on the mentor AND the mentee before endMentorship (sets end date). Route survey 2026-10-07 B1: previously the mentor only.",
+    "confidence": "high",
+    "notes": "requireRole at route.ts:59 org admin only; updates volunteer status (validated against VOLUNTEER_STATUSES). Volunteer roster (names, certification and background-check status), not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
+        "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin"
+        "admin,organization_admin"
       ]
     }
   },
@@ -177,6 +147,36 @@
     }
   },
   {
+    "id": "app/api/pilot/achievements/mentorships/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/achievements/mentorships",
+    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "medium",
+    "notes": "requireRole :109; resolves both athlete ids via getMentorshipAthleteIds then assertActorCanAccessAthlete on the mentor AND the mentee before endMentorship (sets end date). Route survey 2026-10-07 B1: previously the mentor only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/achievements/milestones/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/achievements/milestones",
@@ -209,37 +209,6 @@
     }
   },
   {
-    "id": "app/api/pilot/achievements/milestones/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/achievements/milestones",
-    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin",
-      "athlete"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "requireRole :281; assertActorCanAccessAthlete :290; setAthleteProgram + audit. Athlete may set own program (documented, :271-277).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/achievements/milestones/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/achievements/milestones",
@@ -257,6 +226,37 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "requireRole :224 (writers incl. athlete); assertActorCanAccessAthlete :233 (athlete = self only); awarded_by role derived from session (:237); audit written.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/achievements/milestones/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/achievements/milestones",
+    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "requireRole :281; assertActorCanAccessAthlete :290; setAthleteProgram + audit. Athlete may set own program (documented, :271-277).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -333,34 +333,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/accounts/deactivate/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/admin/accounts/deactivate",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer + not self + same organization",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Owner ruling OD-2026-10-07-009: an organization admin deactivates/reactivates a coach, staff or volunteer in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, athlete, parent, board and the caller's own account are refused (403), an unknown account 404. setAccountActiveStatus revokes the target's sessions; audited.",
-    "mechanical": {
-      "sessionGates": [
-        "requireMicrosoftAuthenticatedPrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/accounts/microsoft-unbind/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/accounts/microsoft-unbind",
@@ -432,6 +404,34 @@
     "looksWrong": "",
     "confidence": "medium",
     "notes": "requireRole(['organization_admin']) in route.ts; admin passes by alias. platform_owner refused (OD-2026-10-10-004 ruling 3). repairStrandedGuardianAuthProvider (auth.ts) updates only role<>athlete, non-platform-owner, active, org-scoped ppbf_local accounts to microsoft. Targets guardian/staff logins, not athlete records; scoped to principal.organizationId. Audited under the caller's gym.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/accounts/deactivate/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/accounts/deactivate",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer + not self + same organization",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Owner ruling OD-2026-10-07-009: an organization admin deactivates/reactivates a coach, staff or volunteer in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, athlete, parent, board and the caller's own account are refused (403), an unknown account 404. setAccountActiveStatus revokes the target's sessions; audited.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -757,30 +757,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/coach-coverage/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/admin/coach-coverage",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + inline isOrganizationAdminRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Gate :100; revokeCoachCoverage scoped to session org; audit only when state changed.",
-    "mechanical": {
-      "sessionGates": [
-        "requireMicrosoftAuthenticatedPrincipal"
-      ],
-      "authorizationGates": [],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/admin/coach-coverage/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/coach-coverage",
@@ -829,6 +805,30 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/coach-coverage/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/admin/coach-coverage",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + inline isOrganizationAdminRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gate :100; revokeCoachCoverage scoped to session org; audit only when state changed.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/admin/community-service/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/community-service",
@@ -858,34 +858,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/content-import/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/admin/content-import",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole (admit(), route.ts:113-121)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": false,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Same admit() gate :144; returns the workout intake prompt with the org's current drill library names (drill library, not athlete data).",
-    "mechanical": {
-      "sessionGates": [
-        "requireMicrosoftAuthenticatedPrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/content-import/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/content-import",
@@ -901,6 +873,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Gate admit() :114-115 org admin only; core also re-checks actor in DB (header :30-34). Preview is read-only transaction; commit:true needs plan_hash and applies gym reference content (drills, templates). Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/content-import/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/content-import",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole (admit(), route.ts:113-121)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Same admit() gate :144; returns the workout intake prompt with the org's current drill library names (drill library, not athlete data).",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -1246,34 +1246,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/grant-obligations/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/admin/grant-obligations",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Grant-obligation tracker for the gym (grant name, funder, due date, status); not athlete data. Gate at route.ts:86-87. No audit event is written for this write.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/grant-obligations/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/grant-obligations",
@@ -1289,6 +1261,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Grant-obligation tracker for the gym (grant name, funder, due date, status); not athlete data. Gate at route.ts:45-46. No audit event is written for this write.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/grant-obligations/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/grant-obligations",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Grant-obligation tracker for the gym (grant name, funder, due date, status); not athlete data. Gate at route.ts:86-87. No audit event is written for this write.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1387,34 +1387,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/gym-photos/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/admin/gym-photos",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:138-139. Audited with entity gym_wall_photo; EXIF stripped. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/gym-photos/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/gym-photos",
@@ -1471,6 +1443,34 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/gym-photos/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/admin/gym-photos",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:138-139. Audited with entity gym_wall_photo; EXIF stripped. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/admin/local-findings/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/local-findings",
@@ -1487,6 +1487,35 @@
     "looksWrong": "",
     "confidence": "medium",
     "notes": "Lists the gym's local research findings (title, statement, tier, athletes_observed count, supporting activity/assessment ids) via localFindings.ts. Aggregate/research content, no per-athlete identifier in the response fields seen. Gate at route.ts:30-31.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/local-findings/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/local-findings",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "coach"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "Coach can attach arbitrary activity/assessment ids (which may belong to athletes not assigned to them) as supporting evidence; no coach-reach check on those ids.",
+    "confidence": "medium",
+    "notes": "Raises a local finding; accepts supporting_activity_ids / supporting_assessment_ids arrays without checking the caller can reach those activities. Gate at route.ts:47-48; audited.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1530,35 +1559,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/local-findings/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/admin/local-findings",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "Coach can attach arbitrary activity/assessment ids (which may belong to athletes not assigned to them) as supporting evidence; no coach-reach check on those ids.",
-    "confidence": "medium",
-    "notes": "Raises a local finding; accepts supporting_activity_ids / supporting_assessment_ids arrays without checking the caller can reach those activities. Gate at route.ts:47-48; audited.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/memberships/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/memberships",
@@ -1587,34 +1587,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/memberships/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/admin/memberships",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Program memberships per athlete (athlete_id, name, program, status, scholarship percent/note) via programMemberships.ts. Gate at route.ts:87-88; org-scoped queries. No audit event written in the route.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...MEMBERSHIP_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/memberships/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/memberships",
@@ -1630,6 +1602,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Program memberships per athlete (athlete_id, name, program, status, scholarship percent/note) via programMemberships.ts. Gate at route.ts:39-40; org-scoped queries. No audit event written in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/memberships/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/memberships",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Program memberships per athlete (athlete_id, name, program, status, scholarship percent/note) via programMemberships.ts. Gate at route.ts:87-88; org-scoped queries. No audit event written in the route.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1758,34 +1758,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/program-phases/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/admin/program-phases",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Program phases (program_name, phase_name, dates, focus) for the gym; not athlete data. Gate at route.ts:78-79; writes audited.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/program-phases/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/program-phases",
@@ -1801,6 +1773,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Program phases (program_name, phase_name, dates, focus) for the gym; not athlete data. Gate at route.ts:48-49; writes audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/program-phases/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/program-phases",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Program phases (program_name, phase_name, dates, focus) for the gym; not athlete data. Gate at route.ts:78-79; writes audited.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1843,34 +1843,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/programs/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/admin/programs",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Creates / archives-reactivates a program (name, notes, status); not athlete data. Gate at route.ts:71-72. No audit event in the route.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...MEMBERSHIP_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/admin/programs/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/programs",
@@ -1886,6 +1858,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates / archives-reactivates a program (name, notes, status); not athlete data. Gate at route.ts:43-44. No audit event in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/programs/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/programs",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Creates / archives-reactivates a program (name, notes, status); not athlete data. Gate at route.ts:71-72. No audit event in the route.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2068,30 +2068,6 @@
     }
   },
   {
-    "id": "app/api/pilot/admin/staff/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/admin/staff",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + inline isOrganizationAdminRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Removes a guardian link between an account and an athlete (removeGuardianLink). Gate at route.ts:200-203; audited at route.ts:223.",
-    "mechanical": {
-      "sessionGates": [
-        "requireMicrosoftAuthenticatedPrincipal"
-      ],
-      "authorizationGates": [],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/admin/staff/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/staff",
@@ -2131,6 +2107,30 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Provisions a staff/coach/volunteer/parent account; a parent invite links the account to an athlete_id (guardian link). Gate at route.ts:76-79; audited at route.ts:148.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/staff/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/admin/staff",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + inline isOrganizationAdminRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Removes a guardian link between an account and an athlete (removeGuardianLink). Gate at route.ts:200-203; audited at route.ts:223.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -3309,33 +3309,6 @@
     }
   },
   {
-    "id": "app/api/pilot/board/seats/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/board/seats",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + assertCanManageBoardSeats",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "board"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "board/seats/route.ts:145 Microsoft session required; assertCanManageBoardSeats (boardSeats.ts:209-226) admits org admin/admin, or a board member only if they are the primary President seat holder. Calls removeBoardSeat and writes an audit row. platform_owner refused.",
-    "mechanical": {
-      "sessionGates": [
-        "requireMicrosoftAuthenticatedPrincipal"
-      ],
-      "authorizationGates": [
-        "assertCanManageBoardSeats"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/board/seats/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/board/seats",
@@ -3357,6 +3330,33 @@
         "requirePrincipal"
       ],
       "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/board/seats/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/board/seats",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + assertCanManageBoardSeats",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "board"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "board/seats/route.ts:76 Microsoft session required; assertCanManageBoardSeats (boardSeats.ts:209-226) admits org admin/admin, or a board member only if they are the primary President seat holder. Calls assignBoardSeat and writes an audit row. platform_owner refused.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "assertCanManageBoardSeats"
+      ],
       "roleLiterals": []
     }
   },
@@ -3388,8 +3388,8 @@
     }
   },
   {
-    "id": "app/api/pilot/board/seats/route.ts#POST",
-    "method": "POST",
+    "id": "app/api/pilot/board/seats/route.ts#DELETE",
+    "method": "DELETE",
     "path": "/api/pilot/board/seats",
     "gate": "requireMicrosoftAuthenticatedPrincipal + assertCanManageBoardSeats",
     "rolesAdmitted": [
@@ -3403,7 +3403,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board/seats/route.ts:76 Microsoft session required; assertCanManageBoardSeats (boardSeats.ts:209-226) admits org admin/admin, or a board member only if they are the primary President seat holder. Calls assignBoardSeat and writes an audit row. platform_owner refused.",
+    "notes": "board/seats/route.ts:145 Microsoft session required; assertCanManageBoardSeats (boardSeats.ts:209-226) admits org admin/admin, or a board member only if they are the primary President seat holder. Calls removeBoardSeat and writes an audit row. platform_owner refused.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -3634,9 +3634,9 @@
     }
   },
   {
-    "id": "app/api/pilot/calibration/body-points/moments/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/calibration/body-points/moments",
+    "id": "app/api/pilot/calibration/body-points/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/calibration/body-points",
     "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
     "rolesAdmitted": [
       "coach",
@@ -3644,12 +3644,12 @@
       "admin"
     ],
     "athleteData": true,
-    "writes": true,
+    "writes": false,
     "coachReachRule": "not-applied",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Removes a moment and its points from the caller's own in-progress set (moments/route.ts DELETE); no clippability check, as events DELETE. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
+    "notes": "Reads the caller's own set's body moments, points, stance labels and the submission's missing list (body-points/route.ts GET; bodyPoints.ts listBodyDataForSet/listMissingBodyData). Teaching footage clip; clip rows carry a nullable athlete_id. No clippability check on a read of marks; private no-store. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3715,9 +3715,9 @@
     }
   },
   {
-    "id": "app/api/pilot/calibration/body-points/points/route.ts#DELETE",
+    "id": "app/api/pilot/calibration/body-points/moments/route.ts#DELETE",
     "method": "DELETE",
-    "path": "/api/pilot/calibration/body-points/points",
+    "path": "/api/pilot/calibration/body-points/moments",
     "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
     "rolesAdmitted": [
       "coach",
@@ -3730,7 +3730,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Removes one point's mark in the caller's own in-progress set (points/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
+    "notes": "Removes a moment and its points from the caller's own in-progress set (moments/route.ts DELETE); no clippability check, as events DELETE. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3769,36 +3769,9 @@
     }
   },
   {
-    "id": "app/api/pilot/calibration/body-points/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/calibration/body-points",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "not-applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Reads the caller's own set's body moments, points, stance labels and the submission's missing list (body-points/route.ts GET; bodyPoints.ts listBodyDataForSet/listMissingBodyData). Teaching footage clip; clip rows carry a nullable athlete_id. No clippability check on a read of marks; private no-store. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireAnnotator"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/calibration/body-points/stance/route.ts#DELETE",
+    "id": "app/api/pilot/calibration/body-points/points/route.ts#DELETE",
     "method": "DELETE",
-    "path": "/api/pilot/calibration/body-points/stance",
+    "path": "/api/pilot/calibration/body-points/points",
     "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
     "rolesAdmitted": [
       "coach",
@@ -3811,7 +3784,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Clears the stance type of one event in the caller's own in-progress set (stance/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
+    "notes": "Removes one point's mark in the caller's own in-progress set (points/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3839,6 +3812,33 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Sets or changes the stance type of one event in the caller's own in-progress set (stance/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (event only, no stance). Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/stance/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/calibration/body-points/stance",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Clears the stance type of one event in the caller's own in-progress set (stance/route.ts DELETE); no clippability check. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3932,60 +3932,6 @@
     }
   },
   {
-    "id": "app/api/pilot/calibration/events/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/calibration/events",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:20-22 -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "not-applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Deletes an event from the caller's own in-progress set (events/route.ts DELETE). Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireAnnotator"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/calibration/events/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/calibration/events",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "not-applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireAnnotator"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/calibration/events/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/calibration/events",
@@ -4029,6 +3975,60 @@
     "looksWrong": "",
     "confidence": "medium",
     "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). On a body-point set, an event that holds body marks is refused (409) instead of replaced, since the delete would cascade them away. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/events/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/calibration/events",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "medium",
+    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/events/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/calibration/events",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:20-22 -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "medium",
+    "notes": "Deletes an event from the caller's own in-progress set (events/route.ts DELETE). Writes + audit. Issue #1480 (Jason, 2026-10-12: \"lets make it coaches to whole gym\"): a coach's reach is the whole gym, so a coach reaching any athlete of the gym here is the rule, not a gap. Was flagged: \"Reach is by owning the annotation set only; no coach-athlete assignment check.\"",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -4387,93 +4387,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/coach/athlete-capacity-notes",
-    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in withdrawCapacityNote (the author; or an organization admin once the author has left the gym)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Withdraws (soft-deletes, deleted_at) one of the caller's OWN capacity notes for an athlete, or, for an organization admin, a note whose author has left the gym (account inactive or deleted, or no active membership here; OD-2026-10-10-003 ruling 4); audit row in the same transaction, not mirrored. Module 013 slice, OD-2026-10-08-002.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...CAPACITY_NOTE_ROLES]>"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/coach/athlete-capacity-notes",
-    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in listCapacityNotes",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Reads an athlete's live coach-written capacity notes, newest first, author by display name (never account id), each with can_withdraw for this reader; reach enforced in athleteCapacityNotes.ts assertNoteAccess via membership role + assertActorCanAccessAthlete.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...CAPACITY_NOTE_ROLES]>"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/coach/athlete-capacity-notes",
-    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in addCapacityNote",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Adds one plain-text capacity note for an athlete in the coach's words (no score, nothing parsed); audit row in the same transaction; addCapacityNote runs assertNoteAccess.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...CAPACITY_NOTE_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/athlete-check-in/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-check-in",
@@ -4652,10 +4565,39 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/athlete-messages/route.ts#GET",
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in withdrawCapacityNote (the author; or an organization admin once the author has left the gym)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Withdraws (soft-deletes, deleted_at) one of the caller's OWN capacity notes for an athlete, or, for an organization admin, a note whose author has left the gym (account inactive or deleted, or no active membership here; OD-2026-10-10-003 ruling 4); audit row in the same transaction, not mirrored. Module 013 slice, OD-2026-10-08-002.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...CAPACITY_NOTE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#GET",
     "method": "GET",
-    "path": "/api/pilot/coach/athlete-messages",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in listCapacityNotes",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4667,17 +4609,45 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "What the gym's staff wrote to one athlete (athlete_message notes, staff-written only, newest first, named, no account id) for the coach's 'Sent to this athlete' list on /coach/decision-loop (athleteCoachMessages.ts; #1542 FC-06). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "notes": "Reads an athlete's live coach-written capacity notes, newest first, author by display name (never account id), each with can_withdraw for this reader; reach enforced in athleteCapacityNotes.ts assertNoteAccess via membership role + assertActorCanAccessAthlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
+        "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin"
+        "<[...CAPACITY_NOTE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in addCapacityNote",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adds one plain-text capacity note for an athlete in the coach's words (no score, nothing parsed); audit row in the same transaction; addCapacityNote runs assertNoteAccess.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...CAPACITY_NOTE_ROLES]>"
       ]
     }
   },
@@ -5037,35 +5007,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/cards/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/coach/cards",
-    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (live athletes of the actor's own gym)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards gives admin all rows and a coach the cards they issued to any live athlete of their own gym (issue #1480); other roles read nothing.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/cards/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/cards",
@@ -5089,6 +5030,35 @@
       "authorizationGates": [
         "requireRole",
         "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/cards/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/cards",
+    "gate": "requirePrincipal + requireRole([coach,admin,organization_admin]); reach inside listCoachCards (live athletes of the actor's own gym)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists issued coach cards with athlete names and completions (cards/route.ts:151-178). listCoachCards gives admin all rows and a coach the cards they issued to any live athlete of their own gym (issue #1480); other roles read nothing.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -5250,35 +5220,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/development-block-objectives/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/development-block-objectives",
-    "gate": "requirePrincipal + requireRole(AUTHOR_ROLES) + setBlockObjectiveStatus (reach via getBlockObjective -> getDevelopmentBlock)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Changes only the status of an objective (route.ts:125-169). Reach is enforced in the module through getBlockObjective (athleteDevelopmentBlockObjectives.ts:171-182); I confirmed that helper but only grepped setBlockObjectiveStatus itself.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/development-block-objectives/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/development-block-objectives",
@@ -5295,6 +5236,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Adds an objective to a block; addBlockObjective calls getDevelopmentBlock(actor, blockId) (athleteDevelopmentBlockObjectives.ts:143) which enforces coach reach.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/development-block-objectives/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/development-block-objectives",
+    "gate": "requirePrincipal + requireRole(AUTHOR_ROLES) + setBlockObjectiveStatus (reach via getBlockObjective -> getDevelopmentBlock)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "medium",
+    "notes": "Changes only the status of an objective (route.ts:125-169). Reach is enforced in the module through getBlockObjective (athleteDevelopmentBlockObjectives.ts:171-182); I confirmed that helper but only grepped setBlockObjectiveStatus itself.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5367,36 +5337,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/development-blocks/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/development-blocks",
-    "gate": "requirePrincipal + requireRole(AUTHOR_ROLES) + getDevelopmentBlock + assertActorCanAccessAthlete on the block's own athlete",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Edits a block; athlete derived from the stored block, never the request (route.ts:205-209); athlete_id cannot be changed.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/development-blocks/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/development-blocks",
@@ -5413,6 +5353,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a block for a named athlete; assertActorCanAccessAthlete at development-blocks/route.ts:158 and again inside createDevelopmentBlock (athleteDevelopmentBlocks.ts:253).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/development-blocks/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/development-blocks",
+    "gate": "requirePrincipal + requireRole(AUTHOR_ROLES) + getDevelopmentBlock + assertActorCanAccessAthlete on the block's own athlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Edits a block; athlete derived from the stored block, never the request (route.ts:205-209); athlete_id cannot be changed.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5458,37 +5428,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/development/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/development",
-    "gate": "requirePrincipal + requireRole(DEVELOPMENT_ROLES = STAFF_CREDENTIAL_ROLES)",
-    "rolesAdmitted": [
-      "coach",
-      "admin",
-      "organization_admin",
-      "staff",
-      "volunteer"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Updates the caller's own coach development goal (updateCoachDevelopmentGoal takes organizationId + principal.accountId + goalId). Not athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...DEVELOPMENT_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/development/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/development",
@@ -5520,32 +5459,33 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/family-message-reads/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/coach/family-message-reads",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "id": "app/api/pilot/coach/development/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/development",
+    "gate": "requirePrincipal + requireRole(DEVELOPMENT_ROLES = STAFF_CREDENTIAL_ROLES)",
     "rolesAdmitted": [
       "coach",
+      "admin",
       "organization_admin",
-      "admin"
+      "staff",
+      "volunteer"
     ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "For one athlete's parent messages, which the family has opened and the first time any guardian did (familyMessageReads.ts listFamilyReadStateForStaff; #1542 FC-05). Never which guardian, an account id, or how many (FC-04 Q-C). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "notes": "Updates the caller's own coach development goal (updateCoachDevelopmentGoal takes organizationId + principal.accountId + goalId). Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
+        "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin"
+        "<[...DEVELOPMENT_ROLES]>"
       ]
     }
   },
@@ -5566,6 +5506,93 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Lists every guardian reply on one athlete's parent messages, oldest first, with the guardian's name from pilot.parents (familyMessageReplies.ts listRepliesForStaff; #1542 FC-03). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-messages",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "What the gym's staff wrote to one athlete (athlete_message notes, staff-written only, newest first, named, no account id) for the coach's 'Sent to this athlete' list on /coach/decision-loop (athleteCoachMessages.ts; #1542 FC-06). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/athlete-messages",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's read-only copy of what the gym's staff wrote to their children under 18 (athlete_message notes, staff-written only, newest first, named, no account id), for 'Sent to your athlete' on the parent hub (athleteCoachMessages.ts; #1542 FC-06 Q-2 ruled B). Scope is guardianAthleteIds resolved on each request: linked, not deleted, under 18; nothing for an athlete 18 or over; organization in the query.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-message-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-message-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "For one athlete's parent messages, which the family has opened and the first time any guardian did (familyMessageReads.ts listFamilyReadStateForStaff; #1542 FC-05). Never which guardian, an account id, or how many (FC-04 Q-C). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5760,6 +5787,96 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": false,
+    "notes": "Lists a minor's return-to-training plans with their steps and the current step for athlete_id (return-to-training/route.ts GET); assertStanding runs on the athlete first. SHADOW_PHI_ROLES = coach, organization_admin, admin (shadowRoleSets.ts:48-52). Lane P8.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Actions: create_plan (on an injury: injuryWithStanding on the injury's own athlete, refusal collapsed to 404, then links the injury to the plan), add_step (assertStanding on athlete_id, then the plan must be in that athlete's list or it is a 404). Writes plan and step rows (health) and audits each.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Advances the current step of a plan as the signed-in coach's recorded decision with a note (not a medical clearance): assertStanding on athlete_id, plan must be in that athlete's list, step must be the earliest not yet advanced. Audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/intelligence/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/intelligence",
@@ -5821,36 +5938,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/intervention-executions/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/intervention-executions",
-    "gate": "requirePrincipal + requireRole(EXECUTION_ROLES) + assertActorCanAccessAthlete on the execution's athlete",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "record/close/correct actions; athlete taken from the stored execution (getExecution) then assertActorCanAccessAthlete.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/intervention-executions/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/intervention-executions",
@@ -5867,6 +5954,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Starts an intervention execution for athlete_id after assertActorCanAccessAthlete; audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/intervention-executions/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/intervention-executions",
+    "gate": "requirePrincipal + requireRole(EXECUTION_ROLES) + assertActorCanAccessAthlete on the execution's athlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "record/close/correct actions; athlete taken from the stored execution (getExecution) then assertActorCanAccessAthlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5911,36 +6028,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/intervention-protocols/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/intervention-protocols",
-    "gate": "requirePrincipal + requireRole(PROTOCOL_ROLES) + assertActorCanAccessAthlete on the target protocol's athlete (when set)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Modifies a protocol; reach is checked against target.athlete_id when non-null (route.ts ~109). Org-level protocols (null athlete) are editable by any coach.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/intervention-protocols/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/intervention-protocols",
@@ -5957,6 +6044,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a protocol version, optionally tied to an athlete (reach check only when athlete_id is supplied). A protocol with no athlete is org-level.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/intervention-protocols/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/intervention-protocols",
+    "gate": "requirePrincipal + requireRole(PROTOCOL_ROLES) + assertActorCanAccessAthlete on the target protocol's athlete (when set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "medium",
+    "notes": "Modifies a protocol; reach is checked against target.athlete_id when non-null (route.ts ~109). Org-level protocols (null athlete) are editable by any coach.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6002,36 +6119,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/intervention-review/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/intervention-review",
-    "gate": "requirePrincipal + requireRole(REVIEW_ROLES) + assertActorCanAccessAthlete on the evidence link's athlete",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "remove_evidence only; owner athlete from getEvidenceLinkOwner then assertActorCanAccessAthlete.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/intervention-review/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/intervention-review",
@@ -6048,6 +6135,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "link_evidence and review_outcome on an execution; athlete from getExecution then assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/intervention-review/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/intervention-review",
+    "gate": "requirePrincipal + requireRole(REVIEW_ROLES) + assertActorCanAccessAthlete on the evidence link's athlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "remove_evidence only; owner athlete from getEvidenceLinkOwner then assertActorCanAccessAthlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6212,125 +6329,6 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/return-to-training/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/coach/return-to-training",
-    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "writes": false,
-    "notes": "Lists a minor's return-to-training plans with their steps and the current step for athlete_id (return-to-training/route.ts GET); assertStanding runs on the athlete first. SHADOW_PHI_ROLES = coach, organization_admin, admin (shadowRoleSets.ts:48-52). Lane P8.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "<[...SHADOW_PHI_ROLES]>"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/coach/return-to-training/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/coach/return-to-training",
-    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "writes": true,
-    "notes": "Advances the current step of a plan as the signed-in coach's recorded decision with a note (not a medical clearance): assertStanding on athlete_id, plan must be in that athlete's list, step must be the earliest not yet advanced. Audited.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "<[...SHADOW_PHI_ROLES]>"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/coach/return-to-training/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/coach/return-to-training",
-    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "writes": true,
-    "notes": "Actions: create_plan (on an injury: injuryWithStanding on the injury's own athlete, refusal collapsed to 404, then links the injury to the plan), add_step (assertStanding on athlete_id, then the plan must be in that athlete's list or it is a 404). Writes plan and step rows (health) and audits each.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "<[...SHADOW_PHI_ROLES]>"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/coach/session-block-links/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/coach/session-block-links",
-    "gate": "requirePrincipal + requireRole(LINK_ROLES) + getDevelopmentBlock (athleteDevelopmentBlocks.ts:284-295, canActorReachAthlete -> assertActorCanAccessAthlete)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Unlinks a session from a block; block cleared via getDevelopmentBlock (route.ts:209) before unlinkSessionFromBlock, which also checks the actor org-membership role (route.ts:214-219).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/coach/session-block-links/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/session-block-links",
@@ -6390,10 +6388,10 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/session-objective-links/route.ts#DELETE",
+    "id": "app/api/pilot/coach/session-block-links/route.ts#DELETE",
     "method": "DELETE",
-    "path": "/api/pilot/coach/session-objective-links",
-    "gate": "requirePrincipal + requireRole(LINK_ROLES) + getDevelopmentBlock (coach-reach via canActorReachAthlete, athleteDevelopmentBlocks.ts:294)",
+    "path": "/api/pilot/coach/session-block-links",
+    "gate": "requirePrincipal + requireRole(LINK_ROLES) + getDevelopmentBlock (athleteDevelopmentBlocks.ts:284-295, canActorReachAthlete -> assertActorCanAccessAthlete)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -6405,7 +6403,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Unlinks session from objective; block cleared via getDevelopmentBlock (route.ts:410) and passed into unlinkSessionFromObjective (418-424).",
+    "notes": "Unlinks a session from a block; block cleared via getDevelopmentBlock (route.ts:209) before unlinkSessionFromBlock, which also checks the actor org-membership role (route.ts:214-219).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6477,10 +6475,10 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/session-staff-notes/route.ts#DELETE",
+    "id": "app/api/pilot/coach/session-objective-links/route.ts#DELETE",
     "method": "DELETE",
-    "path": "/api/pilot/coach/session-staff-notes",
-    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in removeOwnSessionStaffNote (author only)",
+    "path": "/api/pilot/coach/session-objective-links",
+    "gate": "requirePrincipal + requireRole(LINK_ROLES) + getDevelopmentBlock (coach-reach via canActorReachAthlete, athleteDevelopmentBlocks.ts:294)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -6492,7 +6490,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Removes (soft-deletes, deleted_at) one of the caller's OWN staff notes; the module's UPDATE is scoped to the author and the caller must still reach the athlete; audit row in the same transaction.",
+    "notes": "Unlinks session from objective; block cleared via getDevelopmentBlock (route.ts:410) and passed into unlinkSessionFromObjective (418-424).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6501,7 +6499,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<[...STAFF_NOTE_ROLES]>"
+        "admin,coach,organization_admin"
       ]
     }
   },
@@ -6522,6 +6520,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Reads the live staff notes on one athlete's session, oldest first (newest 100), author by display name (never account id); staff only, no athlete or parent view (OD-2026-10-10-003 ruling 3); reach enforced in sessionStaffNotes.ts assertStaffNoteAccess via membership role + assertActorCanAccessAthlete. With run_id instead of session_id (F-067) it lists the notes on that athlete in a session run (listRunStaffNotes): same staff-and-reach check, organization and athlete in the WHERE.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...STAFF_NOTE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/session-staff-notes",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in createSessionStaffNote",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adds one staff note of the caller's own to an athlete's session (OD-2026-10-06-025 ruling 4); the session must be that athlete's; audit row in the same transaction; createSessionStaffNote runs assertStaffNoteAccess. With run_id instead of session_id (F-067) the note is on that athlete in a session run (createRunStaffNote): the athlete's mark in that run must stand, read with the mark row locked; exactly one of session_id and run_id may be named.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6564,10 +6591,10 @@
     }
   },
   {
-    "id": "app/api/pilot/coach/session-staff-notes/route.ts#POST",
-    "method": "POST",
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#DELETE",
+    "method": "DELETE",
     "path": "/api/pilot/coach/session-staff-notes",
-    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in createSessionStaffNote",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in removeOwnSessionStaffNote (author only)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -6579,7 +6606,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Adds one staff note of the caller's own to an athlete's session (OD-2026-10-06-025 ruling 4); the session must be that athlete's; audit row in the same transaction; createSessionStaffNote runs assertStaffNoteAccess. With run_id instead of session_id (F-067) the note is on that athlete in a session run (createRunStaffNote): the athlete's mark in that run must stand, read with the mark row locked; exactly one of session_id and run_id may be named.",
+    "notes": "Removes (soft-deletes, deleted_at) one of the caller's OWN staff notes; the module's UPDATE is scoped to the author and the caller must still reach the athlete; audit row in the same transaction.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6828,34 +6855,6 @@
     }
   },
   {
-    "id": "app/api/pilot/compliance/violations/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/compliance/violations",
-    "gate": "requirePrincipal + requireRole(admin, organization_admin)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Acknowledge/resolve/dismiss a violation about an athlete; org-scoped lookup (route.ts:236), closure requires a note. Coach not admitted so coach-reach not relevant.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/compliance/violations/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/compliance/violations",
@@ -6886,6 +6885,34 @@
     }
   },
   {
+    "id": "app/api/pilot/compliance/violations/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/compliance/violations",
+    "gate": "requirePrincipal + requireRole(admin, organization_admin)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Acknowledge/resolve/dismiss a violation about an athlete; org-scoped lookup (route.ts:236), closure requires a note. Coach not admitted so coach-reach not relevant.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/credentials/document/[accountId]/[clearanceTypeId]/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/credentials/document/[accountId]/[clearanceTypeId]",
@@ -6908,37 +6935,6 @@
       ],
       "authorizationGates": [],
       "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/data-collection-requests/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/data-collection-requests",
-    "gate": "requirePrincipal + requireRole(QUEUE_ROLES) + assertActorCanAccessAthlete / accessibleAthleteIds; person-only requests need requireRole(PERSON_REQUEST_ROLES)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Declines a request; owner athlete gated from stored row (route.ts:250-258) before declineDataCollectionRequest. Writes audit event.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin",
-        "admin,organization_admin"
-      ]
     }
   },
   {
@@ -6966,6 +6962,37 @@
         "requireRole",
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/data-collection-requests/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/data-collection-requests",
+    "gate": "requirePrincipal + requireRole(QUEUE_ROLES) + assertActorCanAccessAthlete / accessibleAthleteIds; person-only requests need requireRole(PERSON_REQUEST_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Creates a request naming an athlete (assertActorCanAccessAthlete route.ts:114) or, with no athlete, org-admin only (115); person_account_id must be an active org member (28-40). Writes audit event.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin",
@@ -7005,8 +7032,8 @@
     }
   },
   {
-    "id": "app/api/pilot/data-collection-requests/route.ts#POST",
-    "method": "POST",
+    "id": "app/api/pilot/data-collection-requests/route.ts#DELETE",
+    "method": "DELETE",
     "path": "/api/pilot/data-collection-requests",
     "gate": "requirePrincipal + requireRole(QUEUE_ROLES) + assertActorCanAccessAthlete / accessibleAthleteIds; person-only requests need requireRole(PERSON_REQUEST_ROLES)",
     "rolesAdmitted": [
@@ -7020,7 +7047,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates a request naming an athlete (assertActorCanAccessAthlete route.ts:114) or, with no athlete, org-admin only (115); person_account_id must be an active org member (28-40). Writes audit event.",
+    "notes": "Declines a request; owner athlete gated from stored row (route.ts:250-258) before declineDataCollectionRequest. Writes audit event.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7070,34 +7097,6 @@
     }
   },
   {
-    "id": "app/api/pilot/drills/floor-tested/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/drills/floor-tested",
-    "gate": "requirePrincipal + requireRole(FLOOR_VALIDATOR_ROLES)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Records that a coach of the session's gym floor-tested a draft reference drill (markDrillFloorTested, append-only pilot.drill_floor_validations) and writes an audit event; adopts nothing and changes no drill_library row; no athlete data. Role gate is the first statement after requirePrincipal in POST. OD-2026-10-06-026 ruling 3.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/drills/lineage/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/drills/lineage",
@@ -7123,6 +7122,34 @@
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/drills/floor-tested/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/drills/floor-tested",
+    "gate": "requirePrincipal + requireRole(FLOOR_VALIDATOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records that a coach of the session's gym floor-tested a draft reference drill (markDrillFloorTested, append-only pilot.drill_floor_validations) and writes an audit event; adopts nothing and changes no drill_library row; no athlete data. Role gate is the first statement after requirePrincipal in POST. OD-2026-10-06-026 ruling 3.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "coach,organization_admin"
       ]
     }
   },
@@ -7272,35 +7299,6 @@
     }
   },
   {
-    "id": "app/api/pilot/drills/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/drills",
-    "gate": "requirePrincipal + requireRole(DRILL_AUTHOR_ROLES)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event; reinstate: true brings back an earlier version as the newest (reinstateDrillVersion, audit row in its transaction). Drill content only.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/drills/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/drills",
@@ -7317,6 +7315,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a drill (createDrill) and writes audit event. Drill content only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/drills/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/drills",
+    "gate": "requirePrincipal + requireRole(DRILL_AUTHOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Edits or retires/restores a drill (updateDrill) and writes audit event; reinstate: true brings back an earlier version as the newest (reinstateDrillVersion, audit row in its transaction). Drill content only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7570,34 +7597,6 @@
     }
   },
   {
-    "id": "app/api/pilot/goals/personal/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/goals/personal",
-    "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
-    "rolesAdmitted": [
-      "athlete"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped. With undo: true (UXB Q1 B, lane U3 L5b) it takes back the athlete's own own-words mark within 10 minutes: undoPersonalGoalReached keys owner, window (server clock) and goal_kind into one statement, sets reached_at back to null (no delete), and writes its audit event in the same transaction; anything else answers 409 PERSONAL_GOAL_UNDO_CLOSED.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "athlete"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/goals/personal/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/goals/personal",
@@ -7612,6 +7611,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a personal goal in the athlete's own words plus an audit row. goals/personal/route.ts GOAL_WRITER_ROLES = athlete only (lane N8-05); assertActorCanAccessAthlete ties the write to the athlete's own record.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/goals/personal/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/goals/personal",
+    "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped. With undo: true (UXB Q1 B, lane U3 L5b) it takes back the athlete's own own-words mark within 10 minutes: undoPersonalGoalReached keys owner, window (server clock) and goal_kind into one statement, sets reached_at back to null (no delete), and writes its audit event in the same transaction; anything else answers 409 PERSONAL_GOAL_UNDO_CLOSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7757,35 +7784,6 @@
     }
   },
   {
-    "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/gym-tvs/[tvId]/session",
-    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId and another coach's live session refused in takeRunOffGymTv unless the caller is an organization admin (O17b)",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Gym TV (S2b). Takes the session off a TV: gymTvs.ts takeRunOffGymTv clears current_run_id and set_by together; while a run is live only the coach whose session is on the TV, or an organization admin (O17b, OD-2026-10-08-007), may clear it (409 TV_IN_USE otherwise); once the run has ended or been switched off, any staff member may clear the leftover pointer. Never deletes the run or its round timer. Idempotent on an empty TV. No athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/gym-tvs/[tvId]/session",
@@ -7802,6 +7800,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Gym TV (S2b). Sends the caller's live session to a paired TV: gymTvs.ts sendRunToGymTv refuses another coach's run id with the same 404 as a missing one, a run not live or not switched on with Show on TV (409), an unpaired or disconnected TV (409), and a TV already showing another coach's live session (409 TV_IN_USE; one session per TV, Jason 'A'). No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/gym-tvs/[tvId]/session",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId and another coach's live session refused in takeRunOffGymTv unless the caller is an organization admin (O17b)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV (S2b). Takes the session off a TV: gymTvs.ts takeRunOffGymTv clears current_run_id and set_by together; while a run is live only the coach whose session is on the TV, or an organization admin (O17b, OD-2026-10-08-007), may clear it (409 TV_IN_USE otherwise); once the run has ended or been switched off, any staff member may clear the leftover pointer. Never deletes the run or its round timer. Idempotent on an empty TV. No athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8206,34 +8233,6 @@
     }
   },
   {
-    "id": "app/api/pilot/operations/external-competition/competitions/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/operations/external-competition/competitions",
-    "gate": "requirePrincipal + requireRole(COMPETITION_WRITE_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Sets a competition status (planned/completed/cancelled). competitions/route.ts:65-66. Not athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...COMPETITION_WRITE_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/operations/external-competition/competitions/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/operations/external-competition/competitions",
@@ -8249,6 +8248,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a competition. competitions/route.ts:34-35; COMPETITION_WRITE_ROLES = organization_admin, admin (externalCompetition.ts:33). Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/operations/external-competition/competitions/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/operations/external-competition/competitions",
+    "gate": "requirePrincipal + requireRole(COMPETITION_WRITE_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Sets a competition status (planned/completed/cancelled). competitions/route.ts:65-66. Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8291,34 +8318,6 @@
     }
   },
   {
-    "id": "app/api/pilot/operations/external-competition/entries/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/operations/external-competition/entries",
-    "gate": "requirePrincipal + requireRole(COMPETITION_WRITE_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "Withdraws an entry or records a result/lesson by entry_id with no per-athlete access check; harmless only because the role set is org admin (who reaches every gym athlete anyway).",
-    "confidence": "high",
-    "notes": "Withdraw entry or record result plus lesson note, with audit. entries/route.ts:118-119 role gate only. Coach not admitted.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...COMPETITION_WRITE_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/operations/external-competition/entries/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/operations/external-competition/entries",
@@ -8334,6 +8333,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Enters an athlete in a competition after safety gates. entries/route.ts:52-53 role gate; competitionSafetyGates.ts:253 assertActorCanAccessAthlete (org admin passes any gym athlete). Coach not admitted.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/operations/external-competition/entries/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/operations/external-competition/entries",
+    "gate": "requirePrincipal + requireRole(COMPETITION_WRITE_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "Withdraws an entry or records a result/lesson by entry_id with no per-athlete access check; harmless only because the role set is org admin (who reaches every gym athlete anyway).",
+    "confidence": "high",
+    "notes": "Withdraw entry or record result plus lesson note, with audit. entries/route.ts:118-119 role gate only. Coach not admitted.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8433,34 +8460,6 @@
     }
   },
   {
-    "id": "app/api/pilot/operations/wrestling-league/roster/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/operations/wrestling-league/roster",
-    "gate": "requirePrincipal + requireRole(LEAGUE_WRITE_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Withdraws a roster entry (status inactive) and audits; gate roster/route.ts:105-106, org admin only.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...LEAGUE_WRITE_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/operations/wrestling-league/roster/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/operations/wrestling-league/roster",
@@ -8476,6 +8475,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Adds athlete to season roster; gate roster/route.ts:50-51, write roles wrestlingLeague.ts:33 (org admin only); also runs competition safety gates (hold, consent, standing) in one transaction at route.ts:78.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/operations/wrestling-league/roster/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/operations/wrestling-league/roster",
+    "gate": "requirePrincipal + requireRole(LEAGUE_WRITE_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Withdraws a roster entry (status inactive) and audits; gate roster/route.ts:105-106, org admin only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8518,34 +8545,6 @@
     }
   },
   {
-    "id": "app/api/pilot/operations/wrestling-league/seasons/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/operations/wrestling-league/seasons",
-    "gate": "requirePrincipal + requireRole(LEAGUE_WRITE_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Sets season status; gate seasons/route.ts:73-74, org admin only.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...LEAGUE_WRITE_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/operations/wrestling-league/seasons/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/operations/wrestling-league/seasons",
@@ -8561,6 +8560,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Creates a league season; gate seasons/route.ts:36-37, org admin only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/operations/wrestling-league/seasons/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/operations/wrestling-league/seasons",
+    "gate": "requirePrincipal + requireRole(LEAGUE_WRITE_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Sets season status; gate seasons/route.ts:73-74, org admin only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8627,33 +8654,6 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/parent/athlete-messages/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/parent/athlete-messages",
-    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
-    "rolesAdmitted": [
-      "parent"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "A guardian's read-only copy of what the gym's staff wrote to their children under 18 (athlete_message notes, staff-written only, newest first, named, no account id), for 'Sent to your athlete' on the parent hub (athleteCoachMessages.ts; #1542 FC-06 Q-2 ruled B). Scope is guardianAthleteIds resolved on each request: linked, not deleted, under 18; nothing for an athlete 18 or over; organization in the query.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "parent"
-      ]
     }
   },
   {
@@ -8767,6 +8767,60 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/message-replies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads only their own replies (author_account_id = caller), on messages about children in guardianAthleteIds now; a co-guardian's replies are never returned (familyMessageReplies.ts listOwnReplies; #1542 FC-03).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-replies/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/message-replies",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the note's athlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian replies to one parent_message note in this gym about a child linked to them on this request; a forged id, another gym's note, a non-parent-message note or an ended link is the same 404 (familyMessageReplies.ts createFamilyMessageReply; append-only table, FC-02).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/family-goals/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/family-goals",
@@ -8781,6 +8835,33 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-goals/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Adds a goal written as role parent by the session's account.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8821,20 +8902,20 @@
     }
   },
   {
-    "id": "app/api/pilot/parent/family-goals/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/parent/family-goals",
-    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "id": "app/api/pilot/parent/resources/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/resources",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in parentResources.ts)",
     "rolesAdmitted": [
       "parent"
     ],
     "athleteData": true,
-    "writes": true,
+    "writes": false,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Adds a goal written as role parent by the session's account.",
+    "notes": "The resources a gym has published for one linked child's family (pilot.parent_resources; parentResources.ts; #1593 PH-11): published for every family plus those for a program the child is an active member of (program_memberships matched to an active pilot.programs row by canonical name). Drafts and archived never; internal links only to pages the building map lists for parents. The child must be linked on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. No writer or account id.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8889,60 +8970,6 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "A guardian records the first open of one parent_message note in this gym about a child linked to them on this request (on screen on the Messages tab, FC-05 Q-1); a forged id, another gym's note, a non-parent-message note or an ended link is the same 404. Written on conflict do nothing, so the first time stays (FC-04).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "parent"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/parent/message-replies/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/parent/message-replies",
-    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
-    "rolesAdmitted": [
-      "parent"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "A guardian reads only their own replies (author_account_id = caller), on messages about children in guardianAthleteIds now; a co-guardian's replies are never returned (familyMessageReplies.ts listOwnReplies; #1542 FC-03).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "parent"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/parent/message-replies/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/parent/message-replies",
-    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the note's athlete",
-    "rolesAdmitted": [
-      "parent"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "A guardian replies to one parent_message note in this gym about a child linked to them on this request; a forged id, another gym's note, a non-parent-message note or an ended link is the same 404 (familyMessageReplies.ts createFamilyMessageReply; append-only table, FC-02).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9059,33 +9086,6 @@
       "authorizationGates": [
         "requireRole",
         "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "parent"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/parent/resources/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/parent/resources",
-    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in parentResources.ts)",
-    "rolesAdmitted": [
-      "parent"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "The resources a gym has published for one linked child's family (pilot.parent_resources; parentResources.ts; #1593 PH-11): published for every family plus those for a program the child is an active member of (program_memberships matched to an active pilot.programs row by canonical name). Drafts and archived never; internal links only to pages the building map lists for parents. The child must be linked on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. No writer or account id.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
       ],
       "roleLiterals": [
         "parent"
@@ -9720,6 +9720,31 @@
     }
   },
   {
+    "id": "app/api/pilot/profile/card/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/profile/card",
+    "gate": "requirePrincipal + assertViewerMayReachSubject (profileDb.ts:327) + resolveRelationship",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Fight card (name, ring name, corner, program, coach name, photo availability) for self or a named account/athlete in the session gym (route.ts:50-61). assertViewerMayReachSubject passes for self, else runs assertActorCanAccessAthlete when the subject is an athlete (coach reach, parent link; platform_owner and board refused); non-athlete subjects fall to relationship none -> 404. All refusals are hiddenNotFound. Item three (#1558): an athlete or parent viewing their child's coach's card (subject_is_my_staff) is shown the family name reader's name (getCoachDisplayName), never the staff name that falls back to the account id; a parent's own card is unchanged.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertViewerMayReachSubject"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/profile/card/coach-photo/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/profile/card/coach-photo",
@@ -9759,31 +9784,6 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Streams the portrait of a fight card's own subject, addressed by the card's handle (account_id or athlete_id, or none for the caller's own card; resolveCardSubjectAccountId), so a family's card needs no account id (F-119). Calls the same gates as profile/photo/[accountId] in the same order (assertViewerMayReachSubject, resolveRelationship, decidePortrait), plus the card's relationship none -> 404. All refusals hiddenNotFound.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "assertViewerMayReachSubject"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/profile/card/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/profile/card",
-    "gate": "requirePrincipal + assertViewerMayReachSubject (profileDb.ts:327) + resolveRelationship",
-    "rolesAdmitted": [
-      "any-authenticated"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Fight card (name, ring name, corner, program, coach name, photo availability) for self or a named account/athlete in the session gym (route.ts:50-61). assertViewerMayReachSubject passes for self, else runs assertActorCanAccessAthlete when the subject is an athlete (coach reach, parent link; platform_owner and board refused); non-athlete subjects fall to relationship none -> 404. All refusals are hiddenNotFound. Item three (#1558): an athlete or parent viewing their child's coach's card (subject_is_my_staff) is shown the family name reader's name (getCoachDisplayName), never the staff name that falls back to the account id; a parent's own card is unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9927,29 +9927,6 @@
     }
   },
   {
-    "id": "app/api/pilot/profile/photo/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/profile/photo",
-    "gate": "requirePrincipal (self-scoped)",
-    "rolesAdmitted": [
-      "any-authenticated"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Deletes the caller own portrait blob and marks it removed (route.ts:132-136); keyed on principal.accountId only.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/profile/photo/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/profile/photo",
@@ -9964,6 +9941,29 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Uploads the caller own portrait under portrait/<org>/<account>/ (route.ts:66-79); no target account parameter, so self only. Rate limited, validated, metadata stripped, state pending_review.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/profile/photo/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/profile/photo",
+    "gate": "requirePrincipal (self-scoped)",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Deletes the caller own portrait blob and marks it removed (route.ts:132-136); keyed on principal.accountId only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10566,34 +10566,6 @@
     }
   },
   {
-    "id": "app/api/pilot/quotes/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/quotes",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "QUOTE_WRITE_ROLES = organization_admin, admin. Updates an org quote (org-scoped updateQuote, 404 if absent) and audits; not athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/quotes/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/quotes",
@@ -10609,6 +10581,34 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "QUOTE_WRITE_ROLES = organization_admin, admin. Creates an org quote and writes an audit event; not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/quotes/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/quotes",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "QUOTE_WRITE_ROLES = organization_admin, admin. Updates an org quote (org-scoped updateQuote, 404 if absent) and audits; not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10732,36 +10732,6 @@
     }
   },
   {
-    "id": "app/api/pilot/safety-flags/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/safety-flags",
-    "gate": "requirePrincipal + requireRole + assertCoachAssignedToAthlete",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Coach: loads flag, requires athlete_id on it and assertCoachAssignedToAthlete (errors masked as 404). Org admin resolves any flag. Calls resolveSafetyFlag, audits. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertCoachReachesAthlete"
-      ],
-      "roleLiterals": [
-        "admin,coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/safety-flags/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/safety-flags",
@@ -10778,6 +10748,36 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Coach must supply athlete_id and pass assertCoachAssignedToAthlete; coach cannot flag an account. Org admin may flag any athlete or person in the org. Writes flag + audit. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachReachesAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/safety-flags/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/safety-flags",
+    "gate": "requirePrincipal + requireRole + assertCoachAssignedToAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Coach: loads flag, requires athlete_id on it and assertCoachAssignedToAthlete (errors masked as 404). Org admin resolves any flag. Calls resolveSafetyFlag, audits. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11709,34 +11709,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/feedback/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/shadow/feedback",
-    "gate": "requirePrincipal + requireRole",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "feedback/route.ts:255 requireRole(organization_admin, admin). Approves/rejects one feedback item for learning, org-scoped (resolveShadowFeedbackReview with principal.organizationId). Feedback/learning record, not an athlete record.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/feedback/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/feedback",
@@ -11767,6 +11739,34 @@
       ],
       "roleLiterals": [
         "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/feedback/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/shadow/feedback",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "feedback/route.ts:255 requireRole(organization_admin, admin). Approves/rejects one feedback item for learning, org-scoped (resolveShadowFeedbackReview with principal.organizationId). Feedback/learning record, not an athlete record.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
       ]
     }
   },
@@ -12073,34 +12073,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/jobs/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/shadow/jobs",
-    "gate": "requirePrincipal + requireRole + cancelJobForActor (actorCanAccessJob)",
-    "rolesAdmitted": [
-      "admin",
-      "organization_admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "jobs/route.ts requireRole admin/org_admin; platform_owner refused (OD-2026-10-10-004 ruling 3). cancelJobForActor (shadowJobQueue.ts) requires owner or org admin and athlete access to the job subject, then cancels a pending job and wipes its payload. Coach not admitted.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/jobs/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/jobs",
@@ -12126,6 +12098,34 @@
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/jobs/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/shadow/jobs",
+    "gate": "requirePrincipal + requireRole + cancelJobForActor (actorCanAccessJob)",
+    "rolesAdmitted": [
+      "admin",
+      "organization_admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "jobs/route.ts requireRole admin/org_admin; platform_owner refused (OD-2026-10-10-004 ruling 3). cancelJobForActor (shadowJobQueue.ts) requires owner or org admin and athlete access to the job subject, then cancels a pending job and wipes its payload. Coach not admitted.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
       ]
     }
   },
@@ -12466,35 +12466,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/library/sources/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/shadow/library/sources",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "platform_owner"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "sources/route.ts:193-194 gate; updates a source rights_status or classification_domain. Not athlete data.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/library/sources/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/library/sources",
@@ -12511,6 +12482,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "sources/route.ts:104-105 gate; createShadowLibrarySource inserts a source row. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/library/sources/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/shadow/library/sources",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "sources/route.ts:193-194 gate; updates a source rights_status or classification_domain. Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13089,35 +13089,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/research-submissions/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/shadow/research-submissions",
-    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "platform_owner"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "research-submissions/route.ts PATCH: role gate; reviewResearchSubmission sets applicability verdict on a submission in the org.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/research-submissions/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/research-submissions",
@@ -13145,6 +13116,35 @@
       ],
       "roleLiterals": [
         "<[...SHADOW_SOURCE_ATTACH_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/research-submissions/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/shadow/research-submissions",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "research-submissions/route.ts PATCH: role gate; reviewResearchSubmission sets applicability verdict on a submission in the org.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
       ]
     }
   },
@@ -13235,40 +13235,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/sessions/[conversationId]/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/shadow/sessions/[conversationId]",
-    "gate": "requirePrincipal + requireRole(all roles except board) + owner-only SQL (account_id match)",
-    "rolesAdmitted": [
-      "platform_owner",
-      "organization_admin",
-      "admin",
-      "coach",
-      "athlete",
-      "parent",
-      "volunteer",
-      "staff"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "not-applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Soft-deletes caller's own conversation (softDeleteConversation, shadowConversations.ts:691-707, where account_id = actor). No athlete-reach check; ownership is the gate.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/sessions/[conversationId]/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/sessions/[conversationId]",
@@ -13324,6 +13290,40 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Renames caller's own conversation (renameConversation, shadowConversations.ts:668-689 updates where account_id = actor). No assertActorCanAccessAthlete call, but only own rows are touched and only the title changes, so a coach who lost reach to the athlete can still rename their own thread; harmless.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/sessions/[conversationId]/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/shadow/sessions/[conversationId]",
+    "gate": "requirePrincipal + requireRole(all roles except board) + owner-only SQL (account_id match)",
+    "rolesAdmitted": [
+      "platform_owner",
+      "organization_admin",
+      "admin",
+      "coach",
+      "athlete",
+      "parent",
+      "volunteer",
+      "staff"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Soft-deletes caller's own conversation (softDeleteConversation, shadowConversations.ts:691-707, where account_id = actor). No athlete-reach check; ownership is the gate.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -13528,29 +13528,6 @@
     }
   },
   {
-    "id": "app/api/pilot/shadow/video-analysis/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/shadow/video-analysis",
-    "gate": "requirePrincipal + getJobStatusForActor (job owner or org admin, then assertActorCanAccessAthlete on job subject)",
-    "rolesAdmitted": [
-      "any-authenticated"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "No role check in the route itself; the real gate is inside getJobStatusForActor (job owner or org admin), so effective roles are the coach/org admin who queued the job.",
-    "confidence": "medium",
-    "notes": "Polls film_study job status by jobId (route.ts:151-203). actorCanAccessJob (shadowJobQueue.ts:323-342): non-owner needs isOrganizationAdminRole, then assertActorCanAccessAthlete on subject_id. Returns only status/message/error string.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/shadow/video-analysis/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/video-analysis",
@@ -13578,6 +13555,29 @@
       "roleLiterals": [
         "admin,coach,organization_admin"
       ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/video-analysis/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/shadow/video-analysis",
+    "gate": "requirePrincipal + getJobStatusForActor (job owner or org admin, then assertActorCanAccessAthlete on job subject)",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "No role check in the route itself; the real gate is inside getJobStatusForActor (job owner or org admin), so effective roles are the coach/org admin who queued the job.",
+    "confidence": "medium",
+    "notes": "Polls film_study job status by jobId (route.ts:151-203). actorCanAccessJob (shadowJobQueue.ts:323-342): non-owner needs isOrganizationAdminRole, then assertActorCanAccessAthlete on subject_id. Returns only status/message/error string.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
     }
   },
   {
@@ -13685,34 +13685,6 @@
     }
   },
   {
-    "id": "app/api/pilot/teach-shadow/labeller-pin/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/teach-shadow/labeller-pin",
-    "gate": "requirePrincipal + requireRole([organization_admin])",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": false,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Org admin clears any member's labelling PIN by account_id in own org (labeller-pin/route.ts:97-127), audited. Does not see or set the PIN.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": [
-        "organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/teach-shadow/labeller-pin/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/teach-shadow/labeller-pin",
@@ -13764,6 +13736,34 @@
         "requireAnnotator"
       ],
       "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/teach-shadow/labeller-pin/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/teach-shadow/labeller-pin",
+    "gate": "requirePrincipal + requireRole([organization_admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Org admin clears any member's labelling PIN by account_id in own org (labeller-pin/route.ts:97-127), audited. Does not see or set the PIN.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -14098,36 +14098,6 @@
     }
   },
   {
-    "id": "app/api/pilot/video/[videoId]/tags/route.ts#DELETE",
-    "method": "DELETE",
-    "path": "/api/pilot/video/[videoId]/tags",
-    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + assertActorCanAccessAthlete(tag.athlete_id) for non-admin + consent check",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Removes a clip tag (tags/route.ts:234-344). Coach reach on tag athlete; coach refused (409) when the athlete's media consent blocks video, admin only then. Does not call staffCanSeeVideo.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": [
-        "coach,organization_admin"
-      ]
-    }
-  },
-  {
     "id": "app/api/pilot/video/[videoId]/tags/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/video/[videoId]/tags",
@@ -14150,37 +14120,6 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "accessibleAthleteIds"
-      ],
-      "roleLiterals": [
-        "coach,organization_admin"
-      ]
-    }
-  },
-  {
-    "id": "app/api/pilot/video/[videoId]/tags/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/video/[videoId]/tags",
-    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + staffCanSeeVideo + assertActorCanAccessAthlete(tag.athlete_id) for non-admin",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Links/clears a sparring exposure on a tag (tags/route.ts:152-232). Non-admin reach check on the tag's athlete.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
       "roleLiterals": [
@@ -14220,28 +14159,60 @@
     }
   },
   {
-    "id": "app/api/pilot/video/capture-session/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/video/capture-session",
-    "gate": "requirePrincipal + requireRole([coach, organization_admin])",
+    "id": "app/api/pilot/video/[videoId]/tags/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/video/[videoId]/tags",
+    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + staffCanSeeVideo + assertActorCanAccessAthlete(tag.athlete_id) for non-admin",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
       "coach"
     ],
-    "athleteData": false,
-    "writes": false,
-    "coachReachRule": "n/a",
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads one recording session and its open take/files by recording_session_id, org-scoped; ?mine=1 instead returns the caller own most recent open session (org + created_by_account scoped) so a reload can resume it. Anonymous teaching capture.",
+    "notes": "Links/clears a sparring exposure on a tag (tags/route.ts:152-232). Non-admin reach check on the tag's athlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "assertActorCanAccessAthlete",
+        "accessibleAthleteIds"
+      ],
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/video/[videoId]/tags/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/video/[videoId]/tags",
+    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + assertActorCanAccessAthlete(tag.athlete_id) for non-admin + consent check",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "coach"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Removes a clip tag (tags/route.ts:234-344). Coach reach on tag athlete; coach refused (409) when the athlete's media consent blocks video, admin only then. Does not call staffCanSeeVideo.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "coach,organization_admin"
@@ -14265,6 +14236,35 @@
     "looksWrong": "No ownership check: any coach or org admin can advance_take or close any recording session in the org by id, or join by code; create rejects athlete_id, so sessions are anonymous.",
     "confidence": "medium",
     "notes": "Teach Shadow recording session create/join/advance_take/close (capture-session/route.ts:60-146). Teaching footage names nobody (athlete_id refused at create), so not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/video/capture-session/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/video/capture-session",
+    "gate": "requirePrincipal + requireRole([coach, organization_admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "coach"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads one recording session and its open take/files by recording_session_id, org-scoped; ?mine=1 instead returns the caller own most recent open session (org + created_by_account scoped) so a reload can resume it. Anonymous teaching capture.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
