@@ -69,8 +69,8 @@ const REPORT = {
 };
 
 test('athletes, parents, the board and the platform owner cannot read or file reports (Q2: staff only)', async () => {
-  for (const role of ['athlete', 'parent', 'board', 'platform_owner'] as const) {
-    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+  for (const role of ['athlete', 'parent', 'board', 'platform_owner', 'volunteer', 'staff'] as const) {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
     expect((await GET(getRequest())).status).toBe(403);
     expect((await POST(postRequest(REPORT))).status).toBe(403);
   }
@@ -129,6 +129,17 @@ test('a body with no session, two sessions, no drill context or two of them is r
     expect((await POST(postRequest(body))).status).toBe(400);
   }
   expect(mockAccess).not.toHaveBeenCalled();
+  expect(mockRecord).not.toHaveBeenCalled();
+});
+
+test('a body that is not an object is refused as a 400, not a 500', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  for (const raw of ['null', '7', '[]']) {
+    const response = await POST(new NextRequest(URL_BASE, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: raw,
+    }));
+    expect(response.status).toBe(400);
+  }
   expect(mockRecord).not.toHaveBeenCalled();
 });
 

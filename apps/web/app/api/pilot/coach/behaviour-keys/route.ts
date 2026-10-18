@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...BEHAVIOUR_KEY_ROLES]);
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body of null, a number or a list is not a request: read as empty, refused below.
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
     if (typeof body.behaviourKey !== 'string' || typeof body.label !== 'string' || typeof body.skillId !== 'string') {
       return NextResponse.json({ ok: false, error: 'behaviourKey, label and skillId are required.' }, { status: 400 });
     }

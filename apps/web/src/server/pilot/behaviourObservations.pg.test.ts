@@ -151,12 +151,38 @@ beforeAll(async () => {
             ($1, $3, 'Sam Rivera', '2011-02-09', 'youth-65', 'active', 'Guardian', true, $4, now(), now(), null)`,
     [ORG, ATHLETE, TEAMMATE, COACH],
   );
+  // The drill's discipline must exist for this gym (drill_library_discipline_fk).
+  await db.query(
+    `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+     values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+    [ORG],
+  );
   await db.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
         standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level, skill_id)
-     values ($1, 'drill-bw-1', 'drill-bw-1', 'Jab return', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01')`,
+     values ($1, 'drill-bw-1', 'lineage-bw-1', 'Jab return', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01')`,
     [ORG],
+  );
+  // Another gym's real run, drill and attempt: each must read as "not in this gym", as a missing one does.
+  await db.query(
+    `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+     values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+    [OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.drill_library
+       (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+        standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level, skill_id)
+     values ($1, 'drill-bw-x', 'lineage-bw-x', 'Theirs', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01')`,
+    [OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+        run_state, started_at, ended_at)
+     values ($1, 'run-bw-x', null, null, $2, current_date, 'completed', now() - interval '1 hour', now())`,
+    [OTHER_ORG, OTHER_GYM_COACH],
   );
   await db.query(
     `insert into pilot.session_script_runs
@@ -223,7 +249,8 @@ describe('a behaviour report', () => {
     const row = await writer.recordBehaviourObservation({ ...base, note: 'NOTE-BW-1 dropped it twice' });
     expect(row).toEqual(expect.objectContaining({
       session_key: 'run:run-bw-1',
-      task_context_key: 'drill:drill-bw-1',
+      // Keyed by the drill's lineage, so a re-versioned drill stays one context.
+      task_context_key: 'drill:lineage-bw-1',
       episode_id: expect.stringMatching(/^ep:[0-9a-f-]{36}$/),
       source_quality: 'moderate',
       fatigue_context: 'unknown',
@@ -247,6 +274,8 @@ describe('a behaviour report', () => {
     });
     expect(revision.episode_id).toBe(first.episode_id);
     expect(revision.supersedes_observation_id).toBe(first.observation_id);
+    // The revision keeps the moment's own time, not the time it was written.
+    expect(revision.observed_at).toEqual(first.observed_at);
     // A third call by the same coach revises the revision, never the original twice.
     const again = await writer.recordBehaviourObservation({
       ...base, session: { date: '2026-10-18' }, context: { attemptContext: 'open_floor' },
@@ -257,7 +286,16 @@ describe('a behaviour report', () => {
 
   test("a logged attempt is its own episode, and must be this athlete's", async () => {
     const row = await writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-1' });
-    expect(row.episode_id).toBe('attempt:att-bw-1');
+    expect(row.episode_id).toBe(`attempt:att-bw-1:${KEY}`);
+    // The same attempt can show a second behaviour: its own episode.
+    await writer.createBehaviourKey({
+      organizationId: ORG, behaviourKey: 'squares_up_on_the_hook', label: 'Squares up on the hook',
+      skillId: 'SK-HOOK-01', createdByAccountId: COACH,
+    });
+    const other = await writer.recordBehaviourObservation({
+      ...base, behaviourKey: 'squares_up_on_the_hook', trainingAttemptId: 'att-bw-1',
+    });
+    expect(other.episode_id).toBe('attempt:att-bw-1:squares_up_on_the_hook');
     await expect(writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-teammate' }))
       .rejects.toThrow("not this athlete's");
     await expect(writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-1', sameMomentAs: row.observation_id }))
@@ -275,6 +313,11 @@ describe('a behaviour report', () => {
     await expect(writer.recordBehaviourObservation({ ...base, context: { drillId: 'drill-nowhere' } })).rejects.toThrow('drill');
     await expect(writer.recordBehaviourObservation({ ...base, context: { attemptContext: 'backyard' } })).rejects.toThrow('context must be one of');
     await expect(writer.recordBehaviourObservation({ ...base, session: { date: '18/10/2026' } })).rejects.toThrow('YYYY-MM-DD');
+    await expect(writer.recordBehaviourObservation({ ...base, session: { date: '2026-02-31' } })).rejects.toThrow('YYYY-MM-DD');
+    await expect(writer.recordBehaviourObservation({ ...base, observedAt: 'March 7' })).rejects.toThrow('ISO 8601');
+    // Another gym's real records read exactly as missing ones.
+    await expect(writer.recordBehaviourObservation({ ...base, session: { runId: 'run-bw-x' } })).rejects.toThrow('session run is not in this gym');
+    await expect(writer.recordBehaviourObservation({ ...base, context: { drillId: 'drill-bw-x' } })).rejects.toThrow('not in this gym');
     await expect(writer.recordBehaviourObservation({ ...base, polarity: 'bad' })).rejects.toThrow('polarity must be one of');
     await expect(writer.recordBehaviourObservation({ ...base, behaviourKey: 'not_on_the_list' })).rejects.toThrow('active list');
     await expect(writer.recordBehaviourObservation({ ...base, observerAccountId: OTHER_GYM_COACH })).rejects.toThrow('Only staff of this gym');
@@ -283,7 +326,7 @@ describe('a behaviour report', () => {
 
   test("the athlete's reports list newest first, as written", async () => {
     const rows = await writer.listBehaviourObservations(ORG, ATHLETE);
-    expect(rows.length).toBe(7);
+    expect(rows.length).toBe(8);
     const times = rows.map((row) => Date.parse(row.observed_at));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     expect(await writer.listBehaviourObservations(ORG, TEAMMATE)).toEqual([]);

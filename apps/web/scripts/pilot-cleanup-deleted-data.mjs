@@ -328,6 +328,7 @@ function emptyShadowCounts() {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
     shadowEventsDeleted: 0, behaviourObservations: 0, shadowGymBehaviourNotesScrubbed: 0,
+    shadowGymBehaviourLabelsScrubbed: 0,
   };
 }
 
@@ -809,7 +810,7 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   const counts = {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowGymBehaviourNotesScrubbed: 0,
+    shadowGymBehaviourNotesScrubbed: 0, shadowGymBehaviourLabelsScrubbed: 0,
   };
   const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
@@ -831,6 +832,14 @@ async function scrubGymNotes(client, tables, organizationId, names) {
     counts.shadowGymBehaviourNotesScrubbed = (await client.query(
       `update pilot.behaviour_observations set note = left(regexp_replace(note, $2, '[name]', 'gi'), 2000)
         where organization_id = $1 and note ~* $2`,
+      [organizationId, pattern],
+    )).rowCount ?? 0;
+    // A behaviour name a coach typed with a child's name in it ("Rosa drops
+    // her hands"): the name goes, the behaviour stays. Capped at the
+    // label's 120.
+    counts.shadowGymBehaviourLabelsScrubbed = (await client.query(
+      `update pilot.behaviour_keys set label = left(regexp_replace(label, $2, '[name]', 'gi'), 120)
+        where organization_id = $1 and label ~* $2`,
       [organizationId, pattern],
     )).rowCount ?? 0;
   }
@@ -1810,6 +1819,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_research_rows', shadow.shadowGymResearchScrubbed],
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
       ['behaviour_observation_notes', shadow.shadowGymBehaviourNotesScrubbed],
+      ['behaviour_key_labels', shadow.shadowGymBehaviourLabelsScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
     [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
