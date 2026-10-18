@@ -52,6 +52,15 @@ export type FormulaId = (typeof FORMULA_IDS)[number];
 
 export type FormulaSupport = 'implemented' | 'primitive_only' | 'unsupported' | 'experimental_unsupported';
 
+/**
+ * The tag on the sparring page's whole-session counts ("Whole session" boxes).
+ * Shared by the page that writes it and the detector that reads it
+ * (runner.ts FORMULA_INPUT_REQUIREMENTS), so the two cannot spell it apart.
+ */
+export const SESSION_TOTAL_DIMENSIONS: Readonly<Record<string, string>> = Object.freeze({
+  scope: 'session_total',
+});
+
 export const OBSERVATION_KINDS = [
   'session_rpe',
   'duration',
