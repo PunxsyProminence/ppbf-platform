@@ -95,12 +95,12 @@ test('a guardian is told who placed the hold, so they have someone to ask', asyn
   expect(screen.getByText('Coach Neale')).toBeInTheDocument();
 });
 
-test('an athlete with no active hold shows "no training pause on file", not silence', async () => {
+test('an athlete with no active hold shows "no training hold on file", not silence', async () => {
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: CLEAR_ATHLETE })) as unknown as typeof fetch;
 
   render(<GuardianSafetyPage />);
 
-  await screen.findByText('No training pause on file right now.');
+  await screen.findByText('No training hold on file right now.');
   expect(screen.queryByText('Training is paused right now')).not.toBeInTheDocument();
 });
 
@@ -160,7 +160,7 @@ test('an active hold reads Paused on the hold row, and nothing reads Not yet che
   render(<GuardianSafetyPage />);
 
   await screen.findByText('Training is paused right now');
-  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Training hold');
   expect(badgeIn('Active Training Hold')).toHaveClass('badge--restricted');
   expect(screen.queryByText('Not yet checked')).not.toBeInTheDocument();
 });
@@ -178,8 +178,8 @@ test('no hold reads No pause on the hold row, whatever the gate last recorded', 
 
   render(<GuardianSafetyPage />);
 
-  await screen.findByText('No training pause on file right now.');
-  expect(badgeIn('Active Training Hold')).toHaveTextContent('✓No pause');
+  await screen.findByText('No training hold on file right now.');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('✓No training hold');
   expect(badgeIn('Active Training Hold')).toHaveClass('badge--cleared');
   expect(screen.queryByText('Not clear')).not.toBeInTheDocument();
 });
@@ -218,8 +218,8 @@ test('a clearance gate is left out even when evaluated: its last outcome is not 
 
 test('a scoped hold names its scope on the hold row, as the heading above does', async () => {
   for (const [scope, label, heading] of [
-    ['contact_only', 'Contact paused', 'Contact work is paused right now'],
-    ['conditioning_only', 'Conditioning paused', 'Conditioning is paused right now'],
+    ['contact_only', 'Training hold: contact', 'Contact work is paused right now'],
+    ['conditioning_only', 'Training hold: conditioning', 'Conditioning is paused right now'],
   ] as const) {
     global.fetch = jest.fn().mockResolvedValue(
       jsonResponse({ ok: true, items: [{ ...HELD_ATHLETE[0], hold: { ...HELD_ATHLETE[0].hold, scope }, gates: NEVER_EVALUATED_GATES }] }),
@@ -241,7 +241,7 @@ test('an evaluated gate the page can answer stays listed beside the hold row', a
   render(<GuardianSafetyPage />);
 
   await screen.findByText('Training is paused right now');
-  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Training hold');
   expect(badgeIn('Mouthguard On File')).toHaveTextContent('▲Needs a look');
 });
 
@@ -273,7 +273,7 @@ test('the hold row is shown even when the response sends no training-hold gate',
   render(<GuardianSafetyPage />);
 
   await screen.findByText('Training is paused right now');
-  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Paused');
+  expect(badgeIn('Active Training Hold')).toHaveTextContent('▲Training hold');
 });
 
 /* ---------------------------------------------------------------- waivers --
