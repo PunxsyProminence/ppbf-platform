@@ -39,23 +39,28 @@ const CONFIG: ResearchArchiveConfig = {
   getAccessToken,
 };
 
-const INPUT = {
-  config: CONFIG,
-  archiveDomainCode: 'R19',
-  archiveFilename: 'synthetic-pilot--0123456789ab.pdf',
-  fileBuffer: Buffer.from('%PDF-1.4 synthetic'),
-};
+const FILE_BYTES = Buffer.from('%PDF-1.4 synthetic');
 
 /**
  * Computed here, independently, from the same bytes. The implementation cannot
  * satisfy the hash assertions by echoing an input back, because the input does
  * not carry a hash at all.
  */
-const EXPECTED_SHA256 = createHash('sha256').update(INPUT.fileBuffer).digest('hex');
+const EXPECTED_SHA256 = createHash('sha256').update(FILE_BYTES).digest('hex');
+
+/** The filed name: its suffix is these bytes' hash, which the writer now requires. */
+const FILED_NAME = `synthetic-pilot--${EXPECTED_SHA256.slice(0, 12)}.pdf`;
+
+const INPUT = {
+  config: CONFIG,
+  archiveDomainCode: 'R19',
+  archiveFilename: FILED_NAME,
+  fileBuffer: FILE_BYTES,
+};
 
 const BASE = `https://graph.microsoft.com/v1.0/sites/${CONFIG.siteId}/drives/${CONFIG.driveId}`;
 const LIST_URL = `${BASE}/items/${ROOT}/children?$select=id,name,folder,parentReference&$top=200`;
-const ITEM_URL = `${BASE}/items/${FOLDER_19}:/synthetic-pilot--0123456789ab.pdf`;
+const ITEM_URL = `${BASE}/items/${FOLDER_19}:/${FILED_NAME}`;
 const PUT_URL = `${ITEM_URL}:/content?@microsoft.graph.conflictBehavior=fail`;
 const FOLDER_LIST_URL = `${BASE}/items/${FOLDER_19}/children?$select=id,name,folder,parentReference&$top=200`;
 const EMPTY_FOLDER = { value: [] };
@@ -116,7 +121,7 @@ describe('the research archive write refuses rather than replaces', () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, ROOT_CHILDREN))
       .mockResolvedValueOnce(
-        jsonResponse(200, { value: [{ id: 'existing-item-id', name: 'Synthetic-Pilot--0123456789AB.pdf', file: {} }] }),
+        jsonResponse(200, { value: [{ id: 'existing-item-id', name: FILED_NAME.toUpperCase(), file: {} }] }),
       );
 
     const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
@@ -165,7 +170,7 @@ describe('the research archive write refuses rather than replaces', () => {
   test('a FOLDER with the name is not an original, and does not stop the write', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, ROOT_CHILDREN))
-      .mockResolvedValueOnce(jsonResponse(200, { value: [{ id: 'odd', name: 'synthetic-pilot--0123456789ab.pdf', folder: {} }] }))
+      .mockResolvedValueOnce(jsonResponse(200, { value: [{ id: 'odd', name: FILED_NAME, folder: {} }] }))
       .mockResolvedValueOnce(created());
 
     await archiveResearchOriginal(INPUT);
@@ -365,6 +370,19 @@ describe('names are validated before anything leaves the process', () => {
     },
   );
 
+  // A name whose hash suffix is not these bytes' would hide the copy from the
+  // same-bytes scan of a later retry (Codex P2 on #1745).
+  test.each([
+    ['another hash', 'synthetic-pilot--0123456789ab.pdf'],
+    ['no hash at all', 'synthetic-pilot.pdf'],
+  ])('a filed name with %s is refused before any request or token', async (_label, archiveFilename) => {
+    const error = await archiveResearchOriginal({ ...INPUT, archiveFilename }).catch((e: unknown) => e);
+
+    expect((error as Error).message).toMatch(/refusing research archive write: .* does not end in the hash of these bytes/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getAccessToken).not.toHaveBeenCalled();
+  });
+
   // R00 and R98 are archive workflow states (#345), not subjects; R20+ do not exist.
   test.each(['R00', 'R98', 'R20', 'R1', 'r19', 'R19/../', 'R191', ''])(
     'archive domain code %j is refused with no request and no token',
@@ -416,7 +434,8 @@ describe('the hash and size are of the bytes, never accepted from a caller', () 
       .mockResolvedValueOnce(jsonResponse(200, EMPTY_FOLDER))
       .mockResolvedValueOnce(created());
 
-    const identity = await archiveResearchOriginal({ ...INPUT, fileBuffer: otherBuffer });
+    const otherName = `synthetic-pilot--${createHash('sha256').update(otherBuffer).digest('hex').slice(0, 12)}.pdf`;
+    const identity = await archiveResearchOriginal({ ...INPUT, archiveFilename: otherName, fileBuffer: otherBuffer });
 
     expect(identity.contentSha256).toBe(createHash('sha256').update(otherBuffer).digest('hex'));
     expect(identity.contentSha256).not.toBe(EXPECTED_SHA256);
@@ -440,7 +459,7 @@ describe('the identity it returns is the archive identity', () => {
       archiveRootItemId: ROOT,
       archiveDomainCode: 'R19',
       archiveFolderItemId: FOLDER_19,
-      archiveFilename: 'synthetic-pilot--0123456789ab.pdf',
+      archiveFilename: FILED_NAME,
       contentSha256: EXPECTED_SHA256,
       byteSize: INPUT.fileBuffer.length,
     });
