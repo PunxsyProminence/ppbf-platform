@@ -160,7 +160,7 @@ test.describe('Athlete journey', () => {
 
     await page.goto('/athlete/progression-intelligence');
 
-    await expect(page.getByRole('heading', { name: 'Your Progression' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My Progression' })).toBeVisible();
 
     // The gate resolved -- an athlete must never be left looking at the
     // holding screen, and must never see the "sign in again" alert on a

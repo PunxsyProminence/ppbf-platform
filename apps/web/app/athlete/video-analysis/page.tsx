@@ -141,7 +141,7 @@ export default function AthleteVideoAnalysisPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Film</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Film</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>My Film</h1>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Rounds your coach has put up for you to watch back.
           </p>

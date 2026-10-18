@@ -99,7 +99,7 @@ function AuditTrace() {
           <div>
             <p className="t-eyebrow">Audit &amp; Change Trace</p>
             <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>
-              The Ledger
+              Audit Trace
             </h1>
             {/* The ledger has no 'why' field. pilot.audit_events records the
                 event type, the actor, the entity and a details blob -- what

@@ -62,10 +62,13 @@ const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-session-close-migration.mjs');
 
 // Applied in the order the `all` chain runs them: upsertSession writes
-// rpe_method and duration_minutes, so both of their migrations come first.
+// rpe_method, duration_minutes and session_type, so their migrations come
+// first (session_type's file also alters athlete_check_ins, which it needs).
 const PREREQUISITE_MIGRATIONS = [
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_duration_migration.sql',
+  'pilot_slice_postgres_athlete_check_ins_migration.sql',
+  'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_session_close_migration.sql';
 
@@ -462,6 +465,35 @@ describe('upsertSession stamps the close record on the completed transition', ()
       const record = await getSessionById(ORG_ID, 'sess-1');
       expect(record?.close_method).toBe('athlete_check_out');
       expect(record?.checked_out_at).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("the athlete's session-type tag is stored at check-out, kept by a write that omits it, and cleared by null", async () => {
+    const client = await freshDatabase('close_upsert_session_type');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      activeClient = client;
+      const typeOf = async () => (
+        await client.query(`select session_type from pilot.sessions where session_id = 'sess-type'`)
+      ).rows[0].session_type;
+      const asRouteSends = (overrides: Partial<PilotSession>) => validateSessionPayload(JSON.parse(JSON.stringify(session({
+        session_id: 'sess-type', rpe: 6, rpe_method: SELF_REPORT, completed_flag: true, ...overrides,
+      }))));
+
+      await upsertSession(ORG_ID, session({ session_id: 'sess-type' }), { mode: 'create' }, { closedBy: 'athlete' });
+      expect(await typeOf()).toBeNull();
+
+      await upsertSession(ORG_ID, asRouteSends({ session_type: 'sparring' }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
+      expect(await typeOf()).toBe('sparring');
+
+      // A staff write omits the key (the validator keeps it absent): the tag stays.
+      await upsertSession(ORG_ID, asRouteSends({}), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: false }, { closedBy: 'staff' });
+      expect(await typeOf()).toBe('sparring');
+
+      await upsertSession(ORG_ID, asRouteSends({ session_type: null }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
+      expect(await typeOf()).toBeNull();
     } finally {
       await client.end();
     }
