@@ -3992,7 +3992,7 @@ export default function CoachWorkspace() {
                       mass (OD-2026-10-17-026 (b)). It reads its own route;
                       keyed by athlete so a new athlete starts a fresh panel. */}
                   {wellnessShown?.status === 'loaded' && (
-                    <AthleteGrowthPanel key={wellnessShown.athleteId} athleteId={wellnessShown.athleteId} />
+                    <AthleteGrowthPanel key={`growth-${wellnessShown.athleteId}`} athleteId={wellnessShown.athleteId} />
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (
