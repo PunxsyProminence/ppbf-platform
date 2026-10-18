@@ -2,10 +2,12 @@
 // infra/azure/pilot_slice_postgres_learning_loop_migration.sql) and of the
 // retention purge's step for it (scripts/pilot-cleanup-deleted-data.mjs,
 // deidentifyBehaviourObservations): behaviour reports are append-only, one
-// episode is one athlete/behaviour/session/drill, a bar is stored only with a
-// citation and a gym admin's name (Jason 2026-10-18 Q3, "Needs to be backed by
-// research"), and a purged child's reports stay under a token with the
-// coach's note gone (Jason 2026-10-06).
+// episode is one athlete/behaviour/session/drill, a behaviour name keeps its
+// meaning, a bar is stored only with a citation and a gym admin's name (Jason
+// 2026-10-18 Q3, "Needs to be backed by research"), and a purged child's
+// reports stay under their one token with the child's name scrubbed from the
+// coach's notes, theirs and other children's (Jason 2026-10-06; 2026-10-07
+// "Scrub the child's name, keep", "Gym-wide").
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
@@ -55,6 +57,8 @@ const OTHER_GYM_COACH = 'acct-ll-other';
 const KEY = 'drops_lead_hand_after_jab';
 const RETIRED_KEY = 'old_name_for_it';
 const NOTE_A = 'NOTE-LL-A-5521 Rosa dropped it again after the double jab';
+const NOTE_B_NAMING_A = 'NOTE-LL-B-7702 paired with Rosa on the pads';
+const LIVE_TOKEN = 'anon_00000000-0000-4000-8000-000000000000';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -110,6 +114,7 @@ function runCleanupScript(extraEnv: Record<string, string>) {
 }
 
 interface Report {
+  observationId?: string;
   organizationId?: string;
   athleteId?: string;
   behaviourKey?: string;
@@ -131,18 +136,18 @@ const EPISODE_2 = 'ep:22222222-2222-4222-8222-222222222222';
 async function report(r: Report = {}): Promise<string> {
   const result = await db.query<{ observation_id: string }>(
     `insert into pilot.behaviour_observations
-       (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key,
+       (observation_id, organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key,
         task_constraint, polarity, attribution_target, attribution_certainty, source_type,
         source_quality, interpretation, observer_account_id, author_role, supersedes_observation_id,
         note, observed_at)
-     values ($1, $2, $3, $4, $5, $6, 'controlled', $7, 'athlete', 'probable', $8, 'moderate', $9,
-             $10, $11, $12, $13, now())
+     values (coalesce($14::uuid, gen_random_uuid()), $1, $2, $3, $4, $5, $6, 'controlled', $7, 'athlete',
+             'probable', $8, 'moderate', $9, $10, $11, $12, $13, now())
      returning observation_id`,
     [
       r.organizationId ?? ORG, r.athleteId ?? ATHLETE_B, r.behaviourKey ?? KEY, r.episodeId ?? EPISODE_1,
       r.sessionKey ?? 'run:run-ll-1', r.taskContextKey ?? 'drill:drill-ll-1', r.polarity ?? 'occurrence',
       r.sourceType ?? 'coach_tag', r.interpretation ?? 'human_observed', r.observer ?? COACH,
-      r.authorRole ?? 'coach', r.supersedes ?? null, r.note ?? '',
+      r.authorRole ?? 'coach', r.supersedes ?? null, r.note ?? '', r.observationId ?? null,
     ],
   );
   return result.rows[0].observation_id;
@@ -302,6 +307,36 @@ describe('the learning-loop migration', () => {
     );
     expect(await refusal(insertKey('Drops Hand', 'SK-JAB-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_key_check' });
     expect(await refusal(insertKey('drops_hand', 'SKILL-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_skill_check' });
+    expect(await refusal(() => db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id) values ($1, 'tabs_only', E'\t\t\t', 'SK-JAB-01')`,
+      [ORG],
+    ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_label_check' });
+    expect(await refusal(() => db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, 'visitor_named', 'A name', 'SK-JAB-01', $2)`,
+      [ORG, OTHER_GYM_COACH],
+    ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_creator_of_this_gym' });
+  });
+
+  test('a behaviour name keeps its meaning: retire it, never re-word, re-file or delete it', async () => {
+    await db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, 'squares_up_on_the_hook', 'Squares up on the hook', 'SK-HOOK-01', $2)`,
+      [ORG, COACH],
+    );
+    const fixed = { code: '23514', constraint: 'pilot_behaviour_keys_meaning_fixed' };
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_keys set label = 'Something else' where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
+    ))).toEqual(fixed);
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_keys set skill_id = 'SK-JAB-01' where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
+    ))).toEqual(fixed);
+    await db.query(
+      `update pilot.behaviour_keys set status = 'retired' where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
+    );
+    expect(await refusal(() => db.query(
+      `delete from pilot.behaviour_keys where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
+    ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_no_delete' });
   });
 
   test('two coaches report one rep as one episode; the same coach revises their own call', async () => {
@@ -344,6 +379,11 @@ describe('the learning-loop migration', () => {
     expect(await refusal(() => report({
       athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: original,
     }))).toEqual({ code: '23505', constraint: 'idx_behaviour_observations_one_successor' });
+    // Never itself: the row is not there yet for its own trigger to find.
+    const self = '33333333-3333-4333-8333-333333333333';
+    expect(await refusal(() => report({
+      observationId: self, athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: self,
+    }))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_own_revision' });
   });
 
   test('a report is never edited or deleted by hand, nor de-identified with anything else moved', async () => {
@@ -360,6 +400,19 @@ describe('the learning-loop migration', () => {
     expect(await refusal(() => db.query(
       `delete from pilot.behaviour_observations where observation_id = $1`, [id],
     ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_no_delete' });
+    // A live child's report cannot be de-identified, even in the purge's own shape.
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_observations set athlete_id = $2, note = '', deidentified_at = now()
+        where observation_id = $1`, [id, LIVE_TOKEN],
+    ))).toEqual(appendOnly);
+    // The observer is struck only by their account going, not by hand.
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_observations set observer_account_id = null where observation_id = $1`, [id],
+    ))).toEqual(appendOnly);
+    // A note changes only by gaining a [name].
+    expect(await refusal(() => db.query(
+      `update pilot.behaviour_observations set note = 'rewritten' where observation_id = $1`, [id],
+    ))).toEqual(appendOnly);
   });
 
   test("an observer's account going leaves the report, without the observer", async () => {
@@ -376,6 +429,8 @@ describe('the learning-loop migration', () => {
     expect(await refusal(() => policy({ citations: [] })))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citations_check' });
     expect(await refusal(() => policy({ citations: [{ note: 'no source' }] })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citation_source' });
+    expect(await refusal(() => policy({ citations: [{ source: '\t\n ' }] })))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citation_source' });
     expect(await refusal(() => policy({ by: COACH, role: 'coach' })))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_role_check' });
@@ -419,6 +474,9 @@ describe('the retention purge and a purged child\'s behaviour reports', () => {
   )).rows[0].n);
 
   beforeAll(async () => {
+    // Another child's report whose note names A (a drill partner): A's name
+    // leaves it too, gym-wide.
+    await report({ athleteId: ATHLETE_B, episodeId: 'attempt:att-ll-3', observer: COACH, note: NOTE_B_NAMING_A });
     // A coach's chat turn about A, so A's two tokens can be compared.
     await db.query(
       `insert into pilot.shadow_chat_audit (organization_id, user_id, user_role, athlete_id, user_message, shadow_response)
@@ -438,40 +496,52 @@ describe('the retention purge and a purged child\'s behaviour reports', () => {
     expect(dry.event).toBe('retention.cleanup.dry-run');
     expect(dry.blocked_by ?? {}).toEqual({});
     expect(dry.would_deidentify_behaviour_observations).toBe(3);
+    expect(dry.would_scrub_behaviour_observation_notes_names).toBe(1);
     expect(await namingA()).toBe(3);
   });
 
-  test("the purge keeps A's reports under A's one token, without the coach's note", async () => {
+  test("the purge keeps A's reports under A's one token, with A's name scrubbed from every note", async () => {
     const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
     expect(event.event).toBe('retention.cleanup.completed');
     expect(event.blocked_by ?? {}).toEqual({});
     expect(event.athletes).toBe(1);
     expect(event.behaviour_observations_deidentified).toBe(3);
+    expect(event.behaviour_observation_notes_names_scrubbed).toBe(1);
     expect(await namingA()).toBe(0);
 
     const kept = await db.query(
-      `select distinct athlete_id, behaviour_key, episode_id, note, deidentified_at is not null as stamped
+      `select distinct athlete_id, behaviour_key, episode_id, deidentified_at is not null as stamped
          from pilot.behaviour_observations where organization_id = $1 and episode_id = $2`,
       [ORG, EPISODE_1],
     );
     expect(kept.rows).toHaveLength(1);
     expect(kept.rows[0]).toEqual({
-      athlete_id: expect.stringMatching(/^anon_/), behaviour_key: KEY, episode_id: EPISODE_1, note: '', stamped: true,
+      athlete_id: expect.stringMatching(/^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+      behaviour_key: KEY, episode_id: EPISODE_1, stamped: true,
     });
+    // The coach's words stay, without the child's name.
+    const notes = await db.query(
+      `select note from pilot.behaviour_observations where organization_id = $1 and note like 'NOTE-LL-%' order by note`,
+      [ORG],
+    );
+    expect(notes.rows.map((row) => row.note)).toEqual([
+      'NOTE-LL-A-5521 [name] dropped it again after the double jab',
+      'NOTE-LL-B-7702 paired with [name] on the pads',
+    ]);
     const audit = await db.query(
       `select athlete_id from pilot.shadow_chat_audit where organization_id = $1 and user_id = $2`, [ORG, COACH],
     );
     expect(audit.rows.map((row) => row.athlete_id)).toEqual([kept.rows[0].athlete_id]);
     const anywhere = await db.query(
-      `select count(*)::int as n from pilot.behaviour_observations where note like '%NOTE-LL-A-5521%'`,
+      `select count(*)::int as n from pilot.behaviour_observations where note ~* 'rosa|ortiz'`,
     );
     expect(anywhere.rows[0].n).toBe(0);
-    // B's reports, and the other gym's names, are untouched.
+    // B's reports stay B's.
     const others = await db.query(
       `select count(*)::int as n from pilot.behaviour_observations where organization_id = $1 and athlete_id = $2`,
       [ORG, ATHLETE_B],
     );
-    expect(others.rows[0].n).toBe(4);
+    expect(others.rows[0].n).toBe(5);
   });
 
   test('an athlete deleted without the purge takes their reports with them', async () => {

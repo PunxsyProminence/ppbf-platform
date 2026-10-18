@@ -19,13 +19,16 @@
 -- coach's own second report of an episode supersedes their first.
 --
 -- APPEND-ONLY. A report is never edited or deleted by hand. The only
--- updates are the purge's de-identification (the athlete key becomes the
--- purge's anon_ token and the note goes; Jason 2026-10-06, "delete any thing
--- that personally Identifys the person but we keep data that [makes] the Ai
--- and ML better") and the observer's account being set null when that
--- account is deleted. An athlete delete that has NOT de-identified first
--- takes the athlete's rows with it (the follow trigger below), the same
--- shape as pilot_slice_postgres_shadow_deidentify_keys_migration.sql.
+-- updates take identification away: the purge's de-identification (the
+-- athlete key becomes the purge's anon_ token; Jason 2026-10-06, "delete any
+-- thing that personally Identifys the person but we keep data that [makes]
+-- the Ai and ML better"), the purge's name scrub of a coach's note (Jason
+-- 2026-10-07, "Scrub the child's name, keep"; "Gym-wide"), and the
+-- observer's account being set null when that account is deleted. An
+-- athlete delete that has NOT de-identified first takes the athlete's rows
+-- with it (the follow trigger below), the same shape as
+-- pilot_slice_postgres_shadow_deidentify_keys_migration.sql, whose token
+-- shape (anon_<uuid>) the de-identified rows must match.
 --
 -- DEPENDS ON pilot.organizations, pilot.accounts, pilot.athletes,
 -- pilot.organization_memberships, pilot.intervention_protocols and
@@ -43,11 +46,57 @@ create table if not exists pilot.behaviour_keys (
   created_at timestamptz not null default now(),
   constraint pilot_behaviour_keys_pkey primary key (organization_id, behaviour_key),
   constraint pilot_behaviour_keys_key_check check (behaviour_key ~ '^[a-z][a-z0-9_]{2,79}$'),
-  constraint pilot_behaviour_keys_label_check check (length(btrim(label)) between 3 and 120),
+  constraint pilot_behaviour_keys_label_check
+    check (length(btrim(label)) between 3 and 120 and label ~ '[^[:space:]]'),
   -- The skill code shape contentImport/ids.ts SKILL_CODE_PATTERN names (SK-STANCE-01).
   constraint pilot_behaviour_keys_skill_check check (skill_id ~ '^SK-[A-Z]+-[0-9]{2}$'),
   constraint pilot_behaviour_keys_status_check check (status in ('active', 'retired'))
 );
+
+-- A name keeps its meaning once coaches file reports under it: only its
+-- status moves (retire it and add a new name rather than re-word or re-file
+-- one), and its creator is set null when their account goes.
+create or replace function pilot.behaviour_keys_guard()
+returns trigger
+language plpgsql
+as $behaviour_keys_guard$
+begin
+  if tg_op = 'DELETE' then
+    if pg_trigger_depth() = 1 then
+      raise exception 'BEHAVIOUR_KEY_IS_RETIRED_NOT_DELETED'
+        using errcode = '23514', constraint = 'pilot_behaviour_keys_no_delete';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'UPDATE' then
+    if to_jsonb(new) - 'status' = to_jsonb(old) - 'status' then
+      return new;
+    end if;
+    if pg_trigger_depth() > 1 and new.created_by_account_id is null
+       and to_jsonb(new) - 'created_by_account_id' = to_jsonb(old) - 'created_by_account_id' then
+      return new;
+    end if;
+    raise exception 'BEHAVIOUR_KEY_MEANING_IS_FIXED'
+      using errcode = '23514', constraint = 'pilot_behaviour_keys_meaning_fixed';
+  end if;
+  if new.created_by_account_id is not null and new.organization_id is not null and not exists (
+    select 1 from pilot.organization_memberships om
+      join pilot.accounts acc on acc.account_id = om.account_id
+     where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
+       and om.active_flag and om.role in ('coach', 'organization_admin', 'admin')
+       and acc.active_flag and acc.deleted_at is null
+  ) then
+    raise exception 'BEHAVIOUR_KEY_CREATOR_OF_THIS_GYM'
+      using errcode = '23514', constraint = 'pilot_behaviour_keys_creator_of_this_gym';
+  end if;
+  return new;
+end;
+$behaviour_keys_guard$;
+
+drop trigger if exists trg_behaviour_keys_guard on pilot.behaviour_keys;
+create trigger trg_behaviour_keys_guard
+  before insert or update or delete on pilot.behaviour_keys
+  for each row execute function pilot.behaviour_keys_guard();
 
 create table if not exists pilot.behaviour_observations (
   organization_id text not null references pilot.organizations(organization_id) on delete cascade,
@@ -109,7 +158,7 @@ create table if not exists pilot.behaviour_observations (
     check (episode_id ~ '^(attempt:[^[:space:]]+|ep:[0-9a-f-]{36})$'),
   constraint pilot_behaviour_observations_note_check check (length(note) <= 2000),
   constraint pilot_behaviour_observations_deidentified_check
-    check (deidentified_at is null or (athlete_id like 'anon\_%' and note = ''))
+    check (deidentified_at is null or athlete_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 );
 
 create index if not exists idx_behaviour_observations_athlete
@@ -138,27 +187,47 @@ begin
   end if;
 
   if tg_op = 'UPDATE' then
-    -- Two updates only, and each can only take identification away.
-    -- (1) The observer's account going (on delete set null): nothing else moves.
-    if new.observer_account_id is null
+    -- Three updates only, and each can only take identification away.
+    -- (1) The observer's account going: the foreign key's own set-null
+    -- action, which runs this deeper than 1; nothing else moves.
+    if pg_trigger_depth() > 1 and new.observer_account_id is null
        and to_jsonb(new) - 'observer_account_id' = to_jsonb(old) - 'observer_account_id' then
       return new;
     end if;
-    -- (2) The purge's de-identification, before it deletes the athlete
-    -- (scripts/pilot-cleanup-deleted-data.mjs, deidentifyBehaviourObservations):
-    -- the athlete key becomes the purge's token, the note goes, nothing else moves.
+    -- (2) The purge's de-identification of a DELETED athlete's reports,
+    -- before it deletes the athlete (scripts/pilot-cleanup-deleted-data.mjs,
+    -- deidentifyBehaviourObservations): the athlete key becomes the purge's
+    -- token and the note is scrubbed of the child's names (or emptied when
+    -- none is on record); nothing else moves, and it happens once.
     if old.deidentified_at is null and new.deidentified_at is not null
-       and new.athlete_id like 'anon\_%' and new.note = ''
+       and new.athlete_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       and not exists (
+         select 1 from pilot.athletes a
+          where a.organization_id = old.organization_id and a.athlete_id = old.athlete_id
+            and a.deleted_at is null)
        and to_jsonb(new) - array['athlete_id', 'note', 'deidentified_at']
          = to_jsonb(old) - array['athlete_id', 'note', 'deidentified_at'] then
+      return new;
+    end if;
+    -- (3) The purge's gym-wide name scrub (scrubGymNotes): another report's
+    -- note naming a purged person gains a [name] where the name was;
+    -- nothing else moves.
+    if new.note is distinct from old.note
+       and length(new.note) - length(replace(new.note, '[name]', ''))
+         > length(old.note) - length(replace(old.note, '[name]', ''))
+       and to_jsonb(new) - 'note' = to_jsonb(old) - 'note' then
       return new;
     end if;
     raise exception 'BEHAVIOUR_OBSERVATION_IS_NOT_CHANGED'
       using errcode = '23514', constraint = 'pilot_behaviour_observations_append_only';
   end if;
 
-  -- INSERT. Missing keys and out-of-vocabulary values are left to their own
-  -- named constraints.
+  -- INSERT. A missing key is left to NOT NULL, and an out-of-vocabulary value
+  -- to its own check, so each is reported by its own name.
+  if new.organization_id is null or new.athlete_id is null or new.behaviour_key is null
+     or new.episode_id is null or new.author_role is null then
+    return new;
+  end if;
   if new.deidentified_at is not null or new.athlete_id like 'anon\_%' then
     raise exception 'BEHAVIOUR_OBSERVATION_NEW_ROW_NAMES_AN_ATHLETE'
       using errcode = '23514', constraint = 'pilot_behaviour_observations_live_athlete';
@@ -187,6 +256,10 @@ begin
     raise exception 'BEHAVIOUR_OBSERVATION_KEY_NOT_ACTIVE'
       using errcode = '23514', constraint = 'pilot_behaviour_observations_active_key';
   end if;
+  -- One episode's reports are written one at a time, so two arriving together
+  -- cannot each miss the other and name two athletes.
+  perform pg_advisory_xact_lock(
+    hashtextextended('pilot.behaviour_observations|' || new.organization_id || '|' || new.episode_id, 0));
   if exists (
     select 1 from pilot.behaviour_observations o
      where o.organization_id = new.organization_id and o.episode_id = new.episode_id
@@ -199,9 +272,11 @@ begin
   if new.supersedes_observation_id is not null then
     select * into prior from pilot.behaviour_observations o
      where o.organization_id = new.organization_id and o.observation_id = new.supersedes_observation_id;
-    -- A revision is the same person's own call on the same episode.
-    if found and (prior.episode_id <> new.episode_id
-                  or prior.observer_account_id is distinct from new.observer_account_id) then
+    -- A revision is the same person's own call on the same episode, of a
+    -- report already written: never itself, never a cycle.
+    if not found or new.supersedes_observation_id = new.observation_id
+       or prior.episode_id <> new.episode_id
+       or prior.observer_account_id is distinct from new.observer_account_id then
       raise exception 'BEHAVIOUR_OBSERVATION_REVISION_IS_OWN'
         using errcode = '23514', constraint = 'pilot_behaviour_observations_own_revision';
     end if;
@@ -293,10 +368,11 @@ begin
 
   if jsonb_typeof(new.citations) = 'array' then
     for citation in select value from jsonb_array_elements(new.citations) loop
-      -- coalesce: a missing key reads as null, and null must refuse, not pass.
+      -- coalesce: a missing key reads as null, and null must refuse, not
+      -- pass. A source of only spaces, tabs or newlines names nothing.
       if jsonb_typeof(citation) <> 'object'
          or coalesce(jsonb_typeof(citation->'source'), '') <> 'string'
-         or length(btrim(coalesce(citation->>'source', ''))) = 0 then
+         or coalesce(citation->>'source', '') !~ '[^[:space:]]' then
         raise exception 'LEARNING_POLICY_CITATION_NAMES_A_SOURCE'
           using errcode = '23514', constraint = 'pilot_learning_policies_citation_source';
       end if;

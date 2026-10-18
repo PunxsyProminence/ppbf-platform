@@ -30,9 +30,10 @@ const constraintReady = (table, name, type) => `exists (
          and c.convalidated
     )`;
 
-// Readiness asserts the result, not the attempt: each table, the append-only guards, the
-// athlete follow trigger, the one-bar-in-force index, the citation check, and both new
-// intervention columns with their key and check.
+// Readiness asserts the result, not the attempt: each table, the three guards, the athlete
+// follow trigger, the revision key and one-successor index, the token-shaped de-identify check,
+// the one-bar-in-force index and version key, the citation check, and both new intervention
+// columns with their key and check.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.behaviour_keys') is not null as keys_table_ready,
@@ -40,10 +41,24 @@ const READINESS_QUERY = `
     to_regclass('pilot.learning_policies') is not null as policies_table_ready,
     ${constraintReady('pilot.behaviour_observations', 'pilot_behaviour_observations_key_fk', 'f')} as observation_key_fk_ready,
     ${constraintReady('pilot.behaviour_observations', 'pilot_behaviour_observations_episode_check', 'c')} as episode_check_ready,
-    ${constraintReady('pilot.behaviour_observations', 'pilot_behaviour_observations_deidentified_check', 'c')} as deidentified_check_ready,
+    exists (
+      -- The de-identified rows must carry the purge's own token shape, anon_<uuid>.
+      select 1 from pg_constraint c
+       where c.conrelid = to_regclass('pilot.behaviour_observations')
+         and c.conname = 'pilot_behaviour_observations_deidentified_check' and c.contype = 'c' and c.convalidated
+         and pg_get_constraintdef(c.oid) like '%anon_[0-9a-f]{8}-%'
+    ) as deidentified_check_ready,
     ${constraintReady('pilot.learning_policies', 'pilot_learning_policies_citations_check', 'c')} as citations_check_ready,
     ${triggerReady('pilot.behaviour_observations', 'trg_behaviour_observations_guard', 'pilot.behaviour_observations_guard()', 28)} as observations_guard_ready,
     ${triggerReady('pilot.learning_policies', 'trg_learning_policies_guard', 'pilot.learning_policies_guard()', 28)} as policies_guard_ready,
+    ${triggerReady('pilot.behaviour_keys', 'trg_behaviour_keys_guard', 'pilot.behaviour_keys_guard()', 28)} as keys_guard_ready,
+    ${constraintReady('pilot.behaviour_observations', 'pilot_behaviour_observations_supersedes_fk', 'f')} as supersedes_fk_ready,
+    ${constraintReady('pilot.learning_policies', 'pilot_learning_policies_version_key', 'u')} as policy_version_key_ready,
+    exists (
+      select 1 from pg_index i
+       where i.indexrelid = to_regclass('pilot.idx_behaviour_observations_one_successor')
+         and i.indrelid = to_regclass('pilot.behaviour_observations') and i.indisunique and i.indpred is not null
+    ) as one_successor_ready,
     ${triggerReady('pilot.athletes', 'pilot_behaviour_observations_follow_athlete', 'pilot.behaviour_observations_follow_athlete()', 8)} as follow_athlete_ready,
     exists (
       select 1 from pg_index i
@@ -65,6 +80,11 @@ const READINESS_QUERY = `
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // The migration replaces a trigger on pilot.athletes and adds columns to
+    // two intervention tables, each under an exclusive lock held to commit;
+    // rather than queue the roster behind a long reader, give up and let the
+    // operator re-run in a quieter moment.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);
     const row = readiness.rows[0];

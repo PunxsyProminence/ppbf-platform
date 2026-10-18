@@ -327,7 +327,7 @@ function emptyShadowCounts() {
     shadowFlaggedConversations: 0, shadowFlaggedMessagesDeleted: 0,
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowEventsDeleted: 0, behaviourObservations: 0,
+    shadowEventsDeleted: 0, behaviourObservations: 0, shadowGymBehaviourNotesScrubbed: 0,
   };
 }
 
@@ -809,6 +809,7 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   const counts = {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
+    shadowGymBehaviourNotesScrubbed: 0,
   };
   const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
@@ -824,6 +825,15 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   counts.shadowGymFeedbackScrubbed = await scrub(tables.shadowFeedback, 'shadow_feedback', 'comment');
   counts.shadowGymFlagNotesScrubbed = await scrub(tables.reviewFlags, 'shadow_library_review_flags', 'user_note');
   counts.shadowGymReviewSummariesScrubbed = await scrub(tables.reviewQueue, 'shadow_human_review_queue', 'summary');
+  if (tables.behaviourObservations) {
+    // A coach's report on another child that names this person (a partner
+    // in the drill, say). Capped at the column's 2000, as above.
+    counts.shadowGymBehaviourNotesScrubbed = (await client.query(
+      `update pilot.behaviour_observations set note = left(regexp_replace(note, $2, '[name]', 'gi'), 2000)
+        where organization_id = $1 and note ~* $2`,
+      [organizationId, pattern],
+    )).rowCount ?? 0;
+  }
   if (tables.researchRequirements) {
     // The typed text a research row carries: the requirement (a filed
     // question, verbatim), the knowledge gap, and in metadata the learning
@@ -951,6 +961,31 @@ async function deidentifyShadowChatAudit(client, tables, people) {
   return counts;
 }
 
+/* A COACH'S BEHAVIOUR REPORTS ABOUT THE CHILD (pilot.behaviour_observations, lane
+   L49) are coaching records the learning loop keeps de-identified (Jason
+   2026-10-06; Q5 "Keep coaching, delete medical"): the athlete key becomes
+   the person's token -- the same one the chat log gets -- and the coach's
+   note is kept with the child's names scrubbed, as a coach's chat turn about
+   them is (Jason 2026-10-07, "Scrub the child's name, keep"), or emptied when
+   no usable name is on record. The behaviour, context and timing stay. Runs
+   before the athlete row goes, whose follow trigger deletes any report still
+   naming the child, so a purge that rolls back leaves every report as it was.
+   Other children's notes naming this one are scrubbed with the gym-wide notes
+   (scrubGymNotes). Capped at the column's 2000: [name] can be longer than the
+   name it replaces. */
+async function deidentifyBehaviourObservations(client, tables, athlete, token, names) {
+  if (!tables.behaviourObservations) return 0;
+  const result = await client.query(
+    `update pilot.behaviour_observations
+        set athlete_id = $3,
+            note = case when $4::text is null then '' else left(regexp_replace(note, $4, '[name]', 'gi'), 2000) end,
+            deidentified_at = now()
+      where organization_id = $1 and athlete_id = $2`,
+    [athlete.organization_id, athlete.athlete_id, token, namePattern(names)],
+  );
+  return result.rowCount ?? 0;
+}
+
 /**
  * Does the deleting, and is run in BOTH modes -- the dry run rolls it back.
  *
@@ -969,24 +1004,6 @@ async function deidentifyShadowChatAudit(client, tables, people) {
  * others, and the constraint that blocked it has to reach the log by name or
  * nobody can act on it.
  */
-/* A COACH'S BEHAVIOUR REPORTS ABOUT THE CHILD (pilot.behaviour_observations, lane
-   L49) are coaching records the learning loop keeps de-identified (Jason
-   2026-10-06; Q5 "Keep coaching, delete medical"): the athlete key becomes
-   the person's token -- the same one the chat log gets -- and the coach's
-   typed note goes; the behaviour, context and timing stay. Runs before the
-   athlete row goes, whose follow trigger deletes any report still naming the
-   child, so a purge that rolls back leaves every report as it was. */
-async function deidentifyBehaviourObservations(client, tables, athlete, token) {
-  if (!tables.behaviourObservations) return 0;
-  const result = await client.query(
-    `update pilot.behaviour_observations
-        set athlete_id = $3, note = '', deidentified_at = now()
-      where organization_id = $1 and athlete_id = $2`,
-    [athlete.organization_id, athlete.athlete_id, token],
-  );
-  return result.rowCount ?? 0;
-}
-
 async function attemptPurge(client, athletes, accountIds, { tables, blobStore }) {
   const blocked = {};
   const record = (error) => {
@@ -1222,7 +1239,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // One token for the person (SHADOW_OPERATIONAL_TABLES), minted before
       // the athlete row goes so their behaviour reports can carry it too.
       const token = anonymousToken();
-      const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token);
+      const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token, knownNames);
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -1792,6 +1809,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_review_flag_notes', shadow.shadowGymFlagNotesScrubbed],
       ['shadow_research_rows', shadow.shadowGymResearchScrubbed],
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
+      ['behaviour_observation_notes', shadow.shadowGymBehaviourNotesScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
     [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
