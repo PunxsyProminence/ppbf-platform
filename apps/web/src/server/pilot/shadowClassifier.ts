@@ -57,11 +57,15 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
     /multi.?(step|faceted|dimensional|modal)/i,
     /trade.?off|trade-off/i,
     /edge\s+case/i,
-    /nuance|subtle|context.?dependent/i,
-    /contradictory|conflicting|tension/i,
-    /(what|how|why).{0,20}(if|when).{0,20}(then|else)/i, // Conditional logic
+    // Whole words: "nuance" sits inside "continuance", "tension" inside
+    // "extension", "exception" inside "exceptional", and "how", "if" and
+    // "then" inside "show", "different" and "strengthen", so a plain request
+    // about a jab or a leg day scored as conflicting and conditional.
+    /\b(?:nuance[sd]?|subtle|context.?dependent)\b/i,
+    /\b(?:contradictory|conflicting|tensions?)\b/i,
+    /\b(?:what|how|why)\b.{0,20}\b(?:if|when)\b.{0,20}\b(?:then|else)\b/i, // Conditional logic
     /compare|contrast|versus|vs\./i,
-    /exception|special\s+case/i,
+    /\bexceptions?\b|special\s+case/i,
     /given.*constraint|with.*limitation/i,
   ];
 
@@ -96,24 +100,43 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
 }
 
 /**
- * Detect the primary topic/domain of the query
+ * Detect the primary topic/domain of the query.
+ *
+ * WHOLE WORDS. These were bare substrings, so a topic word anywhere inside a
+ * longer word decided the topic: "rest" in "wrestling" filed a wrestling
+ * question under recovery, "form" in "performance" and "information" under
+ * technique, "set" in "upset" and "train" in "strain" under training, "pain"
+ * in "painting" under medical. The topic is not used to pick a model, but it
+ * is stored as the message topic, the review category and the profile's
+ * recent topics, and those are written back into later prompts -- so a stray
+ * match became a standing statement about what the person asks about.
+ *
+ * The vocabulary is the same; each word now matches whole, with its plain
+ * inflections listed (train, trains, trained, training, trainer), plus the
+ * compounds and prefixed forms the substring match used to catch correctly
+ * (headgear, biomechanics, painkiller, overtraining, untrained, superset,
+ * reinjury, reposition, overconfidence, unsafe, safeguarding, endanger).
+ * A word ends at a letter, not at a digit, so "3sets" and "10reps" still
+ * count. "injury prevention" is checked before medical: it was listed under
+ * safety but could never match, because "injury" won first.
  */
+const TOPIC_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  ['technique', /(?<![a-z])(?:forms?|postures?|(?:bio)?mechanics|movements?|(?:re)?position(?:s|ed|ing|al)?|grip(?:s|ped|ping)?|stances?)(?![a-z])/],
+  ['training', /(?<![a-z])(?:(?:over|under|re|un|cross|pre)?train(?:s|ed|ing|ings|er|ers|ee|ees)?|workouts?|sessions?|(?:super)?sets?|rep(?:s|etitions?)?|exercis(?:e|es|ed|ing)|drill(?:s|ed|ing)?)(?![a-z])/],
+  ['recovery', /(?<![a-z])(?:recover(?:s|ed|ing|y|ies|able)?|rest(?:s|ed|ing|less|ful)?|sleep(?:s|ing|y|less)?|soreness|doms|fatigu(?:e|es|ed|ing)|nutrition(?:al|ist)?)(?![a-z])/],
+  ['safety', /(?<![a-z])injury[\s-]+prevention(?![a-z])/],
+  ['medical', /(?<![a-z])(?:(?:re)?injur(?:y|ies|ed)|pain(?:s|ful|killers?)?|hurt(?:s|ing)?|medical(?:ly)?|doctors?|clinic(?:s|al|ians?)?|treatments?)(?![a-z])/],
+  ['mindset', /(?<![a-z])(?:mental(?:ly|ity)?|psychology|(?:un|re)?focus(?:ed|es|ing)?|(?:over)?confidence|motivation(?:s|al)?|fear(?:s|ed|ful|less)?|anxiety)(?![a-z])/],
+  ['strategy', /(?<![a-z])(?:strateg(?:y|ies)|plan(?:s|ned|ning|ner|ners)?|goals?|approach(?:es|ed|ing)?|method(?:s|ology)?|systems?)(?![a-z])/],
+  ['competition', /(?<![a-z])(?:competitions?|meets?|events?|(?:under|out)?perform(?:s|ed|ing|er|ers|ance|ances)?|record(?:s|ed|ing)?|rankings?)(?![a-z])/],
+  ['safety', /(?<![a-z])(?:(?:un)?safe(?:ly|r|st|ty)?|safeguard(?:s|ed|ing)?|risk(?:s|y|ier|iest|ed|ing)?|(?:en)?danger(?:s|ed|ing|ous|ously)?|emergenc(?:y|ies))(?![a-z])/],
+  ['equipment', /(?<![a-z])(?:equipment|(?:head|mouth)?gears?|shoes?|shoelaces?|uniforms?|technolog(?:y|ies)|devices?)(?![a-z])/],
+];
+
 function detectTopic(message: string, role: PilotRole): string {
   const msg = message.toLowerCase();
 
-  const topicPatterns: [string, RegExp][] = [
-    ['technique', /form|posture|mechanics|movement|position|grip|stance/i],
-    ['training', /train|workout|session|set|rep|exercise|drill/i],
-    ['recovery', /recover|rest|sleep|soreness|doms|fatigue|nutrition/i],
-    ['medical', /injury|pain|hurt|medical|doctor|clinic|treatment/i],
-    ['mindset', /mental|psychology|focus|confidence|motivation|fear|anxiety/i],
-    ['strategy', /strategy|plan|goal|approach|method|system/i],
-    ['competition', /competition|meet|event|perform|record|ranking/i],
-    ['safety', /safe|risk|danger|emergency|injury prevention/i],
-    ['equipment', /equipment|gear|shoe|uniform|technology|device/i],
-  ];
-
-  for (const [topic, pattern] of topicPatterns) {
+  for (const [topic, pattern] of TOPIC_PATTERNS) {
     if (pattern.test(msg)) return topic;
   }
 

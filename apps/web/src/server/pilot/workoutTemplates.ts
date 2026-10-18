@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
 import { requiresFloorValidation } from '../../lib/drillFloorValidation';
 import { writePilotAuditEvent } from './audit';
@@ -111,12 +113,20 @@ export interface WorkoutTemplateItemRow {
  *   head_drill_name           that head's name, what the coach screen shows
  *                             for a linked item. Null exactly when
  *                             head_drill_id is.
+ *   drill_name                the name of the version the item links
+ *                             (drill_id), which differs from head_drill_name
+ *                             once the drill is renamed in a newer version.
+ *                             Whatever names a copy of the item's drill_id
+ *                             takes this one, so the name and the linked
+ *                             version are one version (audit 2026-10-17
+ *                             item 4). Null for a free-text item.
  *   uses_older_drill_version  true when a higher version of the item's drill
  *                             exists. Always false for a free-text item.
  */
 export interface WorkoutTemplateItemWithDrillHead extends WorkoutTemplateItemRow {
   head_drill_id: string | null;
   head_drill_name: string | null;
+  drill_name: string | null;
   uses_older_drill_version: boolean;
 }
 
@@ -182,6 +192,7 @@ export async function getWorkoutTemplateWithItems(
     `select ${ITEM_FIELDS_QUALIFIED},
             head.drill_id as head_drill_id,
             head.name as head_drill_name,
+            pinned.name as drill_name,
             coalesce(head.drill_id <> i.drill_id, false) as uses_older_drill_version
      from pilot.workout_template_items i
      left join pilot.drill_library pinned
@@ -345,6 +356,9 @@ const RETIRED_OTHER_VERSION_REASON =
   'This gym adopted an earlier version of this drill and then retired it. Restore it in the drill library first.';
 const UNREADABLE_DRILL_REASON = 'This drill could not be read from the library.';
 
+const TEMPLATE_NOT_CURRENT_MESSAGE = 'This workout template is no longer in use, so it cannot be issued.';
+const LIBRARY_CHANGED_MESSAGE = 'The drill library changed while this template was being issued. Nothing was issued; try again.';
+
 function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
   return `Nothing was issued. Cannot be assigned as they stand: ${drills.map((drill) => drill.name).join(', ')}.`;
 }
@@ -481,9 +495,12 @@ type AdoptableReference = DrillWithDetail & {
  * meantime), and, for an update in place, updateDrillToReferenceVersion's
  * checks under its lineage lock (retired, already updated, a name clash).
  * Each ends in a rollback and a conflict, never a partial write.
- * NOT re-decided: a reference withdrawn or superseded, another version of a
- * drill adopted, or the template replaced, between this pass and the write --
- * the same windows the promote route has between its checks and its insert.
+ * The template withdrawn or replaced, and a reference this plan adopts
+ * withdrawn or superseded, are asked again under lock as the transaction's
+ * first statements (assertIssueStillCurrent).
+ * NOT re-decided: another version of a drill adopted between this pass and
+ * the write -- the window the promote route has between its checks and its
+ * insert.
  */
 async function planTemplateIssue(
   organizationId: string,
@@ -660,6 +677,61 @@ async function planTemplateIssue(
 }
 
 /**
+ * The currentness the plan judged, asked again on the transaction, under lock
+ * (audit 2026-10-17 item 5). The plan reads without a lock, so a template
+ * replaced or withdrawn, or a reference it adopts withdrawn or superseded,
+ * after the plan and before the write was issued all the same.
+ *
+ * FOR SHARE: a writer that replaces the template or withdraws or supersedes a
+ * reference updates the row, so it waits for this issue to commit, or this
+ * read waits for it -- and then answers from what it committed, never from
+ * before the wait. A drill the gym already runs is not asked about here: an
+ * adopted drill outlives its reference (planTemplateIssue).
+ *
+ * Refused as before the transaction: the template under its own code; a
+ * reference as the library having changed, so the next attempt plans against
+ * what is there now and names the drill with its reason.
+ *
+ * LOCK ORDER: the references first, then the template, the order content
+ * import takes the same rows in (drill library before templates,
+ * contentImport/specs/index.ts), so an import revising both while a coach
+ * issues cannot deadlock against this read.
+ */
+async function assertIssueStillCurrent(
+  client: PoolClient,
+  organizationId: string,
+  templateId: string,
+  adoptedReferenceIds: readonly string[],
+): Promise<void> {
+  if (adoptedReferenceIds.length > 0) {
+    // In drill-id order, the order the plan sorts adoptions in, so two issues lock alike.
+    const references = await client.query<{ drill_id: string; active: boolean; superseded_at: string | null }>(
+      `select drill_id, active, superseded_at from pilot.drill_library
+        where organization_id = $1 and drill_id = any($2::text[])
+        order by drill_id
+          for share`,
+      [organizationId, [...adoptedReferenceIds]],
+    );
+    const current = new Set(
+      references.rows.filter((reference) => reference.active && reference.superseded_at === null).map((reference) => reference.drill_id),
+    );
+    if (adoptedReferenceIds.some((referenceId) => !current.has(referenceId))) {
+      throw new ConflictError(LIBRARY_CHANGED_MESSAGE, 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED');
+    }
+  }
+  const template = await client.query<{ active: boolean; superseded_at: string | null }>(
+    `select active, superseded_at from pilot.workout_templates
+      where organization_id = $1 and template_id = $2
+        for share`,
+    [organizationId, templateId],
+  );
+  const row = template.rows[0];
+  if (!row || !row.active || row.superseded_at !== null) {
+    throw new ConflictError(TEMPLATE_NOT_CURRENT_MESSAGE, 'WORKOUT_TEMPLATE_NOT_CURRENT');
+  }
+}
+
+/**
  * The answer to a request whose key already names an issue, or null when the
  * key names none. A key is one issue's: sent again with a different athlete or
  * template it is refused, never answered with the other issue and never
@@ -725,10 +797,7 @@ export async function issueWorkoutTemplate(params: {
   // Only a current template is issued: not a withdrawn one (the list read
   // leaves those out) and not one a newer version has replaced.
   if (!template.active || template.superseded_at !== null) {
-    throw new ConflictError(
-      'This workout template is no longer in use, so it cannot be issued.',
-      'WORKOUT_TEMPLATE_NOT_CURRENT',
-    );
+    throw new ConflictError(TEMPLATE_NOT_CURRENT_MESSAGE, 'WORKOUT_TEMPLATE_NOT_CURRENT');
   }
   if (items.length === 0) {
     throw new ConflictError('This workout template has no steps to issue.', 'WORKOUT_TEMPLATE_EMPTY');
@@ -741,6 +810,12 @@ export async function issueWorkoutTemplate(params: {
 
   try {
     return await withTransaction(async (client) => {
+      await assertIssueStillCurrent(
+        client,
+        params.organizationId,
+        template.template_id,
+        plan.adoptions.map((reference) => reference.drill_id),
+      );
       const drillByReference = new Map(plan.operational);
       const adopted: TemplateAdoptedDrill[] = [];
       const updated: TemplateUpdatedDrill[] = [];
@@ -913,10 +988,16 @@ export async function issueWorkoutTemplate(params: {
     // asked here, before the drill library's refusal below can say "nothing
     // was issued" about a workout the other send did issue. A collision that
     // was somebody else's adoption finds no issue under this key and falls
-    // through to that refusal, as before.
+    // through to that refusal, as before. The same holds when the other send
+    // committed and the template or a reference then changed before this one's
+    // re-check (assertIssueStillCurrent): the request was issued, and a retry
+    // of it is answered with that issue, not refused.
+    const changedUnderLock = error instanceof ConflictError
+      && (error.code === 'WORKOUT_TEMPLATE_NOT_CURRENT' || error.code === 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED');
     const lostARace = error instanceof WorkoutIssueRequestKeyTakenError
       || error instanceof DrillNameTakenError
-      || error instanceof ReferenceDrillAlreadyPromotedError;
+      || error instanceof ReferenceDrillAlreadyPromotedError
+      || changedUnderLock;
     if (lostARace && requestKey !== null) {
       const repeat = await repeatOfIssuedRequest(params.organizationId, requestKey, params.athleteId, params.templateId);
       if (repeat) return repeat;
@@ -928,10 +1009,7 @@ export async function issueWorkoutTemplate(params: {
     // order, so neither is described to the coach as a standing name clash;
     // the next attempt plans against what is there now and says exactly why.
     if (error instanceof DrillNameTakenError || error instanceof ReferenceDrillAlreadyPromotedError) {
-      throw new ConflictError(
-        'The drill library changed while this template was being issued. Nothing was issued; try again.',
-        'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
-      );
+      throw new ConflictError(LIBRARY_CHANGED_MESSAGE, 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED');
     }
     throw error;
   }
