@@ -2,8 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
-// READ-ONLY. Counts rows two closed privacy holes may have left behind, so a
-// person can decide whether anything needs cleaning up. Counts only.
+// READ-ONLY. Counts rows two privacy holes may have left behind, so a person
+// can decide whether anything needs cleaning up. Counts only.
 //
 // 1. CROSS-SUBJECT CITATIONS (finding F-099). Before #1630, Library search
 //    checked only a chunk's subject: a chunk with no subject under a document
@@ -15,32 +15,49 @@ import { Client } from 'pg';
 //    replayed; it must be gym-wide). SHADOW chat admits athletes and parents,
 //    so such a citation in one of their conversations is another child's
 //    record in someone else's hands.
-//    What counts: a stored citation whose document has a subject that is not
-//    the conversation's athlete (a conversation with no athlete counts too),
-//    grouped by the asking account's role -- a coach reaches every athlete of
-//    the gym (OD-2026-10-11-007), a parent or athlete does not. Citations in
-//    deleted conversations are counted, and shown apart: the app no longer
+//    What counts: a stored citation whose document has a subject that is
+//    neither the conversation's athlete nor the subject the search was scoped
+//    to (the bundle's). The second matters: an athlete's own chat is stored
+//    with no athlete, and the search falls back to the athlete's own record
+//    (shadowEvidence.ts retrieveShadowEvidenceBundle), so their own documents
+//    are not a leak.
+//    Grouped by the asker's role in that gym (their membership, which is the
+//    role the app uses; the account's own role when there is none). A coach or
+//    an organization admin reaches every athlete of the gym
+//    (OD-2026-10-11-007; access.ts assertActorCanAccessAthlete), so their rows
+//    are shown and do not fail the check; every other asker's do. An asker
+//    whose login has an athlete record behind it is counted apart
+//    (citations_by_athlete_logins); one holding a staff role is section 2's
+//    finding and fails the check there. Citations in
+//    deleted conversations are counted and shown apart: the app no longer
 //    shows them, but the rows are still stored.
 //    The app has copied a document's subject onto its chunks since the Library
 //    was written, and the repository's research seed has no subject-scoped
 //    rows, so the expected answer is 0; only a count shows it.
 //
-// 2. ATHLETE LOGINS WITH A STAFF ROLE (finding F-098). Until lane L44's PR A,
-//    assign-admin and transfer-admin promoted an athlete's login (role
-//    'athlete', or an athlete_id behind it) to the gym's organization_admin
-//    with athlete_id kept, and a transfer could then demote it to coach. What
-//    counts: logins with an athlete_id and a role other than 'athlete', by
-//    role; and memberships with a role other than 'athlete' held by an
-//    athlete login, by membership role. Deleted and inactive ones are shown
-//    apart.
+// 2. ATHLETE LOGINS WITH A STAFF ROLE (finding F-098). Until lane L44's PR A
+//    (#1713), assign-admin and transfer-admin promoted an athlete's login
+//    (role 'athlete', or an athlete_id behind it) to the gym's
+//    organization_admin with athlete_id kept, and a transfer could then demote
+//    it to coach. What counts: logins with an athlete_id and a role other than
+//    'athlete', by role; and memberships with a role other than 'athlete' held
+//    by an athlete login, by membership role. Deleted and inactive ones are
+//    shown apart.
+//    What it cannot see: the retention purge unlinks every login from the
+//    athlete it removes, whatever the login's role, so a promoted login whose
+//    athlete has since been purged carries no athlete_id and no longer shows.
 //
 // THERE IS NO APPLY PATH IN THIS FILE. Every statement runs inside one
 // read-only transaction that is rolled back, so PostgreSQL itself refuses a
-// write. Cleanup, if a count is not zero, is a separate decision.
+// write; REPEATABLE READ gives both sections one snapshot. Cleanup, if
+// anything is found, is a separate decision.
 //
-// Exit codes: 0 nothing found, 2 found (somebody needs to look), 1 the check
+// Exit codes: 0 nothing that needs a look, 2 something does, 1 the check
 // itself failed. Counts and role names only: no ids, emails, names or
 // document names are printed.
+
+// The roles that reach every athlete of their gym (access.ts).
+const REACHES_EVERY_ATHLETE = ['coach', 'organization_admin', 'admin'];
 
 function required(name) {
   const value = process.env[name];
@@ -80,17 +97,23 @@ async function countCrossSubjectCitations(client) {
   );
   const libraryOrganization = column.rows[0]?.present === true ? 'ei.library_organization_id' : 'ei.organization_id';
   const counted = await client.query(
-    `select coalesce(a.role, 'unknown') as asker_role,
+    `select coalesce(om.role, a.role, 'unknown') as asker_role,
             count(*)::int as citations,
             count(distinct mc.assistant_message_id)::int as answers,
             count(distinct m.conversation_id)::int as conversations,
-            (count(*) filter (where s.deleted_at is null))::int as citations_in_open_conversations
+            (count(*) filter (where s.deleted_at is null))::int as citations_in_open_conversations,
+            (count(*) filter (where a.role = 'athlete' or a.athlete_id is not null))::int as citations_by_athlete_logins,
+            (count(*) filter (where coalesce(om.role, a.role, 'unknown') <> all($1::text[])))::int as needs_a_look
        from pilot.shadow_message_citations mc
        join pilot.shadow_evidence_items ei
          on ei.evidence_id = mc.evidence_id
         and ei.bundle_id = mc.bundle_id
         and ei.organization_id = mc.organization_id
         and ei.account_id = mc.account_id
+       join pilot.shadow_evidence_bundles b
+         on b.bundle_id = mc.bundle_id
+        and b.organization_id = mc.organization_id
+        and b.account_id = mc.account_id
        join pilot.shadow_library_documents d
          on d.document_id = ei.document_id
         and d.organization_id = ${libraryOrganization}
@@ -103,10 +126,15 @@ async function countCrossSubjectCitations(client) {
         and s.organization_id = m.organization_id
        left join pilot.accounts a
          on a.account_id = mc.account_id
+       left join pilot.organization_memberships om
+         on om.account_id = mc.account_id
+        and om.organization_id = mc.organization_id
       where d.subject_id is not null
         and d.subject_id is distinct from s.athlete_id
+        and d.subject_id is distinct from b.subject_id
       group by 1
       order by 1`,
+    [REACHES_EVERY_ATHLETE],
   );
   const byRole = counted.rows.map((row) => ({
     asker_role: row.asker_role,
@@ -114,9 +142,12 @@ async function countCrossSubjectCitations(client) {
     answers: row.answers,
     conversations: row.conversations,
     citations_in_open_conversations: row.citations_in_open_conversations,
+    citations_by_athlete_logins: row.citations_by_athlete_logins,
+    needs_a_look: row.needs_a_look,
   }));
   return {
     total: byRole.reduce((sum, row) => sum + row.citations, 0),
+    needs_a_look: byRole.reduce((sum, row) => sum + row.needs_a_look, 0),
     by_asker_role: byRole,
   };
 }
@@ -135,7 +166,7 @@ async function countAthleteLoginsWithStaffRoles(client) {
   const memberships = await client.query(
     `select om.role,
             count(*)::int as memberships,
-            (count(*) filter (where om.active_flag and a.deleted_at is null))::int as live
+            (count(*) filter (where om.active_flag and a.active_flag and a.deleted_at is null))::int as live
        from pilot.organization_memberships om
        join pilot.accounts a on a.account_id = om.account_id
       where (a.role = 'athlete' or a.athlete_id is not null)
@@ -158,7 +189,7 @@ async function countAthleteLoginsWithStaffRoles(client) {
 }
 
 export async function countPrivacyLeftovers(client) {
-  await client.query('BEGIN TRANSACTION READ ONLY');
+  await client.query('BEGIN TRANSACTION READ ONLY, ISOLATION LEVEL REPEATABLE READ');
   try {
     return {
       cross_subject_citations: await countCrossSubjectCitations(client),
@@ -181,16 +212,19 @@ export async function run() {
   }
 
   console.log(JSON.stringify({ event: 'privacy_leftovers.checked', ...report }));
-  const citations = report.cross_subject_citations.total;
+  const citations = report.cross_subject_citations;
   const staffRoles = report.athlete_logins_with_staff_roles.total;
-  if (citations === 0 && staffRoles === 0) {
+  if (citations.needs_a_look === 0 && staffRoles === 0) {
+    const coachRows = citations.total > 0
+      ? ` ${citations.total} stored citation(s) of another athlete's document were asked by a coach or organization admin, who reach every athlete of the gym (OD-2026-10-11-007); see by_asker_role.`
+      : ' No stored SHADOW answer cites a Library document filed against another athlete.';
     console.log(
-      'PILOT PRIVACY LEFTOVERS CHECK PASS: no stored SHADOW answer cites a Library document filed against another athlete, and no athlete login holds a staff role or membership (read-only; nothing changed)',
+      `PILOT PRIVACY LEFTOVERS CHECK PASS:${coachRows} No login with an athlete record behind it holds a staff role, and no athlete login holds a staff membership (read-only; nothing changed)`,
     );
     return 0;
   }
   console.log(
-    `PILOT PRIVACY LEFTOVERS CHECK REPORTED: ${citations} stored citation(s) of a Library document filed against an athlete other than the conversation's (cross_subject_citations), and ${staffRoles} athlete login role(s) or membership(s) other than athlete (athlete_logins_with_staff_roles). Cleanup is a separate decision (read-only; nothing changed)`,
+    `PILOT PRIVACY LEFTOVERS CHECK REPORTED: ${citations.needs_a_look} stored citation(s) of a Library document filed against another athlete, asked by someone who does not reach every athlete (cross_subject_citations), and ${staffRoles} athlete login role(s) or membership(s) other than athlete (athlete_logins_with_staff_roles). Cleanup is a separate decision (read-only; nothing changed)`,
   );
   return 2;
 }

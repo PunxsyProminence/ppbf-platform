@@ -1,9 +1,12 @@
 // Real PostgreSQL proof of the privacy-leftovers counts
 // (scripts/pilot-check-privacy-leftovers.mjs):
 // - F-099: a stored SHADOW citation of a Library document filed against an
-//   athlete other than the conversation's own is counted, by the asking
-//   account's role; one of the conversation's own athlete's document, or of a
-//   gym-wide document, is not. A deleted conversation is counted, apart.
+//   athlete other than the conversation's own (and other than the subject the
+//   search was scoped to) is counted, by the asker's role in the gym; one of
+//   the conversation's own athlete's document, an athlete's own document in
+//   their own chat (stored with no athlete), or a gym-wide document is not. A
+//   coach's or an admin's rows are shown and do not fail the check
+//   (OD-2026-10-11-007). A deleted conversation is counted, apart.
 // - F-098: a login with an athlete record behind it and a role other than
 //   athlete is counted, and so is a membership other than athlete held by an
 //   athlete login; an athlete's own athlete membership and a coach's coach
@@ -50,6 +53,9 @@ const PARENT = 'acct-xs-parent';
 const LOGIN_X = 'acct-xs-athlete-x';
 const PROMOTED = 'acct-xs-promoted';
 const ATHLETE_ONLY = 'acct-xs-athlete-only';
+// A coach at home who is a parent in this gym: the role that counts is this
+// gym's membership.
+const MIXED = 'acct-xs-mixed';
 
 interface Report {
   cross_subject_citations: { total: number; by_asker_role: Array<Record<string, unknown>> };
@@ -100,7 +106,7 @@ async function cite(
   accountId: string,
   athleteId: string | null,
   documentId: string,
-  options: { deleted?: boolean } = {},
+  options: { deleted?: boolean; bundleSubject?: string | null } = {},
 ): Promise<void> {
   const conversationId = await uuid();
   const assistantMessageId = await uuid();
@@ -117,9 +123,11 @@ async function cite(
     [assistantMessageId, conversationId, ORG, accountId],
   );
   await db.query(
-    `insert into pilot.shadow_evidence_bundles (bundle_id, organization_id, account_id, query_sha256, availability, item_count)
-     values ($1, $2, $3, repeat('a', 64), 'available', 1)`,
-    [bundleId, ORG, accountId],
+    `insert into pilot.shadow_evidence_bundles (bundle_id, organization_id, account_id, subject_id, query_sha256, availability, item_count)
+     values ($1, $2, $3, $4, repeat('a', 64), 'available', 1)`,
+    // The search's own subject: the conversation's athlete, unless the test
+    // says otherwise (an athlete's own chat is stored with none).
+    [bundleId, ORG, accountId, options.bundleSubject === undefined ? athleteId : options.bundleSubject],
   );
   await db.query(
     `insert into pilot.shadow_evidence_items
@@ -180,7 +188,7 @@ beforeAll(async () => {
     [ORG],
   );
   // The athlete login is linked to its record once the record exists.
-  for (const [accountId, role] of [[COACH, 'coach'], [PARENT, 'parent'], [LOGIN_X, 'athlete']]) {
+  for (const [accountId, role] of [[COACH, 'coach'], [PARENT, 'parent'], [LOGIN_X, 'athlete'], [MIXED, 'coach']]) {
     await db.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
        values ($1, $2, $3, 'microsoft')`,
@@ -200,8 +208,8 @@ beforeAll(async () => {
   // Not leftovers: the athlete's own athlete membership, the coach's coach one.
   await db.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $3, 'athlete', true), ($2, $3, 'coach', true)`,
-    [LOGIN_X, COACH, ORG],
+     values ($1, $5, 'athlete', true), ($2, $5, 'coach', true), ($3, $5, 'parent', true), ($4, $5, 'parent', true)`,
+    [LOGIN_X, COACH, PARENT, MIXED, ORG],
   );
   await db.query(
     `insert into pilot.shadow_library_sources (source_id, organization_id, title, source_type, authority_tier, rights_status)
@@ -253,40 +261,55 @@ async function runCheck(): Promise<number> {
   }
 }
 
+const NO_CITATIONS = { total: 0, needs_a_look: 0, by_asker_role: [] };
+
+function citationRow(asker_role: string, counts: {
+  citations: number; open?: number; byAthleteLogins?: number; needsALook: number;
+}) {
+  return {
+    asker_role,
+    citations: counts.citations,
+    answers: counts.citations,
+    conversations: counts.citations,
+    citations_in_open_conversations: counts.open ?? counts.citations,
+    citations_by_athlete_logins: counts.byAthleteLogins ?? 0,
+    needs_a_look: counts.needsALook,
+  };
+}
+
+// The cases run in order and build on each other's rows, so that each half of
+// the exit-2 gate is shown failing the check on its own.
 describe('the privacy leftovers check', () => {
-  test('with only own-athlete and gym-wide citations and ordinary memberships it finds nothing and exits 0', async () => {
+  test('own-athlete, own-chat and gym-wide citations and ordinary memberships: nothing found, exit 0', async () => {
     await cite(LOGIN_X, ATHLETE_X, 'doc-x');
+    // An athlete's own chat is stored with no athlete; the search was scoped to
+    // their own record (shadowEvidence.ts), so their own document is theirs.
+    await cite(LOGIN_X, null, 'doc-x', { bundleSubject: ATHLETE_X });
     await cite(PARENT, ATHLETE_X, 'doc-gym');
     await cite(COACH, ATHLETE_Y, 'doc-y');
+    // X's own document in a conversation about X, from a search that was not
+    // scoped to X (the gym-wide branch before #1630): still X's.
+    await cite(PARENT, ATHLETE_X, 'doc-x', { bundleSubject: null });
 
     expect(await check.countPrivacyLeftovers(db)).toEqual({
-      cross_subject_citations: { total: 0, by_asker_role: [] },
+      cross_subject_citations: NO_CITATIONS,
       athlete_logins_with_staff_roles: NO_STAFF_ROLES,
     });
     expect(await runCheck()).toBe(0);
   });
 
-  test('F-099: a citation of another athlete\'s document is counted by the asker\'s role; a deleted conversation apart', async () => {
-    // The parent's conversation about X cites Y's document; so does a deleted
-    // one of theirs. The coach's conversation names no athlete and cites Y's.
-    await cite(PARENT, ATHLETE_X, 'doc-y');
-    await cite(PARENT, ATHLETE_X, 'doc-y', { deleted: true });
+  test('F-099: a coach\'s citation of another athlete\'s document is shown and does not fail the check', async () => {
+    // The coach's conversation names no athlete and cites Y's document.
     await cite(COACH, null, 'doc-y');
 
     expect(await check.countPrivacyLeftovers(db)).toEqual({
-      cross_subject_citations: {
-        total: 3,
-        by_asker_role: [
-          { asker_role: 'coach', citations: 1, answers: 1, conversations: 1, citations_in_open_conversations: 1 },
-          { asker_role: 'parent', citations: 2, answers: 2, conversations: 2, citations_in_open_conversations: 1 },
-        ],
-      },
+      cross_subject_citations: { total: 1, needs_a_look: 0, by_asker_role: [citationRow('coach', { citations: 1, needsALook: 0 })] },
       athlete_logins_with_staff_roles: NO_STAFF_ROLES,
     });
-    expect(await runCheck()).toBe(2);
+    expect(await runCheck()).toBe(0);
   });
 
-  test('F-098: an athlete login holding a staff role or membership is counted, live ones apart', async () => {
+  test('F-098: an athlete login holding a staff role or membership is counted, live ones apart, and fails the check alone', async () => {
     // What the old assign-admin left: Y's login made the gym's admin with its
     // athlete record kept. And an athlete login with no record behind it that
     // holds a coach membership, switched off.
@@ -310,7 +333,37 @@ describe('the privacy leftovers check', () => {
         { role: 'organization_admin', memberships: 1, live: 1 },
       ],
     });
-    expect(report.cross_subject_citations.total).toBe(3);
+    // No citation needs a look, so this exit is the staff-role half's alone.
+    expect(report.cross_subject_citations.needs_a_look).toBe(0);
+    expect(await runCheck()).toBe(2);
+
+    // Cleared, so the next case's exit is the citation half's alone.
+    await db.query('delete from pilot.organization_memberships where account_id = any($1::text[])', [[PROMOTED, ATHLETE_ONLY]]);
+    await db.query('delete from pilot.accounts where account_id = any($1::text[])', [[PROMOTED, ATHLETE_ONLY]]);
+    expect((await check.countPrivacyLeftovers(db)).athlete_logins_with_staff_roles).toEqual(NO_STAFF_ROLES);
+  });
+
+  test('F-099: a parent\'s or an athlete\'s citation of another athlete\'s document fails the check; a deleted conversation apart', async () => {
+    // The parent's conversation about X cites Y's document; so does a deleted
+    // one of theirs. The athlete's own chat cites Y's document. And the
+    // account that coaches elsewhere but is a parent here asks as a parent.
+    await cite(PARENT, ATHLETE_X, 'doc-y');
+    await cite(PARENT, ATHLETE_X, 'doc-y', { deleted: true });
+    await cite(LOGIN_X, null, 'doc-y', { bundleSubject: ATHLETE_X });
+    await cite(MIXED, ATHLETE_X, 'doc-y');
+
+    expect(await check.countPrivacyLeftovers(db)).toEqual({
+      cross_subject_citations: {
+        total: 5,
+        needs_a_look: 4,
+        by_asker_role: [
+          citationRow('athlete', { citations: 1, byAthleteLogins: 1, needsALook: 1 }),
+          citationRow('coach', { citations: 1, needsALook: 0 }),
+          citationRow('parent', { citations: 3, open: 2, needsALook: 3 }),
+        ],
+      },
+      athlete_logins_with_staff_roles: NO_STAFF_ROLES,
+    });
     expect(await runCheck()).toBe(2);
   });
 
@@ -328,7 +381,7 @@ describe('the privacy leftovers check', () => {
     }
     const text = lines.join('\n');
     expect(text).toContain('"event":"privacy_leftovers.checked"');
-    for (const secret of [PARENT, COACH, LOGIN_X, PROMOTED, ATHLETE_ONLY, ATHLETE_X, ATHLETE_Y, 'doc-y', 'DOCNAME-', 'Athlete X']) {
+    for (const secret of [PARENT, COACH, LOGIN_X, PROMOTED, ATHLETE_ONLY, MIXED, ATHLETE_X, ATHLETE_Y, ORG, 'src-xs', 'doc-y', 'DOCNAME-', 'Athlete X']) {
       expect(text).not.toContain(secret);
     }
   });
