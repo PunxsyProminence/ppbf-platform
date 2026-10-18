@@ -16,7 +16,6 @@ import { readMedicalStatusOnFile, type ShadowRecommendationRow } from './shadowR
 const TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 const MAX_EVIDENCE = 4;
 const MAX_QUESTION = 2000;
-const DEFAULT_EXPIRY_HOURS = 72;
 
 export type DraftStopReason =
   | 'invalid_request' | 'source_not_found' | 'source_unavailable'
@@ -336,11 +335,12 @@ export async function previewCoachDraft(input: {
   }
   const citations = [...new Set(proposed.citedChunkIds)].map((id) =>
     publicCitation(evidence.find((row) => row.chunk_id === id)!));
+  const issuedAt = Date.now();
   const draft: SignedDraft = {
     version: 1,
     draftId: randomUUID(),
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + TOKEN_LIFETIME_MS,
+    issuedAt,
+    expiresAt: issuedAt + TOKEN_LIFETIME_MS,
     organizationId: input.actor.organizationId,
     athleteId: input.athleteId,
     requestedByAccountId: input.actor.accountId,
