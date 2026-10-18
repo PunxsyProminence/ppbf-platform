@@ -326,6 +326,12 @@ describe('undoSelfMilestone (OD-2026-10-17-003, F-133)', () => {
       expect((await rowOf(client)).undone_at).toBeNull();
       // The account that made it may.
       expect(await undo({ actor: OTHER_ACCOUNT })).not.toBeNull();
+
+      // The cleared athlete is the owner even when the account matches: a mark on the other
+      // athlete's record made from this account is out of reach of this athlete's Undo.
+      await selfMark(WRAPS, OTHER_ATHLETE, ATHLETE_ACCOUNT);
+      expect(await undo({ milestoneKey: WRAPS })).toBeNull();
+      expect((await rowOf(client, WRAPS, OTHER_ATHLETE)).undone_at).toBeNull();
     });
   });
 
