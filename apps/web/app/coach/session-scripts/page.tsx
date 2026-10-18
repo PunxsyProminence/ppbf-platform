@@ -824,8 +824,8 @@ function CoachSessionScripts() {
                     blocks above reaches it (sessionScriptAuthoring.ts,
                     RENDERINGS FOLLOW THE BLOCKS). */}
                 {detail.renderings.length > 0 && (
-                  <section aria-label="Other formats of this plan" className="mt-[var(--s5)] space-y-[var(--s2)]">
-                    <h4 className="t-label">Other formats</h4>
+                  <section aria-labelledby="session-plan-other-formats" className="mt-[var(--s5)] space-y-[var(--s2)]">
+                    <h4 id="session-plan-other-formats" className="t-label">Other formats of this plan</h4>
                     {detail.renderings.map((rendering) => (
                       <details
                         key={rendering.rendering_id}

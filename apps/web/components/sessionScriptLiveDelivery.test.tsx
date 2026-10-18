@@ -969,10 +969,14 @@ describe("the current block's drill instructions", () => {
       drill: () => jsonResponse({ drill: referenceDrill() }),
     });
 
+    const sentBefore = fetchMock.mock.calls.length;
     await act(async () => {
       fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
     });
 
+    // Every request opening the drill sent is a read, to any route.
+    expect(fetchMock.mock.calls.slice(sentBefore).map((call) => (call[1] as RequestInit | undefined)?.method ?? 'GET'))
+      .toEqual(['GET']);
     // The version the block links, by the drill library's own read.
     expect(fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('drill-library')))
       .toEqual(['/api/pilot/drill-library?drill_id=ref-jab-v1']);
@@ -1034,6 +1038,44 @@ describe("the current block's drill instructions", () => {
     });
 
     expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+  });
+
+  it('back on that block, the drill is closed until the coach opens it again', async () => {
+    const moves = [liveRun({ current_block_id: 'blk-3' }), liveRun({ current_block_id: 'blk-2' })];
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({ drill: referenceDrill() }),
+      patch: () => jsonResponse({ run: moves.shift() }),
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+    await screen.findByRole('article', { name: 'Jab drill' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Previous block' }));
+    });
+
+    expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View instructions: Jab drill' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('a block whose chosen scale the drill has no level for opens the starting level as usual', async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: scriptDetail({ blocks: [block('blk-2', 2, 'Jab drill', { drill_id: 'ref-jab-v1', scale_level: 'C' })] }) }),
+      drill: () => jsonResponse({ drill: { ...referenceDrill(), scale_levels: referenceDrill().scale_levels.slice(0, 2) } }),
+    });
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+
+    const drill = await screen.findByRole('article', { name: 'Jab drill' });
+    expect(within(drill).getByText(/where to start/).closest('details')).toHaveAttribute('open');
+    expect(within(drill).queryByText(/chosen for this block/)).not.toBeInTheDocument();
   });
 
   it('a drill the library cannot open says so, not that it is missing', async () => {
