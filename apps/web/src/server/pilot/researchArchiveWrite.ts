@@ -280,7 +280,7 @@ export async function resolveArchiveDomainFolder(
       (item): item is GraphDriveItem & { id: string; name: string } =>
         typeof item.id === 'string'
         && typeof item.name === 'string'
-        && item.folder !== undefined
+        && item.folder != null
         && item.name.startsWith(prefix)
         && (item.parentReference?.id === undefined || item.parentReference.id === config.archiveRootItemId),
     )
@@ -310,8 +310,17 @@ export async function resolveArchiveDomainFolder(
  * same `--<sha12>.pdf`: the same bytes filed earlier under a curator's other
  * file name (a retry after a failed record, say) are found and checked by the
  * caller, rather than filed a second time. The scan is NOT the guard: between
- * it and the write another writer can create the item. The actual guarantee
- * is `conflictBehavior=fail` on the write.
+ * it and the write another writer can create the item. The guard against
+ * overwriting is `conflictBehavior=fail` on the write, and it guards only the
+ * exact name.
+ *
+ * WHERE A SECOND COPY CAN STILL BE FILED, said so nobody relies on more: two
+ * uploads of the same bytes at the same moment under different curator file
+ * names (both scans see nothing; the database keeps one row and the other copy
+ * stays, never deleted); the same bytes filed for sources in different subject
+ * folders, since only the target folder is read; and an original hand-filed
+ * under a name without `--<sha12>.pdf` (SharePoint business drives expose only
+ * quickXorHash, so a hash scan would mean computing that here).
  */
 export async function archiveResearchOriginal(input: {
   config: ResearchArchiveConfig;
@@ -340,7 +349,8 @@ export async function archiveResearchOriginal(input: {
   const existing = (await listChildren(config, token, folder.id, 'subject folder', MAX_SUBJECT_LISTING_PAGES)).find(
     (item) =>
       typeof item.name === 'string'
-      && item.folder === undefined
+      // Absent or null both mean "not a folder": a file is never skipped.
+      && item.folder == null
       && (item.name.toLowerCase() === sameName || item.name.toLowerCase().endsWith(sameBytes)),
   );
   if (existing) {
@@ -403,13 +413,15 @@ export async function archiveResearchOriginal(input: {
     const detail = await response.text();
     throw new Error(`Research archive write failed (${response.status}): ${detail}`);
   }
-  // 201 Created is the only success. Graph answers 200 when a PUT REPLACED an
-  // existing item, so a 200 here would mean conflictBehavior=fail was ignored:
-  // never recorded as filed, and loud.
+  // A heuristic, not a replacement detector: a create answers 201, and
+  // anything else from a create-only write is unexpected, so it is not
+  // recorded as filed. (Microsoft's own examples answer 201 for a replace too,
+  // so a 201 proves nothing about conflictBehavior; the supervised proof in
+  // production checks a second PUT to the same name is refused 409.) A fresh
+  // create that ever answered 200 would fail closed: the retry finds the file
+  // and records it through the read-back.
   if (response.status !== 201) {
-    throw new Error(
-      `Research archive write answered ${response.status}, not 201 Created: an existing item may have been replaced. Not recorded.`,
-    );
+    throw new Error(`Research archive write answered ${response.status}, not 201 Created. Not recorded.`);
   }
 
   const payload = (await response.json()) as GraphDriveItem;
