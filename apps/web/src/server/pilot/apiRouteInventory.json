@@ -12765,7 +12765,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "documents/route.ts:41-42 gate; :121-123 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
+    "notes": "documents/route.ts:46 gate; :149 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
