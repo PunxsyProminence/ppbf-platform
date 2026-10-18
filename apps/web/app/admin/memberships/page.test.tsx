@@ -327,6 +327,27 @@ test('a failed roster read says so in the support picker, and Try again reads it
     .toEqual(['Choose an athlete', 'Casey Stone']);
 });
 
+test("with the roster unread, a row's Support button still names its athlete in the picker", async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await screen.findByText('Athletes could not be read');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Support provided to Jordan Little' }));
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.value).toBe('ath-1');
+  expect(picker.options[picker.selectedIndex].textContent).toBe('Jordan Little');
+});
+
 test('the support picker says it is loading until the roster read comes back', async () => {
   let answerRoster: (() => void) | null = null;
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
@@ -346,6 +367,7 @@ test('the support picker says it is loading until the roster read comes back', a
   const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
   expect(picker.disabled).toBe(true);
   expect(picker.options[0].textContent).toBe('Loading athletes…');
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
 
   await act(async () => {
     answerRoster?.();

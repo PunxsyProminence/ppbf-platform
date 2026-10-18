@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
@@ -250,6 +250,13 @@ export default function MembershipsPage() {
   const [newProgramName, setNewProgramName] = useState('');
   const [catalogProgramName, setCatalogProgramName] = useState('');
   const [supportAthleteId, setSupportAthleteId] = useState('');
+  // A row's Support button can pick an athlete the roster does not list (the roster
+  // was not read): the picker then offers that athlete too, so it names who is shown.
+  const supportAthletes = useMemo(() => {
+    if (!supportAthleteId || athletes.some((athlete) => athlete.athlete_id === supportAthleteId)) return athletes;
+    const row = items.find((item) => item.athlete_id === supportAthleteId);
+    return row ? [...athletes, { athlete_id: row.athlete_id, full_name: row.athlete_name }] : athletes;
+  }, [athletes, items, supportAthleteId]);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -647,7 +654,7 @@ export default function MembershipsPage() {
             </section>
           )}
 
-          <SupportSection athletes={athletes} athletesLoad={athletesLoad} onRetryAthletes={() => setAthletesNonce((n) => n + 1)}
+          <SupportSection athletes={supportAthletes} athletesLoad={athletesLoad} onRetryAthletes={() => setAthletesNonce((n) => n + 1)}
             athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
           {/* The catalog itself: every persistent group this gym runs, with

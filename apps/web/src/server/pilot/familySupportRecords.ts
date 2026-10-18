@@ -147,19 +147,39 @@ export async function retireSupport(actor: SupportActor, recordId: string): Prom
   if (!current) return null;
   if (current.retired) throw new ConflictError('This record is already retired.');
 
+  // The athlete's live check holds at the write, as in recordSupport: FOR SHARE waits
+  // out a withdrawal in flight and reads the row again, so a record of an athlete
+  // withdrawn while this runs is not retired.
   let retired: { record_id: string } | null;
   try {
     retired = await queryOne<{ record_id: string }>(
-      `update pilot.family_support_records
+      `update pilot.family_support_records r
           set retired_by_account_id = $3
-        where organization_id = $1 and record_id = $2::uuid and retired_at is null
-        returning record_id::text as record_id`,
+        where r.organization_id = $1 and r.record_id = $2::uuid and r.retired_at is null
+          and exists (
+            select 1 from pilot.athletes ath
+             where ath.organization_id = r.organization_id and ath.athlete_id = r.athlete_id
+               and ath.deleted_at is null
+             for share)
+        returning r.record_id::text as record_id`,
       [actor.organizationId, recordId, actor.accountId],
     );
   } catch (error) {
     return seatRefusal(error);
   }
-  // The record was live a moment ago; no row now means another retire got there first.
-  if (!retired) throw new ConflictError('This record is already retired.');
+  if (!retired) {
+    // The record was live a moment ago. If its athlete was withdrawn since, it is the
+    // same hidden not-found the list gives; otherwise another retire got there first.
+    const athleteLive = await queryOne<{ live: boolean }>(
+      `select true as live
+         from pilot.family_support_records r
+         join pilot.athletes ath
+           on ath.organization_id = r.organization_id and ath.athlete_id = r.athlete_id and ath.deleted_at is null
+        where r.organization_id = $1 and r.record_id = $2::uuid`,
+      [actor.organizationId, recordId],
+    );
+    if (!athleteLive) return null;
+    throw new ConflictError('This record is already retired.');
+  }
   return retired;
 }
