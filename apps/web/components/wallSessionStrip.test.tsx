@@ -253,6 +253,13 @@ describe('the session on a paired TV', () => {
     });
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    // The retry ramp's first step is also 5 s; a second miss proves the session keeps the short poll
+    // (without it the wall would wait 10 s now).
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('says "Last block." only on the last block, and nothing when the coach is on none', async () => {
