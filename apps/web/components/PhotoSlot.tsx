@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 
-import { gymPhotoSrc, type GymPhotoSlot } from '@/src/shared/gymPhotos';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
+import { gymPhotoSlotText, gymPhotoSrc, type GymPhotoSlot } from '@/src/shared/gymPhotos';
 
 /**
  * ONE FRAME ON THE WALL.
@@ -53,6 +54,7 @@ export interface PhotoSlotProps {
 
 export default function PhotoSlot({ slot, shape = 'wide', className = '', uploadedSrc = null }: PhotoSlotProps) {
   const [failed, setFailed] = useState(false);
+  const text = gymPhotoSlotText(slot, useOrganizationProfile());
   const src = uploadedSrc ?? gymPhotoSrc(slot.file);
   const showPhoto = src !== null && !failed;
 
@@ -67,7 +69,7 @@ export default function PhotoSlot({ slot, shape = 'wide', className = '', upload
              optimizer must NOT proxy (its cache has no idea about sessions).
              Either way the optimizer would only add a build dependency. */
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={slot.alt} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+          <img src={src} alt={text.alt} loading="lazy" decoding="async" onError={() => setFailed(true)} />
         ) : (
           /* The mount, empty. Nothing is announced to a screen reader here: an
              empty frame is furniture, and the caption below already says in
@@ -77,7 +79,7 @@ export default function PhotoSlot({ slot, shape = 'wide', className = '', upload
       </div>
       <figcaption className="photo-slot-caption">
         <span className="photo-slot-title">{slot.title}</span>
-        <span className="photo-slot-note">{slot.caption}</span>
+        <span className="photo-slot-note">{text.caption}</span>
       </figcaption>
     </figure>
   );
