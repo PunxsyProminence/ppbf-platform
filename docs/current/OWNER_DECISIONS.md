@@ -164,6 +164,94 @@ and should not try to.
 
 ---
 
+## OD-2026-10-18-003 -- Who ratifies the coaching pattern bar: "A: Gym admin only (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 20442, 2026-10-18T15:27:11.325Z; answered at line 20444, 2026-10-18T15:32:01.307Z). Read by script (housekeeping lane HK, 2026-10-18, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because this UTC time is the morning of 2026-10-18 Eastern. It settles who sets the bar, which OD-2026-10-17-022 item 3 left unpicked, for the numbers OD-2026-10-17-027 approved. New; edits no earlier entry.
+
+**Question "Ratify bar".** Overwatch, as written: "Who may ratify (put in force) the coaching pattern bar you approved (Emerging/Pattern/Established numbers, lesson labels, calibration)? Codex flagged that the save button exists before you've picked. A: keep the save, limited to the gym-admin role signed in with Microsoft (today that is only your ppbf@ login). B: ship read-only now and add the save later when its screen is built." Options as written: "A: Gym admin only (Rec.)": "Only ppbf@ (you, gym-admin, Microsoft sign-in) can put the approved numbers in force. Nothing reads them until the Phase 2 screens anyway."; "B: Read-only for now": "No save button until the Phase 2 form; you'd confirm then.". Jason: *"A: Gym admin only (Rec.)"*
+
+**Ruling:** the save that puts the approved bar in force stays, limited to the gym-admin role signed in with Microsoft; per the card, today that is only his ppbf@ login. "B: Read-only for now" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-18):** Overwatch told lane L49 (line 20449): "Keep POST, limited to organization_admin (drop the legacy 'admin'), behind requireMicrosoftAuthenticatedPrincipal."
+
+**Status:** ruled; not checked as built by this records pass.
+
+---
+
+## OD-2026-10-18-002 -- Release 30: unfreeze, ship tomorrow ("A: Unfreeze, ship tomorrow (Rec.)"); shipped fe3c6bee
+
+**Provenance: PRIMARY.** His card answer and typed messages in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps per item). Read by script (housekeeping lane HK, 2026-10-18, at Overwatch's request). His words are quoted exactly, spelling and spacing kept; the card's question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because the ruling (the card answer, 04:32Z) is just after midnight, 2026-10-18 Eastern; the first three items of the trail fall on the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-034 (ship Release 30 on PR tests). New; edits no earlier entry.
+
+**The trail, in time order:**
+
+1. Line 17498, 2026-10-18T02:19:46.926Z: *"Let's go ahead and stage after test passes"*. Overwatch (line 17533): "Merges are frozen. I'm staging main 99025885 once its tests pass; they're queued in the CI backlog now."
+2. Line 18154, 2026-10-18T02:57:18.546Z: *"Unfreeze "* (ending in a space). Overwatch (line 18164): "Lifting the freeze now. Release 30 staging is paused: merges move main forward, so I'll cut the release later from a newer tested head." That ended the attempt to stage 99025885.
+3. OD-2026-10-17-034, answered 03:45:28Z: "A: Ship on PR tests (Rec.)"; Overwatch froze merges with main at `ab0224e2`.
+4. Line 19339, 2026-10-18T04:03:53.894Z: *"I approved it"*, after Overwatch's line 19337: "Still waiting on your production database approval: https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39095426701" Overwatch (line 19363): "Thanks. The production database update is running now (OBSERVED: in_progress), and I'll confirm when it passes." That run (research-archive-originals) concluded success at 2026-10-18T04:07:07Z (gh run view).
+5. The card, put at line 19657 (2026-10-18T04:31:00.623Z), answered at line 19659 (2026-10-18T04:32:06.284Z). Question "Before bed", as written: "Release 30 is deploying to staging now (about 10-15 more minutes). Production needs your signed-in look on staging (Family Goals as a parent, the Safety strip and gym profile editor as gym admin) plus your production click. Merges stay frozen until production is dispatched. What do you want before bed?" Options as written: "A: Unfreeze, ship tomorrow (Rec.)": "Lanes keep merging overnight (~20 GREEN PRs land). Tomorrow I stage a fresh head with Release 31's database changes too, and you do one check + clicks."; "B: I'll check tonight": "I'll send the staging link and checklist when it's up; merges stay frozen until you click production."; "C: Keep frozen overnight": "Nothing merges overnight; you check staging in the morning.". Jason: *"A: Unfreeze, ship tomorrow (Rec.)"*
+6. Line 20739, 2026-10-18T16:23:51.846Z: *"Un freeze"*, after Overwatch's line 20737: "If you won't get to the staging look soon, say "unfreeze" and I'll re-stage later."
+7. Line 20759, 2026-10-18T16:24:07.615Z: *"Loo,s good"*, his staging look. Overwatch (line 20766): "Thanks. Re-freezing right away: production can only deploy main's current head, and I just unfroze. Checking whether anything merged in between." Then (line 20772): "Main is still at the staged commit (OBSERVED: fe3c6bee). Starting the production deploy."
+
+**Ruling:** Release 30 did not ship from `ab0224e2`. Merges reopened overnight, and the release was cut later from a newer tested head ("A: Unfreeze, ship tomorrow (Rec.)"). "B: I'll check tonight" and "C: Keep frozen overnight" were not chosen. Readings (Overwatch's and this records pass's): his "Loo,s good" answers Overwatch's request for his staging look (line 20737) on the head that shipped; his "I approved it" reports his GitHub approval of the production migration run 39095426701, whose apply job started at 04:03:49Z, about five seconds before his message (gh run view).
+
+**Acted on:** `ab0224e2` was staged (deploy-staging run 39097020732, success, 2026-10-18T04:32:15Z) and never shipped. Release 30 shipped from `fe3c6bee29ab75167212d1fd45e5c24916df012b`: deploy-staging run 39140424325; production migrations run 39140422123 (success 15:47:40Z); deploy-production run 39144853964 (success 16:27:06Z). The run records are in `docs/current/PRODUCTION_STATE.json`.
+
+**Status:** ruled and shipped.
+
+---
+
+## OD-2026-10-18-001 -- The coach live-session screen in look B is approved: "A: Approve (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 19326, 2026-10-18T04:02:50.832Z; answered at line 19328, 2026-10-18T04:03:08.922Z). Read by script (housekeeping lane HK, 2026-10-18, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because this UTC time is just after midnight, 2026-10-18 Eastern (00:03). It follows OD-2026-10-17-028 (gym TV look B). New; edits no earlier entry.
+
+**What was sent first.** Overwatch sent three screenshots from lane L39 (line 19325, 2026-10-18T04:02:48.788Z), under `Documents\PPBF-overwatch\lane-inbox\L39-shots\`: `pr3-after-723a8fff/coach-console-tablet-1280.png`, `pr3-before-main-ab0224e2/coach-console-tablet-1280.png`, `pr3-after-723a8fff/coach-console-phone-390.png`, captioned "Coach live-session screen in look B: AFTER (tablet), BEFORE (tablet), AFTER (phone). Mocked data on a local copy, so the numbers are fake and don't agree with each other."
+
+**Question "Coach look".** Overwatch, as written: "Coach live-session screen in look B (screenshots above): new top row of tiles (Attendance today, Need attention for your athletes by severity + pain reports, SHADOW queue), restyled Pause/Previous/Next and timer, block list with icons and Earlier/Current/Upcoming. Approve the look so PR #1751 can merge?" Options as written: "A: Approve (Rec.)": "Matches the TV look you approved; counts only, real reads, a failed read says 'Could not read', never 0."; "B: Changes first": "Say what to change in Other; the lane re-shoots.". Jason: *"A: Approve (Rec.)"*
+
+**Ruling:** the coach live-session screen's look B, as in those screenshots, is approved, so PR #1751 can merge. "B: Changes first" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-18):** Overwatch told lane L39 (line 19331): "Once both reviewers are clear: mark #1751 ready and post GREEN. Merges are frozen for Release 30 right now, so it lands after the release."
+
+**Status:** ruled; whether #1751 merged was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-035 -- The daily check-in's short form: motivation moves behind "Add more detail" (his typed "Go with you recommendation ")
+
+**Provenance: PRIMARY.** His typed message in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; queued at line 19207, 2026-10-18T03:56:09.254Z), quoted exactly, ending in a space. Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-023 item 1 (the check-in additions). New; edits no earlier entry.
+
+**What was put to him.** Lane L58 reported (line 19191): "A reviewer suggested moving motivation behind "+ Add more detail" to match the 5-item research set. Not ruled; I left it." Overwatch then wrote to Jason (line 19205, 2026-10-18T03:53:50.376Z), as written: "L58's second PR (#1754: mood, stress and the session tag on screen) is GREEN. I've held it until its database change is in production. One open product point, which I left as is: the short check-in form now has 5 ratings plus sleep and weight. A reviewer suggested moving "motivation" behind "Add more detail". Say if you want that." That message states no recommendation of its own.
+
+**His answer** (line 19207, 2026-10-18T03:56:09.254Z): *"Go with you recommendation "*
+
+**What followed.** About four seconds later Overwatch wrote (line 19214, 2026-10-18T03:56:13.036Z): "My recommendation: move "motivation" behind "Add more detail". That keeps the daily form to the 5 research-backed items (sleep, energy, soreness, mood, stress), and motivation can still be answered when expanded."
+
+**Ruling (first a reading, Overwatch's and this records pass's; confirmed by him below):** his words accept a recommendation, and the only proposal before him was the reviewer's, so motivation moves behind "Add more detail": the short form keeps the five research-backed items (sleep, energy, soreness, mood, stress), and motivation can still be answered when the form is expanded. Overwatch's recommendation was written down only after his answer; his words govern.
+
+**His confirmation** (PRIMARY). Overwatch put the order of events to him (line 19271, 2026-10-18T03:59:13.370Z), as written: "A correction for you, caught by HK: when you said "go with your recommendation" on motivation, I hadn't actually stated one yet. The only proposal on the table was the reviewer's (move motivation behind "Add more detail"), and that's what we're building and recording. If you meant something else, say so." Jason (queued at line 19273, 2026-10-18T04:01:10.425Z): *"No that was it"*. Read (Overwatch's and this records pass's) as confirming the correction, so the ruling stands as moving motivation behind "Add more detail".
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L58 (line 19215) to make the move in #1754, adding "Its stored values and meaning don't change."
+
+**Status:** ruled; not checked as built by this records pass.
+
+---
+
+## OD-2026-10-17-034 -- How Release 30 goes: "A: Ship on PR tests (Rec.)"
+
+**Provenance: PRIMARY.** The first question of a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 19113, 2026-10-18T03:43:23.309Z; answered at line 19114, 2026-10-18T03:45:28.547Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Release 30".** Overwatch, as written: "Deploy readiness: main has 26 changes since Release 29 and one new database change (research archive originals; staging update queued). Blocker: GitHub is running only 2-6 test jobs at once with 61 runs queued, so main's own test runs (18 of them, one per merge) could take hours. Every one of those changes passed its own PR tests before merging. How should Release 30 go?" Options as written: "A: Ship on PR tests (Rec.)": "Release once the newest main run passes. We rely on each PR's own tests, the staging checks and your signed-in look; we skip waiting for the 18 per-merge main runs. Faster; small risk two PRs clash in a way only main's runs would catch."; "B: Wait for all runs": "Release only after all 18 main runs pass. Safest, but likely hours at this queue speed."; "C: Not now": "Keep merging; release later.". Jason: *"A: Ship on PR tests (Rec.)"*
+
+**Ruling:** Release 30 ships once the newest main run passes, relying on each PR's own tests, the staging checks and his signed-in look; the per-merge main runs are not waited for. "B: Wait for all runs" and "C: Not now" were not chosen. The card names the risk he accepted: two PRs may clash in a way only main's runs would catch.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch (line 19118): "Freezing merges now at the current main, and cancelling the queued per-merge main runs, which your option A skips." Its next command (line 19119) set its merge-freeze flag and selected the queued main `ci` runs whose head is not main's head, which was `ab0224e2b4ebb038a89b06e6f1422c829d8e6ae9` (line 19120); its command output was "cancelled 17 of 17" (line 19124). Those are Overwatch's actions under his pick.
+
+**Status:** ruled; Release 30 was not checked as shipped by this records pass.
+
+**Status (2026-10-18):** Release 30 did not ship from `ab0224e2`. Jason then chose "A: Unfreeze, ship tomorrow (Rec.)" (OD-2026-10-18-002), and Release 30 shipped from `fe3c6bee` on 2026-10-18 (deploy-production run 39144853964).
+
+---
+
 ## OD-2026-10-17-033 -- Cycle tracking data when an athlete's account is deleted: "A: Delete at once (Rec.)"
 
 **Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 18893, 2026-10-18T03:29:53.807Z; answered at line 18903, 2026-10-18T03:36:41.200Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-023 item 4 (cycle tracking is built now). New; edits no earlier entry.
@@ -203,6 +291,8 @@ and should not try to.
 **Acted on:** the card asks Jason to make the check and any upgrade himself. Overwatch also changed the lane rules so lanes post GREEN without waiting for CI (LANE-COMMON-RULES rule 9, dated "~02:15Z" in that file); that is Overwatch's call, not his ruling.
 
 **Status:** ruled; whether the plan was checked or upgraded was not checked by this records pass.
+
+**Status (2026-10-17), answered (PRIMARY):** asked again on a later card (second question, "GitHub plan", line 19113, 2026-10-18T03:43:23.309Z): "Did you check GitHub billing for the concurrent-job limit (the earlier 'I'll check + upgrade')?" Options as written: "Not yet": "I'll remind you; the queue stays slow until then."; "Upgraded": "I'll watch whether more jobs run at once."; "Already on Team": "Then the limit is something else; I'll dig further.". Jason (line 19114, 2026-10-18T03:45:28.547Z): *"Upgraded"*. Whether more jobs now run at once was not checked by this records pass.
 
 ---
 

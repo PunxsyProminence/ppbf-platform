@@ -2,7 +2,14 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { configureRoundTimer, moveRoundTimer, readOwnRoundTimer, type RoundTimerView } from '@/src/server/pilot/roundTimers';
+import {
+  adjustRoundTimer,
+  configureRoundTimerRevised,
+  moveRoundTimerRevised,
+  readOwnRoundTimerRevised,
+  readRoundTimerRevision,
+  type RoundTimerView,
+} from '@/src/server/pilot/roundTimers';
 import { SessionScriptRunError } from '@/src/server/pilot/sessionScriptRuns';
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -11,15 +18,19 @@ jest.mock('@/src/server/pilot/http', () => ({
 }));
 jest.mock('@/src/server/pilot/roundTimers', () => ({
   ...jest.requireActual('@/src/server/pilot/roundTimers'),
-  configureRoundTimer: jest.fn(),
-  moveRoundTimer: jest.fn(),
-  readOwnRoundTimer: jest.fn(),
+  configureRoundTimerRevised: jest.fn(),
+  moveRoundTimerRevised: jest.fn(),
+  readOwnRoundTimerRevised: jest.fn(),
+  adjustRoundTimer: jest.fn(),
+  readRoundTimerRevision: jest.fn(),
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
-const mockConfigure = jest.mocked(configureRoundTimer);
-const mockMove = jest.mocked(moveRoundTimer);
-const mockRead = jest.mocked(readOwnRoundTimer);
+const mockConfigure = jest.mocked(configureRoundTimerRevised);
+const mockMove = jest.mocked(moveRoundTimerRevised);
+const mockRead = jest.mocked(readOwnRoundTimerRevised);
+const mockAdjust = jest.mocked(adjustRoundTimer);
+const mockRevision = jest.mocked(readRoundTimerRevision);
 
 const TIMER: RoundTimerView = {
   state: 'ready',
@@ -61,9 +72,11 @@ const CONFIGURE = { action: 'configure', round_seconds: 180, rest_seconds: 60, r
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockConfigure.mockResolvedValue(TIMER);
-  mockMove.mockResolvedValue({ ...TIMER, state: 'running', phase: 'work', round: 1, seconds_left: 180 });
-  mockRead.mockResolvedValue(TIMER);
+  // The revision rides with the timer it was read or written with (Codex review of #1742).
+  mockConfigure.mockResolvedValue({ timer: TIMER, revision: '11' });
+  mockMove.mockResolvedValue({ timer: { ...TIMER, state: 'running', phase: 'work', round: 1, seconds_left: 180 }, revision: '12' });
+  mockRead.mockResolvedValue({ timer: TIMER, revision: '13' });
+  mockRevision.mockResolvedValue(null);
 });
 
 describe('GET: the coach screens read the shared timer', () => {
@@ -72,7 +85,7 @@ describe('GET: the coach screens read the shared timer', () => {
     const response = await get();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({ timer: TIMER });
+    expect(await response.json()).toEqual({ timer: TIMER, revision: '13' });
     expect(mockRead).toHaveBeenCalledWith('org-1', 'acct-coach', 'ssrun_1');
   });
 
@@ -99,7 +112,7 @@ describe('POST: configure, start, pause, resume, end', () => {
       restSeconds: 60,
       roundsTotal: 3,
     });
-    expect(await response.json()).toEqual({ timer: TIMER });
+    expect(await response.json()).toEqual({ timer: TIMER, revision: '11' });
   });
 
   it.each(['start', 'pause', 'resume', 'end'])('%s is one named move', async (action) => {
@@ -132,8 +145,8 @@ describe('POST: configure, start, pause, resume, end', () => {
     [{ action: 'start', started_at: '2026-10-12T18:00:00Z' }, 'UNEXPECTED_FIELD:started_at'],
     [{ action: 'pause', seconds_left: 10 }, 'UNEXPECTED_FIELD:seconds_left'],
     [{ ...CONFIGURE, state: 'running' }, 'UNEXPECTED_FIELD:state'],
-    [{ action: 'restart' }, 'action:expected one of configure|start|pause|resume|end'],
-    [{}, 'action:expected one of configure|start|pause|resume|end'],
+    [{ action: 'restart' }, 'action:expected one of configure|start|pause|resume|end|add_30|repeat'],
+    [{}, 'action:expected one of configure|start|pause|resume|end|add_30|repeat'],
   ])('refuses a client-sent time, state or unknown action: %j', async (body, code) => {
     as('coach');
     const response = await post(body);
@@ -167,5 +180,73 @@ describe('POST: configure, start, pause, resume, end', () => {
     const response = await post({ action: 'start' });
     expect(response.status).toBe(status);
     expect(await response.json()).toEqual({ error: code });
+  });
+});
+
+// +30 SEC and REPEAT (OD-2026-10-17-010): named actions that carry the revision the screen read.
+describe('POST add_30 / repeat', () => {
+  const RUNNING: RoundTimerView = { ...TIMER, state: 'running', phase: 'work', round: 2, seconds_left: 110 };
+
+  it.each(['add_30', 'repeat'] as const)('%s passes the action and the revision through, and answers with the next revision', async (action) => {
+    as('coach');
+    mockAdjust.mockResolvedValue({ timer: RUNNING, revision: '1760724000000002' });
+    const response = await post({ action, revision: '1760724000000001' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ timer: RUNNING, revision: '1760724000000002' });
+    expect(mockAdjust).toHaveBeenCalledWith('org-1', 'acct-coach', 'ssrun_1', action, '1760724000000001');
+    expect(mockMove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ action: 'add_30' }],
+    [{ action: 'add_30', revision: 1760724000000001 }],
+    [{ action: 'repeat', revision: 'abc' }],
+    [{ action: 'repeat', revision: '' }],
+  ])('refuses %j without a revision it can compare', async (body) => {
+    as('coach');
+    const response = await post(body);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'revision' });
+    expect(mockAdjust).not.toHaveBeenCalled();
+  });
+
+  it('refuses any other field, as every action here does', async () => {
+    as('coach');
+    const response = await post({ action: 'add_30', revision: '1', seconds: 30 });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'UNEXPECTED_FIELD:seconds' });
+  });
+
+  it('a revision on start, pause, resume or end is still an unexpected field', async () => {
+    as('coach');
+    const response = await post({ action: 'pause', revision: '1' });
+    expect(await response.json()).toEqual({ error: 'UNEXPECTED_FIELD:revision' });
+  });
+
+  it.each([
+    ['ROUND_TIMER_STALE', 409],
+    ['ROUND_TIMER_TOO_EARLY', 409],
+    ['SESSION_RUN_NOT_FOUND', 404],
+  ])('a refusal from the module answers %s with %d', async (code, status) => {
+    as('coach');
+    mockAdjust.mockRejectedValue(new SessionScriptRunError(code, status));
+    const response = await post({ action: 'add_30', revision: '1' });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: code });
+  });
+
+  it('every answer with a timer carries the revision of that very timer, never a second read', async () => {
+    as('coach');
+    mockRevision.mockResolvedValue('99');
+    expect(await (await get()).json()).toEqual({ timer: TIMER, revision: '13' });
+    expect(await (await post({ action: 'start' })).json()).toMatchObject({ revision: '12' });
+    expect(await (await post(CONFIGURE)).json()).toMatchObject({ revision: '11' });
+    expect(mockRevision).not.toHaveBeenCalled();
+  });
+
+  it('no timer, no revision', async () => {
+    as('coach');
+    mockRead.mockResolvedValue(null);
+    expect(await (await get()).json()).toEqual({ timer: null });
   });
 });

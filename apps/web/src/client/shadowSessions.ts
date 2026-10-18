@@ -45,10 +45,17 @@ export interface StoredShadowConversationMessage {
   content: string;
   responseState: StoredShadowResponseState | null;
   evidenceTier: StoredShadowEvidenceTier | null;
+  evidenceAlsoCites?: StoredShadowEvidenceTier[];
+  evidenceSourceGraded?: boolean;
   handoff: string | null;
   createdAt: string;
   citations: StoredShadowCitation[];
 }
+
+// Which evidence badge an answer carries: "Strongest source: <grade>" when a
+// cited source graded it, "Evidence: <grade>" when the server graded it from
+// no cited source, none when the server never graded it.
+export type ShadowEvidenceBadgeKind = 'source' | 'answer';
 
 export interface RestoredShadowMessage {
   id: string;
@@ -57,6 +64,8 @@ export interface RestoredShadowMessage {
   timestamp: string;
   state?: StoredShadowResponseState;
   evidenceTier: StoredShadowEvidenceTier;
+  evidenceAlsoCites?: StoredShadowEvidenceTier[];
+  evidenceBadge?: ShadowEvidenceBadgeKind;
   handoff?: string;
   citations?: StoredShadowCitation[];
   feedbackEligible: boolean;
@@ -179,10 +188,23 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
     content: requiredString(value, 'content'),
     responseState,
     evidenceTier: isStoredEvidenceTier(evidenceTier) ? evidenceTier : null,
+    evidenceAlsoCites: parseAlsoCites(value.evidenceAlsoCites),
+    evidenceSourceGraded: value.evidenceSourceGraded === true,
     handoff: typeof handoff === 'string' && handoff.trim() ? handoff : null,
     createdAt: requiredIsoTimestamp(value, 'createdAt'),
     citations: parseCitations(value.citations),
   };
+}
+
+// Absent (a server older than this client) is no line, and a grade this client
+// does not know is left out rather than refusing the whole conversation; a
+// value that is not a list is malformed.
+function parseAlsoCites(value: unknown): StoredShadowEvidenceTier[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+  }
+  return value.filter(isStoredEvidenceTier);
 }
 
 // An absent field is not malformed -- rows written before citations were
@@ -484,6 +506,14 @@ export function mapStoredShadowMessage(
     evidenceTier: message.role === 'assistant'
       ? (message.evidenceTier ?? RESTORED_MESSAGE_FALLBACK_TIER)
       : RESTORED_MESSAGE_FALLBACK_TIER,
+    evidenceAlsoCites: message.role === 'assistant' && message.evidenceAlsoCites?.length
+      ? message.evidenceAlsoCites
+      : undefined,
+    // Only an answered row carries a badge: a withheld one, or one stored with
+    // no grade (written before grades existed), shows none.
+    evidenceBadge: message.role === 'assistant' && state === 'ok' && message.evidenceTier
+      ? (message.evidenceSourceGraded ? 'source' : 'answer')
+      : undefined,
     handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,
     // Receipts belong to SHADOW's answers only, and an empty list stays
     // undefined so the renderer draws no empty Sources block.
