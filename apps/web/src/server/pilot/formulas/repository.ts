@@ -582,21 +582,129 @@ export async function listActiveFormulaResults(input: {
   return rows.map(rowToFormulaResult);
 }
 
+/**
+ * The CURRENT results an observation feeds, for re-running when that one
+ * observation is corrected.
+ *
+ * A result some OTHER input of which was corrected earlier is not current: it
+ * was already replaced when that earlier correction re-ran it. Re-running it
+ * now would hand the runner an id that is already superseded, and
+ * getActiveFormulaObservationsByIds refuses that -- so fixing two numbers of
+ * one sparring entry, one after the other, failed the second fix after it had
+ * been stored. The exclusion is the readers' own (listLatestFormulaResultsPerOutput
+ * below), minus the observation being replaced right now, which is already
+ * superseded by the time this runs and is exactly the input being swapped.
+ */
 export async function findFormulaResultsUsingObservation(input: {
   organizationId: string;
   athleteId: string;
   observationId: string;
 }): Promise<FormulaResult[]> {
   const rows = await query<PersistedFormulaResultRow>(
-    `select *
-     from pilot.shadow_formula_results
-     where organization_id = $1
-       and athlete_id = $2
-       and $3 = any(input_observation_ids)
-     order by computed_at asc, formula_id asc, output_key asc`,
+    `select r.*
+     from pilot.shadow_formula_results r
+     where r.organization_id = $1
+       and r.athlete_id = $2
+       and $3 = any(r.input_observation_ids)
+       and not exists (
+         select 1
+         from unnest(r.input_observation_ids) input_id
+         join pilot.shadow_formula_observations successor
+           on successor.organization_id = r.organization_id
+          and successor.supersedes_observation_id = input_id
+         where input_id <> $3
+       )
+     order by r.computed_at asc, r.formula_id asc, r.output_key asc`,
     [input.organizationId, input.athleteId, input.observationId],
   );
   return rows.map(rowToFormulaResult);
+}
+
+/** The numbers the sparring page lets the person who logged them fix. */
+export const SPARRING_CORRECTABLE_KINDS: readonly ObservationKind[] = Object.freeze([
+  'punch_attempted',
+  'punch_landed',
+  'punch_absorbed',
+]);
+
+/** The sparring page names every entry's context `sparring_<epoch ms>`
+ * (app/athlete/dashboard/sparring/page.tsx); that prefix is what marks an
+ * entry as one of its own. */
+export const SPARRING_CONTEXT_PREFIX = 'sparring_';
+
+export interface SparringEntry {
+  readonly contextId: string;
+  readonly observedAt: string;
+  readonly observations: readonly NumericObservation[];
+}
+
+/**
+ * One athlete's most recent sparring-page entries, newest first, holding only
+ * the active (not superseded) correctable punch numbers.
+ *
+ * Narrow on purpose. A sparring context also holds body weight, contact and
+ * free-text notes; body weight has its own correction path and its own youth
+ * narrowing (athleteBodyMass.ts), and nothing on the fix screen needs the
+ * rest, so none of it leaves the database here.
+ */
+export async function listRecentSparringEntries(input: {
+  organizationId: string;
+  athleteId: string;
+  limit?: number;
+}): Promise<SparringEntry[]> {
+  if (!input.organizationId.trim() || !input.athleteId.trim()) {
+    throw new TypeError('Sparring entries require an organization and athlete.');
+  }
+  const limit = Math.max(1, Math.min(20, Math.trunc(input.limit ?? 5)));
+  const rows = await query<FormulaObservationRow>(
+    `with active as (
+       select o.*
+       from pilot.shadow_formula_observations o
+       where o.organization_id = $1
+         and o.athlete_id = $2
+         and left(o.context_id, length($3)) = $3
+         and o.observation_kind = any($4::text[])
+         and not exists (
+           select 1
+           from pilot.shadow_formula_observations successor
+           where successor.organization_id = o.organization_id
+             and successor.supersedes_observation_id = o.observation_id
+         )
+     ),
+     recent as (
+       select context_id, max(observed_at) as entry_at
+       from active
+       group by context_id
+       order by entry_at desc, context_id desc
+       limit $5
+     )
+     select active.*
+     from active
+     join recent using (context_id)
+     order by recent.entry_at desc, active.context_id desc, active.observation_kind asc`,
+    [
+      input.organizationId,
+      input.athleteId,
+      // Compared as a prefix, not through LIKE: '_' is a LIKE wildcard.
+      SPARRING_CONTEXT_PREFIX,
+      [...SPARRING_CORRECTABLE_KINDS],
+      limit,
+    ],
+  );
+  const entries = new Map<string, NumericObservation[]>();
+  for (const row of rows) {
+    const members = entries.get(row.context_id) ?? [];
+    members.push(rowToObservation(row));
+    entries.set(row.context_id, members);
+  }
+  return [...entries.entries()].map(([contextId, observations]) => ({
+    contextId,
+    observedAt: observations.reduce(
+      (latest, observation) => (observation.observedAt > latest ? observation.observedAt : latest),
+      observations[0].observedAt,
+    ),
+    observations,
+  }));
 }
 
 /**

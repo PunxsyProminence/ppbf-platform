@@ -11,7 +11,7 @@
 // loosely on purpose: what is pinned is that the three outcomes stay three
 // distinguishable messages, not the exact wording of any of them.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
@@ -455,5 +455,102 @@ describe('a coach logging a session for an athlete', () => {
     const submit = await screen.findByRole('button', { name: 'Log This Session' });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText('Which athlete is this for')).toBeNull();
+  });
+});
+
+// FIX A NUMBER (lane L50). A mistyped count could only be corrected by an API
+// call with hand-copied observation ids; nothing on this page sent the
+// correction the observations route has always accepted. These pin that the
+// page now does, one correction per changed number, each replacing the exact
+// observation it showed, in order.
+describe('fix a number', () => {
+  const ENTRY = {
+    contextId: 'sparring_1000',
+    observedAt: '2026-10-17T15:00:00.000Z',
+    observations: [
+      { observationId: 'obs-taken', kind: 'punch_absorbed', value: 3, unit: 'count', dimensions: { opponentStance: 'Orthodox' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      { observationId: 'obs-landed', kind: 'punch_landed', value: 5, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+    ],
+  };
+
+  const gets: string[] = [];
+  const posts: Array<Record<string, unknown>> = [];
+
+  function mockFixFetch() {
+    gets.length = 0;
+    posts.length = 0;
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return {
+          ok: true,
+          json: async () => ({ authenticated: true, role: 'athlete', account_id: 'acct-athlete-001', athlete_id: 'athlete-001' }),
+        } as Response;
+      }
+      if (init?.method === 'GET') {
+        gets.push(String(input));
+        return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      }
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    });
+  }
+
+  async function openFix() {
+    global.fetch = mockFixFetch() as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = await screen.findByRole('button', { name: 'Show recent entries' });
+    await waitFor(() => expect((show as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(show);
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+    return section;
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('lists the athlete\'s own recent entries from the observations route', async () => {
+    await openFix();
+    expect(gets).toEqual([expect.stringContaining('/api/pilot/shadow/formulas/observations?athlete_id=athlete-001')]);
+  });
+
+  test('two changed numbers post two corrections, in order, each superseding what was shown', async () => {
+    const section = await openFix();
+    fireEvent.change(within(section).getByLabelText('Thrown'), { target: { value: '8' } });
+    fireEvent.change(within(section).getByLabelText('Landed'), { target: { value: '4' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([
+      expect.objectContaining({
+        athleteId: 'athlete-001',
+        contextId: 'sparring_1000',
+        kind: 'punch_attempted',
+        value: 8,
+        unit: 'count',
+        dimensions: { punchType: 'Jab' },
+        observedAt: '2026-10-17T15:00:00.000Z',
+        supersedesObservationId: 'obs-thrown',
+        idempotencyKey: 'sparring_1000-punch_attempted-fix-obs-thrown',
+      }),
+      expect.objectContaining({
+        kind: 'punch_landed',
+        value: 4,
+        supersedesObservationId: 'obs-landed',
+      }),
+    ]);
+    // The list is read again, so what is shown is what is on record.
+    expect(gets).toHaveLength(2);
+  });
+
+  test('landing more than thrown is refused before anything is sent', async () => {
+    const section = await openFix();
+    fireEvent.change(within(section).getByLabelText('Landed'), { target: { value: '11' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/cannot land more than you threw/);
+    expect(posts).toEqual([]);
   });
 });
