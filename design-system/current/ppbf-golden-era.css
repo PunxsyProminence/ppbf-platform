@@ -5688,7 +5688,11 @@
 }
 
 /* A pictogram roundel: a struck brass ring on the dark field, the drawing in
+<<<<<<< HEAD
    polished brass. Sized by font-size, so a strip tile and the NOW line share it. */
+=======
+   polished brass (components/blockKindIcons.tsx). Sized by font-size. */
+>>>>>>> local/l39-kind-icons
 .ge-wallboard .ge-pictogram {
   display: inline-flex;
   align-items: center;
@@ -5703,6 +5707,7 @@
   color: var(--brass-200);
   box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .25), 0 1px 0 rgba(0, 0, 0, .6);
 }
+<<<<<<< HEAD
 
 /* One block of the plan on the strip. The current one is lit and the ones
    behind it dimmed: brightness, not hue, and the page says both in words too
@@ -5726,3 +5731,5 @@
 .ge-wallboard .ge-strip-tile[data-state="done"] {
   opacity: .45;
 }
+=======
+>>>>>>> local/l39-kind-icons
