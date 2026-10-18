@@ -581,21 +581,29 @@ describe('athlete workspace honesty', () => {
     expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
-  test("the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it for Next Session and for I'm here (lane U2)", async () => {
+  test("the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it ONCE for Next Session and I'm here (F-127)", async () => {
     await renderWorkspace();
     const schedulerReads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler(\?|$)/.test(call.url));
-    // Two on Today: the Next Session tile (UXB-17) and the I'm here card (lane U2,
-    // Jason 2026-10-17); no more until the tab opens.
-    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
+    // One on Today, shared by the Next Session tile (UXB-17) and the I'm here
+    // card (lane U2, Jason 2026-10-17); no more until the tab opens.
+    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    await act(async () => {});
+    expect(schedulerReads()).toHaveLength(1);
 
     openTab('Schedule');
 
-    await waitFor(() => expect(schedulerReads()).toHaveLength(3));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
     // The lists render inside the workspace, from that read.
     expect(await screen.findByText('Saturday Footwork')).toBeTruthy();
     expect(screen.getByText('8 spots left')).toBeTruthy();
     // Booking stays in the unified scheduler: the tab sends no POST.
     expect(schedulerReads().every((call) => call.method === 'GET')).toBe(true);
+
+    // Back on Today the shared read is taken afresh, once.
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(3));
+    await act(async () => {});
+    expect(schedulerReads()).toHaveLength(3);
   });
 
   test('the Schedule tab no longer apologises for itself over the working link', async () => {

@@ -9,6 +9,9 @@
  * - A known code gets its sentence.
  * - A sentence the server wrote for people is kept: many routes answer
  *   "That athlete is not on your roster", and those words are the point.
+ * - A field name a screen already labels is replaced by that label's words,
+ *   so the server's reason survives ("max_hard_open_... must be ..."); a
+ *   sentence naming any other field is builder text (F-125).
  * - Anything that reads as a code (no spaces, or a trailing "(SOME_CODE)"),
  *   and any reply with no usable words, falls back to plain words.
  *
@@ -41,14 +44,32 @@ export const SESSION_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   ROUND_TIMER_NOT_SET: 'Set up the rounds first, then start them.',
 };
 
+/** Field names a coach-screen refusal carries, in the words of the label
+ *  above that field (ContactCapPanel). PROPOSED. */
+const FIELD_WORDS: Readonly<Record<string, string>> = {
+  max_hard_open_sessions_per_7_days: 'Most hard or open sparring sessions in any 7 days',
+  highest_allowed_stage: 'Highest contact stage allowed',
+};
+
+const FIELD_NAME = /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/;
+
+/** The text with each field name a screen labels replaced by that label's
+ *  words. A bare field name is left a code: it carries no reason. */
+function withFieldWords(text: string): string {
+  if (!/\s/.test(text.trim())) return text;
+  return text.replace(new RegExp(FIELD_NAME.source, 'g'), (name) =>
+    (Object.prototype.hasOwnProperty.call(FIELD_WORDS, name) ? FIELD_WORDS[name] : name));
+}
+
 /** True when the text reads as a stored code rather than words for a person. */
 export function looksLikeCode(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed === '') return true;
   // SOME_CODE, some_code, someCode, HTTP 409, 409: nothing a person can act on.
   if (!/\s/.test(trimmed)) return true;
-  // A field name inside a sentence ("Missing athlete_id", "max_hard_open_... must be").
-  if (/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/.test(trimmed)) return true;
+  // A field name inside a sentence ("Missing athlete_id"); refusalWords puts
+  // the ones a screen labels into words before asking.
+  if (FIELD_NAME.test(trimmed)) return true;
   if (/^HTTP\s*\d{3}$/i.test(trimmed)) return true;
   return false;
 }
@@ -95,14 +116,15 @@ export function refusalWords(
   if (/^forbidden\b/i.test(raw)) {
     // "Forbidden: only an organization admin can lift a hold an admin placed"
     // carries the reason a coach needs; keep it when it reads as words.
-    const reason = raw.replace(/^forbidden\s*:?\s*/i, '');
+    const reason = withFieldWords(raw.replace(/^forbidden\s*:?\s*/i, ''));
     if (reason !== '' && !looksLikeCode(reason) && !CODE_PREFIX.test(reason) && !BUILDER_TEXT.test(reason)) {
       return `${NOT_ALLOWED} ${sentenceCase(withoutTrailingCode(reason))}`;
     }
     return NOT_ALLOWED;
   }
-  if (raw !== '' && !looksLikeCode(raw) && !CODE_PREFIX.test(raw) && !BUILDER_TEXT.test(raw)) {
-    const sentence = withoutTrailingCode(raw);
+  const worded = withFieldWords(raw);
+  if (worded !== '' && !looksLikeCode(worded) && !CODE_PREFIX.test(worded) && !BUILDER_TEXT.test(worded)) {
+    const sentence = withoutTrailingCode(worded);
     if (sentence !== '' && !looksLikeCode(sentence)) return sentence;
   }
   if (input.status === 403) return NOT_ALLOWED;
