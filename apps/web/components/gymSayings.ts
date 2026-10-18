@@ -98,6 +98,16 @@ export interface GymSaying {
  * speaker and placement are those of the line it replaces. The quotes library
  * gets the same change from its own migration (PR #1491, org-quotes-d19).
  *
+ * Line 13, ADAPT AND OVERCOME, is Jason's own (2026-10-17, Overwatch question
+ * card on the TV's header plate: "1 and add it to the approved list"); text he
+ * gives is allowed (OD-2026-10-02-001, "No no made up text, if I give text
+ * thats different"). It is tagged for after a hard session, not 'anywhere':
+ * the TV already shows it all day on its header plate (WallDisplay.tsx
+ * WALL_MOTTO), and a thirteenth 'anywhere' line reshuffles the five milestone
+ * picks so that SHADOW NOTICES THE PATTERN stops reaching any screen
+ * (gymSayingsReach.test.tsx). The quotes library does not get it from a
+ * migration: an admin adds it at /admin/quotes if the gym wants it there.
+ *
  * A test asserts every entry here is attributable and free of stock boxing
  * quotes, so a scraped-off-the-internet line cannot arrive in a later patch
  * without somebody deliberately deleting the test that says it must not.
@@ -115,6 +125,7 @@ export const GYM_SAYINGS: readonly GymSaying[] = [
   { line: 'CHECK IN. THEN WORK.', said_by: 'the wall', shown: ['anywhere'] },
   { line: 'AMPLECTERE MISERIAM', said_by: 'the wall', shown: ['anywhere'] },
   { line: 'WE BUILD PEOPLE, NOT JUST FIGHTERS.', said_by: 'the wall', shown: ['at-a-milestone'] },
+  { line: 'ADAPT AND OVERCOME', said_by: 'the wall', shown: ['after-hard-session'] },
 ];
 
 /** A quote as the library's live reads serve it (/api/pilot/quotes?live=1, the paired TV). */
