@@ -60,7 +60,7 @@ beforeEach(() => {
 async function renderPanel() {
   render(<AthleteAchievements athleteId="ath_1" />);
   await waitFor(() => {
-    expect(screen.getByText(/nothing here ever comes off/i)).toBeTruthy();
+    expect(screen.getByText(/Earned milestones stay\./)).toBeTruthy();
   });
 }
 

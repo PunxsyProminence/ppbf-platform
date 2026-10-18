@@ -32,6 +32,16 @@
  * THE RECORD ONLY GROWS, and nothing here can observe a gap, a date, an
  * absence, or a rate. The only input is the SET of things earned, which never
  * shrinks. See TrainingCard.tsx lines 19-24 for why that is load-bearing.
+ *
+ * ONE EXCEPTION, AND IT IS NOT OBSERVED: THE ATHLETE'S OWN UNDO. An athlete may
+ * take back their own "I did it" for ten minutes (OD-2026-10-17-003). The press
+ * that slipped rang the bell and went on the record, so without this the real
+ * reach later would not ring at all (F-134). forgetCelebrated takes that one key
+ * off, and it is called only by an Undo the server accepted -- never because a
+ * key left the earned set, which would re-ring a session count corrected down
+ * and back up. A device that saw the slip but not the Undo keeps the key: the
+ * same honest cost as a milestone crossed on the office tablet not ringing on
+ * the athlete's phone.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -90,6 +100,20 @@ export function writeCelebrated(key: string, record: readonly string[]): void {
   } catch {
     // The in-memory copy above still holds for the rest of this visit.
   }
+}
+
+/**
+ * Takes one key back off an athlete's record, so a later real reach of the same
+ * thing rings. ONLY for an Undo the server accepted (see the note at the top):
+ * nothing else in the application shrinks this record.
+ */
+export function forgetCelebrated(athleteId: string | undefined, key: string): void {
+  const storageKey = achievementCeremonyKey(athleteId);
+  const known = readCelebrated(storageKey);
+  if (known === null || !known.includes(key)) {
+    return;
+  }
+  writeCelebrated(storageKey, known.filter((held) => held !== key));
 }
 
 /** Test seam, and the only way to forget within one page life. */
