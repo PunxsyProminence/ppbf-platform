@@ -384,6 +384,30 @@ describe('one tap, one intervention (F-135)', () => {
     expect(await createAudits()).toBe(1);
   });
 
+  test('a retry after the protocol was retired is still answered with the first execution', async () => {
+    const key = 'tap-then-retired';
+    const first = await logTap({ request_key: key, protocol_id: OTHER_PROTOCOL_ID });
+    expect(first.status).toBe(200);
+    // The key is looked for before the protocol is read: a retired protocol refuses a NEW start
+    // ("record changed"), and must not tell the coach a logged tap was not logged.
+    await db.query(
+      `update pilot.intervention_protocols set status = 'retired' where organization_id = $1 and protocol_id = $2`,
+      [ORG_ID, OTHER_PROTOCOL_ID],
+    );
+    try {
+      const retry = await logTap({ request_key: key, protocol_id: OTHER_PROTOCOL_ID });
+      expect(retry.status).toBe(200);
+      expect(retry.body.replayed).toBe(true);
+      expect(retry.body.item?.execution_id).toBe(first.body.item?.execution_id);
+      expect(await executionCount()).toBe(1);
+    } finally {
+      await db.query(
+        `update pilot.intervention_protocols set status = 'active' where organization_id = $1 and protocol_id = $2`,
+        [ORG_ID, OTHER_PROTOCOL_ID],
+      );
+    }
+  });
+
   test('starts sent without a key are each their own execution, as before', async () => {
     const one = await logTap({});
     const two = await logTap({});
