@@ -6171,6 +6171,93 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Every resource in any state with program name, state, published date and writer/editor display names (no account ids), plus the active programs a resource may name.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Adds one as a draft or published, written with the caller's own account and session role. Internal links must be a page parents can open (parentMayOpenPath), else 400; program must be this gym's active program, else 400; the DB seat refusal (pilot_parent_resources_writer_of_this_gym) is a 403.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Edits, publishes (again after archiving) or archives one, the editor named from the session; published_at is the database's and kept. Same link, program and seat checks as POST. No hard delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/intervention-protocols/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/intervention-protocols",
@@ -9544,7 +9631,7 @@
     "id": "app/api/pilot/platform/organizations/assign-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/assign-admin",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9557,7 +9644,7 @@
     "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9571,7 +9658,7 @@
     "id": "app/api/pilot/platform/organizations/memberships/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/memberships",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9584,7 +9671,7 @@
     "notes": "Upserts an organization membership with a role from MANAGEABLE_ROLES (excludes athlete and platform_owner); gate memberships/route.ts:22-23.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -14705,6 +14792,62 @@
       "sessionGates": [],
       "authorizationGates": [],
       "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Reads pilot.organization_profiles and the legal name (read-only). Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Validates every field against the table's rules (400 naming the field), upserts the row and writes an audit row (entity organization_profile) in one transaction; the legal name is not written. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   }
 ]
