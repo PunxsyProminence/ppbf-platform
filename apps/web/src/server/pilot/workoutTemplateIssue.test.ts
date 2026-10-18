@@ -214,8 +214,31 @@ function expectNothingWritten() {
 
 let cardCount = 0;
 
+/**
+ * What the transaction's own re-check reads (assertIssueStillCurrent): the
+ * template, and the references the issue adopts. Current unless a case says.
+ */
+function underLock(opts: { template?: Record<string, unknown> | null; withdrawn?: string[]; superseded?: string[] } = {}) {
+  transactionClient.query.mockImplementation(async (text: string, values: unknown[]) => {
+    if (/from pilot\.workout_templates/.test(text)) {
+      return { rows: opts.template === null ? [] : [{ active: true, superseded_at: null, ...opts.template }] };
+    }
+    if (/from pilot\.drill_library/.test(text)) {
+      return {
+        rows: (values[1] as string[]).map((drillId) => ({
+          drill_id: drillId,
+          active: !(opts.withdrawn ?? []).includes(drillId),
+          superseded_at: (opts.superseded ?? []).includes(drillId) ? '2026-10-17T00:00:00Z' : null,
+        })),
+      };
+    }
+    return { rows: [], rowCount: 0 };
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  underLock();
   cardCount = 0;
   mockCueRule.mockResolvedValue(undefined);
   mockRecordIssue.mockResolvedValue('issue-1');
@@ -1490,5 +1513,96 @@ describe('every read is scoped to the session gym', () => {
     expect(mockOtherVersion).toHaveBeenCalledWith(ORG, 'ref-1');
     expect(mockPromote.mock.calls[0][0].organizationId).toBe(ORG);
     expect(mockCard.mock.calls[0][0].organizationId).toBe(ORG);
+  });
+});
+
+// AUDIT 2026-10-17 ITEM 5. The plan reads without a lock; the transaction asks
+// the same currentness again under lock before it writes anything. That the
+// lock really waits for a writer is workoutTemplateIssue.pg.test.ts.
+describe('currentness is asked again inside the transaction', () => {
+  const ADOPTS = { items: [item(1), item(2)], library: { 'ref-1': { state: 'available' as const }, 'ref-2': { state: 'available' as const } } };
+
+  test('both reads are on the transaction, before anything is written, and lock what they read', async () => {
+    given(ADOPTS);
+
+    await issueWorkoutTemplate(PARAMS);
+
+    // References first, then the template: the order content import locks the same rows in.
+    const [referenceRead, templateRead] = transactionClient.query.mock.calls;
+    expect(referenceRead[0]).toMatch(/from pilot\.drill_library[\s\S]*for share/);
+    expect(referenceRead[1]).toEqual([ORG, ['ref-1', 'ref-2']]);
+    expect(templateRead[0]).toMatch(/from pilot\.workout_templates[\s\S]*for share/);
+    expect(templateRead[1]).toEqual([ORG, TEMPLATE_ID]);
+    expect(transactionClient.query.mock.invocationCallOrder[1]).toBeLessThan(mockPromote.mock.invocationCallOrder[0]);
+  });
+
+  test.each([
+    ['replaced by a newer version', { superseded_at: '2026-10-17T00:00:00Z' }],
+    ['withdrawn', { active: false }],
+  ])('a template %s after the plan read it is refused under its own code, and nothing is written', async (_label, change) => {
+    given(ADOPTS);
+    underLock({ template: change });
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_NOT_CURRENT', status: 409 });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockCard).not.toHaveBeenCalled();
+    expect(mockRecordIssue).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['withdrawn', { withdrawn: ['ref-2'] }],
+    ['superseded', { superseded: ['ref-2'] }],
+  ])('a reference the issue adopts, %s after the plan read it, refuses the whole issue as a changed library', async (_label, change) => {
+    given(ADOPTS);
+    underLock(change);
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED', status: 409 });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockCard).not.toHaveBeenCalled();
+    expect(mockRecordIssue).not.toHaveBeenCalled();
+  });
+
+  test('a drill the gym already runs is not asked about: its reference being withdrawn decides nothing', async () => {
+    given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: 'op-1' } } });
+    underLock({ withdrawn: ['ref-1'] });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued' });
+    expect(transactionClient.query.mock.calls.some(([text]) => /drill_library/.test(text as string))).toBe(false);
+  });
+
+  test('a retry of a request that WAS issued is answered with that issue, though the template changed before its own re-check', async () => {
+    given(ADOPTS);
+    underLock({ template: { superseded_at: '2026-10-17T00:00:00Z' } });
+    const first = {
+      issue_id: 'issue-first',
+      athlete_id: ATHLETE,
+      template_id: TEMPLATE_ID,
+      template_name: 'Technical Tuesday As Issued',
+      template_version: 2,
+      step_count: 2,
+    };
+    // Not yet issued when this send began; issued by the other send by the time it was refused.
+    mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce(first);
+
+    const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+    expect(result).toEqual({
+      outcome: 'already_issued',
+      issue_id: 'issue-first',
+      template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday As Issued', version: 2 },
+      step_count: 2,
+    });
+    expect(mockRecordIssue).not.toHaveBeenCalled();
+  });
+
+  test('without a key, or with a key nothing was issued under, the refusal stands', async () => {
+    given(ADOPTS);
+    underLock({ template: { active: false } });
+
+    await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_NOT_CURRENT' });
+    expect(mockFindByKey).toHaveBeenCalledTimes(2);
   });
 });

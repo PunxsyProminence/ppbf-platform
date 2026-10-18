@@ -1,6 +1,7 @@
 import type { PilotRole } from './contracts';
 import {
   ASKER_QUESTION_COACH_SENTENCE,
+  ASKER_QUESTION_NOTE_SENTENCE,
   isAskerFiledQuestion,
   readsWholeResearchRows,
   readsWholeResearchSubmissions,
@@ -178,7 +179,7 @@ describe('by reader', () => {
 
   test.each(['coach', 'organization_admin', 'admin'] as const)('%s receives the stored rows themselves', (role) => {
     expect(researchRequirementsForReader({ accountId: COACH_ID, role }, rows)).toBe(rows);
-    expect(researchSubmissionsForReader({ role }, submissions, false)).toBe(submissions);
+    expect(researchSubmissionsForReader({ role }, submissions, false, rows[0])).toBe(submissions);
   });
 
   test.each(['athlete', 'parent', 'volunteer', 'staff', 'board', 'platform_owner', 'head_coach', undefined] as const)(
@@ -186,16 +187,16 @@ describe('by reader', () => {
     (role) => {
       const reader = { accountId: 'acct-reader', role: role as PilotRole };
       expect(researchRequirementsForReader(reader, rows)).toEqual([toFamilyResearchRequirement(reader, rows[0])]);
-      expect(researchSubmissionsForReader(reader, submissions, false)).toEqual([toFamilyResearchSubmission(submissions[0])]);
+      expect(researchSubmissionsForReader(reader, submissions, false, rows[0])).toEqual([toFamilyResearchSubmission(submissions[0])]);
     },
   );
 
   test('the platform owner receives platform-shelf submissions whole and gym-shelf ones in the family view', () => {
-    expect(researchSubmissionsForReader({ role: 'platform_owner' }, submissions, true)).toBe(submissions);
-    expect(researchSubmissionsForReader({ role: 'platform_owner' }, submissions, false)).toEqual([
+    expect(researchSubmissionsForReader({ role: 'platform_owner' }, submissions, true, rows[0])).toBe(submissions);
+    expect(researchSubmissionsForReader({ role: 'platform_owner' }, submissions, false, rows[0])).toEqual([
       toFamilyResearchSubmission(submissions[0]),
     ]);
-    expect(researchSubmissionsForReader({ role: 'parent' }, submissions, true)).toEqual([
+    expect(researchSubmissionsForReader({ role: 'parent' }, submissions, true, rows[0])).toEqual([
       toFamilyResearchSubmission(submissions[0]),
     ]);
   });
@@ -262,10 +263,75 @@ describe('an asker-filed unanswered question', () => {
     expect(wholeResearchRowFor('coach', own)).toBe(own);
   });
 
-  test('a closed asker row keeps its closing note for the coach', () => {
-    const closed = asked({ status: 'resolved', metadata: { closing_note: 'Answered in the Library.', auto_filed: true } });
+  // Lane L52 (Overwatch 2026-10-18): the closing note is free text a resolver
+  // wrote about the question and can quote it, so a coach gets the sentence.
+  // It replaces the test that pinned the note through to the coach.
+  test('a closed asker row gives the coach the note sentence, not the closing note', () => {
+    const closed = asked({
+      status: 'resolved',
+      metadata: { closing_note: 'Told her the coach was spoken to.', closing_submission_id: 'sub-1', auto_filed: true },
+    });
     const row = wholeResearchRowFor('coach', closed);
-    expect(row.metadata).toEqual({ closing_note: 'Answered in the Library.' });
+    expect(row.metadata).toEqual({ closing_note: ASKER_QUESTION_NOTE_SENTENCE, closing_submission_id: 'sub-1' });
+    expect(JSON.stringify(row)).not.toContain('spoken to');
     expect(Object.keys(row).sort()).not.toContain('created_by_role_kind');
+  });
+
+  test('a row closed by a submission alone carries no closing note for the coach', () => {
+    for (const closing_note of [null, '', '   ', 42]) {
+      const row = wholeResearchRowFor('coach', asked({ status: 'resolved', metadata: { closing_note, closing_submission_id: 'sub-1' } }));
+      expect(row.metadata).toEqual({ closing_submission_id: 'sub-1' });
+    }
+  });
+
+  test('the organization admin, admin and the asker keep the closing note', () => {
+    const closed = asked({ status: 'resolved', metadata: { closing_note: 'Told her the coach was spoken to.' } });
+    for (const role of ['organization_admin', 'admin'] as const) {
+      expect(wholeResearchRowFor(role, closed)).toBe(closed);
+    }
+    const [own] = researchRequirementsForReader({ accountId: ASKER, role: 'athlete' }, [closed]);
+    expect(own.metadata).toEqual({ closing_note: 'Told her the coach was spoken to.' });
+  });
+
+  test('an ordinary row keeps its closing note for the coach', () => {
+    const ordinary = requirement();
+    expect(wholeResearchRowFor('coach', ordinary)).toBe(ordinary);
+  });
+
+  describe('its submissions', () => {
+    const noted = [
+      submission({ submission_note: 'Source on what to do when a coach hits a kid.', review_note: 'Covers her question.' }),
+      submission({ submission_id: 'sub-2', submission_note: '', review_note: '', provenance: {}, reviewed_at: null }),
+    ];
+
+    test('a coach receives the source and the verdict, the note sentence in place of each note, and no provenance', () => {
+      const [first, second] = researchSubmissionsForReader({ role: 'coach' }, noted, false, asked()) as ResearchSubmissionRow[];
+      expect(first).toEqual({
+        ...noted[0],
+        provenance: {},
+        submission_note: ASKER_QUESTION_NOTE_SENTENCE,
+        review_note: ASKER_QUESTION_NOTE_SENTENCE,
+      });
+      expect(second).toEqual({ ...noted[1], submission_note: '', review_note: '' });
+      const text = JSON.stringify([first, second]);
+      expect(text).not.toContain('hits a kid');
+      expect(text).not.toContain('her question');
+      expect(text).not.toContain('Penn State');
+    });
+
+    test('the organization admin and admin receive them whole', () => {
+      for (const role of ['organization_admin', 'admin'] as const) {
+        expect(researchSubmissionsForReader({ role }, noted, false, asked())).toBe(noted);
+      }
+    });
+
+    test('the asker receives the family fields, as on any row', () => {
+      expect(researchSubmissionsForReader({ role: 'athlete' }, noted, false, asked())).toEqual(noted.map(toFamilyResearchSubmission));
+    });
+
+    test("a coach receives an ordinary requirement's submissions and a coach-filed question's whole", () => {
+      expect(researchSubmissionsForReader({ role: 'coach' }, noted, false, requirement())).toBe(noted);
+      expect(researchSubmissionsForReader({ role: 'coach' }, noted, false, asked({ created_by_role: 'coach' }))).toBe(noted);
+    });
   });
 });
