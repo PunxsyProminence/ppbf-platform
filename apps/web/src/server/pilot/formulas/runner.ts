@@ -862,8 +862,26 @@ export async function recalculateForSupersededObservation(input: {
     if (!calculations.has(key)) calculations.set(key, result);
   }
 
+  // A whole-session box cleared to null (Fix a number) is "not counted": the
+  // formulas that run only when it is filled in (nonNullKinds: MVP-02/04/05)
+  // are retired rather than re-run into an "insufficient" row. Their prior
+  // results already drop out of every reader once the input is superseded.
+  const replacement = calculations.size > 0
+    ? (await getActiveFormulaObservationsByIds({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      observationIds: [input.replacementObservationId],
+    }))[0]
+    : undefined;
+  const retiredByNull = (formulaId: string) => replacement != null
+    && replacement.value == null
+    && FORMULA_INPUT_REQUIREMENTS.some((requirement) => (
+      requirement.formulaId === formulaId && requirement.nonNullKinds.includes(replacement.kind)
+    ));
+
   const recalculated: FormulaResult[] = [];
   for (const prior of calculations.values()) {
+    if (retiredByNull(prior.formulaId)) continue;
     const replacementIds = prior.inputObservationIds.map((observationId) => (
       observationId === input.supersededObservationId
         ? input.replacementObservationId

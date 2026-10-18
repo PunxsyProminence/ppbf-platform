@@ -214,6 +214,27 @@ describe('stored MVP formula runner', () => {
     expect(mockSaveResults).toHaveBeenCalledWith(transactionClient, expect.any(Array));
   });
 
+  test('a whole-session box cleared to null retires MVP-02 instead of re-running it (lane L50)', async () => {
+    const oldPunches = observation({ id: 'punches-old', kind: 'punch_count', unit: 'count', value: 100 });
+    const cleared = observation({ id: 'punches-null', kind: 'punch_count', unit: 'count', value: null });
+    const rounds = observation({ id: 'rounds', kind: 'round_count', unit: 'count', value: 3 });
+    const active = observation({ id: 'active', kind: 'active_time', unit: 'minutes', value: 6 });
+    mockFindResults.mockResolvedValue([...calculatePunchOutput({
+      punches: oldPunches, rounds, activeTime: active, computedAt: '2026-07-27T12:00:00.000Z',
+    })]);
+    mockGetObservations.mockResolvedValue([cleared]);
+
+    const recalculated = await recalculateForSupersededObservation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      supersededObservationId: 'punches-old',
+      replacementObservationId: 'punches-null',
+    });
+
+    expect(recalculated).toEqual([]);
+    expect(mockSaveResults).not.toHaveBeenCalled();
+  });
+
   test('deduplicates multi-output history when recalculating a superseded observation', async () => {
     const oldPunches = observation({
       id: 'punches-old',
@@ -256,8 +277,11 @@ describe('stored MVP formula runner', () => {
       computedAt: '2026-07-28T12:00:00.000Z',
     });
 
-    expect(mockGetObservations).toHaveBeenCalledTimes(1);
-    expect(mockGetObservations).toHaveBeenCalledWith(expect.objectContaining({
+    // One RUN for the two outputs (the other read is the replacement lookup
+    // a cleared box needs; see the next test).
+    const runReads = mockGetObservations.mock.calls.filter(([arg]) => arg.observationIds.length > 1);
+    expect(runReads).toHaveLength(1);
+    expect(runReads[0][0]).toEqual(expect.objectContaining({
       observationIds: ['punches-new', 'rounds', 'active'],
     }));
     expect(recalculated.map((result) => result.value)).toEqual([40, 20]);
