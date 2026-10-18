@@ -237,6 +237,20 @@ beforeAll(async () => {
     [ORG, COACH],
   );
 
+  // Who a coach marked present (Jason 2026-10-18, "A: Strict (Rec.)"): both
+  // athletes on run-bw-1; on run-bw-2 the athlete, and the teammate's mark taken back.
+  await db.query(
+    `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, 'run-bw-1', $2, $4, 'coach'), ($1, 'run-bw-1', $3, $4, 'coach'),
+            ($1, 'run-bw-2', $2, $4, 'coach'), ($1, 'run-bw-2', $3, $4, 'coach')`,
+    [ORG, ATHLETE, TEAMMATE, COACH],
+  );
+  await db.query(
+    `update pilot.session_run_athletes set removed_at = now(), removed_by_account_id = $3
+      where organization_id = $1 and run_id = 'run-bw-2' and athlete_id = $2`,
+    [ORG, TEAMMATE, COACH],
+  );
+
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
   // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
@@ -415,5 +429,27 @@ describe('a report filed under a session run names what that run delivered', () 
       .toEqual(expect.objectContaining({ session_key: 'run:run-bw-1' }));
     await expect(writer.recordBehaviourObservation({ ...base, session: { date: '2026-10-18' }, context: { blockId: 'blk-bw-2' } }))
       .resolves.toEqual(expect.objectContaining({ session_key: 'day:2026-10-18' }));
+  });
+});
+
+describe('a report filed under a session run is about an athlete marked present on it', () => {
+  test('an athlete never marked, or whose mark was taken back, is refused; a day is not checked', async () => {
+    // run-bw-3 delivered nothing and marked no one.
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+          run_state, started_at, ended_at)
+       values ($1, 'run-bw-3', null, null, $2, current_date, 'completed', now() - interval '1 hour', now())`,
+      [ORG, COACH],
+    );
+    await expect(writer.recordBehaviourObservation({ ...base, session: { runId: 'run-bw-3' } }))
+      .rejects.toThrow('That athlete is not marked present in that session run.');
+    await expect(writer.recordBehaviourObservation({ ...base, athleteId: TEAMMATE, session: { runId: 'run-bw-2' } }))
+      .rejects.toThrow('That athlete is not marked present in that session run.');
+    await expect(writer.recordBehaviourObservation({ ...base, athleteId: TEAMMATE, session: { runId: 'run-bw-1' } }))
+      .resolves.toEqual(expect.objectContaining({ athlete_id: TEAMMATE, session_key: 'run:run-bw-1' }));
+    await expect(writer.recordBehaviourObservation({
+      ...base, athleteId: TEAMMATE, session: { date: '2026-10-18' }, context: { attemptContext: 'open_floor' },
+    })).resolves.toEqual(expect.objectContaining({ session_key: 'day:2026-10-18' }));
   });
 });
