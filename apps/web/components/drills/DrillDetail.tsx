@@ -60,6 +60,9 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
     if (focusOnMount) headingRef.current?.focus();
   }, [focusOnMount, view.id]);
 
+  // A chosen level the drill has no row for opens nothing of its own: the starting level opens as usual.
+  const openLevel = chosenScale !== null && view.scaleLevels.some((level) => level.level === chosenScale) ? chosenScale : null;
+
   const steps = executionSteps(view.execution);
   // Three groups, because they are three different instructions. A readiness
   // rule ("re-warm before contact after ~20 minutes idle") is something to do
@@ -225,11 +228,11 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
               <details
                 key={`${view.id}-scale-${level.level}`}
                 className={EXPANDER}
-                open={chosenScale ? level.level === chosenScale : level.isStartingPoint}
+                open={openLevel ? level.level === openLevel : level.isStartingPoint}
               >
                 <summary className={EXPANDER_SUMMARY}>
                   {scaleLevelName(level.level)}
-                  {level.level === chosenScale ? ' · chosen for this block' : ''}
+                  {level.level === openLevel ? ' · chosen for this block' : ''}
                   {level.isStartingPoint ? ' · where to start' : ''}
                   {level.contactLevel && level.contactLevel !== view.contactLevel
                     ? ` · ${humanizeContactLevel(level.contactLevel)}`

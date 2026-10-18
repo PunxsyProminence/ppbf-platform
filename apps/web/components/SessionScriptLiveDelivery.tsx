@@ -246,9 +246,18 @@ export default function SessionScriptLiveDelivery({
   // DrillDetail, with the block's scale level opened -- in place under the
   // block, so the session keeps running, and closes it to return to the block.
   // Opening writes nothing. The panel belongs to the block it was opened from:
-  // when the session moves on, it is no longer shown.
+  // when the session moves on it is closed (a read still loading is cancelled),
+  // so going back to that block does not reopen it, and focus stays with the
+  // control the coach used to move -- the Coach Cards page's rule.
   const drill = useDrillOpener();
-  const drillOpen = currentBlock !== null && drill.openKey === currentBlock.block_id;
+  const { openKey: openDrillKey, close: closeDrill } = drill;
+  const drillOpen = currentBlock !== null && openDrillKey === currentBlock.block_id;
+  useEffect(() => {
+    if (openDrillKey !== null && openDrillKey !== run.current_block_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      closeDrill({ returnFocus: false });
+    }
+  }, [openDrillKey, run.current_block_id, closeDrill]);
   function toggleDrill(block: Block) {
     if (drill.openKey === block.block_id) {
       drill.close();
