@@ -33,13 +33,11 @@ const mockSecondGym: OrganizationProfile = {
   headCoachName: 'Morgan Hale',
 };
 
-jest.mock('./organizationProfile', () => {
-  const actual = jest.requireActual('./organizationProfile');
-  return { ...actual, currentOrganizationProfile: () => mockSecondGym };
-});
+import { OrganizationProfileProvider } from '@/components/OrganizationProfileProvider';
+import { PPBF_TRACES } from '@/src/testing/organizationProfileFixtures';
 
-// The homepage reads the stored profile (lane L31); the print sheet and the form still read the
-// constant until the next pull request moves them.
+// Server pages read the stored profile (lane L31); browser components get it from the layout's
+// provider, rendered around them below.
 jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
   getOperatingOrganizationProfile: async () => mockSecondGym,
   // The real module loads pg, which jsdom cannot; the layout only needs the class to compare with.
@@ -57,7 +55,6 @@ jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 // PPBF's own identity, in every form the old copies wrote it.
-const PPBF_TRACES = [/Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /220 N Jefferson/i, /99-2073622/, /Big Run/i, /15767/, /Neale/i, /\bJason\b/];
 
 function expectNoPpbfTrace(text: string) {
   for (const trace of PPBF_TRACES) expect(text).not.toMatch(trace);
@@ -87,7 +84,7 @@ test('the public homepage names the second gym everywhere, in the page and in it
 
 test('a print sheet carries the second gym\'s name and address', async () => {
   const { default: PrintSheet } = await import('@/components/PrintSheet');
-  const { container } = render(<PrintSheet eyebrow="Certificate" title="Ten rounds" footNote="Printed today">body</PrintSheet>);
+  const { container } = render(<OrganizationProfileProvider profile={mockSecondGym}><PrintSheet eyebrow="Certificate" title="Ten rounds" footNote="Printed today">body</PrintSheet></OrganizationProfileProvider>);
 
   expect(container.textContent).toContain('Ridgeway Lantern Boxing & Fitness');
   expect(container.textContent).toContain('9 Kiln Road, Ridgeway, PA 15853');
@@ -97,7 +94,7 @@ test('a print sheet carries the second gym\'s name and address', async () => {
 test('the public interest form points a visitor at the second gym\'s address when sending fails', async () => {
   const { default: PublicInterestForm } = await import('@/components/PublicInterestForm');
   global.fetch = jest.fn(async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
-  const { container } = render(<PublicInterestForm />);
+  const { container } = render(<OrganizationProfileProvider profile={mockSecondGym}><PublicInterestForm /></OrganizationProfileProvider>);
 
   fireEvent.change(screen.getByLabelText(/name/i, { selector: 'input' }), { target: { value: 'Sam Rivera' } });
   const email = container.querySelector('input[type="email"]') as HTMLInputElement | null;

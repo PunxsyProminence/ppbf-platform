@@ -38,6 +38,12 @@ export const PPBF_PROFILE: OrganizationProfile = {
   headCoachName: 'Jason Neale',
 };
 
+/** Every form PPBF's identity takes, for leakage tests: none may appear on a second gym's page. */
+export const PPBF_TRACES: readonly RegExp[] = [
+  /Punxsy/i, /PPBF/, /punxsyprominence/i, /Punxsutawney/i, /220 N Jefferson/i,
+  /99-2073622/, /Big Run/i, /15767/, /Neale/i, /\bJason\b/,
+];
+
 export const SECOND_GYM_PROFILE: OrganizationProfile = {
   brand: 'Ridgeway Lantern Boxing & Fitness',
   legalName: 'Ridgeway Lantern Boxing and Fitness',
