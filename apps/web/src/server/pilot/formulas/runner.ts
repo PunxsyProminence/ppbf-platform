@@ -120,7 +120,9 @@ export interface FormulaInputRequirement {
  *   - MVP-06 is not run: contact stays counts-only (Jason, 2026-10-17, "A:
  *     Counts only").
  *   - MVP-09/MVP-10 wait on a named metric and named cut-offs.
- *   - MVP-11 needs a window, now ruled (28 days, 2026-10-17).
+ *   - MVP-11 spans contexts, so it is not an entry here: it runs over the
+ *     athlete's last 28 days of sessions (Jason, 2026-10-17), selected by
+ *     autoCalculation.ts#focusAttainmentWindow.
  */
 export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Object.freeze([
   Object.freeze({
