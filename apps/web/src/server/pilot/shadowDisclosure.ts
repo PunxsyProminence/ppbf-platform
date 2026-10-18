@@ -241,15 +241,41 @@ export function isCriticalShadowDisclosure(disclosure: ShadowDisclosure | null):
 export const SHADOW_DISCLOSURE_CLASSIFICATION = 'safeguarding_disclosure';
 
 /**
- * Marks a disclosure high-risk when the validator did not. A result that is
- * already high-risk, or withheld, is returned as it is: its answer is main's.
+ * main's emergency returns (validateShadowRequest's urgent_personal_symptom
+ * return and its emergency topic rows), the same set the chat route reviews
+ * as critical. A disclosure never displaces them.
+ */
+const EMERGENCY_CLASSIFICATIONS: ReadonlySet<string> = new Set([
+  'urgent_personal_symptom', 'chest_pain', 'fainting', 'loss_of_consciousness',
+]);
+
+function isEmergencyReturn(validation: ShadowValidationResult): boolean {
+  return EMERGENCY_CLASSIFICATIONS.has(validation.classification ?? '')
+    || (validation.error ?? '').startsWith('Potential emergency');
+}
+
+/**
+ * Marks a disclosure high-risk when the validator did not.
+ *
+ * F-093: a disclosure that also trips one of the validator's non-emergency
+ * medical withholds ("my coach hits me and it hurts" read as a personal pain
+ * question; a diagnosis, clearance or medication question) is answered on the
+ * disclosure path, exactly as the same disclosure without the pain word:
+ * SHADOW still answers (OD-2026-10-10-007). The emergency return stays
+ * ahead of a disclosure (OD-2026-10-10-006; Overwatch, F-093 Q1), and a
+ * result that is already high-risk and allowed is main's. The escalation
+ * files in every case; this decides only the answer.
  */
 export function markShadowDisclosure(
   validation: ShadowValidationResult,
   disclosure: ShadowDisclosure | null,
 ): ShadowValidationResult {
-  if (!disclosure || validation.highRisk === true) return validation;
-  return { ...validation, highRisk: true, classification: SHADOW_DISCLOSURE_CLASSIFICATION };
+  if (!disclosure) return validation;
+  if (validation.highRisk !== true) {
+    return { ...validation, highRisk: true, classification: SHADOW_DISCLOSURE_CLASSIFICATION };
+  }
+  if (validation.valid || isEmergencyReturn(validation)) return validation;
+  return { valid: true, highRisk: true, topic: validation.topic, classification: SHADOW_DISCLOSURE_CLASSIFICATION };
 }
 
 /**

@@ -423,6 +423,30 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
     }
   });
 
+  // F-093: the same disclosure with a pain word was withheld as a personal
+  // health question. It is answered like any disclosure; the escalation and
+  // the admin review row are as before.
+  test('a disclosure that also carries a pain word is answered and files its escalation', async () => {
+    const client = await freshDatabase('ppbf_test_shadow_disclosure_pain');
+    activeClient = client;
+    try {
+      const sent = await sendAsAthlete('my coach hits me and it hurts');
+      expect(sent).toMatchObject({ status: 200, providerCalled: true, body: { state: 'ok', response: ANSWER } });
+      const { rows } = await client.query(`select source_type from pilot.safety_escalations`);
+      expect(rows.map((row: { source_type: string }) => row.source_type)).toEqual(['athlete_voice']);
+      const reviews = await client.query(
+        `select category from pilot.shadow_human_review_queue where conversation_id = $1`,
+        [sent.body.conversationId],
+      );
+      expect(reviews.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ category: 'safeguarding_disclosure' }),
+      ]));
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
   // "my coach yells at me" then, in the same conversation, a disclosure that
   // names nobody: the coach must not receive the second one.
   test('once a conversation names gym staff, its later disclosures stay admin-only', async () => {
