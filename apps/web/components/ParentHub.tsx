@@ -30,7 +30,6 @@ type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' |
 interface Child {
   id: string;
   name: string;
-  track: string;
 
   /* Identity. A guardian is inside their own child's circle, so a released
      portrait reaches them -- and only their own children's, because the server
@@ -65,9 +64,21 @@ interface ParentMessage {
   athlete_id: string;
   athlete_name: string | null;
   sender_role: string;
+  // Who sent it by name ("Coach Rivera", an admin's name, or "Gym office"),
+  // from GET /api/pilot/parent/messages (F-120). Absent from an older server.
+  sender_name?: string | null;
   note_text: string;
   created_at: string;
   task: ParentMessageTask | null;
+}
+
+/** "Coach Rivera" when the server names the sender; the role word otherwise (F-120). */
+function senderLabel(message: ParentMessage): string {
+  const name = message.sender_name?.trim();
+  // "Your coach" is the server's floor for a coach it cannot name
+  // (deriveCoachDisplayName); "From Your coach" misreads, so the role word stands.
+  if (name && name !== 'Your coach') return name;
+  return message.sender_role === 'coach' ? 'Coach' : 'Admin';
 }
 
 /* A due date is a bare calendar date ('2026-10-20', Postgres date::text).
@@ -743,7 +754,6 @@ export default function ParentHub() {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
-            track: 'Unavailable',
             photoPath: null,
             initials: '\u2014',
             photoAvailable: false,
@@ -1149,7 +1159,7 @@ export default function ParentHub() {
       <li key={message.note_id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
         <p className="t-body" id={`floor-task-${message.note_id}`}>{message.note_text}</p>
         <p className="t-muted mt-[var(--s2)]">
-          {`From ${message.sender_role === 'coach' ? 'Coach' : 'Admin'} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}
+          {`From ${senderLabel(message)} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}
         </p>
         <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
           <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
@@ -1479,7 +1489,7 @@ export default function ParentHub() {
                 title="Child Overview"
                 description="Quick snapshot of your child's current training status, progress, and upcoming events."
                 usage={[
-                  'Review current track and skill level',
+                  'Review membership, scholarship and support status',
                   'Check attendance and progress summary',
                   'See upcoming events and important dates',
                   'Review coach messages'
@@ -1499,10 +1509,6 @@ export default function ParentHub() {
                       <div>
                         <p className="t-label mb-[var(--s2)]">Child Name</p>
                         <p className="t-body font-semibold">{activeChild.name}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Current Track</p>
-                        <p className="t-body font-semibold">{activeChild.track}</p>
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Progress</p>
@@ -1840,7 +1846,7 @@ export default function ParentHub() {
                             {wasNewThisVisit(message) && (
                               <span className="badge badge--filed"><i aria-hidden="true">◉</i><span>New</span></span>
                             )}
-                            <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                            <span className="t-label">From {senderLabel(message)}</span>
                           </span>
                         </div>
                         <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
