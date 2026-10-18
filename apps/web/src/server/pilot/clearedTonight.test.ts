@@ -25,6 +25,10 @@ jest.mock('./shadowMedicalStatus', () => ({
   getLatestMedicalAdministrativeStatus: jest.fn(),
 }));
 
+jest.mock('./guardianConsent', () => ({
+  ...jest.requireActual('./guardianConsent'),
+  readOwnMediaConsent: jest.fn(),
+}));
 jest.mock('./compliance', () => ({
   countOpenViolationsByAthlete: jest.fn(),
 }));
@@ -41,6 +45,7 @@ import {
   type ClearedTonightMedicalRead,
 } from './clearedTonight';
 import { countOpenViolationsByAthlete } from './compliance';
+import { readOwnMediaConsent } from './guardianConsent';
 import {
   getLatestMedicalAdministrativeStatus,
   type MedicalAdministrativeStatusValue,
@@ -53,6 +58,7 @@ const mockRoster = jest.mocked(readOrganizationWaiverRoster);
 const mockHolds = jest.mocked(listTrainingHolds);
 const mockMedical = jest.mocked(getLatestMedicalAdministrativeStatus);
 const mockViolations = jest.mocked(countOpenViolationsByAthlete);
+const mockOwn = jest.mocked(readOwnMediaConsent);
 
 const NOW = new Date('2026-10-11T22:00:00.000Z');
 
@@ -358,16 +364,44 @@ describe('getOrganizationClearedTonight', () => {
 
   // OD-2026-10-08-015: at 18 a guardian's media consent stops counting for a
   // new publication and the adult's own cannot be recorded yet.
-  test('an adult athlete: the guardian-era media consent is not reported as the athlete’s consent', async () => {
+  test('an adult athlete with no consent of their own: none, and the guardian-era row is not reported as theirs', async () => {
     mockRoster.mockResolvedValue([rosterEntry({ dob: '2008-10-11' })]);
+    mockOwn.mockResolvedValue(null);
 
     const [row] = await getOrganizationClearedTonight('org-1', NOW);
 
-    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent' });
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'none' });
+    expect(mockOwn).toHaveBeenCalledWith('org-1', 'ath-1');
     // The worklist column is untouched by this lane.
     expect(row.waivers.photo_media).toBe('signed');
     // A paper an adult signed for themselves is read like any other row.
     expect(row.tonight.waivers[0]).toEqual({ type: 'general', status: 'signed', recorded_on: '2026-09-02' });
+    expect(row.tonight.answer).toBe('cleared');
+  });
+
+  const ownRow = (over: Record<string, unknown> = {}) => ({
+    status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-10-01T00:00:00Z', recordedByOwnLogin: true, ...over,
+  });
+
+  test.each([
+    ['their own video consent', ownRow(), 'video'],
+    ['an untidy signature', ownRow({ status: ' Signed ' }), 'video'],
+    ['photo only', ownRow({ coversVideo: false }), 'photo_only'],
+    ['a withdrawal', ownRow({ status: 'withdrawn', coversVideo: false }), 'withdrawn'],
+    ['a signed row their own login did not record', ownRow({ recordedByOwnLogin: false }), 'none'],
+    ['a status nobody can read', ownRow({ status: 'declined' }), 'none'],
+  ])('an adult with %s reads %s, as the publication gate would', async (_label, own, word) => {
+    mockRoster.mockResolvedValue([rosterEntry({ dob: '2000-01-01' })]);
+    mockOwn.mockResolvedValue(own);
+    const [row] = await getOrganizationClearedTonight('org-1', NOW);
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: word });
+  });
+
+  test("an adult's own consent that cannot be read is unavailable, not none, and the rest of the row still answers", async () => {
+    mockRoster.mockResolvedValue([rosterEntry({ dob: '2000-01-01' })]);
+    mockOwn.mockRejectedValue(new Error('connection reset'));
+    const [row] = await getOrganizationClearedTonight('org-1', NOW);
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'unavailable' });
     expect(row.tonight.answer).toBe('cleared');
   });
 

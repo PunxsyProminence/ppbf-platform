@@ -7,6 +7,7 @@ import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import AthleteCyclePanel from './AthleteCyclePanel';
+import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
@@ -3867,6 +3868,13 @@ export default function AthleteWorkspace() {
           {activeTab === 'bio-checkin' && (
             <div className={PANEL}>
               <AthleteCyclePanel />
+            </div>
+          )}
+          {/* The adult athlete's own photo and video consent (OD-2026-10-08-015):
+              only the athlete's own route feeds it. */}
+          {activeTab === 'my-dashboard' && (
+            <div className={PANEL}>
+              <AthleteMediaConsentPanel />
             </div>
           )}
 
