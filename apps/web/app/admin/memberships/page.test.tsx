@@ -295,6 +295,64 @@ test('a failed programs read says so, never "No programs on record. Create the f
   expect(screen.queryByText('No programs on record')).toBeNull();
 });
 
+test('a failed roster read says so in the support picker, and Try again reads it again', async () => {
+  let rosterReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      rosterReads += 1;
+      return rosterReads === 1
+        ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+        : ({ ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response);
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Athletes could not be read')).toBeTruthy();
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['Choose an athlete']);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  });
+
+  expect(rosterReads).toBe(2);
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
+  expect(Array.from((screen.getByLabelText('Support for') as HTMLSelectElement).options).map((option) => option.textContent))
+    .toEqual(['Choose an athlete', 'Casey Stone']);
+});
+
+test('the support picker says it is loading until the roster read comes back', async () => {
+  let answerRoster: (() => void) | null = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      await new Promise<void>((resolve) => { answerRoster = resolve; });
+      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.disabled).toBe(true);
+  expect(picker.options[0].textContent).toBe('Loading athletes…');
+
+  await act(async () => {
+    answerRoster?.();
+  });
+  expect((screen.getByLabelText('Support for') as HTMLSelectElement).disabled).toBe(false);
+});
+
 // PH-12b: support the gym gave a family, recorded on this page.
 const SUPPORT_ROW = {
   record_id: '0f8fad5b-d9cb-469f-a165-70867728950e',

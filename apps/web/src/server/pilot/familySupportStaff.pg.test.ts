@@ -396,6 +396,39 @@ describe('the office records family support (PH-12b)', () => {
     expect(stored.rows).toEqual([{ live: true }]);
   });
 
+  test('an athlete withdrawn while a record is being saved gets no record: the live check holds at the write', async () => {
+    const racer = 'ATH-FSS-RACE';
+    await activeClient!.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+         emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Support Athlete', '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [ORG, racer, COACH],
+    );
+    // The withdrawal is in flight on another connection: written, not yet committed.
+    const withdrawer = new Client({ connectionString: connectionStringFor('ppbf_test_family_support_staff') });
+    await withdrawer.connect();
+    try {
+      await withdrawer.query('begin');
+      await withdrawer.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, racer]);
+      const saving = support.recordSupport(office, racer, 'Gloves', '2026-10-05');
+      const settledEarly = await Promise.race([
+        saving.then(() => true, () => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ]);
+      await withdrawer.query('commit');
+      expect(settledEarly).toBe(false);
+      expect(await saving).toBeNull();
+    } finally {
+      await withdrawer.query('rollback').catch(() => {});
+      await withdrawer.end();
+    }
+    const stored = await activeClient!.query(
+      `select count(*)::int as n from pilot.family_support_records where athlete_id = $1`,
+      [racer],
+    );
+    expect(stored.rows).toEqual([{ n: 0 }]);
+  });
+
   test('a recorder whose seat is retired and whose account is removed is shown as the gym office, with no id', async () => {
     const leaver = { organizationId: ORG, accountId: LEAVER, role: 'organization_admin' };
     const created = await support.recordSupport(leaver, ATHLETE, 'Ride home from the Erie show', '2026-10-07');

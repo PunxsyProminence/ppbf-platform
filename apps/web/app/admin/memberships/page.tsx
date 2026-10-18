@@ -198,18 +198,28 @@ function SupportRecords({ athleteId }: { athleteId: string }) {
   );
 }
 
-function SupportSection({ athletes, athleteId, onAthlete }: {
+function SupportSection({ athletes, athletesLoad, onRetryAthletes, athleteId, onAthlete }: {
   athletes: AthleteOption[];
+  athletesLoad: 'loading' | 'loaded' | 'unavailable';
+  onRetryAthletes: () => void;
   athleteId: string;
   onAthlete: (athleteId: string) => void;
 }) {
   return (
     <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="support-heading">
       <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Support provided</h2>
+      {athletesLoad === 'unavailable' && (
+        <div className="empty mt-[var(--s3)]">
+          <div className="empty-title">Athletes could not be read</div>
+          <p className="empty-msg mx-auto">This is not a record of none. Try again, or open Support on a membership row.</p>
+          <button type="button" className="btn mt-[var(--s3)]" onClick={onRetryAthletes}>Try again</button>
+        </div>
+      )}
       <div className="field mt-[var(--s3)]">
         <label className="t-label" htmlFor="support-athlete">Support for</label>
-        <select id="support-athlete" className="select" value={athleteId} onChange={(e) => onAthlete(e.target.value)}>
-          <option value="">Choose an athlete</option>
+        <select id="support-athlete" className="select" value={athleteId} disabled={athletesLoad === 'loading'}
+          onChange={(e) => onAthlete(e.target.value)}>
+          <option value="">{athletesLoad === 'loading' ? 'Loading athletes…' : 'Choose an athlete'}</option>
           {athletes.map((athlete) => (
             <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
           ))}
@@ -223,6 +233,9 @@ function SupportSection({ athletes, athleteId, onAthlete }: {
 export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
+  // Until the roster read comes back, an empty picker is not a gym with no athletes.
+  const [athletesLoad, setAthletesLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [athletesNonce, setAthletesNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   // True once a read of the memberships list has come back. Until then an
   // empty list is not a record of none, so the empty sentence stays hidden.
@@ -276,22 +289,25 @@ export default function MembershipsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setAthletesLoad('loading');
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('Unable to load athletes.');
         const payload = (await response.json()) as { items?: AthleteOption[] };
         if (controller.signal.aborted) return;
         setAthletes(payload.items ?? []);
+        setAthletesLoad('loaded');
       } catch {
-        // Silent: the picker degrades to empty; the list still renders.
+        // The memberships list still renders; the support picker says the roster was not read.
+        if (!controller.signal.aborted) setAthletesLoad('unavailable');
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [athletesNonce]);
 
   const reloadPrograms = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
@@ -631,7 +647,8 @@ export default function MembershipsPage() {
             </section>
           )}
 
-          <SupportSection athletes={athletes} athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
+          <SupportSection athletes={athletes} athletesLoad={athletesLoad} onRetryAthletes={() => setAthletesNonce((n) => n + 1)}
+            athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
           {/* The catalog itself: every persistent group this gym runs, with
               its live headcount. Archiving retires the name from the enroll

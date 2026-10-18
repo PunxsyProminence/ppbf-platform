@@ -109,18 +109,18 @@ export async function recordSupport(
     throw new ValidationError('The date provided cannot be in the future.');
   }
 
-  const athlete = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.athletes
-     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
-    [actor.organizationId, athleteId],
-  );
-  if (!athlete) return null;
-
+  // The live-athlete check and the insert are one statement: FOR SHARE waits out a
+  // withdrawal in flight and then reads the row again, so an athlete withdrawn
+  // while this runs gets no record (no row comes back, and the caller answers
+  // not-found). A separate lookup first would let that withdrawal slip between.
   try {
     return await queryOne<{ record_id: string }>(
       `insert into pilot.family_support_records
          (organization_id, athlete_id, support_kind, provided_on, recorded_by_account_id, recorded_by_role)
-       values ($1, $2, $3, $4::date, $5, $6)
+       select ath.organization_id, ath.athlete_id, $3::text, $4::date, $5::text, $6::text
+         from pilot.athletes ath
+        where ath.organization_id = $1 and ath.athlete_id = $2 and ath.deleted_at is null
+        for share
        returning record_id::text as record_id`,
       [actor.organizationId, athleteId, kind, providedOn, actor.accountId, role],
     );
