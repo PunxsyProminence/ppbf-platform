@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
@@ -97,16 +97,22 @@ export async function listBehaviourKeys(organizationId: string): Promise<Behavio
   );
 }
 
+/**
+ * A behaviour name's key is minted here, never typed: a coach writes the label,
+ * and a key a coach typed could carry a child's name into the reports'
+ * episode ids and the interventions that cite it, where the purge's name scrub
+ * cannot reach (it scrubs text, not keys). The label carries every human word.
+ */
+function mintBehaviourKey(): string {
+  return `bk_${randomBytes(8).toString('hex')}`;
+}
+
 export async function createBehaviourKey(input: {
   organizationId: string;
-  behaviourKey: string;
   label: string;
   skillId: string;
   createdByAccountId: string;
 }): Promise<BehaviourKeyRow> {
-  if (!BEHAVIOUR_KEY_PATTERN.test(input.behaviourKey)) {
-    throw new ValidationError('A behaviour key is 3-80 lower-case letters, digits or underscores, starting with a letter.');
-  }
   const label = input.label.trim();
   // Characters, as the table's length() counts them -- not UTF-16 units.
   const labelLength = Array.from(label).length;
@@ -121,12 +127,13 @@ export async function createBehaviourKey(input: {
       `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
        values ($1, $2, $3, $4, $5)
        returning behaviour_key, label, skill_id, status, created_at`,
-      [input.organizationId, input.behaviourKey, label, input.skillId, input.createdByAccountId],
+      [input.organizationId, mintBehaviourKey(), label, input.skillId, input.createdByAccountId],
     );
     return rows[0];
   } catch (error) {
+    // 64 random bits: a collision is not a coach's mistake, so it is not dressed as one.
     if ((error as { code?: string }).code === '23505') {
-      throw new ValidationError('That behaviour key is already on the list.');
+      throw new ValidationError('That behaviour name could not be saved. Try again.');
     }
     throw refusalFrom(error);
   }
@@ -280,12 +287,21 @@ async function episodeFor(
   return { episodeId: `ep:${randomUUID()}`, momentAt: null };
 }
 
-/** An ISO 8601 time, normalised; refused with the reason otherwise. */
+/**
+ * An ISO 8601 time WITH its offset (Z or +hh:mm), normalised; refused with the
+ * reason otherwise. No offset would be read in the server's own zone, and a
+ * date that rolls over (2026-02-31) is not a date.
+ */
 function isoTime(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) || Number.isNaN(Date.parse(value))) {
-    throw new ValidationError('observedAt is an ISO 8601 time, such as 2026-10-18T17:30:00Z.');
+  const shape = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const parsed = new Date(value);
+  const day = shape?.[1];
+  const sameDay = day !== undefined && !Number.isNaN(new Date(`${day}T00:00:00Z`).getTime())
+    && new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day;
+  if (!shape || Number.isNaN(parsed.getTime()) || !sameDay) {
+    throw new ValidationError('observedAt is an ISO 8601 time with its offset, such as 2026-10-18T17:30:00Z.');
   }
-  return new Date(value).toISOString();
+  return parsed.toISOString();
 }
 
 export async function recordBehaviourObservation(
@@ -309,8 +325,9 @@ export async function recordBehaviourObservation(
       const taskContextKey = await contextKeyFor(client, input.organizationId, input.context);
       const { episodeId, momentAt } = await episodeFor(client, input);
       // A report of a moment already on record keeps that moment's time, so a
-      // revision written later is not read as a later event.
-      const observedAt = givenAt ?? momentAt ?? new Date().toISOString();
+      // revision written later is not read as a later event; a time sent with
+      // it does not move the moment.
+      const observedAt = momentAt ?? givenAt ?? new Date().toISOString();
       // The episode's own lock (the table's guard takes the same one), before
       // looking for this observer's earlier report: a double-tap cannot find
       // "none" twice and count one coach's call twice.

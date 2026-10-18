@@ -41,7 +41,8 @@ const SECOND_COACH = 'acct-bw-coach-2';
 const OTHER_GYM_COACH = 'acct-bw-other';
 const ATHLETE = 'ath-bw-1';
 const TEAMMATE = 'ath-bw-2';
-const KEY = 'drops_lead_hand_after_jab';
+// A fixture key written straight to the table; keys the app makes are minted (bk_<hex>).
+const KEY = 'bk_fixture_drops_hand';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -192,6 +193,11 @@ beforeAll(async () => {
     [ORG, COACH],
   );
   await db.query(
+    `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+     values ($1, $2, 'Drops lead hand after the jab', 'SK-JAB-01', $3)`,
+    [ORG, KEY, COACH],
+  );
+  await db.query(
     `insert into pilot.training_attempts
        (organization_id, attempt_id, athlete_id, recorded_by_account_id, context_type, metric_kind, direction, achieved_value)
      values ($1, 'att-bw-1', $2, $3, 'session', 'reps', 'at_least', 12),
@@ -224,23 +230,20 @@ afterAll(async () => {
 });
 
 describe('the behaviour-name list', () => {
-  test('a coach adds a name under a skill; the same key twice, or no skill code, is refused by name', async () => {
+  test('a coach adds a name under a skill and the server mints its key; no skill code, or a visitor, is refused', async () => {
     const key = await writer.createBehaviourKey({
-      organizationId: ORG, behaviourKey: KEY, label: '  Drops lead hand after the jab ', skillId: 'SK-JAB-01',
-      createdByAccountId: COACH,
+      organizationId: ORG, label: '  Keeps a low guard ', skillId: 'SK-GUARD-01', createdByAccountId: COACH,
     });
-    expect(key).toEqual(expect.objectContaining({ behaviour_key: KEY, label: 'Drops lead hand after the jab', status: 'active' }));
+    expect(key).toEqual(expect.objectContaining({ label: 'Keeps a low guard', status: 'active' }));
+    expect(key.behaviour_key).toMatch(/^bk_[0-9a-f]{16}$/);
     await expect(writer.createBehaviourKey({
-      organizationId: ORG, behaviourKey: KEY, label: 'Again', skillId: 'SK-JAB-01', createdByAccountId: COACH,
-    })).rejects.toThrow('already on the list');
-    await expect(writer.createBehaviourKey({
-      organizationId: ORG, behaviourKey: 'no_skill', label: 'No skill', skillId: 'jab', createdByAccountId: COACH,
+      organizationId: ORG, label: 'No skill', skillId: 'jab', createdByAccountId: COACH,
     })).rejects.toThrow('skill code');
     await expect(writer.createBehaviourKey({
-      organizationId: ORG, behaviourKey: 'visitor_name', label: 'From elsewhere', skillId: 'SK-JAB-01',
-      createdByAccountId: OTHER_GYM_COACH,
+      organizationId: ORG, label: 'From elsewhere', skillId: 'SK-JAB-01', createdByAccountId: OTHER_GYM_COACH,
     })).rejects.toThrow('Only staff of this gym');
-    expect((await writer.listBehaviourKeys(ORG)).map((row) => row.behaviour_key)).toEqual([KEY]);
+    expect((await writer.listBehaviourKeys(ORG)).map((row) => row.behaviour_key).sort())
+      .toEqual([KEY, key.behaviour_key].sort());
   });
 });
 
@@ -276,6 +279,12 @@ describe('a behaviour report', () => {
     expect(revision.supersedes_observation_id).toBe(first.observation_id);
     // The revision keeps the moment's own time, not the time it was written.
     expect(revision.observed_at).toEqual(first.observed_at);
+    // Even when a time is sent with it.
+    const sentLate = await writer.recordBehaviourObservation({
+      ...base, session: { date: '2026-10-18' }, context: { attemptContext: 'open_floor' },
+      observerAccountId: SECOND_COACH, sameMomentAs: first.observation_id, observedAt: '2030-01-01T00:00:00Z',
+    });
+    expect(sentLate.observed_at).toEqual(first.observed_at);
     // A third call by the same coach revises the revision, never the original twice.
     const again = await writer.recordBehaviourObservation({
       ...base, session: { date: '2026-10-18' }, context: { attemptContext: 'open_floor' },
@@ -288,14 +297,13 @@ describe('a behaviour report', () => {
     const row = await writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-1' });
     expect(row.episode_id).toBe(`attempt:att-bw-1:${KEY}`);
     // The same attempt can show a second behaviour: its own episode.
-    await writer.createBehaviourKey({
-      organizationId: ORG, behaviourKey: 'squares_up_on_the_hook', label: 'Squares up on the hook',
-      skillId: 'SK-HOOK-01', createdByAccountId: COACH,
+    const hook = await writer.createBehaviourKey({
+      organizationId: ORG, label: 'Squares up on the hook', skillId: 'SK-HOOK-01', createdByAccountId: COACH,
     });
     const other = await writer.recordBehaviourObservation({
-      ...base, behaviourKey: 'squares_up_on_the_hook', trainingAttemptId: 'att-bw-1',
+      ...base, behaviourKey: hook.behaviour_key, trainingAttemptId: 'att-bw-1',
     });
-    expect(other.episode_id).toBe('attempt:att-bw-1:squares_up_on_the_hook');
+    expect(other.episode_id).toBe(`attempt:att-bw-1:${hook.behaviour_key}`);
     await expect(writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-teammate' }))
       .rejects.toThrow("not this athlete's");
     await expect(writer.recordBehaviourObservation({ ...base, trainingAttemptId: 'att-bw-1', sameMomentAs: row.observation_id }))
@@ -315,6 +323,8 @@ describe('a behaviour report', () => {
     await expect(writer.recordBehaviourObservation({ ...base, session: { date: '18/10/2026' } })).rejects.toThrow('YYYY-MM-DD');
     await expect(writer.recordBehaviourObservation({ ...base, session: { date: '2026-02-31' } })).rejects.toThrow('YYYY-MM-DD');
     await expect(writer.recordBehaviourObservation({ ...base, observedAt: 'March 7' })).rejects.toThrow('ISO 8601');
+    await expect(writer.recordBehaviourObservation({ ...base, observedAt: '2026-10-18T17:30:00' })).rejects.toThrow('with its offset');
+    await expect(writer.recordBehaviourObservation({ ...base, observedAt: '2026-02-31T10:00:00Z' })).rejects.toThrow('ISO 8601');
     // Another gym's real records read exactly as missing ones.
     await expect(writer.recordBehaviourObservation({ ...base, session: { runId: 'run-bw-x' } })).rejects.toThrow('session run is not in this gym');
     await expect(writer.recordBehaviourObservation({ ...base, context: { drillId: 'drill-bw-x' } })).rejects.toThrow('not in this gym');
@@ -326,7 +336,7 @@ describe('a behaviour report', () => {
 
   test("the athlete's reports list newest first, as written", async () => {
     const rows = await writer.listBehaviourObservations(ORG, ATHLETE);
-    expect(rows.length).toBe(8);
+    expect(rows.length).toBe(9);
     const times = rows.map((row) => Date.parse(row.observed_at));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     expect(await writer.listBehaviourObservations(ORG, TEAMMATE)).toEqual([]);

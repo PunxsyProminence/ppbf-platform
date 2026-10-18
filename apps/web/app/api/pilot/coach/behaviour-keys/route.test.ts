@@ -43,7 +43,7 @@ test('only staff read or grow the list', async () => {
   for (const role of ['athlete', 'parent', 'board', 'platform_owner'] as const) {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
     expect((await GET(new NextRequest(URL_BASE))).status).toBe(403);
-    expect((await POST(postRequest({ behaviourKey: 'k_one', label: 'K one', skillId: 'SK-JAB-01' }))).status).toBe(403);
+    expect((await POST(postRequest({ label: 'K one', skillId: 'SK-JAB-01' }))).status).toBe(403);
   }
   expect(mockList).not.toHaveBeenCalled();
   expect(mockCreate).not.toHaveBeenCalled();
@@ -57,10 +57,11 @@ test("a coach reads the gym's list and adds a name to it as themself", async () 
   expect(mockList).toHaveBeenCalledWith('org-1');
 
   mockCreate.mockResolvedValue({ behaviour_key: 'k_two' });
-  const created = await POST(postRequest({ behaviourKey: 'k_two', label: 'K two', skillId: 'SK-JAB-01' }));
+  // A key the caller sends is ignored: the server mints it.
+  const created = await POST(postRequest({ behaviourKey: 'rosas_low_guard', label: 'K two', skillId: 'SK-JAB-01' }));
   expect(created.status).toBe(201);
   expect(mockCreate).toHaveBeenCalledWith({
-    organizationId: 'org-1', behaviourKey: 'k_two', label: 'K two', skillId: 'SK-JAB-01', createdByAccountId: 'acct-3',
+    organizationId: 'org-1', label: 'K two', skillId: 'SK-JAB-01', createdByAccountId: 'acct-3',
   });
-  expect((await POST(postRequest({ behaviourKey: 'k_three' }))).status).toBe(400);
+  expect((await POST(postRequest({ label: 'No skill' }))).status).toBe(400);
 });
