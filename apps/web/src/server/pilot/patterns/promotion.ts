@@ -30,6 +30,7 @@ import {
   summarizeEvidence,
   toProvenance,
 } from './evidence';
+import { collapseToEpisodes, withReadingDimensions } from './episodes';
 import { assertPatternFormationPolicy, policyParameters, type PatternFormationPolicy } from './policy';
 import { assessStratifiedAttribution, type StratifiedAttributionAssessment } from './inference/attribution';
 import { assessDrift, type DriftAssessment } from './inference/drift';
@@ -149,10 +150,16 @@ export function evaluatePatternCandidate(
   // Admission applies asOf, so every count, statistic and the candidate key
   // below see only what had been observed by the evaluation instant.
   const { admitted, excluded } = admitObservations(scope, input.observations, asOf);
-  const evidence = summarizeEvidence(admitted);
-  const contextDiversity = summarizeContextDiversity(admitted);
-  const attribution = summarizeAttribution(admitted);
-  const counterEvidence = summarizeCounterEvidence(admitted);
+  // COUNTED PER ATTEMPT (episodes.ts): readings of one attempt are one
+  // episode, so two coaches scoring the same rep are one occurrence, not two.
+  // Who looked -- observers, person or model, film -- is still read from every
+  // reading, as are disagreement, video contradiction and reliability below.
+  const collapse = collapseToEpisodes(admitted);
+  const { episodes } = collapse;
+  const evidence = withReadingDimensions(summarizeEvidence(episodes), collapse);
+  const contextDiversity = summarizeContextDiversity(episodes);
+  const attribution = summarizeAttribution(episodes);
+  const counterEvidence = summarizeCounterEvidence(episodes);
 
   const ledger = new ReasonLedger();
 
@@ -262,7 +269,7 @@ export function evaluatePatternCandidate(
   }
 
   // ── time ─────────────────────────────────────────────────────────────────
-  const recentOccurrences = recentOccurrenceCount(admitted, asOf, policy.evidenceStaleAfterDays);
+  const recentOccurrences = recentOccurrenceCount(episodes, asOf, policy.evidenceStaleAfterDays);
   if (evidence.occurrenceCount > 0 && recentOccurrences === 0) {
     ledger.add('NO_RECENT_EVIDENCE', true);
     ledger.add('EVIDENCE_STALE', false);
@@ -279,14 +286,15 @@ export function evaluatePatternCandidate(
   let inference: PatternInferenceReport | null = null;
   if (input.inferencePolicy) {
     const inferencePolicy = input.inferencePolicy;
-    // Trials are OPPORTUNITIES: occurrences plus counterexamples. Sessions
-    // where nobody recorded anything are not failures -- see recurrence.ts.
+    // Trials are OPPORTUNITIES: occurrences plus counterexamples, one per
+    // attempt (a disputed attempt is neither). Sessions where nobody recorded
+    // anything are not failures -- see recurrence.ts.
     const recurrence = assessRecurrence(
-      { trials: admitted.length, occurrences: evidence.occurrenceCount },
+      { trials: episodes.length, occurrences: evidence.occurrenceCount },
       inferencePolicy,
     );
-    const stratified = assessStratifiedAttribution(admitted, inferencePolicy);
-    const drift = assessDrift(admitted, inferencePolicy);
+    const stratified = assessStratifiedAttribution(episodes, inferencePolicy);
+    const drift = assessDrift(episodes, inferencePolicy);
 
     if (recurrence.posteriorTooWide) ledger.add('POSTERIOR_TOO_WIDE', true);
     if (recurrence.verdict === 'reject') ledger.add('SEQUENTIAL_TEST_REJECTED', true);

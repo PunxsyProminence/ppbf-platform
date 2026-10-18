@@ -16,6 +16,7 @@
  */
 
 import { deterministicKey } from '../formulas/identity';
+import { collapseToEpisodes } from './episodes';
 import { admitObservations } from './evidence';
 import type {
   BehaviourObservation,
@@ -207,9 +208,13 @@ export function summarizeTransferEvidence(
   intervention: PatternIntervention,
   postObservations: readonly BehaviourObservation[],
 ): TransferEvidenceSummary {
+  // Only after the intervention began: an improvement elsewhere BEFORE the
+  // lesson is the baseline, not its transfer.
+  const startedMs = Date.parse(intervention.startedAt);
   const transferred = postObservations.filter(
     (observation) => isImprovement(observation)
-      && observation.taskContextKey !== intervention.trainedTaskContextKey,
+      && observation.taskContextKey !== intervention.trainedTaskContextKey
+      && Date.parse(observation.observedAt) >= startedMs,
   );
   const constraints = new Set(transferred.map((observation) => observation.taskConstraint));
   const taskContextKeys = [...new Set(transferred.map((observation) => observation.taskContextKey))].sort();
@@ -320,7 +325,7 @@ export function evaluateValidatedAthleteLesson(
   // at something nobody established, and its apparent success is a story
   // about a behaviour we could not confirm the athlete had.
   if (input.patternState !== 'ESTABLISHED_IN_CONTEXT') {
-    blockers.push('NO_OBSERVATIONS');
+    blockers.push('PATTERN_NOT_ESTABLISHED');
   }
 
   // Same admission as the candidate ladder: another athlete's records, a
@@ -332,7 +337,9 @@ export function evaluateValidatedAthleteLesson(
     behaviourKey: input.behaviourKey,
   };
   const postAdmission = admitObservations(scope, input.postObservations, asOf);
-  const postObservations = postAdmission.admitted;
+  // Counted per attempt (episodes.ts): two coaches reporting the same rep
+  // after the lesson are one piece of transfer or retention, not two.
+  const postObservations = collapseToEpisodes(postAdmission.admitted).episodes;
   const excluded: LessonExclusion[] = postAdmission.excluded.map(observationExclusion);
 
   const asOfMs = Date.parse(asOf);
@@ -343,6 +350,9 @@ export function evaluateValidatedAthleteLesson(
     blockers.push('NO_INTERVENTION');
   } else if (!intervention.decisionId) {
     blockers.push('INTERVENTION_NOT_HUMAN_AUTHORIZED');
+  }
+  if (intervention?.adherence === 'not_delivered') {
+    blockers.push('INTERVENTION_NOT_DELIVERED');
   }
 
   if (!outcome) {
@@ -360,6 +370,15 @@ export function evaluateValidatedAthleteLesson(
     }
     if (outcome.matchState === 'partial') {
       warnings.push('COUNTEREVIDENCE_PRESENT');
+    }
+    // The coach's own answer, read, not judged: a belief they left open, or a
+    // performance they could not call, supports no lesson yet.
+    if (
+      outcome.hypothesisResult === 'unresolved'
+      || outcome.hypothesisResult === 'insufficient_evidence'
+      || outcome.performanceResult === 'unknown'
+    ) {
+      blockers.push('OUTCOME_UNRESOLVED');
     }
   }
 
@@ -386,11 +405,18 @@ export function evaluateValidatedAthleteLesson(
     }
 
     // The athlete still doing the thing, after the intervention, in the very
-    // context it was trained in.
+    // context it was trained in. AFTER means after it ended, when it has
+    // ended by asOf: a fault on day one, while the fix is still being
+    // drilled, is why the drill exists, not a sign it failed. While it runs,
+    // from its start.
+    const endedMs = intervention.endedAt ? Date.parse(intervention.endedAt) : Number.NaN;
+    const regressionFromMs = Number.isFinite(endedMs) && endedMs <= asOfMs
+      ? endedMs
+      : Date.parse(intervention.startedAt);
     const regressed = postObservations.some(
       (observation) => observation.polarity === 'occurrence'
         && observation.taskContextKey === intervention.trainedTaskContextKey
-        && Date.parse(observation.observedAt) >= Date.parse(intervention.startedAt),
+        && Date.parse(observation.observedAt) >= regressionFromMs,
     );
     if (regressed) {
       blockers.push('POST_INTERVENTION_REGRESSION');
@@ -421,7 +447,7 @@ export function evaluateValidatedAthleteLesson(
     }
     const preAdmission = admitObservations(scope, input.preObservations, asOf);
     excluded.push(...preAdmission.excluded.map(observationExclusion));
-    const baseline = buildSessionRateSeries(preAdmission.admitted).map((point) => point.rate);
+    const baseline = buildSessionRateSeries(collapseToEpisodes(preAdmission.admitted).episodes).map((point) => point.rate);
     const treatment = buildSessionRateSeries(postObservations).map((point) => point.rate);
     singleCase = assessSingleCaseDesign(
       { baseline, treatment, direction: input.improvementDirection },
