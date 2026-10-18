@@ -687,3 +687,48 @@ describe('a claim reports its research requirement id as a number (F-128)', () =
     expect(matched.researchRequirementId).toBe(opened.researchRequirementId);
   });
 });
+
+// F-136 (Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)"): the same paper filed
+// under two source ids is one source, so it cannot make a claim 'supported'.
+describe('a claim counts publications, not source ids (F-136)', () => {
+  async function paperChunk(client: Client, sourceId: string, url: string): Promise<void> {
+    const doc = await servableSource(client, sourceId, 2);
+    await client.query(`update pilot.shadow_library_sources set url = $2 where source_id = $1`, [sourceId, url]);
+    await client.query(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content)
+       values ($1, $2, $3, $4, 0, 'Southpaw footwork: pivot on the lead foot to take the outside angle.')`,
+      [`${sourceId}-chunk`, doc, sourceId, ORG_ID],
+    );
+  }
+  const ask = () => createShadowLibraryClaim({
+    organizationId: ORG_ID,
+    actorAccountId: ADMIN_ID,
+    actorRole: 'organization_admin',
+    question: 'southpaw footwork pivot',
+  });
+
+  it('one paper under a doi.org url and a doi.org url with tracking is weak, not supported', async () => {
+    activeClient = await freshDatabase('claim_same_paper');
+    await paperChunk(activeClient, 'paper-a', 'https://doi.org/10.1000/abc.1');
+    await paperChunk(activeClient, 'paper-b', 'https://DOI.org/10.1000/ABC.1?utm_source=x');
+
+    const result = await ask();
+
+    expect(result.evidenceCount).toBe(2);
+    expect(result.distinctSourceCount).toBe(1);
+    expect(result.status).toBe('weak');
+  });
+
+  it('two different papers are supported', async () => {
+    activeClient = await freshDatabase('claim_two_papers');
+    await paperChunk(activeClient, 'paper-a', 'https://example.com/a');
+    await paperChunk(activeClient, 'paper-b', 'https://example.com/b');
+
+    const result = await ask();
+
+    expect(result.distinctSourceCount).toBe(2);
+    expect(result.status).toBe('supported');
+  });
+});
+

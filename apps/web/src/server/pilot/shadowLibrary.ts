@@ -12,6 +12,7 @@ import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } f
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
+import { publicationKey, PUBLICATION_KEY_SQL } from './shadowPublicationKey';
 import { reservedProvenanceKey, reservedProvenanceMessage, type ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
   buildCapabilityGapResearchFields,
@@ -235,6 +236,8 @@ export interface ShadowLibraryClaimResult {
   // Passages at or above the bar. `evidence` may also hold below-bar closest
   // passages when confidenceLevel is 'low'; they are not counted here.
   evidenceCount: number;
+  // Distinct publications among the counted passages (DOI, else PMID, else
+  // normalised URL, else source_id; F-136), not distinct source ids.
   distinctSourceCount: number;
   evidence: ShadowLibrarySearchResult[];
   researchRequirementId: number | null;
@@ -310,7 +313,7 @@ interface ShadowCoverageComputationRow {
  */
 const SERVABLE_MATCHED_SOURCES_LATERAL = `
      left join lateral (
-       select count(distinct s.source_id) as matched_sources
+       select count(distinct ${PUBLICATION_KEY_SQL('s')}) as matched_sources
        from pilot.shadow_library_sources s
        where s.organization_id = any($2::text[])
          and ${SERVABLE_LIBRARY_SOURCE_SQL}
@@ -1924,7 +1927,21 @@ export async function createShadowLibraryClaim(input: {
   const evidence = belowBarOnly ? ranked.nearest : ranked.relevant;
   const counted = ranked.relevant;
 
-  const distinctSourceCount = new Set(counted.map((item) => item.source_id)).size;
+  // Distinct PUBLICATIONS, not source ids (F-136, Jason 2026-10-18, "A:
+  // DOI/PMID/URL key (Rec.)"): one paper filed twice must not read as two
+  // independent sources. The field keeps its name; it now counts papers.
+  const countedIds = [...new Set(counted.map((item) => item.source_id))];
+  const keySources =
+    countedIds.length === 0
+      ? []
+      : ((await query<{ source_id: string; url: string | null; metadata: Record<string, unknown> | null }>(
+          `select source_id, url, metadata from pilot.shadow_library_sources where source_id = any($1::text[])`,
+          [countedIds],
+        )) ?? []);
+  const keySourceById = new Map(keySources.map((row) => [row.source_id, row]));
+  const distinctSourceCount = new Set(
+    countedIds.map((id) => publicationKey(keySourceById.get(id) ?? { source_id: id, url: null, metadata: null })),
+  ).size;
   let status: ShadowLibraryClaimStatus;
   let confidence: number;
   let confidenceLevel: ShadowLibraryConfidenceLevel;

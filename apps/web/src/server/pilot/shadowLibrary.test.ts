@@ -706,6 +706,47 @@ describe('SHADOW library claim honesty', () => {
     expect(result.evidence.some((row) => 'match_mode' in row)).toBe(false);
   });
 
+  // F-136 (Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)"): one paper filed under
+  // two source ids is one source, so it cannot make a claim 'supported'.
+  it('counts one paper filed under two source ids once, so the claim stays weak', async () => {
+    mockQuery
+      .mockResolvedValueOnce([evidenceRow('src-a'), evidenceRow('src-b')] as never)
+      .mockResolvedValueOnce([
+        { source_id: 'src-a', url: null, metadata: { doi: '10.1000/ABC.1' } },
+        { source_id: 'src-b', url: 'https://doi.org/10.1000/abc.1', metadata: {} },
+      ] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'What does the evidence say about jab timing drills?',
+    });
+
+    expect(result.evidenceCount).toBe(2);
+    expect(result.distinctSourceCount).toBe(1);
+    expect(result.status).toBe('weak');
+  });
+
+  it('counts two different papers as two sources', async () => {
+    mockQuery
+      .mockResolvedValueOnce([evidenceRow('src-a'), evidenceRow('src-b')] as never)
+      .mockResolvedValueOnce([
+        { source_id: 'src-a', url: 'https://example.com/a', metadata: {} },
+        { source_id: 'src-b', url: 'https://example.com/b', metadata: {} },
+      ] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'What does the evidence say about jab timing drills?',
+    });
+
+    expect(result.distinctSourceCount).toBe(2);
+    expect(result.status).toBe('supported');
+  });
+
   // JASON'S RULING 2026-10-03: below the relevance bar the closest passages are
   // still shown, labelled low confidence, and the gap is filed as research.
   it('a below-bar match is shown as low confidence and opens a research requirement', async () => {
