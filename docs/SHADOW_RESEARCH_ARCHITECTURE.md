@@ -25,10 +25,12 @@
 >   create-only, under the subject folder its source's classification names
 >   (`archiveCode`), and records where it went in
 >   `pilot.shadow_library_archived_originals`. It is OFF unless the deployment
->   carries the four `RESEARCH_ARCHIVE_*` settings (only production, and only
->   for the shelves named there). The generic uploader in
+>   carries the four `RESEARCH_ARCHIVE_*` settings (meant for production only,
+>   and only for the shelves named there; no file in this repository sets
+>   them). The generic uploader in
 >   `apps/web/src/server/document-intake/sharepoint.ts` is still a different
->   path with its own configurable destination, and never files research.
+>   path with its own configurable destination, and nothing in it files by
+>   subject.
 > - **Custody is not citability.** A document sitting in the archive is not
 >   admissible SHADOW evidence. The gate chain in §3 is untouched.
 > - **Migration is not complete.** OneDrive `Library Intake/` remains the
@@ -57,8 +59,8 @@ recorded here so the target can be addressed by stable Graph identity rather tha
 by a path a reorganisation can break. They are the values of the production settings
 `RESEARCH_ARCHIVE_SITE_ID`, `RESEARCH_ARCHIVE_DRIVE_ID` and `RESEARCH_ARCHIVE_ROOT_ITEM_ID`
 (`apps/web/src/server/pilot/researchArchiveConfig.ts`; lane L57). The create-only write
-(`researchArchiveWrite.ts`) signs in as the app's managed identity, which Jason grants write on
-this folder only, and addresses everything by item id: the subject folder is the one child of
+(`researchArchiveWrite.ts`) signs in as the app's managed identity, which Jason is to grant write
+on this folder only (not done as of 2026-10-18), and addresses everything by item id: the subject folder is the one child of
 the root item whose name starts `R## - ` (the folders are named `R19 - Measurement and
 Assessment Instruments` and so on, read 2026-10-17); it never creates a folder.
 
@@ -171,7 +173,7 @@ to look like a single agreed system. They are not the same place.
 |---|---|---|
 | **Microsoft — OneDrive `Library Intake` tree (§1.1)** | Temporary working and migration source for research originals (#345; §1.2) | Is not the governed archive and not the system of record. No repository artifact corroborates the listing, and no code reads or writes it. |
 | **Microsoft — SharePoint `Research Archive`, Club Operations site (§1.0)** | The permanent governed original-source archive: verified 2026-08-24, and the store open owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) names. #345 keeps its older SharePoint pointer only as historical context (§1.2) | Written only by the `archive-original` route, create-only, where the `RESEARCH_ARCHIVE_*` settings switch it on (§1.0). Custody there is not citability (§3). |
-| **Microsoft — configurable generic SharePoint destination, defaulting to `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}`. The path is configuration, not a constant: `config.ts` reads `SHAREPOINT_FOLDER_PATH` and falls back to `PPBF/Intake` only when it is unset | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
+| **Microsoft — configurable generic SharePoint destination, defaulting to `PPBF/Intake`** | One of the two Microsoft destinations this repository writes to (the other is the Research Archive, above, where switched on): `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}`. The path is configuration, not a constant: `config.ts` reads `SHAREPOINT_FOLDER_PATH` and falls back to `PPBF/Intake` only when it is unset | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
 | `/research` | Research requirements, general research registration, source-to-requirement links, answer-state workflow | Does not approve evidence or resolve a gap from submission alone |
 | `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` (`apps/web/app/research/review/page.tsx`) | Does not verify, approve, index, or make anything citable — that is `/evidence`. A `responsive` verdict does not resolve the requirement. |
 | `/evidence` | Indexing, evidence review, verification, approval, rejection, and retrieval eligibility | Does not replace the original-source archive |
@@ -217,9 +219,9 @@ Each transition below is marked **ENFORCED** (with the file that enforces it) or
 
 | # | Transition | Enforcement |
 |---|---|---|
-| 1 | source acquired -> preserve original and acquisition provenance | **ENFORCED where filing is on, PROCEDURAL elsewhere.** `researchArchiveFiling.ts` files the PDF create-only and records its hash, archive identity, acquisition provider/channel/date and version (`pilot.shadow_library_archived_originals`); an excerpt read from it is linked by `archived_original_id`. Filing is not required to save an excerpt (Overwatch, 2026-10-18: excerpts save unlinked if filing fails, and say so). |
+| 1 | source acquired -> preserve original and acquisition provenance | **PROCEDURAL (filing is optional); RECORDED when filed.** `researchArchiveFiling.ts` files the PDF create-only and records its hash, archive identity, acquisition provider/channel/date and version (`pilot.shadow_library_archived_originals`); an excerpt read from it is linked by `archived_original_id`. Filing is not required to save an excerpt (Overwatch, 2026-10-18: excerpts save unlinked if filing fails, and say so). |
 | 2 | -> R00 intake when classification or lineage is unresolved | **PROCEDURAL — NOT ENFORCED.** R00 exists only in this document. No code reads or writes it. |
-| 3 | -> human subject classification to R01-R19, or R98 duplicate hold | **PROCEDURAL — NOT ENFORCED.** `apps/web/src/shared/researchClassification.ts` constrains the *set* of keys a curator may pick, but nothing requires the step, and `archiveCode` is an unverified documentation crosswalk (§5). |
+| 3 | -> human subject classification to R01-R19, or R98 duplicate hold | **PROCEDURAL — NOT ENFORCED.** `apps/web/src/shared/researchClassification.ts` constrains the *set* of keys a curator may pick, but nothing requires the step; once classified, `archiveCode` names the folder a filed original goes in (§5). |
 | 4 | -> register SHADOW Library source as pending review / unverified | **ENFORCED** for the seed path: `apps/web/scripts/import-shadow-research.mjs` (~L398-415) fails `SEED_ROW_CLAIMS_TRUSTED_STATE` / `SEED_ROW_CLAIMS_INDEXED` on any row arriving already approved, verified, or indexed. The importer has no route to a trusted state. |
 | 5 | -> optionally link to a research requirement | Optional by design. |
 | 6 | -> create/process document and chunks | **PROCEDURAL — NOT ENFORCED** as an ordering constraint. |
@@ -449,7 +451,8 @@ paragraph closes. It stayed a draft, on a base since superseded, and is retired 
 
 **BUILT, NOT YET DEMONSTRATED — the archive-to-SHADOW handoff (lane L57, #345).** The
 research-specific, idempotent handoff now exists: the `archive-original` route hashes the PDF,
-finds the same bytes already recorded or already in the folder, files it create-only under the
+finds the same bytes already recorded, or already in the target folder under the hash-suffixed
+name the app files by, files it create-only under the
 subject folder by item id, records the stable archive identity and acquisition provenance, and
 an excerpt saved from it is linked (`archived_original_id`, same source and shelf by database
 key) and lands pending review like any other. Filing approves nothing; a filing that fails

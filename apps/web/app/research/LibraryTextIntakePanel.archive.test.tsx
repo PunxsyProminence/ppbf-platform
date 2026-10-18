@@ -104,6 +104,10 @@ async function saveExcerptFromPageTwo() {
   await click('Save to Library as pending');
 }
 
+function paragraphStartingWith(text: string) {
+  return screen.queryByText((_content, element) => element?.tagName === 'P' && (element.textContent ?? '').startsWith(text));
+}
+
 function documentWrite(calls: Call[]) {
   return calls.find((call) => call.url.endsWith('/library/documents'));
 }
@@ -129,7 +133,7 @@ describe('LibraryTextIntakePanel: filing the original (lane L57)', () => {
     expect(filing?.form?.get('version_kind')).toBe('version_of_record');
     expect(filing?.form?.get('acquired_at')).toBe('2026-10-01');
     expect(filing?.form?.get('file')).toBeInstanceOf(File);
-    expect(screen.getByText(FILING_WORDS.filed('R19', 'paper--aaaaaaaaaaaa.pdf'), { exact: false })).toBeTruthy();
+    expect(paragraphStartingWith(FILING_WORDS.filed('R19', 'paper--aaaaaaaaaaaa.pdf'))).toBeTruthy();
     expect(screen.getByRole('link', { name: FILING_WORDS.open }).getAttribute('href')).toBe('https://example.sharepoint.com/x.pdf');
     expect(screen.getByText(FILING_WORDS.linked)).toBeTruthy();
 
@@ -151,6 +155,7 @@ describe('LibraryTextIntakePanel: filing the original (lane L57)', () => {
     await click(FILING_WORDS.file);
     await saveExcerptFromPageTwo();
 
+    expect(screen.getByText(FILING_WORDS.differentFile)).toBeTruthy();
     expect(documentWrite(calls)?.body).not.toHaveProperty('archived_original_id');
     expect(screen.queryByText(ARCHIVE_LINK_WORDS.saved)).toBeNull();
   });
@@ -180,13 +185,68 @@ describe('LibraryTextIntakePanel: filing the original (lane L57)', () => {
     await choosePdf();
     await click(FILING_WORDS.file);
 
+    // A 502 may have landed: never "Not filed".
     expect(screen.getByRole('alert').textContent).toBe(
-      FILING_WORDS.notFiled('The Research Archive did not confirm the filing. Try again with the same file.'),
+      FILING_WORDS.mayNotBeFiled('The Research Archive did not confirm the filing. Try again with the same file.'),
     );
     await saveExcerptFromPageTwo();
 
     expect(documentWrite(calls)?.body).not.toHaveProperty('archived_original_id');
     expect(screen.getByRole('status').textContent).toContain('Pending Review');
+  });
+
+  it('a refusal is "Not filed", and says why', async () => {
+    installFetch({ archive: 'on', filing: { status: 409, json: { error: 'Classify this source first.', code: 'SOURCE_NOT_CLASSIFIED' } } });
+    await renderPanel();
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_a' } });
+    await choosePdf();
+    await click(FILING_WORDS.file);
+
+    expect(screen.getByRole('alert').textContent).toBe(FILING_WORDS.notFiled('Classify this source first.'));
+  });
+
+  it('the same PDF filed before is "already filed", and its excerpts are linked', async () => {
+    const calls = installFetch({ archive: 'on', filing: { status: 200, json: { ...filedAnswer().json, status: 'already_filed' } } });
+    await renderPanel();
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_a' } });
+    await choosePdf();
+    await click(FILING_WORDS.file);
+
+    expect(paragraphStartingWith(FILING_WORDS.alreadyFiled('R19', 'paper--aaaaaaaaaaaa.pdf'))).toBeTruthy();
+    expect(paragraphStartingWith(FILING_WORDS.filed('R19', 'paper--aaaaaaaaaaaa.pdf'))).toBeNull();
+    await saveExcerptFromPageTwo();
+    expect(documentWrite(calls)?.body).toMatchObject({ archived_original_id: 'arc_11111111-2222-3333-4444-555555555555' });
+  });
+
+  it('a second PDF starts unfiled, and a late answer for the first is not taken for it', async () => {
+    let answerFirst: (value: Response) => void = () => undefined;
+    const calls = installFetch({ archive: 'on' });
+    const plain = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/library/archive-original') && init?.method === 'POST') {
+        calls.push({ url: String(input), method: 'POST', form: init.body as FormData, body: null });
+        return new Promise<Response>((resolve) => {
+          answerFirst = resolve;
+        });
+      }
+      return plain(input, init);
+    }) as unknown as typeof fetch;
+    await renderPanel();
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_a' } });
+    await choosePdf();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: FILING_WORDS.file }));
+    });
+    await choosePdf();
+    await act(async () => {
+      answerFirst({ status: 201, ok: true, json: async () => filedAnswer().json } as Response);
+    });
+
+    expect(paragraphStartingWith(FILING_WORDS.filed('R19', 'paper--aaaaaaaaaaaa.pdf'))).toBeNull();
+    expect(screen.getByRole('button', { name: FILING_WORDS.file })).toBeTruthy();
+    expect(screen.getByText(FILING_WORDS.notYet)).toBeTruthy();
+    await saveExcerptFromPageTwo();
+    expect(documentWrite(calls)?.body).not.toHaveProperty('archived_original_id');
   });
 
   it('asks for the source before filing, and files nothing', async () => {

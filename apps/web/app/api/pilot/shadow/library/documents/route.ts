@@ -135,6 +135,14 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    // Only an excerpt taken from a page of the PDF is linked to it; the panel
+    // marks those text_origin 'pdf_page' (libraryTextIntake.ts).
+    if (archivedOriginalId !== null && (body.metadata as Record<string, unknown> | undefined)?.text_origin !== 'pdf_page') {
+      return NextResponse.json(
+        { ok: false, error: 'Only an excerpt taken from a page of the filed PDF is linked to it' },
+        { status: 400 },
+      );
+    }
     if (subjectId) {
       await assertActorCanAccessAthlete(principal, subjectId);
     }
@@ -164,7 +172,7 @@ export async function POST(request: NextRequest) {
       }
       if ((error as { constraint?: unknown }).constraint === 'pilot_shadow_library_documents_archived_original_fk') {
         return NextResponse.json(
-          { ok: false, error: 'That filed PDF belongs to another source or shelf, so this excerpt cannot be linked to it' },
+          { ok: false, error: "That filed PDF is not one of this source's originals on this shelf, so this excerpt cannot be linked to it" },
           { status: 409 },
         );
       }

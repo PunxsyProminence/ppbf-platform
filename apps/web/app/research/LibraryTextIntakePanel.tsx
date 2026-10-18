@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -22,7 +22,7 @@ import {
   type IntakeShelf,
   type PdfPageText,
 } from '@/src/client/libraryTextIntake';
-import ArchiveFilingBox from './ArchiveFilingBox';
+import ArchiveFilingBox, { type ArchiveLinkState } from './ArchiveFilingBox';
 import LibrarySourcePicker from './LibrarySourcePicker';
 
 /* RINT-01: manual research text intake.
@@ -114,6 +114,8 @@ interface LoadedPdf {
   emptyPageCount: number;
   file: File;
   contentSha256: string | null;
+  /** Which read this is: the filing box starts fresh for each PDF. */
+  serial: number;
 }
 
 // First words of a page: enough to recognise it in the list.
@@ -160,20 +162,16 @@ export default function LibraryTextIntakePanel({
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [reading, setReading] = useState(false);
   const [pdfMessage, setPdfMessage] = useState<string | null>(null);
-  // Lane L57: whether this shelf files originals in the Research Archive, and
-  // what the PDF read now was filed as.
-  const [archive, setArchive] = useState<ArchiveFilingStatus>('off');
+  // Lane L57: whether this shelf files originals in the Research Archive (asked
+  // once, when a PDF is first read), and what the PDF on screen was filed as.
+  // A filing answer counts only for the file still on screen.
+  const [archive, setArchive] = useState<ArchiveFilingStatus | 'unknown'>('unknown');
   const [filed, setFiled] = useState<FiledOriginal | null>(null);
-  useEffect(() => {
-    let live = true;
-    void readArchiveFilingStatus(apiBase(), shelf).then((status) => {
-      if (live) setArchive(status);
-    });
-    return () => {
-      live = false;
-    };
-  }, [shelf]);
+  const fileOnScreen = useRef<File | null>(null);
   const linkable = linkableOriginal(filed, draft.sourceId, pdf?.contentSha256 ?? null);
+  const linkState: ArchiveLinkState = !filed || linkable
+    ? 'linked'
+    : filed.sourceId !== draft.sourceId ? 'other_source' : 'different_file';
 
   const { textLength, partCount } = useMemo(() => {
     const length = normalizeIntakeText(draft.text).length;
@@ -254,10 +252,18 @@ export default function LibraryTextIntakePanel({
       }
       // A different PDF voids any page link to the old one. Text already in the
       // box stays, unlinked, so nothing the curator did is lost.
-      setPdf({ pages: result.pages, emptyPageCount: result.emptyPageCount, file, contentSha256: result.contentSha256 });
+      setPdf({
+        pages: result.pages,
+        emptyPageCount: result.emptyPageCount,
+        file,
+        contentSha256: result.contentSha256,
+        serial: (pdf?.serial ?? 0) + 1,
+      });
+      fileOnScreen.current = file;
       setFiled(null);
       setDraft((current) => ({ ...current, pdfPageNum: null }));
       if (result.pages.every((page) => page.text === '')) setPdfMessage(PDF_WORDS.noText);
+      if (archive === 'unknown') setArchive(await readArchiveFilingStatus(apiBase(), shelf));
     } finally {
       setReading(false);
     }
@@ -271,6 +277,7 @@ export default function LibraryTextIntakePanel({
 
   function handleClearPdf() {
     setPdf(null);
+    fileOnScreen.current = null;
     setFiled(null);
     setPdfMessage(null);
     setDraft((current) => ({ ...current, pdfPageNum: null }));
@@ -411,8 +418,11 @@ export default function LibraryTextIntakePanel({
                 </ul>
               ) : null}
               {archive === 'on' && pdf && !reading ? (
-                <ArchiveFilingBox file={pdf.file} sourceId={draft.sourceId} shelf={shelf} disabled={locked}
-                  filed={filed} linked={linkable !== null} onFiled={setFiled} />
+                <ArchiveFilingBox key={pdf.serial} file={pdf.file} sourceId={draft.sourceId} shelf={shelf} disabled={locked}
+                  filed={filed} linkState={linkState}
+                  onFiled={(original, file) => {
+                    if (fileOnScreen.current === file) setFiled(original);
+                  }} />
               ) : null}
             </div>
             <label className="field">

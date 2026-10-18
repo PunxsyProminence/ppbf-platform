@@ -578,7 +578,7 @@ describe('an excerpt is linked to its filed original through the documents route
     const response = await postExcerpt(otherSource, { archived_original_id: ARC });
 
     expect(response.status).toBe(409);
-    expect((await response.json()).error).toMatch(/belongs to another source or shelf/);
+    expect((await response.json()).error).toMatch(/not one of this source's originals on this shelf/);
     const after = await rawQuery<{ n: number }>('select count(*)::int as n from pilot.shadow_library_documents');
     expect(after[0].n).toBe(before[0].n);
   });
@@ -586,6 +586,7 @@ describe('an excerpt is linked to its filed original through the documents route
   test.each([
     ['a malformed id', { archived_original_id: "arc_x'; drop table" }, /must be a filed original id/],
     ['a link on a document about an athlete', { archived_original_id: ARC, subject_id: 'ATH-1' }, /about an athlete is not linked/],
+    ['a link on an excerpt not taken from a PDF page', { archived_original_id: ARC, metadata: { intake_method: 'manual_text', locator: 'p. 2' } }, /taken from a page of the filed PDF/],
   ])('%s is refused 400 before anything is written', async (_label, extra, message) => {
     const response = await postExcerpt(linkedSource, extra);
     expect(response.status).toBe(400);
