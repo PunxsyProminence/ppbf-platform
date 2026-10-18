@@ -1,6 +1,6 @@
 import { query } from './db';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
-import { libraryRetrievalOrganizationIds, PLATFORM_LIBRARY_ORGANIZATION_ID } from './platformLibraryScope';
+import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 
 // WHAT A DRILL'S GROUNDING CLAIM IDS POINT AT (audit 2026-10-17 item 11).
 //
@@ -153,7 +153,10 @@ export async function resolveDrillGroundingEvidence(
 
   // Cleared rows first, then the platform baseline -- the research program's
   // own copy of the claim -- over a gym shelf carrying the same id, then the
-  // most authoritative, so the first row per id is the one to show.
+  // most authoritative, so the first row per id is the one to show. The
+  // baseline is "not the reader's own shelf": the candidate set is exactly
+  // those two (libraryRetrievalOrganizationIds), so the reserved id is never
+  // named here (platformLibraryWriteScope.convention.test.ts).
   const rows = await query<ChunkRow>(
     `select c.metadata->>'claim_id' as claim_id,
             (${SERVABLE_LIBRARY_SOURCE_SQL}
@@ -170,8 +173,8 @@ export async function resolveDrillGroundingEvidence(
         and d.subject_id is null
         and not (d.metadata ? 'subject_purged_at')
         and not (c.metadata ? 'subject_purged_at')
-      order by claim_id, cleared desc, (c.organization_id = $3) desc, s.authority_tier asc, c.chunk_id asc`,
-    [libraryRetrievalOrganizationIds(organizationId), ids, PLATFORM_LIBRARY_ORGANIZATION_ID],
+      order by claim_id, cleared desc, (c.organization_id = $3) asc, s.authority_tier asc, c.chunk_id asc`,
+    [libraryRetrievalOrganizationIds(organizationId), ids, organizationId],
   );
 
   const firstById = new Map<string, ChunkRow>();
