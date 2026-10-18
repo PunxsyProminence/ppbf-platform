@@ -10,10 +10,8 @@ import { BlockKindIcon, blockKindWord } from './blockKindIcons';
 import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
 
 /**
  * THE WALL — the board on the gym's television.
@@ -212,18 +210,18 @@ function pickBlock(raw: unknown): WallSessionBlock | null {
   if (typeof block.block_id !== 'string' || typeof block.block_label !== 'string' || typeof block.block_kind !== 'string') {
     return null;
   }
-  const order = Number(block.block_order);
-  const start = Number(block.start_offset_min);
-  const end = Number(block.end_offset_min);
-  if (![order, start, end].every(Number.isFinite)) return null;
+  const order = block.block_order;
+  const start = block.start_offset_min;
+  const end = block.end_offset_min;
+  if (![order, start, end].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
   return {
     block_id: block.block_id,
-    block_order: order,
+    block_order: order as number,
     block_label: block.block_label,
     block_kind: block.block_kind,
     drill_name: typeof block.drill_name === 'string' && block.drill_name.trim() !== '' ? block.drill_name : null,
-    start_offset_min: start,
-    end_offset_min: end,
+    start_offset_min: start as number,
+    end_offset_min: end as number,
   };
 }
 
@@ -237,7 +235,8 @@ export function pickLiveSession(session: PairedResponse['session']): WallLiveSes
   if (blocks.length === 0) return null;
   const current = pickBlock(session.current_block);
   const next = pickBlock(session.next_block);
-  const left = current ? Number((session.current_block as Record<string, unknown>).seconds_to_scheduled_end) : NaN;
+  const raw = current ? (session.current_block as Record<string, unknown>).seconds_to_scheduled_end : undefined;
+  const left = typeof raw === 'number' ? raw : NaN;
   return {
     run_id: session.run_id,
     script_name: typeof session.script_name === 'string' ? session.script_name : '',
@@ -550,7 +549,7 @@ export default function WallDisplay() {
   });
 
   return (
-    <div className="wall-board ge-wallboard flex h-screen w-screen flex-col overflow-hidden">
+    <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden">
       <Masthead
         now={now}
         zone={zone}
@@ -797,13 +796,14 @@ function MottoPlate() {
 }
 
 function Masthead({ now, zone, round }: { now: number | null; zone?: string; round?: ReactNode }) {
+  const gym = useOrganizationProfile();
   const stamp = now === null ? null : new Date(now);
   return (
     <header className="flex shrink-0 flex-col gap-[var(--s3)] px-[var(--s7)] pt-[var(--s4)]">
       <MottoPlate />
       <div className="flex items-end justify-between gap-[var(--s6)]">
-        <div>
-          <p className="wall-eyebrow">{GYM.brand}</p>
+        <div className="min-w-0">
+          <p className="wall-eyebrow">{gym?.brand ?? HELD}</p>
           <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
           <p className="wall-date text-4xl">
             {stamp ? formatIn(stamp, zone, { month: 'long', day: 'numeric', year: 'numeric' }) : HELD}
@@ -813,7 +813,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
         {/* aria-hidden: a clock that announces itself every minute is hostile to
             anyone running a reader near this screen, and the time is not the
             reason a person would be listening to a wall. */}
-        <p className="wall-clock text-8xl" aria-hidden="true">
+        <p className="wall-clock ge-enamel ge-enamel--plate text-8xl" aria-hidden="true">
           {stamp ? formatIn(stamp, zone, { hour: 'numeric', minute: '2-digit' }) : HELD}
         </p>
       </div>
@@ -874,8 +874,8 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
 
   return (
     <section className="wall-panel ge-frame flex min-h-0 flex-1 flex-col" aria-label="On the floor">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">On the floor</span>
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">On the floor</span>
         {board.on_floor_total > 0 && <span className="wall-count">{board.on_floor_total}</span>}
       </h2>
 
@@ -892,7 +892,7 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
         // Density steps the names down the φ ladder as the room fills, so a
         // busy class does not overflow the panel and get silently clipped. See
         // the [data-density] rules in globals.css.
-        <ul className="wall-floor-list min-h-0" data-density={compact ? 'session' : floorDensity(board.on_floor.length)}>
+        <ul className="wall-floor-list min-h-0" data-density={`${compact ? 'session-' : ''}${floorDensity(board.on_floor.length)}`}>
           {board.on_floor.map((person) => (
             <li key={person.key} className="wall-name text-6xl">
               {person.name}
@@ -945,9 +945,9 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
 
   return (
     <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="Now">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">Now</span>
-        {live.is_paused && <span className="wall-heading-cap ge-enamel">Paused</span>}
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">Now</span>
+        {live.is_paused && <span className="wall-heading-stamp">Paused</span>}
         {at >= 0 && <span className="wall-session-place">Block {at + 1} of {live.blocks.length}</span>}
       </h2>
       {current ? (
@@ -971,6 +971,7 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
       )}
       <ol className="wall-strip" aria-label="Today's session">
         {stripWindow(live.blocks, live.current_block_id).map((block) => {
+          const position = live.blocks.indexOf(block) + 1;
           const state = block.block_id === live.current_block_id ? 'now' : block.block_order < currentOrder ? 'done' : 'next';
           return (
             <li
@@ -979,10 +980,12 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
               data-state={state}
               aria-current={state === 'now' ? 'step' : undefined}
             >
-              <span className="wall-strip-number ge-enamel">{block.block_order}</span>
-              <span className="wall-strip-icon ge-pictogram">
-                <BlockKindIcon kind={block.block_kind} />
-              </span>
+              <span className="wall-strip-number ge-enamel">{position}</span>
+              {blockKindWord(block.block_kind) && (
+                <span className="wall-strip-icon ge-pictogram">
+                  <BlockKindIcon kind={block.block_kind} />
+                </span>
+              )}
               <span className="wall-strip-word">{blockKindWord(block.block_kind) ?? block.block_label}</span>
               <span className="wall-strip-min">
                 {block.start_offset_min}–{block.end_offset_min} min
@@ -997,20 +1000,22 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
 
 /** NEXT UP: the block after this one, as the plan has it. */
 function SessionNext({ live }: { live: WallLiveSession }) {
-  const next = live.blocks.find((block) => block.block_id === live.next_block_id) ?? null;
+  const at = live.blocks.findIndex((block) => block.block_id === live.current_block_id);
+  const next =
+    live.blocks.find((block) => block.block_id === live.next_block_id) ?? (at >= 0 ? (live.blocks[at + 1] ?? null) : null);
   return (
     <section className="wall-panel ge-frame flex shrink-0 flex-col" aria-label="Next up">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">Next up</span>
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">Next up</span>
       </h2>
       {next ? (
         <>
           <KindMark kind={next.block_kind} />
           <p className="wall-next-label">{next.block_label}</p>
         </>
-      ) : (
+      ) : at >= 0 && at === live.blocks.length - 1 ? (
         <p className="wall-quiet text-4xl">Last block.</p>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -1023,8 +1028,8 @@ function SessionNext({ live }: { live: WallLiveSession }) {
 function Today({ sessions, zone }: { sessions: readonly WallSession[]; zone?: string }) {
   return (
     <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="Today">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">Today</span>
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">Today</span>
       </h2>
 
       {sessions.length === 0 ? (
@@ -1170,12 +1175,15 @@ function Marquee({ board, daily }: { board: WallBoard; daily: DailySaying | null
 export const WALL_STANDING_SEED = 'wall-standing';
 
 function StandingBoard({ health }: { health: WallHealth }) {
+  const gym = useOrganizationProfile();
   const saying = pickSaying('anywhere', WALL_STANDING_SEED);
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[var(--s5)] px-[var(--s7)] text-center">
-      <p className="wall-standing-crest" aria-hidden="true">
-        {GYM.shortName}
-      </p>
+      {gym ? (
+        <p className="wall-standing-crest" aria-hidden="true">
+          {gym.shortName}
+        </p>
+      ) : null}
       {saying ? (
         <p className="wall-standing-line text-6xl" data-testid="wall-standing-saying">
           {saying.line}

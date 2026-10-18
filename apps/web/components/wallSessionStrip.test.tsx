@@ -225,6 +225,79 @@ describe('the session on a paired TV', () => {
     expect(container.textContent).not.toContain('COACH NOTE');
   });
 
+  it('follows the coach through a board outage: a read with no board still moves NOW', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ session: session(), board: board(), quotes: [] }) })
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          session: session({ current_block: { ...BLOCKS[4], seconds_to_scheduled_end: 60 }, next_block: BLOCKS[5] }),
+          board: null,
+          board_status: 'unavailable',
+        }),
+      });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Now' }).textContent).toContain('Jab on the bag');
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('region', { name: 'Now' }).textContent).toContain('Water');
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('says "Last block." only on the last block, and nothing when the coach is on none', async () => {
+    global.fetch = paired({
+      session: session({ current_block: { ...BLOCKS[7], seconds_to_scheduled_end: 60 }, next_block: null }),
+      board: board(),
+      quotes: [],
+    }) as unknown as typeof fetch;
+    const view = render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Next up' }).textContent).toContain('Last block.');
+    view.unmount();
+
+    global.fetch = paired({ session: session({ current_block: null, next_block: null }), board: board(), quotes: [] }) as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Next up' }).textContent).not.toContain('Last block.');
+  });
+
+  it('takes NEXT UP from the plan when the next block did not come through', async () => {
+    global.fetch = paired({ session: session({ next_block: { block_id: 'broken' } }), board: board(), quotes: [] }) as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Next up' }).textContent).toContain('Water');
+  });
+
+  it('steps the names down as the room fills while a session is up', async () => {
+    const people = Array.from({ length: 16 }, (_, i) => ({ key: `p${i}`, name: `P${i}.`, visibility: 'initials' as const }));
+    global.fetch = paired({ session: session(), board: board({ on_floor: people, on_floor_total: 16 }), quotes: [] }) as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('session-packed');
+  });
+
+  it('carries cream enamel only on the sign bands, the clock plate and the strip numbers (burn-in)', async () => {
+    global.fetch = paired({ session: session(), board: board(), quotes: [] }) as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    const enamelled = [...container.querySelectorAll('.ge-enamel')].map((el) => `${el.tagName.toLowerCase()}.${el.classList[0]}`);
+    expect(enamelled.filter((name) => name !== 'span.wall-strip-number').sort()).toEqual(
+      ['h2.wall-heading', 'h2.wall-heading', 'h2.wall-heading', 'p.wall-clock'],
+    );
+    expect(enamelled.filter((name) => name === 'span.wall-strip-number')).toHaveLength(SESSION_STRIP_MAX);
+  });
+
   it('keeps only the fields it names, whatever else the payload carries', () => {
     const leaky = session({
       what_to_say: 'COACH NOTE ONE',

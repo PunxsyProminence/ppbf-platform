@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query, sanitizedSqlState } from '@/src/server/pilot/db';
+import { getOperatingOrganizationProfileOrNull } from '@/src/server/pilot/organizationProfileStore';
 import { isUuid, requirePrincipal, jsonError } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { fileUnansweredShadowQuestion, mayFileUnansweredQuestion } from '@/src/server/pilot/shadowResearchFiling';
@@ -377,7 +378,8 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
   // deployment measured 14-17k characters per answer without one), and the
   // register follows the authenticated role -- athletes are assumed minors, so
   // their register keeps the language clean and holds an ~8th-grade reading level.
-  const trustBoundaryPrompt = `${composeShadowSystemPrompt({ role: userRole, sessionType })}
+  const gym = await getOperatingOrganizationProfileOrNull();
+  const trustBoundaryPrompt = `${composeShadowSystemPrompt({ role: userRole, sessionType, gym })}
 
 ## EVIDENCE BOUNDARY
 Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.`;

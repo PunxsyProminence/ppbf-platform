@@ -5555,19 +5555,26 @@
    the TV first and are meant for the coach's own floor screen next, which is
    why they are not inside the [data-surface="wall"] block in globals.css.
 
-   BURN-IN, AND WHY THE ENAMEL IS SMALL. A television showing one layout for
-   twelve hours keeps it. The pictures hang big cream panels; a lit cream field
-   held still all evening is exactly what the wall's third defence exists to
-   prevent. So the board's field stays DARK (blackened steel over the room),
-   the header plate is dark bronze with polished letters rather than bright
-   brass with dark ones, and cream enamel appears only on small label caps.
-   wallBoardKit.test.ts holds the enamel fill to the .ge-enamel rule.
+   BURN-IN, AND HOW MUCH CREAM. A television showing one layout for twelve
+   hours keeps it. Jason's pick for the TV is "B: Push further" (2026-10-17):
+   cream enamel signs on the boards and the clock, a heavier frame, more
+   texture, inside the burn-in limit. So the cream is sign bands and plates
+   (each board's title band, the clock plate), at aged-paper luminance, and
+   the boards' bodies stay dark slate; measured at 1920x1080 the cream is
+   about a tenth of the screen (the PR states the number per state). The
+   header plate is dark bronze with polished letters. The 1200 s drift moves
+   every edge, the screen frame's included. wallBoardKit.test.ts holds the
+   enamel fill to .ge-enamel; wallHeaderPlate.test.tsx holds which elements
+   carry it.
 
    Pieces, each drawn rather than imaged:
-     .ge-frame   a board: dark field, aged-wood surround, four brass corner
-                 brackets with a rivet in each
-     .ge-plate   the engraved header plate: dark bronze, two rivets
-     .ge-enamel  a cream enamel label cap with a pinstripe, dark ink */
+     .ge-screenframe  the screen's own heavy wood frame with a blackened-steel
+                      lip; its top rail carries the header plate
+     .ge-frame        a board: dark slate field, wood surround, brass corner
+                      brackets with a rivet in each
+     .ge-plate        the engraved header plate: dark bronze, two rivets
+     .ge-enamel       cream enamel with dark ink; --sign and --plate add the
+                      worn, chipped edge and the pinstripe */
 
 .ge-wallboard {
   --brass-200: #E7C88A;
@@ -5593,8 +5600,12 @@
   --enamel: #E2D5B5;
   --enamel-ink: #191919;
   --enamel-ink-rgb: 25 25 25;
+  /* The steel a chip shows, and the pinstripe in the club's red: decoration. */
+  --enamel-chip: #23262A;
+  --enamel-chip-rgb: 35 38 42;
+  --enamel-stripe: #8E2A24;
 
-  --frame-band: 10px;
+  --frame-band: 16px;
   --frame-field: #121517;
   --frame-field-rgb: 18 21 23;
 
@@ -5613,16 +5624,20 @@
   border-radius: 4px;
   background-image:
     radial-gradient(90% 60% at 18% 0%, rgb(var(--brass-300-rgb) / .05), transparent 70%),
-    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .90), rgb(var(--frame-field-rgb) / .94)),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, .18) 0 3px, transparent 3px 11px),
-    linear-gradient(160deg, #4E3624 0%, #2E1F14 34%, #432E1F 62%, #24180F 100%);
-  background-clip: padding-box, padding-box, border-box, border-box;
-  background-origin: padding-box, padding-box, border-box, border-box;
+    var(--grain-fine),
+    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .92), rgb(var(--frame-field-rgb) / .95)),
+    var(--grain-fine),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, .22) 0 2px, transparent 2px 9px, rgba(255, 255, 255, .03) 9px 10px, transparent 10px 15px),
+    linear-gradient(160deg, #573C28 0%, #2E1F14 30%, #4A3322 58%, #241810 100%);
+  background-clip: padding-box, padding-box, padding-box, border-box, border-box, border-box;
+  background-origin: padding-box, padding-box, padding-box, border-box, border-box, border-box;
+  background-blend-mode: normal, soft-light, normal, soft-light, normal, normal;
   box-shadow:
     var(--shadow-contact),
-    0 8px 22px rgba(0, 0, 0, .38),
-    inset 0 0 0 1px rgba(0, 0, 0, .7),
-    inset 0 2px 0 rgb(var(--brass-300-rgb) / .07);
+    0 10px 26px rgba(0, 0, 0, .45),
+    inset 0 0 0 3px #15181A,
+    inset 0 0 0 4px rgb(var(--brass-300-rgb) / .12),
+    inset 0 3px 8px rgba(0, 0, 0, .55);
 }
 
 /* The four brackets: an L of brass at each corner of the surround, a rivet
@@ -5639,11 +5654,11 @@
     var(--ge-bracket), var(--ge-bracket), var(--ge-bracket), var(--ge-bracket);
   background-repeat: no-repeat;
   background-size:
-    14px 14px, 14px 14px, 14px 14px, 14px 14px,
-    46px 10px, 10px 46px, 46px 10px, 10px 46px,
-    46px 10px, 10px 46px, 46px 10px, 10px 46px;
+    16px 16px, 16px 16px, 16px 16px, 16px 16px,
+    64px 16px, 16px 64px, 64px 16px, 16px 64px,
+    64px 16px, 16px 64px, 64px 16px, 16px 64px;
   background-position:
-    left -2px top -2px, right -2px top -2px, left -2px bottom -2px, right -2px bottom -2px,
+    left 0 top 0, right 0 top 0, left 0 bottom 0, right 0 bottom 0,
     left top, left top, right top, right top,
     left bottom, left bottom, right bottom, right bottom;
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .55));
@@ -5685,6 +5700,79 @@
     0 1px 0 rgba(0, 0, 0, .55),
     var(--shadow-contact);
   text-shadow: none;
+}
+
+/* Worn enamel: chips knocked out of the edge down to the steel, the grain of
+   the coat, and a pinstripe inside the rim. Signs and plates only; a small
+   cap stays clean. */
+.ge-wallboard .ge-enamel--sign,
+.ge-wallboard .ge-enamel--plate {
+  background-image:
+    radial-gradient(16px 10px at 3% 0%, var(--enamel-chip) 55%, transparent 72%),
+    radial-gradient(24px 11px at 38% 100%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(11px 16px at 100% 30%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(10px 9px at 0% 78%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(18px 10px at 82% 0%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(8px 6px at 64% 100%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(6px 5px at 21% 100%, var(--enamel-chip) 50%, transparent 72%),
+    radial-gradient(130% 160% at 30% 0%, rgba(255, 255, 255, .12), transparent 62%),
+    linear-gradient(180deg, transparent 55%, rgb(var(--enamel-ink-rgb) / .14)),
+    var(--grain-fine);
+  background-blend-mode: normal, normal, normal, normal, normal, normal, normal, normal, normal, soft-light;
+  box-shadow:
+    inset 0 0 0 2px rgb(var(--enamel-chip-rgb) / .9),
+    inset 0 0 0 5px var(--enamel),
+    inset 0 0 0 7px var(--enamel-stripe),
+    0 2px 0 rgba(0, 0, 0, .55),
+    var(--shadow-contact);
+}
+
+/* The screen's own frame. Painted on a pseudo-element behind the board's
+   content (the board isolates, so it stays behind with or without the drift
+   transform), so it drifts with the board and nothing on it is a target. The
+   wood is the border box with the middle masked out; the top rail is deep
+   enough for the header plate to be mounted on it. */
+.ge-wallboard.ge-screenframe {
+  position: relative;
+  isolation: isolate;
+}
+
+.ge-wallboard.ge-screenframe::before,
+.ge-wallboard.ge-screenframe::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.ge-wallboard.ge-screenframe::before {
+  inset: 6px;
+  border: solid transparent;
+  border-width: 58px 16px 16px;
+  border-radius: 6px;
+  background-image:
+    var(--ge-rivet), var(--ge-rivet), var(--ge-rivet), var(--ge-rivet),
+    var(--grain-fine),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, .22) 0 2px, transparent 2px 9px, rgba(255, 255, 255, .035) 9px 10px, transparent 10px 17px),
+    linear-gradient(180deg, #5A3E29 0%, #2E1F14 38%, #46301F 68%, #21160E 100%);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat, no-repeat;
+  background-size: 16px 16px, 16px 16px, 16px 16px, 16px 16px, auto, auto, auto;
+  background-position: left 12px top 21px, right 12px top 21px, left 0 bottom 0, right 0 bottom 0, 0 0, 0 0, 0 0;
+  background-origin: border-box;
+  background-clip: border-box;
+  background-blend-mode: normal, normal, normal, normal, soft-light, normal, normal;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box;
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box;
+  mask-composite: exclude;
+}
+
+/* The blackened-steel lip just inside the wood. */
+.ge-wallboard.ge-screenframe::after {
+  inset: 60px 18px 18px;
+  border: 4px solid #15181A;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(var(--brass-300-rgb) / .14), 0 0 0 1px rgba(0, 0, 0, .65);
 }
 
 /* A pictogram roundel: a struck brass ring on the dark field, the drawing in

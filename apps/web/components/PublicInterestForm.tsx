@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useId, useState, type SyntheticEvent } from 'react';
 import { apiBase } from '@/lib/apiBase';
-import { currentOrganizationProfile, physicalAddressLine } from '@/src/shared/organizationProfile';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
+import { physicalAddressLine } from '@/src/shared/organizationProfile';
 import {
   contactMethodLabels,
   contactMethodOptions,
@@ -26,10 +27,11 @@ import {
    contact them if they are requesting info"). Sending the form is the request
    to be contacted, and the route records it that way. */
 
-// The gym's address, from its one profile (#1469, N9-01).
-const fallbackAddress = physicalAddressLine(currentOrganizationProfile());
-
 export default function PublicInterestForm() {
+  // The gym's address, from its stored profile (lane L31). With none, the
+  // failure line asks only for another try.
+  const gym = useOrganizationProfile();
+  const comeBy = gym?.physical.street ? ` Try again, or just come by: ${physicalAddressLine(gym)}.` : ' Try again.';
   // htmlFor/id rather than a wrapping <label>: a label wrapped around a
   // <select> folds every option's text into the select's accessible name.
   const id = useId();
@@ -77,7 +79,7 @@ export default function PublicInterestForm() {
       if (!response.ok || !payload.ok) {
         setConfirmation(
           payload.error
-          || `Something went wrong sending this and it did not go through. Try again, or just come by: ${fallbackAddress}.`,
+          || `Something went wrong sending this and it did not go through.${comeBy}`,
         );
         return;
       }
@@ -88,7 +90,7 @@ export default function PublicInterestForm() {
       setPhone('');
       setMessage('');
     } catch {
-      setConfirmation(`The connection dropped and this was not sent. Try again, or just come by: ${fallbackAddress}.`);
+      setConfirmation(`The connection dropped and this was not sent.${comeBy}`);
     } finally {
       setSubmitting(false);
     }

@@ -6,10 +6,11 @@ import path from 'node:path';
  *
  * Two things here are function rather than look, and both fail silently:
  *
- *   1. Burn-in. A TV holds one layout for twelve hours. The references hang big cream panels; the
- *      kit keeps the field dark and lets cream enamel fill only small label caps. The one place
- *      that could quietly undo that is a later rule painting `var(--enamel)` on a panel, so the
- *      fill is held to the .ge-enamel rule, in the kit and in the wall's own block.
+ *   1. Burn-in. A TV holds one layout for twelve hours. The boards' bodies stay dark and cream
+ *      enamel fills only the signs and plates that carry .ge-enamel (about a tenth of the screen,
+ *      measured; which elements carry it is held by wallHeaderPlate.test.tsx). The one place that
+ *      could quietly undo that is a later rule painting `var(--enamel)` on something else, so the
+ *      fill is held to .ge-enamel, in the kit and in the wall's own block.
  *   2. The bronze ramp leak. Brass at partial alpha reads `--brass-N-rgb`; a scope that moves a rung
  *      without its triple paints bronze solids beside legacy-gold hairlines. Each rung moves with
  *      its triple.
@@ -49,7 +50,7 @@ describe('the wall-board kit', () => {
     }
   });
 
-  it('paints cream enamel only on the small label caps', () => {
+  it('paints cream enamel only through .ge-enamel', () => {
     // By token (with or without a fallback) and by its literal value, outside the scope that defines it.
     const painting = [...rules(kit), ...rules(wallBlock)]
       .filter((rule) => rule.selector !== '.ge-wallboard')
@@ -59,13 +60,6 @@ describe('the wall-board kit', () => {
     for (const rule of painting) {
       expect({ selector: rule.selector, enamelOnly: /\.ge-enamel\b/.test(rule.selector) })
         .toEqual({ selector: rule.selector, enamelOnly: true });
-    }
-  });
-
-  it('gives the cap no size of its own, so it stays as big as its label', () => {
-    const cap = rules(kit).filter((rule) => /\.ge-enamel\b/.test(rule.selector));
-    for (const rule of cap) {
-      expect(rule.body).not.toMatch(/(^|;)\s*(width|height|min-width|min-height|flex(-grow)?)\s*:/);
     }
   });
 });

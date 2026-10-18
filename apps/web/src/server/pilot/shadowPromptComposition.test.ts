@@ -172,7 +172,7 @@ describe('weight cutting, heat and "am I cleared" questions are taught', () => {
   test('every audience gets the same section: it is in the base prompt, not in a register', () => {
     for (const role of ['coach', 'organization_admin', 'athlete', 'parent']) {
       for (const sessionType of ['quick_round', 'heavy_bag']) {
-        expect(composeShadowSystemPrompt({ role, sessionType }).split(WEIGHT_CUT_SECTION)).toHaveLength(2);
+        expect(composeShadowSystemPrompt({ role, sessionType, gym: null }).split(WEIGHT_CUT_SECTION)).toHaveLength(2);
       }
     }
   });
@@ -258,26 +258,26 @@ describe('canned urgent replies do not vary with the audience', () => {
 
 describe('composed prompt', () => {
   test('doctrine and persona are carried unchanged', () => {
-    const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round' });
+    const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round', gym: null });
     // The audience must never change the rules, only the wording register.
     expect(prompt).toContain(SHADOW_SYSTEM_PROMPT);
     expect(prompt).toContain('DOCTRINE — NON-NEGOTIABLE');
   });
 
   test('an athlete quick round gets both the budget and the youth register', () => {
-    const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round' });
+    const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round', gym: null });
     expect(prompt).toContain('150 words');
     expect(prompt).toContain(ATHLETE_REGISTER);
   });
 
   test('a parent quick round gets the parent register', () => {
-    const prompt = composeShadowSystemPrompt({ role: 'parent', sessionType: 'quick_round' });
+    const prompt = composeShadowSystemPrompt({ role: 'parent', sessionType: 'quick_round', gym: null });
     expect(prompt).toContain(PARENT_REGISTER);
     expect(prompt).not.toContain(ATHLETE_REGISTER);
   });
 
   test('a coach heavy bag gets long-form and the staff register', () => {
-    const prompt = composeShadowSystemPrompt({ role: 'coach', sessionType: 'heavy_bag' });
+    const prompt = composeShadowSystemPrompt({ role: 'coach', sessionType: 'heavy_bag', gym: null });
     expect(prompt).not.toContain('150 words');
     expect(prompt).toContain('full technical register');
   });
