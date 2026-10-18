@@ -84,7 +84,8 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
     throw new Error('Unable to create SHADOW research requirement.');
   }
 
-  return row.research_requirement_id;
+  // bigserial: node-postgres hands int8 back as a string (F-128).
+  return Number(row.research_requirement_id);
 }
 
 // Every column of a requirement row, in the order ShadowResearchRequirementRow
