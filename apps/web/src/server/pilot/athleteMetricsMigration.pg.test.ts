@@ -31,6 +31,7 @@ const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedd
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-athlete-metrics-migration.mjs');
 const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+const VERIFY_SCHEMA_PATH = path.resolve(__dirname, '../../../scripts/pilot-verify-schema.mjs');
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_metrics_migration.sql';
 const TEMPLATE_DB = 'athmetrics_template';
 
@@ -38,7 +39,9 @@ const ORG = 'org-athmetrics';
 const OTHER_ORG = 'org-athmetrics-other';
 const COACH = 'acct-athmetrics-coach';
 const OFFICE = 'acct-athmetrics-office';
-const PLATFORM_ADMIN = 'acct-athmetrics-admin';
+// 'admin' is the legacy name of the organization admin role (roleAlias.ts).
+const LEGACY_ADMIN = 'acct-athmetrics-admin';
+const INACTIVE_ACCOUNT_COACH = 'acct-athmetrics-inactive';
 const LAPSED_COACH = 'acct-athmetrics-lapsed';
 const DELETED_COACH = 'acct-athmetrics-deleted';
 const OTHER_GYM_COACH = 'acct-athmetrics-other-coach';
@@ -111,9 +114,10 @@ async function seed(client: Client): Promise<void> {
   const accounts: Array<[string, string, string]> = [
     [COACH, 'coach', ORG],
     [OFFICE, 'organization_admin', ORG],
-    [PLATFORM_ADMIN, 'admin', ORG],
+    [LEGACY_ADMIN, 'admin', ORG],
     [LAPSED_COACH, 'coach', ORG],
     [DELETED_COACH, 'coach', ORG],
+    [INACTIVE_ACCOUNT_COACH, 'coach', ORG],
     [OTHER_GYM_COACH, 'coach', OTHER_ORG],
     [GUARDIAN, 'parent', ORG],
     [ATHLETE_LOGIN, 'athlete', ORG],
@@ -126,13 +130,16 @@ async function seed(client: Client): Promise<void> {
     );
   }
   await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [DELETED_COACH]);
+  // An account switched off while its seat in the gym is still active.
+  await client.query('update pilot.accounts set active_flag = false where account_id = $1', [INACTIVE_ACCOUNT_COACH]);
   // Authority comes from an active seat in the gym, as sign-in grants it (auth.ts).
   const seats: Array<[string, string, string, boolean]> = [
     [COACH, ORG, 'coach', true],
     [OFFICE, ORG, 'organization_admin', true],
-    [PLATFORM_ADMIN, ORG, 'admin', true],
+    [LEGACY_ADMIN, ORG, 'admin', true],
     [LAPSED_COACH, ORG, 'coach', false],
     [DELETED_COACH, ORG, 'coach', true],
+    [INACTIVE_ACCOUNT_COACH, ORG, 'coach', true],
     [OTHER_GYM_COACH, OTHER_ORG, 'coach', true],
     [GUARDIAN, ORG, 'parent', true],
     [ATHLETE_LOGIN, ORG, 'athlete', true],
@@ -156,7 +163,7 @@ async function seed(client: Client): Promise<void> {
       [org, athlete, COACH],
     );
   }
-  // A completed session that predates the column: its RPE and minutes must come through untouched.
+  // A completed session. The test that needs it to predate the column drops the column first.
   await client.query(
     `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes,
        completed_flag, created_at, updated_at, duration_minutes)
@@ -265,6 +272,8 @@ describe('athlete metrics migration: enjoyment (OD-2026-10-17-026 (a))', () => {
   test('lands on an existing session as "not answered" and leaves its RPE, minutes and note alone; re-applying is a no-op', async () => {
     const client = await freshDatabase('athm_enjoy_existing');
     try {
+      // The template already ran this file; take the column away so the row truly predates it.
+      await client.query('alter table pilot.sessions drop column enjoyment');
       await applyRunner(client, migrationSql);
       await applyRunner(client, migrationSql);
       const rows = await client.query(
@@ -323,7 +332,7 @@ describe('athlete metrics migration: standing height (OD-2026-10-17-026 (b))', (
     try {
       await height(client, { cm: 151.4 });
       await height(client, { recorder: OFFICE, role: 'organization_admin', cm: '152.0', measuredOn: '2026-10-17' });
-      await height(client, { recorder: PLATFORM_ADMIN, role: 'admin', cm: 150.05, measuredOn: '2026-10-15' });
+      await height(client, { recorder: LEGACY_ADMIN, role: 'admin', cm: 150.05, measuredOn: '2026-10-15' });
       const rows = await client.query(
         `select recorded_by_role, height_cm::text as cm, measured_on::text as measured_on
            from pilot.athlete_heights order by measured_on`,
@@ -361,6 +370,7 @@ describe('athlete metrics migration: standing height (OD-2026-10-17-026 (b))', (
         [OTHER_GYM_COACH, 'coach'],
         [LAPSED_COACH, 'coach'],
         [DELETED_COACH, 'coach'],
+        [INACTIVE_ACCOUNT_COACH, 'coach'],
         ['acct-athmetrics-nobody', 'coach'],
       ] as const) {
         await expect(height(client, { recorder, role })).rejects.toMatchObject({
@@ -487,10 +497,12 @@ describe('athlete metrics migration: standing height (OD-2026-10-17-026 (b))', (
         code: '23503',
         constraint: 'pilot_athlete_heights_supersedes_fk',
       });
+      // A row naming itself: it does not exist yet, so the guard refuses it as a reading that is
+      // not there (pilot_athlete_heights_not_self_check stands behind it; readiness pins it).
       const selfId = randomUUID();
       await expect(height(client, { heightId: selfId, supersedes: selfId })).rejects.toMatchObject({
-        code: '23514',
-        constraint: 'pilot_athlete_heights_not_self_check',
+        code: '23503',
+        constraint: 'pilot_athlete_heights_supersedes_fk',
       });
       const correction = await height(client, { supersedes: original });
       await expect(height(client, { supersedes: original })).rejects.toMatchObject({
@@ -501,6 +513,34 @@ describe('athlete metrics migration: standing height (OD-2026-10-17-026 (b))', (
       await height(client, { supersedes: correction });
       const n = await client.query('select count(*)::int as n from pilot.athlete_heights');
       expect(n.rows[0].n).toBe(3);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('one statement cannot write two readings that replace each other', async () => {
+    const client = await freshDatabase('athm_height_loop');
+    try {
+      const a = randomUUID();
+      const b = randomUUID();
+      const loop = client.query(
+        `insert into pilot.athlete_heights (organization_id, height_id, athlete_id, measured_on, height_cm,
+           recorded_by_account_id, recorded_by_role, request_key, supersedes_height_id)
+         values ($1, $2::uuid, $4, '2026-10-16', 151.4, $5, 'coach', 'loop-a', $3::uuid),
+                ($1, $3::uuid, $4, '2026-10-16', 151.4, $5, 'coach', 'loop-b', $2::uuid)`,
+        [ORG, a, b, ATHLETE, COACH],
+      );
+      await expect(loop).rejects.toMatchObject({ code: '23503', constraint: 'pilot_athlete_heights_supersedes_fk' });
+      // A reading and its correction in one statement, in order, is fine.
+      await client.query(
+        `insert into pilot.athlete_heights (organization_id, height_id, athlete_id, measured_on, height_cm,
+           recorded_by_account_id, recorded_by_role, request_key, supersedes_height_id)
+         values ($1, $2::uuid, $4, '2026-10-16', 115.4, $5, 'coach', 'chain-a', null),
+                ($1, $3::uuid, $4, '2026-10-16', 151.4, $5, 'coach', 'chain-b', $2::uuid)`,
+        [ORG, a, b, ATHLETE, COACH],
+      );
+      const n = await client.query('select count(*)::int as n from pilot.athlete_heights');
+      expect(n.rows[0].n).toBe(2);
     } finally {
       await client.end();
     }
@@ -535,6 +575,19 @@ describe('athlete metrics migration: standing height (OD-2026-10-17-026 (b))', (
 });
 
 describe('athlete metrics migration: the file and the runner', () => {
+  test('the pre-deploy schema check (pilot-verify-schema.mjs) reads the file and expects what it creates', async () => {
+    process.env.PPBF_SCHEMA_VERIFY_SKIP_MAIN = 'true';
+    const verify = await nativeDynamicImport(pathToFileURL(VERIFY_SCHEMA_PATH).href);
+    const expected = (verify.expectedObjectsFrom as (files: string[]) => Record<string, Set<string>>)([
+      path.join(INFRA_DIR, MIGRATION_FILE),
+    ]);
+    // A '--' inside a quoted comment once hid the whole create table from this parser.
+    expect([...expected.tables]).toEqual(['athlete_heights']);
+    expect([...expected.columns]).toEqual(['sessions.enjoyment']);
+    expect(expected.constraints.has('pilot_sessions_enjoyment_range')).toBe(true);
+    expect(expected.indexes.has('idx_athlete_heights_athlete_measured')).toBe(true);
+  });
+
   test('the file holds nothing destructive, and alters only pilot.sessions', async () => {
     // Comments and string literals (the column comments, error names) are prose, not statements.
     const sql = migrationSql.toLowerCase().replace(/--.*$/gm, '').replace(/'(?:[^']|'')*'/g, "''");
@@ -652,6 +705,22 @@ describe('athlete metrics migration: the file and the runner', () => {
       await expect(applyRunner(correction, migrationSql)).rejects.toThrow('ATHLETE_METRICS_NOT_READY: one_correction_ready');
     } finally {
       await correction.end();
+    }
+  });
+
+  test('the runner refuses a missing self-correction, save-key or date check', async () => {
+    for (const name of [
+      'pilot_athlete_heights_not_self_check',
+      'pilot_athlete_heights_request_key_check',
+      'pilot_athlete_heights_measured_on_check',
+    ]) {
+      const client = await freshDatabase(`athm_runner_${name.slice('pilot_athlete_heights_'.length)}`);
+      try {
+        await client.query(`alter table pilot.athlete_heights drop constraint ${name}`);
+        await expect(applyRunner(client, migrationSql)).rejects.toThrow('ATHLETE_METRICS_NOT_READY: shape_checks_ready');
+      } finally {
+        await client.end();
+      }
     }
   });
 

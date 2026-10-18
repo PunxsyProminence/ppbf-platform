@@ -26,27 +26,35 @@
 --    guard requires the recorder to hold that role in this gym through an
 --    ACTIVE membership, on an active account that is not deleted -- the same
 --    rule family_reply_reads, family_goals and family_support_records use for
---    their writers. An athlete, guardian, board member or platform owner
---    cannot be the recorder.
+--    their writers. An athlete, guardian or board seat cannot be the
+--    recorder. A platform owner's seat carries the role platform_owner as
+--    sign-in grants it (auth.ts), which the role check refuses; nothing here
+--    reads pilot.accounts.is_platform_owner.
 --
---    A READING IS NEVER CHANGED OR DELETED BY HAND. A mistyped height is
+--    A READING IS NEVER CHANGED OR DELETED ROW BY ROW. A mistyped height is
 --    corrected by a NEW row naming the one it replaces (supersedes_height_id),
 --    as OD-2026-10-04-029 keeps the original of a corrected weight. The
 --    reference is (organization_id, athlete_id, height_id), so a correction can
 --    only replace a reading of the same athlete in the same gym, and each
---    reading is replaced at most once. The reading in force is the one nothing
---    supersedes. UPDATE is refused; a direct DELETE is refused, and one that
---    arrives as a cascade (the athlete or the gym going, e.g. the retention
---    purge deleting pilot.athletes) runs from inside another trigger, so
---    pg_trigger_depth() is above 1 and it goes through.
+--    reading is replaced at most once. The guard also requires the replaced
+--    reading to exist already, so one multi-row INSERT cannot write two rows
+--    that replace each other and leave no reading in force. The reading in
+--    force is the one nothing supersedes. UPDATE is refused; a direct DELETE
+--    is refused, and one that arrives as a cascade (the athlete or the gym
+--    going, e.g. the retention purge deleting pilot.athletes) runs from inside
+--    another trigger, so pg_trigger_depth() is above 1 and it goes through.
+--    TRUNCATE, an administrator's statement that skips row triggers, is not
+--    guarded here (as for family_reply_reads).
 --
 --    ONE SAVE, ONE ROW. request_key is unique per gym: the application derives
 --    it from the save, so a retry after a lost reply lands on the row the
 --    first attempt wrote instead of adding a second reading.
 --
 --    The bounds (50.0-250.0 cm, one decimal) refuse typing slips -- a value in
---    mm or inches, a missing decimal point -- not people. No predicted
---    maturity, growth category or label is stored, here or anywhere.
+--    millimetres, a missing decimal point -- not people. A height typed in
+--    inches (50-98) is inside the bounds and is NOT refused here; the
+--    application labels the box in centimetres. No predicted maturity, growth
+--    category or label is stored, here or anywhere.
 --
 -- DEPENDS ON pilot.organizations, pilot.accounts,
 -- pilot.organization_memberships, pilot.athletes and pilot.sessions.
@@ -77,7 +85,7 @@ end
 $$;
 
 comment on column pilot.sessions.enjoyment is
-  'The athlete''s own answer at check-out to how much they enjoyed the session, 1-5, higher is more. NULL means not answered -- never 0, never a default (OD-2026-10-17-026 (a)).';
+  'The athlete''s own answer at check-out to how much they enjoyed the session, 1-5, higher is more. NULL means not answered, never 0, never a default (OD-2026-10-17-026 (a)).';
 
 -- ---------------------------------------------------------------------------
 -- 2. STANDING HEIGHT.
@@ -144,6 +152,17 @@ begin
        or new.recorded_by_role is null
        or new.recorded_by_role not in ('coach', 'organization_admin', 'admin') then
       return new;
+    end if;
+    -- A correction replaces a reading that is already there (rows written
+    -- earlier in the same statement count; later ones do not), so no two rows
+    -- can replace each other. Reported under the reference's own name.
+    if new.supersedes_height_id is not null and not exists (
+      select 1 from pilot.athlete_heights p
+       where p.organization_id = new.organization_id and p.athlete_id = new.athlete_id
+         and p.height_id = new.supersedes_height_id
+    ) then
+      raise exception 'ATHLETE_HEIGHT_CORRECTS_AN_EXISTING_READING'
+        using errcode = '23503', constraint = 'pilot_athlete_heights_supersedes_fk';
     end if;
     if not exists (
       select 1 from pilot.organization_memberships om

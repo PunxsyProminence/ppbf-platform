@@ -76,17 +76,28 @@ const READINESS_QUERY = `
       as request_key_unique_ready,
     ${keyColumns('pilot.athlete_heights', 'pilot_athlete_heights_one_correction', 'u', ['organization_id', 'supersedes_height_id'])}
       as one_correction_ready,
+    ${keyColumns('pilot.athlete_heights', 'pilot_athlete_heights_athlete_height_key', 'u', ['organization_id', 'athlete_id', 'height_id'])}
+      as athlete_height_key_ready,
+    ${namedCheck('pilot.athlete_heights', 'pilot_athlete_heights_not_self_check',
+      'CHECK (((supersedes_height_id IS NULL) OR (supersedes_height_id <> height_id)))')}
+      and ${namedCheck('pilot.athlete_heights', 'pilot_athlete_heights_request_key_check',
+        'CHECK (((length(btrim(request_key)) >= 1) AND (length(btrim(request_key)) <= 200)))')}
+      and ${namedCheck('pilot.athlete_heights', 'pilot_athlete_heights_measured_on_check',
+        "CHECK ((measured_on >= '2000-01-01'::date))")} as shape_checks_ready,
     exists (
       -- Dies with its athlete: (organization_id, athlete_id) -> pilot.athletes, with the cascade.
       select 1 from pg_constraint c
        where c.conrelid = to_regclass('pilot.athlete_heights')
          and c.conname = 'pilot_athlete_heights_athlete_fk' and c.contype = 'f'
          and c.confrelid = to_regclass('pilot.athletes') and c.confdeltype = 'c'
-         and (
-           select array_agg(a.attname::text order by a.attname)
-             from pg_attribute a
-            where a.attrelid = c.conrelid and a.attnum = any (c.conkey)
-         ) = array['athlete_id', 'organization_id']
+         and array(
+           select a.attname::text from unnest(c.conkey) with ordinality k(attnum, n)
+             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum order by k.n
+         ) = array['organization_id', 'athlete_id']
+         and array(
+           select a.attname::text from unnest(c.confkey) with ordinality k(attnum, n)
+             join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k.attnum order by k.n
+         ) = array['organization_id', 'athlete_id']
     ) as athlete_fk_ready,
     exists (
       -- A correction names a reading of the SAME athlete in the same gym: all three columns, in
