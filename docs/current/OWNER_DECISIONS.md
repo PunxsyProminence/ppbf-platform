@@ -240,7 +240,7 @@ and should not try to.
 
 **Status:** ruled; not built at the time of writing.
 
-**Status (2026-10-17), build note (Overwatch's and lane L58's, not a ruling):** lane L58 dropped the per-gym recipient setting from its database change (#1750) after "both reviewers flagged that a per-gym setting could route the flag away from the coach" (L58, line 18870), and Overwatch accepted it (line 18913): "recipient_role is dropped (the coach always gets it, per "A: Their coach (Rec.)")". So the coach always gets the sparring symptom flag. Overwatch to Jason (line 18928): "That differs from my earlier card, which said gyms could change it later; it would now need new work."
+**Status (2026-10-17), build note (lane L58's and Overwatch's, not a ruling):** the default recipient of the sparring symptom flag is the coach, and the setting is stored per gym so a gym can change it once L58's PR-3b editor exists. Lane L58's database change (#1750, still open, head `b5f8b96541b2b7af725cf38a8f146464b2fa13a9`) stores `recipient_role` with default 'coach' and allowed values coach, organization_admin and admin (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:104` and `:113` at that head). L58 had dropped the setting after its reviewers' advice (line 18870; Overwatch accepted it at line 18913) and restored it at that head (line 19154, 2026-10-18T03:50:07.175Z): "recipient_role is BACK (default 'coach'). The recorded ruling OD-2026-10-17-029 quotes your card "each gym can change the setting later", so the reviewers' advice to drop it would have contradicted it." and "PR-3b's editor will edit both recipient and protocol text." PR-3b was not built at the time of writing.
 
 ---
 
