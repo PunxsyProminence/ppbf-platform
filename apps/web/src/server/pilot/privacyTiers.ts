@@ -213,6 +213,12 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
     note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
   },
+  'sessions.session_type': {
+    tier: 'athlete_record',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'familyRecordView.ts#SESSION_WITHHELD_FROM_FAMILY_FIELDS'],
+    note: 'The athlete\'s own check-out tag (OD-2026-10-17-023). Staff reads as sessions.rpe; withheld from '
+      + 'every athlete and family session read until a screen reads it back.',
+  },
   'sessions.notes': {
     tier: 'athlete_record',
     enforcedBy: [
@@ -406,6 +412,28 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'through /api/pilot/coach/injuries; the athlete and their guardians read their own injuries through the '
       + 'family projection, which never selects this column (owner decision 2026-10-04).',
   },
+  'shadow_formula_observations.check_in_answers': {
+    tier: 'athlete_record',
+    enforcedBy: [
+      'access.ts#assertActorCanAccessAthlete',
+      '../../../app/api/pilot/shadow/formulas/results/route.ts#excludeFormulaIds',
+      '../../../app/api/pilot/shadow/formulas/observations/route.ts#checkInAnswerRefused',
+      'formulas/runner.ts#CHECK_IN_BASELINE_POLICY',
+    ],
+    note:
+      'A child\'s daily check-in answers (sleep_hours, energy, soreness, stress, mood), copied by the check-in into numeric '
+      + 'observations, and the personal baseline (MVP-09) results and snapshots built from them (Jason '
+      + '2026-10-17, OD-2026-10-17-020; lane L50). Same readers as the check-in answers themselves: the athlete '
+      + '(their own), and coach / organization admin / admin through assertActorCanAccessAthlete '
+      + '(/coach/athlete-intelligence). PARENTS READ NONE OF IT (Overwatch QD2, 2026-10-17): check-in answers '
+      + 'have no parent surface, so a number derived from them must not open one -- GET '
+      + '/api/pilot/shadow/formulas/results passes excludeFormulaIds [MVP-09] for a parent, and a parent view '
+      + 'needs its own ruling from Jason. Only the check-in writes these values: the observations route refuses '
+      + 'numeric writes into check-in contexts and superseding a check-in answer, and the runner refuses an '
+      + 'MVP-09 for these items built from anything else. Deleted with the athlete row (ON DELETE CASCADE), as '
+      + 'the check-ins are. Any new reader of pilot.shadow_formula_results that a parent can reach must apply '
+      + 'the same exclusion.',
+  },
   'shadow_formula_observations.body_weight': {
     tier: 'athlete_record',
     enforcedBy: [
@@ -461,6 +489,16 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'membership role; athletes, guardians, board and platform_owner are refused. Whether the athlete or family '
       + 'should see these notes is not decided, so nothing shows them one.',
   },
+  'athlete_heights.height_cm': {
+    tier: 'organization',
+    enforcedBy: ['athleteHeights.ts#assertHeightAccess', '../../../app/api/pilot/coach/athlete-height/route.ts#HEIGHT_ROLES'],
+    note:
+      "A child's standing height, entered by a coach, used only for a growth rate in cm per year "
+      + '(OD-2026-10-17-026 (b); no maturity labels). Coach-only: an active coach or admin membership here AND '
+      + 'assertActorCanAccessAthlete for that athlete, run with the membership role; athletes, guardians, board '
+      + 'and platform_owner are refused, and the database guard requires the recorder to hold a staff seat in '
+      + 'the gym. No athlete or family screen reads it.',
+  },
   'athlete_minor_limits.value_number': {
     tier: 'organization',
     enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
@@ -500,6 +538,32 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '(OD-2026-10-11-007; OD-2026-10-10-003 items 3 and 4). Athletes, guardians, the board and '
       + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
       + 'attendance view or report (CT-13). A mark taken back keeps its row.',
+  },
+  'behaviour_keys.label': {
+    tier: 'organization',
+    enforcedBy: [
+      '../../../app/api/pilot/coach/behaviour-keys/route.ts#GET',
+      'behaviourObservations.ts#listBehaviourKeys',
+    ],
+    note:
+      'A behaviour name on the gym\'s shared list (lane L49; Jason 2026-10-18 Q1, "A: Shared growing list"), '
+      + 'typed by a coach. It names a behaviour, but a coach could type a child\'s name into it, so it is staff '
+      + 'only like the reports it labels, and the purge scrubs a purged person\'s name out of it gym-wide '
+      + '(Jason 2026-10-07, "Scrub the child\'s name, keep").',
+  },
+  'behaviour_observations.note': {
+    tier: 'organization',
+    enforcedBy: [
+      '../../../app/api/pilot/coach/behaviour-observations/route.ts#GET',
+      'access.ts#assertActorCanAccessAthlete',
+      'behaviourObservations.ts#listBehaviourObservations',
+    ],
+    note:
+      'A coach\'s note beside a behaviour report on one athlete (lane L49): what the coach saw in a drill, '
+      + 'in the coach\'s words. Staff only (Jason 2026-10-18 Q2, "A: Staff only"): coach, organization_admin '
+      + 'or admin AND assertActorCanAccessAthlete for that athlete; athletes, guardians, board and '
+      + 'platform_owner are refused. At the purge the child\'s names are scrubbed from it and it is kept '
+      + '(Jason 2026-10-07, "Scrub the child\'s name, keep").',
   },
   'session_staff_notes.note': {
     tier: 'organization',
@@ -613,6 +677,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_contact_caps',
   // A coach's heat, weight-cut and supervision limits for one child.
   'pilot.athlete_minor_limits',
+  // A child's standing height, coach-entered, coach-only (OD-2026-10-17-026 (b)).
+  'pilot.athlete_heights',
   // A coach's own note on a child's session, in the coach's name.
   'pilot.session_staff_notes',
   // Which children a coach marked present in one session run (F-067). Staff only.
@@ -627,6 +693,13 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
   'pilot.athlete_pathway_stages',
+  // A child's own period start dates: athlete-only (Jason 2026-10-18, cycle
+  // tracking "C: Now"). Prefix: covers athlete_cycle_tracking and _entries.
+  'pilot.athlete_cycle',
+  // What a child ticked after sparring (head symptoms): a safety record.
+  'pilot.sparring_symptom_reports',
+  // A coach's report of what a child did in a drill, and why (lane L49). Staff only.
+  'pilot.behaviour_observations',
 ];
 
 /**

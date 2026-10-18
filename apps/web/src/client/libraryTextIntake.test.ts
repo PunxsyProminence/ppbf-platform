@@ -2,6 +2,7 @@ import {
   INTAKE_CHUNK_TARGET_LENGTH,
   INTAKE_MAX_TEXT_LENGTH,
   INTAKE_METHOD,
+  INTAKE_RECOVERY_WORDS,
   PDF_READ_MAX_BYTES,
   TEXT_ORIGIN_PDF_PAGE,
   isTextFromPage,
@@ -168,6 +169,8 @@ describe('submitLibraryTextIntake', () => {
         chunk_count: chunks.length,
         text_length: normalizeIntakeText(INPUT.text).length,
       },
+      // L54: the entry's own id, sent again by any retry of this request.
+      request_id: expect.stringMatching(/^[A-Za-z0-9-]{8,100}$/),
     });
     // The document never claims an ingest or review state of its own.
     expect(calls[0].body).not.toHaveProperty('ingest_state');
@@ -203,13 +206,31 @@ describe('submitLibraryTextIntake', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it.each([[500], [0], [201]])('does not claim nothing was saved when the document answer is %s without an id', async (status) => {
+  // L54 (audit 2026-10-17 item 3): a lost document answer is finished, not
+  // re-entered. Finish saving sends the SAME document request with the same
+  // request id; the server answers with the document it already made.
+  it.each([[500], [0], [201]])('a document answer of %s without an id offers Finish saving, which files nothing twice', async (status) => {
     const { calls, impl } = recordingFetch(() => (status === 0 ? 'throw' : { status }));
     const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
-    expect(result).toMatchObject({ ok: false, resume: null });
-    expect(result.ok === false && result.message).toMatch(/did not confirm.*check Evidence Review/);
-    expect(result.ok === false && result.message).not.toMatch(/Nothing was saved/);
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { documentId: null, nextOrdinal: 0 } });
+    expect(result.ok === false && result.message).toBe(INTAKE_RECOVERY_WORDS.documentUnconfirmed);
     expect(calls).toHaveLength(1);
+    if (result.ok || !result.resume) throw new Error('expected a resumable failure');
+
+    const total = splitIntakeText(INPUT.text).length;
+    const retry = recordingFetch((_call, index) => (index === 0
+      ? { status: 200, json: { ok: true, recovered: true, document: { document_id: 'doc_1' } } }
+      : { status: 201 }));
+    // The form may have changed since; the retry still sends the original entry.
+    const finished = await submitLibraryTextIntake('', { ...INPUT, sourceId: 'source_other', text: 'changed' }, {
+      resume: result.resume,
+      fetchImpl: retry.impl,
+    });
+    expect(finished).toEqual({ ok: true, documentId: 'doc_1', chunkCount: total });
+    expect(retry.calls[0].url).toMatch(/\/library\/documents$/);
+    expect(retry.calls[0].body).toEqual(calls[0].body);
+    expect(retry.calls.filter((call) => call.url.endsWith('/documents'))).toHaveLength(1);
+    expect(retry.calls.slice(1).map((call) => call.body.ordinal)).toEqual(Array.from({ length: total }, (_, index) => index));
   });
 
   // CL-C2: the server's 422 sentence is shown, and an excerpt-budget refusal
@@ -254,9 +275,12 @@ describe('submitLibraryTextIntake', () => {
     // Nothing after the failure was attempted.
     expect(first.calls).toHaveLength(4);
 
-    // The retry: no second document, starts at the failed ordinal, and a 409
-    // there (the lost request did land) counts as written.
-    const second = recordingFetch((_call, index) => (index === 0 ? { status: 409 } : { status: 201 }));
+    // The retry: no second document, starts at the failed ordinal, and the
+    // server's "already stored, same text" there (the lost request did land)
+    // counts as written.
+    const second = recordingFetch((_call, index) => (index === 0
+      ? { status: 200, json: { ok: true, already_stored: true } }
+      : { status: 201 }));
     const finished = await submitLibraryTextIntake('', { ...INPUT, text: 'changed since' }, {
       resume: failed.resume,
       fetchImpl: second.impl,
@@ -276,7 +300,61 @@ describe('submitLibraryTextIntake', () => {
   it('does not treat a 409 on a first attempt as written', async () => {
     const { impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 409 }));
     const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
-    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { nextOrdinal: 0 } });
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0 });
+  });
+
+  // L54 review: only the route's own comparison makes a 409 a conflict. Any
+  // other 409 (a document that moved source mid-save) stays resumable.
+  it('a 409 without the conflict code is an ordinary, resumable failure', async () => {
+    const { impl } = recordingFetch((_call, index) => (index === 0
+      ? created
+      : { status: 409, json: { error: 'This document moved to another source while the text was being saved. Try again.' } }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { documentId: 'doc_1', nextOrdinal: 0 } });
+    expect(result.ok === false && result.message).not.toMatch(/different text/);
+  });
+
+  // L54 review: a refusal on Finish saving proves nothing about the FIRST
+  // request, which may have saved the document before its answer was lost.
+  it.each([[401], [429], [404]])('a %s on Finish saving keeps the entry resumable and never says nothing was saved', async (status) => {
+    const lost = recordingFetch(() => 'throw');
+    const stopped = await submitLibraryTextIntake('', INPUT, { fetchImpl: lost.impl });
+    if (stopped.ok || !stopped.resume) throw new Error('expected a resumable failure');
+
+    const refused = recordingFetch(() => ({ status }));
+    const result = await submitLibraryTextIntake('', INPUT, { resume: stopped.resume, fetchImpl: refused.impl });
+
+    expect(result).toMatchObject({ ok: false, resume: { documentId: null, requestId: stopped.resume.requestId } });
+    expect(result.ok === false && result.message).toContain(INTAKE_RECOVERY_WORDS.documentUnconfirmed);
+    expect(result.ok === false && result.message).not.toMatch(/Nothing was saved/);
+  });
+
+  // L54 (audit 2026-10-17 item 2): during Finish saving, a 409 means different
+  // text is already stored at that part. It is never reported as saved, and no
+  // second Finish saving is offered, because a retry cannot change it.
+  it('a resume that meets different stored text is never reported as saved', async () => {
+    const first = recordingFetch((_call, index) => (index === 0 ? created : index === 3 ? 'throw' : { status: 201 }));
+    const failed = await submitLibraryTextIntake('', INPUT, { fetchImpl: first.impl });
+    if (failed.ok || !failed.resume) throw new Error('expected a resumable failure');
+
+    const total = splitIntakeText(INPUT.text).length;
+    const second = recordingFetch(() => ({ status: 409, json: { ok: false, code: 'SHADOW_LIBRARY_CHUNK_CONFLICT' } }));
+    const result = await submitLibraryTextIntake('', INPUT, { resume: failed.resume, fetchImpl: second.impl });
+
+    expect(result).toEqual({
+      ok: false,
+      message: INTAKE_RECOVERY_WORDS.chunkConflict(2, total),
+      resume: null,
+      writtenChunks: 2,
+      totalChunks: total,
+    });
+    expect(second.calls).toHaveLength(1);
+  });
+
+  it('a plain 200 without already_stored is not taken as a stored part', async () => {
+    const { impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 200, json: { ok: true } }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { documentId: 'doc_1', nextOrdinal: 0 } });
   });
 });
 
@@ -447,6 +525,8 @@ describe('readLibraryPdf', () => {
       ok: true,
       pages: [{ num: 1, text: 'one' }, { num: 2, text: '' }],
       emptyPageCount: 1,
+      // The route sent no hash, so none is claimed.
+      contentSha256: null,
     });
     expect(seen).toHaveLength(1);
     expect(seen[0].url).toBe('https://app.test/api/pilot/shadow/library/pdf-text');

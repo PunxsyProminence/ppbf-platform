@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { readLibraryRequestId } from '@/src/server/pilot/libraryIntakeRecovery';
 import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibraryDocument,
@@ -32,6 +33,9 @@ const INGEST_STATES: Record<ShadowLibraryIngestState, true> = {
   quarantined: true,
 };
 
+// researchArchiveFiling.ts mints `arc_<uuid>`.
+const ARCHIVED_ORIGINAL_ID = /^arc_[0-9a-f-]{36}$/;
+
 function isIngestState(value: unknown): value is ShadowLibraryIngestState {
   return typeof value === 'string' && Object.hasOwn(INGEST_STATES, value);
 }
@@ -50,6 +54,8 @@ export async function POST(request: NextRequest) {
       ingest_state?: unknown;
       metadata?: unknown;
       shelf?: unknown;
+      request_id?: unknown;
+      archived_original_id?: unknown;
     };
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
@@ -118,11 +124,40 @@ export async function POST(request: NextRequest) {
     if (subjectId && parseLibraryShelf(body.shelf) === 'platform') {
       return NextResponse.json({ ok: false, error: 'subject_id is not allowed on the platform shelf' }, { status: 400 });
     }
+    // The filed Research Archive original an excerpt was read from (lane L57).
+    // The database holds it to this document's source and shelf, and refuses it
+    // on a document about an athlete; both are said here first, plainly.
+    const archivedOriginalId = body.archived_original_id ?? null;
+    if (archivedOriginalId !== null && (typeof archivedOriginalId !== 'string' || !ARCHIVED_ORIGINAL_ID.test(archivedOriginalId))) {
+      return NextResponse.json({ ok: false, error: 'archived_original_id must be a filed original id' }, { status: 400 });
+    }
+    if (archivedOriginalId !== null && subjectId) {
+      return NextResponse.json(
+        { ok: false, error: 'A document about an athlete is not linked to a Research Archive original' },
+        { status: 400 },
+      );
+    }
+    // Only an excerpt taken from a page of the PDF is linked to it; the panel
+    // marks those text_origin 'pdf_page' (libraryTextIntake.ts).
+    if (archivedOriginalId !== null && (body.metadata as Record<string, unknown> | undefined)?.text_origin !== 'pdf_page') {
+      return NextResponse.json(
+        { ok: false, error: 'Only an excerpt taken from a page of the filed PDF is linked to it' },
+        { status: 400 },
+      );
+    }
     if (subjectId) {
       await assertActorCanAccessAthlete(principal, subjectId);
     }
 
-    const document = await createShadowLibraryDocument({
+    // The client's id for this entry (L54). A retry that sends it again gets
+    // the document the first request saved (200, recovered: true), so a lost
+    // answer is finished rather than entered twice.
+    const requestId = readLibraryRequestId(body.request_id);
+    if (requestId === undefined) {
+      return NextResponse.json({ ok: false, error: 'request_id must be 8 to 100 letters, digits or hyphens' }, { status: 400 });
+    }
+
+    const { recovered, ...document } = await createShadowLibraryDocument({
       organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
@@ -133,8 +168,11 @@ export async function POST(request: NextRequest) {
       contentSha256: (body.content_sha256 as string | null | undefined) ?? null,
       ingestState: body.ingest_state as ShadowLibraryIngestState | undefined,
       metadata: body.metadata as Record<string, unknown> | undefined,
+      requestId,
+      archivedOriginalId,
     });
 
+    if (recovered) return NextResponse.json({ ok: true, document, recovered: true }, { status: 200 });
     return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
@@ -143,6 +181,12 @@ export async function POST(request: NextRequest) {
       // other organizations' sources by id.
       if (error.message === 'Source does not exist in this organization.') {
         return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+      }
+      if ((error as { constraint?: unknown }).constraint === 'pilot_shadow_library_documents_archived_original_fk') {
+        return NextResponse.json(
+          { ok: false, error: "That filed PDF is not one of this source's originals on this shelf, so this excerpt cannot be linked to it" },
+          { status: 409 },
+        );
       }
       // unique (organization_id, content_sha256): the same content is already
       // registered, which is the seed script re-running rather than a fault.

@@ -13,7 +13,8 @@
  * WHAT THIS IS NOT. It is not a scheduler, a queue, a debounce, or a rules
  * engine. It reads one context, matches it against
  * FORMULA_INPUT_REQUIREMENTS, and calls the existing runStoredMvpFormula for
- * each complete match. Every guarantee it relies on already existed:
+ * each complete match -- plus MVP-11, whose sessions span contexts and are
+ * read from a 28-day window (focusAttainmentWindow below). Every guarantee it relies on already existed:
  *
  *   - Idempotency. `calculationKey` is a sha256 over formula identity, scope
  *     and ordered input observation ids and EXCLUDES computedAt; the insert is
@@ -37,7 +38,10 @@
  * owed and absent, in exchange for nothing.
  */
 
-import { getActiveObservationsForContext } from './repository';
+import {
+  getActiveObservationsForContext,
+  getActiveObservationsOfKindInWindow,
+} from './repository';
 import {
   FORMULA_INPUT_REQUIREMENTS,
   runStoredMvpFormula,
@@ -79,8 +83,9 @@ import type {
  * therefore cannot reach another boxer's record -- the safeguarding boundary
  * that matters is held one layer up and is untouched by this change.
  *
- * WHY IT MATTERED. Both real producers of the MVP-03/MVP-04 inputs are athlete
- * surfaces (athlete/dashboard/sparring/page.tsx and AthleteWorkspace.tsx), so
+ * WHY IT MATTERED. The producer of the MVP-03/MVP-04 inputs is an athlete
+ * surface (athlete/dashboard/sparring/page.tsx; AthleteWorkspace.tsx posts
+ * only pain_report to the same route), so
  * under the narrower list this module was reachable by almost nothing: the
  * orchestration existed and the flow that generates its inputs could not run
  * it.
@@ -99,12 +104,26 @@ export function canTriggerStoredCalculation(role: PilotRole): boolean {
 export interface DetectedFormulaCalculation {
   readonly formulaId: FormulaInputRequirement['formulaId'];
   readonly observationIds: readonly string[];
+  /** Present for a policy formula (MVP-10): what it runs under. */
+  readonly policy?: FormulaInputRequirement['policy'];
 }
 
 /** The switch's own reading of a dimension: absent and non-string are ''. */
 function dimensionString(observation: NumericObservation, key: string): string {
   const value = observation.dimensions?.[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Whether an observation carries every dimension value the requirement
+ *  names for its kind -- the switch's own string reading, trimmed. */
+function isCandidate(
+  observation: NumericObservation,
+  requirement: FormulaInputRequirement,
+): boolean {
+  if (observation.value == null && requirement.nonNullKinds.includes(observation.kind)) return false;
+  const wanted = requirement.dimensionValues[observation.kind];
+  if (!wanted) return true;
+  return Object.entries(wanted).every(([key, value]) => dimensionString(observation, key) === value);
 }
 
 function groupKeyFor(
@@ -161,7 +180,7 @@ export function detectSatisfiedFormulaInputs(
     const kinds = new Set(Object.keys(requirement.kinds) as ObservationKind[]);
     const groups = new Map<string, NumericObservation[]>();
     for (const observation of observations) {
-      if (!kinds.has(observation.kind)) continue;
+      if (!kinds.has(observation.kind) || !isCandidate(observation, requirement)) continue;
       const key = groupKeyFor(observation, requirement);
       const members = groups.get(key) ?? [];
       members.push(observation);
@@ -176,6 +195,7 @@ export function detectSatisfiedFormulaInputs(
         observationIds: Object.freeze(
           members.map((member) => member.observationId).sort(),
         ),
+        ...(requirement.policy ? { policy: requirement.policy } : {}),
       }));
     }
   }
@@ -211,7 +231,24 @@ export async function autoCalculateForObservationContext(input: {
   contextId: string;
 }): Promise<readonly FormulaResult[]> {
   const observations = await getActiveObservationsForContext(input);
-  const detected = detectSatisfiedFormulaInputs(observations);
+  const detected: DetectedFormulaCalculation[] = [...detectSatisfiedFormulaInputs(observations)];
+
+  const window = focusAttainmentWindow(observations);
+  if (window) {
+    const sessions = await getActiveObservationsOfKindInWindow({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      kind: 'focus_achieved',
+      ...window,
+    });
+    const observationIds = sessions
+      .filter((session) => session.unit === 'boolean_0_1')
+      .map((session) => session.observationId)
+      .sort();
+    if (observationIds.length > 0) {
+      detected.push(Object.freeze({ formulaId: 'MVP-11' as const, observationIds: Object.freeze(observationIds) }));
+    }
+  }
 
   const results: FormulaResult[] = [];
   for (const calculation of detected) {
@@ -220,8 +257,39 @@ export async function autoCalculateForObservationContext(input: {
       athleteId: input.athleteId,
       formulaId: calculation.formulaId,
       observationIds: calculation.observationIds,
+      ...(calculation.policy
+        ? { parameters: calculation.policy.parameters, policyVersion: calculation.policy.policyVersion }
+        : {}),
     });
     results.push(...output.results);
   }
   return Object.freeze(results);
+}
+
+/** Jason 2026-10-17, focus rate: "A: Last 28 days (Recommended)". */
+export const FOCUS_ATTAINMENT_WINDOW_DAYS = 28;
+
+/**
+ * MVP-11 (focus attainment) is the one formula here whose input set spans
+ * contexts: the share of sparring sessions in the last 28 days where the
+ * athlete ticked "I did the thing we were working on". A context with exactly
+ * one focus_achieved observation in the formula's unit is a session that
+ * completes a window; the window ends at that session and reaches back 28
+ * days, so the same sessions always give the same calculationKey however many
+ * of the session's observations race to trigger it.
+ *
+ * Exactly one, for the reason detectSatisfiedFormulaInputs gives: with two
+ * there is no rule for which session time ends the window. Pure.
+ */
+export function focusAttainmentWindow(
+  observations: readonly NumericObservation[],
+): { observedAfter: string; observedAtOrBefore: string } | null {
+  const focus = observations.filter((observation) => observation.kind === 'focus_achieved');
+  if (focus.length !== 1 || focus[0].unit !== 'boolean_0_1') return null;
+  const endsAt = Date.parse(focus[0].observedAt);
+  if (!Number.isFinite(endsAt)) return null;
+  return {
+    observedAfter: new Date(endsAt - FOCUS_ATTAINMENT_WINDOW_DAYS * 24 * 60 * 60 * 1_000).toISOString(),
+    observedAtOrBefore: new Date(endsAt).toISOString(),
+  };
 }

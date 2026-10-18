@@ -1756,6 +1756,58 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     }));
   });
 
+  // Audit item 11, Jason's ruling A ("Strongest + also-cites", relayed by
+  // Overwatch 2026-10-17). The old pick took the best class, then tier, so a
+  // transferred tier-1 source (Emerging) headed an answer that also cited a
+  // boxing-specific tier-2 one (Proven).
+  test('grades the answer by its strongest cited source and lists the other grades', async () => {
+    const transferredId = '00000000-0000-4000-8000-000000000211';
+    const boxingId = '00000000-0000-4000-8000-000000000212';
+    const contestedId = '00000000-0000-4000-8000-000000000213';
+    const item = (evidenceId: string, quality: { authorityTier: number; evidenceClass: string; boxingSpecificity: string }) => ({
+      evidenceId,
+      token: `[E:${evidenceId}]`,
+      sourceId: `source-${evidenceId}`,
+      documentId: `doc-${evidenceId}`,
+      chunkId: `chunk-${evidenceId}`,
+      subjectId: null,
+      sourceTitle: `Source ${evidenceId}`,
+      documentName: `Document ${evidenceId}`,
+      excerpt: 'Approved bounded excerpt.',
+      ...quality,
+    });
+    mockRetrieveEvidence.mockResolvedValueOnce({
+      bundleId: '00000000-0000-4000-8000-000000000210',
+      availability: 'available',
+      allowedEvidenceIds: [transferredId, boxingId, contestedId],
+      context: 'Approved excerpts.',
+      items: [
+        item(transferredId, { authorityTier: 1, evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'transferred' }),
+        item(boxingId, { authorityTier: 2, evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'boxing_specific' }),
+        item(contestedId, { authorityTier: 1, evidenceClass: 'CONTESTED PRACTICE', boxingSpecificity: 'boxing_specific' }),
+      ],
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: `Research suggests the drill may help. [E:${transferredId}] [E:${boxingId}] [E:${contestedId}]`,
+          },
+        }],
+      }),
+    }) as unknown as typeof fetch;
+
+    const payload = await (await POST(postRequest({ message: 'What does approved research suggest?' }))).json();
+
+    expect(payload.state).toBe('ok');
+    expect(payload.evidenceTier).toBe('PROVEN');
+    expect(payload.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+    expect(payload.evidenceSourceGraded).toBe(true);
+    // The stored grade is the one the reader was shown.
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({ evidenceTier: 'PROVEN' }));
+  });
+
   test('filters a generated citation that was not in the exact retrieved bundle', async () => {
     const evidenceId = '00000000-0000-4000-8000-000000000201';
     const forgedId = '00000000-0000-4000-8000-000000000999';
@@ -2319,9 +2371,9 @@ describe('Omega cross-organization breadth', () => {
       recommendationsMade: 0,
       researchRequirementsCreated: 0,
       researchRequirementsClosed: 0,
-      newLibraryPatterns: 0,
+      newLibrarySources: 0,
       filterRate: null,
-      positiveOutcomeRate: null,
+      reviewedHelpfulRate: null,
       unavailableReasons: {},
     };
   }
@@ -2440,6 +2492,8 @@ describe('Omega cross-organization breadth', () => {
     expect(payload.citations ?? []).toEqual([]);
     expect(payload.evidenceTier).not.toBe('PROVEN');
     expect(payload.evidenceTier).not.toBe('EMERGING');
+    // No Library source graded it, so the badge may not name one.
+    expect(payload.evidenceSourceGraded).toBe(false);
   });
 
   test('no other role reaches the block, even asking the same question', async () => {

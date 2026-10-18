@@ -230,6 +230,16 @@ recommendation effectiveness, the human review queue, data-deletion requests) an
 `pilot_shadow_rows_follow_account` when a guardian's account row is purged. Pinned by
 `shadowDeidentifyKeysMigration.pg.test.ts`.
 
+The learning loop's coach behaviour reports (`pilot.behaviour_observations`, lane L49) follow the
+same shape. They have no athlete key, and the trigger `pilot_behaviour_observations_follow_athlete`
+deletes every report that still names the athlete when the athlete row goes. Before that, the
+cleanup job keeps them de-identified (Jason 2026-10-06; Q5 "Keep coaching, delete medical"): the
+athlete key becomes the person's one token, the same one the chat log gets. The coach's note is
+kept with the child's names scrubbed (Jason 2026-10-07: "Scrub the child's name, keep"), or is
+emptied when no name is on record. A purged person's name is also scrubbed gym-wide from other
+reports' notes and from coach-typed behaviour names (`pilot.behaviour_keys.label`). The tables'
+guards admit only that exact scrub, checked against the cleanup's own name pattern.
+
 **Marked deleted -- no screen shows them after the deletion:**
 - Videos: the video lists (coach and admin), any read of one video (publishing, clipping,
   analysis, compliance review), the malware/content scan queue (a deleted athlete's footage is
@@ -474,9 +484,17 @@ treated like any other); nothing writes `subject_deleted_at` yet. Pinned by
 `retiredLoginPurge.pg.test.ts`. Three tokens per person, none shared: the chat log's, the
 feedback and learning rows', and the review, receipt and flagged-conversation rows'. **Not yet
 built:** a flagged conversation someone ELSE had about the purged child (`athlete_id` set) is still
-deleted with the child by the athlete trigger, not de-identified; the purged
-athlete's own `pilot.accounts` row keeps its login (F-102), and `shadow_telemetry_events.actor_account_id`
-still names it (F-106).
+deleted with the child by the athlete trigger, not de-identified; and `shadow_telemetry_events.actor_account_id`
+still names the purged athlete's login (F-106).
+**The retired athlete login (F-102).** The login is retired, not deleted: refusing its sign-in and
+the purged-child filters read its id, role, gym and `deleted_at`, and nothing else left on it names
+or signs in the child. The purge clears its email, PIN, password and Microsoft binding, and its
+ring name in the purged gym (`account_profiles.display_nickname`); the scrub reads the email and
+ring name first (OD-2026-10-08-009 D15). The same login's profile in another gym is that gym's,
+as its SHADOW rows and portrait there are.
+The id itself is the sign-in ID an admin typed and stays: replacing it is an owner question.
+Pinned by `retiredLoginPurge.pg.test.ts`; `dataRetentionDeletion.pg.test.ts` pins that a coach on
+the child's old login keeps every way it signs in.
 **SHADOW's event log.** The person's rows in `pilot.shadow_events` (SHADOW's activity feed) are
 deleted, in the purged gym (a guardian's everywhere: their account goes): every row that names them
 as actor, as entity (their login, athlete id, `<athlete>:<key>`, `<org>:<login>` for a gym

@@ -166,6 +166,12 @@ function installPdfFetch(readerAnswer: { status: number; json?: unknown }) {
   const calls: PdfCall[] = [];
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // Lane L57: the panel asks whether this shelf files PDFs in the Research
+    // Archive once a PDF is read. Here it does not; that flow has its own file
+    // (LibraryTextIntakePanel.archive.test.tsx), and the question is not a write.
+    if (url.includes('/library/archive-original') && (init?.method ?? 'GET') === 'GET') {
+      return { status: 200, ok: true, json: async () => ({ ok: true, archive: 'off' }) } as Response;
+    }
     const isForm = init?.body instanceof FormData;
     calls.push({ url, isForm, body: isForm ? null : JSON.parse(String(init?.body)) });
     if (url.endsWith('/library/pdf-text')) {
@@ -398,6 +404,19 @@ describe('LibraryTextIntakePanel: the excerpt limit of a non-owned source', () =
 
     expect(calls).toHaveLength(0);
     expect(screen.getByText(/over its limit of 20 passages and 30,000 characters\. Nothing was sent\./)).toBeTruthy();
+  });
+
+  // L54 (audit 2026-10-17 item 10): the advice keeps the words with their real
+  // source; it never suggests filing them under another one.
+  it('the over-limit advice keeps the words with the source they came from', async () => {
+    installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sourcesWith({ passages: 21 - parts.length, characters: 0 })} />);
+    fillForm();
+    await click('Save to Library as pending');
+
+    const advice = screen.getByText(/over its limit of 20 passages/).textContent ?? '';
+    expect(advice).toMatch(/Save a shorter passage; these words stay filed under the source they came from\.$/);
+    expect(advice).not.toMatch(/another source/);
   });
 
   it('refuses before sending when the text would pass the character limit', async () => {

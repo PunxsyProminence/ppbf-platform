@@ -797,10 +797,16 @@ describe('an observation that completes an input set triggers its formula', () =
 
     expect(response.status).toBe(200);
     expect(mockRecalculate).toHaveBeenCalledTimes(1);
-    expect(mockAutoCalculate).not.toHaveBeenCalled();
+    // Detection also runs now (lane L50): filling a blank "Whole session" box
+    // re-runs MVP-10 AND newly satisfies MVP-02/04/05. A set recalculation
+    // already re-ran comes back as the same row (calculationKey).
+    expect(mockAutoCalculate).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+    });
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
       recalculatedResultCount: 1,
-      autoCalculatedResultCount: 0,
     }));
   });
 
@@ -902,7 +908,7 @@ describe('a weight is corrected only through the body mass correction (Jason 202
 
   test('another kind superseding a body_weight entry is refused, and nothing is written', async () => {
     mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => (
-      sql.includes('select observation_kind from pilot.shadow_formula_observations')
+      sql.includes('select observation_kind, context_id from pilot.shadow_formula_observations')
         && params[0] === 'org-1' && params[1] === 'weight-1'
         ? { observation_kind: 'body_weight' }
         : null));
@@ -924,5 +930,43 @@ describe('a weight is corrected only through the body mass correction (Jason 202
     const response = await postObservation(jsonRequest(weight));
     expect(response.status).not.toBe(409);
     expect(mockSaveObservation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('check-in answers are written by the check-in only (personal baseline, lane L50)', () => {
+  test('a numeric value posted into a check-in context is refused, and nothing is written', async () => {
+    const response = await postObservation(jsonRequest({
+      athleteId: 'athlete-1',
+      contextId: 'check-in:ci-1',
+      kind: 'numeric',
+      value: 9,
+      unit: 'hours',
+      dimensions: { metricKey: 'sleep_hours' },
+      observedAt: '2026-08-18T18:00:00.000Z',
+      idempotencyKey: 'fake-sleep',
+    }));
+    expect(response.status).toBe(409);
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+
+  test('superseding a check-in answer is refused, and nothing is written', async () => {
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => (
+      sql.includes('select observation_kind, context_id from pilot.shadow_formula_observations')
+        && params[1] === 'sleep-1'
+        ? { observation_kind: 'numeric', context_id: 'check-in:ci-1' }
+        : null));
+    const response = await postObservation(jsonRequest({
+      athleteId: 'athlete-1',
+      contextId: 'elsewhere',
+      kind: 'numeric',
+      value: 9,
+      unit: 'hours',
+      dimensions: { metricKey: 'sleep_hours' },
+      observedAt: '2026-08-18T18:00:00.000Z',
+      idempotencyKey: 'fix-sleep',
+      supersedesObservationId: 'sleep-1',
+    }));
+    expect(response.status).toBe(409);
+    expect(mockSaveObservation).not.toHaveBeenCalled();
   });
 });

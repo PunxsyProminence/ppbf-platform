@@ -191,6 +191,19 @@ function existingObservationIdentity(row: FormulaObservationRow) {
   };
 }
 
+/**
+ * completeness is stored as numeric(6,5) (pilot_slice_postgres.sql), so a
+ * stored row reads back at five decimals. A recomputed result compared at full
+ * double precision then never matches its own stored row whenever the ratio
+ * does not end within five decimals -- 2/3, 5/7, 6/7 -- and the conflict path
+ * below refused an identical recomputation as IDEMPOTENCY_CONFLICT. MVP-11 with
+ * an unanswered session in the window (lane L50 review) and MVP-10 reach those
+ * ratios. Compared at the precision the column keeps.
+ */
+function storedCompleteness(value: number): number {
+  return Math.round(value * 100_000) / 100_000;
+}
+
 function formulaResultIdentity(result: FormulaResult) {
   return {
     resultId: result.resultId,
@@ -208,7 +221,7 @@ function formulaResultIdentity(result: FormulaResult) {
     inputObservationIds: result.inputObservationIds,
     provenance: result.provenance,
     validation: result.validation,
-    quality: result.quality,
+    quality: { ...result.quality, completeness: storedCompleteness(result.quality.completeness) },
     unavailableReason: result.unavailableReason,
     humanReviewRequired: result.humanReviewRequired,
   };
@@ -448,6 +461,46 @@ export async function getActiveObservationsForContext(input: {
   return rows.map(rowToObservation);
 }
 
+/**
+ * Every active observation of one kind for one athlete inside a time window,
+ * across contexts: (observedAfter, observedAtOrBefore]. The supersession
+ * predicate is the one getActiveObservationsForContext uses, unchanged.
+ */
+export async function getActiveObservationsOfKindInWindow(input: {
+  organizationId: string;
+  athleteId: string;
+  kind: ObservationKind;
+  observedAfter: string;
+  observedAtOrBefore: string;
+}): Promise<NumericObservation[]> {
+  if (
+    !input.organizationId.trim()
+    || !input.athleteId.trim()
+    || !Number.isFinite(Date.parse(input.observedAfter))
+    || !Number.isFinite(Date.parse(input.observedAtOrBefore))
+  ) {
+    throw new TypeError('Formula observation window read requires an organization, athlete, and window.');
+  }
+  const rows = await query<FormulaObservationRow>(
+    `select o.*
+     from pilot.shadow_formula_observations o
+     where o.organization_id = $1
+       and o.athlete_id = $2
+       and o.observation_kind = $3
+       and o.observed_at > $4::timestamptz
+       and o.observed_at <= $5::timestamptz
+       and not exists (
+         select 1
+         from pilot.shadow_formula_observations successor
+         where successor.organization_id = o.organization_id
+           and successor.supersedes_observation_id = o.observation_id
+       )
+     order by o.observed_at asc, o.observation_id asc`,
+    [input.organizationId, input.athleteId, input.kind, input.observedAfter, input.observedAtOrBefore],
+  );
+  return rows.map(rowToObservation);
+}
+
 function requireFormulaResultScope(
   results: readonly FormulaResult[],
 ): { organizationId: string; athleteId: string } {
@@ -559,6 +612,8 @@ export async function listActiveFormulaResults(input: {
   organizationId: string;
   athleteId: string;
   formulaId?: FormulaId;
+  /** Formulas this reader may not see (a parent reads no MVP-09). */
+  excludeFormulaIds?: readonly FormulaId[];
   limit?: number;
 }): Promise<FormulaResult[]> {
   const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50)));
@@ -568,6 +623,7 @@ export async function listActiveFormulaResults(input: {
      where r.organization_id = $1
        and r.athlete_id = $2
        and ($3::text is null or r.formula_id = $3)
+       and not (r.formula_id = any($5::text[]))
        and not exists (
          select 1
          from unnest(r.input_observation_ids) input_id
@@ -577,26 +633,140 @@ export async function listActiveFormulaResults(input: {
        )
      order by r.computed_at desc, r.formula_id asc, r.output_key asc
      limit $4`,
-    [input.organizationId, input.athleteId, input.formulaId ?? null, limit],
+    [input.organizationId, input.athleteId, input.formulaId ?? null, limit, [...(input.excludeFormulaIds ?? [])]],
   );
   return rows.map(rowToFormulaResult);
 }
 
+/**
+ * The CURRENT results an observation feeds, for re-running when that one
+ * observation is corrected.
+ *
+ * A result some OTHER input of which was corrected earlier is not current: it
+ * was already replaced when that earlier correction re-ran it. Re-running it
+ * now would hand the runner an id that is already superseded, and
+ * getActiveFormulaObservationsByIds refuses that -- so fixing two numbers of
+ * one sparring entry, one after the other, failed the second fix after it had
+ * been stored. The exclusion is the readers' own (listLatestFormulaResultsPerOutput
+ * below), minus the observation being replaced right now, which is already
+ * superseded by the time this runs and is exactly the input being swapped.
+ */
 export async function findFormulaResultsUsingObservation(input: {
   organizationId: string;
   athleteId: string;
   observationId: string;
 }): Promise<FormulaResult[]> {
   const rows = await query<PersistedFormulaResultRow>(
-    `select *
-     from pilot.shadow_formula_results
-     where organization_id = $1
-       and athlete_id = $2
-       and $3 = any(input_observation_ids)
-     order by computed_at asc, formula_id asc, output_key asc`,
+    `select r.*
+     from pilot.shadow_formula_results r
+     where r.organization_id = $1
+       and r.athlete_id = $2
+       and $3 = any(r.input_observation_ids)
+       and not exists (
+         select 1
+         from unnest(r.input_observation_ids) input_id
+         join pilot.shadow_formula_observations successor
+           on successor.organization_id = r.organization_id
+          and successor.supersedes_observation_id = input_id
+         where input_id <> $3
+       )
+     order by r.computed_at asc, r.formula_id asc, r.output_key asc`,
     [input.organizationId, input.athleteId, input.observationId],
   );
   return rows.map(rowToFormulaResult);
+}
+
+/** The numbers the sparring page's "Fix a number" corrects. Anyone the
+ *  observations route admits for the athlete may correct them, as POST always
+ *  allowed; this list only bounds which kinds the screen offers. */
+export const SPARRING_CORRECTABLE_KINDS: readonly ObservationKind[] = Object.freeze([
+  'punch_attempted',
+  'punch_landed',
+  'punch_absorbed',
+  // The "Whole session" counts (Jason 2026-10-17, "B: Longer sparring form").
+  'punch_count',
+  'round_count',
+  'active_time',
+]);
+
+/** The sparring page names every entry's context `sparring_<epoch ms>`
+ * (app/athlete/dashboard/sparring/page.tsx); that prefix is what marks an
+ * entry as one of its own. */
+export const SPARRING_CONTEXT_PREFIX = 'sparring_';
+
+export interface SparringEntry {
+  readonly contextId: string;
+  readonly observedAt: string;
+  readonly observations: readonly NumericObservation[];
+}
+
+/**
+ * One athlete's most recent sparring-page entries, newest first, holding only
+ * the active (not superseded) correctable punch numbers.
+ *
+ * Narrow on purpose. A sparring context also holds body weight, contact and
+ * free-text notes; body weight has its own correction path and its own youth
+ * narrowing (athleteBodyMass.ts), and nothing on the fix screen needs the
+ * rest, so none of it leaves the database here.
+ */
+export async function listRecentSparringEntries(input: {
+  organizationId: string;
+  athleteId: string;
+  limit?: number;
+}): Promise<SparringEntry[]> {
+  if (!input.organizationId.trim() || !input.athleteId.trim()) {
+    throw new TypeError('Sparring entries require an organization and athlete.');
+  }
+  const limit = Math.max(1, Math.min(20, Math.trunc(input.limit ?? 5)));
+  const rows = await query<FormulaObservationRow>(
+    `with active as (
+       select o.*
+       from pilot.shadow_formula_observations o
+       where o.organization_id = $1
+         and o.athlete_id = $2
+         and left(o.context_id, length($3)) = $3
+         and o.observation_kind = any($4::text[])
+         and not exists (
+           select 1
+           from pilot.shadow_formula_observations successor
+           where successor.organization_id = o.organization_id
+             and successor.supersedes_observation_id = o.observation_id
+         )
+     ),
+     recent as (
+       select context_id, max(observed_at) as entry_at
+       from active
+       group by context_id
+       order by entry_at desc, context_id desc
+       limit $5
+     )
+     select active.*
+     from active
+     join recent using (context_id)
+     order by recent.entry_at desc, active.context_id desc, active.observation_kind asc`,
+    [
+      input.organizationId,
+      input.athleteId,
+      // Compared as a prefix, not through LIKE: '_' is a LIKE wildcard.
+      SPARRING_CONTEXT_PREFIX,
+      [...SPARRING_CORRECTABLE_KINDS],
+      limit,
+    ],
+  );
+  const entries = new Map<string, NumericObservation[]>();
+  for (const row of rows) {
+    const members = entries.get(row.context_id) ?? [];
+    members.push(rowToObservation(row));
+    entries.set(row.context_id, members);
+  }
+  return [...entries.entries()].map(([contextId, observations]) => ({
+    contextId,
+    observedAt: observations.reduce(
+      (latest, observation) => (observation.observedAt > latest ? observation.observedAt : latest),
+      observations[0].observedAt,
+    ),
+    observations,
+  }));
 }
 
 /**
@@ -626,7 +796,11 @@ export async function listLatestFormulaResultsPerOutput(input: {
 }): Promise<FormulaResult[]> {
   const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 200)));
   const rows = await query<PersistedFormulaResultRow>(
-    `select distinct on (r.formula_id, r.output_key) r.*
+    // metricKey is part of the output's identity for MVP-09: sleep, energy and
+    // soreness each have a raw_change, and without it in the key the newest of
+    // the three would hide the other two. Formulas with no metricKey group
+    // exactly as before ('' for all of them).
+    `select distinct on (r.formula_id, r.output_key, coalesce(r.parameters->>'metricKey', '')) r.*
      from pilot.shadow_formula_results r
      where r.organization_id = $1
        and r.athlete_id = $2
@@ -642,7 +816,8 @@ export async function listLatestFormulaResultsPerOutput(input: {
      -- lead the sort and recency must follow it. created_at and result_id are
      -- tie-breakers only: two rows with the same computed_at would otherwise
      -- resolve arbitrarily, and an arbitrary winner is an unreproducible read.
-     order by r.formula_id, r.output_key, r.computed_at desc, r.created_at desc, r.result_id desc
+     order by r.formula_id, r.output_key, coalesce(r.parameters->>'metricKey', ''),
+              r.computed_at desc, r.created_at desc, r.result_id desc
      limit $4`,
     [input.organizationId, input.athleteId, input.formulaId ?? null, limit],
   );

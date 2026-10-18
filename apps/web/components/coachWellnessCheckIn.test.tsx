@@ -99,6 +99,7 @@ const MEASURE_LABELS: Readonly<Record<WellnessScaleKey, string>> = {
   mental_clarity: 'Mental clarity',
   stress: 'Stress',
   nutrition_compliance: 'Nutrition compliance',
+  mood: 'Mood',
 };
 
 const JORDAN_NOTE = 'Left knee is "tight" after sparring.\nStill want to work pads.';
@@ -119,6 +120,7 @@ function checkInRow(athleteId: string, overrides: Record<string, unknown> = {}):
     mental_clarity: 2,
     stress: 5,
     nutrition_compliance: 4,
+    mood: 3,
     note: JORDAN_NOTE,
     created_at: '2026-09-22T21:05:00.000Z',
     ...overrides,
@@ -137,6 +139,7 @@ function bareRow(athleteId: string): Record<string, unknown> {
     mental_clarity: null,
     stress: null,
     nutrition_compliance: null,
+    mood: null,
     note: '',
   });
 }
@@ -165,6 +168,13 @@ interface WorkspaceOptions {
   readonly covered?: readonly string[];
   /** GET /api/pilot/coach/athlete-body-mass. Default: no weigh-in. */
   readonly bodyMass?: AthleteRoute;
+  /** GET /api/pilot/coach/athlete-height (OD-2026-10-17-026 (b)). Default: no reading. */
+  readonly heights?: AthleteRoute;
+}
+
+function heightsPayload(readings: Array<{ height_id: string; measured_on: string; height_cm: number }>) {
+  const rows = readings.map((row) => ({ ...row, supersedes_height_id: null, superseded: false }));
+  return { ok: true, readings: rows, latest: rows[0] ?? null, growth: null, growth_min_days: 60, height_cm_min: 50, height_cm_max: 250 };
 }
 
 /** The session-note route for the cases that are not about it: a gym day with
@@ -191,6 +201,10 @@ function installFetch(
     if (url.includes('/api/pilot/coach/athlete-session-note')) {
       const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
       return sessionNote(athleteId, init);
+    }
+    if (url.includes('/api/pilot/coach/athlete-height')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return (options.heights ?? (() => jsonResponse(heightsPayload([]))))(athleteId, init);
     }
     if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ items: ATHLETES });
     if (url.includes('/api/pilot/profile/roster')) return jsonResponse({ ok: true, items: [] });
@@ -223,6 +237,16 @@ function installFetch(
     // Map items 20 and 10: the selected athlete's sleep trend and bout history.
     if (url.includes('/api/pilot/coach/athlete-sleep-trend')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/coach/athlete-competition-history')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/coach/athlete-attendance')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return jsonResponse({
+        ok: true,
+        attendance: {
+          athlete_id: athleteId, window_from: '2026-09-21', window_to: '2026-10-18', days_present: 3, days_absent: 1,
+          days_excused: 0, attendance_rate: 0.75, last_present_day: '2026-10-06', days_since_last_present: 12,
+        },
+      });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -395,6 +419,17 @@ describe('the read starts from a deliberate pick', () => {
   });
 });
 
+describe('the attendance lines (OD-2026-10-17-026 (c)) sit in the picked athlete\'s wellness view', () => {
+  it('asks the attendance route for the picked athlete and shows the register\'s numbers', async () => {
+    const fetchMock = await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }));
+    await pickAthlete('Sam R.');
+    const calls = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/coach/athlete-attendance'));
+    expect(calls).toEqual([expect.stringContaining('athlete_id=ath_2')]);
+    const lines = await within(panel()).findByTestId('coach-athlete-attendance');
+    expect(within(lines).getByText(/75% \(present 3 of 4 days marked on the class register\)/)).not.toBeNull();
+  });
+});
+
 describe('a check-in that exists is read back exactly as stored', () => {
   it('shows the date, every measure, sleep in hours and the note verbatim', async () => {
     await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
@@ -418,6 +453,7 @@ describe('a check-in that exists is read back exactly as stored', () => {
     // is a visible diff here and not only a silent re-derivation.
     expect(measure('Stress')).toBe('5 — Very stressed');
     expect(measure('Soreness')).toBe('2 — A little stiff');
+    expect(measure('Mood')).toBe('3 — Okay');
 
     const noteLabel = within(panel()).getByText("Athlete's note");
     expect(noteLabel.nextElementSibling?.textContent).toBe(JORDAN_NOTE);
@@ -1455,5 +1491,35 @@ describe('a session run under way is not "no session started today" (F-067)', ()
     await pickAthlete('Sam R.');
     await within(notePanel()).findByText(NO_SESSION_TODAY);
     expect(within(notePanel()).queryByText(SESSION_RUNNING_NO_NOTE)).toBeNull();
+  });
+});
+
+describe('the standing-height panel (OD-2026-10-17-026 (b)) sits in the picked athlete\'s wellness view', () => {
+  it('asks the height route for the picked athlete and shows that athlete\'s reading', async () => {
+    const fetchMock = await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }), NO_SESSION_TODAY_ROUTE, {
+      heights: () => jsonResponse(heightsPayload([{ height_id: '11111111-1111-4111-8111-111111111111', measured_on: '2026-10-01', height_cm: 151.4 }])),
+    });
+    await pickAthlete('Sam R.');
+    const heightCalls = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/coach/athlete-height'));
+    expect(heightCalls).toEqual([expect.stringContaining('athlete_id=ath_2')]);
+    const growth = await within(panel()).findByTestId('coach-athlete-growth');
+    expect(within(growth).getByText(/Height: 151\.4 cm/)).not.toBeNull();
+  });
+
+  it('a slow height reply for the first athlete never draws under the second', async () => {
+    const slowJordan = deferred<Response>();
+    await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }), NO_SESSION_TODAY_ROUTE, {
+      heights: (athleteId) => (athleteId === 'ath_1'
+        ? slowJordan.promise
+        : jsonResponse(heightsPayload([{ height_id: '22222222-2222-4222-8222-222222222222', measured_on: '2026-10-01', height_cm: 160.2 }]))),
+    });
+    await pickAthlete('Jordan P.');
+    await pickAthlete('Sam R.');
+    await within(panel()).findByText(/Height: 160\.2 cm/);
+    await act(async () => {
+      slowJordan.resolve(jsonResponse(heightsPayload([{ height_id: '33333333-3333-4333-8333-333333333333', measured_on: '2026-10-01', height_cm: 120.5 }])));
+    });
+    expect(within(panel()).getByText(/Height: 160\.2 cm/)).not.toBeNull();
+    expect(within(panel()).queryByText(/120\.5/)).toBeNull();
   });
 });

@@ -70,18 +70,31 @@ export interface IntakeInput {
   // sentence shown when it is not; the panel owns the wording.
   pdfPage?: { num: number; text: string; notOnPageMessage: string };
   shelf?: IntakeShelf;
+  // The Research Archive original the PDF was filed as (lane L57). Sent only
+  // with pdfPage: an excerpt is linked to a filed PDF only when it was read
+  // from that PDF in this session.
+  archivedOriginalId?: string;
 }
 
-// Everything needed to finish a submission whose document exists but whose
-// chunks do not all exist yet. Carries the ORIGINAL split, so a retry writes
-// the same text at the same ordinals even if the form has changed since.
+// Everything needed to finish a submission whose chunks do not all exist yet.
+// Carries the ORIGINAL split, so a retry writes the same text at the same
+// ordinals even if the form has changed since.
+//
+// documentId is null when the document's own answer was lost (L54): it may or
+// may not exist. Finish saving then sends the same document request again with
+// the same requestId, and the server answers with the document it already made
+// if there is one, so nothing is filed twice and the entry stays with the
+// source it was started under.
 export interface IntakeResume {
-  documentId: string;
+  documentId: string | null;
   nextOrdinal: number;
   locator: string;
   chunks: IntakeChunk[];
   // The shelf the document was created on: its chunks must go to the same one.
   shelf?: IntakeShelf;
+  requestId: string;
+  // The document request exactly as first sent; used only while documentId is null.
+  documentRequest: Record<string, unknown>;
 }
 
 export type IntakeResult =
@@ -193,7 +206,9 @@ export interface PdfPageText {
 }
 
 export type PdfReadResult =
-  | { ok: true; pages: PdfPageText[]; emptyPageCount: number }
+  // contentSha256: of the bytes the reader parsed, so a filed original can be
+  // matched to the file the pages came from. Null if the server sent none.
+  | { ok: true; pages: PdfPageText[]; emptyPageCount: number; contentSha256: string | null }
   // serverMessage is the route's own sentence for a refusal it authored (a
   // too-long or unreadable PDF); null when there was none or no answer at all.
   | { ok: false; status: number; serverMessage: string | null };
@@ -234,10 +249,12 @@ export async function readLibraryPdf(
         }
         pages.push({ num: row.num, text: row.text });
       }
+      const sha = body.content_sha256;
       return {
         ok: true,
         pages,
         emptyPageCount: pages.filter((page) => page.text === '').length,
+        contentSha256: typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha) ? sha : null,
       };
     }
     return {
@@ -282,6 +299,8 @@ export function validateIntakeInput(input: IntakeInput): string | null {
 // The excerpt budget's refusal code (shadowLibrary.ts EXCERPT_BUDGET_EXCEEDED_CODE;
 // not imported, so this client module carries no server import).
 const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
+// The chunk route's answer when different text is stored at that part (L54).
+const CHUNK_CONFLICT_CODE = 'SHADOW_LIBRARY_CHUNK_CONFLICT';
 
 function serverError(payload: unknown): { error: string | null; code: string | null } {
   if (typeof payload !== 'object' || payload === null) return { error: null, code: null };
@@ -309,6 +328,25 @@ function refusalMessage(status: number, what: string, shelf: IntakeShelf | undef
   if (status === 429) return 'The Library is rate limited right now. Wait a moment and retry.';
   return `The Library refused the ${what} (${status}).`;
 }
+
+// One id per entry, sent with the document request and again on every retry
+// of it. Uniqueness is all it needs; it is not a secret.
+export function newIntakeRequestId(): string {
+  const cryptoApi = (globalThis as { crypto?: Crypto }).crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') return cryptoApi.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') cryptoApi.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// L54 copy (accepted by Overwatch 2026-10-18).
+export const INTAKE_RECOVERY_WORDS = {
+  documentUnconfirmed:
+    'The Library did not confirm the save. Use Finish saving: it finds the entry if it was saved and finishes it, without saving anything twice.',
+  chunkConflict: (saved: number, total: number) =>
+    `Saved ${saved} of ${total} parts, then stopped: part ${saved + 1} is already saved with different text. Nothing was overwritten. The entry is incomplete; reject it in Evidence Review, then enter the text again.`,
+};
 
 // Generous: a chunk write embeds its text before it answers.
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -342,16 +380,26 @@ function documentIdFrom(payload: unknown): string | null {
   return typeof id === 'string' && id ? id : null;
 }
 
+function alreadyStoredFrom(status: number, payload: unknown): boolean {
+  return status === 200
+    && typeof payload === 'object' && payload !== null
+    && (payload as { already_stored?: unknown }).already_stored === true;
+}
+
 /**
  * Writes the document, then each chunk in ordinal order, stopping at the first
  * failure.
  *
- * Not atomic, and it does not pretend to be: the two routes are separate
- * requests. When the document exists and a chunk fails, the result says how
- * far it got and carries a resume token. Passing that token back finishes the
- * same document from the failed ordinal. A 409 on a chunk during a resume
- * means that ordinal is already stored (the earlier request landed and its
- * answer was lost), so it counts as written rather than as a failure.
+ * Not atomic, and it does not pretend to be: the routes are separate requests.
+ * When a write's answer is lost or refused part-way, the result says how far it
+ * got and carries a resume token. Passing that token back finishes the same
+ * entry: the document request goes again with the same request id when its
+ * own answer was lost, then the chunks from the failed ordinal.
+ *
+ * A part counts as written only when the server says so: 201, or 200 with
+ * already_stored (it compared the stored part with this one and they are the
+ * same). A 409 means different text is already stored there; that is never
+ * reported as saved (L54; audit 2026-10-17 item 2).
  */
 export async function submitLibraryTextIntake(
   apiBaseUrl: string,
@@ -361,11 +409,13 @@ export async function submitLibraryTextIntake(
   const fetchImpl = options.fetchImpl ?? fetch;
   const resume = options.resume ?? null;
 
-  let documentId: string;
+  let documentId: string | null;
   let chunks: IntakeChunk[];
   let locator: string;
   let startAt: number;
   let shelf: IntakeShelf | undefined;
+  let requestId: string;
+  let documentRequest: Record<string, unknown>;
 
   if (resume) {
     documentId = resume.documentId;
@@ -373,6 +423,8 @@ export async function submitLibraryTextIntake(
     locator = resume.locator;
     startAt = resume.nextOrdinal;
     shelf = resume.shelf;
+    requestId = resume.requestId;
+    documentRequest = resume.documentRequest;
   } else {
     const invalid = validateIntakeInput(input);
     if (invalid) {
@@ -382,8 +434,8 @@ export async function submitLibraryTextIntake(
     locator = input.locator.trim();
     startAt = 0;
     shelf = input.shelf;
-
-    const created = await postJson(fetchImpl, `${apiBaseUrl}/api/pilot/shadow/library/documents`, {
+    requestId = newIntakeRequestId();
+    documentRequest = {
       source_id: input.sourceId,
       document_name: input.documentName.trim(),
       metadata: {
@@ -393,26 +445,57 @@ export async function submitLibraryTextIntake(
         chunk_count: chunks.length,
         text_length: rejoinIntakeChunks(chunks).length,
       },
+      ...(input.pdfPage && input.archivedOriginalId ? { archived_original_id: input.archivedOriginalId } : {}),
+      request_id: requestId,
       ...shelfField(shelf),
-    });
-    const createdId = created.status === 201 ? documentIdFrom(created.payload) : null;
+    };
+    documentId = null;
+  }
+  const resumeFrom = (nextOrdinal: number, id: string | null): IntakeResume => ({
+    documentId: id,
+    nextOrdinal,
+    locator,
+    chunks,
+    ...(shelf === 'platform' ? { shelf } : {}),
+    requestId,
+    documentRequest,
+  });
+
+  if (documentId === null) {
+    const created = await postJson(fetchImpl, `${apiBaseUrl}/api/pilot/shadow/library/documents`, documentRequest);
+    // 201: made now. 200: the server found the document this request id made
+    // earlier, whose answer was lost.
+    const createdId = created.status === 201 || created.status === 200 ? documentIdFrom(created.payload) : null;
     if (!createdId) {
-      // Only a 4xx is a refusal, and only a refusal proves nothing was stored.
-      // No answer, a 5xx, or a 201 without an id can each follow a row that
-      // WAS written (the route inserts before it logs), so those say "check"
-      // instead of inviting a retry that would file the same text twice.
+      // On a first attempt only a 4xx is a refusal, and only a refusal proves
+      // nothing was stored. No answer, a 5xx, or a success without an id can
+      // each follow a document that WAS written, so they offer Finish saving,
+      // which asks again with the same request id instead of filing the text
+      // twice. On Finish saving even a refusal proves nothing about the FIRST
+      // request (a session that expired since, a rate limit), so the entry
+      // stays resumable and locked to what was first sent.
       const refused = created.status >= 400 && created.status < 500;
+      if (refused && resume === null) {
+        return {
+          ok: false,
+          message: `${refusalMessage(created.status, 'source', shelf, created.payload)} Nothing was saved.`,
+          resume: null,
+          writtenChunks: 0,
+          totalChunks: chunks.length,
+        };
+      }
       return {
         ok: false,
         message: refused
-          ? `${refusalMessage(created.status, 'source', shelf, created.payload)} Nothing was saved.`
-          : 'The Library did not confirm the save. An empty entry with this label may exist: check Evidence Review before trying again, and reject it there if it does.',
-        resume: null,
+          ? `${refusalMessage(created.status, 'source', shelf, created.payload)} ${INTAKE_RECOVERY_WORDS.documentUnconfirmed}`
+          : INTAKE_RECOVERY_WORDS.documentUnconfirmed,
+        resume: resumeFrom(0, null),
         writtenChunks: 0,
         totalChunks: chunks.length,
       };
     }
     documentId = createdId;
+    startAt = 0;
   }
 
   for (let index = startAt; index < chunks.length; index += 1) {
@@ -427,8 +510,20 @@ export async function submitLibraryTextIntake(
       metadata: { intake_method: INTAKE_METHOD, locator, join_before: chunk.joinBefore },
       ...shelfField(shelf),
     });
-    const alreadyStored = resume !== null && written.status === 409;
-    if (written.status !== 201 && !alreadyStored) {
+    if (written.status !== 201 && !alreadyStoredFrom(written.status, written.payload)) {
+      // Different text is already stored at this part: retrying cannot change
+      // that, so no Finish saving is offered, and it is never counted as saved.
+      // Only the route's own comparison says so; any other 409 (a document
+      // that moved source mid-save) is an ordinary failure, resumable.
+      if (written.status === 409 && serverError(written.payload).code === CHUNK_CONFLICT_CODE) {
+        return {
+          ok: false,
+          message: INTAKE_RECOVERY_WORDS.chunkConflict(index, chunks.length),
+          resume: null,
+          writtenChunks: index,
+          totalChunks: chunks.length,
+        };
+      }
       // Over the source's excerpt budget, a retry is refused the same way, so
       // no "Finish saving" is offered (CL-C2).
       if (written.status === 422 && serverError(written.payload).code === EXCERPT_BUDGET_EXCEEDED_CODE) {
@@ -447,7 +542,7 @@ export async function submitLibraryTextIntake(
         message: `Saved ${index} of ${chunks.length} parts, then stopped: ${
           written.status === 0 ? 'the Library could not be reached.' : refusalMessage(written.status, 'document', shelf, written.payload)
         } The entry is incomplete. Use Finish saving to write the rest.`,
-        resume: { documentId, nextOrdinal: index, locator, chunks, ...(shelf === 'platform' ? { shelf } : {}) },
+        resume: resumeFrom(index, documentId),
         writtenChunks: index,
         totalChunks: chunks.length,
       };
@@ -455,4 +550,148 @@ export async function submitLibraryTextIntake(
   }
 
   return { ok: true, documentId, chunkCount: chunks.length };
+}
+
+// ---------------------------------------------------------------------------
+// Filing the PDF in the SharePoint Research Archive (lane L57, issue #345).
+// The archive-original route files it and records where it went; the app keeps
+// no copy. ON only where the deployment and the shelf are set up for it.
+
+export type ArchiveFilingStatus = 'on' | 'off' | 'unavailable';
+
+export const ARCHIVE_ACQUISITION_CHANNELS = [
+  'library_database',
+  'publisher_site',
+  'open_access_repository',
+  'author_copy',
+  'ppbf_created',
+  'other',
+] as const;
+export type ArchiveAcquisitionChannel = (typeof ARCHIVE_ACQUISITION_CHANNELS)[number];
+
+export const ARCHIVE_VERSION_KINDS = [
+  'version_of_record',
+  'accepted_manuscript',
+  'author_original',
+  'corrected_version_of_record',
+  'other',
+  'unknown',
+] as const;
+export type ArchiveVersionKind = (typeof ARCHIVE_VERSION_KINDS)[number];
+
+export interface FiledOriginal {
+  archivedOriginalId: string;
+  sourceId: string;
+  archiveDomainCode: string;
+  archiveFilename: string;
+  webUrl: string | null;
+  contentSha256: string;
+}
+
+export type ArchiveFilingResult =
+  | { ok: true; alreadyFiled: boolean; original: FiledOriginal }
+  | { ok: false; status: number; serverMessage: string | null; code: string | null };
+
+/** Whether this shelf files originals here. Never throws; no answer reads as unavailable. */
+export async function readArchiveFilingStatus(
+  apiBaseUrl: string,
+  shelf: IntakeShelf | undefined,
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<ArchiveFilingStatus> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const response = await fetchImpl(
+      `${apiBaseUrl}/api/pilot/shadow/library/archive-original${shelf === 'platform' ? '?shelf=platform' : ''}`,
+      { method: 'GET', credentials: 'include' },
+    );
+    const payload = (await response.json().catch(() => null)) as { archive?: unknown } | null;
+    const archive = payload?.archive;
+    if (response.status === 200 && (archive === 'on' || archive === 'off' || archive === 'unavailable')) return archive;
+    // A role that cannot file sees no filing at all.
+    return response.status === 403 ? 'off' : 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+// One upload of up to 10 MB plus a SharePoint write.
+const ARCHIVE_FILING_TIMEOUT_MS = 90_000;
+
+/** Files the PDF for this source. Never throws. */
+export async function fileLibraryPdfOriginal(
+  apiBaseUrl: string,
+  file: File,
+  fields: {
+    sourceId: string;
+    acquisitionProvider: string;
+    acquisitionChannel: ArchiveAcquisitionChannel;
+    versionKind: ArchiveVersionKind;
+    acquiredAt: string;
+    shelf?: IntakeShelf;
+  },
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<ArchiveFilingResult> {
+  if (file.size > PDF_READ_MAX_BYTES) return { ok: false, status: 413, serverMessage: null, code: null };
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const form = new FormData();
+  form.append('file', file);
+  form.append('source_id', fields.sourceId);
+  form.append('acquisition_provider', fields.acquisitionProvider);
+  form.append('acquisition_channel', fields.acquisitionChannel);
+  form.append('version_kind', fields.versionKind);
+  if (fields.acquiredAt.trim()) form.append('acquired_at', fields.acquiredAt.trim());
+  if (fields.shelf === 'platform') form.append('shelf', 'platform');
+  try {
+    const response = await fetchImpl(`${apiBaseUrl}/api/pilot/shadow/library/archive-original`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ARCHIVE_FILING_TIMEOUT_MS) : undefined,
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+    const row = typeof body.archived_original === 'object' && body.archived_original !== null
+      ? (body.archived_original as Record<string, unknown>)
+      : null;
+    if (
+      (response.status === 201 || response.status === 200)
+      && body.ok === true
+      && row
+      && typeof row.archived_original_id === 'string'
+      && typeof row.source_id === 'string'
+      && typeof row.archive_domain_code === 'string'
+      && typeof row.archive_filename === 'string'
+      && typeof row.content_sha256 === 'string'
+    ) {
+      return {
+        ok: true,
+        alreadyFiled: body.status === 'already_filed',
+        original: {
+          archivedOriginalId: row.archived_original_id,
+          sourceId: row.source_id,
+          archiveDomainCode: row.archive_domain_code,
+          archiveFilename: row.archive_filename,
+          webUrl: typeof row.web_url === 'string' ? row.web_url : null,
+          contentSha256: row.content_sha256,
+        },
+      };
+    }
+    const { error, code } = serverError(payload);
+    return { ok: false, status: response.status, serverMessage: error, code };
+  } catch {
+    return { ok: false, status: 0, serverMessage: null, code: null };
+  }
+}
+
+/**
+ * The filed original an excerpt may be linked to: only one filed for the
+ * excerpt's own source, from the very bytes the pages were read from.
+ */
+export function linkableOriginal(
+  filed: FiledOriginal | null,
+  sourceId: string,
+  readSha256: string | null,
+): FiledOriginal | null {
+  if (!filed || readSha256 === null) return null;
+  return filed.sourceId === sourceId && filed.contentSha256 === readSha256 ? filed : null;
 }

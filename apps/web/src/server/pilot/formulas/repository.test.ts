@@ -341,7 +341,7 @@ describe('formula repository', () => {
     });
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('successor.supersedes_observation_id = input_id'),
-      ['org-1', 'athlete-1', 'MVP-01', 50],
+      ['org-1', 'athlete-1', 'MVP-01', 50, []],
     );
   });
 });

@@ -327,7 +327,8 @@ function emptyShadowCounts() {
     shadowFlaggedConversations: 0, shadowFlaggedMessagesDeleted: 0,
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowEventsDeleted: 0,
+    shadowEventsDeleted: 0, behaviourObservations: 0, shadowGymBehaviourNotesScrubbed: 0,
+    shadowGymBehaviourLabelsScrubbed: 0,
   };
 }
 
@@ -809,6 +810,7 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   const counts = {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
+    shadowGymBehaviourNotesScrubbed: 0, shadowGymBehaviourLabelsScrubbed: 0,
   };
   const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
@@ -824,6 +826,23 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   counts.shadowGymFeedbackScrubbed = await scrub(tables.shadowFeedback, 'shadow_feedback', 'comment');
   counts.shadowGymFlagNotesScrubbed = await scrub(tables.reviewFlags, 'shadow_library_review_flags', 'user_note');
   counts.shadowGymReviewSummariesScrubbed = await scrub(tables.reviewQueue, 'shadow_human_review_queue', 'summary');
+  if (tables.behaviourObservations) {
+    // A coach's report on another child that names this person (a partner
+    // in the drill, say). Capped at the column's 2000, as above.
+    counts.shadowGymBehaviourNotesScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
+      `update pilot.behaviour_observations set note = left(regexp_replace(note, $2, '[name]', 'gi'), 2000)
+        where organization_id = $1 and note ~* $2`,
+      [organizationId, pattern],
+    ))).rowCount ?? 0;
+    // A behaviour name a coach typed with a child's name in it ("Rosa drops
+    // her hands"): the name goes, the behaviour stays. Capped at the
+    // label's 120.
+    counts.shadowGymBehaviourLabelsScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
+      `update pilot.behaviour_keys set label = left(regexp_replace(label, $2, '[name]', 'gi'), 120)
+        where organization_id = $1 and label ~* $2`,
+      [organizationId, pattern],
+    ))).rowCount ?? 0;
+  }
   if (tables.researchRequirements) {
     // The typed text a research row carries: the requirement (a filed
     // question, verbatim), the knowledge gap, and in metadata the learning
@@ -949,6 +968,48 @@ async function deidentifyShadowChatAudit(client, tables, people) {
   );
   counts.shadowChatAuditScrubbed = scrubbed.rowCount ?? 0;
   return counts;
+}
+
+/* A COACH'S BEHAVIOUR REPORTS ABOUT THE CHILD (pilot.behaviour_observations, lane
+   L49) are coaching records the learning loop keeps de-identified (Jason
+   2026-10-06; Q5 "Keep coaching, delete medical"): the athlete key becomes
+   the person's token -- the same one the chat log gets -- and the coach's
+   note is kept with the child's names scrubbed, as a coach's chat turn about
+   them is (Jason 2026-10-07, "Scrub the child's name, keep"), or emptied when
+   no usable name is on record. The behaviour, context and timing stay. Runs
+   before the athlete row goes, whose follow trigger deletes any report still
+   naming the child, so a purge that rolls back leaves every report as it was.
+   Other children's notes naming this one are scrubbed with the gym-wide notes
+   (scrubGymNotes). Capped at the column's 2000: [name] can be longer than the
+   name it replaces. */
+async function deidentifyBehaviourObservations(client, tables, athlete, token, names) {
+  if (!tables.behaviourObservations) return 0;
+  const pattern = namePattern(names);
+  // The table's guard admits the scrubbed note only as exactly what this
+  // pattern makes of it, so the pattern is named to it for the statement.
+  const result = await withNameScrubPattern(client, pattern, () => client.query(
+    `update pilot.behaviour_observations
+        set athlete_id = $3,
+            note = case when $4::text is null then '' else left(regexp_replace(note, $4, '[name]', 'gi'), 2000) end,
+            deidentified_at = now()
+      where organization_id = $1 and athlete_id = $2`,
+    [athlete.organization_id, athlete.athlete_id, token, pattern],
+  ));
+  return result.rowCount ?? 0;
+}
+
+/* The learning-loop tables admit a name scrub only as exactly what the purge's
+   pattern makes of the text (their guards read pilot.name_scrub_pattern), so
+   the pattern is set for the transaction around the scrub and cleared after:
+   nothing later in the purge can rewrite a note under it. On a failure there is
+   nothing to clear here -- the caller rolls back to its savepoint, which undoes
+   the setting with everything else -- and a query on the failed transaction
+   would only replace the error the purge reports. */
+async function withNameScrubPattern(client, pattern, run) {
+  await client.query(`select set_config('pilot.name_scrub_pattern', $1, true)`, [pattern ?? '']);
+  const result = await run();
+  await client.query(`select set_config('pilot.name_scrub_pattern', '', true)`);
+  return result;
 }
 
 /**
@@ -1135,7 +1196,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          read while the rows that hold them still exist: the delete below
          cascades the guardian links and, through the login, the profile. */
       const athleteLogins = linked.rows.filter((row) => row.role === 'athlete').map((row) => row.account_id);
-      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys
+      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name, false as guardian from pilot.athletes where organization_id = $1 and athlete_id = $2
            union all
@@ -1201,6 +1262,10 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       const flaggedHere = await deidentifyFlaggedConversations(
         client, tables, athleteLogins, athlete.organization_id, receiptToken, knownNames,
       );
+      // One token for the person (SHADOW_OPERATIONAL_TABLES), minted before
+      // the athlete row goes so their behaviour reports can carry it too.
+      const token = anonymousToken();
+      const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token, knownNames);
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -1220,13 +1285,27 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let retiredHere = 0;
       let correctionsHere = 0;
       const shadowHere = emptyShadowCounts();
+      shadowHere.behaviourObservations = behaviourHere;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
+          /* A retired athlete login keeps only what refusing its sign-in needs:
+             the row, its role, its gym and deleted_at (deletedAccountSignIn.ts,
+             deletedAthletes.ts). Its email, PIN and any password or Microsoft
+             binding go with the child (F-102, OD-2026-10-08-009 D15: "Build the
+             removals"); each pair is cleared together, as its check requires.
+             A login that is not the athlete's role is still in use and keeps
+             them. */
           await client.query(
             `update pilot.accounts
                 set athlete_id = null,
                     deleted_at = case when role = 'athlete' then coalesce(deleted_at, now()) else deleted_at end,
                     active_flag = case when role = 'athlete' then false else active_flag end,
+                    login_email = case when role = 'athlete' then null else login_email end,
+                    pin_hash = case when role = 'athlete' then null else pin_hash end,
+                    password_hash = case when role = 'athlete' then null else password_hash end,
+                    password_set_at = case when role = 'athlete' then null else password_set_at end,
+                    microsoft_oid = case when role = 'athlete' then null else microsoft_oid end,
+                    microsoft_tid = case when role = 'athlete' then null else microsoft_tid end,
                     updated_at = now()
               where account_id = $1`,
             [login.account_id],
@@ -1259,8 +1338,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           }
         }
         /* The same athlete-role logins as the corrections above, and the
-           athlete's own record: one token for the person (SHADOW_OPERATIONAL_TABLES). */
-        const token = anonymousToken();
+           athlete's own record: the person's one token, minted above. */
         const subject = { organizationId: athlete.organization_id, athleteId: athlete.athlete_id };
         Object.assign(shadowHere, await deleteShadowOperationalRows(client, tables, athleteLogins));
         shadowHere.shadowProfileMentions = await clearShadowProfileMentions(client, tables, [subject]);
@@ -1484,10 +1562,18 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         ],
       });
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
-         cleared the way a reviewer's removal clears it (profileDb.ts). */
+         cleared the way a reviewer's removal clears it (profileDb.ts). So does
+         the ring name (F-102): the scrub above already treats it as one of the
+         child's names, and it is read there, before this clears it. */
       const portraitPaths = [];
       if (removed.rows.length > 0 && tables.profiles) {
         for (const login of linked.rows.filter((row) => row.role === 'athlete')) {
+          await client.query(
+            `update pilot.account_profiles
+                set display_nickname = null, updated_at = now()
+              where organization_id = $1 and account_id = $2 and display_nickname is not null`,
+            [athlete.organization_id, login.account_id],
+          );
           const portrait = await client.query(
             `select photo_blob_path from pilot.account_profiles
               where organization_id = $1 and account_id = $2 and photo_blob_path is not null
@@ -1554,7 +1640,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
     try {
       // Read before the guardian record and its links go (SHADOW_OPERATIONAL_TABLES):
       // the guardian's names, and the children whose turns those names must leave.
-      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys
+      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name from pilot.parents where account_id = $1
            union all
@@ -1770,8 +1856,11 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_review_flag_notes', shadow.shadowGymFlagNotesScrubbed],
       ['shadow_research_rows', shadow.shadowGymResearchScrubbed],
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
+      ['behaviour_observation_notes', shadow.shadowGymBehaviourNotesScrubbed],
+      ['behaviour_key_labels', shadow.shadowGymBehaviourLabelsScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
+    [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
   };
 }
 
@@ -1866,6 +1955,7 @@ async function main() {
               exists (select 1 from information_schema.columns
                        where table_schema = 'pilot' and table_name = 'shadow_human_review_queue'
                          and column_name = 'deidentified_at') as "deidentifyKeys",
+              to_regclass('pilot.behaviour_observations') is not null as "behaviourObservations",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];

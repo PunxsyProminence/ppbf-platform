@@ -22,6 +22,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
+import { BUILDING } from './buildingMap';
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as unknown as Response;
@@ -160,6 +161,31 @@ afterEach(() => {
   // test's pick must not choose the next test's opening child.
   window.sessionStorage.clear();
   window.localStorage.clear();
+});
+
+// Each menu label equals its page title (Jason's ruling): the hub's heading is
+// the name its door carries in the building map.
+test('the page heading is the door name, Parent Hub', async () => {
+  installFetch();
+  await renderHub();
+  const door = BUILDING.find((entry) => entry.href === '/parent/dashboard');
+  expect(door?.label).toBe('Parent Hub');
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(door!.label);
+});
+
+// #1593: "Current Track" had no source and read Unavailable for every child,
+// so the row is gone (Overwatch ruling B); the status panel keeps what is real.
+test('the status panel has no Current Track row, and still names the child', async () => {
+  installFetch();
+  await renderHub();
+  expect(screen.queryByText('Current Track')).toBeNull();
+  // The panel's help, opened, names what the panel shows.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Child Overview/ }));
+  });
+  expect(screen.getByText('Review membership, scholarship and support status')).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/current track/i);
+  expect(screen.getByText('Child Name')).toBeInTheDocument();
 });
 
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
@@ -363,13 +389,14 @@ describe('what the overview no longer says, and what it still does', () => {
     expect(screen.queryByText(/hidden until backend-authoritative feeds/)).toBeNull();
   });
 
-  test('membership, scholarship and community-service rows are unchanged (Q2 = B for this PR)', async () => {
+  test('membership, scholarship and community-service rows are still there (their values: parentHubSupportStatus.test.tsx, PH-13)', async () => {
     installFetch();
     await renderHub();
     const text = statusPanelText();
     expect(text).toContain('Membership Status');
     expect(text).toContain('Scholarship Status');
     expect(text).toContain('Community Service Support Status');
+    expect(text).not.toContain('not yet tracked');
   });
 });
 

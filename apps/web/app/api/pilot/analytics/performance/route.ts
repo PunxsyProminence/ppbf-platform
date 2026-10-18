@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { getAthletesForCoach } from '@/src/server/pilot/entities';
+import { gymDayIso } from '@/src/lib/gymTime';
+import { getAttendanceLast28Days } from '@/src/server/pilot/attendancePrecedence';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   clampWindowDays,
@@ -50,15 +52,23 @@ export async function GET(request: NextRequest) {
           : [];
 
     const names = new Map(roster.map((athlete) => [athlete.athlete_id, athlete.full_name]));
-    const rollup = await getPerformanceRollup(
-      principal.organizationId,
-      roster.map((athlete) => athlete.athlete_id),
-      windowDays,
-    );
+    const ids = roster.map((athlete) => athlete.athlete_id);
+    const today = gymDayIso();
+    if (!today) throw new Error('Unable to resolve the gym date.');
+    const [rollup, attendance] = await Promise.all([
+      getPerformanceRollup(principal.organizationId, ids, windowDays),
+      // Always the last 28 days, whatever window the page picked
+      // (OD-2026-10-17-026 (c)); the same staff-only roster as the rollup.
+      getAttendanceLast28Days(principal.organizationId, ids, today),
+    ]);
 
     return NextResponse.json({
       window_days: windowDays,
-      items: rollup.map((row) => ({ ...row, full_name: names.get(row.athlete_id) ?? 'Unknown' })),
+      items: rollup.map((row) => ({
+        ...row,
+        full_name: names.get(row.athlete_id) ?? 'Unknown',
+        attendance_28d: attendance.get(row.athlete_id) ?? null,
+      })),
     });
   } catch (error) {
     return jsonError(error);

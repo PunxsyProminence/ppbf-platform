@@ -44,10 +44,10 @@ import {
   type ShadowUnlockHint,
 } from '@/src/server/pilot/shadowUnlocks';
 import {
+  alsoCitedTiers,
   deriveEvidenceTier,
+  gradeableEvidence,
   selectStrongestEvidence,
-  type ShadowBoxingSpecificity,
-  type ShadowEvidenceClass,
   type ShadowEvidenceTier,
 } from '@/src/server/pilot/shadowEvidenceTier';
 import {
@@ -1554,6 +1554,7 @@ async function handleShadowChat(
     // Computed before persistence so the stored row and the response body carry
     // identical values -- a restored conversation has to replay what the user
     // was shown, not a recomputed approximation of it.
+    const citedQuality = gradeableEvidence(citedEvidenceQuality(evidenceBundle, responseValidation.citationIds));
     const persistedEvidenceTier = deriveEvidenceTier({
       isAnsweredState: state === 'ok',
       evidenceAvailability: evidenceBundle.availability,
@@ -1571,16 +1572,13 @@ async function handleShadowChat(
       // citation grades the tier -- see selectStrongestEvidence's own
       // comment for why that reduction is the right one, not the weakest
       // or an average.
-      strongestEvidence: selectStrongestEvidence(
-        citedEvidenceQuality(evidenceBundle, responseValidation.citationIds)
-          .filter((item) => item.evidenceClass !== null && item.boxingSpecificity !== null)
-          .map((item) => ({
-            evidenceClass: item.evidenceClass as ShadowEvidenceClass,
-            authorityTier: item.authorityTier,
-            boxingSpecificity: item.boxingSpecificity as ShadowBoxingSpecificity,
-          })),
-      ),
+      strongestEvidence: selectStrongestEvidence(citedQuality),
     });
+    // The other cited sources' grades, under the headline ("Also cites").
+    const evidenceAlsoCites = alsoCitedTiers(persistedEvidenceTier, citedQuality);
+    // Whether a cited source graded the answer, so the badge may name one
+    // ("Strongest source"); otherwise it reads "Evidence".
+    const evidenceSourceGraded = state === 'ok' && evidenceBundle.availability === 'available' && citedQuality.length > 0;
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({
       requiresHumanReview: persistedRequiresHumanReview,
@@ -1810,6 +1808,8 @@ async function handleShadowChat(
       requiresHumanReview: responseRequiresHumanReview,
       highRiskTopic: responseTopic,
       evidenceTier: persistedEvidenceTier,
+      evidenceAlsoCites,
+      evidenceSourceGraded,
       // Three distinct situations, and the tier alone cannot tell them apart --
       // all three grade RESEARCH_NEEDED:
       //   * the lookup itself failed, so the grade is not a statement about the

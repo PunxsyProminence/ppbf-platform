@@ -2019,6 +2019,77 @@ h6 {
   }
 }
 
+/* ===================================================== THE COACH'S CONSOLE ===
+   The live-session console on /coach/session-scripts in look B (lane L39
+   PR 3). Its sizes come from the kiosk surface it sits on; what is set here is
+   the top row's layout, the tiles' caps, and the controls as brass plates. No
+   rule here sets a font size on a kiosk voice (.t-label, .t-data, .badge ...):
+   kioskTypeFloor.test.ts owns those. */
+.coach-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+.coach-tiles__group {
+  min-width: 0;
+}
+.coach-tiles__cap {
+  display: flex;
+  margin: 0 0 var(--s3);
+  padding: var(--s2) var(--s4);
+  font-family: var(--font-ui);
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+/* A badge's word may wrap inside a narrow tile instead of spilling into the next. */
+.coach-tiles .badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.coach-tiles__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coach-tiles__note {
+  margin: 0;
+  font-size: var(--t-md);
+  color: var(--bone-300);
+}
+/* The controls as brass plates: the same buttons, the same handlers. Ink on
+   brass-300 to brass-400 reads 6:1 or better across the plate; the press and
+   hover feedback the plain button had stays. */
+.coach-live .coach-live-controls .btn,
+.coach-live .coach-live-timer .btn:not(.btn--ghost) {
+  border: 1px solid var(--brass-700);
+  background-image: linear-gradient(180deg, var(--brass-300), var(--brass-400));
+  color: var(--enamel-ink);
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .45);
+  box-shadow: var(--shadow-contact), inset 0 1px 0 rgb(var(--brass-200-rgb) / .5);
+}
+.coach-live .coach-live-controls .btn:hover:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.coach-live .coach-live-controls .btn:active:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35);
+}
+.coach-live .coach-live-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-lg);
+}
+
 /* ============================================================== THE WALL ===
    Scoped entirely to [data-surface="wall"], the marker app/wall/layout.tsx
    puts on its subtree. Nothing here can reach another page: no other element
@@ -2388,6 +2459,147 @@ h6 {
 [data-surface="wall"] .wall-session--cancelled {
   opacity: .55;
 }
+
+/* --- The session on the TV ---------------------------------------------- */
+
+/* A paired TV with a shown live run: NOW (the block, its kind, plan time left,
+   the strip of blocks) on the major side, NEXT UP and the names on the minor
+   one. Every word here is the plan's own or a fixed label. */
+[data-surface="wall"] .wall-session-place {
+  margin-left: auto;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgb(var(--enamel-ink-rgb) / .78);
+}
+
+/* Paused, struck on the NOW sign: cream letters on an ink block. */
+[data-surface="wall"] .wall-heading-stamp {
+  padding: 0 var(--s3);
+  border-radius: 2px;
+  background-color: var(--enamel-ink);
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 700;
+  letter-spacing: .18em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--bone-200);
+}
+
+[data-surface="wall"] .wall-now { display: flex; flex-direction: column; gap: var(--s3); }
+[data-surface="wall"] .wall-now-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); }
+
+[data-surface="wall"] .wall-kind { display: inline-flex; align-items: center; gap: var(--s4); font-size: var(--t-2xl); }
+
+[data-surface="wall"] .wall-kind-word {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--brass-200);
+}
+
+[data-surface="wall"] .wall-now-left { display: flex; align-items: baseline; gap: var(--s3); margin: 0; }
+
+[data-surface="wall"] .wall-now-time {
+  font-family: var(--font-display);
+  font-size: var(--t-4xl);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-100);
+}
+
+[data-surface="wall"] .wall-now-unit,
+[data-surface="wall"] .wall-strip-min {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--bone-400);
+}
+
+/* Two lines at most: a long label the coach typed ends in an ellipsis rather
+   than pushing the strip off the board. */
+[data-surface="wall"] .wall-now-label {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  padding-bottom: .05em;
+  font-family: var(--font-display);
+  font-size: var(--t-4xl);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  color: var(--wall-ink);
+}
+
+[data-surface="wall"] .wall-now-drill {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xl);
+  line-height: 1.3;
+  color: var(--bone-300);
+}
+
+[data-surface="wall"] .wall-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: auto 0 0;
+  padding: var(--s4) 0 0;
+  list-style: none;
+}
+
+[data-surface="wall"] .wall-strip-number {
+  padding: 0 var(--s3);
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+[data-surface="wall"] .wall-strip-icon,
+[data-surface="wall"] .wall-kind-roundel { font-size: var(--t-xl); }
+
+[data-surface="wall"] .wall-strip-word {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 500;
+  color: var(--bone-200);
+}
+
+[data-surface="wall"] .wall-next-label {
+  display: -webkit-box;
+  margin: var(--s3) 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--font-display);
+  font-size: var(--t-3xl);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  color: var(--wall-ink);
+}
+
+/* The names, shrunk to the minor side while a session is up, and still
+   stepping down as the room fills rather than clipping the last row. */
+[data-surface="wall"] .wall-floor-list[data-density="session-roomy"] .wall-name { font-size: var(--t-2xl); }
+[data-surface="wall"] .wall-floor-list[data-density="session-dense"] .wall-name { font-size: var(--t-xl); }
+[data-surface="wall"] .wall-floor-list[data-density="session-packed"] .wall-name { font-size: var(--t-lg); }
 
 /* --- The marquee --------------------------------------------------------- */
 

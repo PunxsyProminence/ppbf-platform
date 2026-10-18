@@ -11,7 +11,7 @@
 // loosely on purpose: what is pinned is that the three outcomes stay three
 // distinguishable messages, not the exact wording of any of them.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
@@ -455,5 +455,379 @@ describe('a coach logging a session for an athlete', () => {
     const submit = await screen.findByRole('button', { name: 'Log This Session' });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText('Which athlete is this for')).toBeNull();
+  });
+});
+
+// FIX A NUMBER (lane L50). A mistyped count could only be corrected by an API
+// call with hand-copied observation ids; nothing on this page sent the
+// correction the observations route has always accepted. These pin that the
+// page now does, one correction per changed number, each replacing the exact
+// observation it showed, in order.
+describe('fix a number', () => {
+  const ENTRY = {
+    contextId: 'sparring_1000',
+    observedAt: '2026-10-17T15:00:00.000Z',
+    observations: [
+      { observationId: 'obs-taken', kind: 'punch_absorbed', value: 3, unit: 'count', dimensions: { opponentStance: 'Orthodox' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      { observationId: 'obs-landed', kind: 'punch_landed', value: 5, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+    ],
+  };
+
+  const gets: string[] = [];
+  const posts: Array<Record<string, unknown>> = [];
+
+  function mockFixFetch() {
+    gets.length = 0;
+    posts.length = 0;
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return {
+          ok: true,
+          json: async () => ({ authenticated: true, role: 'athlete', account_id: 'acct-athlete-001', athlete_id: 'athlete-001' }),
+        } as Response;
+      }
+      if (init?.method === 'GET') {
+        gets.push(String(input));
+        return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      }
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    });
+  }
+
+  async function openFix() {
+    global.fetch = mockFixFetch() as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    // Re-queried: the section remounts once the athlete is known (it is keyed
+    // by athlete), so a node found before that is not the one on screen.
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+    return section;
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('lists the athlete\'s own recent entries from the observations route', async () => {
+    await openFix();
+    expect(gets).toEqual([expect.stringContaining('/api/pilot/shadow/formulas/observations?athlete_id=athlete-001')]);
+  });
+
+  test('two changed numbers post two corrections, in order, each superseding what was shown', async () => {
+    const section = await openFix();
+    fireEvent.change(within(section).getByLabelText('Thrown'), { target: { value: '8' } });
+    fireEvent.change(within(section).getByLabelText('Landed'), { target: { value: '4' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([
+      expect.objectContaining({
+        athleteId: 'athlete-001',
+        contextId: 'sparring_1000',
+        kind: 'punch_attempted',
+        value: 8,
+        unit: 'count',
+        dimensions: { punchType: 'Jab' },
+        observedAt: '2026-10-17T15:00:00.000Z',
+        supersedesObservationId: 'obs-thrown',
+        idempotencyKey: 'sparring_1000-punch_attempted-fix-obs-thrown',
+      }),
+      expect.objectContaining({
+        kind: 'punch_landed',
+        value: 4,
+        supersedesObservationId: 'obs-landed',
+      }),
+    ]);
+    // The list is read again, so what is shown is what is on record.
+    expect(gets).toHaveLength(2);
+  });
+
+  test('a coach who switches athletes never sees the previous athlete late-arriving entries', async () => {
+    let releaseEntries: () => void = () => {};
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'coach', account_id: 'acct-coach-001' }) } as Response;
+      }
+      if (url.includes('/api/pilot/coach/athletes')) {
+        return {
+          ok: true,
+          json: async () => ({ items: [
+            { athlete_id: 'ath-a', full_name: 'Athlete A' },
+            { athlete_id: 'ath-b', full_name: 'Athlete B' },
+          ] }),
+        } as Response;
+      }
+      if (init?.method === 'GET' && url.includes('athlete_id=ath-a')) {
+        await new Promise<void>((resolve) => { releaseEntries = resolve; });
+        return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ ok: true, entries: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+
+    const picker = await screen.findByLabelText('Which athlete is this for');
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.change(picker, { target: { value: 'ath-a' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show recent entries' }));
+    fireEvent.change(picker, { target: { value: 'ath-b' } });
+    releaseEntries();
+
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    await waitFor(() => expect(within(section).queryByText('Loading…')).toBeNull());
+    expect(within(section).queryByRole('button', { name: 'Fix' })).toBeNull();
+  });
+
+  test('a correction that raises a safety review says so', async () => {
+    const section = await openFix();
+    (global.fetch as jest.Mock).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      return { ok: true, json: async () => ({ ok: true, safetyReview: { raised: true, lesson: 'Clearance first.' } }) } as Response;
+    });
+    fireEvent.change(within(section).getByLabelText('Punches taken'), { target: { value: '4' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    const status = await within(section).findByText(/your coach has been asked to look at it/);
+    expect(status.textContent).toContain('Fixed.');
+    expect(status.textContent).toContain('Clearance first.');
+  });
+
+  test('landing more than thrown is refused before anything is sent', async () => {
+    const section = await openFix();
+    fireEvent.change(within(section).getByLabelText('Landed'), { target: { value: '11' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/cannot land more than you threw/);
+    expect(posts).toEqual([]);
+  });
+});
+
+// WHOLE SESSION (Jason 2026-10-17, "B: Longer sparring form"; copy accepted by
+// Overwatch). Optional boxes: blank sends nothing, filled sends the counts the
+// MVP-02/04/05 detectors read, tagged as whole-session so they never collide
+// with the per-type numbers above.
+describe('whole session boxes', () => {
+  async function renderFillAndSubmit(fill: Record<string, string>) {
+    submittedObservations.length = 0;
+    global.fetch = mockFetch(() => true) as unknown as typeof fetch;
+    const { container } = render(<SparringTelemetryPage />);
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    for (const [label, value] of Object.entries(fill)) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    }
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+  }
+
+  const kinds = () => submittedObservations.map((item) => item.kind);
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('left blank, each box is sent empty (null) with its fieldKey; rounds still go', async () => {
+    // A blank is a gap data completeness (MVP-10) counts (Overwatch QD3); the
+    // detector never reads a null as a value for MVP-02/04/05.
+    await renderFillAndSubmit({});
+    await screen.findByText('Saved to your training record.');
+    const boxes = submittedObservations
+      .filter((item) => typeof (item.dimensions as Record<string, unknown>)?.fieldKey === 'string')
+      .map((item) => [item.kind, item.value, (item.dimensions as Record<string, unknown>).fieldKey]);
+    expect(boxes.sort()).toEqual([
+      ['active_time', null, 'minutes_worked'],
+      ['punch_count', null, 'all_thrown'],
+      ['punch_landed', null, 'all_landed'],
+    ]);
+    expect(kinds()).toContain('round_count');
+  });
+
+  test('filled in, each box is sent tagged as the whole session, with rounds beside all thrown', async () => {
+    await renderFillAndSubmit({
+      'All punches thrown': '90',
+      'All punches landed': '30',
+      'Minutes of actual work': '12',
+    });
+    await screen.findByText('Saved to your training record.');
+    const whole = submittedObservations.filter((item) => (
+      (item.dimensions as Record<string, unknown>)?.scope === 'session_total'
+    ));
+    expect(whole.map((item) => [item.kind, item.value, item.unit]).sort()).toEqual([
+      ['active_time', 12, 'minutes'],
+      ['punch_count', 90, 'count'],
+      ['punch_landed', 30, 'count'],
+      ['round_count', 6, 'count'],
+    ]);
+    // Two punch_landed in one context need two idempotency keys.
+    const landedKeys = submittedObservations
+      .filter((item) => item.kind === 'punch_landed')
+      .map((item) => item.idempotencyKey);
+    expect(new Set(landedKeys).size).toBe(2);
+  });
+
+  test.each([
+    [{ 'All punches thrown': '10', 'All punches landed': '11' }, "All punches landed can't be more than all punches thrown"],
+    [{ 'Thrown': '20', 'All punches thrown': '10' }, "All punches thrown can't be fewer than the jabs you threw above"],
+    [{ 'Thrown': '10', 'Landed': '5', 'All punches landed': '4' }, "All punches landed can't be fewer than the jabs you landed above"],
+    [{ 'Minutes of actual work': '0' }, 'Minutes of actual work has to be between 1 and 120'],
+    [{ 'Minutes of actual work': '121' }, 'Minutes of actual work has to be between 1 and 120'],
+  ])('refuses %j before anything is sent', async (fill, message) => {
+    await renderFillAndSubmit(fill as Record<string, string>);
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(message));
+    expect(submittedObservations).toEqual([]);
+  });
+});
+
+describe('fix a number, whole-session counts', () => {
+  test('an entry with both landed counts offers both, and fixing the total replaces the total', async () => {
+    const entry = {
+      contextId: 'sparring_1000',
+      observedAt: '2026-10-17T15:00:00.000Z',
+      observations: [
+        { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-landed', kind: 'punch_landed', value: 5, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-landed', kind: 'punch_landed', value: 12, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-thrown', kind: 'punch_count', value: 40, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      ],
+    };
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'athlete', athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [entry] }) } as Response;
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+
+    expect((within(section).getByLabelText('Landed') as HTMLInputElement).value).toBe('5');
+    expect((within(section).getByLabelText('All punches landed') as HTMLInputElement).value).toBe('12');
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '14' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([expect.objectContaining({
+      kind: 'punch_landed',
+      value: 14,
+      dimensions: { scope: 'session_total' },
+      supersedesObservationId: 'obs-all-landed',
+    })]);
+  });
+});
+
+describe('whole session review fixes', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('a cleared rounds box sends no round count', async () => {
+    submittedObservations.length = 0;
+    global.fetch = mockFetch(() => true) as unknown as typeof fetch;
+    const { container } = render(<SparringTelemetryPage />);
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText('Rounds you finished'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('All punches thrown'), { target: { value: '40' } });
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+
+    await screen.findByText('Saved to your training record.');
+    const kinds = submittedObservations.map((item) => item.kind);
+    expect(kinds).toContain('punch_count');
+    expect(kinds).not.toContain('round_count');
+  });
+
+  test('a fix makes the same whole-session checks the log does, and rounds can be fixed', async () => {
+    const entry = {
+      contextId: 'sparring_1000',
+      observedAt: '2026-10-17T15:00:00.000Z',
+      observations: [
+        { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-landed', kind: 'punch_landed', value: 5, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-landed', kind: 'punch_landed', value: 12, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-thrown', kind: 'punch_count', value: 40, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-rounds', kind: 'round_count', value: 6, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      ],
+    };
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'athlete', athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [entry] }) } as Response;
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '3' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+    await within(section).findByText(/All punches landed can't be fewer than the jabs you landed above/);
+    expect(posts).toEqual([]);
+
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '12' } });
+    fireEvent.change(within(section).getByLabelText('Rounds you finished'), { target: { value: '13' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+    await within(section).findByText(/Rounds you finished has to be between 1 and 12/);
+    expect(posts).toEqual([]);
+
+    fireEvent.change(within(section).getByLabelText('Rounds you finished'), { target: { value: '5' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([expect.objectContaining({ kind: 'round_count', value: 5, supersedesObservationId: 'obs-rounds' })]);
+  });
+});
+
+describe('fix a number, clearing a whole-session box (Codex review on #1729)', () => {
+  test('a cleared whole-session box is replaced by null; a cleared per-type box changes nothing', async () => {
+    const entry = {
+      contextId: 'sparring_1000',
+      observedAt: '2026-10-17T15:00:00.000Z',
+      observations: [
+        { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-landed', kind: 'punch_landed', value: 12, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      ],
+    };
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'athlete', athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [entry] }) } as Response;
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+
+    fireEvent.change(within(section).getByLabelText('Thrown'), { target: { value: '' } });
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([expect.objectContaining({
+      kind: 'punch_landed',
+      value: null,
+      dimensions: { scope: 'session_total' },
+      supersedesObservationId: 'obs-all-landed',
+    })]);
   });
 });

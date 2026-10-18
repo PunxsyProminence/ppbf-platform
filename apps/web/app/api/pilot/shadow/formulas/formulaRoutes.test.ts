@@ -287,6 +287,8 @@ describe('formula API access and trust boundaries', () => {
       organizationId: 'org-1',
       athleteId: 'athlete-1',
       formulaId: 'MVP-01',
+      // A parent reads no personal baseline (lane L50, Overwatch QD2).
+      excludeFormulaIds: ['MVP-09'],
       limit: 50,
     });
 
