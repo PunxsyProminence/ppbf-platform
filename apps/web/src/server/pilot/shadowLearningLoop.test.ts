@@ -1,4 +1,4 @@
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { processLearningSignal } from './shadowLearningLoop';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { createShadowResearchRequirement } from './shadowResearch';
@@ -8,6 +8,8 @@ import { upsertRememberedFact } from './shadowUserProfile';
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  withTransaction: jest.fn(),
+  sanitizedSqlState: jest.fn(),
 }));
 jest.mock('./shadowMetrics', () => ({
   recordRecommendationEffectiveness: jest.fn(),
@@ -30,6 +32,21 @@ const mockResearch = jest.mocked(createShadowResearchRequirement);
 const mockEvaluateUnlocks = jest.mocked(evaluateShadowUnlockState);
 const mockFeatureEnabled = jest.mocked(isFeatureEnabled);
 const mockRememberFact = jest.mocked(upsertRememberedFact);
+const mockWithTransaction = jest.mocked(withTransaction);
+
+// The once-only effects run in a transaction under a lock on the feedback
+// row. Its client answers the lock with `effectsDone` and sends every other
+// statement through mockQuery, so the SQL assertions below see them all.
+let effectsDone: string[] = [];
+const transactionClient = {
+  async query(sql: string, params?: unknown[]) {
+    if (sql.includes('FROM pilot.shadow_feedback') && sql.includes('FOR UPDATE')) {
+      return { rows: [{ learning_effects_done: effectsDone }] };
+    }
+    return { rows: (await mockQuery(sql, params as never)) ?? [] };
+  },
+};
+const sqlCalls = () => mockQuery.mock.calls.map(([sql]) => String(sql));
 
 const baseSignal = {
   feedbackId: 12,
@@ -52,6 +69,8 @@ describe('SHADOW learning-loop trust gates', () => {
     mockEvaluateUnlocks.mockResolvedValue({ features: {} } as never);
     mockFeatureEnabled.mockReturnValue(true);
     mockRememberFact.mockResolvedValue(undefined);
+    effectsDone = [];
+    mockWithTransaction.mockImplementation(async (fn) => fn(transactionClient as never));
   });
 
   test('rejects unverified signals without recording effectiveness or profile facts', async () => {
@@ -88,11 +107,9 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(mockQuery.mock.calls.some(([sql]) =>
       typeof sql === 'string' && sql.includes("review_state, flagged_at")
     )).toBe(true);
-    expect(mockQuery.mock.calls.some(([sql]) =>
-      typeof sql === 'string'
-      && sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id')
-    )).toBe(true);
+    expect(sqlCalls().some((sql) => sql.includes('flag_count + $8::int'))).toBe(true);
     expect(result.actions.join(' ')).toContain('no learning was promoted');
+    expect(result.complete).toBe(true);
   });
 
   // O11 = A (GO-RECS-CONFIRMED, Jason 2026-10-08): a Library review flag comes
@@ -166,10 +183,9 @@ describe('SHADOW learning-loop trust gates', () => {
       && sql.includes('ON CONFLICT (feedback_id, verification_state)')
       && sql.includes('actions_taken = EXCLUDED.actions_taken')
     )).toBe(true);
-    expect(mockQuery.mock.calls.some(([sql]) =>
-      typeof sql === 'string'
-      && sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id')
-    )).toBe(true);
+    expect(sqlCalls().some((sql) => sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id'))).toBe(false);
+    expect(sqlCalls().some((sql) => sql.includes("array_append(learning_effects_done, 'complete')"))).toBe(true);
+    expect(result.complete).toBe(true);
     // The proposal re-points the flag at this account; an earlier flagger's
     // note goes with the earlier account, never shown as this one's.
     const proposal = mockQuery.mock.calls.find(([sql]) =>
@@ -225,6 +241,73 @@ describe('SHADOW learning-loop trust gates', () => {
       .find((sql) => sql.includes('latest_outcome_signal = $6'));
     expect(flagSql).toBeDefined();
     expect(flagSql).toContain('proposed_action = NULL');
+  });
+
+  // One feedback event has each once-only effect once, whatever the retries
+  // (L46 item 1). Real-database proof: shadowLearningIntegrity.pg.test.ts.
+  describe('once-only effects and completion', () => {
+    const markWritten = (effect: string) => mockQuery.mock.calls.some(([sql, params]) =>
+      String(sql).includes('array_append(learning_effects_done, $3::text)')
+      && Array.isArray(params) && params[2] === effect);
+    const completeWritten = () => sqlCalls().some((sql) => sql.includes("array_append(learning_effects_done, 'complete')"));
+
+    test('a failed fact write leaves the approval incomplete, unmarked, and not complete', async () => {
+      mockRememberFact.mockRejectedValue(new Error('profile write failed'));
+      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      expect(result.actions).toContain('Fact extraction failed');
+      expect(result.complete).toBe(false);
+      expect(markWritten('facts')).toBe(false);
+      expect(completeWritten()).toBe(false);
+    });
+
+    test('facts are counted inside the marking transaction, and not again once marked', async () => {
+      await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      expect(mockRememberFact).toHaveBeenCalledWith('account-1', 'org-1', expect.objectContaining({ key: 'engaged_topic_footwork' }), transactionClient);
+      expect(markWritten('facts')).toBe(true);
+
+      jest.clearAllMocks();
+      effectsDone = ['facts'];
+      const retry = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      expect(mockRememberFact).not.toHaveBeenCalled();
+      expect(retry.actions).toContain('Facts from this feedback were already counted');
+      expect(retry.complete).toBe(true);
+    });
+
+    test('a topic flag this feedback already counted is re-written with +0 and not re-marked', async () => {
+      effectsDone = ['library_flag'];
+      await processLearningSignal({ ...baseSignal, outcome: 'thumbs_down', verificationState: 'human_reviewed' });
+      const flag = mockQuery.mock.calls.find(([sql]) => String(sql).includes('latest_outcome_signal = $6'));
+      expect(flag?.[1]?.[7]).toBe(0);
+      expect(markWritten('library_flag')).toBe(false);
+    });
+
+    test('an unreadable unlock state is a retryable failure, not a reason to skip effects', async () => {
+      mockEvaluateUnlocks.mockRejectedValue(new Error('unlock read failed'));
+      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      expect(result.actions).toContain('Unlock state unavailable');
+      expect(result.complete).toBe(false);
+      expect(completeWritten()).toBe(false);
+    });
+
+    test('a failed learning log keeps the approval incomplete', async () => {
+      mockQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('INSERT INTO pilot.shadow_learning_events')) throw new Error('log failed');
+        return [];
+      });
+      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      expect(result.complete).toBe(false);
+      expect(completeWritten()).toBe(false);
+    });
+
+    test('a client signal no longer negative withdraws the flag it counted', async () => {
+      effectsDone = ['library_flag'];
+      const result = await processLearningSignal({ ...baseSignal, outcome: 'thumbs_up', verificationState: 'durable_client' });
+      expect(sqlCalls().some((sql) => sql.includes('FROM pilot.shadow_library_review_flags') && sql.includes('FOR UPDATE'))).toBe(true);
+      expect(mockQuery.mock.calls.some(([sql, params]) =>
+        String(sql).includes('array_remove(learning_effects_done, $3::text)') && Array.isArray(params) && params[2] === 'library_flag')).toBe(true);
+      expect(result.libraryFlagged).toBe(false);
+      expect(result.complete).toBe(true);
+    });
   });
 
   // communication_style was unwritable in production: the inference required

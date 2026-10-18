@@ -1,7 +1,7 @@
 import { query, queryOne } from './db';
 import {
   recordShadowFeedback,
-  hasDurableHumanReviewedLearningEvent,
+  hasCompletedLearning,
   listShadowFeedback,
   normalizeShadowFeedbackId,
   resolveShadowFeedbackReview,
@@ -313,16 +313,18 @@ describe('SHADOW feedback correlation', () => {
     })).resolves.toBeNull();
   });
 
-  test('verifies an organization-scoped durable human-reviewed learning event', async () => {
+  test('reads completion from the organization-scoped feedback row, not from the learning log', async () => {
     mockQueryOne.mockResolvedValueOnce({ present: true });
 
-    await expect(hasDurableHumanReviewedLearningEvent({
+    await expect(hasCompletedLearning({
       organizationId: 'org-1',
       feedbackId: 41,
     })).resolves.toBe(true);
 
     const [sql, params] = mockQueryOne.mock.calls[0];
-    expect(sql).toContain("verification_state = 'human_reviewed'");
+    expect(sql).toContain('FROM pilot.shadow_feedback');
+    expect(sql).toContain("'complete' = ANY (learning_effects_done)");
+    expect(sql).not.toContain('shadow_learning_events');
     expect(sql).toContain('organization_id = $1');
     expect(params).toEqual(['org-1', 41]);
   });
