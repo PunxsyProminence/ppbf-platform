@@ -24,6 +24,11 @@
 //    gets no new version; and the server's start does not read the state.
 // 8. MARKING REVIEWED (F-092). A coach moves a draft to coach_reviewed in
 //    place, and the audit row names that coach.
+// 9. AUDIT 2026-10-17. A block is titled with the drill version it links
+//    (item 4); a template replaced while a plan is being made from it is
+//    refused under lock (item 5's window, on this writer); and an edit
+//    re-renders the coach renderings made from the blocks and leaves every
+//    other rendering as written (item 8).
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
@@ -88,6 +93,7 @@ import {
   createSessionScriptFromTemplate,
   editSessionScript,
   markSessionScriptReviewed,
+  renderingFromBlocks,
   setSessionScriptRetired,
 } from './sessionScriptAuthoring';
 import {
@@ -1182,5 +1188,161 @@ describe('marking a session script reviewed (F-092)', () => {
     await retireAs(true);
     await retireAs(false);
     expect(await stateOf(gym, created.script_id)).toBe('coach_reviewed');
+  });
+});
+
+/**
+ * Holds `statement` uncommitted on a connection of its own, starts `act`, and
+ * commits as soon as `act` is seen waiting on that connection's lock -- or
+ * once `act` has finished without ever waiting. Says which happened.
+ */
+async function whileUncommitted<T>(
+  statement: string,
+  values: unknown[],
+  act: () => Promise<T>,
+): Promise<{ waited: boolean; outcome: PromiseSettledResult<T> }> {
+  const holder = new Client({ connectionString: activeConnectionString as string });
+  await holder.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query(statement, values);
+    const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+    let finished = false;
+    const settled: Promise<PromiseSettledResult<T>> = act().then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (reason: unknown) => ({ status: 'rejected' as const, reason }),
+    );
+    void settled.then(() => {
+      finished = true;
+    });
+    let waited = false;
+    const deadline = Date.now() + 30_000;
+    while (!finished && Date.now() < deadline) {
+      const blocked = await client.query(
+        `select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid)) limit 1`,
+        [rows[0].pid],
+      );
+      if ((blocked.rowCount ?? 0) > 0) {
+        waited = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await holder.query('COMMIT');
+    return { waited, outcome: await settled };
+  } finally {
+    await holder.end();
+  }
+}
+
+describe('audit 2026-10-17: version names, the template under lock, and renderings on edit', () => {
+  test('a block is titled with the drill version it links, though a newer version renamed the drill (item 4)', async () => {
+    const gym = await newGym('version-name');
+    await insertTemplate(gym);
+    // A newer version of the jab drill, renamed. The template still names v1,
+    // which the revision supersedes (one head per lineage).
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-jab'`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, version, supersedes_drill_id, name, discipline, category, difficulty,
+          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like,
+          field_provenance, active)
+       values ($1, 'ref-jab-v2', 'ref-jab', 2, 'ref-jab', 'Renamed drill v2', 'boxing', 'footwork', 'advanced',
+               'target', 'purpose', 'setup', 'execution', 'good', 'bad', 'PPBF source manual v3', true)`,
+      [gym.organizationId],
+    );
+
+    const created = await create(gym);
+
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect([detail!.blocks[0].drill_id, detail!.blocks[0].block_label]).toEqual(['ref-jab', 'Jab Drill']);
+  });
+
+  test('a template replaced while a plan is being made from it is refused, and nothing is written', async () => {
+    const gym = await newGym('create-lock');
+    await insertTemplate(gym);
+    const before = await counts(gym);
+
+    const { waited, outcome } = await whileUncommitted(
+      `update pilot.workout_templates set superseded_at = now() where organization_id = $1 and template_id = $2`,
+      [gym.organizationId, TEMPLATE_ID],
+      () => create(gym),
+    );
+
+    expect(outcome.status).toBe('rejected');
+    const reason = (outcome as PromiseRejectedResult).reason as SessionScriptAuthoringError;
+    expect([reason.message, reason.status]).toEqual(['WORKOUT_TEMPLATE_NOT_CURRENT', 409]);
+    expect(waited).toBe(true);
+    expect(await counts(gym)).toEqual(before);
+  });
+
+  async function insertRenderings(gym: Gym, scriptId: string): Promise<void> {
+    await client.query(
+      `insert into pilot.session_script_renderings
+         (organization_id, rendering_id, script_id, format, audience_note, body, generated_from_blocks)
+       values ($1, $2 || '-sheet',  $2, 'cheat_sheet',    'coach, in hand', 'made from the old blocks', true),
+              ($1, $2 || '-plan',   $2, 'class_plan',     'coach',          'Written by hand.',         false),
+              ($1, $2 || '-parent', $2, 'parent_summary', 'families',       'Family words.',            true)`,
+      [gym.organizationId, scriptId],
+    );
+  }
+
+  async function renderings(gym: Gym, scriptId: string): Promise<Array<[string, string, boolean]>> {
+    const { rows } = await client.query<{ format: string; body: string; generated_from_blocks: boolean }>(
+      `select format, body, generated_from_blocks from pilot.session_script_renderings
+        where organization_id = $1 and script_id = $2 order by format`,
+      [gym.organizationId, scriptId],
+    );
+    return rows.map((row) => [row.format, row.body, row.generated_from_blocks]);
+  }
+
+  test('an edit in place re-renders the coach rendering made from the blocks; hand-written and family ones stay as written (item 8)', async () => {
+    const gym = await newGym('render-in-place');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await insertRenderings(gym, created.script_id);
+    const before = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+
+    const result = await edit(gym, created.script_id, {
+      name: 'Friday plan',
+      blocks: [{ block_id: before!.blocks[0].block_id, block_label: 'Long jab round', start_offset_min: 0, end_offset_min: 12 }],
+    });
+
+    expect(result.outcome).toBe('updated');
+    const after = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(renderingFromBlocks('Friday plan', after!.blocks)).toContain('0-12 min  Long jab round');
+    expect(await renderings(gym, created.script_id)).toEqual([
+      ['cheat_sheet', renderingFromBlocks('Friday plan', after!.blocks), true],
+      ['class_plan', 'Written by hand.', false],
+      ['parent_summary', 'Family words.', true],
+    ]);
+  });
+
+  test('a delivered plan: the new version re-renders the coach rendering made from the blocks, copies the rest, and version 1 is untouched (item 8)', async () => {
+    const gym = await newGym('render-version');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await insertRenderings(gym, created.script_id);
+    const v1 = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    const v1Bytes = await storedBytes(gym, created.script_id);
+
+    const result = await edit(gym, created.script_id, {
+      blocks: [{ block_id: v1!.blocks[2].block_id, block_label: 'Two rounds', start_offset_min: 11, end_offset_min: 20 }],
+    });
+
+    expect(result.outcome).toBe('new_version');
+    expect(await storedBytes(gym, created.script_id)).toBe(v1Bytes);
+    const v2 = await getSessionScriptWithDetail(gym.organizationId, result.script_id);
+    expect(renderingFromBlocks('Fixture Workout', v2!.blocks)).toContain('11-20 min  Two rounds');
+    expect(await renderings(gym, result.script_id)).toEqual([
+      ['cheat_sheet', renderingFromBlocks('Fixture Workout', v2!.blocks), true],
+      ['class_plan', 'Written by hand.', false],
+      ['parent_summary', 'Family words.', true],
+    ]);
   });
 });

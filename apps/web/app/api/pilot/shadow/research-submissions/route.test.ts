@@ -629,6 +629,94 @@ describe('what a submission row carries', () => {
   });
 });
 
+// F-054 (Jason 2026-10-13 "A: Office + asker (Recommended)"), lane L52: on an
+// athlete's or parent's unanswered question a coach sees that sources were
+// submitted and their verdicts, never what anyone wrote about the case.
+describe('the submissions on an asker-filed question', () => {
+  const NOTED = {
+    organization_id: 'org-1',
+    submission_id: 'sub-1',
+    research_requirement_id: 7,
+    source_id: 'src-1',
+    document_id: null,
+    provenance: { found_via: 'ZEBRA-PROVENANCE search for coach hitting' },
+    submission_note: 'ZEBRA-SUBMISSION answers her question about the coach',
+    applicability_state: 'responsive',
+    reviewed_by_account_id: 'admin.one@gym.example.test',
+    reviewed_at: '2026-10-02T00:00:00.000Z',
+    review_note: 'ZEBRA-REVIEW covers what she asked',
+    submitted_by_account_id: 'coach.one@gym.example.test',
+    created_at: '2026-10-01T00:00:00.000Z',
+    updated_at: '2026-10-02T00:00:00.000Z',
+  };
+  const ASKED = {
+    research_requirement_id: 7,
+    organization_id: 'org-1',
+    source_event_name: 'shadow_unanswered_question',
+    source_entity_type: 'shadow_asker_question',
+    created_by_account_id: 'athlete.one@gym.example.test',
+    created_by_role: 'athlete',
+    subject_id: null,
+    metadata: { asked_in: 'shadow', auto_filed: true },
+  };
+
+  beforeEach(() => {
+    mockGetRequirement.mockResolvedValue(ASKED);
+    mockRequirementStatus.mockResolvedValue('resolved');
+    mockList.mockResolvedValue([NOTED]);
+  });
+
+  test('a coach by-id read carries the source and verdict, the note sentence and no free text', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach.two@gym.example.test', role: 'coach' }));
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).not.toContain('ZEBRA');
+    expect(JSON.parse(text)).toEqual({
+      items: [{
+        ...NOTED,
+        provenance: {},
+        submission_note: 'The gym administrator can read this note.',
+        review_note: 'The gym administrator can read this note.',
+      }],
+      answer_state: 'resolved',
+    });
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('a %s by-id read carries every note', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([NOTED]);
+  });
+
+  test('the asker reads the family fields, as on any question they filed', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'athlete.one@gym.example.test', role: 'athlete', athleteId: 'ath-1' }));
+
+    const text = await (await GET(getRequest('research_requirement_id=7'))).text();
+
+    expect(JSON.parse(text).items).toEqual([{
+      submission_id: 'sub-1',
+      research_requirement_id: 7,
+      applicability_state: 'responsive',
+      created_at: '2026-10-01T00:00:00.000Z',
+      reviewed_at: '2026-10-02T00:00:00.000Z',
+    }]);
+  });
+
+  test("a coach reads a coach-filed question's submissions whole", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockGetRequirement.mockResolvedValue({ ...ASKED, created_by_role: 'coach', created_by_account_id: 'coach.one@gym.example.test' });
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([NOTED]);
+  });
+});
+
 // Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
 // the curator got a 500 for what is their own malformed request.
 describe('malformed JSON bodies (CL-C24)', () => {
