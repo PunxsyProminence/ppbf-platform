@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -94,6 +94,25 @@ const ANSWER_STATE_BADGES: Record<AnswerState, { className: string; glyph: strin
   resolved: { className: 'badge badge--cleared', glyph: '✓', label: 'Resolved' },
 };
 
+/* One source submitted against a requirement, as the submissions GET returns
+   it, and its applicability verdict from /research/review. */
+type ApplicabilityState = 'unreviewed' | 'responsive' | 'partially_responsive' | 'not_responsive' | 'duplicate';
+
+interface RequirementSubmission {
+  submission_id: string;
+  source_id: string;
+  applicability_state: ApplicabilityState;
+  review_note: string;
+}
+
+const APPLICABILITY_LABEL: Record<ApplicabilityState, string> = {
+  unreviewed: 'Unreviewed',
+  responsive: 'Responsive',
+  partially_responsive: 'Partially Responsive',
+  not_responsive: 'Not Responsive',
+  duplicate: 'Duplicate',
+};
+
 interface LibrarySourceOption {
   source_id: string;
   title: string;
@@ -109,6 +128,34 @@ const SOURCES_PAGE_SIZE = 200;
 const REQUIREMENTS_PAGE_SIZE = 50;
 // The submissions route's batch read takes at most this many ids.
 const ANSWER_STATES_BATCH = 200;
+
+/* #345's three workflows as tabs (PROPOSED labels). The choice is a
+   per-viewer convenience kept in this browser only. */
+type ResearchTab = 'needs_evidence' | 'general_research' | 'intake';
+const RESEARCH_TABS: ReadonlyArray<{ key: ResearchTab; label: string }> = [
+  { key: 'needs_evidence', label: 'Needs Evidence' },
+  { key: 'general_research', label: 'General Research' },
+  { key: 'intake', label: 'Intake Cards' },
+];
+const RESEARCH_TAB_STORAGE_KEY = 'ppbf.research.tab';
+
+function isResearchTab(value: unknown): value is ResearchTab {
+  return RESEARCH_TABS.some((tab) => tab.key === value);
+}
+
+function readStoredResearchTab(): ResearchTab {
+  try {
+    const saved = window.localStorage.getItem(RESEARCH_TAB_STORAGE_KEY);
+    return isResearchTab(saved) ? saved : 'needs_evidence';
+  } catch {
+    return 'needs_evidence';
+  }
+}
+
+function subscribeToStorage(onChange: () => void) {
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
 
 // RINT-05b. Approved by Jason in the RINT-05b lane, 2026-10-03.
 const PLATFORM_SHELF_LABEL = 'Platform shelf (every gym reads this)';
@@ -128,6 +175,19 @@ export default function ResearchIntakePage() {
   const onPlatformShelf = session.role === 'platform_owner';
   const shelfBody = onPlatformShelf ? { shelf: 'platform' as const } : {};
   const shelfQuery = onPlatformShelf ? '&shelf=platform' : '';
+  // The remembered tab is read the way ThemeProvider reads its theme (an
+  // external store, the server snapshot the default); a pick this visit wins.
+  const storedTab = useSyncExternalStore(subscribeToStorage, readStoredResearchTab, () => 'needs_evidence' as ResearchTab);
+  const [pickedTab, setPickedTab] = useState<ResearchTab | null>(null);
+  const tab = pickedTab ?? storedTab;
+  const setTab = (next: ResearchTab) => {
+    setPickedTab(next);
+    try {
+      window.localStorage.setItem(RESEARCH_TAB_STORAGE_KEY, next);
+    } catch {
+      // Remembering the tab is a convenience only (private window, blocked site data).
+    }
+  };
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
@@ -155,7 +215,14 @@ export default function ResearchIntakePage() {
     setClosingIdState(id);
   };
   const [closingNote, setClosingNote] = useState('');
+  // ...or a submission reviewed Responsive on that requirement (A-Q13;
+  // N6-02-Q1 A). '' means none picked.
+  const [closingSubmissionId, setClosingSubmissionId] = useState('');
   const [closingError, setClosingError] = useState<string | null>(null);
+  // The sources submitted against each requirement, read on demand for staff
+  // ('unread' when the read was refused or failed).
+  const [submissionsFor, setSubmissionsFor] = useState<Record<number, RequirementSubmission[] | 'unread'>>({});
+  const [submissionsShownFor, setSubmissionsShownFor] = useState<Record<number, boolean>>({});
   // Issue #345 slice 2: the computed ladder per requirement, the curator's
   // source list (null until the sources read succeeds -- a 403 simply leaves
   // the Answer-a-Gap panel unrendered, matching the POST's own gate), and
@@ -204,6 +271,31 @@ export default function ResearchIntakePage() {
       }
     }
   };
+
+  const loadSubmissions = async (requirementId: number) => {
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_id=${requirementId}`,
+        { credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('unread');
+      const payload = (await response.json()) as { items?: RequirementSubmission[] };
+      const items = payload.items ?? [];
+      setSubmissionsFor((current) => ({ ...current, [requirementId]: items }));
+      // A pick that is no longer Responsive leaves the close, so Resolve is
+      // never enabled by a choice the panel no longer shows.
+      if (closingIdRef.current === requirementId) {
+        setClosingSubmissionId((picked) => (
+          items.some((item) => item.submission_id === picked && item.applicability_state === 'responsive') ? picked : ''
+        ));
+      }
+    } catch {
+      setSubmissionsFor((current) => ({ ...current, [requirementId]: 'unread' }));
+    }
+  };
+
+  const sourceTitle = (sourceId: string) =>
+    curatorSources?.find((source) => source.source_id === sourceId)?.title ?? sourceId;
 
   const loadRequirementsPage = async (cursor: string | null) => {
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
@@ -447,6 +539,8 @@ export default function ResearchIntakePage() {
       setAnswerDraft({ sourceId: '', doi: '', provider: '', note: '' });
       setAnswerMessage({ forId: requirementId, text: 'Source submitted. It answers nothing until evidence review says so.' });
       await refreshAnswerStates(requirements.map((item) => item.research_requirement_id));
+      // A list already shown would otherwise miss the source just attached.
+      if (submissionsFor[requirementId] !== undefined) await loadSubmissions(requirementId);
     } catch (error) {
       setAnswerMessage({ forId: requirementId, text: error instanceof Error ? error.message : 'Unable to submit the source.' });
     } finally {
@@ -521,9 +615,9 @@ export default function ResearchIntakePage() {
     }
   }
 
-  async function handleResolveRequirement(researchRequirementId: number, note: string) {
+  async function handleResolveRequirement(researchRequirementId: number, note: string, submissionId: string) {
     const trimmed = note.trim();
-    if (!trimmed) return;
+    if (!trimmed && !submissionId) return;
     setResolvingId(researchRequirementId);
     setClosingError(null);
 
@@ -535,7 +629,8 @@ export default function ResearchIntakePage() {
         body: JSON.stringify({
           action: 'resolve',
           research_requirement_id: researchRequirementId,
-          closing_note: trimmed,
+          ...(trimmed ? { closing_note: trimmed } : {}),
+          ...(submissionId ? { closing_submission_id: submissionId } : {}),
           metadata: { resolved_from: 'research_page' },
         }),
       });
@@ -548,7 +643,11 @@ export default function ResearchIntakePage() {
       setRequirements((current) =>
         current.map((requirement) =>
           requirement.research_requirement_id === researchRequirementId
-            ? { ...requirement, status: 'resolved', metadata: { ...requirement.metadata, closing_note: trimmed } }
+            ? {
+              ...requirement,
+              status: 'resolved',
+              metadata: { ...requirement.metadata, closing_note: trimmed || null, closing_submission_id: submissionId || null },
+            }
             : requirement,
         ),
       );
@@ -556,6 +655,7 @@ export default function ResearchIntakePage() {
       if (closingIdRef.current === researchRequirementId) {
         setClosingId(null);
         setClosingNote('');
+        setClosingSubmissionId('');
       }
       setSubmitMessage('Research requirement resolved.');
     } catch (error) {
@@ -572,6 +672,12 @@ export default function ResearchIntakePage() {
   // again beside the failure alert (#991 class, Lane 14 batch 8 R1).
   const projectionAnswered = !projectionLoading && !errorMessage;
   const shownCount = (value: number) => (projectionAnswered ? String(value) : '--');
+
+  // General Research is the curators' (the sources read answered and the role
+  // curates); everyone else sees the other two tabs.
+  const mayGeneralResearch = curatorSources !== null && mayCurateLibrary(session.role);
+  const visibleTabs = RESEARCH_TABS.filter((item) => item.key !== 'general_research' || mayGeneralResearch);
+  const shownTab: ResearchTab = tab === 'general_research' && !mayGeneralResearch ? 'needs_evidence' : tab;
 
   const stats = [
     { label: 'Mode', value: 'Research Projection' },
@@ -644,6 +750,13 @@ export default function ResearchIntakePage() {
             <Link href="/evidence" className="btn btn--ghost">
               Evidence Review
             </Link>
+            {/* The applicability verdicts are given there; same door and
+                label as the building map's. */}
+            {mayCurateLibrary(session.role) ? (
+              <Link href="/research/review" className="btn btn--ghost">
+                Submission Review
+              </Link>
+            ) : null}
           </div>
         </div>
       </header>
@@ -659,6 +772,8 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
+        {/* Above the tabs, as before them: a failed projection read is said
+            whichever tab is open. */}
         {errorMessage ? (
           <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
             <span className="badge badge--locked">
@@ -668,6 +783,51 @@ export default function ResearchIntakePage() {
           </section>
         ) : null}
 
+        <div
+          role="tablist"
+          aria-label="Research workflows"
+          className="flex flex-wrap gap-[var(--s2)]"
+          onKeyDown={(event) => {
+            const at = visibleTabs.findIndex((item) => item.key === shownTab);
+            const target: Record<string, number> = {
+              ArrowRight: (at + 1) % visibleTabs.length,
+              ArrowLeft: (at + visibleTabs.length - 1) % visibleTabs.length,
+              Home: 0,
+              End: visibleTabs.length - 1,
+            };
+            if (!(event.key in target)) return;
+            event.preventDefault();
+            const next = visibleTabs[target[event.key]];
+            setTab(next.key);
+            document.getElementById(`research-tab-${next.key}`)?.focus();
+          }}
+        >
+          {visibleTabs.map((item) => (
+            <button
+              key={item.key}
+              id={`research-tab-${item.key}`}
+              type="button"
+              role="tab"
+              aria-selected={shownTab === item.key}
+              aria-controls={`research-panel-${item.key}`}
+              tabIndex={shownTab === item.key ? 0 : -1}
+              onClick={() => setTab(item.key)}
+              className={shownTab === item.key ? 'btn' : 'btn btn--ghost'}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Panels stay mounted and are hidden, so a half-typed draft in one
+            survives a look at another. */}
+        <div
+          role="tabpanel"
+          id="research-panel-intake"
+          aria-labelledby="research-tab-intake"
+          hidden={shownTab !== 'intake'}
+          className="space-y-[var(--s5)]"
+        >
         {!errorMessage && projectionLoading ? (
           <section aria-busy="true" className="mat-paper note-torn rounded-[var(--r-sm)] p-[var(--s5)]">
             {/* .working pins --brass-300 (tuned for leather, ~1.2:1 on paper).
@@ -753,6 +913,15 @@ export default function ResearchIntakePage() {
           </div>
         </section>
 
+        </div>
+
+        <div
+          role="tabpanel"
+          id="research-panel-needs_evidence"
+          aria-labelledby="research-tab-needs_evidence"
+          hidden={shownTab !== 'needs_evidence'}
+          className="space-y-[var(--s5)]"
+        >
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Operational Research Requirements
@@ -854,9 +1023,84 @@ export default function ResearchIntakePage() {
                 {requirement.status === 'resolved' && typeof requirement.metadata?.closing_note === 'string' && requirement.metadata.closing_note ? (
                   <p className="t-body mt-[var(--s3)]">Closing note: {requirement.metadata.closing_note}</p>
                 ) : null}
+                {requirement.status === 'resolved' && typeof requirement.metadata?.closing_submission_id === 'string' && requirement.metadata.closing_submission_id ? (
+                  (() => {
+                    const loaded = submissionsFor[requirement.research_requirement_id];
+                    const closing = Array.isArray(loaded)
+                      ? loaded.find((submission) => submission.submission_id === requirement.metadata?.closing_submission_id)
+                      : undefined;
+                    return (
+                      <p className="t-body mt-[var(--s3)]">
+                        {closing ? `Answered by: ${sourceTitle(closing.source_id)}` : 'Closed with a submission reviewed Responsive.'}
+                      </p>
+                    );
+                  })()
+                ) : null}
+                {mayOfferResolve(session.role) ? (
+                  <div className="mt-[var(--s3)] space-y-[var(--s2)]">
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      aria-expanded={Boolean(submissionsShownFor[requirement.research_requirement_id])}
+                      onClick={() => {
+                        const id = requirement.research_requirement_id;
+                        const show = !submissionsShownFor[id];
+                        setSubmissionsShownFor((current) => ({ ...current, [id]: show }));
+                        if (show) void loadSubmissions(id);
+                      }}
+                    >
+                      {submissionsShownFor[requirement.research_requirement_id] ? 'Hide submitted sources' : 'Submitted sources'}
+                    </button>
+                    {submissionsShownFor[requirement.research_requirement_id] ? (
+                      (() => {
+                        const loaded = submissionsFor[requirement.research_requirement_id];
+                        if (loaded === undefined) return <p className="t-muted" role="status">Loading…</p>;
+                        if (loaded === 'unread') return <p className="t-muted" role="status">The submitted sources could not be read.</p>;
+                        if (loaded.length === 0) return <p className="t-muted">No sources submitted yet.</p>;
+                        return (
+                          <ul aria-label="Submitted sources" className="space-y-[var(--s1)]">
+                            {loaded.map((submission) => (
+                              <li key={submission.submission_id} className="t-body">
+                                {sourceTitle(submission.source_id)} — {APPLICABILITY_LABEL[submission.applicability_state]}
+                                {submission.review_note ? ` (${submission.review_note})` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()
+                    ) : null}
+                  </div>
+                ) : null}
                 {requirement.status === 'open' && mayOfferResolve(session.role) ? (
                   closingId === requirement.research_requirement_id ? (
                     <div className="mt-[var(--s4)] space-y-[var(--s2)]">
+                      {(() => {
+                        const loaded = submissionsFor[requirement.research_requirement_id];
+                        const responsive = Array.isArray(loaded)
+                          ? loaded.filter((submission) => submission.applicability_state === 'responsive')
+                          : [];
+                        if (responsive.length === 0) return null;
+                        return (
+                          <fieldset className="space-y-[var(--s1)]">
+                            <legend className="t-label">Close with a submission reviewed Responsive</legend>
+                            {[{ submission_id: '', label: 'None' }, ...responsive.map((submission) => ({
+                              submission_id: submission.submission_id,
+                              label: sourceTitle(submission.source_id),
+                            }))].map((option) => (
+                              <label key={option.submission_id || 'none'} className="t-body flex items-center gap-[var(--s2)]">
+                                <input
+                                  type="radio"
+                                  name={`closing-submission-${requirement.research_requirement_id}`}
+                                  value={option.submission_id}
+                                  checked={closingSubmissionId === option.submission_id}
+                                  onChange={() => setClosingSubmissionId(option.submission_id)}
+                                />
+                                {option.label}
+                              </label>
+                            ))}
+                          </fieldset>
+                        );
+                      })()}
                       <label className="t-label block" htmlFor={`closing-note-${requirement.research_requirement_id}`}>
                         Closing note
                       </label>
@@ -872,8 +1116,8 @@ export default function ResearchIntakePage() {
                       <div className="flex flex-wrap gap-[var(--s2)]">
                         <button
                           type="button"
-                          onClick={() => void handleResolveRequirement(requirement.research_requirement_id, closingNote)}
-                          disabled={!closingNote.trim() || resolvingId === requirement.research_requirement_id}
+                          onClick={() => void handleResolveRequirement(requirement.research_requirement_id, closingNote, closingSubmissionId)}
+                          disabled={(!closingNote.trim() && !closingSubmissionId) || resolvingId === requirement.research_requirement_id}
                           className="btn disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Resolve'}
@@ -884,6 +1128,7 @@ export default function ResearchIntakePage() {
                           onClick={() => {
                             setClosingId(null);
                             setClosingNote('');
+                            setClosingSubmissionId('');
                             setClosingError(null);
                           }}
                         >
@@ -897,7 +1142,10 @@ export default function ResearchIntakePage() {
                       onClick={() => {
                         setClosingId(requirement.research_requirement_id);
                         setClosingNote('');
+                        setClosingSubmissionId('');
                         setClosingError(null);
+                        // The Responsive submissions it may close on.
+                        void loadSubmissions(requirement.research_requirement_id);
                       }}
                       disabled={resolvingId !== null}
                       className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
@@ -983,7 +1231,16 @@ export default function ResearchIntakePage() {
             </button>
           ) : null}
         </section>
+        </div>
 
+        {mayGeneralResearch ? (
+        <div
+          role="tabpanel"
+          id="research-panel-general_research"
+          aria-labelledby="research-tab-general_research"
+          hidden={shownTab !== 'general_research'}
+          className="space-y-[var(--s5)]"
+        >
         {curatorSources !== null && mayCurateLibrary(session.role) ? (
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
@@ -1094,6 +1351,8 @@ export default function ResearchIntakePage() {
             truncated={curatorSourcesTruncated}
             onSaved={() => void refreshCuratorSources()}
           />
+        ) : null}
+        </div>
         ) : null}
       </div>
       </div>

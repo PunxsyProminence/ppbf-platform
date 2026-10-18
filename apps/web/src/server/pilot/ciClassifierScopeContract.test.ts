@@ -70,7 +70,30 @@ function runnableClassifyShell(outputPath: string): string {
     .map((line) => line.replace(/^ {10}/, ''))
     .filter((line) => !line.trim().startsWith('node scripts/ci-classify-paths.mjs'))
     .join('\n')
-    .replace(/\/tmp\/changed-files\.txt/g, outputPath);
+    // Forward slashes, so Git Bash on Windows does not read the separators as
+    // escapes; on Linux this is a no-op.
+    .replace(/\/tmp\/changed-files\.txt/g, outputPath.split(path.sep).join('/'));
+}
+
+/**
+ * ci.yml split into jobs, and each job into its header and steps.
+ *
+ * Since lane L38 the suites run in separate jobs (classify, static, unit, pg,
+ * e2e) whose `if:` reads `needs.classify.outputs.*`, so "which step runs for
+ * this flag" is answered per job: a flag can guard a whole job (pg) or one
+ * step in it (each E2E suite).
+ */
+function workflowJobs(): { name: string; header: string; steps: string[] }[] {
+  const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+  const jobsAt = workflow.indexOf('\njobs:\n');
+  expect(jobsAt).toBeGreaterThan(-1);
+  const parts = workflow.slice(jobsAt + '\njobs:\n'.length).split(/^ {2}([a-z][\w-]*):\n/m);
+  const jobs: { name: string; header: string; steps: string[] }[] = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const [header, ...steps] = parts[i + 1].split(/\n {6}- name: /);
+    jobs.push({ name: parts[i], header, steps });
+  }
+  return jobs;
 }
 
 /** Run the shipped classifier over a file list and return its flags. */
@@ -219,6 +242,211 @@ describe("ci.yml's own shell, executed against that topology", () => {
 });
 
 /**
+ * A pull request run is classified from the main it is merged into.
+ *
+ * WHY THIS EXISTS. On a pull_request event `github.sha` is GitHub's test merge
+ * (refs/pull/N/merge): first parent the CURRENT main tip, second parent the PR
+ * head. `pull_request.base.sha` is older -- the base the branch last synced
+ * with -- and it is an ancestor of that merge, so the merge-base step above
+ * cannot remove what main gained since. Measured on #1685 (run 39059770045):
+ * base.sha sat 6 main commits behind the merge's first parent, 80 files were
+ * classified where the PR changed 31, migrations came on from the five files
+ * of #1613's merged migration, and the run was cancelled at 60 minutes.
+ *
+ * The topology is GitHub's: a branch forks, main moves on, and the merge
+ * commit is built on the moved main, with BASE_SHA left at the fork.
+ */
+describe("ci.yml's own shell, on a pull request's merge ref", () => {
+  let dir: string;
+  let out: string;
+
+  type Topology = { repo: string; fork: string; merge: string; prHead: string; mainTip: string };
+
+  /** A repository shaped like a pull_request run: fork, branch, main moves, test merge. */
+  function pullRequestTopology(
+    name: string,
+    branchFile: string,
+    otherLaneFile: string,
+    laterMainFile?: string,
+  ): Topology {
+    const repo = path.join(dir, name);
+    fs.mkdirSync(repo);
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    const commit = (file: string, message: string) => {
+      fs.mkdirSync(path.join(repo, path.dirname(file)), { recursive: true });
+      fs.writeFileSync(path.join(repo, file), `${message}\n`);
+      git('add', '-A');
+      git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', message);
+    };
+
+    git('init', '-q', '-b', 'main');
+    commit('README.md', 'base');
+    const fork = git('rev-parse', 'HEAD');
+    git('checkout', '-q', '-b', 'feature');
+    commit(branchFile, 'the branch changes this');
+    const prHead = git('rev-parse', 'HEAD');
+    git('checkout', '-q', 'main');
+    commit(otherLaneFile, 'another lane, merged after the branch last synced');
+    if (laterMainFile) commit(laterMainFile, 'a second commit on main');
+    const mainTip = git('rev-parse', 'HEAD');
+    // GitHub's merge ref: the moved main first, the PR head second.
+    git('checkout', '-q', '--detach', 'main');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-ff', '--no-edit', 'feature');
+    return { repo, fork, merge: git('rev-parse', 'HEAD'), prHead, mainTip };
+  }
+
+  /** Run the workflow's classify shell with the environment ci.yml gives it. */
+  function changedFilesPerCi(repo: string, env: Record<string, string>): { files: string[]; log: string } {
+    const log = execFileSync('bash', ['-c', runnableClassifyShell(out)], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...process.env, PR_HEAD_SHA: '', ...env },
+    });
+    return { files: fs.readFileSync(out, 'utf8').split('\n').filter(Boolean), log };
+  }
+
+  let docsPr: Topology;
+  let migrationPr: Topology;
+
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-ci-pr-'));
+    out = path.join(dir, 'changed-files.txt');
+    // The route that turned guardian_e2e on for #842, as the other lane's work.
+    // A second main commit after it, so fork..mainTip is a multi-commit push.
+    docsPr = pullRequestTopology(
+      'docs',
+      'docs/current/EVIDENCE_APPLICABILITY.md',
+      'apps/web/app/api/pilot/parent/messages/route.ts',
+      'apps/web/app/coach/cards/page.tsx',
+    );
+    // A PR that really adds a migration, while another lane changes a coach page.
+    migrationPr = pullRequestTopology(
+      'migration',
+      'infra/azure/pilot_slice_postgres_example_migration.sql',
+      'apps/web/app/coach/cards/page.tsx',
+    );
+  });
+
+  afterAll(() => {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('hands the classifier only what the PR adds on top of current main', () => {
+    // Restoring the base.sha-only path reds this: it reports the other lane's
+    // route as well, because the stale base is an ancestor of the merge.
+    const { files, log } = changedFilesPerCi(docsPr.repo, {
+      BASE_SHA: docsPr.fork,
+      HEAD_SHA: docsPr.merge,
+      PR_HEAD_SHA: docsPr.prHead,
+    });
+
+    expect(files).toEqual(['docs/current/EVIDENCE_APPLICABILITY.md']);
+    expect(log).toContain('first parent');
+    expect(classify(files).docs_only).toBe('true');
+  });
+
+  it('still turns the PostgreSQL suite on for a PR that adds a migration', () => {
+    const { files } = changedFilesPerCi(migrationPr.repo, {
+      BASE_SHA: migrationPr.fork,
+      HEAD_SHA: migrationPr.merge,
+      PR_HEAD_SHA: migrationPr.prHead,
+    });
+    const flags = classify(files);
+
+    expect(files).toEqual(['infra/azure/pilot_slice_postgres_example_migration.sql']);
+    expect([flags.migrations, flags.coach_e2e]).toEqual(['true', 'false']);
+  });
+
+  it('keeps the old path, and says so, when the merge ref is of a different PR head', () => {
+    // Pins the PR-head comparison itself: a merge with SOME second parent is
+    // not enough. Without the comparison this would take the first parent
+    // silently.
+    const { files, log } = changedFilesPerCi(docsPr.repo, {
+      BASE_SHA: docsPr.fork,
+      HEAD_SHA: docsPr.merge,
+      PR_HEAD_SHA: docsPr.fork,
+    });
+
+    // The old path's over-inclusive list; the first-parent path would give one file.
+    expect(files.sort()).toEqual([
+      'apps/web/app/api/pilot/parent/messages/route.ts',
+      'apps/web/app/coach/cards/page.tsx',
+      'docs/current/EVIDENCE_APPLICABILITY.md',
+    ]);
+    expect(log).toContain('::warning title=CI classifier::');
+    expect(log).not.toContain('first parent');
+  });
+
+  it('keeps the old path, and says so, when HEAD_SHA is not a merge of the PR head', () => {
+    // A shape GitHub is not documented to produce. The base.sha path is
+    // over-inclusive rather than blind, and the warning makes it visible.
+    const { files, log } = changedFilesPerCi(docsPr.repo, {
+      BASE_SHA: docsPr.fork,
+      HEAD_SHA: docsPr.prHead,
+      PR_HEAD_SHA: docsPr.prHead,
+    });
+
+    expect(files).toEqual(['docs/current/EVIDENCE_APPLICABILITY.md']);
+    expect(log).toContain('::warning title=CI classifier::');
+  });
+
+  it('leaves a push of several commits classified from `before`, all of them', () => {
+    // A push has no PR head. Taking the first parent here would classify only
+    // the last commit and could skip a suite an earlier commit needs.
+    const { files, log } = changedFilesPerCi(docsPr.repo, {
+      BASE_SHA: docsPr.fork,
+      HEAD_SHA: docsPr.mainTip,
+      PR_HEAD_SHA: '',
+    });
+
+    expect(files.sort()).toEqual([
+      'apps/web/app/api/pilot/parent/messages/route.ts',
+      'apps/web/app/coach/cards/page.tsx',
+    ]);
+    expect(log).not.toContain('first parent');
+  });
+
+  it('lists both paths of a moved file, so a move out of a folder still runs its suite', () => {
+    // With git's default rename detection the diff names only the NEW path,
+    // and the coach page below lands where no journey predicate looks.
+    const repo = path.join(dir, 'rename');
+    fs.mkdirSync(repo);
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    const page = 'apps/web/app/coach/cards/page.tsx';
+    fs.mkdirSync(path.join(repo, path.dirname(page)), { recursive: true });
+    fs.writeFileSync(path.join(repo, page), 'export default function Page() { return null; }\n');
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'base');
+    const before = git('rev-parse', 'HEAD');
+    fs.mkdirSync(path.join(repo, 'apps/web/src/lib'), { recursive: true });
+    git('mv', page, 'apps/web/src/lib/movedCardsPage.tsx');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'move it');
+
+    const { files } = changedFilesPerCi(repo, {
+      BASE_SHA: before,
+      HEAD_SHA: git('rev-parse', 'HEAD'),
+      PR_HEAD_SHA: '',
+    });
+
+    expect(files.sort()).toEqual([page, 'apps/web/src/lib/movedCardsPage.tsx']);
+    expect(classify(files).coach_e2e).toBe('true');
+  });
+
+  it('is fed the PR head by the workflow, not only by this test', () => {
+    // The cases above inject PR_HEAD_SHA themselves. Without this env line
+    // every pull request falls back to the old path with no warning at all.
+    const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const step = workflow.slice(workflow.indexOf('- name: Classify changed surface'));
+    const env = step.slice(0, step.indexOf('run: |'));
+
+    expect(env).toContain('PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}');
+  });
+});
+
+/**
  * A flagged suite must actually run the spec that flagged it.
  *
  * WHY THIS EXISTS. The classifier deciding `coach_e2e=true` is only the first
@@ -252,16 +480,12 @@ describe("ci.yml's own shell, executed against that topology", () => {
 describe('the coach E2E command attends every coach spec on disk', () => {
   /** The npm script `ci.yml` runs for a `coach_e2e` diff, read from the workflow. */
   function coachScriptPerCi(): string {
-    const workflow = fs.readFileSync(
-      path.join(repositoryRoot, '.github/workflows/ci.yml'),
-      'utf8',
-    );
-    // The step that RUNS a coach command, not every step whose condition
-    // mentions the flag: "Install Playwright browsers" is guarded by an OR
-    // across all seven E2E flags and runs no npm script.
-    const guarded = workflow
-      .split(/\n      - name: /)
-      .filter((step) => /steps\.changes\.outputs\.coach_e2e == 'true'/.test(step))
+    // The step that RUNS a coach command, not every place whose condition
+    // mentions the flag: the e2e job's own `if:` is an OR across all seven E2E
+    // flags, and its "Install Playwright browsers" runs no npm script.
+    const guarded = workflowJobs()
+      .flatMap((job) => job.steps)
+      .filter((step) => /needs\.classify\.outputs\.coach_e2e == 'true'/.test(step))
       .filter((step) => /run: npm --workspace web run \S+/.test(step));
     expect(guarded).toHaveLength(1);
 
@@ -453,19 +677,36 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     expect(docs.filter((file) => flags[file].migrations !== false || flags[file].docsOnly !== true)).toEqual([]);
   });
 
-  it('runs the migration suite from the one step that flag guards', () => {
-    const workflow = fs.readFileSync(
-      path.join(repositoryRoot, '.github/workflows/ci.yml'),
-      'utf8',
-    );
-    const guarded = workflow
-      .split(/\n      - name: /)
-      .filter((step) => /steps\.changes\.outputs\.migrations == 'true'/.test(step));
+  it('runs the migration suite from the one job that flag guards, every shard of it', () => {
+    const jobs = workflowJobs();
+    const guarded = jobs.filter((job) => /needs\.classify\.outputs\.migrations == 'true'/.test(job.header));
 
     // A flag nothing reads is the "suite ran" without "the suite traversed the
     // changed path" this file's header describes.
-    expect(guarded).toHaveLength(1);
-    expect(guarded[0]).toMatch(/\n\s+run: npm run test:migrations\s*(\n|$)/);
+    expect(guarded.map((job) => job.name)).toEqual(['pg']);
+    const runs = guarded[0].steps.filter((step) => /run: npm run test:migrations/.test(step));
+    expect(runs).toHaveLength(1);
+    // The total is the matrix's own size, so no edit to the list can leave a
+    // shard -- and its suites -- unrun.
+    expect(runs[0]).toMatch(
+      /\n\s+run: npm run test:migrations -- --shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ strategy\.job-total \}\}\s*(\n|$)/,
+    );
+    const shards = /\n {8}shard: \[([\d, ]+)\]\n/.exec(guarded[0].header);
+    expect(shards).not.toBeNull();
+    const list = shards![1].split(',').map((n) => Number(n.trim()));
+    expect(list).toEqual(list.map((_, i) => i + 1));
+    expect(list.length).toBeGreaterThan(1);
+
+    // Nowhere else: a second, unsharded run would double the suite's time.
+    // Any spelling of it -- from the root, through the workspace, or the
+    // runner itself.
+    const elsewhere = jobs
+      .filter((job) => job.name !== 'pg')
+      .flatMap((job) => job.steps)
+      .filter((step) =>
+        /\bnpm (--workspace web )?run test:migrations(?![:\w-])|\bnode \S*run-migration-suites\.mjs/.test(step),
+      );
+    expect(elsewhere).toEqual([]);
   });
 });
 

@@ -25,7 +25,7 @@ import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays, SESSION_TOKEN_RETENTION_DAYS } from './sessionPolicy';
 import { isLoopbackPostgresConnectionString, query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 
 /**
@@ -1623,6 +1623,11 @@ export async function transferOrganizationAdmin(
   organizationId: string,
   demoteRole: Exclude<PilotRole, 'platform_owner' | 'organization_admin'>,
 ): Promise<void> {
+  // One account cannot hand its seat to itself: the promote and the demote
+  // would hit the same row and leave the gym with no admin (lane L31).
+  if (fromAccountId === toAccountId) {
+    throw new ValidationError('from_account_id and to_account_id must be different accounts');
+  }
   await withTransaction(async (client) => {
     // The promote used to match on account_id alone, so it both moved an
     // account in from another organization and could strip platform ownership
@@ -1653,7 +1658,9 @@ export async function transferOrganizationAdmin(
 
     // The demoted side carries the same platform-owner exclusion (audit
     // CL-A6): named as from_account_id in its own organization, the owner
-    // used to be demoted with is_platform_owner = false.
+    // used to be demoted with is_platform_owner = false. It must also hold the
+    // seat being handed over (lane L31): a "transfer" from a coach was a
+    // promotion with nobody stepping down.
     const demotedRows = await client.query<{ account_id: string }>(
       `update pilot.accounts a
        set role = $3,
@@ -1662,6 +1669,14 @@ export async function transferOrganizationAdmin(
        where account_id = $1 and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and role in ('organization_admin', 'admin')
+         -- Authority comes from the membership; the account row and the
+         -- membership must both hold the seat being handed over.
+         and exists (
+           select 1 from pilot.organization_memberships om
+            where om.account_id = a.account_id and om.organization_id = $2
+              and om.role in ('organization_admin', 'admin') and om.active_flag
+         )
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [fromAccountId, organizationId, demoteRole],

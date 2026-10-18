@@ -471,7 +471,7 @@ export default function CoachDevelopmentPage() {
             </div>
 
             <button type="submit" className="btn" disabled={goalBusy}>
-              {goalBusy ? 'Saving...' : 'Save goal'}
+              {goalBusy ? 'Saving…' : 'Save goal'}
             </button>
           </form>
         </section>
@@ -726,7 +726,7 @@ export default function CoachDevelopmentPage() {
             </div>
 
             <button type="submit" className="btn" disabled={activityBusy}>
-              {activityBusy ? 'Saving...' : 'Record it'}
+              {activityBusy ? 'Saving…' : 'Record it'}
             </button>
           </form>
         </section>

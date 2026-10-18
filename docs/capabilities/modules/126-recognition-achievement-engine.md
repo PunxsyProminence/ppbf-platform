@@ -2,7 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **DONE** (Wave 9 reconciliation) |
+| Status | **DONE** |
+| Status note | Was "DONE (Wave 9 reconciliation)" until 2026-10-16. GET/POST/PATCH milestone awards, role-gated: apps/web/app/api/pilot/achievements/milestones/route.ts,74,131; server logic in apps/web/src/server/pilot/achievements.ts |
+| Code | `apps/web/app/api/pilot/achievements/milestones/route.ts`, `apps/web/src/server/pilot/achievements.ts` |
+| Tests | `apps/web/app/api/pilot/achievements/milestones/route.test.ts`, `apps/web/src/server/pilot/achievements.test.ts`, `apps/web/src/server/pilot/achievementsNoRanking.test.ts` |
 | Vertical slice | GET/POST milestone awards, role-gated (MILESTONE_READER_ROLES/MILESTONE_WRITER_ROLES), assertActorCanAccessAthlete guardian scoping, writes  |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
@@ -41,3 +44,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/app/api/pilot/achievements/milestones/route.ts; apps/web/src/server/pilot/achievements.ts; infra/azure/pilot_slice_postgres_achievements_migration.sql. Test: apps/web/src/server/pilot/achievements.test.ts and achievementsNoRanking.test.ts pin award/list behavior and the no-comp |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-10-16 | Claude (lane L32) | Status set to **DONE** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DONE (Wave 9 reconciliation)". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

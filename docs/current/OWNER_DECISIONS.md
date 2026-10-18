@@ -164,6 +164,339 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-020 -- Personal baseline and data completeness: "Sleep (Recommended)", "Energy", "Soreness" and his typed "What else can we put in if we need research do n it"; "80% / 50% (Recommended)"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15656, 2026-10-18T00:30:31.973Z; answered at line 15657, 2026-10-18T00:32:00.919Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-019, whose card left these two formulas unbuilt until a metric and cut-offs were named, and his question there (line 15613): *"How to we pick tho metric and cutoff "*. New; edits no earlier entry.
+
+**Question "Baseline"** (multi-select). Overwatch, as written: "OFFICIAL: Personal baseline formula (MVP-09). Which daily check-in number should it compare against the athlete's own normal (last 28 days, starting once they have 7 check-ins)? PLAIN: which number should the app watch for "unusual for this kid"?" Options as written: "Sleep (Recommended)": "Hours slept vs their own normal."; "Energy": "Daily energy rating vs their normal."; "Soreness": "Daily soreness rating vs their normal."; "Not now": "Leave the baseline formula unbuilt." Jason ticked *"Sleep (Recommended)"*, *"Energy"* and *"Soreness"*, and typed: *"What else can we put in if we need research do n it"*
+
+**Question "Completeness".** Overwatch, as written: "OFFICIAL: Data completeness formula (MVP-10) cut-offs for the share of expected entries actually logged. PLAIN: when do we call an athlete's data good enough to trust?" Options as written: "80% / 50% (Recommended)": "High 80%+, Moderate 50-79%, Low under 50%."; "90% / 60%": "Stricter: High 90%+, Moderate 60-89%."; "Not now": "Leave the completeness formula unbuilt." Jason: *"80% / 50% (Recommended)"*
+
+**Ruling:**
+
+1. Personal baseline (MVP-09): sleep, energy and soreness from the daily check-in are each compared with the athlete's own normal over the last 28 days, starting once they have 7 check-ins. "Not now" was not chosen.
+2. His typed *"What else can we put in if we need research do n it"* asks what other numbers could be added, and to research it if needed. It adds no metric by itself.
+3. Data completeness (MVP-10): High is 80% or more of expected entries logged, Moderate 50-79%, Low under 50%. Options "90% / 60%" and "Not now" were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed both rulings to lane L50 (line 15670) and asked for a PR-D plan before building. Its later message to L50 (line 15719) adds Overwatch's own technical calls on how the engine meets the 28-day window and which log boxes count; those are not his rulings. For his "what else", Overwatch started a research pass (line 15690), written to `Documents\PPBF-overwatch\research\BASELINE-METRICS-2026-10-18.md` and to be marked a research draft for his decision (line 15698). It is not a ruling, and no metric from it is ruled here.
+
+**Status:** ruled; not built at the time of writing. The research report was not read by this records pass.
+
+---
+
+## OD-2026-10-17-019 -- Punch counts go on the sparring log now: "B: Longer sparring form", not the recommended "A: Wait for video (Recommended)"
+
+**Provenance: PRIMARY.** The fourth question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q3 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Punch counts".** Overwatch, as written: "OFFICIAL: Four punch-rate formulas (punch output, offensive efficiency, work-rate consistency, round-to-round change) need total punches, minutes worked or per-round output, which no screen records. (A) leave them unbuilt until punch counting comes from video (the teach-AI piece); (B) add "total punches thrown", "total landed" and "minutes worked" to the sparring log now (unlocks 2 of the 4). Also: personal baseline and data-completeness formulas need a chosen metric and cut-offs — leave them unbuilt until named. PLAIN: wait for video to count punches, or make the sparring form longer now?" Options as written: "A: Wait for video (Recommended)": "Form stays short; the two needing cut-offs also wait."; "B: Longer sparring form": "Add 3 fields; unlocks 2 formulas." Jason: *"B: Longer sparring form"*, which is not the recommended option.
+
+**Ruling:** "total punches thrown", "total landed" and "minutes worked" are added to the sparring log now, which unlocks 2 of the 4 punch-rate formulas. Option A (wait for punch counting from video) was the recommended one and was not chosen.
+
+**Not ruled here:** the card's own text says the personal baseline and data-completeness formulas stay unbuilt until a metric and cut-offs are named; his pick did not change that. Overwatch read it the same way (line 15591): "Your B didn't change that, so I'm treating them as waiting." He then asked (line 15613, 2026-10-18T00:29:47.461Z): *"How to we pick tho metric and cutoff "* (ending in a space). Overwatch then put a follow-up card at line 15656 (2026-10-18T00:30:31.973Z, questions "Baseline" and "Completeness"); his answers to it are OD-2026-10-17-020.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "PR-C is GO: add total punches thrown, total landed and minutes worked to the sparring log. That unlocks MVP-02 and 05; 07 and 08 still need per-round output." It asked L50 for the form copy (PROPOSED) before building. Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-018 -- No weekly contact-exposure number; the coach's floor record stays counts only: "A: Counts only (Recommended)"
+
+**Provenance: PRIMARY.** The third question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q2 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Contact load".** Overwatch, as written: "OFFICIAL: Contact Exposure formula (contact level x rounds, 7-day and 4-week totals). (A) don't run it; the coach's floor exposure record stays the contact record, counts only, no cumulative risk number; (B) run it from the athlete's own sparring log, marked "incomplete" unless every week has an entry; (C) run it from the coach floor record (needs a contact-stage-to-level mapping). PLAIN: should the app add up a kid's sparring contact into a weekly number, and from whose entries? Today it only shows counts." Options as written: "A: Counts only (Recommended)": "No new weekly contact number."; "B: From athlete log": "Weekly number, often incomplete."; "C: From coach record": "Weekly number from the floor record." Jason: *"A: Counts only (Recommended)"*
+
+**Ruling:** the Contact Exposure formula is not run. The coach's floor exposure record stays the contact record, counts only, with no cumulative number. Options B (from the athlete's log) and C (from the coach's record) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "MVP-06 is not run."
+
+**Status:** ruled; nothing to build for this ruling.
+
+---
+
+## OD-2026-10-17-017 -- The Focus Attainment Rate counts the last 28 days: "A: Last 28 days (Recommended)"
+
+**Provenance: PRIMARY.** The second question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q1 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Focus rate".** Overwatch, as written: "OFFICIAL: Focus Attainment Rate = % of an athlete's logged sparring sessions where they ticked "I did the thing we were working on". Which sessions count? (A) the last 28 days (matches the 4-week windows used elsewhere); (B) the last 10 logged sessions; (C) don't run it. PLAIN: "how often did they hit their focus" — over what stretch." Options as written: "A: Last 28 days (Recommended)": "Same 4-week window as elsewhere."; "B: Last 10 sessions": "Count by sessions, not days."; "C: Don't run it": "Leave unbuilt." Jason: *"A: Last 28 days (Recommended)"*
+
+**Ruling:** the Focus Attainment Rate (the share of an athlete's logged sparring sessions where they ticked "I did the thing we were working on") counts the athlete's sessions in the last 28 days. Options B (the last 10 sessions) and C (don't run it) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "Q1, MVP-11 window: "A: Last 28 days (Recommended)". PR-B is GO." Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-016 -- SHADOW's evidence badge names its strongest source and lists the weaker ones: "A: Strongest + also-cites (Rec.)"
+
+**Provenance: PRIMARY.** The first question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L47 (item 11; overwatch's message to L47 at line 15556). New; edits no earlier entry.
+
+**Question "SHADOW badge".** Overwatch, as written: "OFFICIAL: SHADOW's evidence badge shows the grade of the STRONGEST source it cited ("Evidence: Proven"), even when other cited sources are weaker. (A) badge reads "Strongest source: Proven", plus a second line "Also cites: Emerging, Experimental" when sources differ, and the grade meanings rewritten to say what's measured; (B) badge wording and meanings only, no second line; (C) leave as is. PLAIN: today one strong source can make a mixed answer look fully proven. A says exactly what it is and lists the weaker sources too." Options as written: "A: Strongest + also-cites (Rec.)": "Clear badge plus mixed-evidence line."; "B: Wording only": "Clearer badge text, no second line."; "C: Leave as is": "No change." Jason: *"A: Strongest + also-cites (Rec.)"*
+
+**Ruling:** SHADOW's evidence badge reads "Strongest source: <grade>". When the cited sources differ in grade, a second line lists the others (Overwatch's wording at line 15621: "Also cites: …"), and the grade meanings are rewritten to say what is measured. Options B (wording only) and C (leave as is) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L47 (line 15621; its first send, at line 15583, was not delivered) to build it "as the label PR after PR 1". Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-015 -- New athlete sign-in IDs are not the child's real name: "B: Change the guidance (Recommended)"
+
+**Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15425, 2026-10-18T00:22:46.582Z; answered at line 15435, 2026-10-18T00:23:41.567Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them, in the order it listed them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Sign-in IDs".** Overwatch, as written: "OFFICIAL: When an athlete's login is retired, the app keeps the sign-in ID the office typed (the People form suggests IDs "like jsmith", which is often the child's initial + surname) as the record that blocks reuse. (A) keep as built; (B) change the People-form guidance so new athlete sign-in IDs are not the child's real name (e.g. use the ring name or a number); copy only, new logins; (C) rewrite retired IDs to random tokens (large database change). PLAIN: after a kid leaves, their old sign-in ID (often their name) stays in the system. B stops new IDs from being real names; C scrubs old ones but is a big job." Options as written: "B: Change the guidance (Recommended)": "New athlete IDs not real names; small copy change."; "A: Keep as built": "No change."; "C: Rewrite old IDs": "Scrub retired IDs; large migration." Jason: *"B: Change the guidance (Recommended)"*
+
+**Ruling:** the People form's guidance changes so that new athlete sign-in IDs are not the child's real name (for example the ring name or a number). It is a copy change for new logins only. Retired sign-in IDs already stored are not rewritten. Options A (keep as built) and C (rewrite old IDs) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L44 (line 15443) to add a PR D, a small copy change to the People form's athlete sign-in ID guidance for new logins only, "needed to close F-102". Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-014 -- No age rule on staff roles; the gym decides who it makes a coach: "A: No age rule (Recommended)"
+
+**Provenance: PRIMARY.** The first question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15425, 2026-10-18T00:22:46.582Z; answered at line 15435, 2026-10-18T00:23:41.567Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Where it came from.** Lane L44's gap check of finding F-098 ("staff role on a minor") returned its part (b) as a ruling question: no rule in the code or the rulings refuses a staff role to a minor (line 15420, REPORTED by L44). Overwatch put it to Jason.
+
+**Question "Teen staff".** Overwatch, as written: "OFFICIAL: May a person under 18 hold a staff role in the app (coach, staff, volunteer, admin)? Today there is no age rule: an org admin can invite a teen's own email as a coach, and under your "Any coach all coaches coach all athletes" ruling that teen coach then sees every minor's released photo and ring name, like any coach. (A) no age rule, the gym decides who it invites (as built); (B) under-18s may be volunteer or staff, but not coach or admin (only coaches are in the photo circle); (C) staff roles are adults only. PLAIN: if a teenage helper is made a coach in the app, they see every kid's released photo, the same as an adult coach. Do you want an age limit on coach/admin accounts?" Options as written: "A: No age rule (Recommended)": "The gym decides who it makes a coach; as built."; "B: Under-18 not coach/admin": "Teens can be volunteer or staff, not coach or admin."; "C: Adults only for staff": "Any staff role needs 18+." Jason: *"A: No age rule (Recommended)"*
+
+**Ruling:** the app has no age rule on staff roles (coach, staff, volunteer, admin). The gym decides who it invites and who it makes a coach, as built. As the card states, a teen made a coach then sees every minor's released photo and ring name, like any coach, under OD-2026-10-12-016 (*"Any coach all coaches coach all athletes"*). Options B (under-18 not coach or admin) and C (adults only for staff) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L44 (line 15443) that F-098(b) is ruled A, "so the gym decides and nothing is added beyond your PR A integrity fix". L44's PR A, which includes its fix for F-098 part (a), was approved in Overwatch's GO to L44 (line 15423); it is Overwatch's call, not this ruling.
+
+**Status:** ruled; nothing to build for this ruling.
+
+---
+
+## OD-2026-10-17-013 -- New chips to start: "Small fixes bundle", "Milestone Undo", "Privacy if-real checks", "Records pass", and his typed "A continual housekeeping l ing and clean up o chip"
+
+**Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14927, 2026-10-18T00:03:06.862Z; answered at line 14928, 2026-10-18T00:04:07.432Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "New chips"** (multi-select). Overwatch, as written: "OFFICIAL: Which new chips should start now? None of these collide with open lanes. PLAIN: tick the ones you want; each becomes a chip you tap." Options as written: "Small fixes bundle": "F-124 flaky test, F-125 error reasons kept, F-129 escalation Acknowledge press-twice, F-130 CI job name, F-127 Today double read. Sonnet."; "Milestone Undo": "Your Undo ruling for milestones too (needs a database change), plus the ceremony re-ring (F-133/134). Opus."; "Privacy if-real checks": "Check and fix the 'HIGH if real' findings: F-087 Library search, F-098 staff role on a minor, F-099, F-102 retired login email, F-109/113 second gym admin. Opus, 2 reviewers."; "Records pass": "Write today's rulings into the decisions file (style, TV tiles, icons, motto, payments/HIIT, +30/Repeat, TV look B)." Jason ticked all four: *"Small fixes bundle"*, *"Milestone Undo"*, *"Privacy if-real checks"*, *"Records pass"*, and typed a fifth: *"A continual housekeeping l ing and clean up o chip"*
+
+**Ruling:** all four offered chips start now, and so does a fifth he asked for himself: a continual housekeeping and clean-up lane.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed five chips (lines 14953, 14955, 14957, 14969 and 14971; the fifth titled "Continual housekeeping and clean-up lane") and reported (line 15030, 2026-10-18T00:07:16.014Z): "All 5 new chips have started." The handover log names them L42 (small fixes), L43 (milestone undo), L44 (privacy if-real), L45 (records) and HK (housekeeping) (REPORTED). This entry is L45's work.
+
+**Status:** ruled; the lanes are running. Not checked as built by this records pass.
+
+---
+
+## OD-2026-10-17-012 -- Release 29: "A: Stage now, I'll look (Rec.)"
+
+**Provenance: PRIMARY.** The first question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14927, 2026-10-18T00:03:06.862Z; answered at line 14928, 2026-10-18T00:04:07.432Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Release 29".** Overwatch, as written: "OFFICIAL: Release 29. main (ffa68d13) has 50 commits since Release 28 and its CI is green; the 5 database changes are already live. Stage it now? Staging deploys without asking; merges freeze from staging until you approve production (about 30-45 min). Your release rule also needs your signed-in look on staging for minors'-data screens. PLAIN: this puts today's fixes on the live site. While it's staged, lanes can't merge, and you'd need to look at staging signed in, or waive that look for this release." Options as written: "A: Stage now, I'll look (Rec.)": "I deploy staging and send you the staging link to check signed in, then the production link."; "B: Stage now, waive the look": "Skip your staging look this once; I run read-only checks only, then send the production link."; "C: Wait for L29 + L31": "Stage after the Parent Hub and gym-profile PRs land (a few more hours)." Jason: *"A: Stage now, I'll look (Rec.)"*
+
+**Ruling:** Release 29 (main at `ffa68d13`) is staged now. Merges freeze from the staging deploy until he approves production. He checks staging himself, signed in, before the production link; his signed-in look is not waived for this release. Options B (waive the look) and C (wait for L29 and L31) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch reported (line 14991, 2026-10-18T00:05:42.727Z) "Release 29 staging deploy started (run 39081404756)" and "Merges are frozen." Production was not dispatched at the time of writing.
+
+**Status:** ruled; staging deploy started. Production not checked by this records pass.
+
+---
+
+## OD-2026-10-17-011 -- The gym TV look (#1705): "B: Push further (Recommended)", after his typed "Show what the options look l ike"
+
+**Provenance: PRIMARY.** Two question cards in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, lane L45, 2026-10-17). His words and his pick are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows OD-2026-10-17-007 and -008.
+
+**First card, question "TV look"** (put at line 14715, 2026-10-17T23:48:06.444Z, after he typed *"Ask the tv screen shot questions "* at line 14711, 2026-10-17T23:48:01.690Z, ending in a space). Overwatch, as written: "OFFICIAL: Gym TV restyle, PR 1 (#1705), live-session screenshots sent above (BEFORE = today, AFTER = PR 1). Changes: brass header plate "ADAPT AND OVERCOME * OBSERVE. DECIDE. EXECUTE. REPEAT."; "On the Floor" and "Today" in dark framed boards with brass corners and cream label plates; round clock in its own framed box; dark field kept (no screen burn-in). The session strip with drill icons comes in PR 2. Approve this look for PR 1? PLAIN: this is step one of the new look on the TV. Say go, push it further toward your pictures, or change direction." Options as written: "A: Approve, go to PR 2": "Merge PR 1 as shown; build the session strip with icons next."; "B: Approve, push further": "Merge PR 1, and in PR 2 move closer to the pictures (more cream enamel, heavier wood frame, more texture). Type any specifics."; "C: Not this direction": "Hold PR 1; type what's off." Answered at line 14716, 2026-10-17T23:49:45.382Z, typed: *"Show what the options look l ike"*
+
+Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Option B rendering (lines 14720-14737). He then typed (line 14866, 2026-10-17T23:58:32.000Z): *"Ask the ABC again"*
+
+**Second card, question "TV look"** (put at line 14876, 2026-10-17T23:58:43.299Z). Overwatch, as written: "OFFICIAL: Gym TV restyle PR 1 (#1705). Option A = as built (4 screenshots sent: live session, paired idle, standing board, unpaired public). Option B = push further toward your pictures: cream enamel-sign panels with worn edges on the boards and clock, heavier wood/steel frame, more texture (cream kept limited on the TV for burn-in). Option B screenshots are not ready yet; the lane is rendering them. C = different direction. PLAIN: A ships the look you saw now. B goes closer to your pictures; you can wait for its screenshots or pick it from the description." Options as written: "A: Ship as shown": "Merge PR 1 as in the screenshots; PR 2 adds the session strip."; "B: Push further (Recommended)": "Closer to your pictures; I'll send its screenshots before anything merges."; "C: Different direction": "Hold PR 1; type what's off." Answered at line 14877, 2026-10-17T23:59:08.585Z: *"B: Push further (Recommended)"*
+
+**Ruling:** the gym TV look goes further toward his pictures than PR 1 as built: cream enamel-sign panels with worn edges on the boards and clock, a heavier wood/steel frame, and more texture, with cream kept limited on the TV for burn-in. Its screenshots go to him before anything merges. The ruling is the second card's B. The first card's "B: Approve, push further" (merge PR 1 as shown now) was not picked, and neither were "A: Ship as shown" or "C: Different direction".
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 14880) to fold Option B into PR 1 (#1705) and to hold #1705, with no GREEN, until the B screenshots go to Jason and he approves.
+
+**Status:** ruled; the B screenshots and his approval were not checked by this records pass.
+
+---
+
+## OD-2026-10-17-010 -- The +30 SEC and REPEAT timer buttons: "A" (yes, after the restyle)
+
+**Provenance: PRIMARY.** One typed letter from Jason in the new overwatch session, answering a question overwatch put in its reply ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his question with an image at line 14793, 2026-10-17T23:55:15.357Z; overwatch's question at line 14820, 2026-10-17T23:55:56.573Z; his answer queued at line 14833, 2026-10-17T23:56:48.719Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly; overwatch's question is quoted as written, with its bold marks left out. New; edits no earlier entry.
+
+**What led to it.** He sent one of his style pictures and typed (line 14793): *"How close can we get to it on the top row m of this picture"*. Overwatch answered that the top row is the coach's floor control panel, and that two of its buttons, +30 SEC and REPEAT, do not exist: "The timer only has start / pause / resume / end (OBSERVED)". It recommended applying the top-row look to the coach's live-session screen as lane L39's PR 3, then asked, as written: "Do you want the +30 SEC and REPEAT buttons built? - A (recommended): yes, after the restyle. - B: no, just Pause / Skip / Next."
+
+**Answered** (queued at line 14833, 2026-10-17T23:56:48.719Z): *"A"*
+
+**Ruling:** the +30 SEC and REPEAT round-timer buttons are built, after the restyle. Option B (no, just Pause / Skip / Next) was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch added to lane L39's queue (line 14842), behind PR 1 and PR 2: PR 3, the top-row look on the coach's live-session screen, starting after lane L40's PR on `SessionScriptLiveDelivery.tsx` merges; and PR 4, the +30 SEC and REPEAT round-timer actions, with a plan to Overwatch first. That sequencing is Overwatch's call, not his ruling.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-009 -- Payments and Danielle's HIIT are off the pilot launch list: "Those will not be in the pilot unless there is time"
+
+**Provenance: PRIMARY.** One typed message from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; overwatch's two questions at line 14534, 2026-10-17T23:41:58.984Z; his message at line 14538, 2026-10-17T23:44:09.675Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly; overwatch's questions are quoted as written, with bold marks left out. New; edits no earlier entry.
+
+**The questions.** Overwatch, as written, at the end of its check of ChatGPT's pilot audit: "Two calls for you, whenever you're ready:" "Will the pilot collect payments through the app? If not, that stays off the launch list." and "Is Danielle's HIIT part of the first pilot? If so, it needs a read-only look at its data first."
+
+**Answered** (line 14538): *"Those will not be in the pilot unless there is time"*
+
+**Ruling:** payments through the app and Danielle's HIIT are not part of the pilot launch; they come back only if there is time. Overwatch read it the same way (line 14546): "Payments and Danielle's HIIT are off the pilot launch list, and we'll come back to them only if there's time."
+
+**Note:** This is about the pilot launch only. OD-2026-10-13-011 and OD-2026-10-13-012 (Danielle's HIIT stays a program in the gym) are not changed.
+
+**Status:** ruled.
+
+---
+
+## OD-2026-10-17-008 -- Style cards for the gym TV: "A: Coach screen only (Recommended)"; "Both"; "1 and add it to the approved list"
+
+**Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14111, 2026-10-17T22:12:17.946Z; answered at line 14114, 2026-10-17T22:51:04.318Z). Read by script (records pass, lane L45, 2026-10-17). His pick and his two typed answers are quoted exactly; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows OD-2026-10-17-007.
+
+**Question "TV tiles".** Overwatch, as written: "OFFICIAL: Your style pictures put ATTENDANCE (absent / excused / unmarked counts) and NEED ATTENTION (critical / high / medium counts) on the gym TV. The TV currently shows only who is present, with initials (OD-2026-10-07-008), and never shows absence, pain, clearance or safety flags (wallDisplay.ts). (A) Keep the TV that way and put those two tiles on the COACH'S own floor screen instead; (B) allow COUNTS ONLY on the TV (no names or initials); (C) show them on the TV as in the pictures. PLAIN: the TV hangs in the gym where parents and kids see it. A keeps 'who skipped' and 'who's hurt' off the public wall but still gives the coach those tiles." Options as written: "A: Coach screen only (Recommended)": "TV keeps present-only + initials; attendance/need-attention tiles go on the coach's floor screen in the same style."; "B: Counts only on TV": "Numbers only (e.g. Absent 2, Critical 1), no names or initials."; "C: As in the pictures": "Changes your Oct 7 wall ruling; I'd note the privacy cost in the record." Jason: *"A: Coach screen only (Recommended)"*
+
+**Question "Drill icons".** Overwatch, as written: "OFFICIAL: The pictures show drill icons (warmup, bags, ring, mitts, defense, cooldown). The app's session blocks are typed differently (arrival, instruction, drill round, conditioning, close, and others), and no icon set exists yet. (A) Draw icons for the real block types the app already has; (B) add a new 'station' field (bags/ring/mitts/defense) coaches set on each block, then icons for those. PLAIN: A is a restyle only and can ship soon. B shows exactly the pictures' icons but means coaches tag each block and it's extra build work." Options as written: "A: Icons for real types (Recommended)": "Restyle only; no new data."; "B: Add a station field": "Matches the pictures; new field + coach tagging; bigger build." Jason typed: *"Both"*
+
+**Question "Motto".** Overwatch, as written: "OFFICIAL: The pictures' header plate reads "ADAPT AND OVERCOME * OBSERVE. DECIDE. EXECUTE. REPEAT." "OBSERVE. DECIDE. EXECUTE. REPEAT." is already in an approved past reference; "ADAPT AND OVERCOME" is not in any ruling. Put both on the TV header? PLAIN: the app doesn't show slogans you haven't approved; say yes and it goes up." Options as written: "A: Use both lines": ""ADAPT AND OVERCOME" plus "OBSERVE. DECIDE. EXECUTE. REPEAT.""; "B: Only the approved line": ""OBSERVE. DECIDE. EXECUTE. REPEAT." only."; "C: Neither": "Header shows the gym name only." Jason typed: *"1 and add it to the approved list"*
+
+**Ruling:**
+
+1. TV tiles: the gym TV keeps showing only who is present, by initials (OD-2026-10-07-008 is not changed). The attendance and need-attention tiles from his pictures go on the coach's own floor screen, in the same style. Options B (counts only on the TV) and C (as in the pictures) were not chosen.
+2. Drill icons: *"Both"*, typed, not one of the options.
+3. Motto: *"1 and add it to the approved list"*, typed, not one of the options as labelled.
+
+**How overwatch read the two typed answers (applied by Overwatch 2026-10-17; his words above are the ruling):** in the re-issued lane L39 brief (line 14146) and its report to him (line 14164, 2026-10-17T22:52:01.052Z). "Both" was read as both options in turn: icons now for the session block kinds the app already has, and later, as a separate PR, an optional station field (bags, ring, mitts, defense) that coaches set, with its own icons. "1 and add it to the approved list" was read as option A, the first option: the TV header shows both "ADAPT AND OVERCOME" and "OBSERVE. DECIDE. EXECUTE. REPEAT.", and "ADAPT AND OVERCOME" is added to the approved list of gym sayings. Overwatch told him (line 14164; bold marks left out): "Header: both lines go up, "ADAPT AND OVERCOME" and "OBSERVE. DECIDE. EXECUTE. REPEAT.". "ADAPT AND OVERCOME" gets added to the approved-words list." None of his later messages in the transcript, read by this records pass to line 15036, returns to either reading.
+
+**Acted on:** Overwatch withdrew the first style chip and re-issued it with these rulings (line 14144, line 14146). The handover log says L39 added "ADAPT AND OVERCOME" to `GYM_SAYINGS` in PR 1 (#1705) (REPORTED; not checked on main by this records pass).
+
+**Status:** ruled; not built on main at the time of writing.
+
+---
+
+## OD-2026-10-17-007 -- A lane to move the look of the pages toward his style pictures, gym TV / floor board first: "Can we start a lane ..."; "A"
+
+**Provenance: PRIMARY.** One typed message from Jason with an image, then one typed letter, in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his message at line 13945, 2026-10-17T21:52:18.309Z; overwatch's question at line 13958, 2026-10-17T21:52:39.277Z; his answer queued at line 13988, 2026-10-17T21:55:35.186Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly, spelling kept; overwatch's question is quoted as written, with bold marks left out. New; edits no earlier entry.
+
+**His ask** (line 13945, with one of his style pictures): *"Can we start a lane to try and get the look and feel of the pages shifting towards these styles as far as UI goes or do we need to work that sepperate"*
+
+**Overwatch's answer and question** (line 13958): it recommended starting the style work now as its own lane, separate from the fix lanes, in stages: a style kit, then one screen, then the rest a screen at a time as each fix lane closes. It said the pictures are AI pictures, used as a style guide only. Then, as written: "Question: which screen goes first?" "A (Recommended): gym TV / floor board. It matches the images best and collides with no open lane." "B: coach home / floor workspace. Most used, but U2 and U3 are still editing it." "C: athlete Today. Kids see it, but U2 and L35 just changed it."
+
+**Answered** (queued at line 13988, 2026-10-17T21:55:35.186Z): *"A"*
+
+**Ruling:** a style lane starts now, separate from the fix lanes, to move the look and feel of the pages toward his style pictures, and the gym TV / floor board is the first screen. Options B (coach home / floor workspace) and C (athlete Today) were not chosen as the first screen.
+
+**Note:** About two minutes later his message "Check our price and with the ais you have access to we have work things against real l anesthesia in th past see if there is anything usfule" (line 14025) came through partly garbled. Overwatch asked what he meant on a one-question card (line 14030), and he picked "A: Past design/style work (Recommended)" (line 14031, 2026-10-17T22:00:53.384Z). That started a read-only search of past design work for the style lane (report `Documents\PPBF-overwatch\audit\STYLE-REFS-PAST-WORK-2026-10-17.md`). It clarifies what he asked for and rules nothing new, so it has no entry of its own.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed the style lane chip (lane L39, "Restyle the gym TV / floor board to Jason's references", line 14008) and created an empty folder on the laptop for his reference pictures, `Desktop\PPBF-style-refs` (made at line 13999, 2026-10-17T21:55:45.315Z; reported to him at line 14021). The style kit, the lane's PR plan and its screenshot step are Overwatch's design of the lane, not his rulings.
+
+**Status:** ruled; lane L39 running at the time of writing.
+
+---
+
+## OD-2026-10-17-006 -- The gym-admin live check: "A: Now", not the recommended "B: After Release 29 (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12522, 2026-10-17T18:42:48.381Z; answered at line 12530, 2026-10-17T18:46:22.324Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Admin login".** Overwatch, as written: "OFFICIAL: The gym-admin (ppbf@) screens have never been checked live: no window was ever signed in as the gym admin. Sign the gym admin in on the in-app browser's live tab (the same tab is waiting for the test coach) now, or wait until Release 29 is live? PLAIN: I can't type passwords; you sign in, then a lane runs the admin and coach checks. Doing it after Release 29 tests the version the gym will actually use." Options as written: "B: After Release 29 (Recommended)": "One sign-in session for admin + coach, run the per-role checks on the version the gym will use."; "A: Now": "Sign in now; the check runs on Release 28 and again after Release 29." Jason: *"A: Now"*
+
+**Ruling:** the gym admin is signed in on the in-app browser's live tab now, and the admin and coach checks run on Release 28 and again after Release 29. He enters the sign-in; overwatch does not type passwords. Option B was the recommended one and was not chosen.
+
+**Acted on:** Overwatch opened the live sign-in page in the in-app browser tab "seed" (line 12534, 2026-10-17T18:46:34.859Z). The sign-in itself and the checks were not observed by this records pass.
+
+**Status:** ruled; whether the check has run was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-005 -- What the athlete home's "Active Goals" number counts (UXB-18): "A: Count both (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Goal count".** Overwatch, as written: "OFFICIAL: What the athlete home's "Active Goals" number counts (UX audit UXB-18): (A) own-words and SMART goals; (B) SMART goals only. PLAIN: the number should match the Goals tab, and A does that. Lane U3 built A." Options as written: "A: Count both (Recommended)": "Matches the Goals tab."; "B: SMART only": "Own-words goals not counted." Jason: *"A: Count both (Recommended)"*
+
+**Ruling:** the "Active Goals" number on the athlete home counts own-words and SMART goals, so it matches the Goals tab. Option B (SMART only) was not chosen.
+
+**Note:** It confirms the call overwatch had already made in lane U3's brief (UXB Q2, transcript line 9903).
+
+**Acted on:** The card says lane U3 built A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-004 -- What a guardian of an under-18 athlete sees about programs and support (PH-13): "A: Standing, yes/none, dates (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Parent view".** Overwatch, as written: "OFFICIAL: What a guardian of an under-18 athlete sees about programs and support on the Parent Hub (PH-13): (A) each program's standing with dates; scholarship shown only as "yes" or "none recorded"; recorded supports with dates; no percentages, no staff notes; (B) the same plus the scholarship percentage; (C) don't show these to guardians. PLAIN: a parent sees their own child's memberships and whether help was given, without money details or staff notes. Lane L29 is building A." Options as written: "A: Standing, yes/none, dates (Recommended)": "No percentages, no notes."; "B: Also show the percent": "Adds the scholarship percentage."; "C: Hide from guardians": "Guardians don't see program or support status." Jason: *"A: Standing, yes/none, dates (Recommended)"*
+
+**Ruling:** a guardian of an under-18 athlete sees, on the Parent Hub, each program's standing with its dates, the scholarship only as "yes" or "none recorded", and recorded supports with their dates; no percentages and no staff notes. Options B (also show the percent) and C (hide from guardians) were not chosen.
+
+**Note:** It settles lane L29's question Q-D, which overwatch had answered A in its GO to L29 (transcript line 9708) before putting it to him.
+
+**Acted on:** The card says lane L29 is building A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-003 -- Athlete "I did it" on a goal or milestone (UXB-19): "A: One tap + Undo (Recommended)"
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "I did it".** Overwatch, as written: "OFFICIAL: Athlete "I did it" on a goal or milestone (UX audit UXB-19): (A) one tap plus a short Undo (10 minutes, the athlete's own marks only); (B) an armed second press; (C) one tap with no undo (today). PLAIN: today a glove brushing the button marks it done for good. A lets the kid who slipped take it back; B makes every kid tap twice. Lane U3 is set to build A." Options as written: "A: One tap + Undo (Recommended)": "10-minute undo of their own mark; never touches a coach's mark; history kept."; "B: Press twice": "First press arms, second press marks it."; "C: Leave as is": "One tap, no undo." Jason: *"A: One tap + Undo (Recommended)"*
+
+**Ruling:** one tap marks it done, with a short Undo: 10 minutes, the athlete's own marks only, never a coach's mark, history kept. Options B (press twice) and C (leave as is) were not chosen.
+
+**Note:** It confirms the call overwatch had already made in lane U3's brief (UXB Q1, transcript line 9903), which is not his ruling and is not recorded separately.
+
+**Acted on:** The card says lane U3 is set to build A. Not checked as built by this records pass.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-002 -- Policy-shelf move: "A: Detach + narrow hold (Recommended)"; SUPERSEDES OD-2026-10-08-009 D22
+
+**Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12507, 2026-10-17T18:40:25.003Z; answered at line 12516, 2026-10-17T18:42:39.962Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Policy move".** Overwatch, as written: "OFFICIAL: Policy-shelf move to the gym, in production. Your recorded plan D22 ("Re-point citations, then move") proved impossible; the tool that was built detaches citations, then moves. Production has 2 hidden evidence rows from 1 flagged, not-deleted person, and the strict safeguarding hold blocks the move (DETACH_WOULD_BREAK_HOLD). PLAIN: A moves the gym's policies now; the flagged person's chat and safety record stay untouched, and only 2 link rows nobody sees are removed and logged by id. B leaves the policies where they are until that person is no longer flagged." Options as written: "A: Detach + narrow hold (Recommended)": "Replace D22 with detach-then-move. The hold covers flagged chats of deleted people and any evidence actually shown in a flagged chat; the 2 rows are detached and logged, and the policies move."; "B: Keep the strict hold": "Nothing moves until the person is no longer flagged." Jason: *"A: Detach + narrow hold (Recommended)"*
+
+**Ruling:** the policy shelf moves to the gym by detach-then-move, replacing D22's re-point-then-move (OD-2026-10-08-009). The safeguarding hold that blocks a detach covers flagged chats of deleted people and evidence actually shown in a flagged chat; the 2 production evidence rows from the 1 flagged, not-deleted person are detached and logged, and the policies move. Option B (keep the strict hold) was not chosen.
+
+**Note:** This entry replaces D22 of OD-2026-10-08-009 (*"Re-point citations, then move (Recommended)"*); the card states that the re-point proved impossible.
+
+**Acted on:** Overwatch offered lane L37 ("Narrow the policy-shelf hold to Jason's ruling", lane brief at line 12556, chip at line 12557) to change the hold check in the move tool. Not built at the time of writing.
+
+**Status:** ruled; whether it is built was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-001 -- UX coherence cards: "A: Use these words (Recommended)"; "A: Rename + I'm here on Today (Recommended)"; "A: Cross-link now (Recommended)"; "B: Keep one", corrected to "Im Ment A"
+
+**Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 9921, 2026-10-17T01:14:03.456Z; answered at line 9922, 2026-10-17T15:01:17.651Z; his typed correction queued at line 9926, 2026-10-17T15:01:35.108Z). Read by script (records pass, lane L36, 2026-10-17). The button picks and his typed words are quoted exactly; the questions and options are quoted as overwatch wrote them. The findings behind the card are in the UX coherence audit, `Documents\PPBF-overwatch\audit\UX-COHERENCE-A-STRUCTURE-2026-10-16.md`. New; edits no earlier entry.
+
+**Question "Glossary".** Overwatch, as written: "UX glossary (UX audit A-12): the same thing has different names on different screens. Use one word for each: (a) a coach's plan for a session = "Session Plan" (not "Session Script"); (b) a training stop = "Training Hold" ("paused" only in the family sentence); (c) the coach's multi-week plan for an athlete = "Development Plan"; (d) the admin's home = "Gym Office"? Plain: today one thing has several names, so people can't find it. You pick one word each, and every screen and menu uses it." Options as written: "A: Use these words (Recommended)": "Session Plan, Training Hold, Development Plan, Gym Office, everywhere; each menu label matches its page title."; "B: Keep current names": "No renames; only the menu labels are made to match the page titles." Jason: *"A: Use these words (Recommended)"*
+
+**Question "Check-in".** Overwatch, as written: "Athlete check-in (UX audit A-4): three different athlete buttons are all called "check in". Rename them to "How I feel today" (wellness), "Start training" (starts a session) and "I'm here" (attendance), and put "I'm here" for today's class on the athlete's Today tab? Plain: a kid can press "check in" and still not be marked present. This makes "I'm here" the only attendance button and puts it where they already are." Options as written: "A: Rename + I'm here on Today (Recommended)": "Three clear names; attendance from the athlete's home."; "B: Keep as is": "No change." Jason: *"A: Rename + I'm here on Today (Recommended)"*
+
+**Question "Coach pages".** Overwatch, as written: "Overlapping coach pages (UX audit A-11): five pages answer "who needs me" (Morning Read, Performance Analytics, Passbook Gaps, Athlete Intelligence, the home list), and four pages cover sparring. Keep them as separate pages with cross-links, or merge each group into one page? Plain: links make them findable now and are cheap. Merging means fewer pages, but it's real rebuild work across several lanes." Options as written: "A: Cross-link now (Recommended)": "Home links to the Morning Read as the full list; each group gets a shared sub-nav. No merges."; "B: Merge each group": "Rebuild into one page per group; several lanes of work." Jason: *"A: Cross-link now (Recommended)"*
+
+**Question "Menus".** Overwatch, as written: "Header menus (UX audit A-16): the top bar has two menus showing the same page list two ways (the Corridor and the Jump catalog). Keep both or keep one? Plain: two menus with the same list. Keeping both costs nothing; keeping one is simpler." Options as written: "A: Keep both (Recommended)": "Low cost; no change."; "B: Keep one": "Remove one menu (we'd keep the Jump catalog, which has search)." Jason: *"B: Keep one"*, which is not the recommended option. About 17 seconds later he typed (line 9926, 2026-10-17T15:01:35.108Z): *"Im Ment A"*. Overwatch withdrew the lane chip it had just issued with the "keep one" wording (line 9946, reason "Jason corrected the menus answer to A (keep both)") and answered (line 9954, 2026-10-17T15:01:57.642Z): "Got it: both header menus stay."
+
+**Ruling:**
+
+1. Glossary: one word for each thing on every screen and menu: Session Plan (not Session Script), Training Hold ("paused" only in the family sentence), Development Plan (the coach's multi-week plan for an athlete), Gym Office (the admin's home). Each menu label matches its page title.
+2. Athlete check-in: the three buttons are named "How I feel today" (wellness), "Start training" (starts a session) and "I'm here" (attendance), and "I'm here" for today's class is on the athlete's Today tab.
+3. Overlapping coach pages: they stay separate pages, cross-linked; no merges. The home links to the Morning Read as the full list, and each group gets a shared sub-nav.
+4. Header menus: A, both stay (the Corridor and the Jump catalog). His card pick was "B: Keep one"; his typed "Im Ment A" corrects it, and overwatch read and acted on it as A. Option B of the first three questions and his first menus pick are not the ruling.
+
+**Acted on (OBSERVED in the transcript):** overwatch re-issued the navigation lane chip (lane U2) with these four rulings and both menus kept (line 9948; chip id at line 9949). Whether each ruling is built was not checked by this records pass.
+
+**Status:** REPORTED, lane U2 started (gap check) at the time of writing; not built.
+
+---
+
 ## OD-2026-10-15-002 -- Overwatch's application of an existing ruling, NOT a new pick of Jason's: F-076, a child's disclosure of harm typed into SHADOW chat is an athlete-scoped high-risk SHADOW message under OD-2026-10-01-008 section 3; "You just asked me that are you fucking with me now"; "I already answered it ..."
 
 **Provenance: DERIVED, with his words PRIMARY.** He did not pick a letter on F-076; he said he had already answered it, and Overwatch then applied his OD-2026-10-01-008 section 3 ruling. Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-15). His words are quoted exactly, spelling and spacing kept (the second ends in a space). New; edits no earlier entry. It follows from OD-2026-10-13-013.
@@ -378,6 +711,8 @@ and should not try to.
 **Acted on (REPORTED, handover 00:21 and 01:50 UTC entries):** nothing has been changed. The platform-owner and athlete test windows were signed out, so the two records were not read; the next step is a read-only look on the platform desk, then a lane for the program move.
 
 **Status:** OPEN, not acted on.
+
+**Status (2026-10-17), H-2 read-only look (REPORTED, live audit LA1, `Documents\PPBF-overwatch\audit\LIVE-AUDIT-2026-10-17.md`):** the gym named "hiit fit" has the id `danielles`, and Danielle's HIIT Fit has the id `hiit_boxing_danielle`; the names and ids cross. "hiit fit" has 0 accounts of any role, 0 track assignments and 0 SHADOW interactions; Danielle's HIIT Fit has one organization admin, 0 track assignments and 0 SHADOW interactions. Roster rows without an account, programs and classes are UNVERIFIED (no platform-owner read route returns them). Nothing has been closed or moved.
 
 ---
 
@@ -684,6 +1019,8 @@ and should not try to.
 
 **Acted on:** overwatch's comment on PR #1506 at 2026-10-12T17:21:54Z (OBSERVED, `gh`) quotes his words and asks the lane to update the comment in `athleteBodyMass.ts` that calls this an open owner question, at its next touch of the file. PR #1506, "Lane P11 (PR A): a coach's reach is the whole gym, not only assigned athletes", merged `0ad57fa6c196c61f8cce1e96bdc0ff716be2b282` at 2026-10-12T17:22:02Z (OBSERVED, `gh`) and shipped in Release 19 (OD-2026-10-12-017). Overwatch's note (handover, REPORTED): it raises the shadow context contract version, so queued SHADOW jobs are refused as stale at deploy time.
 
+**Status (2026-10-17), applied by Overwatch 2026-10-15:** two more cases were closed under his words *"Any coach all coaches coach all athletes"*, without a new question (lane L11, issue #1480). Q2: any coach of the gym may be named as the coach for a 1:1 (PR #1635, merged `f35184ac0253ede39e22df653997547e5189e767` 2026-10-16T14:30:22Z). Q5: every coach of the athlete's gym is in a minor's photo circle (the released portrait and ring name, releasing or blocking the portrait after viewing it, clearing the ring name); the org admin stays outside the circle; `is_mine` stays the coach of record (PR #1643, merged `5c0488325a514797cba57c8f58b98bc674f1850d` 2026-10-16T14:31:35Z). Merges OBSERVED (`gh`); what each PR does is REPORTED by lane L11 (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, lines 7421 and 8476). Overwatch, as written (line 7426, 2026-10-15T19:56:03.708Z): "GO on C2 under the Q5 application of "Any coach all coaches coach all athletes"." This is overwatch's reading of his words, not new words of his.
+
 ---
 
 ## OD-2026-10-12-015 -- "No keep this open": the two HIIT gyms are left alone and the session keeps working
@@ -924,6 +1261,8 @@ and should not try to.
 7. **Gemini is on his psu.edu account.** "A: fine" / "B: stop using it for gym work". Answer "7 A". Gemini on that account is fine for gym work.
 8. **Grok.** "Sign it in when convenient, or skip it". The row had no lettered options; he answered *"8 a"*. Overwatch read it as: he signs Grok in himself (its reply: "you'll sign Grok in"). That reading is overwatch's; the letter does not map to a lettered option.
 
+**Status (2026-10-17), item 2 (REPORTED, live audit LA1, `Documents\PPBF-overwatch\audit\LIVE-AUDIT-2026-10-17.md` and the findings register row F-009):** the gym named Audit Test Gym reads `inactive` with 0 members (OBSERVED by that audit through the platform read routes). Still to check or do: the other Audit Test Gyms, and the ZZ-AUDIT Test Class, which still shows in the athlete's `/schedule` records.
+
 ---
 
 ## OD-2026-10-11-008 -- Remaining coach-written text is stripped for family readers: "strip them" (PR #1479)
@@ -1060,6 +1399,8 @@ and should not try to.
 3. Overwatch stops putting safety, legal, medical and compliance questions to him, and stops sending him lists of what can now get through. When a lane or a reviewer raises one, overwatch decides it in the direction he has ruled (teach; do not block, flag, warn, banner, log for staff or hold for extra review) and tells the lane. He hears about such a matter only if it breaks the hard floor in his rules (safeguarding, minors' privacy, authorization, data integrity, nothing false), and then as one line.
 
 **Withdrawn by overwatch on ruling 3:** the note it had sent him that the emergency rule misses some spellings. Nothing was changed for it.
+
+**Status (2026-10-17), applied by Overwatch 2026-10-16:** F-051 (the athlete reads the coach's gap description and its severity on `/athlete/progression-intelligence`) was closed under this ruling without a question: the severity stays visible to the athlete. Overwatch, as written to lane L28 (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, line 9056, 2026-10-16T16:27:48.950Z): "F-051: keep the severity shown to the athlete. Jason's principle "Blocking and flagging stuff can cause more damage then knowledge" (OD-2026-10-10-007) points toward showing it, and the description is now labelled as athlete-read, so there is no question for Jason." This is overwatch's reading of his words, not new words of his.
 
 ---
 
@@ -1409,6 +1750,8 @@ Question (log, short): "Build all" scope: people-facing features only, or every 
 12. D24: the visual lane proposes plate rules; Jason approves.
 
 **Not ruled here:** whether the re-homed parent test login counts as a test login (D16); thresholds inside the engine-unlock proposals (D21).
+
+**Status (2026-10-17):** D22 is superseded by OD-2026-10-17-002 (detach-then-move with a narrowed hold); the rest of this entry stands.
 
 ---
 
@@ -1942,6 +2285,8 @@ The lane's question, line 398 (2026-10-03T21:28:35.666Z), as written: "**Copies 
 4. Session notes (Q8): only the writer can edit a session note; coaches and admins add a separate note of their own and never rewrite the athlete's. Jason chose the recommended option.
 
 **Not ruled here:** which features are the 15, and the order or timing of building their screens.
+
+**Status (2026-10-17), applied by Overwatch 2026-10-17:** UX audit question UXB Q3 was closed under *"Show coach name, hide ID"* without a question: the schedule's coach picker shows coach names only, never the sign-in email. Overwatch, as written in lane U3's brief (transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`, line 9903, 2026-10-17T01:13:37.012Z): "Q3: the schedule coach picker shows names only, never the sign-in email (OD-2026-10-06-025, "Show coach name, hide ID")." Whether it is built was not checked by this records pass. This is overwatch's reading of his words, not new words of his.
 
 ---
 

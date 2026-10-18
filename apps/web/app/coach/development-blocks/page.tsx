@@ -12,6 +12,7 @@ import {
 } from '@/components/developmentBlockDomains';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
+import ClusterNav from '@/components/ClusterNav';
 
 /*
  * A coach's multi-week plan for one athlete: writing one, reading it back,
@@ -1126,6 +1127,7 @@ export default function CoachDevelopmentBlocksPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Athlete Development</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">The Next Several Weeks</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             A development block is what you intend for one athlete over a window you choose, in your own
             words. The platform stores it and reads it back. It does not score it, grade it, or move it
@@ -1301,7 +1303,7 @@ export default function CoachDevelopmentBlocksPage() {
               </div>
 
               <button type="submit" disabled={submitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
-                {submitting ? 'Saving...' : 'Save block'}
+                {submitting ? 'Saving…' : 'Save block'}
               </button>
             </form>
 
@@ -1931,7 +1933,7 @@ export default function CoachDevelopmentBlocksPage() {
                             disabled={editBusy}
                             className="btn disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {editBusy ? 'Saving...' : 'Save changes'}
+                            {editBusy ? 'Saving…' : 'Save changes'}
                           </button>
                           <button type="button" onClick={() => setEditingId(null)} className="btn btn--ghost">
                             Cancel
@@ -2081,7 +2083,7 @@ export default function CoachDevelopmentBlocksPage() {
                                 disabled={objectiveBusy}
                                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {objectiveBusy ? 'Saving...' : 'Add objective'}
+                                {objectiveBusy ? 'Saving…' : 'Add objective'}
                               </button>
                             </form>
                           )}

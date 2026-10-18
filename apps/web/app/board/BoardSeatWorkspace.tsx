@@ -17,7 +17,10 @@ export default function BoardSeatWorkspace({ member }: BoardSeatWorkspaceProps) 
     <BoardMemberDashboard
       seat={seat}
       links={[
-        { label: 'Board hub', href: '/board' },
+        { label: 'Board Hub', href: '/board' },
+        // Lane U2 (audit UX-A A-16): the board's two reads had no link in.
+        { label: 'Program Aggregates', href: '/board/aggregates' },
+        { label: 'Escalation Ladder', href: '/board/escalation-monitoring' },
       ]}
     />
   );

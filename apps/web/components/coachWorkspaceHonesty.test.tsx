@@ -1175,7 +1175,7 @@ describe('coach review session picker', () => {
     ).toHaveLength(0);
   });
 
-  test('the server\'s refusal for an athlete outside this coach\'s scope is shown verbatim, not as an empty list', async () => {
+  test('the server\'s refusal for an athlete outside this coach\'s scope is shown in words, not as an empty list', async () => {
     await renderWorkspace({
       athletesList: twoAthletes,
       sessionsList: () =>
@@ -1185,7 +1185,9 @@ describe('coach review session picker', () => {
     openTab('Athlete Reviews');
     await pickReviewAthlete('ath_2');
 
-    expect(screen.queryByText(/Forbidden: coach not assigned to athlete/)).not.toBeNull();
+    // Its reason in words, never the access layer's "Forbidden:" (UXB-09).
+    expect(screen.queryByText(/Your account cannot do this here\. Coach not assigned to athlete\./)).not.toBeNull();
+    expect(screen.queryByText(/Forbidden/)).toBeNull();
     expect(screen.queryByText(/Sessions may exist that are not listed here/)).not.toBeNull();
     // The refusal must not be dressed as "this athlete has no sessions".
     expect(screen.queryByText(/No sessions are recorded for this athlete yet/)).toBeNull();
@@ -1338,10 +1340,11 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
 
-    await waitFor(() => expect(screen.queryByText(/Forbidden: coach not assigned to athlete/i)).not.toBeNull());
+    // The refusal is words, with its reason, never the access layer's "Forbidden:" (UXB-09).
+    await waitFor(() => expect(screen.queryByText('Your account cannot do this here. Coach not assigned to athlete.')).not.toBeNull());
     // The item's own local status must not be optimistically flipped on a
     // refused request -- it is still exactly what the server last said.
-    expect(screen.queryByText('Status: pending_review')).not.toBeNull();
+    expect(screen.queryByText('Status: waiting for review')).not.toBeNull();
     expect(reviewActionCalls(fetchMock)).toHaveLength(1);
   });
 
@@ -1546,7 +1549,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     // One RED, zero YELLOW; ath_3 has no fresh reading and is counted as
     // unknown rather than silently folded into "no alerts".
-    expect(screen.getByText(/1 RED, 0 YELLOW, 1 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.getByText(/1 to adjust the plan, 0 to check in with, 1 not tracked \(not tracked is not clear\)/)).toBeTruthy();
     expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   });
 
@@ -1578,7 +1581,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
       }),
     });
 
-    expect(screen.getByText(/0 RED, 0 YELLOW, 3 unknown — unknown is not clear/)).toBeTruthy();
+    expect(screen.getByText(/0 to adjust the plan, 0 to check in with, 3 not tracked \(not tracked is not clear\)/)).toBeTruthy();
     // Not deleted, not hidden: still on screen, as something written down.
     expect(screen.getByText(/staff judgement\(s\) recorded but not counted above/i)).toBeTruthy();
     expect(screen.getByText(/written down, not measured/i)).toBeTruthy();
@@ -1681,7 +1684,7 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     // The tile is live (one GREEN reading, two athletes without one), so the
     // caveat's absence is a real decision rather than the tile being empty.
-    expect(screen.getByText(/0 RED, 0 YELLOW, 2 unknown/)).toBeTruthy();
+    expect(screen.getByText(/0 to adjust the plan, 0 to check in with, 2 not tracked/)).toBeTruthy();
     expect(screen.queryByText(/entered by staff during intake review/i)).toBeNull();
   });
 

@@ -6,7 +6,10 @@ import {
   createPersonalGoal,
   listPersonalGoals,
   markPersonalGoalReached,
+  undoPersonalGoalReached,
 } from '@/src/server/pilot/achievements';
+import { PilotError } from '@/src/server/pilot/errors';
+import { withTransaction } from '@/src/server/pilot/db';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { readsFullGoals, toFamilyPersonalGoal } from '@/src/server/pilot/goalProjection';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -131,6 +134,39 @@ export async function PATCH(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
+
+    // "Undo" (UXB Q1 B): the athlete's own mark, within ten minutes, checked by
+    // the statement itself -- the owner, the window and own-words are all in
+    // undoPersonalGoalReached's WHERE clause, not in the button. A reversal with
+    // its own audit event, never a delete.
+    if (body.undo === true) {
+      // One transaction: a reversal of a child's record never commits without
+      // its audit event, and a failed audit write leaves the mark standing.
+      const undone = await withTransaction(async (client) => {
+        const reversed = await undoPersonalGoalReached(principal.organizationId, goalId, athleteId, new Date(), client);
+        if (!reversed) {
+          // One answer for "too late", "not yours" and "no such goal".
+          throw new PilotError(409, 'That can no longer be undone.', 'PERSONAL_GOAL_UNDO_CLOSED');
+        }
+        await writePilotAuditEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'goal',
+          entity_id: reversed.goal_id,
+          details: {
+            athlete_id: athleteId,
+            reached: false,
+            undone_reached_at: new Date(reversed.undone_reached_at).toISOString(),
+          },
+        }, client);
+        return reversed;
+      });
+      const goal: Partial<typeof undone> = { ...undone };
+      delete goal.undone_reached_at;
+      return NextResponse.json({ ok: true, goal });
+    }
 
     // The authorized athlete travels INTO the write, so the statement can only
     // reach a goal this actor was cleared for. Previously the mark was keyed on

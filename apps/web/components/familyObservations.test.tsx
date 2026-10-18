@@ -126,3 +126,25 @@ test("a slow read for the athlete just left never shows under the next athlete's
   expect(screen.queryByText(/Tired after a double shift/)).toBeNull();
   expect(screen.getByText('No observations from the family yet.')).toBeInTheDocument();
 });
+
+// UXB-05: a reload would throw away every unsent draft on the Decision Loop.
+test('a failed read offers Check again, which re-runs this read only, and never says Reload', async () => {
+  let fail = true;
+  const fetchMock = jest.fn(async () => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [RATED] })));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<FamilyObservations athleteId="ath-1" />);
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded');
+  expect(document.body.textContent).not.toMatch(/reload/i);
+
+  fail = false;
+  await act(async () => {
+    screen.getByRole('button', { name: 'Check again' }).click();
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByText(/Tired after a double shift/)).toBeInTheDocument();
+});

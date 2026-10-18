@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort, formatGymDateTimeShort, formatGymDayShort, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 interface AttendanceAthleteSummary {
   athlete_id: string;
@@ -488,7 +489,6 @@ export default function AttendanceDashboardPage() {
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Attendance</h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | ROLLS UP pilot.scheduler_attendance</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every mark comes from a real check-in recorded on the <Link href="/schedule" className="underline">Schedule</Link> page.
               An athlete with no rows here has never been checked in for a class, not a 0% attendance rate --
@@ -621,16 +621,13 @@ export default function AttendanceDashboardPage() {
             <Link href="/schedule" className="btn btn--ghost">
               Go to Schedule (mark attendance)
             </Link>
-            <Link href="/admin/athletes" className="btn btn--ghost">
+            {/* This page admits a coach as well as an admin: Athlete Records
+                shows only to the roles that page admits, and back goes to the
+                reader's own home (lane U2). */}
+            <RoleLink href="/admin/athletes" roles={['admin', 'platform_owner']} className="btn btn--ghost">
               Athlete Records
-            </Link>
-            {/* This page admits a coach as well as an admin, so the hub link
-                had to stop being unconditional here too -- a coach reaching
-                the attendance queue from the corridor would otherwise still
-                be offered a door that only bounces them. */}
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            </RoleLink>
+            <BackHome />
           </div>
         </div>
       </main>

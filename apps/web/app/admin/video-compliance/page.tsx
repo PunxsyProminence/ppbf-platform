@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
+import BackHome from '@/components/BackHome';
 
 interface PendingPublication {
   publication_id: string;
@@ -293,7 +293,6 @@ export default function VideoCompliancePage() {
             >
               Video Compliance Review
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.video_publications</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every submission waits here before it can be published. Check for appropriate content, that every
               visible athlete is covered by consent, and for privacy-violating audio -- then approve, reject, or
@@ -622,9 +621,7 @@ export default function VideoCompliancePage() {
           ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

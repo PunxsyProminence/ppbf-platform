@@ -10,6 +10,7 @@ import {
   subscribeRoleSession,
 } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
+import { roleWords } from '@/src/shared/roleWords';
 import { isRefusalSurface } from "./buildingMap";
 import ChromeLink from "./ChromeLink";
 import { requiresDocumentLoad } from "./cameraDocuments";
@@ -202,7 +203,7 @@ export default function GlobalRoleHeader() {
               shorthand, which would beat the ladder size every other control on
               this bar uses. */}
           <span className="inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:var(--brass-700)] bg-[rgba(0,0,0,.4)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-200)] shadow-[inset_0_1px_0_rgb(var(--brass-300-rgb)_/_.16)]">
-            {session.role}
+            {roleWords(session.role)}
           </span>
           {/* The corridor: the other 61 routes used to be reachable only by
               typing a URL. It lives in the header so every surface gets it.

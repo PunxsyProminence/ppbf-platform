@@ -2,11 +2,11 @@
 
 import { formatGymDateShort } from '@/src/lib/gymTime';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { RECOGNITION_KINDS } from '@/src/shared/achievementPaths';
+import BackHome from '@/components/BackHome';
 
 // Behavior standards (module 125). Two paths, and the page keeps them
 // visibly apart because that separation is the whole design:
@@ -441,7 +441,7 @@ export default function BehaviorStandardsPage() {
           </section>
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

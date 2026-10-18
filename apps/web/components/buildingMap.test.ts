@@ -157,7 +157,9 @@ describe('visibleDoors', () => {
   it('never shows a parent the coach drill library', () => {
     const hrefs = visibleDoors('parent').map((d) => d.href);
     expect(hrefs).not.toContain('/coach/drills');
-    expect(hrefs).toContain('/guardian');
+    expect(hrefs).toContain('/parent/dashboard');
+    // /guardian forwards to the Parent Hub (UX audit A-10): one parent door.
+    expect(BUILDING.some((d) => d.href === '/guardian' || d.href.startsWith('/guardian/'))).toBe(false);
   });
 
   // platform_owner is broader in breadth but strictly NARROWER in depth
@@ -166,7 +168,7 @@ describe('visibleDoors', () => {
     const hrefs = visibleDoors('platform_owner').map((d) => d.href);
     expect(hrefs).toContain('/admin/platform');
     expect(hrefs).not.toContain('/athlete/dashboard');
-    expect(hrefs).not.toContain('/guardian');
+    expect(hrefs).not.toContain('/parent/dashboard');
   });
 
   // The capability console and the customize desk show the platform owner a

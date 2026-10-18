@@ -13,10 +13,9 @@ import { installPilotApi, signInAtTheBell } from './support/signIn';
    the real app above it.
 
    'parent' IS THE CANONICAL GUARDIAN ROLE in this codebase -- /guardian
-   itself now redirects into the Parent Hub, and /guardian/dashboard is a
-   signpost saying the consent and safety controls live on their real
-   surfaces. So the guardian's destination is /parent/dashboard, and the
-   consent decision is made at /parent/consent. Both are asserted here.
+   and /guardian/dashboard both redirect permanently into the Parent Hub. So
+   the guardian's destination is /parent/dashboard, and the consent decision
+   is made at /parent/consent. Both are asserted here.
 
    The Microsoft half of sign-in belongs to an identity provider and is not
    simulated; see e2e/support/signIn.ts. */
@@ -36,7 +35,10 @@ test.describe('Guardian journey', () => {
         '/api/pilot/profile/card': (url) => ({
           card: {
             athleteId: url.searchParams.get('athlete_id'),
-            accountId: 'acct-rosa',
+            // F-119: a family's card carries no account id; the portrait is
+            // addressed by the card.
+            accountId: null,
+            portraitPath: `/api/pilot/profile/card/photo?athlete_id=${url.searchParams.get('athlete_id')}`,
             initials: 'RD',
             photoAvailable: false,
           },

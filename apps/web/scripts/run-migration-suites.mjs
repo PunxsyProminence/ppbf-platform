@@ -50,18 +50,45 @@ export function discoverSuiteScripts(scripts) {
   return Object.keys(scripts).filter((name) => /^test:migrations:[a-z0-9-]+$/.test(name));
 }
 
+/**
+ * The suites one CI shard runs: `--shard=N/M` takes every M-th suite starting
+ * at the N-th, in definition order. No argument runs every suite, which is
+ * what every caller but ci.yml's `pg` matrix passes.
+ *
+ * ROUND-ROBIN, NOT TIMED. Measured on #1685 (314 suites, 2427 s): round-robin
+ * over 4 shards gave a slowest shard of 10.5 min against 10.1 for a split
+ * balanced on the measured durations, so a timing file would buy 0.4 min and
+ * need maintaining.
+ *
+ * Any other argument is refused rather than ignored: `--shard 1/4` (a space)
+ * or a misspelling would otherwise run every suite in every shard, or none.
+ */
+export function selectShard(suites, argv) {
+  if (argv.length === 0) return suites;
+  const match = argv.length === 1 ? /^--shard=([1-9]\d*)\/([1-9]\d*)$/.exec(argv[0]) : null;
+  if (!match) {
+    throw new Error(`expected no arguments or one --shard=N/M, got: ${argv.join(' ')}`);
+  }
+  const index = Number(match[1]);
+  const total = Number(match[2]);
+  if (index > total || total > suites.length) {
+    throw new Error(`--shard=${index}/${total} is out of range for ${suites.length} suites`);
+  }
+  return suites.filter((_, position) => position % total === index - 1);
+}
+
 function main() {
   const { scripts } = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
-  const suites = discoverSuiteScripts(scripts);
+  const discovered = discoverSuiteScripts(scripts);
 
   // A floor, not decoration. If the regex or the manifest shape ever changed,
   // discovery could return nothing -- and a runner that runs zero suites and
   // exits 0 would report every migration guarded while guarding none. That is
   // the failure mode a chain cannot have and a discovery runner can, so it is
   // refused explicitly.
-  if (suites.length < 50) {
+  if (discovered.length < 50) {
     console.error(
-      `run-migration-suites: discovered only ${suites.length} suite scripts, which cannot be right.\n`
+      `run-migration-suites: discovered only ${discovered.length} suite scripts, which cannot be right.\n`
       + 'Expected 100+. Either package.json is truncated (see scripts/verify-package-integrity.mjs\n'
       + 'for why that is a real failure mode here) or the naming convention changed. Refusing to\n'
       + 'report success while running almost nothing.',
@@ -69,7 +96,19 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`run-migration-suites: ${suites.length} suites discovered\n`);
+  let suites;
+  try {
+    suites = selectShard(discovered, process.argv.slice(2));
+  } catch (error) {
+    console.error(`run-migration-suites: ${error.message}`);
+    process.exit(1);
+  }
+
+  console.log(
+    suites === discovered
+      ? `run-migration-suites: ${discovered.length} suites discovered\n`
+      : `run-migration-suites: ${discovered.length} suites discovered; ${process.argv[2]} runs ${suites.length}\n`,
+  );
 
   let index = 0;
   for (const suite of suites) {
