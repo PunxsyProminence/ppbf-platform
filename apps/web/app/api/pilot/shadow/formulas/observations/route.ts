@@ -22,6 +22,7 @@ import {
   recalculateForSupersededObservation,
 } from '@/src/server/pilot/formulas/runner';
 import {
+  CHECK_IN_CONTEXT_PREFIX,
   FORMULA_UNITS,
   OBSERVATION_KINDS,
   type FormulaUnit,
@@ -174,11 +175,21 @@ export async function POST(request: NextRequest) {
     // A weight is corrected only through correctBodyMass (athlete or their
     // coach, a 7-day window, audited; Jason 2026-10-04). Superseding one here
     // -- or superseding something with a weight -- would skip all of that.
+    // A check-in answer (personal baseline, MVP-09) is written by the check-in
+    // only, and check-ins are never edited: a number posted or corrected here
+    // would let the baseline drift from what the athlete answered (lane L50).
+    const checkInAnswerRefused = () => NextResponse.json(
+      { ok: false, error: 'Check-in answers are recorded by the check-in itself.' },
+      { status: 409 },
+    );
+    if (body.kind === 'numeric' && body.contextId.trim().startsWith(CHECK_IN_CONTEXT_PREFIX)) {
+      return checkInAnswerRefused();
+    }
     if (body.supersedesObservationId != null) {
       const replaced = body.kind === 'body_weight'
-        ? { observation_kind: 'body_weight' }
-        : await queryOne<{ observation_kind: string }>(
-          `select observation_kind from pilot.shadow_formula_observations
+        ? { observation_kind: 'body_weight', context_id: '' }
+        : await queryOne<{ observation_kind: string; context_id: string }>(
+          `select observation_kind, context_id from pilot.shadow_formula_observations
            where organization_id = $1 and observation_id = $2`,
           [principal.organizationId, body.supersedesObservationId.trim()],
         );
@@ -187,6 +198,12 @@ export async function POST(request: NextRequest) {
           { ok: false, error: 'Body mass is corrected from the check-in or the coach\'s body mass panel.' },
           { status: 409 },
         );
+      }
+      if (
+        replaced?.observation_kind === 'numeric'
+        && replaced.context_id.startsWith(CHECK_IN_CONTEXT_PREFIX)
+      ) {
+        return checkInAnswerRefused();
       }
     }
     await assertShadowRuntimeReadiness({

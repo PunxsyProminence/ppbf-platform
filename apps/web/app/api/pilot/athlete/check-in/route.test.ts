@@ -8,6 +8,9 @@ import { WELLNESS_COLUMNS, checkIn } from '@/src/server/pilot/athleteCheckIns';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { recordCheckInBodyMass } from '@/src/server/pilot/athleteBodyMass';
 import { FormulaRepositoryError } from '@/src/server/pilot/formulas/repository';
+import { recordCheckInBaselines } from '@/src/server/pilot/formulas/checkInBaseline';
+
+jest.mock('@/src/server/pilot/formulas/checkInBaseline', () => ({ recordCheckInBaselines: jest.fn() }));
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -298,4 +301,50 @@ test("a deleted athlete's surviving session is refused on GET and POST, and noth
   expect(mockCheckIn).not.toHaveBeenCalled();
   expect(mockRecordBodyMass).not.toHaveBeenCalled();
   expect(mockAudit).not.toHaveBeenCalled();
+});
+
+// PERSONAL BASELINE (MVP-09, lane L50; Jason 2026-10-17, OD-2026-10-17-020).
+describe('personal baseline inputs', () => {
+  const mockBaselines = recordCheckInBaselines as jest.Mock;
+  const storedRow = {
+    check_in_id: 'ci-9',
+    checked_in_on: '2026-10-17',
+    created_at: '2026-10-17T12:00:00.000Z',
+    sleep_hours: 7.5,
+    energy: 4,
+    soreness: 2,
+    stress: 3,
+    mood: 4,
+  };
+
+  test('sleep, energy, soreness, stress and mood are recorded from the STORED check-in, keyed by it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    // A repeat submission the same day: the body differs, the stored row wins.
+    mockCheckIn.mockResolvedValue({ row: storedRow, created: false });
+
+    const response = await POST(postRequest({ energy: 1, soreness: 5, sleep_hours: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(mockBaselines).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'ath-1',
+      checkInId: 'ci-9',
+      observedAt: '2026-10-17T12:00:00.000Z',
+      accountId: 'acct-1',
+      values: { sleep_hours: 7.5, energy: 4, soreness: 2, stress: 3, mood: 4 },
+    });
+  });
+
+  test('a baseline failure never turns a stored check-in into a failed one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row: storedRow, created: true });
+    mockBaselines.mockRejectedValueOnce(new Error('db down'));
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await POST(postRequest({ energy: 4 }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).item.check_in_id).toBe('ci-9');
+    quiet.mockRestore();
+  });
 });

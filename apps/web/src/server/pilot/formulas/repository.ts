@@ -612,6 +612,8 @@ export async function listActiveFormulaResults(input: {
   organizationId: string;
   athleteId: string;
   formulaId?: FormulaId;
+  /** Formulas this reader may not see (a parent reads no MVP-09). */
+  excludeFormulaIds?: readonly FormulaId[];
   limit?: number;
 }): Promise<FormulaResult[]> {
   const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50)));
@@ -621,6 +623,7 @@ export async function listActiveFormulaResults(input: {
      where r.organization_id = $1
        and r.athlete_id = $2
        and ($3::text is null or r.formula_id = $3)
+       and not (r.formula_id = any($5::text[]))
        and not exists (
          select 1
          from unnest(r.input_observation_ids) input_id
@@ -630,7 +633,7 @@ export async function listActiveFormulaResults(input: {
        )
      order by r.computed_at desc, r.formula_id asc, r.output_key asc
      limit $4`,
-    [input.organizationId, input.athleteId, input.formulaId ?? null, limit],
+    [input.organizationId, input.athleteId, input.formulaId ?? null, limit, [...(input.excludeFormulaIds ?? [])]],
   );
   return rows.map(rowToFormulaResult);
 }
@@ -793,7 +796,11 @@ export async function listLatestFormulaResultsPerOutput(input: {
 }): Promise<FormulaResult[]> {
   const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 200)));
   const rows = await query<PersistedFormulaResultRow>(
-    `select distinct on (r.formula_id, r.output_key) r.*
+    // metricKey is part of the output's identity for MVP-09: sleep, energy and
+    // soreness each have a raw_change, and without it in the key the newest of
+    // the three would hide the other two. Formulas with no metricKey group
+    // exactly as before ('' for all of them).
+    `select distinct on (r.formula_id, r.output_key, coalesce(r.parameters->>'metricKey', '')) r.*
      from pilot.shadow_formula_results r
      where r.organization_id = $1
        and r.athlete_id = $2
@@ -809,7 +816,8 @@ export async function listLatestFormulaResultsPerOutput(input: {
      -- lead the sort and recency must follow it. created_at and result_id are
      -- tie-breakers only: two rows with the same computed_at would otherwise
      -- resolve arbitrarily, and an arbitrary winner is an unreproducible read.
-     order by r.formula_id, r.output_key, r.computed_at desc, r.created_at desc, r.result_id desc
+     order by r.formula_id, r.output_key, coalesce(r.parameters->>'metricKey', ''),
+              r.computed_at desc, r.created_at desc, r.result_id desc
      limit $4`,
     [input.organizationId, input.athleteId, input.formulaId ?? null, limit],
   );

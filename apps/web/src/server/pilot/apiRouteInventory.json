@@ -2635,6 +2635,60 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/cycle/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/cycle",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own cycle tracking (OD-2026-10-17-023 item 4): opt-in state and the dates their period started. Athlete only, self only via session athleteId (requireOwnAthleteId in cycle/route.ts); no other role or route reads the tables (cycleTrackingAthleteOnly.test.ts). No audit row.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/cycle/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/cycle",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own cycle tracking writes: turn_on, turn_off (deletes every date), add (a day or the gym's today), remove (own entry only). Athlete only, self only via session athleteId. No audit row by design (an audit row would disclose it).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/coach-messages/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/coach-messages",
