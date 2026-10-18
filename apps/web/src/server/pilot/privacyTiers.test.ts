@@ -150,6 +150,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.athlete_capacity_notes',
       // A coach's sparring limits for one child (map item 15).
       'pilot.athlete_contact_caps',
+      // A child's own period start dates, athlete-only (Jason 2026-10-18).
+      'pilot.athlete_cycle',
       'pilot.athlete_injuries',
       // A coach's heat, weight-cut and supervision limits for one child (OD-2026-10-06-024 ruling 2).
       'pilot.athlete_minor_limits',
@@ -173,6 +175,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.shadow_near_misses',
       // Head-contact exposure per child: a safety record.
       'pilot.sparring_exposure',
+      // What a child ticked after sparring: a safety record.
+      'pilot.sparring_symptom_reports',
       'pilot.training_holds',
       // A workout issued to one child: the coach's note and contact level per step (lane P7c).
       'pilot.workout_issue_steps',
