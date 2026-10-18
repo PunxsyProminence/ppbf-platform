@@ -23,11 +23,21 @@ export interface ShadowFeatureThreshold {
   description: string;
 }
 
+// Four separate facts about a capability, because "unlocked" used to stand for
+// all of them: a counter reaching its threshold (data sufficiency, `satisfied`),
+// the app containing code that acts on the feature (`implemented`), the feature
+// actually being on (`unlocked`), and evidence of how well it works
+// (`measuredPerformance`). A counter is not a capability: fine_tuning_pipeline
+// could read "unlocked" at 500 reviewed events while no fine-tuning code exists.
 export interface ShadowFeatureStatus {
   featureKey: ShadowFeatureKey;
   unlocked: boolean;
   activationMode: ActivationMode;
   satisfied: boolean;
+  implemented: boolean;
+  // Nothing in the app evaluates the effect of any of these features, so this
+  // is null for every one of them until something does.
+  measuredPerformance: number | null;
   currentValue: number;
   thresholdValue: number;
   metricKey: ShadowMetricKey;
@@ -70,6 +80,21 @@ const DEFAULT_THRESHOLD_CONFIG: Record<ShadowFeatureKey, {
     activationMode: 'disabled',
     description: 'Disabled until an approved training-data, evaluation, privacy, fairness, and drift-governance process exists. Human-reviewed event volume alone is not model readiness.',
   },
+};
+
+// Whether the app has code that changes behaviour when the feature is on:
+// strong_personalization gates remembered facts and prompt personalization
+// (shadowLearningLoop.ts handlePositiveOutcome, shadowPersonalizationGate.ts),
+// auto_library_updates queues Library promote/demote proposals
+// (queueLibraryChangeForReview), aggressive_research_generation widens the
+// negative outcomes that open research requirements (handleNegativeOutcome).
+// No fine-tuning code exists anywhere in the app, so that one cannot be on
+// whatever its mode and counter say.
+export const SHADOW_FEATURE_IMPLEMENTED: Readonly<Record<ShadowFeatureKey, boolean>> = {
+  strong_personalization: true,
+  auto_library_updates: true,
+  aggressive_research_generation: true,
+  fine_tuning_pipeline: false,
 };
 
 function defaultThresholdRows(organizationId: string): ShadowFeatureThreshold[] {
@@ -241,6 +266,7 @@ async function persistSnapshot(
       JSON.stringify({
         metricKey: status.metricKey,
         activationMode: status.activationMode,
+        implemented: status.implemented,
       }),
     ],
   );
@@ -260,13 +286,16 @@ function computeFeatureStatus(
     const activationMode = matching?.activationMode ?? def.activationMode;
     const currentValue = metrics[metricKey] ?? 0;
     const satisfied = currentValue >= thresholdValue;
-    const unlocked = activationMode === 'enabled' && satisfied;
+    const implemented = SHADOW_FEATURE_IMPLEMENTED[def.featureKey];
+    const unlocked = activationMode === 'enabled' && satisfied && implemented;
 
     result[def.featureKey] = {
       featureKey: def.featureKey,
       unlocked,
       activationMode,
       satisfied,
+      implemented,
+      measuredPerformance: null,
       currentValue,
       thresholdValue,
       metricKey,
@@ -334,8 +363,10 @@ export function buildShadowUnlockHints(unlockState: ShadowUnlockState | null): S
       // no matter the counter, so advertising it as "close to unlocking" was
       // a permanent false promise -- three of the four features default to
       // exactly that state, and their banners read 100% progress forever.
-      // Progress still reports honestly; only the promise is gated.
+      // Progress still reports honestly; only the promise is gated. A feature
+      // with no code behind it cannot unlock either.
       closeToUnlocking: status.activationMode === 'enabled'
+        && status.implemented
         && !status.unlocked
         && progress >= CLOSE_TO_UNLOCKING_PROGRESS,
     };

@@ -77,6 +77,16 @@ const feedbackItem = {
   created_at: '2026-07-30T12:00:00.000Z',
 };
 
+function capabilityOff(implemented: boolean) {
+  return {
+    dataSufficient: false,
+    implemented,
+    activated: false,
+    measuredPerformance: null,
+    unavailableReasons: { measuredPerformance: 'NOT_MEASURED' },
+  };
+}
+
 // Enough of OrgMetrics for the SHADOW Intelligence panel to render its
 // readings; the panel binds to the interface by import, so a shape change is a
 // compile error rather than a NaN tile.
@@ -109,19 +119,19 @@ const growthMetrics = {
     profileCompletionRate: null,
     tierAdvancementCount: null,
     totalInteractions: 88,
-    positiveOutcomeRate: null,
+    reviewedHelpfulRate: null,
     filterRate: 0.125,
     avgSatisfaction: null,
     reviewedOutcomes: 3,
     researchRequirementsCreated: 2,
     researchRequirementsClosed: 1,
-    newLibraryPatterns: 0,
+    newLibrarySources: 0,
   },
   viewerUnlocks: {
-    strongPersonalization: false,
-    autoLibraryUpdates: false,
-    aggressiveResearchGeneration: false,
-    fineTuningPipelineReady: false,
+    strongPersonalization: capabilityOff(true),
+    autoLibraryUpdates: capabilityOff(true),
+    aggressiveResearchGeneration: capabilityOff(true),
+    fineTuningPipeline: capabilityOff(false),
   },
 };
 
@@ -302,6 +312,9 @@ it('reads its rates off the room instrument and its counts off .stat', async () 
   const statLabels = [...document.querySelectorAll('.stat-label')].map((node) => node.textContent);
   expect(statLabels).toContain('Interactions');
   expect(statLabels).toContain('Research Created');
+  // The count is new rows on the Library's sources shelf, not patterns.
+  expect(statLabels).toContain('New Library Sources');
+  expect(statLabels).not.toContain('New Patterns');
   expect(document.querySelectorAll('.stat-val').length).toBeGreaterThan(0);
 });
 
@@ -658,5 +671,44 @@ describe('the console names itself and reads its dials honestly (F-024)', () => 
     expect(await screen.findByText('No reviewed outcomes yet')).toBeTruthy();
     const effectivenessGauge = screen.getByText('Effectiveness').closest('.gauge');
     expect(effectivenessGauge?.textContent).not.toContain('Unavailable');
+  });
+});
+
+describe('the feature unlock panel reports each fact on its own (L46 item 13)', () => {
+  const fineTuningThreshold = {
+    featureKey: 'fine_tuning_pipeline',
+    metricKey: 'org_labeled_training_examples',
+    minValue: 500,
+    activationMode: 'enabled',
+    description: 'Disabled until an approved training-data process exists.',
+  };
+
+  it('says a switched-on, counter-met fine-tuning pipeline is not built, not on and not measured', async () => {
+    renderConsoleWith({
+      '/shadow/unlocks': async () => jsonResponse({
+        ok: true,
+        thresholds: [fineTuningThreshold],
+        state: {
+          features: {
+            fine_tuning_pipeline: {
+              unlocked: false,
+              activationMode: 'enabled',
+              satisfied: true,
+              implemented: false,
+              measuredPerformance: null,
+              currentValue: 600,
+              thresholdValue: 500,
+            },
+          },
+        },
+      }),
+    });
+
+    expect(await screen.findByText('Not built: the app has no fine-tuning code.')).toBeTruthy();
+    expect(screen.getByText('Reviewed feedback with a message (not training data)')).toBeTruthy();
+    expect(pageText()).toContain('Enough data: yes (600 / 500) \u00b7 Built: no \u00b7 On: no \u00b7 Measured: not measured');
+    // The raw counter key no longer stands in for what it counts.
+    expect(pageText()).not.toContain('org_labeled_training_examples: 600');
+    expect(pageText()).not.toContain('Counter has not reached the threshold.');
   });
 });

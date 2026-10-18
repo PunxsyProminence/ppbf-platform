@@ -579,7 +579,8 @@ function renderMetricsPanel(
               ['Reviewed Outcomes', growthMetrics.growth.reviewedOutcomes],
               ['Research Created', growthMetrics.growth.researchRequirementsCreated],
               ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
-              ['New Patterns', growthMetrics.growth.newLibraryPatterns],
+              // Rows added to the Library's sources; nothing detects patterns.
+              ['New Library Sources', growthMetrics.growth.newLibrarySources],
             ] as [string, string | number][]).map(([label, value]) => (
               <div key={label} className="stat">
                 <span className="stat-label">{label}</span>
@@ -626,8 +627,29 @@ interface UnlockStatusRow {
   unlocked: boolean;
   activationMode: ActivationModeValue;
   satisfied: boolean;
+  implemented: boolean;
+  measuredPerformance: number | null;
   currentValue: number;
   thresholdValue: number;
+}
+
+// What each counter actually counts. The raw keys read as more than they are:
+// org_labeled_training_examples is human-reviewed feedback events that carry a
+// message id -- every one does, so it is the same number as
+// org_recommendation_outcomes -- and nothing turns them into training data.
+const UNLOCK_METRIC_LABELS: Record<string, string> = {
+  user_high_quality_interactions: 'Your helpful ratings',
+  org_recommendation_outcomes: 'Reviewed feedback (gym)',
+  org_resolved_scout_reports: 'Completed scout reports',
+  org_labeled_training_examples: 'Reviewed feedback with a message (not training data)',
+};
+
+const NOT_BUILT_REASONS: Record<string, string> = {
+  fine_tuning_pipeline: 'Not built: the app has no fine-tuning code.',
+};
+
+function yesNo(value: boolean): string {
+  return value ? 'yes' : 'no';
 }
 
 type UnlockAdminRow = UnlockThresholdRow & { status: UnlockStatusRow | null };
@@ -890,11 +912,15 @@ function FeatureUnlockPanel() {
           const dirty = draft.minValue !== String(row.minValue) || draft.activationMode !== row.activationMode;
           // Why it is locked, stated separately: a counter that is met but
           // gated by mode is a different fact from one that is not met.
+          // A feature with no code behind it is the first reason, because no
+          // mode or counter can turn it on.
           const lockReason = status?.unlocked
             ? null
-            : row.activationMode !== 'enabled'
-              ? `Cannot unlock: activation mode is '${row.activationMode}'.`
-              : 'Counter has not reached the threshold.';
+            : status && !status.implemented
+              ? NOT_BUILT_REASONS[row.featureKey] ?? 'Not built.'
+              : row.activationMode !== 'enabled'
+                ? `Cannot unlock: activation mode is '${row.activationMode}'.`
+                : 'Counter has not reached the threshold.';
 
           return (
             <div key={row.featureKey} className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)] text-[length:var(--t-xs)] text-[color:var(--bone-200)]">
@@ -903,10 +929,18 @@ function FeatureUnlockPanel() {
                 <span className={`badge ${status?.unlocked ? 'badge--cleared' : 'badge--restricted'}`}>
                   <i>{status?.unlocked ? '✓' : '▲'}</i>{status?.unlocked ? 'unlocked' : 'locked'}
                 </span>
-                <span className="t-muted font-mono">
-                  {row.metricKey}: {status?.currentValue ?? 0} / {row.minValue}
+                <span className="t-muted" title={row.metricKey}>
+                  {UNLOCK_METRIC_LABELS[row.metricKey] ?? row.metricKey}
                 </span>
               </div>
+              {status ? (
+                <p className="mt-[var(--s2)]">
+                  Enough data: {yesNo(status.satisfied)} ({status.currentValue} / {status.thresholdValue})
+                  {' · '}Built: {yesNo(status.implemented)}
+                  {' · '}On: {yesNo(status.unlocked)}
+                  {' · '}Measured: {status.measuredPerformance == null ? 'not measured' : status.measuredPerformance}
+                </p>
+              ) : null}
               <p className="t-muted mt-[var(--s3)]">{row.description}</p>
               {lockReason ? (
                 <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"><span aria-hidden>▲</span> {lockReason}</p>

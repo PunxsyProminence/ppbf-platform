@@ -2319,9 +2319,9 @@ describe('Omega cross-organization breadth', () => {
       recommendationsMade: 0,
       researchRequirementsCreated: 0,
       researchRequirementsClosed: 0,
-      newLibraryPatterns: 0,
+      newLibrarySources: 0,
       filterRate: null,
-      positiveOutcomeRate: null,
+      reviewedHelpfulRate: null,
       unavailableReasons: {},
     };
   }
