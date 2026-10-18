@@ -95,7 +95,8 @@ function invalidObservation(message: string) {
  * without anybody assembling observation ids by hand.
  *
  * Same two gates as POST, in the same order. The answer is an ENUMERATED
- * projection of the punch numbers only (listRecentSparringEntries): no body
+ * projection of the punch counts and working minutes only
+ * (listRecentSparringEntries): no body
  * weight, no notes, no source reference.
  */
 export async function GET(request: NextRequest) {
@@ -301,8 +302,8 @@ export async function POST(request: NextRequest) {
     // path to another boxer's record.
     // A CORRECTION THAT COMPLETES A SET STILL HAS TO CALCULATE. Recalculation
     // above only finds formulas the REPLACED observation was already used in.
-    // When a correction is what makes the context satisfy MVP-03 or MVP-04 in
-    // the first place -- replacing a wrong-unit punch_absorbed, say -- there is
+    // When a correction is what makes the context satisfy a formula's input
+    // set in the first place -- replacing a wrong-unit punch_absorbed, say -- there is
     // no prior result to re-run, `recalculated` comes back empty, and treating
     // "this superseded something" as a blanket skip meant the newly valid set
     // was never calculated at all. So detection is skipped only when

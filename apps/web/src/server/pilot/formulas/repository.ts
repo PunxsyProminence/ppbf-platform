@@ -680,6 +680,10 @@ export const SPARRING_CORRECTABLE_KINDS: readonly ObservationKind[] = Object.fre
   'punch_attempted',
   'punch_landed',
   'punch_absorbed',
+  // The "Whole session" counts (Jason 2026-10-17, "B: Longer sparring form").
+  'punch_count',
+  'round_count',
+  'active_time',
 ]);
 
 /** The sparring page names every entry's context `sparring_<epoch ms>`
