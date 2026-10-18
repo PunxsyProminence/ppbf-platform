@@ -11,7 +11,7 @@
 import { act, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
-import { attendanceRateWords, daysSinceWords, isAttendanceWindow } from '@/src/lib/attendanceWords';
+import { attendanceRateWords, attendanceWindowWords, daysSinceWords, isAttendanceWindow } from '@/src/lib/attendanceWords';
 
 import AthleteAttendancePanel from './AthleteAttendancePanel';
 
@@ -30,23 +30,40 @@ beforeEach(() => {
   global.fetch = fetchMock as unknown as typeof fetch;
 });
 
-test('the words say the denominator, and no register is not 0%', () => {
-  expect(attendanceRateWords(WINDOW)).toBe('75% (present 3 of 4 marked days, 2 excused)');
+test('the words say the source and the denominator, and no register is not 0%', () => {
+  expect(attendanceRateWords(WINDOW)).toBe('75% (present 3 of 4 days marked on the class register, 2 excused)');
   expect(attendanceRateWords({ ...WINDOW, days_present: 0, days_absent: 0, days_excused: 0, attendance_rate: null }))
-    .toBe('No register in the last 28 days');
+    .toBe('No class register in the last 28 days');
   expect(attendanceRateWords({ ...WINDOW, days_present: 0, days_absent: 0, days_excused: 2, attendance_rate: null }))
-    .toBe('No present or absent marks in the last 28 days (2 excused)');
+    .toBe('No present or absent marks on the class register in the last 28 days (2 excused)');
   expect(attendanceRateWords({ ...WINDOW, days_present: 0, days_absent: 3, days_excused: 0, attendance_rate: 0 }))
-    .toBe('0% (present 0 of 3 marked days)');
+    .toBe('0% (present 0 of 3 days marked on the class register)');
   expect(attendanceRateWords({ ...WINDOW, days_present: 1, days_absent: 0, days_excused: 0, attendance_rate: 1 }))
-    .toBe('100% (present 1 of 1 marked day)');
+    .toBe('100% (present 1 of 1 day marked on the class register)');
+  expect(attendanceWindowWords(WINDOW)).toBe('9/20/2026 to 10/17/2026');
 });
 
-test('days since the last session, today, and never', () => {
-  expect(daysSinceWords(WINDOW)).toBe('12 days since the last session (10/5/2026)');
-  expect(daysSinceWords({ ...WINDOW, days_since_last_present: 1 })).toBe('1 day since the last session (10/5/2026)');
-  expect(daysSinceWords({ ...WINDOW, days_since_last_present: 0, last_present_day: '2026-10-17' })).toBe('Trained today');
-  expect(daysSinceWords({ ...WINDOW, days_since_last_present: null, last_present_day: null })).toBe('Never marked present');
+test('the whole percent is worked out from the counts, never rounded twice', () => {
+  // 5/11 is 45.45%; rounding the stored 0.455 again would say 46%.
+  expect(attendanceRateWords({ ...WINDOW, days_present: 5, days_absent: 6, days_excused: 0, attendance_rate: 0.455 }))
+    .toMatch(/^45% /);
+  // 13/23 is 56.52%; 0.565 * 100 is 56.4999... and would say 56%.
+  expect(attendanceRateWords({ ...WINDOW, days_present: 13, days_absent: 10, days_excused: 0, attendance_rate: 0.565 }))
+    .toMatch(/^57% /);
+  for (let marked = 1; marked <= 28; marked += 1) {
+    for (let present = 0; present <= marked; present += 1) {
+      const rate = Math.round((present / marked) * 1000) / 1000;
+      const words = attendanceRateWords({ ...WINDOW, days_present: present, days_absent: marked - present, days_excused: 0, attendance_rate: rate });
+      expect(words.startsWith(`${Math.round((100 * present) / marked)}% `)).toBe(true);
+    }
+  }
+});
+
+test('the last day marked present, today, and not at all -- said as the register says it', () => {
+  expect(daysSinceWords(WINDOW)).toBe('Last marked present on the class register 12 days ago (10/5/2026)');
+  expect(daysSinceWords({ ...WINDOW, days_since_last_present: 1 })).toBe('Last marked present on the class register 1 day ago (10/5/2026)');
+  expect(daysSinceWords({ ...WINDOW, days_since_last_present: 0, last_present_day: '2026-10-17' })).toBe('Marked present on the class register today');
+  expect(daysSinceWords({ ...WINDOW, days_since_last_present: null, last_present_day: null })).toBe('Not marked present on the class register');
 });
 
 test('the shape check refuses what the words cannot honestly show', () => {
@@ -63,8 +80,9 @@ test('shows both lines for the picked athlete', async () => {
     render(<AthleteAttendancePanel athleteId="ath-1" />);
   });
   expect(fetchMock.mock.calls[0][0]).toContain('/api/pilot/coach/athlete-attendance?athlete_id=ath-1');
-  expect(screen.getByText('Last 28 days: 75% (present 3 of 4 marked days, 2 excused)')).toBeTruthy();
-  expect(screen.getByText('12 days since the last session (10/5/2026)')).toBeTruthy();
+  expect(screen.getByText('Last 28 days: 75% (present 3 of 4 days marked on the class register, 2 excused)')).toBeTruthy();
+  expect(screen.getByText('9/20/2026 to 10/17/2026')).toBeTruthy();
+  expect(screen.getByText('Last marked present on the class register 12 days ago (10/5/2026)')).toBeTruthy();
 });
 
 test('a failed read is never shown as "no register"', async () => {
@@ -74,7 +92,7 @@ test('a failed read is never shown as "no register"', async () => {
   });
   const text = screen.getByTestId('coach-athlete-attendance').textContent ?? '';
   expect(text).toMatch(/could not be read/);
-  expect(text).not.toMatch(/No register in the last/);
+  expect(text).not.toMatch(/No class register in the last/);
 });
 
 test('a reply for the previous athlete never lands', async () => {
@@ -89,10 +107,10 @@ test('a reply for the previous athlete never lands', async () => {
   await act(async () => {
     rerender(<AthleteAttendancePanel athleteId="ath-2" />);
   });
-  expect(screen.getByText('Trained today')).toBeTruthy();
+  expect(screen.getByText('Marked present on the class register today')).toBeTruthy();
   await act(async () => {
     release(respond(200, { ok: true, attendance: WINDOW }));
   });
-  expect(screen.getByText('Trained today')).toBeTruthy();
-  expect(screen.queryByText(/12 days since/)).toBeNull();
+  expect(screen.getByText('Marked present on the class register today')).toBeTruthy();
+  expect(screen.queryByText(/12 days ago/)).toBeNull();
 });

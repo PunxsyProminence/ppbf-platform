@@ -21,12 +21,15 @@ import { query } from './db';
 // underlying table, and attendancePrecedence.test.ts fails if any file starts
 // to.
 //
-// WHAT THIS MODULE CANNOT DO. There is no function here that returns two
-// athletes' participation in one sortable shape, for the same reason
-// achievements.ts has none: a leaderboard between children needs a comparable
-// number per athlete, and privacyTiers.ts already lists all three attendance
-// tables in PUBLIC_RANKING_FORBIDDEN_TABLES. Organization totals below are
-// deliberately scalar counts, not per-athlete arrays.
+// WHAT THIS MODULE CANNOT DO. There is no function here for a shared or
+// public surface that returns athletes' participation in one sortable shape,
+// for the same reason achievements.ts has none: a leaderboard between
+// children needs a comparable number per athlete, and privacyTiers.ts lists
+// all three attendance tables in PUBLIC_RANKING_FORBIDDEN_TABLES.
+// Organization totals below are deliberately scalar counts.
+// getAttendanceLast28Days is the one per-athlete set, and it is for STAFF
+// callers only (the coach's athlete view and the staff analytics page,
+// OD-2026-10-17-026 (c)); a board, wall or family surface must not call it.
 
 /** The status vocabulary the view emits. Narrower than pilot.attendance's
  * unconstrained free text, because the view normalises on the way out. */

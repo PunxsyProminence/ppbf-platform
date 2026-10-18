@@ -1,11 +1,13 @@
 import { formatGymDateNumeric } from './gymTime';
 
-// Words for the 28-day attendance figure and the days since the last session
+// Words for the 28-day attendance figure and the last day marked present
 // (OD-2026-10-17-026 (c)), shared by the coach's athlete view and
-// /coach/performance-analytics so both say the same thing. The denominator is
-// always said out loud: the rate counts the days the register marked, so a
-// day nobody marked is not an absence and a missing register is not 0%.
-// All wording PROPOSED.
+// /coach/performance-analytics so both say the same thing. They say where the
+// numbers come from -- the CLASS REGISTER (pilot.attendance_reconciled) -- and
+// the denominator: the rate counts the days the register marked, so a day
+// nobody marked is not an absence, a missing register is not 0%, and a day
+// trained but not marked on the register (for example only in a live
+// session) is not seen. All wording PROPOSED.
 
 export interface AttendanceWindowView {
   window_from: string;
@@ -35,22 +37,31 @@ function day(iso: string): string {
   return formatGymDateNumeric(`${iso}T12:00:00Z`) ?? iso;
 }
 
-/** "75% (present 3 of 4 marked days, 1 excused)" or "No register in the last 28 days". */
-export function attendanceRateWords(window: AttendanceWindowView): string {
-  if (window.attendance_rate === null) {
-    return window.days_excused > 0
-      ? `No present or absent marks in the last 28 days (${window.days_excused} excused)`
-      : 'No register in the last 28 days';
-  }
-  const marked = window.days_present + window.days_absent;
-  const excused = window.days_excused > 0 ? `, ${window.days_excused} excused` : '';
-  return `${Math.round(window.attendance_rate * 100)}% (present ${window.days_present} of ${marked} marked day${marked === 1 ? '' : 's'}${excused})`;
+/** "9/21/2026 to 10/18/2026": the days the figure covers. */
+export function attendanceWindowWords(window: AttendanceWindowView): string {
+  return `${day(window.window_from)} to ${day(window.window_to)}`;
 }
 
-/** "12 days since the last session (10/6/2026)", "Trained today", or "Never marked present". */
+/** "75% (present 3 of 4 days marked on the class register, 1 excused)" or "No class register in the last 28 days". */
+export function attendanceRateWords(window: AttendanceWindowView): string {
+  const marked = window.days_present + window.days_absent;
+  if (marked === 0) {
+    return window.days_excused > 0
+      ? `No present or absent marks on the class register in the last 28 days (${window.days_excused} excused)`
+      : 'No class register in the last 28 days';
+  }
+  // Worked out from the counts, so the whole percent is never rounded twice.
+  const percent = Math.round((100 * window.days_present) / marked);
+  const excused = window.days_excused > 0 ? `, ${window.days_excused} excused` : '';
+  return `${percent}% (present ${window.days_present} of ${marked} day${marked === 1 ? '' : 's'} marked on the class register${excused})`;
+}
+
+/** "Last marked present on the class register 12 days ago (10/6/2026)", "today", or not at all. */
 export function daysSinceWords(window: AttendanceWindowView): string {
-  if (window.days_since_last_present === null || window.last_present_day === null) return 'Never marked present';
-  if (window.days_since_last_present === 0) return 'Trained today';
+  if (window.days_since_last_present === null || window.last_present_day === null) {
+    return 'Not marked present on the class register';
+  }
+  if (window.days_since_last_present === 0) return 'Marked present on the class register today';
   const n = window.days_since_last_present;
-  return `${n} day${n === 1 ? '' : 's'} since the last session (${day(window.last_present_day)})`;
+  return `Last marked present on the class register ${n} day${n === 1 ? '' : 's'} ago (${day(window.last_present_day)})`;
 }

@@ -4,7 +4,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { type AttendanceWindowView, attendanceRateWords, daysSinceWords, isAttendanceWindow } from '@/src/lib/attendanceWords';
+import {
+  type AttendanceWindowView,
+  attendanceRateWords,
+  attendanceWindowWords,
+  daysSinceWords,
+  isAttendanceWindow,
+} from '@/src/lib/attendanceWords';
 import ClusterNav from '@/components/ClusterNav';
 
 // Read-only rollup over data the gym already records: session logs and RPE
@@ -308,7 +314,15 @@ export default function PerformanceAnalyticsPage() {
                     {/* Present / (present + absent) days the register marked,
                         with the counts beside it; always the last 28 days. */}
                     <Figure label="Attendance, last 28 days">
-                      {isAttendanceWindow(item.attendance_28d) ? attendanceRateWords(item.attendance_28d) : '—'}
+                      {isAttendanceWindow(item.attendance_28d) ? (
+                        <>
+                          {attendanceRateWords(item.attendance_28d)}
+                          {/* Its own dates, said out loud: they are not the window Training days uses. */}
+                          <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                            ({attendanceWindowWords(item.attendance_28d)})
+                          </span>
+                        </>
+                      ) : '—'}
                     </Figure>
                     <Figure label="Last session">
                       {isAttendanceWindow(item.attendance_28d) ? daysSinceWords(item.attendance_28d) : '—'}

@@ -5,6 +5,7 @@ import { apiBase } from '@/lib/apiBase';
 import {
   type AttendanceWindowView,
   attendanceRateWords,
+  attendanceWindowWords,
   daysSinceWords,
   isAttendanceWindow,
 } from '@/src/lib/attendanceWords';
@@ -54,6 +55,7 @@ export default function AthleteAttendancePanel({ athleteId }: { athleteId: strin
       {reading.state === 'loaded' && (
         <>
           <p className="t-body">Last 28 days: {attendanceRateWords(reading.attendance)}</p>
+          <p className="t-muted">{attendanceWindowWords(reading.attendance)}</p>
           <p className="t-body">{daysSinceWords(reading.attendance)}</p>
         </>
       )}
