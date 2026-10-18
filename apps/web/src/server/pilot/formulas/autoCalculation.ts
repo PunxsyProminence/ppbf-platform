@@ -79,8 +79,9 @@ import type {
  * therefore cannot reach another boxer's record -- the safeguarding boundary
  * that matters is held one layer up and is untouched by this change.
  *
- * WHY IT MATTERED. Both real producers of the MVP-03/MVP-04 inputs are athlete
- * surfaces (athlete/dashboard/sparring/page.tsx and AthleteWorkspace.tsx), so
+ * WHY IT MATTERED. The producer of the MVP-03/MVP-04 inputs is an athlete
+ * surface (athlete/dashboard/sparring/page.tsx; AthleteWorkspace.tsx posts
+ * only pain_report to the same route), so
  * under the narrower list this module was reachable by almost nothing: the
  * orchestration existed and the flow that generates its inputs could not run
  * it.

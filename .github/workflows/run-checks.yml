@@ -123,6 +123,7 @@ on:
           - medical-clearance-coverage
           - deletion-preflight
           - calibration-adjudication-ties
+          - privacy-leftovers
           - discipline-values
           - waiver-statuses
           - cue-source-provenance
@@ -483,6 +484,7 @@ jobs:
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
               run_one calibration-adjudication-ties  pilot:check-calibration-adjudication-ties
+              run_one privacy-leftovers pilot:check-privacy-leftovers
               run_one discipline-values   pilot:check-discipline-values
               run_one waiver-statuses     pilot:check-waiver-statuses
               run_one cue-source-provenance pilot:check-cue-source-provenance
@@ -503,6 +505,7 @@ jobs:
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
             deletion-preflight) run_one deletion-preflight  pilot:check-deletion-preflight ;;
             calibration-adjudication-ties) run_one calibration-adjudication-ties  pilot:check-calibration-adjudication-ties ;;
+            privacy-leftovers) run_one privacy-leftovers pilot:check-privacy-leftovers ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
