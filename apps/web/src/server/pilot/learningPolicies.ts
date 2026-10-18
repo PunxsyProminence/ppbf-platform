@@ -1,5 +1,12 @@
+import { isDeepStrictEqual } from 'node:util';
 import { query, withTransaction } from './db';
 import { ConflictError, ValidationError } from './errors';
+import {
+  APPROVED_ATHLETE_LESSON_V1,
+  APPROVED_CITATIONS_V1,
+  APPROVED_OBSERVER_CALIBRATION_V1,
+  APPROVED_PATTERN_FORMATION_V1,
+} from './learningPolicyApprovedV1';
 
 // The bars the learning loop's evaluators read (lane L49). Jason 2026-10-18,
 // Q3 "Needs to be backed by research", then his approval of the threshold
@@ -14,7 +21,7 @@ import { ConflictError, ValidationError } from './errors';
 // (Rec.)"). Each version keeps who signed which numbers, when,
 // on what evidence; a new version supersedes the last rather than editing it.
 // The approved numbers are in learningPolicyApprovedV1.ts, waiting to be
-// ratified; nothing here applies them.
+// ratified; nothing here applies them, and the save refuses any others.
 
 export const POLICY_KINDS = ['pattern_formation', 'athlete_lesson', 'observer_calibration'] as const;
 export type PolicyKind = (typeof POLICY_KINDS)[number];
@@ -318,6 +325,27 @@ export function barFor(kind: PolicyKind, raw: unknown): LearningBar {
   return raw as LearningBar;
 }
 
+// Only the numbers and sources Jason approved may be put in force: OD-2026-10-18-003
+// ("A: Gym admin only (Rec.)") lets the gym admin "put the approved numbers in
+// force", not choose new ones. A different bar needs his approval and a code
+// change that adds it here.
+const APPROVED_BARS: Record<PolicyKind, { parameters: LearningBar; citations: Citation[] }> = {
+  pattern_formation: { parameters: APPROVED_PATTERN_FORMATION_V1, citations: APPROVED_CITATIONS_V1.pattern_formation },
+  athlete_lesson: { parameters: APPROVED_ATHLETE_LESSON_V1, citations: APPROVED_CITATIONS_V1.athlete_lesson },
+  observer_calibration: { parameters: APPROVED_OBSERVER_CALIBRATION_V1, citations: APPROVED_CITATIONS_V1.observer_calibration },
+};
+
+/** Refused unless the bar and its sources are exactly the approved ones for its kind. */
+export function assertApprovedBar(kind: PolicyKind, parameters: LearningBar, citations: Citation[]): void {
+  const approved = APPROVED_BARS[kind];
+  if (!isDeepStrictEqual(parameters, approved.parameters)) {
+    throw new ValidationError('Only the approved numbers can be put in force (OD-2026-10-18-003).');
+  }
+  if (!isDeepStrictEqual(citations, citationsFrom(approved.citations))) {
+    throw new ValidationError('Only the approved cited sources can be put in force (OD-2026-10-18-003).');
+  }
+}
+
 const FIELDS = `policy_id, policy_kind, version, parameters, citations, ratified_by_account_id, ratified_by_role,
   ratified_at, status, supersedes_policy_id`;
 
@@ -345,6 +373,7 @@ export async function ratifyLearningPolicy(input: {
   const kind = input.kind as PolicyKind;
   const parameters = barFor(kind, input.parameters);
   const citations = citationsFrom(input.citations);
+  assertApprovedBar(kind, parameters, citations);
   try {
     return await withTransaction(async (client) => {
       // The latest version of this kind, locked: two admins saving at once

@@ -168,7 +168,8 @@ describe('ratifying a bar', () => {
       version: 1, status: 'active', supersedes_policy_id: null,
       parameters: APPROVED_PATTERN_FORMATION_V1, citations: APPROVED_CITATIONS_V1.pattern_formation,
     }));
-    const v2 = await ratify({ parameters: { ...APPROVED_PATTERN_FORMATION_V1, currentWithinDays: 90 } });
+    // Re-ratifying the approved bar is the only new version the save allows (OD-2026-10-18-003).
+    const v2 = await ratify();
     expect(v2).toEqual(expect.objectContaining({ version: 2, status: 'active', supersedes_policy_id: v1.policy_id }));
     const lesson = await ratify({
       kind: 'athlete_lesson', parameters: APPROVED_ATHLETE_LESSON_V1, citations: APPROVED_CITATIONS_V1.athlete_lesson,
@@ -196,9 +197,12 @@ describe('ratifying a bar', () => {
     expect(active.map((row) => row.version)).toEqual([2]);
   });
 
-  test('a bar with no source, or one out of shape, never reaches the table', async () => {
+  test('a bar with no source, out of shape, or not the approved one never reaches the table', async () => {
     await expect(ratify({ citations: [] })).rejects.toThrow('at least one cited source');
     await expect(ratify({ parameters: { currentWithinDays: 84 } })).rejects.toThrow('missing tiers');
+    await expect(ratify({ parameters: { ...APPROVED_PATTERN_FORMATION_V1, currentWithinDays: 90 } }))
+      .rejects.toThrow('Only the approved numbers');
+    await expect(ratify({ citations: [{ source: 'x' }] })).rejects.toThrow('Only the approved cited sources');
     expect((await writer.listLearningPolicies(ORG)).length).toBe(4);
   });
 });

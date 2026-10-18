@@ -1,4 +1,4 @@
-import { barFor, citationsFrom } from './learningPolicies';
+import { assertApprovedBar, barFor, citationsFrom } from './learningPolicies';
 import {
   APPROVED_ATHLETE_LESSON_V1,
   APPROVED_CITATIONS_V1,
@@ -169,5 +169,32 @@ describe('a bar is exactly its kind\'s shape', () => {
       return;
     }
     throw new Error('expected a refusal');
+  });
+});
+
+describe('only the approved v1 bar and sources can be put in force (OD-2026-10-18-003)', () => {
+  test('the approved bar and sources of each kind pass, as a client would send them', () => {
+    expect(() => assertApprovedBar('pattern_formation', clone(APPROVED_PATTERN_FORMATION_V1), citationsFrom(clone(APPROVED_CITATIONS_V1.pattern_formation)))).not.toThrow();
+    expect(() => assertApprovedBar('athlete_lesson', clone(APPROVED_ATHLETE_LESSON_V1), citationsFrom(clone(APPROVED_CITATIONS_V1.athlete_lesson)))).not.toThrow();
+    expect(() => assertApprovedBar('observer_calibration', clone(APPROVED_OBSERVER_CALIBRATION_V1), citationsFrom(clone(APPROVED_CITATIONS_V1.observer_calibration)))).not.toThrow();
+  });
+
+  test('a well-formed bar with other numbers is refused', () => {
+    const looser = clone(APPROVED_PATTERN_FORMATION_V1);
+    looser.tiers.emerging.minimumSessions = 1;
+    expect(barFor('pattern_formation', looser)).toEqual(looser);
+    expect(() => assertApprovedBar('pattern_formation', looser, citationsFrom(APPROVED_CITATIONS_V1.pattern_formation)))
+      .toThrow('Only the approved numbers');
+    expect(() => assertApprovedBar('athlete_lesson', APPROVED_PATTERN_FORMATION_V1, citationsFrom(APPROVED_CITATIONS_V1.athlete_lesson)))
+      .toThrow('Only the approved numbers');
+  });
+
+  test("other sources, fewer sources, or another kind's sources are refused", () => {
+    const bar = APPROVED_OBSERVER_CALIBRATION_V1;
+    expect(() => assertApprovedBar('observer_calibration', bar, [{ source: 'x' }])).toThrow('Only the approved cited sources');
+    expect(() => assertApprovedBar('observer_calibration', bar, citationsFrom(APPROVED_CITATIONS_V1.observer_calibration.slice(1))))
+      .toThrow('Only the approved cited sources');
+    expect(() => assertApprovedBar('observer_calibration', bar, citationsFrom(APPROVED_CITATIONS_V1.athlete_lesson)))
+      .toThrow('Only the approved cited sources');
   });
 });
