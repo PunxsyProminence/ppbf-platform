@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
     }
 
     // PERSONAL BASELINE (MVP-09; Jason 2026-10-17, OD-2026-10-17-020): sleep,
-    // energy and soreness against the athlete's own last 28 days. Read from
+    // energy, soreness and stress against the athlete's own last 28 days. Read from
     // the STORED row, so a repeat submission the same day writes the same
     // keyed observations and never a second set. Same doctrine as the weight
     // above: the check-in is committed, so a failure here is logged and never
@@ -178,6 +178,7 @@ export async function POST(request: NextRequest) {
           sleep_hours: result.row.sleep_hours,
           energy: result.row.energy,
           soreness: result.row.soreness,
+          stress: result.row.stress,
         },
       });
     } catch (error) {

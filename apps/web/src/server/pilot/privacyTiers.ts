@@ -412,10 +412,10 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'access.ts#assertActorCanAccessAthlete',
       '../../../app/api/pilot/shadow/formulas/results/route.ts#excludeFormulaIds',
       '../../../app/api/pilot/shadow/formulas/observations/route.ts#checkInAnswerRefused',
-      'formulas/runner.ts#CHECK_IN_BASELINE_METRIC_KEYS',
+      'formulas/runner.ts#CHECK_IN_BASELINE_POLICY',
     ],
     note:
-      'A child\'s daily check-in answers (sleep_hours, energy, soreness), copied by the check-in into numeric '
+      'A child\'s daily check-in answers (sleep_hours, energy, soreness, stress), copied by the check-in into numeric '
       + 'observations, and the personal baseline (MVP-09) results and snapshots built from them (Jason '
       + '2026-10-17, OD-2026-10-17-020; lane L50). Same readers as the check-in answers themselves: the athlete '
       + '(their own), and coach / organization admin / admin through assertActorCanAccessAthlete '

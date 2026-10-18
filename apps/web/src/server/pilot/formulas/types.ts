@@ -61,7 +61,35 @@ export type FormulaSupport = 'implemented' | 'primitive_only' | 'unsupported' | 
  * items built from anything else (lane L50).
  */
 export const CHECK_IN_CONTEXT_PREFIX = 'check-in:';
-export const CHECK_IN_BASELINE_METRIC_KEYS = Object.freeze(['sleep_hours', 'energy', 'soreness'] as const);
+
+/**
+ * The one policy a check-in baseline runs under (Jason 2026-10-17,
+ * OD-2026-10-17-020: the athlete's own last 28 days, from 7 check-ins,
+ * "provisional" until 14). The runner refuses any other for a check-in item.
+ */
+export const CHECK_IN_BASELINE_POLICY = Object.freeze({
+  windowDays: 28,
+  minimumHistory: 7,
+  adequateHistory: 14,
+  policyVersion: 'check-in-baseline-2026-10-17',
+});
+
+/**
+ * The check-in items with a personal baseline, by check-in column. SD floors
+ * relayed by Overwatch (QD1): 0.5 point for the 1-5 ratings, 0.5 h for sleep.
+ * Stress added on Jason's "Mood + stress (Rec.)" (relayed by Overwatch
+ * 2026-10-18); mood follows once its check-in column exists (lane L58).
+ */
+export const CHECK_IN_BASELINE_METRICS = Object.freeze([
+  Object.freeze({ metricKey: 'sleep_hours', unit: 'hours', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'energy', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'soreness', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'stress', unit: 'rating_1_5', sdFloor: 0.5 }),
+] as const);
+
+export const CHECK_IN_BASELINE_METRIC_KEYS: readonly string[] = Object.freeze(
+  CHECK_IN_BASELINE_METRICS.map((metric) => metric.metricKey),
+);
 
 /**
  * The tag on the sparring page's whole-session counts ("Whole session" boxes).

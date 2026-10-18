@@ -279,7 +279,7 @@ describe('stored MVP formula runner', () => {
       mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1'), sleep('b', 'manual-1')]);
       await expect(runStoredMvpFormula({
         organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09',
-        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'p',
+        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'check-in-baseline-2026-10-17',
       })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
       expect(mockSaveResults).not.toHaveBeenCalled();
     });
@@ -293,13 +293,25 @@ describe('stored MVP formula runner', () => {
       })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
     });
 
-    test('check-in answers under the day-window policy run', async () => {
+    test('check-in answers under the ruled policy run', async () => {
       mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1'), sleep('b', 'check-in:2')]);
       const output = await runStoredMvpFormula({
         organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09',
-        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'p',
+        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'check-in-baseline-2026-10-17',
       });
       expect(output.results.length).toBeGreaterThan(0);
+    });
+
+    test.each([
+      ['a lower floor', { ...dayWindow, sdFloor: 0.1 }, 'check-in-baseline-2026-10-17'],
+      ['a shorter window', { ...dayWindow, windowDays: 7 }, 'check-in-baseline-2026-10-17'],
+      ['another policy version', dayWindow, 'p'],
+    ])('%s is refused for a check-in item', async (_label, parameters, policyVersion) => {
+      mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1'), sleep('b', 'check-in:2')]);
+      await expect(runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09',
+        observationIds: ['a', 'b'], parameters, policyVersion,
+      })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
     });
   });
 });

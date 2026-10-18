@@ -1,8 +1,8 @@
 /**
  * Personal baseline (MVP-09) from the daily check-in.
  *
- * Jason 2026-10-17 (OD-2026-10-17-020): sleep, energy and soreness from the
- * daily check-in, each compared with the athlete's own last 28 days, starting
+ * Jason 2026-10-17 (OD-2026-10-17-020): sleep, energy and soreness (and stress,
+ * on his later "Mood + stress (Rec.)") from the daily check-in, each compared with the athlete's own last 28 days, starting
  * once they have 7 check-ins; "provisional" until about 14; an SD floor
  * ("Yes, all three (Rec.)"). Floors relayed by Overwatch: 0.5 point for the
  * 1-5 ratings, 0.5 h for sleep.
@@ -28,23 +28,19 @@ import {
 } from './repository';
 import { runStoredMvpFormula } from './runner';
 import {
+  CHECK_IN_BASELINE_METRICS,
+  CHECK_IN_BASELINE_POLICY,
   CHECK_IN_CONTEXT_PREFIX,
   type FormulaResult,
-  type FormulaUnit,
 } from './types';
 
-export const CHECK_IN_BASELINE_POLICY_VERSION = 'check-in-baseline-2026-10-17';
+export const CHECK_IN_BASELINE_POLICY_VERSION = CHECK_IN_BASELINE_POLICY.policyVersion;
 
 export { CHECK_IN_CONTEXT_PREFIX } from './types';
-export const CHECK_IN_BASELINE_WINDOW_DAYS = 28;
-export const CHECK_IN_BASELINE_MINIMUM_HISTORY = 7;
-export const CHECK_IN_BASELINE_ADEQUATE_HISTORY = 14;
-
-export const CHECK_IN_BASELINE_METRICS = Object.freeze([
-  Object.freeze({ metricKey: 'sleep_hours' as const, unit: 'hours' as FormulaUnit, sdFloor: 0.5 }),
-  Object.freeze({ metricKey: 'energy' as const, unit: 'rating_1_5' as FormulaUnit, sdFloor: 0.5 }),
-  Object.freeze({ metricKey: 'soreness' as const, unit: 'rating_1_5' as FormulaUnit, sdFloor: 0.5 }),
-]);
+export const CHECK_IN_BASELINE_WINDOW_DAYS = CHECK_IN_BASELINE_POLICY.windowDays;
+export const CHECK_IN_BASELINE_MINIMUM_HISTORY = CHECK_IN_BASELINE_POLICY.minimumHistory;
+export const CHECK_IN_BASELINE_ADEQUATE_HISTORY = CHECK_IN_BASELINE_POLICY.adequateHistory;
+export { CHECK_IN_BASELINE_METRICS } from './types';
 
 export type CheckInBaselineMetricKey = (typeof CHECK_IN_BASELINE_METRICS)[number]['metricKey'];
 

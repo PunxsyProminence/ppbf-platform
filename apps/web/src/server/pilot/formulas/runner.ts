@@ -29,7 +29,8 @@ import {
   saveFormulaResultsWithClient,
 } from './repository';
 import {
-  CHECK_IN_BASELINE_METRIC_KEYS,
+  CHECK_IN_BASELINE_METRICS,
+  CHECK_IN_BASELINE_POLICY,
   CHECK_IN_CONTEXT_PREFIX,
   SESSION_TOTAL_DIMENSIONS,
   SPARRING_LOG_FIELD_KEYS,
@@ -682,11 +683,22 @@ function calculateStoredFormula(
       // OD-2026-10-17-020): only its day-window policy, only over check-in
       // answers. Without this a hand-picked numeric observation run through
       // POST /results would become the coach's "latest" sleep baseline.
+      // Pinned to the ruled policy too, so a run with its own window, floor or
+      // version cannot stand as the newest "Sleep" on the coach page.
+      const checkInMetric = CHECK_IN_BASELINE_METRICS.find((metric) => metric.metricKey === policy.metricKey);
       if (
-        (CHECK_IN_BASELINE_METRIC_KEYS as readonly string[]).includes(policy.metricKey)
+        checkInMetric
         && (
           !('windowDays' in policy)
-          || observations.some((observation) => !observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX))
+          || policy.windowDays !== CHECK_IN_BASELINE_POLICY.windowDays
+          || policy.minimumHistory !== CHECK_IN_BASELINE_POLICY.minimumHistory
+          || policy.adequateHistory !== CHECK_IN_BASELINE_POLICY.adequateHistory
+          || policy.sdFloor !== checkInMetric.sdFloor
+          || policyVersion !== CHECK_IN_BASELINE_POLICY.policyVersion
+          || observations.some((observation) => (
+            !observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX)
+            || observation.unit !== checkInMetric.unit
+          ))
         )
       ) {
         executionError('A check-in baseline is calculated from check-in answers only.');

@@ -10,7 +10,11 @@ import {
   isMvpFormulaId,
   runStoredMvpFormula,
 } from '@/src/server/pilot/formulas/runner';
-import { FORMULA_IDS, type FormulaId } from '@/src/server/pilot/formulas/types';
+import {
+  CHECK_IN_BASELINE_METRIC_KEYS,
+  FORMULA_IDS,
+  type FormulaId,
+} from '@/src/server/pilot/formulas/types';
 import {
   hiddenNotFound,
   jsonError,
@@ -126,6 +130,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { ok: false, error: 'Formula calculation payload is invalid.' },
         { status: 400 },
+      );
+    }
+
+    // A check-in item's baseline is run by the check-in, over every answer in
+    // its window; a hand-picked run here (even of real answers) would stand
+    // as the newest one on the coach page (lane L50 review).
+    if (
+      body.formulaId === 'MVP-09'
+      && isParameterObject(body.parameters)
+      && typeof body.parameters.metricKey === 'string'
+      && CHECK_IN_BASELINE_METRIC_KEYS.includes(body.parameters.metricKey.trim())
+    ) {
+      return NextResponse.json(
+        { ok: false, error: 'Check-in baselines are calculated by the check-in.' },
+        { status: 409 },
       );
     }
 
