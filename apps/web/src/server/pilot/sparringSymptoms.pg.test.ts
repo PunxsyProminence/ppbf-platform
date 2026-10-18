@@ -102,7 +102,7 @@ async function call(actor: PilotPrincipal, method: 'GET' | 'POST', body?: Record
 const send = (athleteId: string, context: string, symptoms: unknown) =>
   call(principal('athlete', athleteId), 'POST', { context, symptoms });
 
-async function escalations(athleteId = ATHLETE) {
+async function escalations(athleteId: string = ATHLETE) {
   const { rows } = await activeClient!.query(
     `select source_type, source_id, severity, reason, escalated_to_role, triggered_by, triggered_by_role, metadata
      from pilot.safety_escalations where organization_id = $1 and athlete_id = $2 order by created_at, reason`,

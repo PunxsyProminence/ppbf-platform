@@ -217,7 +217,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'familyRecordView.ts#SESSION_WITHHELD_FROM_FAMILY_FIELDS'],
     note: 'The athlete\'s own check-out tag (OD-2026-10-17-023). Staff reads as sessions.rpe; withheld from '
-      + 'every athlete and family session read until a screen reads it back.',
+      + 'every family read and from athlete session reads. The athlete\'s own after-sparring check reads a '
+      + 'due flag derived from it (sparring-symptoms route, the athlete only), never the value itself.',
   },
   'sessions.notes': {
     tier: 'athlete_record',

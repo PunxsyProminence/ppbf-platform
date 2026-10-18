@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       next_day_due: today.nextDayDue,
       protocol_text: settings.protocolText,
       recipient_role: settings.recipientRole,
-    });
+    }, { headers: { 'cache-control': 'private, no-store' } });
   } catch (error) {
     return jsonError(error);
   }
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       flagged: result.flagged,
       protocol_text: settings.protocolText,
       recipient_role: settings.recipientRole,
-    });
+    }, { headers: { 'cache-control': 'private, no-store' } });
   } catch (error) {
     return jsonError(error);
   }
