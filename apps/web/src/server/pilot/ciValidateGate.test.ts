@@ -180,7 +180,9 @@ describe('ci.yml is wired to the gate', () => {
       .filter((file) => /\.ya?ml$/.test(file) && file !== 'ci.yml')
       .filter((file) => {
         const text = fs.readFileSync(path.join(dir, file), 'utf8');
-        return /^ {2}validate:\s*$/m.test(text) || /^ {4}name:\s*['"]?validate['"]?\s*$/m.test(text);
+        // A key or a job name, quoted or not, with or without a comment after it.
+        return /^ {2}['"]?validate['"]?:\s*(?:#.*)?$/im.test(text)
+          || /^ {4}name:\s*['"]?validate['"]?\s*(?:#.*)?$/im.test(text);
       });
 
     expect(clashes).toEqual([]);

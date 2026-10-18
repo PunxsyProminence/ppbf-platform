@@ -1424,6 +1424,8 @@ describe('the staff name on a training hold, for a family reader', () => {
       expect(status).toBe(200);
       expect(JSON.parse(raw).hold.placed_by_name).toBe('Your coach');
       expect(raw).not.toContain(placer);
+      // The digits are really there, in the timestamp the check must skip.
+      expect(raw).toMatch(/\.441199/);
       expect(digitsShown(raw, /4411|9911/)).toEqual([]);
     }
   });
@@ -1472,11 +1474,14 @@ describe('the staff name on a training hold, for a family reader', () => {
     for (const actor of [AS.athlete(), AS.guardianA()]) {
       const { raw } = await readHold(actor);
       expect(JSON.parse(raw).hold.placed_by_name).toBe('The gym');
+      expect(raw).not.toContain(ADMIN_NAMELESS);
       expect(raw).not.toMatch(/admin\.nameless/);
+      expect(raw).toMatch(/\.5521/);
       expect(digitsShown(raw, /5521/)).toEqual([]);
     }
     const { name, raw } = await readSafetyHoldName(AS.guardianB());
     expect(name).toBe('The gym');
+    expect(raw).not.toContain(ADMIN_NAMELESS);
     expect(raw).not.toMatch(/admin\.nameless/);
     expect(digitsShown(raw, /5521/)).toEqual([]);
   });
