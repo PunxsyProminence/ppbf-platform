@@ -220,7 +220,7 @@ export default function ClipTagsPanel({
               <input value={note} onChange={(e) => setNote(e.target.value)} className="input mt-[var(--s1)] block" />
             </label>
             <button type="button" onClick={() => { void addTag(); }} disabled={busy} className="btn disabled:opacity-50">
-              {busy ? 'Saving...' : 'Tag athlete'}
+              {busy ? 'Saving…' : 'Tag athlete'}
             </button>
           </div>
         </>

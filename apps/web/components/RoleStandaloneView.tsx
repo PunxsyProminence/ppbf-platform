@@ -305,7 +305,7 @@ export default function RoleStandaloneView({
                     than this one was. */}
                 <div className="hidden items-center sm:flex">
                   <Link href="/dashboard" className={familyGround ? LINK : LINK_INK}>
-                    Bell
+                    Home
                   </Link>
                 </div>
               </div>

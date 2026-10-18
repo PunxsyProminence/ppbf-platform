@@ -13,6 +13,7 @@
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import React from 'react';
 
 import CoachFloorFocus, { type CoachFloorFocusProps, type FocusFeed, type FocusItem } from './CoachFloorFocus';
@@ -101,12 +102,35 @@ test('shows one thing at a time, and Next moves to the next without fetching or 
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 
+test('a double tap on Open does not acknowledge: the tap that lands on Acknowledge does not even arm it (UXB-01)', () => {
+  const onAcknowledge = jest.fn();
+  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+
+  expect(onAcknowledge).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeTruthy();
+  expect(screen.getByText('Took a hard shot and kept going.')).toBeTruthy();
+});
+
+test('a deliberate press arms Acknowledge and names who; only the next press acknowledges', () => {
+  const onAcknowledge = jest.fn();
+  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  armOnly(screen.getByRole('button', { name: 'Acknowledge' }));
+  expect(onAcknowledge).not.toHaveBeenCalled();
+  pressArmed(screen.getByRole('button', { name: 'Press again: acknowledge Ada Rivera' }));
+  expect(onAcknowledge).toHaveBeenCalledTimes(1);
+});
+
 test('the only write it can reach is the acknowledge it is handed, and only for an escalation', () => {
   const onAcknowledge = jest.fn();
   render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge), PAIN] })} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
   expect(onAcknowledge).toHaveBeenCalledTimes(1);
 
   // A pain report has no acknowledge on the backend, so the view offers none.
@@ -262,7 +286,7 @@ describe('Start a session', () => {
     rerender(<CoachFloorFocus {...props({ sessionLive: true })} />);
     expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/session-scripts');
     rerender(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
-    expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href')).toBe('/coach/session-scripts');
+    expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
   });
 });
 
@@ -326,7 +350,7 @@ test('a live-run read that failed is never shown as "no session"', () => {
   expect(gauge('Session').textContent).toContain('?');
   expect(gauge('Session').textContent).not.toContain('None');
   expect(screen.queryByRole('link', { name: 'Start a session' })).toBeNull();
-  expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href')).toBe('/coach/session-scripts');
+  expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
 });
 
 test('a roster that was not read leaves the athlete and readings gauges unknown', () => {
@@ -347,7 +371,7 @@ test('after an acknowledge, the next child\'s escalation arrives closed, and the
   const { rerender } = render(<CoachFloorFocus {...props({ items: [first, second] })} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
   expect(first.acknowledge?.onAcknowledge).toHaveBeenCalledTimes(1);
 
   // The workspace drops the acknowledged escalation from the queue.

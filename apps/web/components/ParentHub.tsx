@@ -15,9 +15,13 @@ import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
-import type { FightCardPayload } from './profileClient';
+import SentToYourAthlete from './SentToYourAthlete';
+import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
+import ParentFamilyGoals from './ParentFamilyGoals';
+import ParentResources from './ParentResources';
 import { apiBase } from '@/lib/apiBase';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
 
@@ -33,17 +37,9 @@ interface Child {
      resolves the guardian link per athlete before it decides anything (see
      profileVisibility.ts). Another family's child is not in this list at all,
      and would render a plate even if they were. */
-  accountId: string | null;
+  photoPath: string | null;
   initials: string;
   photoAvailable: boolean;
-}
-
-interface FamilyGoal {
-  id: string;
-  title: string;
-  supportAction: string;
-  progress: number;
-  targetDate: string;
 }
 
 /* The task on a message: present when a coach gave the message a due date
@@ -190,14 +186,6 @@ interface SchedulerFeedAttendance {
   checked_in_at: string;
 }
 
-interface ParentResource {
-  id: string;
-  title: string;
-  type: 'Guide' | 'Checklist' | 'Video' | 'Policy';
-  summary: string;
-  actionLabel: string;
-}
-
 interface SafetySummary {
   activeHolds: number;
   flaggedGates: number;
@@ -217,11 +205,6 @@ const TAB_BASE =
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
-
-/* Progress on canvas: a brass fill on a recessed paper track — chrome, not a
-   status claim. The percent is always printed next to it. */
-const TRACK_CLASS = 'h-[8px] w-full rounded-[var(--r-pill)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)]';
-const FILL_CLASS = 'h-full rounded-[var(--r-pill)] bg-[var(--brass-600)]';
 
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
@@ -251,8 +234,15 @@ export default function ParentHub() {
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
-
-  const [familyGoals] = useState<FamilyGoal[]>([]);
+  // The child on screen is the one other pages mean (print; #1596 item 2b):
+  // kept in this tab whenever the selection changes, so a link opened in any
+  // way -- clicked, middle-clicked, from the building map -- prints this child.
+  // Nothing is written until the roster read has made the first selection
+  // (null is a no-op), and that selection starts from the remembered child, so
+  // opening the hub never replaces a pick made on another page.
+  useEffect(() => {
+    rememberChosenChild(activeChildId);
+  }, [activeChildId]);
 
   // Capability #90, scoped to one-directional read: /api/pilot/parent/messages
   // reads pilot.coach_observations rows a coach/admin filed with
@@ -311,12 +301,55 @@ export default function ParentHub() {
         setFloorClockMs(Date.now());
         setMessagesLoaded(true);
       } catch {
-        // Messages tab falls back to its empty state; the summary tile shows
-        // Unavailable because messagesLoaded stays false.
+        // The Messages tab and the summary tile both show Unavailable:
+        // messagesLoaded stays false and messagesFailed is set.
         setMessagesFailed(true);
       }
     })();
   }, []);
+
+  /* NEW TO THIS GUARDIAN (#1542, FC-08). A message is "New" until this
+     guardian has opened it (FC-05's rule below). Their own opens are read once,
+     on their own (GET /api/pilot/parent/message-reads; never a co-guardian's),
+     and each open the observer records here is added as it lands. Until that
+     read has answered -- or when it failed -- no card says "New" and the tile
+     is Unavailable: "all new" and "nothing new" are both claims nobody checked.
+     Keyed by note id, so the child selected does not enter into it: the
+     Messages tab lists every child's messages whichever child is selected. */
+  const [ownReadIds, setOwnReadIds] = useState<Set<string>>(() => new Set());
+  const [ownReadsLoaded, setOwnReadsLoaded] = useState(false);
+  // What this guardian had opened when the hub loaded. The card's "New" is
+  // decided from this, so it stays on for this visit -- a message half on
+  // screen is opened at once (FC-05), and a badge that went with it would be
+  // gone before anyone read it. The tile counts live (ownReadIds).
+  const [openedAtLoad, setOpenedAtLoad] = useState<Set<string>>(() => new Set());
+  // Opens this visit recorded: kept out of the at-load snapshot, so an open
+  // that commits before the reads answer is taken does not cost the message
+  // its visit-long "New".
+  const openedThisVisitRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/message-reads`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => null)) as { items?: unknown } | null;
+        if (!response.ok || !Array.isArray(payload?.items)) return;
+        const fetched = (payload.items as Array<{ note_id?: unknown }>)
+          .map((item) => item.note_id)
+          .filter((noteId): noteId is string => typeof noteId === 'string');
+        // Merged, not replaced: an open recorded before this answered stays.
+        setOwnReadIds((held) => new Set([...held, ...fetched]));
+        setOpenedAtLoad(new Set(fetched.filter((noteId) => !openedThisVisitRef.current.has(noteId))));
+        setOwnReadsLoaded(true);
+      } catch {
+        // ownReadsLoaded stays false: no "New", and the tile is Unavailable.
+      }
+    })();
+  }, []);
+  const isNewToMe = (message: ParentMessage) => ownReadsLoaded && !ownReadIds.has(message.note_id);
+  const wasNewThisVisit = (message: ParentMessage) => ownReadsLoaded && !openedAtLoad.has(message.note_id);
 
   /* OPENING A MESSAGE (#1542, FC-05). A coach's message counts as opened when
      at least half of it is on screen on the Messages tab (FC-05 Q-1 default
@@ -349,7 +382,13 @@ export default function ParentHub() {
           body: JSON.stringify({ note_id: noteId }),
         })
           .then((response) => {
-            if (!response.ok) readsSentRef.current.delete(noteId);
+            if (!response.ok) {
+              readsSentRef.current.delete(noteId);
+              return;
+            }
+            // Opened: its "New" comes off now, not on the next reload (FC-08).
+            openedThisVisitRef.current.add(noteId);
+            setOwnReadIds((held) => new Set(held).add(noteId));
           })
           .catch(() => {
             readsSentRef.current.delete(noteId);
@@ -586,7 +625,6 @@ export default function ParentHub() {
     return () => controller.abort();
   }, []);
 
-  const [parentResources] = useState<ParentResource[]>([]);
 
   // Capabilities #93/#167: this hub links to /parent/safety and
   // /parent/consent (both already built, #84/T-008) but never surfaced
@@ -594,6 +632,9 @@ export default function ParentHub() {
   // own effect, own state -- a failure here must never block the rest of
   // this page, same doctrine as every other secondary read on this hub.
   const [safetySummary, setSafetySummary] = useState<SafetySummary | null>(null);
+  // UXB-24: a refused or broken read is not "nothing to report". Until the
+  // read answers the card says it is checking; if it fails, it says so.
+  const [safetyFailed, setSafetyFailed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -602,7 +643,10 @@ export default function ParentHub() {
           method: 'GET',
           credentials: 'include',
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setSafetyFailed(true);
+          return;
+        }
         const payload = (await response.json()) as {
           items?: Array<{ hold: unknown; gates?: Array<{ outcome: string }> }>;
         };
@@ -614,7 +658,8 @@ export default function ParentHub() {
         );
         setSafetySummary({ activeHolds, flaggedGates });
       } catch {
-        // Card falls back to plain links with no summary line.
+        // The links still work; the card says the check did not answer.
+        setSafetyFailed(true);
       }
     })();
   }, []);
@@ -626,7 +671,8 @@ export default function ParentHub() {
   // why this is its own route rather than widening intake/domain-upsert.
   const [barrierType, setBarrierType] = useState<'home' | 'transportation'>('home');
   const [barrierDescription, setBarrierDescription] = useState('');
-  const [barrierMessage, setBarrierMessage] = useState('');
+  // UXB-23: a sent report and a failed one must not look alike.
+  const [barrierMessage, setBarrierMessage] = useState<{ tone: 'sent' | 'failed'; text: string } | null>(null);
   const [barrierSubmitting, setBarrierSubmitting] = useState(false);
   // One report per press (#1529): a ref, because two presses in one tick both
   // read the same `barrierSubmitting` and both got through.
@@ -636,7 +682,7 @@ export default function ParentHub() {
     event.preventDefault();
     if (!activeChildId || !barrierDescription.trim() || barrierSubmitting || barrierSubmittingRef.current) return;
     barrierSubmittingRef.current = true;
-    setBarrierMessage('');
+    setBarrierMessage(null);
     setBarrierSubmitting(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent/barrier-report`, {
@@ -654,9 +700,9 @@ export default function ParentHub() {
         throw new Error(payload.error || 'Failed to send the report.');
       }
       setBarrierDescription('');
-      setBarrierMessage('Sent to your child\'s coach.');
+      setBarrierMessage({ tone: 'sent', text: 'Sent to your child\'s coach.' });
     } catch (error) {
-      setBarrierMessage(error instanceof Error ? error.message : 'Failed to send the report.');
+      setBarrierMessage({ tone: 'failed', text: error instanceof Error ? error.message : 'Failed to send the report.' });
     } finally {
       barrierSubmittingRef.current = false;
       setBarrierSubmitting(false);
@@ -698,7 +744,7 @@ export default function ParentHub() {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
             track: 'Unavailable',
-            accountId: null,
+            photoPath: null,
             initials: '\u2014',
             photoAvailable: false,
           };
@@ -721,7 +767,7 @@ export default function ParentHub() {
             if (!cardResponse.ok) return;
             const payload = (await cardResponse.json()) as { card?: FightCardPayload };
             if (!payload.card) return;
-            child.accountId = payload.card.accountId;
+            child.photoPath = payload.card.portraitPath;
             child.initials = payload.card.initials;
             child.photoAvailable = payload.card.photoAvailable;
           } catch {
@@ -734,8 +780,12 @@ export default function ParentHub() {
         setChildren(childList);
         // Functional update so the default selection does not read activeChildId
         // here: depending on it would refetch the whole roster and re-show the
-        // loading spinner every time the parent switches child.
-        setActiveChildId((current) => current || childList[0]?.id || current);
+        // loading spinner every time the parent switches child. The first
+        // selection is the child last chosen on any family page when that child
+        // is one of these (src/lib/chosenChild.ts), otherwise the first child.
+        const chosen = readChosenChild();
+        const opening = childList.find((child) => child.id === chosen)?.id ?? childList[0]?.id;
+        setActiveChildId((current) => current || opening || current);
       } catch (error) {
         // A cancelled roster read is not a failed one -- it says nothing about
         // whether this guardian has children, so it must not empty the list or
@@ -1177,7 +1227,7 @@ export default function ParentHub() {
         </div>
 
         {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
-            selected child's; Home Tasks and Messages count across every
+            selected child's; Home Tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
             answered, never 0: a derived 0 would tell a parent "nothing is
             scheduled" or "nothing is due", which nobody verified. */}
@@ -1186,7 +1236,7 @@ export default function ParentHub() {
           tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded ? messages.length : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
         />
 
         {/* CHILD SELECTOR */}
@@ -1241,7 +1291,8 @@ export default function ParentHub() {
                 )}
               >
                 <ProfilePortrait
-                  accountId={child.accountId}
+                  accountId={null}
+                  src={cardPhotoUrl(apiBase(), child.photoPath)}
                   initials={child.initials}
                   name={child.name}
                   photoAvailable={child.photoAvailable}
@@ -1295,7 +1346,13 @@ export default function ParentHub() {
                   the guardian who never sees the room, and the first thing
                   they should meet is the coach's own words, not a button
                   grid. */}
-              <ParentDigest athleteId={activeChildId || null} childName={activeChild?.name ?? null} />
+              {/* The roster maps a missing name to 'Unknown' for the selector;
+                  the digest gets null instead, so its lines read "your child"
+                  rather than "Marked by a coach or by Unknown". */}
+              <ParentDigest
+                athleteId={activeChildId || null}
+                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
+              />
 
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Quick Actions</h3>
@@ -1352,8 +1409,12 @@ export default function ParentHub() {
                     {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
                     {' '}across your children. This is not a punishment -- see the Safety page for details.
                   </p>
-                ) : (
+                ) : safetySummary ? (
                   <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
+                ) : safetyFailed ? (
+                  <p className="t-body mt-[var(--s2)]">Couldn&apos;t check right now. Use View Safety Status to see it.</p>
+                ) : (
+                  <p className="working mt-[var(--s2)]">Checking safety status</p>
                 )}
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
                   <Link href="/parent/safety" className="btn w-full">
@@ -1393,13 +1454,16 @@ export default function ParentHub() {
 
               {/* The paper version. Scoped to the child currently selected, and
                   the print route re-checks the guardian link server-side before
-                  it renders anything -- a link is not an authorisation. */}
+                  it renders anything -- a link is not an authorisation. The
+                  child goes over in this tab's storage, not in the address
+                  (#1596 item 2b; src/lib/chosenChild.ts). */}
               {activeChildId && (
                 <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                   <p className="t-label">For the fridge</p>
                   <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                     <Link
-                      href={`/print?athlete_id=${encodeURIComponent(activeChildId)}`}
+                      href="/print"
+                      onClick={() => rememberChosenChild(activeChildId)}
                       className="btn btn--ghost"
                     >
                       Print their card and certificate
@@ -1558,7 +1622,12 @@ export default function ParentHub() {
                 </p>
 
                 {barrierMessage && (
-                  <p className="t-body text-[color:var(--brass-300)]">{barrierMessage}</p>
+                  <p
+                    role={barrierMessage.tone === 'failed' ? 'alert' : 'status'}
+                    className={barrierMessage.tone === 'failed' ? 't-body font-bold text-[var(--restricted-ink)]' : 't-body'}
+                  >
+                    {barrierMessage.text}
+                  </p>
                 )}
 
                 <form onSubmit={handleReportBarrier} className="space-y-[var(--s3)]">
@@ -1676,47 +1745,28 @@ export default function ParentHub() {
           {/* FAMILY GOALS */}
           {activeTab === 'family-goals' && (
             <div className="space-y-6 panel-settle">
+              {/* PROPOSED copy: the gym-set goal clause (PH-06 Q-2 A). */}
               <HelpPanel
                 title="Family Goals"
-                description="Collaborative family goals that support your child's boxing journey."
+                description="Goals your family sets to support your child. Each says what the family will do; it shows Done with the date it was ticked, or In progress. Goals the gym sets show here too; only the gym can change them."
                 usage={[
-                  'Review family support goals',
-                  'Track progress toward goals',
-                  'Work together as a family',
-                  'Celebrate achievements'
+                  'Add a goal: what you are aiming for and what the family will do',
+                  'Tick Done when it is done; untick it if it was ticked by mistake',
+                  'Edit or retire a goal you set'
                 ]}
                 mistakes={[
-                  'Setting unrealistic goals',
-                  'Not reviewing progress regularly',
-                  'Not involving the whole family'
+                  'Writing a goal without what the family will actually do',
+                  'Leaving a finished goal unticked'
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
-                is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)]">
-                {familyGoals.map(goal => (
-                  <div key={goal.id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s4)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)]">
-                      <h4 className="t-body font-semibold">{goal.title}</h4>
-                      <span className="t-muted">{goal.targetDate}</span>
-                    </div>
-                    <p className="t-body">{goal.supportAction}</p>
-                    <div>
-                      <div className="flex justify-between mb-[var(--s2)]">
-                        <span className="t-label">Progress</span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{goal.progress}%</span>
-                      </div>
-                      <div className={TRACK_CLASS}>
-                        <div className={FILL_CLASS} style={{width: `${goal.progress}%`}}></div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* #1593 PH-06: built, so F-019's "not built yet" note goes.
+                  Per child (key), like Observations. */}
+              {activeChildId ? (
+                <ParentFamilyGoals key={activeChildId} athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 
@@ -1753,13 +1803,11 @@ export default function ParentHub() {
                   Unavailable); the tab did not, and the tab is what a guardian
                   opens to read their messages.
 
-                  Worded to be true in BOTH unanswered states. This flag does
-                  not separate "still in flight" from "refused", and the fetch
-                  starts when the hub mounts rather than when this tab opens,
-                  so a guardian who taps Messages quickly is looking at a read
-                  that has not come back yet -- "could not be loaded" would
-                  claim a failure nobody has observed either. "Unavailable" is
-                  the tile's own word for exactly this, and it covers both. */}
+                  UXB-13: a read still in flight is not a failed one either.
+                  The fetch starts when the hub mounts, so a guardian who taps
+                  Messages quickly is looking at a read that has not come back
+                  yet: that reads as loading. "Unavailable" is only for a read
+                  that was refused or broke (`messagesFailed`). */}
               {taskNotice && (
                 <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
               )}
@@ -1768,7 +1816,9 @@ export default function ParentHub() {
                 <p className="t-muted">Your earlier replies have not loaded. This is not a statement that you have not replied.</p>
               )}
 
-              {!messagesLoaded ? (
+              {!messagesLoaded && !messagesFailed ? (
+                <p className="working">Reading your messages</p>
+              ) : !messagesLoaded ? (
                 <p className="t-muted">Unavailable - your messages have not loaded. This is not an empty inbox.</p>
               ) : messages.length === 0 ? (
                 <p className="t-muted">No messages yet.</p>
@@ -1782,7 +1832,16 @@ export default function ParentHub() {
                       <div data-read-note={message.note_id}>
                         <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
                           <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
-                          <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                          <span className="flex items-center gap-[var(--s2)]">
+                            {/* PROPOSED copy (FC-08): "New" on a message this guardian had
+                                not opened when the hub loaded; it stays for the visit.
+                                Administrative, not a safety state, hence --filed, with
+                                its glyph (Law 3). */}
+                            {wasNewThisVisit(message) && (
+                              <span className="badge badge--filed"><i aria-hidden="true">◉</i><span>New</span></span>
+                            )}
+                            <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                          </span>
                         </div>
                         <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       </div>
@@ -1859,6 +1918,10 @@ export default function ParentHub() {
                 </div>
               )}
 
+              {/* A copy of what staff wrote to the guardian's children under 18
+                  (#1542, FC-06 Q-2, ruled B), kept apart from the family's own
+                  messages above. */}
+              <SentToYourAthlete childNames={Object.fromEntries(children.map((child) => [child.id, child.name]))} />
             </div>
           )}
 
@@ -1980,6 +2043,26 @@ export default function ParentHub() {
                   </Link>
                 </>
               )}
+
+              {/* The coach's multi-week plan and the mental-skills log, for the
+                  child on screen: those pages open on the child chosen here
+                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
+              <div className="flex flex-wrap gap-[var(--s3)]">
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental Skills
+                </Link>
+              </div>
             </div>
           )}
 
@@ -1988,22 +2071,13 @@ export default function ParentHub() {
             <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Parent Support Resources</h3>
               <p className="t-body">Guides, videos, and tips for supporting young athletes.</p>
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
-                list is always empty.
-              </p>
-              <div className="space-y-[var(--s3)]">
-                {parentResources.map((resource) => (
-                  <div key={resource.id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
-                    <p className="t-body font-semibold">{resource.title}</p>
-                    <p className="t-muted mt-[var(--s2)]">Type: {resource.type}</p>
-                    <p className="t-body mt-[var(--s2)]">{resource.summary}</p>
-                    <button className="btn mt-[var(--s3)]">
-                      {resource.actionLabel}
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {/* #1593 PH-11: built, so F-019's "not built yet" note goes.
+                  Per child (key): program resources follow the child. */}
+              {activeChildId ? (
+                <ParentResources key={activeChildId} athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 

@@ -339,7 +339,7 @@ test('Publication Workflow Automation reads as parked with its backlog id', asyn
 test('the radar lists the shipped coach-floor capabilities as existing', async () => {
   await renderPage();
 
-  expect(await screen.findByText('Session Script Delivery')).toBeTruthy();
+  expect(await screen.findByText('Session Plan Delivery')).toBeTruthy();
   expect(screen.getByText('Safety Compliance Center')).toBeTruthy();
   expect(screen.getByText('Coach Coverage')).toBeTruthy();
   expect(screen.getByText('Drill Library')).toBeTruthy();
@@ -349,7 +349,7 @@ test('the radar lists the shipped coach-floor capabilities as existing', async (
 test('the removed override token is not advertised anywhere on the hub', async () => {
   await renderPage();
 
-  await screen.findByText('Session Script Delivery');
+  await screen.findByText('Session Plan Delivery');
   expect(screen.queryByText(/BREAK MY 40% RULE/)).toBeNull();
   expect(screen.queryByText(/GRIND STATE ENGAGED/)).toBeNull();
 });
@@ -451,7 +451,7 @@ describe('a role the hub no longer admits', () => {
 
     // queryBy*, never getBy*, so a rendered hub fails as an assertion rather
     // than as a thrown lookup.
-    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Operations' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'WORKSPACES' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'THE ROLE SELECTOR' })).toBeNull();
     expect(mockReplace).toHaveBeenCalled();
@@ -467,7 +467,7 @@ describe('a role the hub no longer admits', () => {
     await act(async () => { render(<OperationsHubPage />); });
 
     expect(screen.getByText('Checking access')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'The Ring' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Operations' })).toBeNull();
   });
 
   /* A refusal must not spend the refused role's session on requests made for
@@ -492,7 +492,29 @@ describe('a role the hub no longer admits', () => {
 
     await act(async () => { render(<OperationsHubPage />); });
 
-    expect(screen.getByRole('heading', { name: 'The Ring' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Operations' })).toBeTruthy();
     expect(screen.queryByText('Checking access')).toBeNull();
+  });
+});
+
+/* Lane U2 (audit UX-A A-5): the hub is administration only, so it offers no
+   tile into another role's home -- every one of them refused the admin who
+   clicked it and sent them home with nothing said. */
+describe.each(['admin', 'platform_owner'] as const)('the hub, read by %s', (role) => {
+  test('links no other role\'s home or athlete-only page', async () => {
+    await renderPage(role);
+    const hrefs = screen.queryAllByRole('link').map((a) => a.getAttribute('href'));
+    for (const crossRole of [
+      '/athlete/dashboard',
+      '/coach/environment/intake-router',
+      '/parent/dashboard',
+      '/board',
+      '/guardian',
+      '/athlete/progression-intelligence',
+    ]) {
+      expect(hrefs).not.toContain(crossRole);
+    }
+    expect(screen.queryByRole('heading', { name: 'Role Selector' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'WORKSPACES' })).toBeNull();
   });
 });

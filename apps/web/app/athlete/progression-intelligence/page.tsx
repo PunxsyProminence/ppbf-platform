@@ -9,8 +9,9 @@ import { readAssignmentInstruction } from '@/components/drills/drillInstructionR
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 import { orderAssignedWork, readDatedIssuedWorkouts, type DatedIssuedWorkout } from '@/src/lib/issuedWorkouts';
+import BackHome from '@/components/BackHome';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
@@ -588,6 +589,7 @@ export default function AthleteProgressionIntelligencePage() {
               says what it is. */}
           <p className="t-eyebrow">Drills</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             What your coach wants you working on, and somewhere to say when you have done it.
           </p>
@@ -746,7 +748,7 @@ export default function AthleteProgressionIntelligencePage() {
                     </div>
                     <div className="flex items-center gap-[var(--s3)]">
                       <StatusBadge status={gap.status} type="gap" />
-                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateNumeric(gap.created_at)}</span>
+                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateShort(gap.created_at)}</span>
                     </div>
                     <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
                     <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
@@ -780,7 +782,7 @@ export default function AthleteProgressionIntelligencePage() {
                           </h3>
                           <p className="t-muted mt-[var(--s2)]">
                             {row.workout.issued_by_name ? `From: ${row.workout.issued_by_name} · ` : ''}
-                            {formatGymDateNumeric(row.workout.issued_at)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
+                            {formatGymDateShort(row.workout.issued_at)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
                           </p>
                         </div>
                       );
@@ -954,7 +956,7 @@ export default function AthleteProgressionIntelligencePage() {
                                     <div className="flex-1">
                                       <div className="flex items-center gap-[var(--s3)]">
                                         <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                                          {formatGymDateNumeric(completion.completed_at)}
+                                          {formatGymDateShort(completion.completed_at)}
                                         </span>
                                         <StatusBadge status={completion.verification_status} type="completion" />
                                       </div>
@@ -966,7 +968,7 @@ export default function AthleteProgressionIntelligencePage() {
                                       )}
                                       {completion.verified_at && (
                                         <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
-                                          ✓ Verified on {formatGymDateNumeric(completion.verified_at)}
+                                          ✓ Verified on {formatGymDateShort(completion.verified_at)}
                                         </p>
                                       )}
                                     </div>

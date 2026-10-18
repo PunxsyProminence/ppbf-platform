@@ -675,7 +675,9 @@ export async function POST(request: NextRequest) {
         metadata: body.metadata ?? {},
       });
 
-      return NextResponse.json({ ok: true, research_requirement_id: id });
+      // The id is a bigserial, which node-postgres returns as a string; /shadow's
+      // "file as research" accepts only a number (researchLadder.pg.test.ts).
+      return NextResponse.json({ ok: true, research_requirement_id: Number(id) });
     }
 
     return NextResponse.json({ ok: false, error: 'missing research requirement fields' }, { status: 400 });

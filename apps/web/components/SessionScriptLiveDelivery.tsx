@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { explainLine } from '@/src/lib/sessionScriptWords';
 import RoundTimerControls from '@/components/RoundTimerControls';
 import SessionRunPresence from '@/components/SessionRunPresence';
@@ -109,22 +110,60 @@ function formatElapsed(totalSeconds: number): string {
   return `${hours > 0 ? `${hours}:` : ''}${mm}:${String(rest).padStart(2, '0')}`;
 }
 
-// Known refusal codes, translated for a coach mid-class. The raw code is kept
-// in the sentence so what the server actually said is never hidden.
-function describeRunError(code: unknown): string {
-  if (code === 'SESSION_RUN_BLOCK_NOT_IN_SCRIPT') {
-    return 'The server refused the move: that block is not part of this session\'s script. (SESSION_RUN_BLOCK_NOT_IN_SCRIPT)';
-  }
-  if (typeof code === 'string' && code.trim() !== '') {
-    return `The server refused: ${code}`;
-  }
-  return 'The server refused the request.';
+// Refusal codes in words for a coach mid-class; a code or a status number is
+// never shown (UXB-09). The words live in src/lib/serverRefusalWords.ts.
+function describeRunError(code: unknown, status?: number): string {
+  return refusalWords({ error: code, status });
 }
+
+// WHAT A WRITE'S ANSWER PROVES (ChatGPT pilot audit 2026-10-17, item 1). A refusal (4xx)
+// changed nothing, and a 2xx carrying the object is the server's word. Anything else -- the
+// request threw, the server failed (5xx), or a yes came back without the object -- proves
+// nothing either way: the write may already be committed. So the screen asks the server what
+// it now holds and says that, rather than claiming "not logged" or "nothing changed" and
+// inviting a repeat that could log the same thing twice. All wording PROPOSED (lane L40).
+const RUN_NOT_SAVED = 'No clear answer came back, and the server shows it was not saved. Try again.';
+const RUN_UNCHECKED = 'No clear answer came back and the server could not be checked. Reload the page before trying again.';
+const RUN_END_UNKNOWN = 'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.';
+const LOG_SAVED = 'No clear answer came back, but the server shows the intervention was logged.';
+const LOG_NOT_SAVED = 'No clear answer came back, and the server shows the intervention was not logged. Try again.';
+const LOG_UNCHECKED = 'No clear answer came back and the server could not be checked. Check The Work before logging it again.';
+const RUN_OUT_OF_DATE = 'The session shown was out of date and has been reloaded from the server.';
+const RUN_GONE = 'This session is no longer live on the server. Nothing further can be recorded through this screen.';
+
+/** True only for a refusal: the server answered and wrote nothing. */
+function isRefusal(status: number): boolean {
+  return status >= 400 && status < 500;
+}
+
+/** What the live run shows about the run action that was asked, or null when it does not show it. */
+function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun, blocks: readonly Block[]): string | null {
+  switch (body.action) {
+    case 'pause':
+      return live.is_paused ? 'the session is paused' : null;
+    case 'resume':
+      return live.is_paused ? null : 'the session is running';
+    case 'advance': {
+      if (live.current_block_id !== body.to_block_id) return null;
+      const label = blocks.find((item) => item.block_id === body.to_block_id)?.block_label;
+      return label ? `the session is on ${label}` : 'the session is on the block you picked';
+    }
+    case 'show_on_wall':
+      if (live.show_on_wall !== body.show) return null;
+      return live.show_on_wall ? 'the session is on the TV' : 'the session is off the TV';
+    default:
+      return null;
+  }
+}
+
+/** The settled run handed back: only what the page reads from it, which both the PATCH answer
+ *  and the finished-sessions read carry. */
+export type SettledRunSummary = Pick<SessionScriptRunRow, 'run_id' | 'script_id' | 'run_state'>;
 
 interface SessionScriptLiveDeliveryProps {
   readonly initialRun: LiveSessionScriptRun;
   /** The run settled (completed or abandoned) -- the server's settled row. */
-  readonly onSettled: (run: SessionScriptRunRow) => void;
+  readonly onSettled: (run: SettledRunSummary) => void;
   /** The run is no longer live server-side and no live run replaced it. */
   readonly onRunGone: (message: string) => void;
 }
@@ -250,6 +289,32 @@ export default function SessionScriptLiveDelivery({
     (protocol) => !protocol.athlete_id || protocol.athlete_id === logAthleteId,
   );
 
+  // This athlete's executions already tied to this run under this protocol, newest first, from
+  // the existing ledger read; null when the read fails, times out, or its answer has no list.
+  const readRunExecutions = useCallback(
+    async (
+      athleteId: string,
+      protocolId: string,
+      signal?: AbortSignal,
+    ): Promise<{ execution_id: string; created_at: string }[] | null> => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/coach/intervention-executions?athlete_id=${encodeURIComponent(athleteId)}`,
+          { method: 'GET', credentials: 'include', cache: 'no-store', signal },
+        );
+        if (!response.ok) return null;
+        const payload = (await response.json()) as {
+          items?: { execution_id: string; created_at: string; session_run_id: string | null; protocol_id: string }[];
+        };
+        if (!Array.isArray(payload.items)) return null;
+        return payload.items.filter((item) => item.session_run_id === run.run_id && item.protocol_id === protocolId);
+      } catch {
+        return null;
+      }
+    },
+    [run.run_id],
+  );
+
   const logIntervention = useCallback(async () => {
     if (logBusy) return;
     if (!logAthleteId || !logProtocolId) {
@@ -258,68 +323,167 @@ export default function SessionScriptLiveDelivery({
     }
     setLogBusy(true);
     setLogError('');
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        // The link this whole control exists for: session_run_id ties the
-        // execution to the run that is live right now, on the row the
-        // server already has pilot_intervention_executions_session_run_fk for.
-        body: JSON.stringify({
-          athlete_id: logAthleteId,
-          protocol_id: logProtocolId,
-          session_run_id: run.run_id,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        item?: { execution_id: string; created_at: string };
-        error?: string;
-      };
-      if (!response.ok || !payload.item) {
-        setLogError(payload.error || `The server refused to log the intervention (${response.status}).`);
-        return;
-      }
-      const athleteName = logAthletes.find((a) => a.athlete_id === logAthleteId)?.full_name ?? logAthleteId;
-      const protocolTitle = logProtocols.find((p) => p.protocol_id === logProtocolId)?.title ?? logProtocolId;
+    const athleteName = logAthletes.find((a) => a.athlete_id === logAthleteId)?.full_name ?? logAthleteId;
+    const protocolTitle = logProtocols.find((p) => p.protocol_id === logProtocolId)?.title ?? logProtocolId;
+    const showLogged = (item: { execution_id: string; created_at: string }) => {
       setLoggedInterventions((items) => [
-        { execution_id: payload.item!.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: payload.item!.created_at },
+        { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
         ...items,
       ]);
       setLogProtocolId('');
-    } catch {
-      setLogError('Network error -- the intervention was not logged.');
+    };
+    try {
+      // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
+      // log of the same pair in this run (from before a reload, say) must not read as this one.
+      // A failed read never stops the log, and a slow one holds it back three seconds at most.
+      const before = await readRunExecutions(
+        logAthleteId,
+        logProtocolId,
+        typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
+      );
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          // The link this whole control exists for: session_run_id ties the
+          // execution to the run that is live right now, on the row the
+          // server already has pilot_intervention_executions_session_run_fk for.
+          body: JSON.stringify({
+            athlete_id: logAthleteId,
+            protocol_id: logProtocolId,
+            session_run_id: run.run_id,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          item?: { execution_id: string; created_at: string };
+          error?: string;
+        };
+        if (response.ok && payload.item) {
+          showLogged(payload.item);
+          return;
+        }
+        if (isRefusal(response.status)) {
+          setLogError(refusalWords({ error: payload.error, status: response.status }, {}, 'The intervention was not logged. Try again.'));
+          return;
+        }
+      } catch {
+        // Thrown: the request may or may not have reached the server. Checked below.
+      }
+      const after = await readRunExecutions(logAthleteId, logProtocolId);
+      if (after === null) {
+        setLogError(LOG_UNCHECKED);
+        return;
+      }
+      const known = new Set([...(before ?? []), ...loggedInterventions].map((item) => item.execution_id));
+      const fresh = after.filter((item) => !known.has(item.execution_id));
+      if (fresh.length === 0) {
+        setLogError(LOG_NOT_SAVED);
+        return;
+      }
+      // Without the before picture, a record this screen did not log cannot be placed.
+      if (before === null) {
+        setLogError(LOG_UNCHECKED);
+        return;
+      }
+      showLogged(fresh[0]);
+      setLogError(LOG_SAVED);
     } finally {
       setLogBusy(false);
     }
-  }, [logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, run.run_id]);
+  }, [logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, loggedInterventions, readRunExecutions, run.run_id]);
 
   // A run can stop being live underneath this screen (finished on another
   // device, or settled by a race). The recovery is always the same: ask the
   // server what is live now, and either show that or hand control back.
-  const resyncAfterNotLive = useCallback(async () => {
+  // The coach's live run as the server holds it now: the run, null for none, or 'unreadable'.
+  const readLiveRun = useCallback(async (): Promise<LiveSessionScriptRun | null | 'unreadable'> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
         method: 'GET',
         credentials: 'include',
+        cache: 'no-store',
       });
-      if (!response.ok) throw new Error('resync');
+      if (!response.ok) return 'unreadable';
       const payload = (await response.json()) as { run?: LiveSessionScriptRun | null };
-      if (payload.run) {
-        applyServerRun(payload.run);
-        setActionError('The session shown was out of date and has been reloaded from the server.');
+      return payload.run === undefined ? 'unreadable' : payload.run;
+    } catch {
+      return 'unreadable';
+    }
+  }, []);
+
+  // Another run is live, or none is: show that one, or hand control back.
+  const showOtherLiveRun = useCallback(
+    (live: LiveSessionScriptRun | null) => {
+      if (live) {
+        applyServerRun(live);
+        setActionError(RUN_OUT_OF_DATE);
         return;
       }
-      onRunGone('This session is no longer live on the server. Nothing further can be recorded through this screen.');
-    } catch {
+      onRunGone(RUN_GONE);
+    },
+    [applyServerRun, onRunGone],
+  );
+
+  const resyncAfterNotLive = useCallback(async () => {
+    const live = await readLiveRun();
+    if (live === 'unreadable') {
       setActionError('This session may no longer be live, and the server could not be reached to confirm. Reload to recover the real state.');
+      return;
     }
-  }, [applyServerRun, onRunGone]);
+    showOtherLiveRun(live);
+  }, [readLiveRun, showOtherLiveRun]);
+
+  // A run action whose answer proved nothing: read what the server holds and say that.
+  const recoverRunAction = useCallback(
+    async (body: Record<string, unknown>) => {
+      const live = await readLiveRun();
+      if (live === 'unreadable') {
+        setActionError(RUN_UNCHECKED);
+        return;
+      }
+      if (live && live.run_id === run.run_id) {
+        applyServerRun(live);
+        const words = body.action === 'finish' ? null : savedRunWords(body, live, detail?.blocks ?? []);
+        setActionError(words ? `No clear answer came back, but the server shows it was saved: ${words}.` : RUN_NOT_SAVED);
+        return;
+      }
+      if (body.action !== 'finish') {
+        showOtherLiveRun(live);
+        return;
+      }
+      // This run is no longer live: a finish that landed is among the gym's finished sessions.
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs?finished=true`, {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (response.ok) {
+          const payload = (await response.json()) as { runs?: SettledRunSummary[] };
+          const settled = payload.runs?.find((item) => item.run_id === run.run_id);
+          if (settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned')) {
+            onSettled(settled);
+            return;
+          }
+          if (Array.isArray(payload.runs)) {
+            setActionError(RUN_END_UNKNOWN);
+            return;
+          }
+        }
+      } catch {
+        // Falls through to "could not be checked".
+      }
+      setActionError(RUN_UNCHECKED);
+    },
+    [applyServerRun, detail, onSettled, readLiveRun, run.run_id, showOtherLiveRun],
+  );
 
   const mutateRun = useCallback(
     async (body: Record<string, unknown>, busyKey: string): Promise<void> => {
       // One mutation at a time: a double-tapped control must not race itself.
-      // (Pause/resume are additionally idempotent server-side.)
+      // (Pause/resume are additionally idempotent server-side.) The lock holds
+      // through any recovery read below.
       if (actionBusy) return;
       setActionBusy(busyKey);
       setActionError('');
@@ -336,7 +500,7 @@ export default function SessionScriptLiveDelivery({
             },
           );
         } catch {
-          setActionError('Network error -- nothing was changed on the server.');
+          await recoverRunAction(body);
           return;
         }
 
@@ -345,27 +509,29 @@ export default function SessionScriptLiveDelivery({
           error?: string;
         };
 
-        if (!response.ok) {
+        if (isRefusal(response.status)) {
           if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
             await resyncAfterNotLive();
             return;
           }
-          setActionError(describeRunError(payload.error));
+          setActionError(describeRunError(payload.error, response.status));
           return;
         }
 
-        if (body.action === 'finish' && payload.run) {
-          onSettled(payload.run as SessionScriptRunRow);
+        if (!response.ok || !payload.run) {
+          await recoverRunAction(body);
           return;
         }
-        if (payload.run) {
-          applyServerRun(payload.run as LiveSessionScriptRun);
+        if (body.action === 'finish') {
+          onSettled(payload.run);
+          return;
         }
+        applyServerRun(payload.run as LiveSessionScriptRun);
       } finally {
         setActionBusy(null);
       }
     },
-    [actionBusy, applyServerRun, onSettled, resyncAfterNotLive, run.run_id],
+    [actionBusy, applyServerRun, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
   );
 
   // ---- Finish / abandon -------------------------------------------------
@@ -436,7 +602,7 @@ export default function SessionScriptLiveDelivery({
           </h2>
           {!isPlain && (
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">
-              Pinned at version {run.script_version} when this session started.
+              This session follows the plan as it was when the session started (version {run.script_version}).
             </p>
           )}
           {!isPlain && detail && detail.version !== run.script_version && (
@@ -519,7 +685,7 @@ export default function SessionScriptLiveDelivery({
       <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
 
       {actionError && (
-        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           {actionError}
         </p>
       )}
@@ -530,8 +696,8 @@ export default function SessionScriptLiveDelivery({
       )}
 
       {!isPlain && detailState === 'unavailable' && (
-        <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-          <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+        <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+          <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
             The plan for this session could not be loaded, so its blocks cannot be shown or
             navigated. The session itself is still live -- pausing, resuming and ending it still work.
           </p>
@@ -643,7 +809,7 @@ export default function SessionScriptLiveDelivery({
             </p>
 
             {logAthletesState === 'unavailable' || logProtocolsState === 'unavailable' ? (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {logAthletesState === 'unavailable' && logProtocolsState === 'unavailable'
                   ? 'The athlete roster and the protocol list could not be loaded, so nothing can be logged from here.'
                   : logAthletesState === 'unavailable'
@@ -660,14 +826,14 @@ export default function SessionScriptLiveDelivery({
                     onChange={(event) => { setLogAthleteId(event.target.value); setLogProtocolId(''); }}
                     disabled={logAthletesState === 'loading'}
                   >
-                    <option value="">Select an athlete...</option>
+                    <option value="">Choose an athlete</option>
                     {logAthletes.map((athlete) => (
                       <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                     ))}
                   </select>
                 </label>
                 <label className="field">
-                  <span className="t-label">Protocol (its intended exposure becomes the frozen plan)</span>
+                  <span className="t-label">Protocol</span>
                   <select
                     className="select"
                     value={logProtocolId}
@@ -686,7 +852,7 @@ export default function SessionScriptLiveDelivery({
             )}
 
             {logError && (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {logError}
               </p>
             )}
@@ -803,7 +969,7 @@ export default function SessionScriptLiveDelivery({
               />
             </label>
             {settleFieldError && (
-              <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">{settleFieldError}</p>
+              <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{settleFieldError}</p>
             )}
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button

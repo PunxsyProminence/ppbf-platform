@@ -98,6 +98,9 @@ test('enrollments render with the scholarship shown as a discount, and the no-bi
 
   expect(await screen.findByText('Jordan Little')).toBeTruthy();
   expect(screen.getByText('100% scholarship')).toBeTruthy();
+  // A plain start date is its own calendar day at the gym, not the day before.
+  expect(screen.getByText(/since September 1, 2026/)).toBeTruthy();
+  expect(screen.queryByText(/8\/31\/2026|August 31, 2026/)).toBeNull();
   expect(screen.getByText(/No billing happens here/)).toBeTruthy();
   // Lane N4-02: fees are a plan, not a fact (paymentSetup.ts: no charging, no checkout).
   expect(screen.getByText(/fees are planned with the payment lanes, and nothing reads these records for billing yet\./)).toBeTruthy();
@@ -290,6 +293,86 @@ test('a failed programs read says so, never "No programs on record. Create the f
 
   expect(await screen.findByText('Programs could not be read')).toBeTruthy();
   expect(screen.queryByText('No programs on record')).toBeNull();
+});
+
+test('a failed roster read says so in the support picker, and Try again reads it again', async () => {
+  let rosterReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      rosterReads += 1;
+      return rosterReads === 1
+        ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+        : ({ ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response);
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Athletes could not be read')).toBeTruthy();
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['Choose an athlete']);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  });
+
+  expect(rosterReads).toBe(2);
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
+  expect(Array.from((screen.getByLabelText('Support for') as HTMLSelectElement).options).map((option) => option.textContent))
+    .toEqual(['Choose an athlete', 'Casey Stone']);
+});
+
+test("with the roster unread, a row's Support button still names its athlete in the picker", async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await screen.findByText('Athletes could not be read');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Support provided to Jordan Little' }));
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.value).toBe('ath-1');
+  expect(picker.options[picker.selectedIndex].textContent).toBe('Jordan Little');
+});
+
+test('the support picker says it is loading until the roster read comes back', async () => {
+  let answerRoster: (() => void) | null = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      await new Promise<void>((resolve) => { answerRoster = resolve; });
+      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.disabled).toBe(true);
+  expect(picker.options[0].textContent).toBe('Loading athletes…');
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
+
+  await act(async () => {
+    answerRoster?.();
+  });
+  expect((screen.getByLabelText('Support for') as HTMLSelectElement).disabled).toBe(false);
 });
 
 // PH-12b: support the gym gave a family, recorded on this page.

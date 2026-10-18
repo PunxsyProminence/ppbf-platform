@@ -439,6 +439,20 @@ describe('family support records migration (PH-12)', () => {
     }
   });
 
+  test('the runner refuses a same-named role check that names the two admin roles but admits more', async () => {
+    const client = await freshDatabase('fsup_role_or');
+    try {
+      // The same two quoted roles, widened by an OR: the guard skips its seat check for a role
+      // outside its list, so this would admit a recorder the gym never gave an admin seat.
+      await client.query('alter table pilot.family_support_records drop constraint pilot_family_support_records_role_check');
+      await client.query(`alter table pilot.family_support_records add constraint pilot_family_support_records_role_check
+        check (recorded_by_role in ('organization_admin', 'admin') or recorded_by_role = current_user)`);
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('FAMILY_SUPPORT_RECORDS_NOT_READY: checks_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a result it did not produce', async () => {
     const client = await freshDatabase('fsup_not_ready', 'none');
     try {

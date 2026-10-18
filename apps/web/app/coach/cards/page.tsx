@@ -13,6 +13,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
+import ClusterNav from '@/components/ClusterNav';
 
 // Coach Cards -- issue work straight onto the assignment spine, to one
 // athlete or to a whole program. No gap, no detection, no new engine: a
@@ -412,6 +413,7 @@ export default function CoachCardsPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Coach Cards</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Issue Work. Watch It Land.</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             A card goes to one athlete or to a whole program. The athlete sees it on their progression page,
             logs completions against it, and you verify here. No gap required.

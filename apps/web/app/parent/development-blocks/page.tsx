@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import DevelopmentBlockPlanView, { type PlanBlock } from '@/components/DevelopmentBlockPlanView';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 /*
  * A guardian reading the plan their child's coach wrote.
@@ -44,6 +45,14 @@ export default function ParentDevelopmentBlocksPage() {
      reason as the coach page's blocksAthleteRef. */
   const subjectRef = useRef('');
 
+  // Opens on the child chosen in the hub when it is one of these
+  // (src/lib/chosenChild.ts); otherwise nothing is picked, as before. The
+  // route checks the guardian link on the read either way.
+  const openChosenChild = useEffectEvent((items: LinkedChild[]) => {
+    const chosen = readChosenChild();
+    if (chosen && items.some((child) => child.athlete_id === chosen)) selectChild(chosen);
+  });
+
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -57,8 +66,10 @@ export default function ParentDevelopmentBlocksPage() {
         });
         if (!response.ok) throw new Error('children');
         const payload = (await response.json()) as { items?: LinkedChild[] };
-        setChildren(payload.items ?? []);
+        const items = payload.items ?? [];
+        setChildren(items);
         setChildrenState('loaded');
+        openChosenChild(items);
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return;
         // Not "you have no children linked" -- this read did not establish
@@ -99,6 +110,8 @@ export default function ParentDevelopmentBlocksPage() {
     // arrives afterwards can recognise itself as stale.
     subjectRef.current = nextId;
     setActiveChildId(nextId);
+    // The child the next family page opens on (src/lib/chosenChild.ts).
+    rememberChosenChild(nextId);
     void loadBlocks(nextId);
   }
 
@@ -172,7 +185,7 @@ export default function ParentDevelopmentBlocksPage() {
               blocks={blocks}
               state={state}
               subjectLabel="their plan"
-              emptyMessage="No development block has been written yet. That is normal — a coach writes one when they are planning a stretch of weeks, not for every session."
+              emptyMessage="No development plan has been written yet. That is normal — a coach writes one when they are planning a stretch of weeks, not for every session."
             />
           </section>
         )}

@@ -47,8 +47,8 @@ export interface ProfilePortraitProps {
   readonly decorative?: boolean;
   /**
    * Where to fetch the photograph, when it is not this member's own id route:
-   * the coach line on a fight card is fetched by the card
-   * (coachPortraitUrl), because a family's card carries no coach id.
+   * every portrait on a fight card is fetched by the card (cardPhotoUrl),
+   * because a family's card carries no account id.
    */
   readonly src?: string;
 }

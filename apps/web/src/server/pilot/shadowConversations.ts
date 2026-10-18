@@ -1050,16 +1050,15 @@ export async function denyShadowDataDeletionRequest(
  */
 export async function getOwnShadowDataDeletionRequest(
   actor: ActorIdentity,
-): Promise<ShadowDataDeletionRequest | null> {
+): Promise<Omit<ShadowDataDeletionRequest, 'accountId'> | null> {
   requireTenantOwner(actor);
   const rows = await query<{
     request_id: string;
-    account_id: string;
     status: ShadowDataDeletionRequestStatus;
     requested_at: Date;
     completed_at: Date | null;
   }>(
-    `select request_id, account_id, status, requested_at, completed_at
+    `select request_id, status, requested_at, completed_at
        from pilot.shadow_data_deletion_requests
       where organization_id = $1 and account_id = $2
       order by requested_at desc
@@ -1068,9 +1067,10 @@ export async function getOwnShadowDataDeletionRequest(
   );
   const row = rows[0];
   if (!row) return null;
+  // No accountId (F-119): it is the caller's own, nothing reads it back, and
+  // a parent's is email-shaped.
   return {
     requestId: row.request_id,
-    accountId: row.account_id,
     status: row.status,
     requestedAt: row.requested_at.toISOString(),
     completedAt: row.completed_at ? row.completed_at.toISOString() : null,

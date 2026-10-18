@@ -55,7 +55,7 @@
  * people -- not even drawn ones.
  */
 
-import { currentOrganizationProfile } from './organizationProfile';
+import type { OrganizationProfile } from './organizationProfile';
 
 /** Where a slot is allowed to appear. A slot names its surfaces; a surface asks for its slots. */
 export type GymPhotoSurface = 'public' | 'dashboard';
@@ -67,6 +67,14 @@ export interface GymPhotoSlot {
   readonly title: string;
   /** One line under the title, in the gym's voice, empty or full. */
   readonly caption: string;
+  /**
+   * The caption and alt text when the gym's stored profile gives a street
+   * (lane L31): {street} and {city} are filled from it ({city} as ", <city>",
+   * or nothing). Without one the plain caption and alt stand, and name no
+   * address. Plain text, not a function: a slot crosses from server pages to
+   * browser components.
+   */
+  readonly withStreet?: { readonly caption: string; readonly alt: string };
   /**
    * The file name under apps/web/public/gym/, or null while nobody has taken
    * the picture yet. Never a URL: a slot cannot point at another origin, and it
@@ -89,16 +97,18 @@ export interface GymPhotoSlot {
  * it is full, because the empty state is the one nearly everybody will see and
  * a caption that only makes sense beside a photograph reads as a broken page.
  */
-// The gym's street and town, from its one profile (#1469, N9-01).
-const GYM = currentOrganizationProfile();
-
 export const GYM_PHOTO_SLOTS: readonly GymPhotoSlot[] = [
   {
     key: 'entrance',
     title: 'The front door',
-    caption: `${GYM.physical.street}. What you are looking for when you pull up the first time.`,
+    caption: 'What you are looking for when you pull up the first time.',
+    // The street and town, from the gym's stored profile (lane L31, #1469).
+    withStreet: {
+      caption: '{street}. What you are looking for when you pull up the first time.',
+      alt: 'Illustration of the entrance to the gym at {street}{city} — a placeholder until the real photograph is taken.',
+    },
     file: 'entrance.svg',
-    alt: `Illustration of the entrance to the gym at ${GYM.physical.street}, ${GYM.physical.city} — a placeholder until the real photograph is taken.`,
+    alt: 'Illustration of the entrance to the gym — a placeholder until the real photograph is taken.',
     surfaces: ['public'],
   },
   {
@@ -175,16 +185,30 @@ export interface GymStaffCard {
  * here is the same physical one as every other slot: a person put the file in
  * the folder.
  */
-export const GYM_STAFF_CARDS: readonly GymStaffCard[] = [
-  {
-    key: 'head-coach',
-    name: 'Jason Neale',
-    role: 'Head Coach',
-    bio: 'Runs the floor most nights. Ask to meet him before you commit to anything — that is the right way round, and he would rather you did.',
-    photo: null,
-    alt: 'Jason Neale, head coach.',
-  },
-];
+// The head coach's name is the gym's stored profile's (lane L31, #1469), the
+// one the homepage reads; none is written here.
+export function gymStaffCards(gym: Pick<OrganizationProfile, 'headCoachName'> | null): readonly GymStaffCard[] {
+  if (!gym?.headCoachName) return [];
+  return [
+    {
+      key: 'head-coach',
+      name: gym.headCoachName,
+      role: 'Head Coach',
+      bio: 'Runs the floor most nights. Ask to meet him before you commit to anything — that is the right way round, and he would rather you did.',
+      photo: null,
+      alt: `${gym.headCoachName}, head coach.`,
+    },
+  ];
+}
+
+/** A slot's caption and alt text, with the gym's facts where it has them. */
+export function gymPhotoSlotText(slot: GymPhotoSlot, gym: OrganizationProfile | null): { caption: string; alt: string } {
+  const street = gym?.physical.street ?? '';
+  if (!slot.withStreet || !street) return { caption: slot.caption, alt: slot.alt };
+  const fill = (text: string) =>
+    text.replace('{street}', street).replace('{city}', gym?.physical.city ? `, ${gym.physical.city}` : '');
+  return { caption: fill(slot.withStreet.caption), alt: fill(slot.withStreet.alt) };
+}
 
 /** Where a filled slot's bytes live. Static, same-origin, no session involved. */
 export const GYM_PHOTO_BASE_PATH = '/gym';

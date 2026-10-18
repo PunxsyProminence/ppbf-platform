@@ -11,11 +11,13 @@ import { apiBase } from '@/lib/apiBase';
 import { authoringStateWords, explainLine } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import type {
   SessionScriptBlockRow,
   SessionScriptRow,
   SessionScriptWithDetail,
 } from '@/src/server/pilot/sessionScripts';
+import ClusterNav from '@/components/ClusterNav';
 
 // The session plans the gym actually teaches from, read on the floor.
 //
@@ -63,7 +65,7 @@ const RETIRE_REFUSALS: Readonly<Record<string, string>> = {
 
 const RETIRE_REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
   401: 'You are signed out, so the plan was not changed. Sign in and open the plan again.',
-  403: 'Your account may not retire session scripts, so the plan was not changed.',
+  403: 'Your account may not retire session plans, so the plan was not changed.',
 };
 
 // MARKING A PLAN REVIEWED (F-092): the coach's word that a draft is fit to run.
@@ -75,7 +77,7 @@ const REVIEW_REFUSALS: Readonly<Record<string, string>> = {
 
 const REVIEW_REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
   ...RETIRE_REFUSALS_BY_STATUS,
-  403: 'Your account may not mark session scripts reviewed, so the plan was not changed.',
+  403: 'Your account may not mark session plans reviewed, so the plan was not changed.',
 };
 
 // An ordinary message, so not the medical-stop colour (--locked means a
@@ -158,7 +160,7 @@ function CoachSessionScripts() {
         method: 'GET',
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('The session scripts could not be loaded.');
+      if (!response.ok) throw new Error('The session plans could not be loaded.');
       const payload = (await response.json()) as { scripts?: Script[] };
       if (read !== listRead.current) return;
       setScripts(payload.scripts ?? []);
@@ -166,7 +168,7 @@ function CoachSessionScripts() {
     } catch (error) {
       if (read !== listRead.current) return;
       setScripts([]);
-      setLoadError(error instanceof Error ? error.message : 'The session scripts could not be loaded.');
+      setLoadError(error instanceof Error ? error.message : 'The session plans could not be loaded.');
     } finally {
       if (read === listRead.current) setLoading(false);
     }
@@ -265,11 +267,11 @@ function CoachSessionScripts() {
       }
 
       if (payload.error === 'SESSION_SCRIPT_HAS_NO_BLOCKS') {
-        setStartError('This script has no blocks, so there is nothing to deliver. It stays start-disabled until blocks exist.');
+        setStartError('This plan has no blocks, so there is nothing to deliver. It stays start-disabled until blocks exist.');
         return;
       }
       if (payload.error === 'SESSION_SCRIPT_NOT_FOUND') {
-        setStartError('That script could not be found, so no session was started.');
+        setStartError('That plan could not be found, so no session was started.');
         return;
       }
       // A newer version of this plan loaded after the list was read. The route words this one
@@ -326,12 +328,12 @@ function CoachSessionScripts() {
           `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(scriptId)}`,
           { method: 'GET', credentials: 'include' },
         );
-        if (!response.ok) throw new Error('That session script could not be opened.');
+        if (!response.ok) throw new Error('That session plan could not be opened.');
         const payload = (await response.json()) as { script?: ScriptDetail };
         setDetail(payload.script ?? null);
       } catch (error) {
         setDetail(null);
-        setDetailError(error instanceof Error ? error.message : 'That session script could not be opened.');
+        setDetailError(error instanceof Error ? error.message : 'That session plan could not be opened.');
       } finally {
         setDetailLoading(false);
       }
@@ -495,7 +497,8 @@ function CoachSessionScripts() {
       <div className="mx-auto max-w-5xl">
         <header data-surface="kiosk" className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Session Scripts</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Session Plans</h1>
+          <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             The plan for a session, block by block. Times are minutes from the start of the session,
             not clock times -- the same script runs whether the room opens at 4:00 or 6:30.
@@ -573,7 +576,7 @@ function CoachSessionScripts() {
 
         <section data-surface="kiosk" className="mt-[var(--s6)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-            <h2 className="t-command text-[length:var(--t-lg)]">Scripts</h2>
+            <h2 className="t-command text-[length:var(--t-lg)]">Plans</h2>
             <button
               type="button"
               onClick={() => setShowRetired((shown) => !shown)}
@@ -598,7 +601,7 @@ function CoachSessionScripts() {
           {!loading && !loadError && scripts.length === 0 && (
             <div className="mt-[var(--s3)]">
               <p className="t-body text-[color:var(--bone-300)]">
-                {showRetired ? 'No session scripts yet.' : 'No session scripts in the list.'}
+                {showRetired ? 'No session plans yet.' : 'No session plans in the list.'}
               </p>
               {!showRetired && (
                 <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
@@ -606,7 +609,7 @@ function CoachSessionScripts() {
                 </p>
               )}
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                A workout template can be made into one: open the template and choose Make a session script.
+                A workout template can be made into one: open the template and choose Make a session plan.
               </p>
               <Link href="/coach/workout-templates" className="btn btn--ghost mt-[var(--s3)]">
                 Workout templates
@@ -771,7 +774,7 @@ function CoachSessionScripts() {
 
                 {!editing && detail.blocks.length === 0 && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-                    This script has no blocks yet. It cannot be delivered live until it has blocks.
+                    This plan has no blocks yet. It cannot be delivered live until it has blocks.
                   </p>
                 )}
 
@@ -856,7 +859,7 @@ function CoachSessionScripts() {
                     className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                   >
                     <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                      <span className="plaque">{typeof run.delivered_on === 'string' ? run.delivered_on.slice(0, 10) : run.delivered_on}</span>
+                      <span className="plaque">{typeof run.delivered_on === 'string' ? formatCalendarDay(run.delivered_on.slice(0, 10)) : run.delivered_on}</span>
                       <span className="t-label">
                         {run.run_state === 'completed' && 'Completed'}
                         {run.run_state === 'abandoned' && 'Abandoned'}
@@ -885,7 +888,7 @@ function CoachSessionScripts() {
                     )}
                     {(run.what_did_not ?? '').trim() !== '' && (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                        <span className="t-label">Did not: </span>{run.what_did_not}
+                        <span className="t-label">Did not work: </span>{run.what_did_not}
                       </p>
                     )}
                   </li>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
 
 // Wrestling league minimal skeleton (owner decision 2026-08-15: build both
 // competition skeletons deliberately skeletal). Season, event, and roster
@@ -532,7 +532,7 @@ export default function WrestlingLeagueManagementPage() {
                                 <label className="t-label" htmlFor="roster-athlete">Add athlete</label>
                                 <select id="roster-athlete" className="select" value={pickedAthleteId}
                                   onChange={(e) => setRosterAthleteId(e.target.value)}>
-                                  <option value="">Select an athlete…</option>
+                                  <option value="">Choose an athlete</option>
                                   {pickableAthletes.map((athlete) => (
                                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                                   ))}
@@ -556,9 +556,7 @@ export default function WrestlingLeagueManagementPage() {
           </section>
 
           <div className="mt-[var(--s6)]">
-            <OperationsLink className="btn btn--ghost">
-              Back to Mission Control
-            </OperationsLink>
+            <BackHome />
           </div>
         </div>
       </main>

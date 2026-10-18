@@ -148,7 +148,9 @@ checkChainsResolve(webScripts, webManifestPath);
 
 // Every migration suite the repository defines has to be reachable from the
 // entry point the release gate runs. A suite that exists but is not reached is
-// invisible, and `npm run test:migrations` runs inside deploy-production.yml.
+// invisible: `npm run test:migrations` is ci.yml's pg job, and
+// pre-release-migrations.yml runs the same discovery. deploy-production.yml
+// runs neither.
 //
 // THIS USED TO WALK A CHAIN, and the chain is gone. `test:migrations` was a
 // single line naming all 118 scripts with `&&`; it is now a discovery runner

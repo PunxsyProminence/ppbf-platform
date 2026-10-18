@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 // Transfer check (module 053): the honesty check on gains. A rep that
 // holds in drills and vanishes in sparring is not progress yet. Every flag
@@ -141,7 +142,7 @@ export default function TransferCheckPage() {
             <label className="t-label" htmlFor="transfer-athlete">Athlete</label>
             <select id="transfer-athlete" className="select" value={athleteId}
               onChange={(e) => selectAthlete(e.target.value)}>
-              <option value="">Select an athlete…</option>
+              <option value="">Choose an athlete</option>
               {athletes.map((athlete) => (
                 <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
               ))}
@@ -188,7 +189,7 @@ export default function TransferCheckPage() {
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/attempt-log" className="btn btn--ghost">Attempt Log</Link>{' '}
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

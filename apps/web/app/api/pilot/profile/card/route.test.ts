@@ -188,3 +188,91 @@ describe('GET /api/pilot/profile/card: the card of a staff member, by viewer', (
     expect(body.card.displayName).toBe('Dana Vance');
   });
 });
+
+/*
+ * F-119 (live audit 2026-10-17): the parent hub's card reads carried the
+ * parent's OWN account id, which is email-shaped, and the child's. A family's
+ * card now carries no account id at all; its portraits are addressed by the
+ * handle the family already holds. Staff cards are unchanged.
+ */
+describe('GET /api/pilot/profile/card: no account id on a family card (F-119)', () => {
+  const PARENT = 'dana.vance@example.test';
+
+  function asViewer(role: keyof typeof VIEWERS, accountId: string = VIEWERS[role].accountId) {
+    const viewer = VIEWERS[role];
+    mockPrincipal.mockResolvedValue({ accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never);
+    mockRelationship.mockImplementation(async (_v, subject) =>
+      (subject.accountId === COACH ? viewer.coach : viewer.card) as never);
+  }
+
+  test('a parent\'s own card: no id, no @, portraits addressed with no query', async () => {
+    asViewer('parent', PARENT);
+    mockRelationship.mockResolvedValue('self' as never);
+    mockIdentity.mockImplementation(async (_org, accountId) => (accountId === PARENT
+      ? { accountId: PARENT, fullName: 'Dana Vance', athleteId: null, dob: null, coachAccountId: null, memberSince: null }
+      : IDENTITIES[accountId] ?? null) as never);
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card'));
+    const raw = await response.text();
+    const card = JSON.parse(raw).card;
+
+    expect(response.status).toBe(200);
+    expect(card.accountId).toBeNull();
+    expect(card.portraitPath).toBe('/api/pilot/profile/card/photo');
+    expect(raw).not.toContain(PARENT);
+    expect(raw).not.toContain('@');
+  });
+
+  test('a parent\'s view of their child: no child account id, addressed by athlete id', async () => {
+    asViewer('parent', PARENT);
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card?athlete_id=ath-1'));
+    const raw = await response.text();
+    const card = JSON.parse(raw).card;
+
+    expect(card.accountId).toBeNull();
+    expect(card.portraitPath).toBe('/api/pilot/profile/card/photo?athlete_id=ath-1');
+    expect(card.coachPortraitPath).toBe('/api/pilot/profile/card/coach-photo?athlete_id=ath-1&coach_name=Coach%20Ray');
+    expect(raw).not.toContain(ATHLETE);
+    expect(raw).not.toContain(PARENT);
+    expect(raw).not.toContain('@');
+  });
+
+  test('an athlete\'s own card: no id', async () => {
+    asViewer('athlete');
+
+    const raw = await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card?athlete_id=ath-1'))).text();
+
+    expect(JSON.parse(raw).card.accountId).toBeNull();
+    expect(JSON.parse(raw).card.portraitPath).toBe('/api/pilot/profile/card/photo');
+    expect(raw).not.toContain(ATHLETE);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)('a %s viewer\'s card is unchanged, ids included', async (role) => {
+    asViewer(role);
+
+    const card = (await (await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card?athlete_id=ath-1'))).json()).card;
+
+    // Every field the card had before F-119, at the value it had; the two
+    // portrait paths are the only additions.
+    expect(card).toEqual({
+      accountId: ATHLETE,
+      displayName: 'Marisol Vance',
+      initials: 'MV',
+      ringName: null,
+      corner: 'none',
+      cornerLabel: expect.any(String),
+      program: 'unstated',
+      programLabel: expect.any(String),
+      coachName: 'Ray Nolan',
+      coachAccountId: COACH,
+      coachPhotoAvailable: true,
+      coachInitials: 'RN',
+      timeAtGym: expect.any(String),
+      // A minor's face reaches their own coach, not the whole staff (decidePortrait).
+      photoAvailable: role === 'coach',
+      portraitPath: '/api/pilot/profile/card/photo?athlete_id=ath-1',
+      coachPortraitPath: '/api/pilot/profile/card/coach-photo?athlete_id=ath-1&coach_name=Ray%20Nolan',
+    });
+  });
+});

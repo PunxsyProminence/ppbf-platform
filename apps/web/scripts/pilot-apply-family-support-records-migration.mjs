@@ -66,12 +66,13 @@ const READINESS_QUERY = `
          and (
            (c.conname = 'pilot_family_support_records_kind_check'
              and d.def like '%char_length(btrim(support_kind))%' and d.def like '%200%')
-           -- The recorder roles exactly (Q-E): every quoted word in the check, and nothing more.
+           -- The recorder roles exactly (Q-E): the whole predicate as PostgreSQL prints this
+           -- migration's own check (runs of whitespace collapsed). Matching only the quoted words
+           -- passed a same-named check with the same two roles plus "or recorded_by_role =
+           -- current_user", and the guard does not vouch for a role outside its list.
            or (c.conname = 'pilot_family_support_records_role_check'
-             and (
-               select array_agg(distinct m[1] order by m[1])
-                 from regexp_matches(d.def, '''([a-z_]+)''', 'g') as m
-             ) = array['admin', 'organization_admin'])
+             and regexp_replace(d.def, '[[:space:]]+', ' ', 'g')
+               = 'CHECK ((recorded_by_role = ANY (ARRAY[''organization_admin''::text, ''admin''::text])))')
          )
     ) = 2 as checks_ready,
     exists (

@@ -596,11 +596,12 @@ describe('the page stays in its lane', () => {
 
   test('it imports only its own content, the session order and the access gate', () => {
     const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
+    // The shared back link (lane U2) replaced the page's own next/link one.
     expect(imports.sort()).toEqual([
+      '@/components/BackHome',
       '@/components/RoleSessionGate',
       '@/src/lib/visualization/guidedSession',
       '@/src/lib/visualization/pf001Scenario',
-      'next/link',
       'react',
     ]);
   });

@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
 // "Scholarship Tracking"). A scholarship is a stored DISCOUNT on a real
@@ -198,18 +198,28 @@ function SupportRecords({ athleteId }: { athleteId: string }) {
   );
 }
 
-function SupportSection({ athletes, athleteId, onAthlete }: {
+function SupportSection({ athletes, athletesLoad, onRetryAthletes, athleteId, onAthlete }: {
   athletes: AthleteOption[];
+  athletesLoad: 'loading' | 'loaded' | 'unavailable';
+  onRetryAthletes: () => void;
   athleteId: string;
   onAthlete: (athleteId: string) => void;
 }) {
   return (
     <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="support-heading">
       <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Support provided</h2>
+      {athletesLoad === 'unavailable' && (
+        <div className="empty mt-[var(--s3)]">
+          <div className="empty-title">Athletes could not be read</div>
+          <p className="empty-msg mx-auto">This is not a record of none. Try again, or open Support on a membership row.</p>
+          <button type="button" className="btn mt-[var(--s3)]" onClick={onRetryAthletes}>Try again</button>
+        </div>
+      )}
       <div className="field mt-[var(--s3)]">
         <label className="t-label" htmlFor="support-athlete">Support for</label>
-        <select id="support-athlete" className="select" value={athleteId} onChange={(e) => onAthlete(e.target.value)}>
-          <option value="">Select an athlete…</option>
+        <select id="support-athlete" className="select" value={athleteId} disabled={athletesLoad === 'loading'}
+          onChange={(e) => onAthlete(e.target.value)}>
+          <option value="">{athletesLoad === 'loading' ? 'Loading athletes…' : 'Choose an athlete'}</option>
           {athletes.map((athlete) => (
             <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
           ))}
@@ -223,6 +233,9 @@ function SupportSection({ athletes, athleteId, onAthlete }: {
 export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
+  // Until the roster read comes back, an empty picker is not a gym with no athletes.
+  const [athletesLoad, setAthletesLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [athletesNonce, setAthletesNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   // True once a read of the memberships list has come back. Until then an
   // empty list is not a record of none, so the empty sentence stays hidden.
@@ -237,6 +250,13 @@ export default function MembershipsPage() {
   const [newProgramName, setNewProgramName] = useState('');
   const [catalogProgramName, setCatalogProgramName] = useState('');
   const [supportAthleteId, setSupportAthleteId] = useState('');
+  // A row's Support button can pick an athlete the roster does not list (the roster
+  // was not read): the picker then offers that athlete too, so it names who is shown.
+  const supportAthletes = useMemo(() => {
+    if (!supportAthleteId || athletes.some((athlete) => athlete.athlete_id === supportAthleteId)) return athletes;
+    const row = items.find((item) => item.athlete_id === supportAthleteId);
+    return row ? [...athletes, { athlete_id: row.athlete_id, full_name: row.athlete_name }] : athletes;
+  }, [athletes, items, supportAthleteId]);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -282,16 +302,18 @@ export default function MembershipsPage() {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error('Unable to load athletes.');
         const payload = (await response.json()) as { items?: AthleteOption[] };
         if (controller.signal.aborted) return;
         setAthletes(payload.items ?? []);
+        setAthletesLoad('loaded');
       } catch {
-        // Silent: the picker degrades to empty; the list still renders.
+        // The memberships list still renders; the support picker says the roster was not read.
+        if (!controller.signal.aborted) setAthletesLoad('unavailable');
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [athletesNonce]);
 
   const reloadPrograms = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/admin/programs`, {
@@ -482,7 +504,7 @@ export default function MembershipsPage() {
                   <label className="t-label" htmlFor="membership-athlete">Athlete</label>
                   <select id="membership-athlete" className="select" value={form.athlete_id}
                     onChange={(e) => setForm((f) => ({ ...f, athlete_id: e.target.value }))}>
-                    <option value="">Select an athlete…</option>
+                    <option value="">Choose an athlete</option>
                     {athletes.map((athlete) => (
                       <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                     ))}
@@ -587,8 +609,10 @@ export default function MembershipsPage() {
                           )}
                         </td>
                         <td className="ledger-id whitespace-nowrap">
-                          since {formatGymDateNumeric(row.started_on)}
-                          {row.ended_on ? ` — ended ${formatGymDateNumeric(row.ended_on)}` : ''}
+                          {/* Plain dates: formatGymDay keeps the calendar day (a date read as
+                              UTC midnight showed the day before at the gym). */}
+                          since {formatGymDay(row.started_on)}
+                          {row.ended_on ? ` — ended ${formatGymDay(row.ended_on)}` : ''}
                         </td>
                         <td>
                           <div className="flex flex-wrap items-center gap-[var(--s2)]">
@@ -629,7 +653,11 @@ export default function MembershipsPage() {
             </section>
           )}
 
-          <SupportSection athletes={athletes} athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
+          <SupportSection athletes={supportAthletes} athletesLoad={athletesLoad} onRetryAthletes={() => {
+              setAthletesLoad('loading');
+              setAthletesNonce((n) => n + 1);
+            }}
+            athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
           {/* The catalog itself: every persistent group this gym runs, with
               its live headcount. Archiving retires the name from the enroll
@@ -697,7 +725,7 @@ export default function MembershipsPage() {
           </section>
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            <BackHome />
           </div>
         </div>
       </main>

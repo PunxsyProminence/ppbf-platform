@@ -95,12 +95,15 @@ type MilestoneHandler = (athleteId: string, init?: RequestInit) => Promise<Respo
 function installFetch(options: {
   scheduler?: () => Promise<Response>;
   milestones?: MilestoneHandler;
+  roster?: Array<{ athlete_id: string; full_name?: string }>;
 } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({
-        items: [
+        items: options.roster ?? [
           { athlete_id: 'ath_1', full_name: 'First Child' },
           { athlete_id: 'ath_2', full_name: 'Second Child' },
         ],
@@ -153,6 +156,10 @@ async function selectChild(name: string) {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // The hub opens on the child remembered last (src/lib/chosenChild.ts); one
+  // test's pick must not choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
@@ -331,6 +338,8 @@ describe('no child selected', () => {
   test('a schedule that answered before the roster, with the roster failing, is not zero sessions', async () => {
     const fetchMock = jest.fn(async (input: unknown) => {
       const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ error: 'down' }, false);
       if (url.includes('/api/pilot/scheduler')) return jsonResponse(SCHEDULE);
       return jsonResponse({ ok: true, items: [], announcements: [], card: null });
@@ -362,5 +371,39 @@ describe('what the overview no longer says, and what it still does', () => {
     expect(text).toContain('Scholarship Status');
     expect(text).toContain('Community Service Support Status');
     expect(text).not.toContain('not yet tracked');
+  });
+});
+
+describe('the paper version (#1596 item 2b)', () => {
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  test('the print link carries no child id in the address; the chosen child goes over in tab storage', async () => {
+    installFetch();
+    await renderHub();
+    await selectChild('Second Child');
+
+    const link = screen.getByRole('link', { name: 'Print their card and certificate' });
+    expect(link.getAttribute('href')).toBe('/print');
+    // Kept on selection, before any click: a middle-click fires no click.
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
+    await selectChild('First Child');
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_1');
+  });
+});
+
+// The roster maps a missing name to 'Unknown' for the selector. The digest
+// must not read "Marked by a coach or by Unknown"; it says "your child".
+describe('the digest when a child’s name did not load', () => {
+  test('the digest says "your child", never "Unknown"', async () => {
+    installFetch({ roster: [{ athlete_id: 'ath_1' }] });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(await screen.findByText('Marked by a coach or by your child')).toBeInTheDocument();
+    expect(screen.queryByText(/Marked by a coach or by Unknown/)).toBeNull();
+    expect(screen.getByText('Your child’s corner, as it stands')).toBeInTheDocument();
   });
 });

@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { SaveNote, withoutKey, type SaveState } from './AthleteAchievements';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
 
 /**
@@ -50,13 +51,21 @@ export interface PersonalGoalBoardProps {
   athleteId: string | null;
   /** Family surfaces read but never write. */
   readOnly?: boolean;
+  /** Told after a goal is added or marked reached, so a count elsewhere (Active Goals) reads again. */
+  onChanged?: () => void;
 }
 
 const TITLE_MAX = 160;
+/** When the Undo line stops being offered. The server's PERSONAL_GOAL_UNDO_WINDOW_MS decides. */
+const UNDO_WINDOW_MS = 10 * 60 * 1000;
 const WHY_MAX = 240;
 
-export default function PersonalGoalBoard({ athleteId, readOnly = false }: PersonalGoalBoardProps) {
-  const [goals, setGoals] = useState<PersonalGoalItem[]>([]);
+export default function PersonalGoalBoard({ athleteId, readOnly = false, onChanged }: PersonalGoalBoardProps) {
+  const [loadedGoals, setGoals] = useState<PersonalGoalItem[]>([]);
+  // Whose goals those are. On a shared kiosk a failed read for the next athlete
+  // must not leave the previous athlete's goals (and their Undo) on screen.
+  const [goalsFor, setGoalsFor] = useState<string | null>(null);
+  const goals = useMemo(() => (goalsFor === athleteId ? loadedGoals : []), [goalsFor, athleteId, loadedGoals]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -68,6 +77,13 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
   // athlete and goal, so the line sits on the goal that was pressed and leaves with its athlete.
   const [reachSave, setReachSave] = useState<Readonly<Record<string, SaveState>>>({});
   const [message, setMessage] = useState('');
+  // "Undo" for a mark made in the last ten minutes (UXB Q1 B). The server
+  // decides the window and the owner (undoPersonalGoalReached); this clock only
+  // decides when to stop offering the line. Ticked in an effect, not read in render.
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const [undoFailed, setUndoFailed] = useState<Readonly<Record<string, string>>>({});
+  const undoingRef = useRef<Set<string>>(new Set());
+  const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!athleteId) return;
@@ -79,6 +95,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       if (!response.ok) throw new Error('unavailable');
       const body = (await response.json()) as { items?: PersonalGoalItem[] };
       setGoals(body.items ?? []);
+      setGoalsFor(athleteId);
       setFailed(false);
       setLoaded(true);
     } catch {
@@ -111,8 +128,10 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
     onCross: ring,
   });
 
+  // Only a goal that is still reached: after an Undo the ceremony keeps its
+  // record (it never shrinks), but the board must not keep saying "You did."
   const pressedGoal = pressed
-    ? goals.find((goal) => `goal:${goal.goal_id}` === pressed) ?? null
+    ? goals.find((goal) => `goal:${goal.goal_id}` === pressed && goal.reached_at !== null) ?? null
     : null;
 
   const create = useCallback(async () => {
@@ -139,7 +158,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        setMessage(payload.error || 'That did not save. Try it again.');
+        setMessage(payload.error || 'That did not save. Try again.');
         return;
       }
       setOwnWords('');
@@ -147,16 +166,23 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       setTargetDate('');
       setMessage('On the board.');
       await load();
+      onChanged?.();
     } catch {
-      setMessage('That did not save. Try it again.');
+      setMessage('That did not save. Try again.');
     } finally {
       setSaving(false);
     }
-  }, [athleteId, ownWords, why, targetDate, saving, load]);
+  }, [athleteId, ownWords, why, targetDate, saving, load, onChanged]);
+
+  // One mark per press (UXB-19), as AthleteAchievements does (#1529): a second
+  // tap before the first is answered must not send a second write.
+  const reachingRef = useRef<Set<string>>(new Set());
 
   const markReached = useCallback(async (goalId: string) => {
     if (!athleteId || readOnly) return;
     const key = `${athleteId}:${goalId}`;
+    if (reachingRef.current.has(key)) return;
+    reachingRef.current.add(key);
     setReachSave((now) => ({ ...now, [key]: 'saving' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/goals/personal`, {
@@ -168,6 +194,7 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       if (response.ok) {
         await load();
         setReachSave((now) => withoutKey(now, key));
+        onChanged?.();
       } else {
         setReachSave((now) => ({ ...now, [key]: 'failed' }));
       }
@@ -175,8 +202,53 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       // The goal stays open, which is the truth until the server says otherwise,
       // and its card says the press was not kept.
       setReachSave((now) => ({ ...now, [key]: 'failed' }));
+    } finally {
+      reachingRef.current.delete(key);
     }
-  }, [athleteId, readOnly, load]);
+  }, [athleteId, readOnly, load, onChanged]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const undoReached = useCallback(async (goalId: string) => {
+    if (!athleteId || readOnly) return;
+    const key = `${athleteId}:${goalId}`;
+    if (undoingRef.current.has(key)) return;
+    undoingRef.current.add(key);
+    setUndoing(new Set(undoingRef.current));
+    setUndoFailed((now) => {
+      const rest = { ...now };
+      delete rest[key];
+      return rest;
+    });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/goals/personal`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ athlete_id: athleteId, goal_id: goalId, undo: true }),
+      });
+      if (response.ok) {
+        await load();
+        onChanged?.();
+      } else {
+        // 409: past the window, as the server counts it, or already undone
+        // elsewhere: read again so the board shows what is stored. PROPOSED wording.
+        setUndoFailed((now) => ({
+          ...now,
+          [key]: response.status === 409 ? 'That can no longer be undone.' : 'That did not undo. Try again.',
+        }));
+        if (response.status === 409) await load();
+      }
+    } catch {
+      setUndoFailed((now) => ({ ...now, [key]: 'That did not undo. Try again.' }));
+    } finally {
+      undoingRef.current.delete(key);
+      setUndoing(new Set(undoingRef.current));
+    }
+  }, [athleteId, readOnly, load, onChanged]);
 
   if (!athleteId) {
     return null;
@@ -257,9 +329,14 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
       )}
 
       {failed && (
-        <p className="tcard-sub mt-[var(--s4)]">
-          These did not load. That is a connection problem — nothing you wrote has gone anywhere.
-        </p>
+        <div className="mt-[var(--s4)] space-y-[var(--s3)]">
+          <p className="tcard-sub" role="alert">
+            These did not load. That is a connection problem — nothing you wrote has gone anywhere.
+          </p>
+          <button type="button" onClick={() => void load()} className="btn btn--kiosk">
+            Try again
+          </button>
+        </div>
       )}
 
       {loaded && !failed && goals.length === 0 && (
@@ -295,7 +372,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
                   <button
                     type="button"
                     onClick={() => void markReached(goal.goal_id)}
-                    className="btn btn--kiosk mt-[var(--s3)]"
+                    disabled={reachSave[`${athleteId}:${goal.goal_id}`] === 'saving'}
+                    className="btn btn--kiosk mt-[var(--s3)] disabled:opacity-60"
                   >
                     I did it
                   </button>
@@ -322,6 +400,24 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false }: Perso
                 <span aria-hidden="true" className="mr-[var(--s2)]">✓</span>
                 {goal.title}
                 <span className="tcard-sub ml-[var(--s3)]">{formatDay(goal.reached_at ?? '')}</span>
+                {/* One tap marks it; a slip can be taken back for ten minutes (UXB Q1 B). */}
+                {!readOnly && goal.reached_at && clockMs - Date.parse(goal.reached_at) < UNDO_WINDOW_MS && (
+                  <p className="mt-[var(--s2)]">
+                    Marked.{' '}
+                    <button
+                      type="button"
+                      onClick={() => void undoReached(goal.goal_id)}
+                      disabled={undoing.has(`${athleteId}:${goal.goal_id}`)}
+                      aria-label={`Undo "${goal.title}"`}
+                      className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-60"
+                    >
+                      {undoing.has(`${athleteId}:${goal.goal_id}`) ? 'Undoing…' : 'Undo'}
+                    </button>
+                  </p>
+                )}
+                {undoFailed[`${athleteId}:${goal.goal_id}`] && (
+                  <p className="tcard-sub mt-[var(--s2)]" role="status">{undoFailed[`${athleteId}:${goal.goal_id}`]}</p>
+                )}
               </li>
             ))}
           </ul>
@@ -341,6 +437,6 @@ function formatDay(raw: string): string {
   const ymd = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : (gymDayIso(raw) ?? raw.slice(0, 10));
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return raw;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(match[2]) - 1] ?? match[2]} ${Number(match[3])} ${match[1]}`;
+  // One date form across the app (UXB-30): "Oct 16, 2026".
+  return formatCalendarDay(ymd);
 }
