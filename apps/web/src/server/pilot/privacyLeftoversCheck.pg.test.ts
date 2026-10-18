@@ -58,7 +58,7 @@ const ATHLETE_ONLY = 'acct-xs-athlete-only';
 const MIXED = 'acct-xs-mixed';
 
 interface Report {
-  cross_subject_citations: { total: number; by_asker_role: Array<Record<string, unknown>> };
+  cross_subject_citations: { total: number; needs_a_look: number; by_asker_role: Array<Record<string, unknown>> };
   athlete_logins_with_staff_roles: {
     total: number;
     logins_by_role: Array<Record<string, unknown>>;
