@@ -384,7 +384,17 @@ describe('SHADOW library semantic search', () => {
     mockIsSemanticEnabled.mockReturnValue(true);
   });
 
-  it('ranks candidates by real cosine similarity and never runs the keyword SQL', async () => {
+  const candidateLoads = () => mockQuery.mock.calls.filter((call) => String(call[0]).includes('c.embedding is not null'));
+  // After a semantic answer the keyword statement runs once more, over the
+  // passages the semantic index does not hold and no others.
+  function expectUnindexedKeywordOnly() {
+    const keyword = mockQuery.mock.calls.filter((call) => !String(call[0]).includes('c.embedding is not null'));
+    expect(keyword).toHaveLength(1);
+    expect(String(keyword[0][0])).toContain('c.embedding is null or c.embedding_model is distinct from $6::text');
+    expect(keyword[0][1]?.[5]).toBe('test-embedding');
+  }
+
+  it('ranks candidates by real cosine similarity and runs the keyword SQL over unindexed passages only', async () => {
     mockEmbedText.mockResolvedValue([1, 0]);
     mockQuery.mockResolvedValueOnce([
       candidate('chunk_far', [0.1, 0.99]),
@@ -396,9 +406,10 @@ describe('SHADOW library semantic search', () => {
     expect(results.map((r) => r.chunk_id)).toEqual(['chunk_near', 'chunk_mid']);
     expect(results[0].score).toBeGreaterThan(results[1].score);
     expect(results[0]).not.toHaveProperty('embedding');
-    // One db call: the candidate load. The keyword statement never ran.
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    // One candidate load; the keyword statement reached only unindexed passages.
+    expect(candidateLoads()).toHaveLength(1);
     expect(String(mockQuery.mock.calls[0][0])).toContain('c.embedding is not null');
+    expectUnindexedKeywordOnly();
   });
 
   // CL-C13: the candidate set used to be the first 200 rows by tier and age.
@@ -415,7 +426,7 @@ describe('SHADOW library semantic search', () => {
     const results = await searchShadowLibrary(searchInput);
 
     expect(results.map((r) => r.chunk_id)).toEqual(['chunk_b_best']);
-    expect(mockQuery).toHaveBeenCalledTimes(2);
+    expect(candidateLoads()).toHaveLength(2);
     const [firstSql, firstParams] = mockQuery.mock.calls[0];
     expect(String(firstSql)).not.toContain('limit 200');
     expect(String(firstSql)).not.toContain('c.created_at asc');
@@ -431,7 +442,7 @@ describe('SHADOW library semantic search', () => {
     mockQuery.mockResolvedValueOnce([candidate('chunk_only', [0.98, 0.05])] as never);
 
     await searchShadowLibrary(searchInput);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(candidateLoads()).toHaveLength(1);
   });
 
   it('scores an embedding that is not an array of numbers as no match, not as a number', async () => {
@@ -470,7 +481,57 @@ describe('SHADOW library semantic search', () => {
     const ranked = await searchShadowLibraryRanked(searchInput);
     expect(ranked.relevant).toEqual([]);
     expect(ranked.nearest).toEqual([]);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    // The indexed passages are never re-admitted on word overlap.
+    expectUnindexedKeywordOnly();
+  });
+
+  // Item 3 of the 2026-10-17 non-video ML audit: once any passage was
+  // embedded, search answered from the semantic index alone, and a passage
+  // whose embedding failed (or came from a retired deployment) could not be
+  // found at all.
+  // The keyword statement selects no embedding column.
+  function keywordRow(chunkId: string, score: number) {
+    const row: Partial<ReturnType<typeof candidate>> = { ...candidate(chunkId, []), score };
+    delete row.embedding;
+    return row;
+  }
+
+  it('finds a passage the semantic index does not hold when it clears the keyword bar', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery
+      .mockResolvedValueOnce([candidate('chunk_unrelated', [0.01, 0.999])] as never)
+      .mockResolvedValueOnce([keywordRow('chunk_unembedded', 1)] as never);
+
+    const ranked = await searchShadowLibraryRanked(searchInput);
+
+    expect(ranked.relevant.map((r) => [r.chunk_id, r.match_mode])).toEqual([['chunk_unembedded', 'keyword']]);
+    expect(ranked.mode).toBe('semantic');
+    expectUnindexedKeywordOnly();
+  });
+
+  it('adds no unindexed keyword match below the keyword bar, as evidence or as nearest', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery
+      .mockResolvedValueOnce([candidate('chunk_unrelated', [0.01, 0.999])] as never)
+      .mockResolvedValueOnce([keywordRow('chunk_one_word', 1 / 3)] as never);
+
+    const ranked = await searchShadowLibraryRanked(searchInput);
+
+    expect(ranked.relevant).toEqual([]);
+    expect(ranked.nearest).toEqual([]);
+  });
+
+  it('places each path by its own confidence level, semantic first within a level', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery
+      // cosine about 0.36 and 0.71: medium and high on the semantic cutoffs.
+      .mockResolvedValueOnce([candidate('chunk_sem_medium', [0.36, 0.93]), candidate('chunk_sem_high', [0.71, 0.71])] as never)
+      // 1.0 is high and 0.67 medium on the keyword cutoffs.
+      .mockResolvedValueOnce([keywordRow('chunk_kw_high', 1), keywordRow('chunk_kw_medium', 2 / 3)] as never);
+
+    const results = await searchShadowLibrary({ ...searchInput, limit: 4 });
+
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_sem_high', 'chunk_kw_high', 'chunk_sem_medium', 'chunk_kw_medium']);
   });
 
   it('keeps a candidate between the floor and the relevance bar as nearest, not as evidence', async () => {
