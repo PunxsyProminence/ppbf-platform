@@ -443,7 +443,8 @@ describe('filing a research PDF (real database, Graph mocked)', () => {
   test('two uploads of the same PDF at once: the loser reads the winner back and returns its row', async () => {
     // The other request wins the create-only PUT and records its row while this
     // one is writing: this PUT is refused nameAlreadyExists, the read-back finds
-    // the same item, and the insert collides on both unique keys.
+    // the same item, and the insert collides on the sha key (Postgres reports
+    // that one first; the item key alone is the next test).
     fetchMock
       .mockResolvedValueOnce(ROOT_CHILDREN)
       .mockResolvedValueOnce(folderWith())
@@ -468,6 +469,29 @@ describe('filing a research PDF (real database, Graph mocked)', () => {
 
     expect(result).toMatchObject({ status: 'already_filed', original: { archived_original_id: 'arc_winner' } });
     expect(await originals()).toHaveLength(1);
+  });
+
+  test('an archive item already recorded for different bytes is refused, and nothing new is recorded', async () => {
+    // Only the item key collides (the recorded sha differs), so no winner is
+    // found by hash: a 409 that names it, never a second row for the item.
+    fetchMock
+      .mockResolvedValueOnce(ROOT_CHILDREN)
+      .mockResolvedValueOnce(folderWith())
+      .mockImplementationOnce(async () => {
+        await sql(
+          `insert into pilot.shadow_library_archived_originals
+             (archived_original_id, organization_id, source_id, site_id, drive_id, item_id, archive_root_item_id,
+              archive_domain_code, archive_filename, original_filename, content_sha256, byte_size,
+              acquisition_provider, acquisition_channel, acquired_at, created_by_account_id, created_by_role)
+           values ('arc_same_item', $1, $2, 'site-guid', 'b!drive', 'ITEM-NEW', $3, 'R19', 'y.pdf', 'y.pdf', $4, 5,
+                   'PPBF', 'ppbf_created', now(), 'acct-other', 'organization_admin')`,
+          [ORG, PAPER, ROOT, 'c'.repeat(64)],
+        );
+        return CREATED;
+      });
+
+    await expect(file()).rejects.toMatchObject({ status: 409, code: 'ARCHIVE_ITEM_ALREADY_RECORDED' });
+    expect(await originals()).toEqual([expect.objectContaining({ item_id: 'ITEM-NEW', archive_filename: 'y.pdf' })]);
   });
 
   test('a lost race to the same bytes for another source is refused, not recorded twice', async () => {
@@ -542,6 +566,7 @@ describe('filing a research PDF (real database, Graph mocked)', () => {
     ['no provider', { acquisitionProvider: '   ' }, 400, 'ARCHIVE_PROVIDER_INVALID'],
     ['a control character in the provider', { acquisitionProvider: `Penn State${String.fromCharCode(0)}` }, 400, 'ARCHIVE_PROVIDER_INVALID'],
     ['a control character in the file name', { originalFilename: `Paper${String.fromCharCode(0)}.pdf` }, 400, 'ARCHIVE_FILENAME_INVALID'],
+    ['a right-to-left override in the file name', { originalFilename: `Paper${String.fromCharCode(0x202e)}fdp.exe.pdf` }, 400, 'ARCHIVE_FILENAME_INVALID'],
   ] as const)('%s is refused before anything is called', async (_label, overrides, status, code) => {
     await expect(file(overrides as never)).rejects.toMatchObject({ status, code });
     expect(fetchMock).not.toHaveBeenCalled();
