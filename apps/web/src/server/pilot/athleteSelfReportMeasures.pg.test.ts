@@ -592,6 +592,8 @@ describe('athlete self-report measures migration (L58)', () => {
       alter table pilot.safety_escalations add constraint safety_escalations_source_type_check check (source_type in ('sparring_symptom'))`],
     ['escalation_no_narrower_source_check', `alter table pilot.safety_escalations add constraint safety_escalations_old_source_check
       check (source_type in ('near_miss', 'pain_report'))`],
+    ['symptom_day_column_ready', 'alter table pilot.sparring_symptom_reports alter column reported_on drop not null'],
+    ['mood_column_ready', 'alter table pilot.athlete_check_ins alter column mood set not null'],
     ['cycle_tracking_athlete_fk_ready', `alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_tracking_fk;
       alter table pilot.athlete_cycle_tracking drop constraint pilot_athlete_cycle_tracking_athlete_fk;
       alter table pilot.athlete_cycle_tracking add constraint pilot_athlete_cycle_tracking_athlete_fk
@@ -604,6 +606,18 @@ describe('athlete self-report measures migration (L58)', () => {
     ['cycle_entries_one_per_day_ready', 'alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_one_per_day'],
     ['cycle_entries_day_column_ready', 'alter table pilot.athlete_cycle_entries alter column period_started_on drop not null'],
   ];
+
+  test('a later source type widening the escalation check does not trip this gate', async () => {
+    const client = await freshDatabase('selfrep_escalation_later');
+    try {
+      await applyRunner(client, `
+        alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check;
+        alter table pilot.safety_escalations add constraint safety_escalations_source_type_check
+          check (source_type in (${[...PRE_L58_SOURCE_TYPES, 'sparring_symptom', 'a_later_source'].map((type) => `'${type}'`).join(', ')}))`);
+    } finally {
+      await client.end();
+    }
+  });
 
   test('each readiness probe refuses its own object when it alone is wrong', async () => {
     const client = await freshDatabase('selfrep_probes');

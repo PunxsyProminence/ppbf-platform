@@ -79,9 +79,10 @@ const READINESS_QUERY = `
     ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_protocol_check',
       'CHECK ((char_length(protocol_text) <= 1000))')} as settings_protocol_check_ready,
     not exists (
+      -- Jason ruled the flag goes to "Their coach": no per-gym recipient to route it elsewhere.
       select 1 from information_schema.columns
        where table_schema = 'pilot' and table_name = 'organization_symptom_flag_settings'
-         and column_name not in ('organization_id', 'protocol_text', 'updated_at')
+         and column_name like '%recipient%'
     ) as settings_no_recipient_column,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_pkey', 'p', ['organization_id', 'report_id'])} as symptom_pkey_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_athlete_fk', 'f', ['organization_id', 'athlete_id'], 'pilot.athletes')} as symptom_athlete_fk_ready,
@@ -101,8 +102,15 @@ const READINESS_QUERY = `
          and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1 and (t.tgtype & 16) = 16
          and t.tgfoid = to_regprocedure('pilot.sparring_symptom_reports_guard()')
     ) as symptom_ticks_kept_guard_ready,
-    ${checkIs('pilot.safety_escalations', 'safety_escalations_source_type_check',
-      `CHECK ((source_type = ANY (${anyText(ESCALATION_SOURCES)})))`)} as escalation_source_ready,
+    exists (
+      -- Every value this file needs, not the exact list: a later source type widens the same
+      -- check (in the escalations file and the base schema), and this gate must not refuse it.
+      select 1 from pg_constraint c
+       where c.conrelid = to_regclass('pilot.safety_escalations')
+         and c.contype = 'c' and c.convalidated
+         and c.conname = 'safety_escalations_source_type_check'
+         ${ESCALATION_SOURCES.map((source) => `and pg_get_constraintdef(c.oid) like '%''${source}''%'`).join(' ')}
+    ) as escalation_source_ready,
     not exists (
       select 1 from pg_constraint
        where conrelid = to_regclass('pilot.safety_escalations')

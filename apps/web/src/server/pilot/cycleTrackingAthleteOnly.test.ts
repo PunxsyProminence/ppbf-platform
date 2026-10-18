@@ -23,13 +23,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../..');
-const SCANNED_ROOTS = ['apps', 'packages', 'scripts', 'infra'];
+const SCANNED_ROOTS = ['apps', 'packages', 'scripts', 'infra', '.github'];
 const SKIPPED_DIRS = new Set(['node_modules', '.next', 'coverage', 'dist', 'build', 'out', 'test-results', 'playwright-report']);
 const SOURCE = /\.(?:[cm]?[jt]sx?|sql|ps1|py|sh|ya?ml)$/;
 const TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 const CYCLE_TABLE = /athlete_cycle_(?:tracking|entries)\b|['"`]pilot\.athlete_cycle['"`]/;
-const CYCLE_MODULE_IMPORT = /from\s+['"][^'"]*\/athleteCycle['"]|import\(\s*['"][^'"]*\/athleteCycle['"]\s*\)|require\(\s*['"][^'"]*\/athleteCycle['"]\s*\)/;
+const MODULE = String.raw`[^'"]*\/athleteCycle(?:\.[cm]?[jt]sx?)?['"]`;
+const CYCLE_MODULE_IMPORT = new RegExp(String.raw`from\s+['"]${MODULE}|import\(\s*['"]${MODULE}\s*\)|require\(\s*['"]${MODULE}\s*\)`);
 
 /** The only files that may name the cycle tables. */
 const MAY_NAME_THE_TABLES = new Set([
@@ -95,6 +96,9 @@ describe('cycle tracking is reachable only through the athlete', () => {
     expect(CYCLE_MODULE_IMPORT.test("import { listCycleEntries } from '@/src/server/pilot/athleteCycle';")).toBe(true);
     expect(CYCLE_MODULE_IMPORT.test("import x from './athleteCycle'")).toBe(true);
     expect(CYCLE_MODULE_IMPORT.test("await import('../pilot/athleteCycle')")).toBe(true);
+    expect(CYCLE_MODULE_IMPORT.test("import x from './athleteCycle.ts'")).toBe(true);
+    expect(CYCLE_MODULE_IMPORT.test("require('./athleteCycle.js')")).toBe(true);
+    expect(CYCLE_MODULE_IMPORT.test("import x from './athleteCycleView'")).toBe(false);
     expect(CYCLE_MODULE_IMPORT.test("import { checkIn } from './athleteCheckIns';")).toBe(false);
   });
 });
