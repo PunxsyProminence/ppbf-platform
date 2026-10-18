@@ -95,7 +95,8 @@ function invalidObservation(message: string) {
  * without anybody assembling observation ids by hand.
  *
  * Same two gates as POST, in the same order. The answer is an ENUMERATED
- * projection of the punch numbers only (listRecentSparringEntries): no body
+ * projection of the punch counts and working minutes only
+ * (listRecentSparringEntries): no body
  * weight, no notes, no source reference.
  */
 export async function GET(request: NextRequest) {

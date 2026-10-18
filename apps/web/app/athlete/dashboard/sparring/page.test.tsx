@@ -604,3 +604,114 @@ describe('fix a number', () => {
     expect(posts).toEqual([]);
   });
 });
+
+// WHOLE SESSION (Jason 2026-10-17, "B: Longer sparring form"; copy accepted by
+// Overwatch). Optional boxes: blank sends nothing, filled sends the counts the
+// MVP-02/04/05 detectors read, tagged as whole-session so they never collide
+// with the per-type numbers above.
+describe('whole session boxes', () => {
+  async function renderFillAndSubmit(fill: Record<string, string>) {
+    submittedObservations.length = 0;
+    global.fetch = mockFetch(() => true) as unknown as typeof fetch;
+    const { container } = render(<SparringTelemetryPage />);
+    const submit = await screen.findByRole('button', { name: 'Log This Session' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    for (const [label, value] of Object.entries(fill)) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    }
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+  }
+
+  const kinds = () => submittedObservations.map((item) => item.kind);
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('left blank, none of the whole-session kinds is sent', async () => {
+    await renderFillAndSubmit({});
+    await screen.findByText('Saved to your training record.');
+    expect(kinds()).not.toContain('punch_count');
+    expect(kinds()).not.toContain('round_count');
+    expect(kinds()).not.toContain('active_time');
+    expect(kinds().filter((kind) => kind === 'punch_landed')).toHaveLength(1);
+  });
+
+  test('filled in, each box is sent tagged as the whole session, with rounds beside all thrown', async () => {
+    await renderFillAndSubmit({
+      'All punches thrown': '90',
+      'All punches landed': '30',
+      'Minutes of actual work': '12',
+    });
+    await screen.findByText('Saved to your training record.');
+    const whole = submittedObservations.filter((item) => (
+      (item.dimensions as Record<string, unknown>)?.scope === 'session_total'
+    ));
+    expect(whole.map((item) => [item.kind, item.value, item.unit]).sort()).toEqual([
+      ['active_time', 12, 'minutes'],
+      ['punch_count', 90, 'count'],
+      ['punch_landed', 30, 'count'],
+      ['round_count', 6, 'count'],
+    ]);
+    // Two punch_landed in one context need two idempotency keys.
+    const landedKeys = submittedObservations
+      .filter((item) => item.kind === 'punch_landed')
+      .map((item) => item.idempotencyKey);
+    expect(new Set(landedKeys).size).toBe(2);
+  });
+
+  test.each([
+    [{ 'All punches thrown': '10', 'All punches landed': '11' }, "All punches landed can't be more than all punches thrown"],
+    [{ 'Thrown': '20', 'All punches thrown': '10' }, "All punches thrown can't be fewer than the jabs you threw above"],
+    [{ 'Thrown': '10', 'Landed': '5', 'All punches landed': '4' }, "All punches landed can't be fewer than the jabs you landed above"],
+    [{ 'Minutes of actual work': '0' }, 'Minutes of actual work has to be between 1 and 120'],
+    [{ 'Minutes of actual work': '121' }, 'Minutes of actual work has to be between 1 and 120'],
+  ])('refuses %j before anything is sent', async (fill, message) => {
+    await renderFillAndSubmit(fill as Record<string, string>);
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(message));
+    expect(submittedObservations).toEqual([]);
+  });
+});
+
+describe('fix a number, whole-session counts', () => {
+  test('an entry with both landed counts offers both, and fixing the total replaces the total', async () => {
+    const entry = {
+      contextId: 'sparring_1000',
+      observedAt: '2026-10-17T15:00:00.000Z',
+      observations: [
+        { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-landed', kind: 'punch_landed', value: 5, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-landed', kind: 'punch_landed', value: 12, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-thrown', kind: 'punch_count', value: 40, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      ],
+    };
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'athlete', athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [entry] }) } as Response;
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = await screen.findByRole('button', { name: 'Show recent entries' });
+    await waitFor(() => expect((show as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(show);
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+
+    expect((within(section).getByLabelText('Landed') as HTMLInputElement).value).toBe('5');
+    expect((within(section).getByLabelText('All punches landed') as HTMLInputElement).value).toBe('12');
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '14' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([expect.objectContaining({
+      kind: 'punch_landed',
+      value: 14,
+      dimensions: { scope: 'session_total' },
+      supersedesObservationId: 'obs-all-landed',
+    })]);
+  });
+});
