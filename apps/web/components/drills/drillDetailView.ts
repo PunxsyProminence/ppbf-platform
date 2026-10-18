@@ -5,6 +5,7 @@
 // both are normalised into this one view so a single component renders them.
 // Type-only imports: nothing server-side reaches the client bundle.
 
+import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import type { AthleteDrillDetail, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 
 export interface DrillScaleView {
@@ -79,6 +80,12 @@ export interface DrillCoachContext {
   contentClass: string;
   sourceRef: string | null;
   groundingClaimIds: string[];
+  /**
+   * What each grounding claim id points at in the Library: found, not cleared
+   * for use, or not found (audit 2026-10-17 item 11). null when the payload
+   * carried no answer, which the screen says rather than showing bare ids.
+   */
+  groundingEvidence: GroundingEvidence[] | null;
 }
 
 export interface DrillDetailView {
@@ -129,7 +136,10 @@ export function fromAthleteDrillDetail(drill: AthleteDrillDetail): DrillDetailVi
   };
 }
 
-export function fromCoachDrillDetail(drill: DrillWithDetail): DrillDetailView {
+export function fromCoachDrillDetail(
+  drill: DrillWithDetail,
+  groundingEvidence: GroundingEvidence[] | null = null,
+): DrillDetailView {
   // The coach cue read has no ORDER BY, so its order is whatever Postgres
   // returns. Sorted the way the athlete read is, so the two audiences see one
   // order and it does not change between loads.
@@ -178,6 +188,7 @@ export function fromCoachDrillDetail(drill: DrillWithDetail): DrillDetailView {
       contentClass: drill.content_class,
       sourceRef: drill.source_ref,
       groundingClaimIds: drill.grounding_claim_ids ?? [],
+      groundingEvidence,
     },
   };
 }

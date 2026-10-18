@@ -10,6 +10,7 @@ import {
   listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
 import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
+import { resolveDrillGroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { roleEquals } from '@/src/server/pilot/roleAlias';
 
@@ -104,14 +105,23 @@ export async function GET(request: NextRequest) {
       // fresher than the list. Derived on every read from durable rows.
       // Beside the lifecycle: whether a coach of this gym has floor-tested
       // this version (OD-2026-10-06-026 ruling 3), which Promote needs to know.
-      const [lifecycles, floorTested] = await Promise.all([
+      // And what each grounding claim id points at in the Library (audit
+      // 2026-10-17 item 11) -- found, not cleared for use, or not found -- so
+      // the coach opens the evidence rather than reading a bare id. Authors
+      // only, like the ids themselves.
+      const [lifecycles, floorTested, groundingEvidence] = await Promise.all([
         listReferenceLifecycles(principal.organizationId, [drillId]),
         listFloorValidations(principal.organizationId, [drillId]),
+        resolveDrillGroundingEvidence(
+          principal.organizationId,
+          'grounding_claim_ids' in detail ? detail.grounding_claim_ids ?? [] : [],
+        ),
       ]);
       return NextResponse.json({
         drill: detail,
         lifecycle: lifecycles[drillId] ?? null,
         floor_tested: floorTested[drillId] ?? null,
+        grounding_evidence: groundingEvidence,
       });
     }
 
