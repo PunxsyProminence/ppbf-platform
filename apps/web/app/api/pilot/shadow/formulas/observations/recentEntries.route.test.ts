@@ -12,7 +12,7 @@ import * as route from './route';
  * number" (lane L50). Same two gates as POST, in the same order, and an
  * enumerated projection -- no source reference or idempotency key leaves.
  * The SQL itself is proved against Postgres in
- * src/server/pilot/formulas/sparringCorrection.pg.test.ts.
+ * src/server/pilot/formulaSparringCorrection.pg.test.ts.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
