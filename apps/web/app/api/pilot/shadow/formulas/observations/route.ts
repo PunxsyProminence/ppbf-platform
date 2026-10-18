@@ -291,8 +291,8 @@ export async function POST(request: NextRequest) {
     // A correction re-runs the calculations the replaced observation was
     // actually used in, which knows more than re-detecting the context can:
     // it carries the parameters and policyVersion each original ran under.
-    // Auto-detection below is therefore the else-branch, not an addition --
-    // running both would compute the same context twice.
+    // Auto-detection below runs as well (see there); a set both reach is the
+    // same calculationKey, so the same row.
     const recalculated = observation.supersedesObservationId
       ? await recalculateForSupersededObservation({
           organizationId: principal.organizationId,

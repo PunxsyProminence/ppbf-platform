@@ -720,7 +720,13 @@ function calculateStoredFormula(
       const { policy, policyVersion } = parseCompletenessPolicy(input);
       return {
         results: [calculateDataCompleteness({
-          observations,
+          // In a fixed order: the engine keys the result on its inputs in the
+          // order given, and detection (sorted ids) and a correction (the
+          // replacement swapped in place) would otherwise store the same
+          // completeness twice under two keys (lane L50 review).
+          observations: [...observations].sort(
+            (left, right) => left.observationId.localeCompare(right.observationId),
+          ),
           policy,
           policyVersion,
           computedAt: input.computedAt,

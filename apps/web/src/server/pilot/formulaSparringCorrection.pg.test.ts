@@ -589,5 +589,8 @@ describe('data completeness (MVP-10) over the whole-session boxes (Jason 2026-10
       organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-10',
     }))[0];
     expect(filled.quality.confidence).toBe('HIGH');
+    // One current completeness row, not one per path that computed it.
+    const active = await repository.listActiveFormulaResults({ organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-10' });
+    expect(active).toHaveLength(1);
   });
 });

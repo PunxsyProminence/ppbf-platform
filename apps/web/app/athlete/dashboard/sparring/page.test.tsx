@@ -630,7 +630,7 @@ describe('whole session boxes', () => {
     jest.restoreAllMocks();
   });
 
-  test('left blank, each box is sent empty (null) with its fieldKey, and no round count', async () => {
+  test('left blank, each box is sent empty (null) with its fieldKey; rounds still go', async () => {
     // A blank is a gap data completeness (MVP-10) counts (Overwatch QD3); the
     // detector never reads a null as a value for MVP-02/04/05.
     await renderFillAndSubmit({});
@@ -643,7 +643,7 @@ describe('whole session boxes', () => {
       ['punch_count', null, 'all_thrown'],
       ['punch_landed', null, 'all_landed'],
     ]);
-    expect(kinds()).not.toContain('round_count');
+    expect(kinds()).toContain('round_count');
   });
 
   test('filled in, each box is sent tagged as the whole session, with rounds beside all thrown', async () => {

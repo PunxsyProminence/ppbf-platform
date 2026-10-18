@@ -111,10 +111,10 @@ async function submitDeepTrackObservations(input: {
     { kind: 'punch_landed', value: input.allLanded, unit: 'count', dimensions: box(SPARRING_LOG_FIELD_KEYS.allLanded), keySuffix: 'session_total' },
     { kind: 'active_time', value: input.minutesWorked, unit: 'minutes', dimensions: box(SPARRING_LOG_FIELD_KEYS.minutesWorked) },
   );
-  // Rounds go with "All punches thrown": punches per round is the only formula
-  // that reads them here. A cleared rounds box reads as 0, which is not a
-  // count of rounds, so it is not sent.
-  if (input.allThrown != null && input.totalRoundsCompleted >= 1) {
+  // Rounds are sent whenever answered, so filling "All punches thrown" later
+  // (Fix a number) can still give punches per round. A cleared rounds box
+  // reads as 0, which is not a count of rounds, so it is not sent.
+  if (input.totalRoundsCompleted >= 1) {
     observations.push({ kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: { ...SESSION_TOTAL_DIMENSIONS } });
   }
 

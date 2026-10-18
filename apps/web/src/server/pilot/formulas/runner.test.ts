@@ -303,3 +303,29 @@ describe('stored MVP formula runner', () => {
     });
   });
 });
+
+describe('data completeness (MVP-10) does not depend on input order (lane L50)', () => {
+  test('the same three boxes in two orders store one calculation', async () => {
+    jest.clearAllMocks();
+    mockWithTransaction.mockImplementation(async (callback) => callback(transactionClient as never));
+    mockSaveResults.mockImplementation(async (_client, results) => [...results]);
+    const box = (id: string, kind: 'punch_count' | 'punch_landed' | 'active_time', fieldKey: string) => observation({
+      id, kind, unit: kind === 'active_time' ? 'minutes' : 'count', value: 1, contextId: 'sparring_1',
+      dimensions: { scope: 'session_total', fieldKey },
+    });
+    const boxes = [box('a', 'punch_count', 'all_thrown'), box('x', 'punch_landed', 'all_landed'), box('c', 'active_time', 'minutes_worked')];
+    const policy = {
+      parameters: { expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'], highAt: 0.8, moderateAt: 0.5, lowAt: 0 },
+      policyVersion: 'sparring-log-completeness-2026-10-17',
+    };
+    const keyFor = async (order: typeof boxes) => {
+      mockGetObservations.mockResolvedValueOnce(order);
+      const output = await runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-10',
+        observationIds: order.map((item) => item.observationId), ...policy,
+      });
+      return output.results[0].calculationKey;
+    };
+    expect(await keyFor([boxes[0], boxes[1], boxes[2]])).toBe(await keyFor([boxes[0], boxes[2], boxes[1]]));
+  });
+});
