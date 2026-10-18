@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
@@ -189,8 +189,12 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
   const [message, setMessage] = useState('');
 
   // A coach switching athletes must never be looking at the previous child's
-  // entries with a Fix button under them.
+  // entries with a Fix button under them -- including entries whose request
+  // was still in flight when the picker changed, which is why every response
+  // below is checked against the athlete selected NOW before it is shown.
+  const subjectRef = useRef(athleteId);
   useEffect(() => {
+    subjectRef.current = athleteId;
     setEntries([]);
     setListState('idle');
     setEditing(null);
@@ -206,9 +210,11 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
       );
       if (!response.ok) throw new Error('entries');
       const payload = (await response.json()) as { entries?: SparringEntry[] };
+      if (subjectRef.current !== subject) return;
       setEntries(payload.entries ?? []);
       setListState('loaded');
     } catch {
+      if (subjectRef.current !== subject) return;
       setEntries([]);
       setListState('unavailable');
     }
@@ -253,16 +259,19 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
       return;
     }
 
+    const subject = athleteId;
     setSaving(true);
     let saved = 0;
+    let safetyLesson: string | null | undefined;
     try {
       for (const { observation, value } of changes) {
+        if (subjectRef.current !== subject) break;
         const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            athleteId,
+            athleteId: subject,
             contextId: entry.contextId,
             kind: observation.kind,
             value,
@@ -277,18 +286,28 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
         }).catch(() => null);
         if (!response?.ok) break;
         saved += 1;
+        // The route's contact gate runs on a correction exactly as on a new
+        // entry; when it raises a review, say so the way the log above does.
+        const payload = (await response.json().catch(() => ({}))) as {
+          safetyReview?: { raised?: boolean; lesson?: string };
+        };
+        if (payload.safetyReview?.raised) safetyLesson = payload.safetyReview.lesson ?? null;
       }
     } finally {
       setSaving(false);
     }
 
+    if (subjectRef.current !== subject) return;
     setEditing(null);
-    setMessage(saved === changes.length
+    const outcome = saved === changes.length
       ? 'Fixed. The old number stays on record as replaced.'
       : saved === 0
         ? 'That fix did not save. Check your connection and try again.'
-        : 'Only part of that fix saved. The numbers below are what is on record now.');
-    await loadEntries(athleteId);
+        : 'Only part of that fix saved. The numbers below are what is on record now.';
+    setMessage(safetyLesson !== undefined
+      ? `${outcome} There is no current medical clearance on file for this athlete, so your coach has been asked to look at it.${safetyLesson ? ` ${safetyLesson}` : ''}`
+      : outcome);
+    await loadEntries(subject);
   }
 
   return (

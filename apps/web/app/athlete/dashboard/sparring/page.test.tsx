@@ -545,6 +545,56 @@ describe('fix a number', () => {
     expect(gets).toHaveLength(2);
   });
 
+  test('a coach who switches athletes never sees the previous athlete late-arriving entries', async () => {
+    let releaseEntries: () => void = () => {};
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'coach', account_id: 'acct-coach-001' }) } as Response;
+      }
+      if (url.includes('/api/pilot/coach/athletes')) {
+        return {
+          ok: true,
+          json: async () => ({ items: [
+            { athlete_id: 'ath-a', full_name: 'Athlete A' },
+            { athlete_id: 'ath-b', full_name: 'Athlete B' },
+          ] }),
+        } as Response;
+      }
+      if (init?.method === 'GET' && url.includes('athlete_id=ath-a')) {
+        await new Promise<void>((resolve) => { releaseEntries = resolve; });
+        return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ ok: true, entries: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+
+    const picker = await screen.findByLabelText('Which athlete is this for');
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.change(picker, { target: { value: 'ath-a' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show recent entries' }));
+    fireEvent.change(picker, { target: { value: 'ath-b' } });
+    releaseEntries();
+
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    await waitFor(() => expect(within(section).queryByText('Loading…')).toBeNull());
+    expect(within(section).queryByRole('button', { name: 'Fix' })).toBeNull();
+  });
+
+  test('a correction that raises a safety review says so', async () => {
+    const section = await openFix();
+    (global.fetch as jest.Mock).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [ENTRY] }) } as Response;
+      return { ok: true, json: async () => ({ ok: true, safetyReview: { raised: true, lesson: 'Clearance first.' } }) } as Response;
+    });
+    fireEvent.change(within(section).getByLabelText('Punches taken'), { target: { value: '4' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    const status = await within(section).findByText(/your coach has been asked to look at it/);
+    expect(status.textContent).toContain('Fixed.');
+    expect(status.textContent).toContain('Clearance first.');
+  });
+
   test('landing more than thrown is refused before anything is sent', async () => {
     const section = await openFix();
     fireEvent.change(within(section).getByLabelText('Landed'), { target: { value: '11' } });
