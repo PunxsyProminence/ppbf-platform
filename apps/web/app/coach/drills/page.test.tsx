@@ -11,6 +11,7 @@ import type { PilotSessionRole } from '@/components/usePilotSession';
 import type { DrillLineageResponse } from '@/app/api/pilot/drills/lineage/route';
 import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
 import type { DrillChangeProposalListing, PilotDrillVersionRow } from '@/src/server/pilot/drillVersioning';
+import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -169,6 +170,8 @@ interface RouteOptions {
   changedBeforeDetail?: LifecycleMap;
   /** The detail answers with the drill alone, without a lifecycle. */
   detailWithoutLifecycle?: boolean;
+  /** What the detail says the drill's grounding claim ids point at (audit 2026-10-17 item 11). */
+  groundingEvidence?: GroundingEvidence[];
   /** Answers the Nth read of a drill's detail (1-based) instead, when it returns a response. */
   detailRead?: (readNumber: number) => Response | undefined;
   /** Every change proposal in the gym (#1471); the queue and lineage reads filter it. */
@@ -267,7 +270,12 @@ function routes(options: RouteOptions = {}) {
       if (!details[id]) return jsonResponse({ error: 'DRILL_NOT_FOUND' }, false, 404);
       return jsonResponse(options.detailWithoutLifecycle
         ? { drill: details[id] }
-        : { drill: details[id], lifecycle: lifecycle?.[id] ?? null, floor_tested: floorTested[id] ?? null });
+        : {
+          drill: details[id],
+          lifecycle: lifecycle?.[id] ?? null,
+          floor_tested: floorTested[id] ?? null,
+          ...(options.groundingEvidence ? { grounding_evidence: options.groundingEvidence } : {}),
+        });
     }
     if (url === '/api/pilot/drill-library') {
       libraryReads += 1;
@@ -541,6 +549,73 @@ describe('the reference drill detail', () => {
     // Coach-only context is there for the coach.
     expect(within(detail).getByText('Can the athlete respond to one cue?')).toBeInTheDocument();
     expect(within(detail).getByText('PPBF source manual v3')).toBeInTheDocument();
+  });
+
+  it('opens each cited claim to its evidence, and says in words when an id resolves to nothing', async () => {
+    // Audit 2026-10-17 item 11. The ids used to be one comma-separated line
+    // that opened nothing. Each now opens what the Library holds for it, with
+    // who was studied and the limitations beside the claim.
+    global.fetch = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, grounding_claim_ids: ['A2-070', 'A9-404', 'A5-777'] } },
+      groundingEvidence: [
+        {
+          claimId: 'A2-070',
+          status: 'found',
+          record: {
+            claim: 'Boxers who returned the lead hand faster were hit less often.',
+            effect: 'Fewer counters landed (p=0.03)',
+            ppbfImplication: 'Coach the hand home on every jab.',
+            evidenceClass: 'VERIFIED EVIDENCE',
+            evidenceTier: 'EMERGING',
+            confidence: 'moderate',
+            population: 'Elite male amateur boxers',
+            competitiveLevel: 'elite amateur',
+            sex: 'male',
+            ageRange: 'adult',
+            studyDesign: 'Notational analysis',
+            sampleSize: '39',
+            limitations: 'Single tournament; association, not cause.',
+            transferStatus: 'BOXING-SPECIFIC',
+            boxingSpecificity: 'boxing_specific',
+            doiOrPmid: 'PMID 12345',
+            sourceTitle: 'Guard return and counters in amateur boxing',
+            sourcePublisher: 'J Sports Sci',
+            sourceType: 'peer_reviewed',
+            publicationDate: '2019-01-01',
+            sourceUrl: 'https://doi.org/10.1000/example',
+            authorityTier: 3,
+          },
+        },
+        { claimId: 'A9-404', status: 'not_found' },
+        { claimId: 'A5-777', status: 'not_cleared' },
+      ],
+    }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    fireEvent.click(within(detail).getByText('Cited evidence (3)'));
+    fireEvent.click(within(detail).getByText('A2-070: Guard return and counters in amateur boxing'));
+    expect(within(detail).getByText('Boxers who returned the lead hand faster were hit less often.')).toBeInTheDocument();
+    expect(within(detail).getByText('Coach the hand home on every jab.')).toBeInTheDocument();
+    expect(within(detail).getByText('Elite male amateur boxers · elite amateur · male · age adult')).toBeInTheDocument();
+    expect(within(detail).getByText('Single tournament; association, not cause.')).toBeInTheDocument();
+    expect(within(detail).getByRole('link', { name: 'Open the source for A2-070' })).toHaveAttribute('href', 'https://doi.org/10.1000/example');
+    expect(within(detail).getByText('A9-404: reference not found in the Library.')).toBeInTheDocument();
+    expect(within(detail).getByText(/^A5-777: in the Library but not cleared for use/)).toBeInTheDocument();
+    // Never the bare id list.
+    expect(within(detail).queryByText('A2-070, A9-404, A5-777')).not.toBeInTheDocument();
+    expect(within(detail).queryByText('Grounding claims')).not.toBeInTheDocument();
+  });
+
+  it('says the evidence could not be loaded when the detail carries none, rather than showing bare ids', async () => {
+    global.fetch = routes() as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    expect(within(detail).getByText('A2-070: the evidence for this reference could not be loaded.')).toBeInTheDocument();
+    expect(within(detail).queryByText('A2-070')).not.toBeInTheDocument();
   });
 
   it('puts Promote on the detail, and promotes through the promote endpoint only', async () => {

@@ -133,8 +133,10 @@ export const FAMILY_SESSION_FIELDS = [
   'inactivity_minutes',
 ] as const;
 
-/** Columns of pilot.sessions an athlete is not sent. */
-export const SESSION_WITHHELD_FROM_FAMILY_FIELDS = ['organization_id'] as const;
+/** Columns of pilot.sessions an athlete is not sent. session_type (the
+ *  athlete's own check-out tag, self-report measures migration) waits here
+ *  until the code that writes it decides who reads it back (lane L58 PR-2). */
+export const SESSION_WITHHELD_FROM_FAMILY_FIELDS = ['organization_id', 'session_type'] as const;
 
 export interface FamilySession {
   session_id: string;
