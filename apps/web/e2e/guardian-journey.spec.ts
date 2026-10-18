@@ -47,7 +47,7 @@ test.describe('Guardian journey', () => {
     });
 
     await expect(page).toHaveURL(/\/parent\/dashboard$/);
-    await expect(page.getByRole('heading', { name: 'Family Development Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Parent Hub', exact: true })).toBeVisible();
 
     // The child, by name. A family hub that resolved but showed "No children
     // found" is the failure a guardian would report, and it is exactly what
@@ -201,7 +201,7 @@ test.describe('Guardian journey', () => {
 
     await page.goto('/parent/dashboard');
 
-    await expect(page.getByRole('heading', { name: 'Family Development Dashboard' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Parent Hub', exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
   });
 });

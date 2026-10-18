@@ -47,11 +47,11 @@ const priorityLanes = [
    of these surfaces is guarded by its own API checks. */
 const developmentLab = [
   { label: 'Research Intake', href: '/research' },
-  { label: 'Evidence Review', href: '/evidence' },
-  { label: 'Knowledge Graph', href: '/knowledge-graph' },
-  { label: 'Scenario Simulator', href: '/simulator' },
+  { label: 'Evidence Review Queue', href: '/evidence' },
+  { label: 'Concept Relationship Map', href: '/knowledge-graph' },
+  { label: 'Validation Sandbox', href: '/simulator' },
   { label: 'Audit Trace', href: '/audit' },
-  { label: 'AI/ML Video Analysis', href: '/coach/video-analysis' },
+  { label: 'Video Analysis', href: '/coach/video-analysis' },
   // No /board/compliance-monitoring desk (F-003): its route serves 'board'
   // alone, and nobody in this page's audience is the board.
   // No /athlete/progression-intelligence desk either (lane U2): athlete only.

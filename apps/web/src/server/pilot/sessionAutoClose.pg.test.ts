@@ -82,6 +82,8 @@ const MIGRATIONS = [
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_duration_migration.sql',
   'pilot_slice_postgres_session_close_migration.sql',
+  // upsertSession writes session_type (self-report measures migration).
+  'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
 ];
 
 const ORG_A = 'org-autoclose-a';

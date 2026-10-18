@@ -9,7 +9,7 @@ import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot
 import { BlockKindIcon, blockKindWord } from './blockKindIcons';
 import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
-import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
+import { advanceRoundTimer, isNewSet, releasedKeys, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
 
@@ -534,6 +534,10 @@ export default function WallDisplay() {
     const previous = lastReading.current?.runId === roundTimer.runId ? lastReading.current.reading : null;
     if (isNewSet(previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) setEpoch.current += 1;
     const setKey = `${roundTimer.runId}#${setEpoch.current}`;
+    // Time the coach added (+30 SEC) puts this round's knock and end, and the next start, back ahead.
+    for (const key of releasedKeys(setKey, previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) {
+      rung.current.delete(key);
+    }
     let dropped = false;
     for (const sound of roundSounds(setKey, previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) {
       if (sound.keys.every((key) => rung.current.has(key))) continue;
