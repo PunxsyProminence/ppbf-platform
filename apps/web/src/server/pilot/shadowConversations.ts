@@ -58,7 +58,7 @@ export interface ShadowConversationMessage {
   responseState: ShadowStoredResponseState | null;
   evidenceTier: ShadowStoredEvidenceTier | null;
   /** The other cited sources' grades, below the headline ("Also cites"); graded again on load. */
-  evidenceAlsoCites: ShadowEvidenceTier[];
+  evidenceAlsoCites?: ShadowEvidenceTier[];
   handoff: string | null;
   createdAt: string;
   citations?: Array<{
