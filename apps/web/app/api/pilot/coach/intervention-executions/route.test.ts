@@ -315,3 +315,66 @@ test('the version the screen loaded is handed to record, close and correct; with
     expect(mocks[action].mock.calls.length).toBe(callsBefore);
   }
 });
+
+// F-135: a request key makes a repeated tap answer with the first execution.
+describe('POST request_key (F-135)', () => {
+  test('the key is passed to the module as sent; a start without one passes null', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue({ execution_id: 'ex-1', protocol_id: 'p-1', protocol_version: 1, athlete_id: 'ath-1', decision_id: null });
+
+    const key = ' tap-1 ';
+    expect((await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: key }))).status).toBe(200);
+    expect(mockStart).toHaveBeenLastCalledWith(expect.objectContaining({ requestKey: key }));
+
+    expect((await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1' }))).status).toBe(200);
+    expect(mockStart).toHaveBeenLastCalledWith(expect.objectContaining({ requestKey: null }));
+    expect(mockAudit).toHaveBeenCalledTimes(2);
+  });
+
+  test('a replay is answered with the first execution and replayed: true, and records no second audit event', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue({
+      execution_id: 'ex-first', protocol_id: 'p-1', protocol_version: 1, athlete_id: 'ath-1', decision_id: null, replayed: true,
+    });
+
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: 'tap-1' }));
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { item: Record<string, unknown>; replayed?: boolean };
+    expect(payload.replayed).toBe(true);
+    expect(payload.item.execution_id).toBe('ex-first');
+    expect(payload.item).not.toHaveProperty('replayed');
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a first start says nothing about replay', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue({ execution_id: 'ex-new', protocol_id: 'p-1', protocol_version: 1, athlete_id: 'ath-1', decision_id: null });
+
+    const payload = (await (await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: 'tap-2' }))).json()) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('replayed');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['blank', ''],
+    ['all spaces', '   '],
+    ['over 200 characters', 'k'.repeat(201)],
+    ['holding a NUL', `tap${String.fromCharCode(0)}1`],
+    ['not text', 12],
+  ])('a key that is %s is refused before anything is written', async (_label, key) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: key }));
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toMatch(/request_key/);
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a key of exactly 200 characters is accepted', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue({ execution_id: 'ex-1', protocol_id: 'p-1', protocol_version: 1, athlete_id: 'ath-1', decision_id: null });
+    const key = 'k'.repeat(200);
+    expect((await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: key }))).status).toBe(200);
+    expect(mockStart).toHaveBeenLastCalledWith(expect.objectContaining({ requestKey: key }));
+  });
+});
