@@ -85,6 +85,38 @@ describe('observation admission', () => {
     expect(admission.excluded).toEqual([{ observationId: 'obs-2', reason }]);
   });
 
+  test("a second coach's contrary call is a second reading, not a revision", () => {
+    const first = obs(1, { sessionId: 'session-1', opportunityKey: 'rep-1', observerAccountId: 'coach-a' });
+    const second = obs(2, {
+      sessionId: 'session-1',
+      opportunityKey: 'rep-1',
+      observerAccountId: 'coach-b',
+      polarity: 'counterexample',
+      supersedesObservationId: 'obs-1',
+    });
+    const admission = admitObservations(SCOPE, [first, second]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1', 'obs-2']);
+    expect(admission.excluded).toEqual([]);
+    // Both readings survive, so the disagreement stays visible.
+    expect(detectObserverDisagreement(admission.admitted)).toBe(true);
+  });
+
+  test('a machine-captured record cannot show it is the same observer, so it revises nothing', () => {
+    const clip = { type: 'computer_vision', quality: 'verified', referenceId: 'clip-1' } as const;
+    const admission = admitObservations(SCOPE, [
+      obs(1, { observerAccountId: null, source: clip }),
+      obs(2, { observerAccountId: null, source: clip, supersedesObservationId: 'obs-1' }),
+    ]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1', 'obs-2']);
+
+    // Nor can a coach revise the machine's reading: it is not theirs.
+    const overruled = admitObservations(SCOPE, [
+      obs(1, { observerAccountId: null, source: clip }),
+      obs(2, { supersedesObservationId: 'obs-1' }),
+    ]);
+    expect(overruled.admitted.map((item) => item.observationId)).toEqual(['obs-1', 'obs-2']);
+  });
+
   test('a revision that is itself revised still removes the original', () => {
     const admission = admitObservations(SCOPE, [
       obs(1),
@@ -96,8 +128,8 @@ describe('observation admission', () => {
       .toEqual(['SUPERSEDED_OBSERVATION', 'SUPERSEDED_OBSERVATION']);
   });
 
-  test('a record naming itself as superseded stays excluded, as it always was', () => {
-    const admission = admitObservations(SCOPE, [obs(1, { supersedesObservationId: 'obs-1' })]);
+  test.each(['coach-a', null])('a record naming itself as superseded stays excluded, as it always was (observer %p)', (observerAccountId) => {
+    const admission = admitObservations(SCOPE, [obs(1, { observerAccountId, supersedesObservationId: 'obs-1' })]);
     expect(admission.admitted).toEqual([]);
     expect(admission.excluded).toEqual([{ observationId: 'obs-1', reason: 'SUPERSEDED_OBSERVATION' }]);
   });

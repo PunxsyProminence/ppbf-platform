@@ -396,6 +396,30 @@ describe('SHADOW pattern candidate evaluation', () => {
     expect(withForeignRevision.excluded).toEqual([{ observationId: 'obs-20', reason: 'ATHLETE_SCOPE_MISMATCH' }]);
   });
 
+  test("a second coach naming the first coach's reading as superseded contests it instead of erasing it", () => {
+    const result = evaluatePatternCandidate({
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      behaviourKey: BEHAVIOUR,
+      observations: [
+        ...withRepOnFirst(strongEvidence()),
+        obs(5, {
+          sessionId: 'session-1',
+          taskContextKey: 'task-mitts',
+          opportunityKey: 'rep-1',
+          observerAccountId: 'coach-c',
+          polarity: 'counterexample',
+          supersedesObservationId: 'obs-1',
+        }),
+      ],
+      policy,
+      asOf: AS_OF,
+    });
+    expect(result.excluded).toEqual([]);
+    expect(result.blockers).toContain('OBSERVER_DISAGREEMENT');
+    expect(result.state).toBe('CONTESTED');
+  });
+
   test('two coaches scoring different reps of one drill do not contest the pattern', () => {
     const result = evaluatePatternCandidate({
       organizationId: ORG,

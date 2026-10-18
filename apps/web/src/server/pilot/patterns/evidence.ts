@@ -107,8 +107,12 @@ function groupByOpportunity(
  * auditable act, and erasing the original would hide the revision. Only a
  * record that is admissible in its own right can supersede: another
  * athlete's revision, a mis-keyed import or a failed capture has no standing
- * to remove evidence it was never part of. (A record naming itself is
- * malformed and stays excluded, as it always was.)
+ * to remove evidence it was never part of. And only the same observer can
+ * revise a reading: a second coach's contrary call is a second reading, which
+ * is what disagreement detection exists to see, not a correction that erases
+ * the first. A machine-captured record (no observer) cannot show it is the
+ * same observer, so it revises nothing. (A record naming itself is malformed
+ * and stays excluded, as it always was.)
  *
  * With `asOf`, records observed after that instant are left out entirely --
  * not listed as exclusions -- because at `asOf` they had not been made yet.
@@ -137,17 +141,27 @@ export function admitObservations(
     .filter((observation) => !(Date.parse(observation.observedAt) > asOfMs))
     .sort((left, right) => sortKey(left).localeCompare(sortKey(right)));
 
-  // First pass: which records may supersede. The same checks as below, so a
-  // record the second pass rejects can never have suppressed anything.
-  const supersededIds = new Set<string>();
+  // First pass: which records may supersede, and as which observer. The same
+  // checks as below, so a record the second pass rejects can never have
+  // suppressed anything.
+  const revisionsByTarget = new Map<string, Set<string>>();
   const standingIds = new Set<string>();
   for (const observation of ordered) {
     if (standingIds.has(observation.observationId)) continue;
     standingIds.add(observation.observationId);
     if (scopeFailure(scope, observation) !== null || observation.source.quality === 'failed') continue;
     const target = observation.supersedesObservationId;
-    if (typeof target === 'string' && target.length > 0) supersededIds.add(target);
+    if (typeof target !== 'string' || target.length === 0 || !observation.observerAccountId) continue;
+    const observers = revisionsByTarget.get(target);
+    if (observers) observers.add(observation.observerAccountId);
+    else revisionsByTarget.set(target, new Set([observation.observerAccountId]));
   }
+  const isSuperseded = (observation: BehaviourObservation): boolean =>
+    observation.supersedesObservationId === observation.observationId
+    || (
+      observation.observerAccountId != null
+      && revisionsByTarget.get(observation.observationId)?.has(observation.observerAccountId) === true
+    );
 
   const seenIds = new Set<string>();
 
@@ -163,7 +177,7 @@ export function admitObservations(
       excluded.push({ observationId: observation.observationId, reason: failure });
       continue;
     }
-    if (supersededIds.has(observation.observationId)) {
+    if (isSuperseded(observation)) {
       excluded.push({ observationId: observation.observationId, reason: 'SUPERSEDED_OBSERVATION' });
       continue;
     }
