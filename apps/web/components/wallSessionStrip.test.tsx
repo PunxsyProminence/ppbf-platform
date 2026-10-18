@@ -4,7 +4,7 @@
 
 import { act, render, screen } from '@testing-library/react';
 
-import WallDisplay, { SESSION_STRIP_MAX, WALL_STALE_MS, stripWindow, type WallSessionBlock } from './WallDisplay';
+import WallDisplay, { SESSION_STRIP_MAX, WALL_STALE_MS, pickLiveSession, stripWindow, type WallSessionBlock } from './WallDisplay';
 import type { WallBoard } from '@/src/server/pilot/wallDisplay';
 
 /**
@@ -225,16 +225,52 @@ describe('the session on a paired TV', () => {
     expect(container.textContent).not.toContain('COACH NOTE');
   });
 
+  it('keeps only the fields it names, whatever else the payload carries', () => {
+    const leaky = session({
+      what_to_say: 'COACH NOTE ONE',
+      blocks: BLOCKS.map((b) => ({ ...b, fix: 'COACH NOTE FOUR', what_to_say: 'COACH NOTE FIVE' })),
+    });
+    const picked = pickLiveSession(leaky);
+    expect(Object.keys(picked ?? {}).sort()).toEqual(
+      ['blocks', 'current_block_id', 'is_paused', 'next_block_id', 'run_id', 'scheduled_seconds_left', 'script_name'],
+    );
+    for (const picked_block of picked?.blocks ?? []) {
+      expect(Object.keys(picked_block).sort()).toEqual(
+        ['block_id', 'block_kind', 'block_label', 'block_order', 'drill_name', 'end_offset_min', 'start_offset_min'],
+      );
+    }
+  });
+
+  it('takes the session down at once when the TV is told it is no longer paired', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ session: session(), board: board(), quotes: [] }) })
+      .mockImplementation(async (url: string) =>
+        url.includes('/api/pilot/tv/session')
+          ? ({ ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response)
+          : ({ ok: false, status: 503, json: async () => ({}) } as unknown as Response));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Now' })).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await settle();
+    expect(screen.queryByRole('region', { name: 'Now' })).toBeNull();
+  });
+
   it('shows no session on an unpaired TV, whatever the public read carries', async () => {
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (url.includes('/api/pilot/tv/session')) {
         return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
       }
-      const { name_mode: _mode, on_floor: _floor, marquee: _marquee, ...rest } = board();
+      const { generated_at, gym_day, time_zone, sessions, on_floor_total, notice } = board();
+      const publicBoard = { scope: 'public', generated_at, gym_day, time_zone, sessions, on_floor_total, notice };
       return {
         ok: true,
         status: 200,
-        json: async () => ({ ok: true, board: { ...rest, scope: 'public' }, session: session() }),
+        json: async () => ({ ok: true, board: publicBoard, session: session() }),
       } as unknown as Response;
     }) as unknown as typeof fetch;
     const { container } = render(<WallDisplay />);
