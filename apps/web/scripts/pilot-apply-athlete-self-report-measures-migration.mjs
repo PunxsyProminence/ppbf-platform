@@ -78,12 +78,14 @@ const READINESS_QUERY = `
       "CHECK ((organization_id <> '__platform__'::text))")} as settings_not_platform_ready,
     ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_protocol_check',
       'CHECK ((char_length(protocol_text) <= 1000))')} as settings_protocol_check_ready,
-    not exists (
-      -- Jason ruled the flag goes to "Their coach": no per-gym recipient to route it elsewhere.
+    ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_role_check',
+      `CHECK ((recipient_role = ANY (${anyText(['coach', 'organization_admin', 'admin'])})))`)} as settings_role_check_ready,
+    exists (
+      -- No row, or a row nobody changed, sends the flag to the athlete's coach (OD-2026-10-17-029).
       select 1 from information_schema.columns
        where table_schema = 'pilot' and table_name = 'organization_symptom_flag_settings'
-         and column_name like '%recipient%'
-    ) as settings_no_recipient_column,
+         and column_name = 'recipient_role' and column_default = '''coach''::text' and is_nullable = 'NO'
+    ) as settings_default_coach_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_pkey', 'p', ['organization_id', 'report_id'])} as symptom_pkey_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_athlete_fk', 'f', ['organization_id', 'athlete_id'], 'pilot.athletes')} as symptom_athlete_fk_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_one_per_day', 'u', ['organization_id', 'athlete_id', 'reported_on', 'context'])} as symptom_one_per_day_ready,

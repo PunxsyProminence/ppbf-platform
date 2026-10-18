@@ -16,10 +16,10 @@
 -- WHAT THIS ADDS. Additive only: no drop of data, no altered value.
 --   1. pilot.athlete_check_ins.mood -- 1-5 self-report, higher is better.
 --   2. pilot.sessions.session_type -- the athlete's tag on their own session.
---   3. pilot.organization_symptom_flag_settings -- the gym's own protocol
---      words shown under the fixed message. No row means none (Jason: "Not
---      yet, leave blank"). Who receives a flag is not a setting: Jason ruled
---      "Their coach", so the filing code sends it to the athlete's coach.
+--   3. pilot.organization_symptom_flag_settings -- who a symptom flag goes to
+--      and the gym's own protocol words. No row means the defaults Jason
+--      chose (OD-2026-10-17-029): the athlete's coach, no protocol text; per
+--      that card, each gym can change the setting later.
 --   4. pilot.sparring_symptom_reports -- what an athlete ticked after
 --      sparring. A FLAG, not a score: there is no total, no severity and no
 --      column that could hold one. A tick is never taken back off a report.
@@ -90,16 +90,18 @@ comment on column pilot.sessions.session_type is
   'The athlete''s own tag for the session, set at check-out: technique, bag_pads, conditioning, sparring, mixed or other. NULL means not said.';
 
 -- ---------------------------------------------------------------------------
--- 3. SYMPTOM FLAG SETTINGS, one row per gym: the gym's own protocol words,
--- shown to the athlete under the fixed message; '' means the gym has not
--- written one (Jason: "Not yet, leave blank"). Kept out of
--- pilot.organization_profiles on purpose: that table is the gym's public
--- identity, and this is safety guidance. There is deliberately no recipient
--- column: Jason ruled the flag goes to "Their coach", and a setting would let
--- a gym route it away from the coach.
+-- 3. SYMPTOM FLAG SETTINGS, one row per gym (OD-2026-10-17-029). Kept out
+-- of pilot.organization_profiles on purpose: that table is the gym's public
+-- identity, and this is safety routing. recipient_role defaults to 'coach'
+-- (Jason: "A: Their coach (Rec.)"; the card: "each gym can change the setting
+-- later") and uses the targets pilot.safety_escalations.escalated_to_role
+-- allows. protocol_text is the gym's own words, shown to the athlete under the
+-- fixed message; '' means the gym has not written one (Jason: "A: Not yet,
+-- leave blank (Rec.)").
 
 create table if not exists pilot.organization_symptom_flag_settings (
   organization_id text not null,
+  recipient_role  text not null default 'coach',
   protocol_text   text not null default '',
   updated_at      timestamptz not null default now(),
   constraint pilot_org_symptom_flag_settings_pkey primary key (organization_id),
@@ -107,12 +109,14 @@ create table if not exists pilot.organization_symptom_flag_settings (
     references pilot.organizations (organization_id) on delete cascade,
   constraint pilot_org_symptom_flag_settings_not_platform_check
     check (organization_id <> '__platform__'),
+  constraint pilot_org_symptom_flag_settings_role_check
+    check (recipient_role in ('coach', 'organization_admin', 'admin')),
   constraint pilot_org_symptom_flag_settings_protocol_check
     check (char_length(protocol_text) <= 1000)
 );
 
 comment on table pilot.organization_symptom_flag_settings is
-  'The gym''s own protocol words for a sparring symptom flag, shown under the fixed message. No row or blank = none written.';
+  'Who a sparring symptom flag is escalated to, and the gym''s own protocol words. No row = the defaults: the athlete''s coach, no protocol text.';
 
 -- ---------------------------------------------------------------------------
 -- 4. SPARRING SYMPTOM REPORTS. What an athlete ticked after sparring

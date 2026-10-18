@@ -322,14 +322,16 @@ describe('athlete self-report measures migration (L58)', () => {
     }
   });
 
-  test('symptom-flag settings hold only the gym protocol text, blank by default; there is no recipient to change', async () => {
+  test("symptom-flag settings default to the athlete's coach and no protocol text, and stay inside their vocabulary", async () => {
     const client = await freshDatabase('selfrep_settings');
     try {
       await client.query('insert into pilot.organization_symptom_flag_settings (organization_id) values ($1)', [ORG]);
-      const row = await client.query('select * from pilot.organization_symptom_flag_settings');
-      expect(Object.keys(row.rows[0]).sort()).toEqual(['organization_id', 'protocol_text', 'updated_at']);
-      expect(row.rows[0].protocol_text).toBe('');
+      const row = await client.query('select recipient_role, protocol_text from pilot.organization_symptom_flag_settings');
+      expect(row.rows).toEqual([{ recipient_role: 'coach', protocol_text: '' }]);
 
+      await expect(
+        client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, recipient_role) values ($1, 'parent')`, [OTHER_ORG]),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_org_symptom_flag_settings_role_check' });
       await expect(
         client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, protocol_text) values ($1, $2)`, [OTHER_ORG, 'x'.repeat(1001)]),
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_org_symptom_flag_settings_protocol_check' });
@@ -337,7 +339,7 @@ describe('athlete self-report measures migration (L58)', () => {
         client.query(`insert into pilot.organization_symptom_flag_settings (organization_id) values ('nobody-here')`),
       ).rejects.toMatchObject({ code: '23503', constraint: 'pilot_org_symptom_flag_settings_org_fk' });
 
-      await client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, protocol_text) values ($1, 'Sit out, tell a coach.')`, [OTHER_ORG]);
+      await client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, recipient_role) values ($1, 'organization_admin')`, [OTHER_ORG]);
       await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG]);
       expect(await count(client, 'pilot.organization_symptom_flag_settings')).toBe(1);
     } finally {
@@ -577,7 +579,9 @@ describe('athlete self-report measures migration (L58)', () => {
     ['settings_not_platform_ready', 'alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_not_platform_check'],
     ['settings_protocol_check_ready', `alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_protocol_check;
       alter table pilot.organization_symptom_flag_settings add constraint pilot_org_symptom_flag_settings_protocol_check check (char_length(protocol_text) <= 100000)`],
-    ['settings_no_recipient_column', `alter table pilot.organization_symptom_flag_settings add column recipient_role text not null default 'coach'`],
+    ['settings_role_check_ready', `alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_role_check;
+      alter table pilot.organization_symptom_flag_settings add constraint pilot_org_symptom_flag_settings_role_check check (recipient_role <> '')`],
+    ['settings_default_coach_ready', `alter table pilot.organization_symptom_flag_settings alter column recipient_role set default 'organization_admin'`],
     ['symptom_athlete_fk_ready', `alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_athlete_fk;
       alter table pilot.sparring_symptom_reports add constraint pilot_sparring_symptom_reports_athlete_fk
         foreign key (organization_id, athlete_id) references pilot.athletes (organization_id, athlete_id)`],
