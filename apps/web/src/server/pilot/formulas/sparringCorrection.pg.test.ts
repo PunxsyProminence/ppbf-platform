@@ -40,6 +40,8 @@ const TEST_DB_NAME = 'ppbf_test_sparring_correction';
 const ORG_ID = 'org-sparring-fix';
 const OTHER_ORG_ID = 'org-sparring-fix-elsewhere';
 const ACCOUNT_ID = 'acct-sparring-fix-athlete';
+const COACH_ID = 'acct-sparring-fix-coach';
+const OTHER_COACH_ID = 'acct-sparring-fix-other-coach';
 const ATHLETE_ID = 'ATH-FIX-1';
 const OTHER_ATHLETE_ID = 'ATH-FIX-2';
 
@@ -78,22 +80,29 @@ async function seed(client: Client): Promise<void> {
       [organizationId],
     );
   }
-  await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'athlete', $2, 'microsoft') on conflict do nothing`,
-    [ACCOUNT_ID, ORG_ID],
-  );
-  for (const [organizationId, athleteId] of [
-    [ORG_ID, ATHLETE_ID],
-    [ORG_ID, OTHER_ATHLETE_ID],
-    [OTHER_ORG_ID, ATHLETE_ID],
+  for (const [accountId, role, organizationId] of [
+    [ACCOUNT_ID, 'athlete', ORG_ID],
+    [COACH_ID, 'coach', ORG_ID],
+    [OTHER_COACH_ID, 'coach', OTHER_ORG_ID],
+  ]) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, $2, $3, 'microsoft') on conflict do nothing`,
+      [accountId, role, organizationId],
+    );
+  }
+  // pilot.athletes.coach_id is NOT NULL with a foreign key to pilot.accounts.
+  for (const [organizationId, athleteId, coachId] of [
+    [ORG_ID, ATHLETE_ID, COACH_ID],
+    [ORG_ID, OTHER_ATHLETE_ID, COACH_ID],
+    [OTHER_ORG_ID, ATHLETE_ID, OTHER_COACH_ID],
   ]) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
                                    emergency_contact, active_flag, coach_id, created_at, updated_at)
-       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, null, now(), now())
+       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
        on conflict do nothing`,
-      [organizationId, athleteId],
+      [organizationId, athleteId, coachId],
     );
   }
 }

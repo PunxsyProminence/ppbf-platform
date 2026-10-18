@@ -620,7 +620,9 @@ export async function findFormulaResultsUsingObservation(input: {
   return rows.map(rowToFormulaResult);
 }
 
-/** The numbers the sparring page lets the person who logged them fix. */
+/** The numbers the sparring page's "Fix a number" corrects. Anyone the
+ *  observations route admits for the athlete may correct them, as POST always
+ *  allowed; this list only bounds which kinds the screen offers. */
 export const SPARRING_CORRECTABLE_KINDS: readonly ObservationKind[] = Object.freeze([
   'punch_attempted',
   'punch_landed',
