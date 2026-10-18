@@ -25,15 +25,18 @@
 # carry.
 #
 # TWO JOBS, AND THE ORDER IS THE POINT.
-#   validate  no environment, no secrets, no Azure: confirms the form, then
-#             checks the COMMITTED files this dispatch would load with the
-#             same validator every PR is held to (content:validate --dataset).
-#             A dispatch runs on whatever branch was picked, not only main, so
-#             this is not a repeat of the PR guard. A package that would be
-#             refused fails here, before anyone is asked to approve a
-#             production run and before any credential exists.
-#   seed      needs validate. Resolves the target, logs in, then plans and
-#             applies.
+#   seed-validate  no environment, no secrets, no Azure: confirms the form,
+#             then checks the COMMITTED files this dispatch would load with
+#             the same validator every PR is held to (content:validate
+#             --dataset). A dispatch runs on whatever branch was picked, not
+#             only main, so this is not a repeat of the PR guard. A package
+#             that would be refused fails here, before anyone is asked to
+#             approve a production run and before any credential exists.
+#             Not named `validate`: branch protection's required check matches
+#             by name, and a dispatch on a PR's branch posts its check on that
+#             PR's head (F-130).
+#   seed      needs seed-validate. Resolves the target, logs in, then plans
+#             and applies.
 #
 # ONE TRANSACTION. `dataset: all` is one CLI call: it plans every dataset
 # (printed before anything is written), then applies all of them in ONE
@@ -136,7 +139,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate:
+  seed-validate:
     # NO `environment:` and no secrets, on purpose: this job cannot read a
     # connection string or log in to Azure, so nothing it runs can touch a
     # database. It also needs no approval, so a refused package costs no
@@ -199,7 +202,7 @@ jobs:
         run: npm run --silent content:validate -- --dataset "$DATASET"
 
   seed:
-    needs: validate
+    needs: seed-validate
     # Same environment name as the target, so a protection rule on `production`
     # gates this exactly as it gates apply-migrations and deploy-production.
     environment: ${{ inputs.target }}
@@ -291,9 +294,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
       # The organization that will own every row: the operator's explicit
-      # input, required and checked non-blank by the validate job. There is
-      # no fallback to the app's default-org secret any more (see the validate
-      # job).
+      # input, required and checked non-blank by the seed-validate job. There
+      # is no fallback to the app's default-org secret any more (see the
+      # seed-validate job).
       - name: Resolve Owning Organization
         env:
           SUPPLIED: ${{ inputs.organization_id }}
