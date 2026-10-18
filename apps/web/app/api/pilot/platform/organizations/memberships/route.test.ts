@@ -2,11 +2,18 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { upsertOrganizationMembership } from '@/src/server/pilot/auth';
-import { requirePrincipal } from '@/src/server/pilot/http';
+import { requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from '@/src/server/pilot/http';
 
+// Platform work signs in with Microsoft, as transfer-admin does (lane L31).
+// The plain session read refuses here, so a route that reached for it instead
+// of the Microsoft gate fails every case (lane L44).
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
-  return { ...actual, requirePrincipal: jest.fn() };
+  return {
+    ...actual,
+    requireMicrosoftAuthenticatedPrincipal: jest.fn(),
+    requirePrincipal: jest.fn(),
+  };
 });
 
 jest.mock('@/src/server/pilot/auth', () => ({
@@ -17,7 +24,8 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
-const mockRequirePrincipal = jest.mocked(requirePrincipal);
+const mockRequirePrincipal = jest.mocked(requireMicrosoftAuthenticatedPrincipal);
+const mockPlainSession = jest.mocked(requirePrincipal);
 const mockUpsertMembership = jest.mocked(upsertOrganizationMembership);
 
 beforeEach(() => {
@@ -28,8 +36,10 @@ beforeEach(() => {
     organizationId: 'platform',
     athleteId: null,
     sessionToken: 'token',
-    authProvider: 'ppbf_local',
+    authProvider: 'microsoft',
+    signInMethod: 'microsoft',
   });
+  mockPlainSession.mockRejectedValue(new Error('Forbidden: the plain session read is not the gate of this route'));
   mockUpsertMembership.mockResolvedValue(undefined);
 });
 
@@ -78,5 +88,27 @@ test('refuses to assign the athlete role (audit CL-A5)', async () => {
   ));
 
   expect(response.status).toBe(400);
+  expect(mockUpsertMembership).not.toHaveBeenCalled();
+});
+
+test('a session that did not sign in with Microsoft is refused, and no membership is written', async () => {
+  mockRequirePrincipal.mockRejectedValue(new Error('Forbidden: Microsoft-authenticated session required'));
+
+  const response = await POST(new NextRequest(
+    'http://localhost/api/pilot/platform/organizations/memberships',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organization_id: 'org-1',
+        account_id: 'coach-account',
+        role: 'coach',
+        active_flag: true,
+      }),
+    },
+  ));
+
+  expect(response.status).toBe(403);
+  expect(mockPlainSession).not.toHaveBeenCalled();
   expect(mockUpsertMembership).not.toHaveBeenCalled();
 });
