@@ -164,6 +164,128 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-013 -- New chips to start: "Small fixes bundle", "Milestone Undo", "Privacy if-real checks", "Records pass", and his typed "A continual housekeeping l ing and clean up o chip"
+
+**Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14927, 2026-10-18T00:03:06.862Z; answered at line 14928, 2026-10-18T00:04:07.432Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "New chips"** (multi-select). Overwatch, as written: "OFFICIAL: Which new chips should start now? None of these collide with open lanes. PLAIN: tick the ones you want; each becomes a chip you tap." Options as written: "Small fixes bundle": "F-124 flaky test, F-125 error reasons kept, F-129 escalation Acknowledge press-twice, F-130 CI job name, F-127 Today double read. Sonnet."; "Milestone Undo": "Your Undo ruling for milestones too (needs a database change), plus the ceremony re-ring (F-133/134). Opus."; "Privacy if-real checks": "Check and fix the 'HIGH if real' findings: F-087 Library search, F-098 staff role on a minor, F-099, F-102 retired login email, F-109/113 second gym admin. Opus, 2 reviewers."; "Records pass": "Write today's rulings into the decisions file (style, TV tiles, icons, motto, payments/HIIT, +30/Repeat, TV look B)." Jason ticked all four: *"Small fixes bundle"*, *"Milestone Undo"*, *"Privacy if-real checks"*, *"Records pass"*, and typed a fifth: *"A continual housekeeping l ing and clean up o chip"*
+
+**Ruling:** all four offered chips start now, and so does a fifth he asked for himself: a continual housekeeping and clean-up lane.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed five chips (lines 14953, 14955, 14957, 14969 and 14971; the fifth titled "Continual housekeeping and clean-up lane") and reported (line 15030, 2026-10-18T00:07:16.014Z): "All 5 new chips have started." The handover log names them L42 (small fixes), L43 (milestone undo), L44 (privacy if-real), L45 (records) and HK (housekeeping) (REPORTED). This entry is L45's work.
+
+**Status:** ruled; the lanes are running. Not checked as built by this records pass.
+
+---
+
+## OD-2026-10-17-012 -- Release 29: "A: Stage now, I'll look (Rec.)"
+
+**Provenance: PRIMARY.** The first question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14927, 2026-10-18T00:03:06.862Z; answered at line 14928, 2026-10-18T00:04:07.432Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Release 29".** Overwatch, as written: "OFFICIAL: Release 29. main (ffa68d13) has 50 commits since Release 28 and its CI is green; the 5 database changes are already live. Stage it now? Staging deploys without asking; merges freeze from staging until you approve production (about 30-45 min). Your release rule also needs your signed-in look on staging for minors'-data screens. PLAIN: this puts today's fixes on the live site. While it's staged, lanes can't merge, and you'd need to look at staging signed in, or waive that look for this release." Options as written: "A: Stage now, I'll look (Rec.)": "I deploy staging and send you the staging link to check signed in, then the production link."; "B: Stage now, waive the look": "Skip your staging look this once; I run read-only checks only, then send the production link."; "C: Wait for L29 + L31": "Stage after the Parent Hub and gym-profile PRs land (a few more hours)." Jason: *"A: Stage now, I'll look (Rec.)"*
+
+**Ruling:** Release 29 (main at `ffa68d13`) is staged now. Merges freeze from the staging deploy until he approves production. He checks staging himself, signed in, before the production link; his signed-in look is not waived for this release. Options B (waive the look) and C (wait for L29 and L31) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch reported (line 14991, 2026-10-18T00:05:42.727Z) "Release 29 staging deploy started (run 39081404756)" and "Merges are frozen." Production was not dispatched at the time of writing.
+
+**Status:** ruled; staging deploy started. Production not checked by this records pass.
+
+---
+
+## OD-2026-10-17-011 -- The gym TV look (#1705): "B: Push further (Recommended)", after his typed "Show what the options look l ike"
+
+**Provenance: PRIMARY.** Two question cards in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, lane L45, 2026-10-17). His words and his pick are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows OD-2026-10-17-007 and -008.
+
+**First card, question "TV look"** (put at line 14715, 2026-10-17T23:48:06.444Z, after he typed *"Ask the tv screen shot questions "* at line 14711, 2026-10-17T23:48:01.690Z, ending in a space). Overwatch, as written: "OFFICIAL: Gym TV restyle, PR 1 (#1705), live-session screenshots sent above (BEFORE = today, AFTER = PR 1). Changes: brass header plate "ADAPT AND OVERCOME * OBSERVE. DECIDE. EXECUTE. REPEAT."; "On the Floor" and "Today" in dark framed boards with brass corners and cream label plates; round clock in its own framed box; dark field kept (no screen burn-in). The session strip with drill icons comes in PR 2. Approve this look for PR 1? PLAIN: this is step one of the new look on the TV. Say go, push it further toward your pictures, or change direction." Options as written: "A: Approve, go to PR 2": "Merge PR 1 as shown; build the session strip with icons next."; "B: Approve, push further": "Merge PR 1, and in PR 2 move closer to the pictures (more cream enamel, heavier wood frame, more texture). Type any specifics."; "C: Not this direction": "Hold PR 1; type what's off." Answered at line 14716, 2026-10-17T23:49:45.382Z, typed: *"Show what the options look l ike"*
+
+Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Option B rendering (lines 14720-14737). He then typed (line 14866, 2026-10-17T23:58:32.000Z): *"Ask the ABC again"*
+
+**Second card, question "TV look"** (put at line 14876, 2026-10-17T23:58:43.299Z). Overwatch, as written: "OFFICIAL: Gym TV restyle PR 1 (#1705). Option A = as built (4 screenshots sent: live session, paired idle, standing board, unpaired public). Option B = push further toward your pictures: cream enamel-sign panels with worn edges on the boards and clock, heavier wood/steel frame, more texture (cream kept limited on the TV for burn-in). Option B screenshots are not ready yet; the lane is rendering them. C = different direction. PLAIN: A ships the look you saw now. B goes closer to your pictures; you can wait for its screenshots or pick it from the description." Options as written: "A: Ship as shown": "Merge PR 1 as in the screenshots; PR 2 adds the session strip."; "B: Push further (Recommended)": "Closer to your pictures; I'll send its screenshots before anything merges."; "C: Different direction": "Hold PR 1; type what's off." Answered at line 14877, 2026-10-17T23:59:08.585Z: *"B: Push further (Recommended)"*
+
+**Ruling:** the gym TV look goes further toward his pictures than PR 1 as built: cream enamel-sign panels with worn edges on the boards and clock, a heavier wood/steel frame, and more texture, with cream kept limited on the TV for burn-in. Its screenshots go to him before anything merges. The ruling is the second card's B. The first card's "B: Approve, push further" (merge PR 1 as shown now) was not picked, and neither were "A: Ship as shown" or "C: Different direction".
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 14880) to fold Option B into PR 1 (#1705) and to hold #1705, with no GREEN, until the B screenshots go to Jason and he approves.
+
+**Status:** ruled; the B screenshots and his approval were not checked by this records pass.
+
+---
+
+## OD-2026-10-17-010 -- The +30 SEC and REPEAT timer buttons: "A" (yes, after the restyle)
+
+**Provenance: PRIMARY.** One typed letter from Jason in the new overwatch session, answering a question overwatch put in its reply ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his question with an image at line 14793, 2026-10-17T23:55:15.357Z; overwatch's question at line 14820, 2026-10-17T23:55:56.573Z; his answer queued at line 14833, 2026-10-17T23:56:48.719Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly; overwatch's question is quoted as written, with its bold marks left out. New; edits no earlier entry.
+
+**What led to it.** He sent one of his style pictures and typed (line 14793): *"How close can we get to it on the top row m of this picture"*. Overwatch answered that the top row is the coach's floor control panel, and that two of its buttons, +30 SEC and REPEAT, do not exist: "The timer only has start / pause / resume / end (OBSERVED)". It recommended applying the top-row look to the coach's live-session screen as lane L39's PR 3, then asked, as written: "Do you want the +30 SEC and REPEAT buttons built? - A (recommended): yes, after the restyle. - B: no, just Pause / Skip / Next."
+
+**Answered** (queued at line 14833, 2026-10-17T23:56:48.719Z): *"A"*
+
+**Ruling:** the +30 SEC and REPEAT round-timer buttons are built, after the restyle. Option B (no, just Pause / Skip / Next) was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch added to lane L39's queue (line 14842), behind PR 1 and PR 2: PR 3, the top-row look on the coach's live-session screen, starting after lane L40's PR on `SessionScriptLiveDelivery.tsx` merges; and PR 4, the +30 SEC and REPEAT round-timer actions, with a plan to Overwatch first. That sequencing is Overwatch's call, not his ruling.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-009 -- Payments and Danielle's HIIT are off the pilot launch list: "Those will not be in the pilot unless there is time"
+
+**Provenance: PRIMARY.** One typed message from Jason in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; overwatch's two questions at line 14534, 2026-10-17T23:41:58.984Z; his message at line 14538, 2026-10-17T23:44:09.675Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly; overwatch's questions are quoted as written, with bold marks left out. New; edits no earlier entry.
+
+**The questions.** Overwatch, as written, at the end of its check of ChatGPT's pilot audit: "Two calls for you, whenever you're ready:" "Will the pilot collect payments through the app? If not, that stays off the launch list." and "Is Danielle's HIIT part of the first pilot? If so, it needs a read-only look at its data first."
+
+**Answered** (line 14538): *"Those will not be in the pilot unless there is time"*
+
+**Ruling:** payments through the app and Danielle's HIIT are not part of the pilot launch; they come back only if there is time. Overwatch read it the same way (line 14546): "Payments and Danielle's HIIT are off the pilot launch list, and we'll come back to them only if there's time."
+
+**Note:** This is about the pilot launch only. OD-2026-10-13-011 and OD-2026-10-13-012 (Danielle's HIIT stays a program in the gym) are not changed.
+
+**Status:** ruled.
+
+---
+
+## OD-2026-10-17-008 -- Style cards for the gym TV: "A: Coach screen only (Recommended)"; "Both"; "1 and add it to the approved list"
+
+**Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14111, 2026-10-17T22:12:17.946Z; answered at line 14114, 2026-10-17T22:51:04.318Z). Read by script (records pass, lane L45, 2026-10-17). His pick and his two typed answers are quoted exactly; the questions and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows OD-2026-10-17-007.
+
+**Question "TV tiles".** Overwatch, as written: "OFFICIAL: Your style pictures put ATTENDANCE (absent / excused / unmarked counts) and NEED ATTENTION (critical / high / medium counts) on the gym TV. The TV currently shows only who is present, with initials (OD-2026-10-07-008), and never shows absence, pain, clearance or safety flags (wallDisplay.ts). (A) Keep the TV that way and put those two tiles on the COACH'S own floor screen instead; (B) allow COUNTS ONLY on the TV (no names or initials); (C) show them on the TV as in the pictures. PLAIN: the TV hangs in the gym where parents and kids see it. A keeps 'who skipped' and 'who's hurt' off the public wall but still gives the coach those tiles." Options as written: "A: Coach screen only (Recommended)": "TV keeps present-only + initials; attendance/need-attention tiles go on the coach's floor screen in the same style."; "B: Counts only on TV": "Numbers only (e.g. Absent 2, Critical 1), no names or initials."; "C: As in the pictures": "Changes your Oct 7 wall ruling; I'd note the privacy cost in the record." Jason: *"A: Coach screen only (Recommended)"*
+
+**Question "Drill icons".** Overwatch, as written: "OFFICIAL: The pictures show drill icons (warmup, bags, ring, mitts, defense, cooldown). The app's session blocks are typed differently (arrival, instruction, drill round, conditioning, close, and others), and no icon set exists yet. (A) Draw icons for the real block types the app already has; (B) add a new 'station' field (bags/ring/mitts/defense) coaches set on each block, then icons for those. PLAIN: A is a restyle only and can ship soon. B shows exactly the pictures' icons but means coaches tag each block and it's extra build work." Options as written: "A: Icons for real types (Recommended)": "Restyle only; no new data."; "B: Add a station field": "Matches the pictures; new field + coach tagging; bigger build." Jason typed: *"Both"*
+
+**Question "Motto".** Overwatch, as written: "OFFICIAL: The pictures' header plate reads "ADAPT AND OVERCOME * OBSERVE. DECIDE. EXECUTE. REPEAT." "OBSERVE. DECIDE. EXECUTE. REPEAT." is already in an approved past reference; "ADAPT AND OVERCOME" is not in any ruling. Put both on the TV header? PLAIN: the app doesn't show slogans you haven't approved; say yes and it goes up." Options as written: "A: Use both lines": ""ADAPT AND OVERCOME" plus "OBSERVE. DECIDE. EXECUTE. REPEAT.""; "B: Only the approved line": ""OBSERVE. DECIDE. EXECUTE. REPEAT." only."; "C: Neither": "Header shows the gym name only." Jason typed: *"1 and add it to the approved list"*
+
+**Ruling:**
+
+1. TV tiles: the gym TV keeps showing only who is present, by initials (OD-2026-10-07-008 is not changed). The attendance and need-attention tiles from his pictures go on the coach's own floor screen, in the same style. Options B (counts only on the TV) and C (as in the pictures) were not chosen.
+2. Drill icons: *"Both"*, typed, not one of the options.
+3. Motto: *"1 and add it to the approved list"*, typed, not one of the options as labelled.
+
+**How overwatch read the two typed answers (applied by Overwatch 2026-10-17; his words above are the ruling):** in the re-issued lane L39 brief (line 14146) and its report to him (line 14164, 2026-10-17T22:52:01.052Z). "Both" was read as both options in turn: icons now for the session block kinds the app already has, and later, as a separate PR, an optional station field (bags, ring, mitts, defense) that coaches set, with its own icons. "1 and add it to the approved list" was read as option A, the first option: the TV header shows both "ADAPT AND OVERCOME" and "OBSERVE. DECIDE. EXECUTE. REPEAT.", and "ADAPT AND OVERCOME" is added to the approved list of gym sayings. Overwatch told him (line 14164; bold marks left out): "Header: both lines go up, "ADAPT AND OVERCOME" and "OBSERVE. DECIDE. EXECUTE. REPEAT.". "ADAPT AND OVERCOME" gets added to the approved-words list." None of his later messages in the transcript, read by this records pass to line 15036, returns to either reading.
+
+**Acted on:** Overwatch withdrew the first style chip and re-issued it with these rulings (line 14144, line 14146). The handover log says L39 added "ADAPT AND OVERCOME" to `GYM_SAYINGS` in PR 1 (#1705) (REPORTED; not checked on main by this records pass).
+
+**Status:** ruled; not built on main at the time of writing.
+
+---
+
+## OD-2026-10-17-007 -- A lane to move the look of the pages toward his style pictures, gym TV / floor board first: "Can we start a lane ..."; "A"
+
+**Provenance: PRIMARY.** One typed message from Jason with an image, then one typed letter, in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; his message at line 13945, 2026-10-17T21:52:18.309Z; overwatch's question at line 13958, 2026-10-17T21:52:39.277Z; his answer queued at line 13988, 2026-10-17T21:55:35.186Z). Read by script (records pass, lane L45, 2026-10-17). His words are quoted exactly, spelling kept; overwatch's question is quoted as written, with bold marks left out. New; edits no earlier entry.
+
+**His ask** (line 13945, with one of his style pictures): *"Can we start a lane to try and get the look and feel of the pages shifting towards these styles as far as UI goes or do we need to work that sepperate"*
+
+**Overwatch's answer and question** (line 13958): it recommended starting the style work now as its own lane, separate from the fix lanes, in stages: a style kit, then one screen, then the rest a screen at a time as each fix lane closes. It said the pictures are AI pictures, used as a style guide only. Then, as written: "Question: which screen goes first?" "A (Recommended): gym TV / floor board. It matches the images best and collides with no open lane." "B: coach home / floor workspace. Most used, but U2 and U3 are still editing it." "C: athlete Today. Kids see it, but U2 and L35 just changed it."
+
+**Answered** (queued at line 13988, 2026-10-17T21:55:35.186Z): *"A"*
+
+**Ruling:** a style lane starts now, separate from the fix lanes, to move the look and feel of the pages toward his style pictures, and the gym TV / floor board is the first screen. Options B (coach home / floor workspace) and C (athlete Today) were not chosen as the first screen.
+
+**Note:** About two minutes later his message "Check our price and with the ais you have access to we have work things against real l anesthesia in th past see if there is anything usfule" (line 14025) came through partly garbled. Overwatch asked what he meant on a one-question card (line 14030), and he picked "A: Past design/style work (Recommended)" (line 14031, 2026-10-17T22:00:53.384Z). That started a read-only search of past design work for the style lane (report `Documents\PPBF-overwatch\audit\STYLE-REFS-PAST-WORK-2026-10-17.md`). It clarifies what he asked for and rules nothing new, so it has no entry of its own.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed the style lane chip (lane L39, "Restyle the gym TV / floor board to Jason's references", line 14008) and created an empty folder on the laptop for his reference pictures, `Desktop\PPBF-style-refs` (made at line 13999, 2026-10-17T21:55:45.315Z; reported to him at line 14021). The style kit, the lane's PR plan and its screenshot step are Overwatch's design of the lane, not his rulings.
+
+**Status:** ruled; lane L39 running at the time of writing.
+
+---
+
 ## OD-2026-10-17-006 -- The gym-admin live check: "A: Now", not the recommended "B: After Release 29 (Recommended)"
 
 **Provenance: PRIMARY.** A question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 12522, 2026-10-17T18:42:48.381Z; answered at line 12530, 2026-10-17T18:46:22.324Z). Read by script (records pass, lane L36, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
