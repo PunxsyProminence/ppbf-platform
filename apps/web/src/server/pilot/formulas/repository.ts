@@ -191,6 +191,19 @@ function existingObservationIdentity(row: FormulaObservationRow) {
   };
 }
 
+/**
+ * completeness is stored as numeric(6,5) (pilot_slice_postgres.sql), so a
+ * stored row reads back at five decimals. A recomputed result compared at full
+ * double precision then never matches its own stored row whenever the ratio
+ * does not end within five decimals -- 2/3, 5/7, 6/7 -- and the conflict path
+ * below refused an identical recomputation as IDEMPOTENCY_CONFLICT. MVP-11 with
+ * an unanswered session in the window (lane L50 review) and MVP-10 reach those
+ * ratios. Compared at the precision the column keeps.
+ */
+function storedCompleteness(value: number): number {
+  return Math.round(value * 100_000) / 100_000;
+}
+
 function formulaResultIdentity(result: FormulaResult) {
   return {
     resultId: result.resultId,
@@ -208,7 +221,7 @@ function formulaResultIdentity(result: FormulaResult) {
     inputObservationIds: result.inputObservationIds,
     provenance: result.provenance,
     validation: result.validation,
-    quality: result.quality,
+    quality: { ...result.quality, completeness: storedCompleteness(result.quality.completeness) },
     unavailableReason: result.unavailableReason,
     humanReviewRequired: result.humanReviewRequired,
   };

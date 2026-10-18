@@ -359,4 +359,32 @@ describe('focus attainment (MVP-11) over the last 28 days', () => {
     expect(inputs.map((observation) => observation.contextId).sort()).toEqual(['sparring_2000', 'sparring_3000']);
     expect((await latestValues())['MVP-11:value']).toBe(50);
   });
+
+  test('recomputing the same window is a no-op even when completeness is 2/3', async () => {
+    // A focus answer of null (possible through the API, not the page) makes
+    // MVP-11 insufficient with completeness 2/3, which numeric(6,5) cannot hold
+    // exactly. Every observation of one submission recomputes the same window;
+    // the second computation must find its own row, not a conflict.
+    await observe({ contextId: 'sparring_1000', kind: 'focus_achieved', value: 1, unit: 'boolean_0_1', observedAt: '2026-10-10T15:00:00.000Z' });
+    await repository.saveFormulaObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId: 'sparring_2000',
+      kind: 'focus_achieved',
+      value: null,
+      unit: 'boolean_0_1',
+      observedAt: '2026-10-12T15:00:00.000Z',
+      source: { type: 'manual', quality: 'moderate', referenceId: 'ref-null-focus' },
+      idempotencyKey: 'sparring_2000-focus_achieved',
+      createdByAccountId: ACCOUNT_ID,
+    });
+    await observe({ contextId: 'sparring_3000', kind: 'focus_achieved', value: 1, unit: 'boolean_0_1', observedAt: '2026-10-17T15:00:00.000Z' });
+    const scope = { organizationId: ORG_ID, athleteId: ATHLETE_ID, contextId: 'sparring_3000' };
+
+    const first = await autoCalculation.autoCalculateForObservationContext(scope);
+    const second = await autoCalculation.autoCalculateForObservationContext(scope);
+
+    expect(first.map((result) => result.quality.completeness)).toEqual([0.66667]);
+    expect(second.map((result) => result.resultId)).toEqual(first.map((result) => result.resultId));
+  });
 });
