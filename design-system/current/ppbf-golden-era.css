@@ -5843,3 +5843,26 @@
     --frame-band: 8px;
   }
 }
+
+/* One block of the plan on the strip. The current one is lit and the ones
+   behind it dimmed: brightness, not hue, and the page says both in words too
+   (the NOW panel names the block and its number; aria-current marks it). */
+.ge-wallboard .ge-strip-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s3) var(--s2);
+  border: 1px solid rgb(var(--brass-600-rgb) / .45);
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, .22);
+}
+.ge-wallboard .ge-strip-tile[data-state="now"] {
+  border-color: var(--brass-300);
+  background-color: rgb(var(--brass-500-rgb) / .16);
+  box-shadow: 0 0 0 2px rgb(var(--brass-300-rgb) / .35), 0 0 18px rgb(var(--brass-300-rgb) / .22);
+}
+.ge-wallboard .ge-strip-tile[data-state="done"] {
+  opacity: .45;
+}

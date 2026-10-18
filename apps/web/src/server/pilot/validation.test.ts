@@ -489,3 +489,30 @@ describe('only an athlete may write duration_minutes', () => {
     )).not.toThrow();
   });
 });
+
+describe("session_type is one of the six tags, null, or absent -- and only the athlete's", () => {
+  const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
+
+  test.each(['technique', 'bag_pads', 'conditioning', 'sparring', 'mixed', 'other'])('%s is kept', (tag) => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, session_type: tag })).session_type).toBe(tag);
+  });
+
+  test('null is "not said", and an absent key stays absent so the stored tag is left alone', () => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, session_type: null })).session_type).toBeNull();
+    expect('session_type' in validateSessionPayload(sessionPayload(rated))).toBe(false);
+  });
+
+  test.each(['boxing', 'Sparring', '', 3])('%p is refused, naming the field', (bad) => {
+    expect(() => validateSessionPayload(sessionPayload({ ...rated, session_type: bad }))).toThrow(/session_type/);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'])('%s carrying the key is refused as Forbidden', (role) => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, session_type: 'sparring' }));
+    expect(() => assertDurationWrittenByAthlete(role, session)).toThrow(/^Forbidden: session_type/);
+  });
+
+  test('the athlete may write it', () => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, session_type: 'sparring' }));
+    expect(() => assertDurationWrittenByAthlete('athlete', session)).not.toThrow();
+  });
+});

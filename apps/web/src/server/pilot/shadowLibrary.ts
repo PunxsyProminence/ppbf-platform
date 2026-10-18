@@ -7,6 +7,7 @@ import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError, PilotError, ValidationError } from './errors';
+import { LIBRARY_REQUEST_ID_PATTERN } from './libraryIntakeRecovery';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
@@ -590,6 +591,29 @@ function assertNoReservedProvenance(metadata: Record<string, unknown> | undefine
   if (key) throw new ValidationError(reservedProvenanceMessage(key));
 }
 
+// A retried registration names the request it repeats (L54, audit 2026-10-17
+// item 3). The id is the client's, made once per registration and sent again
+// on every retry; it is kept in the source's metadata under this key.
+export const SOURCE_REGISTRATION_REQUEST_KEY = 'registration_request_id';
+
+// The request keys are written only from the request id, never taken from a
+// caller's metadata: a key slipped in there would let a later request with
+// that id "recover" a row it did not make.
+function assertNoRequestKey(metadata: Record<string, unknown> | undefined, key: string): void {
+  if (metadata && Object.hasOwn(metadata, key)) {
+    throw new ValidationError(`metadata.${key} is set only from request_id.`);
+  }
+}
+
+// One transaction-scoped advisory lock per (organization, request): a retry
+// that arrives while the first request is still inside its transaction waits
+// for it, then finds what it wrote instead of writing a second row.
+async function lockLibraryRequest(client: PoolClient, kind: string, organizationId: string, requestId: string): Promise<void> {
+  await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+    `shadow_library_${kind}_request:${organizationId}:${requestId}`,
+  ]);
+}
+
 export async function createShadowLibrarySource(input: {
   organizationId: string;
   actorAccountId: string;
@@ -603,68 +627,97 @@ export async function createShadowLibrarySource(input: {
   status?: ShadowLibrarySourceStatus;
   rightsStatus?: ShadowLibraryRightsStatus;
   metadata?: Record<string, unknown>;
-}): Promise<ShadowLibrarySourceRow> {
+  /** The client's id for this registration; a retry with the same id gets the source it already made. */
+  requestId?: string | null;
+}): Promise<ShadowLibrarySourceRow & { recovered?: true }> {
   // Marking a source as PPBF-owned or open-licence decides what the Library may
   // hold of it, so it is the reviewer tier's call, as on the rights PATCH.
   if (input.rightsStatus && input.rightsStatus !== 'unknown') requireEvidenceReviewer(input.actorRole as PilotRole);
   assertNoReservedProvenance(input.metadata);
-  const sourceId = `source_${randomUUID()}`;
-
-  const row = await queryOne<ShadowLibrarySourceRow>(
-    `insert into pilot.shadow_library_sources
-      (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role, rights_status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12,$13)
-     returning *`,
-    [
-      sourceId,
-      input.organizationId,
-      input.title.trim(),
-      input.publisher?.trim() || null,
-      input.sourceType,
-      clampAuthorityTier(input.authorityTier ?? 3),
-      input.url?.trim() || null,
-      input.publicationDate?.trim() || null,
-      input.status ?? 'active',
-      JSON.stringify(input.metadata ?? {}),
-      input.actorAccountId,
-      input.actorRole,
-      input.rightsStatus ?? 'unknown',
-    ],
-  );
-
-  if (!row) {
-    throw new Error('Unable to create SHADOW Library source.');
+  assertNoRequestKey(input.metadata, SOURCE_REGISTRATION_REQUEST_KEY);
+  const requestId = input.requestId?.trim() || null;
+  if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
   }
+  const sourceId = `source_${randomUUID()}`;
+  const metadata = requestId === null
+    ? input.metadata ?? {}
+    : { ...input.metadata, [SOURCE_REGISTRATION_REQUEST_KEY]: requestId };
 
-  await emitShadowEvent({
-    organizationId: input.organizationId,
-    eventName: 'SHADOW_LIBRARY_SOURCE_CREATED',
-    entityType: 'shadow_library_source',
-    entityId: row.source_id,
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    payload: {
-      source_type: row.source_type,
-      authority_tier: row.authority_tier,
-      status: row.status,
-      rights_status: row.rights_status,
-      title: row.title,
-    },
+  // The source, its SHADOW event and its telemetry are written in ONE
+  // transaction. They used to be three statements, and an event or telemetry
+  // failure answered 500 with the source already saved: the curator's retry
+  // then met "already registered" (with a URL) or filed a second source
+  // (without one).
+  return withTransaction(async (client) => {
+    if (requestId !== null) {
+      await lockLibraryRequest(client, 'source', input.organizationId, requestId);
+      const existing = await client.query<ShadowLibrarySourceRow>(
+        `select * from pilot.shadow_library_sources
+          where organization_id = $1 and created_by_account_id = $2 and metadata->>'${SOURCE_REGISTRATION_REQUEST_KEY}' = $3
+          order by created_at
+          limit 1`,
+        [input.organizationId, input.actorAccountId, requestId],
+      );
+      if (existing.rows[0]) return { ...existing.rows[0], recovered: true as const };
+    }
+
+    const inserted = await client.query<ShadowLibrarySourceRow>(
+      `insert into pilot.shadow_library_sources
+        (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role, rights_status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12,$13)
+       returning *`,
+      [
+        sourceId,
+        input.organizationId,
+        input.title.trim(),
+        input.publisher?.trim() || null,
+        input.sourceType,
+        clampAuthorityTier(input.authorityTier ?? 3),
+        input.url?.trim() || null,
+        input.publicationDate?.trim() || null,
+        input.status ?? 'active',
+        JSON.stringify(metadata),
+        input.actorAccountId,
+        input.actorRole,
+        input.rightsStatus ?? 'unknown',
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) {
+      throw new Error('Unable to create SHADOW Library source.');
+    }
+
+    await emitShadowEvent({
+      organizationId: input.organizationId,
+      eventName: 'SHADOW_LIBRARY_SOURCE_CREATED',
+      entityType: 'shadow_library_source',
+      entityId: row.source_id,
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      payload: {
+        source_type: row.source_type,
+        authority_tier: row.authority_tier,
+        status: row.status,
+        rights_status: row.rights_status,
+        title: row.title,
+      },
+    }, client);
+
+    await writeShadowTelemetryEvent({
+      organizationId: input.organizationId,
+      metricName: 'shadow.library.source.create',
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      dimensions: {
+        source_type: row.source_type,
+        authority_tier: row.authority_tier,
+        status: row.status,
+      },
+    }, client);
+
+    return row;
   });
-
-  await writeShadowTelemetryEvent({
-    organizationId: input.organizationId,
-    metricName: 'shadow.library.source.create',
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    dimensions: {
-      source_type: row.source_type,
-      authority_tier: row.authority_tier,
-      status: row.status,
-    },
-  });
-
-  return row;
 }
 
 /**
@@ -994,6 +1047,10 @@ export async function reviewShadowLibrarySource(input: {
   return row;
 }
 
+// A retried intake names the entry it repeats, the same way a retried source
+// registration does (L54). Kept in the document's metadata under this key.
+export const DOCUMENT_INTAKE_REQUEST_KEY = 'intake_request_id';
+
 export async function createShadowLibraryDocument(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1005,70 +1062,111 @@ export async function createShadowLibraryDocument(input: {
   contentSha256?: string | null;
   ingestState?: ShadowLibraryIngestState;
   metadata?: Record<string, unknown>;
-}): Promise<ShadowLibraryDocumentRow> {
+  /** The client's id for this entry; a retry with the same id gets the document it already made. */
+  requestId?: string | null;
+}): Promise<ShadowLibraryDocumentRow & { recovered?: true }> {
   assertNoReservedProvenance(input.metadata);
-  const source = await queryOne<{ source_id: string }>(
-    `select source_id
-     from pilot.shadow_library_sources
-     where source_id = $1 and organization_id = $2`,
-    [input.sourceId, input.organizationId],
-  );
-
-  if (!source) {
-    throw new Error('Source does not exist in this organization.');
+  assertNoRequestKey(input.metadata, DOCUMENT_INTAKE_REQUEST_KEY);
+  const requestId = input.requestId?.trim() || null;
+  if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
   }
+  const metadata = requestId === null
+    ? input.metadata ?? {}
+    : { ...input.metadata, [DOCUMENT_INTAKE_REQUEST_KEY]: requestId };
 
-  const documentId = `doc_${randomUUID()}`;
-  const row = await queryOne<ShadowLibraryDocumentRow>(
-    `insert into pilot.shadow_library_documents
-      (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
-     returning *`,
-    [
-      documentId,
-      input.sourceId,
-      input.organizationId,
-      input.subjectId?.trim() || null,
-      input.documentName.trim(),
-      input.blobPath?.trim() || null,
-      input.contentSha256?.trim() || null,
-      input.ingestState ?? 'pending',
-      JSON.stringify(input.metadata ?? {}),
-      input.actorAccountId,
-      input.actorRole,
-    ],
-  );
+  // The document, its SHADOW event and its telemetry are written in ONE
+  // transaction, as the source's are: an event failure no longer answers 500
+  // over a document that was kept, which the curator could only find in
+  // Evidence Review and had to enter again.
+  return withTransaction(async (client) => {
+    if (requestId !== null) {
+      await lockLibraryRequest(client, 'document', input.organizationId, requestId);
+      const existing = await client.query<ShadowLibraryDocumentRow>(
+        `select * from pilot.shadow_library_documents
+          where organization_id = $1 and created_by_account_id = $2 and metadata->>'${DOCUMENT_INTAKE_REQUEST_KEY}' = $3
+            -- A document the retention purge held takes no new chunk (F-086).
+            and not (metadata ? 'subject_purged_at')
+          order by created_at
+          limit 1`,
+        [input.organizationId, input.actorAccountId, requestId],
+      );
+      const found = existing.rows[0];
+      if (found) {
+        // An unfinished excerpt stays with the source it was started under.
+        if (found.source_id !== input.sourceId) {
+          throw new ConflictError(
+            'This entry was already started under a different source. Finish it there, or reject it in Evidence Review.',
+            'SHADOW_LIBRARY_INTAKE_SOURCE_MISMATCH',
+          );
+        }
+        return { ...found, recovered: true as const };
+      }
+    }
 
-  if (!row) {
-    throw new Error('Unable to create SHADOW Library document.');
-  }
+    const source = await client.query<{ source_id: string }>(
+      `select source_id
+       from pilot.shadow_library_sources
+       where source_id = $1 and organization_id = $2`,
+      [input.sourceId, input.organizationId],
+    );
 
-  await emitShadowEvent({
-    organizationId: input.organizationId,
-    eventName: 'SHADOW_LIBRARY_DOCUMENT_REGISTERED',
-    entityType: 'shadow_library_document',
-    entityId: row.document_id,
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    payload: {
-      source_id: row.source_id,
-      ingest_state: row.ingest_state,
-      subject_id: row.subject_id,
-    },
+    if (!source.rows[0]) {
+      throw new Error('Source does not exist in this organization.');
+    }
+
+    const documentId = `doc_${randomUUID()}`;
+    const inserted = await client.query<ShadowLibraryDocumentRow>(
+      `insert into pilot.shadow_library_documents
+        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+       returning *`,
+      [
+        documentId,
+        input.sourceId,
+        input.organizationId,
+        input.subjectId?.trim() || null,
+        input.documentName.trim(),
+        input.blobPath?.trim() || null,
+        input.contentSha256?.trim() || null,
+        input.ingestState ?? 'pending',
+        JSON.stringify(metadata),
+        input.actorAccountId,
+        input.actorRole,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) {
+      throw new Error('Unable to create SHADOW Library document.');
+    }
+
+    await emitShadowEvent({
+      organizationId: input.organizationId,
+      eventName: 'SHADOW_LIBRARY_DOCUMENT_REGISTERED',
+      entityType: 'shadow_library_document',
+      entityId: row.document_id,
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      payload: {
+        source_id: row.source_id,
+        ingest_state: row.ingest_state,
+        subject_id: row.subject_id,
+      },
+    }, client);
+
+    await writeShadowTelemetryEvent({
+      organizationId: input.organizationId,
+      metricName: 'shadow.library.document.register',
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      dimensions: {
+        ingest_state: row.ingest_state,
+        subject_scoped: Boolean(row.subject_id),
+      },
+    }, client);
+
+    return row;
   });
-
-  await writeShadowTelemetryEvent({
-    organizationId: input.organizationId,
-    metricName: 'shadow.library.document.register',
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    dimensions: {
-      ingest_state: row.ingest_state,
-      subject_scoped: Boolean(row.subject_id),
-    },
-  });
-
-  return row;
 }
 
 // EXCERPT BUDGET (CL-C2; OD-2026-10-02-013 answer 4A: "only excerpts a curator

@@ -154,6 +154,16 @@ export interface BehaviourObservation {
   readonly fatigueContext: FatigueContext;
   readonly observedAt: string;
 
+  /**
+   * The one attempt -- rep, round, exchange -- this reading is about, unique
+   * within its session and task. Two readings are of the same attempt only
+   * when they share session, task AND this key; without it, two coaches in
+   * the same drill may simply have scored different reps. Absent means "not
+   * identified", and an unidentified reading is never compared against
+   * another for disagreement or video contradiction.
+   */
+  readonly opportunityKey?: string | null;
+
   /** Reused verbatim from the formula engine. `computer_vision` is the video path. */
   readonly source: ObservationSource;
 
@@ -174,6 +184,8 @@ export interface BehaviourObservation {
    * own call after watching film, typically. Superseded observations are
    * excluded from evidence rather than deleted, so the revision stays
    * auditable and the original never silently vanishes from provenance.
+   * Honoured only when both records carry the same observerAccountId: one
+   * coach cannot revise another's reading.
    */
   readonly supersedesObservationId?: string | null;
 
@@ -257,6 +269,7 @@ export type PatternReasonCode =
   // --- intervention / lesson ----------------------------------------------
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
+  | 'OUTCOME_INTERVENTION_MISMATCH'
   | 'OUTCOME_NOT_HUMAN_REVIEWED'
   | 'OUTCOME_CONFOUNDED'
   | 'OUTCOME_MISS'
@@ -300,6 +313,7 @@ export interface PatternObservationProvenance {
   readonly taskConstraint: TaskConstraint;
   readonly fatigueContext: FatigueContext;
   readonly observedAt: string;
+  readonly opportunityKey: string | null;
   readonly sourceType: ObservationSource['type'];
   readonly sourceQuality: ObservationSource['quality'];
   readonly observerAccountId: string | null;
@@ -497,6 +511,12 @@ export interface RetentionEvidenceSummary {
   readonly latestAt: string | null;
 }
 
+export interface LessonExclusion {
+  readonly kind: 'observation' | 'intervention' | 'outcome';
+  readonly id: string;
+  readonly reason: PatternReasonCode;
+}
+
 /**
  * The end of the athlete ladder -- and deliberately not the end of anything
  * else. A validated lesson is a claim about ONE athlete, evidenced by their
@@ -516,6 +536,15 @@ export interface ValidatedAthleteLessonEvaluation {
   readonly eligible: boolean;
   readonly blockers: readonly PatternReasonCode[];
   readonly warnings: readonly PatternReasonCode[];
+
+  /**
+   * Records excluded before evaluation, with the code that excluded them:
+   * post- (and, with a single-case policy, pre-) intervention observations
+   * through the candidate ladder's admission, and an intervention or outcome
+   * that belongs to another athlete, behaviour or intervention, or carries a
+   * timestamp nobody can place.
+   */
+  readonly excluded: readonly LessonExclusion[];
 
   readonly transfer: TransferEvidenceSummary;
   readonly retention: RetentionEvidenceSummary;

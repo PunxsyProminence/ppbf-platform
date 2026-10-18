@@ -109,7 +109,7 @@ function RosterImportConsole() {
         <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">
           Roster
         </p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Load a roster</h1>
+        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Load a Roster</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           Paste a spreadsheet or choose a file. Nothing is written until you have seen what it would
           do and pressed Add. An athlete already on the roster is never overwritten, and nobody gets

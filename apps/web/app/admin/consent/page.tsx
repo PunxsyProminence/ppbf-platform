@@ -289,7 +289,7 @@ function ConsentConsole() {
           <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
           <p className="t-eyebrow">Consent on file</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-            Record a signed consent
+            Waivers &amp; Consent
           </h1>
           <p className="t-body mt-[var(--s3)] max-w-[68ch]">
             This records that a consent or waiver was given, so the gym can answer later who signed and
