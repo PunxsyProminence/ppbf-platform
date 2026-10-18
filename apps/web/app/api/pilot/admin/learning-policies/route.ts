@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from '@/src/server/pilot/http';
 import { listLearningPolicies, ratifyLearningPolicy } from '@/src/server/pilot/learningPolicies';
 
 export const runtime = 'nodejs';
@@ -12,13 +12,13 @@ export const runtime = 'nodejs';
 // Q3 "Needs to be backed by research", then his approval of the threshold
 // research: a bar is saved only with its cited sources, and only a gym admin's
 // ratification puts one in force (the approved v1 payloads wait in
-// learningPolicyApprovedV1.ts). Staff read the bars in force so a
-// coach can see what the app's words rest on; a gym admin ratifies a new
-// version (the working default, pending Overwatch's confirmation with Jason).
-// A bar names no athlete.
+// learningPolicyApprovedV1.ts). Staff read the bars in force so a coach can
+// see what the app's words rest on. Ratifying is the organization admin's
+// alone (Jason 2026-10-18, "A: Gym admin only (Rec.)"), on a
+// Microsoft-authenticated session. A bar names no athlete.
 
 const READ_ROLES = ['coach', 'organization_admin', 'admin'] as const;
-const RATIFY_ROLES = ['organization_admin', 'admin'] as const;
+const RATIFY_ROLES = ['organization_admin'] as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,8 +33,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    // Ratifying is a privileged write: a Microsoft-authenticated session, as
+    // the other admin mutations require (http.ts requireMicrosoftAuthenticatedPrincipal).
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, [...RATIFY_ROLES]);
+    // requireRole reads the legacy admin role as organization_admin
+    // (roleAlias.ts); the ruling names the organization admin alone, so the
+    // role is checked exactly here (and again by the table).
+    if (principal.role !== 'organization_admin') throw new Error('Forbidden: role not allowed');
     // A body of null, a number or a list is not a request: read as empty, refused below.
     const parsed: unknown = await request.json().catch(() => null);
     const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;

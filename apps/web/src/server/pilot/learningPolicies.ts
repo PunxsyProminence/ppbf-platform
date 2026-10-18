@@ -9,9 +9,9 @@ import { ConflictError, ValidationError } from './errors';
 //   pattern_formation     when a behaviour is emerging, a pattern, established
 //   athlete_lesson        when a lesson improved, likely worked, worked
 //   observer_calibration  when a coach pair's reports are trusted to count
-// A bar is stored only with its cited sources, and only a gym admin's
-// ratification puts one in force (the working default, pending Overwatch's
-// confirmation with Jason). Each version keeps who signed which numbers, when,
+// A bar is stored only with its cited sources, and only the organization
+// admin's ratification puts one in force (Jason 2026-10-18, "A: Gym admin only
+// (Rec.)"). Each version keeps who signed which numbers, when,
 // on what evidence; a new version supersedes the last rather than editing it.
 // The approved numbers are in learningPolicyApprovedV1.ts, waiting to be
 // ratified; nothing here applies them.

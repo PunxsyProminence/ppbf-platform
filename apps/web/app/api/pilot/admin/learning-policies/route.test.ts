@@ -8,7 +8,17 @@ import { listLearningPolicies, ratifyLearningPolicy } from '@/src/server/pilot/l
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
-  return { ...actual, requirePrincipal: jest.fn() };
+  const requirePrincipal = jest.fn();
+  // The real Microsoft check over the mocked session, so the test can show a
+  // non-Microsoft session refused.
+  const requireMicrosoftAuthenticatedPrincipal = jest.fn(async (request: unknown) => {
+    const principal = await requirePrincipal(request);
+    if (principal.authProvider !== 'microsoft' || principal.signInMethod !== 'microsoft') {
+      throw new Error('Forbidden: Microsoft-authenticated session required');
+    }
+    return principal;
+  });
+  return { ...actual, requirePrincipal, requireMicrosoftAuthenticatedPrincipal };
 });
 
 jest.mock('@/src/server/pilot/learningPolicies', () => {
@@ -32,6 +42,7 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
     athleteId: undefined,
     sessionToken: 'token',
     authProvider: 'microsoft',
+    signInMethod: 'microsoft',
     ...overrides,
   } as PilotPrincipal;
 }
@@ -54,7 +65,9 @@ test('staff read the bars; athletes, parents, the board and the platform owner d
 });
 
 test('only a gym admin ratifies: a coach reads the bar but cannot set it', async () => {
-  for (const role of ['coach', 'athlete', 'parent', 'board', 'platform_owner'] as const) {
+  // Gym admin only (Jason 2026-10-18): the legacy admin role, which reads as
+  // organization_admin elsewhere, does not ratify.
+  for (const role of ['admin', 'coach', 'athlete', 'parent', 'board', 'platform_owner'] as const) {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
     expect((await POST(postRequest(BODY))).status).toBe(403);
   }
@@ -85,6 +98,13 @@ test('a body that is not an object is refused as a 400, not a 500', async () => 
     }));
     expect(response.status).toBe(400);
   }
+  expect(mockRatify).not.toHaveBeenCalled();
+});
+
+test('ratifying needs a Microsoft-authenticated session; reading does not', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ signInMethod: null } as unknown as Partial<PilotPrincipal>));
+  expect((await POST(postRequest(BODY))).status).toBe(403);
+  expect((await GET(new NextRequest(URL_BASE))).status).toBe(200);
   expect(mockRatify).not.toHaveBeenCalled();
 });
 
