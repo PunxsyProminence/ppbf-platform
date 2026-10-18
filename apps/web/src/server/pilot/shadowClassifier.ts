@@ -58,8 +58,11 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
     /trade.?off|trade-off/i,
     /edge\s+case/i,
     /nuance|subtle|context.?dependent/i,
-    /contradictory|conflicting|tension/i,
-    /(what|how|why).{0,20}(if|when).{0,20}(then|else)/i, // Conditional logic
+    // Whole words: "tension" sits inside "extension", and "how", "if" and
+    // "then" inside "show", "different" and "strengthen", so a plain request
+    // about a jab or a leg day scored as conflicting and conditional.
+    /\b(?:contradictory|conflicting|tensions?)\b/i,
+    /\b(?:what|how|why)\b.{0,20}\b(?:if|when)\b.{0,20}\b(?:then|else)\b/i, // Conditional logic
     /compare|contrast|versus|vs\./i,
     /exception|special\s+case/i,
     /given.*constraint|with.*limitation/i,
@@ -96,24 +99,42 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
 }
 
 /**
- * Detect the primary topic/domain of the query
+ * Detect the primary topic/domain of the query.
+ *
+ * WHOLE WORDS. These were bare substrings, so a topic word anywhere inside a
+ * longer word decided the topic: "rest" in "wrestling" filed a wrestling
+ * question under recovery, "form" in "performance" and "information" under
+ * technique, "set" in "upset" and "train" in "strain" under training, "pain"
+ * in "painting" under medical. The topic is not used to pick a model, but it
+ * is stored as the message topic, the review category and the profile's
+ * recent topics, and those are written back into later prompts -- so a stray
+ * match became a standing statement about what the person asks about.
+ *
+ * The vocabulary is the same; each word now matches whole, with its plain
+ * inflections listed (train, trains, trained, training, trainer), plus the
+ * compounds and prefixed forms the substring match used to catch correctly
+ * (headgear, biomechanics, painkiller, overtraining, reinjury, unsafe,
+ * safeguarding). "injury prevention" is checked before medical:
+ * it was listed under safety but could never match, because "injury" won
+ * first.
  */
+const TOPIC_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  ['technique', /\b(?:forms?|postures?|(?:bio)?mechanics|movements?|position(?:s|ed|ing|al)?|grip(?:s|ped|ping)?|stances?)\b/],
+  ['training', /\b(?:(?:over|re)?train(?:s|ed|ing|er|ers|ee|ees)?|workouts?|sessions?|sets?|rep(?:s|etitions?)?|exercis(?:e|es|ed|ing)|drill(?:s|ed|ing)?)\b/],
+  ['recovery', /\b(?:recover(?:s|ed|ing|y)?|rest(?:s|ed|ing)?|sleep(?:s|ing|y|less)?|soreness|doms|fatigu(?:e|ed|ing)|nutrition(?:al|ist)?)\b/],
+  ['safety', /\binjury prevention\b/],
+  ['medical', /\b(?:(?:re)?injur(?:y|ies|ed)|pain(?:s|ful|killers?)?|hurt(?:s|ing)?|medical(?:ly)?|doctors?|clinic(?:s|al)?|treatments?)\b/],
+  ['mindset', /\b(?:mental(?:ly|ity)?|psychology|(?:un|re)?focus(?:ed|es|ing)?|confidence|motivation(?:al)?|fear(?:s|ful|less)?|anxiety)\b/],
+  ['strategy', /\b(?:strateg(?:y|ies)|plan(?:s|ned|ning|ner|ners)?|goals?|approach(?:es)?|method(?:s|ology)?|systems?)\b/],
+  ['competition', /\b(?:competitions?|meets?|events?|perform(?:s|ed|ing|er|ers|ance|ances)?|record(?:s|ed|ing)?|rankings?)\b/],
+  ['safety', /\b(?:(?:un)?safe(?:ly|r|st|ty)?|safeguard(?:s|ed|ing)?|risk(?:s|y)?|danger(?:s|ous|ously)?|emergenc(?:y|ies))\b/],
+  ['equipment', /\b(?:equipment|(?:head)?gear|shoes?|uniforms?|technology|devices?)\b/],
+];
+
 function detectTopic(message: string, role: PilotRole): string {
   const msg = message.toLowerCase();
 
-  const topicPatterns: [string, RegExp][] = [
-    ['technique', /form|posture|mechanics|movement|position|grip|stance/i],
-    ['training', /train|workout|session|set|rep|exercise|drill/i],
-    ['recovery', /recover|rest|sleep|soreness|doms|fatigue|nutrition/i],
-    ['medical', /injury|pain|hurt|medical|doctor|clinic|treatment/i],
-    ['mindset', /mental|psychology|focus|confidence|motivation|fear|anxiety/i],
-    ['strategy', /strategy|plan|goal|approach|method|system/i],
-    ['competition', /competition|meet|event|perform|record|ranking/i],
-    ['safety', /safe|risk|danger|emergency|injury prevention/i],
-    ['equipment', /equipment|gear|shoe|uniform|technology|device/i],
-  ];
-
-  for (const [topic, pattern] of topicPatterns) {
+  for (const [topic, pattern] of TOPIC_PATTERNS) {
     if (pattern.test(msg)) return topic;
   }
 

@@ -146,6 +146,70 @@ describe('SHADOW Classifier', () => {
     });
   });
 
+  describe('Topic words match whole words only', () => {
+    // Each message has a topic word inside a longer word. On main the stray
+    // match decided the topic (shown as `was`); it must not any more.
+    test.each([
+      ['What wrestling moves help on the mat?', 'athlete', 'recovery'],
+      ['Any interesting combinations to try?', 'athlete', 'recovery'],
+      ['Can you give me more information about the program?', 'parent', 'technique'],
+      ['My athlete pulled a muscle and it is a strain, what helps?', 'coach', 'training'],
+      ['How do I keep my distance from a taller opponent?', 'coach', 'technique'],
+      ['My son is upset after losing', 'parent', 'training'],
+      ['Where do I report the weigh-in numbers?', 'coach', 'training'],
+      ['My kid has an obsession with boxing videos', 'parent', 'training'],
+      ['How do I teach fundamentals to beginners?', 'coach', 'mindset'],
+      ['How do I prevent cuts?', 'athlete', 'competition'],
+      ['What time is the parents meeting?', 'parent', 'competition'],
+      ['Is painting the gym walls on the list?', 'parent', 'medical'],
+    ] as const)('%s (%s) is not filed under %s', (message, role, was) => {
+      expect(classifyRequest(message, role).topic).not.toBe(was);
+    });
+
+    test('"performance" is competition, no longer technique through "form"', () => {
+      expect(classifyRequest('How do I improve my performance in the ring?', 'athlete').topic).toBe('competition');
+    });
+
+    test('"injury prevention" reaches safety instead of being shadowed by "injury"', () => {
+      expect(classifyRequest('What is good injury prevention for shoulders?', 'coach').topic).toBe('safety');
+      expect(classifyRequest('He has an injury in his wrist', 'coach').topic).toBe('medical');
+    });
+
+    // What the substring match caught correctly is still caught.
+    test.each([
+      ['Should I wear headgear?', 'equipment'],
+      ['Is overtraining a risk before a bout?', 'training'],
+      ['How do I avoid a reinjury of my wrist?', 'medical'],
+      ['Is it unsafe to spar with a cold?', 'safety'],
+      ['Who handles safeguarding at the gym?', 'safety'],
+      ['Can you explain the biomechanics of a hook?', 'technique'],
+      ['Are painkillers ok after sparring?', 'medical'],
+      ['How many sets and reps today?', 'training'],
+      ['I trained twice yesterday', 'training'],
+      ['He gets unfocused in the third round', 'mindset'],
+    ] as const)('%s -> %s', (message, topic) => {
+      expect(classifyRequest(message, 'admin').topic).toBe(topic);
+    });
+  });
+
+  describe('Complexity keywords match whole words only', () => {
+    test('"extension" is not "tension"', () => {
+      const reference = classifyRequest('The reach on my jab is short', 'coach').complexity;
+      expect(classifyRequest('The extension on my jab is short', 'coach').complexity).toBe(reference);
+    });
+
+    test('"show ... different ... strengthen" is not if/then logic', () => {
+      const reference = classifyRequest('Show me legs', 'coach').complexity;
+      expect(classifyRequest('Show me a different way to strengthen my legs', 'coach').complexity).toBe(reference);
+    });
+
+    test('real conflict and conditional wording still counts', () => {
+      const plain = classifyRequest('The reach on my jab is short', 'coach').complexity;
+      expect(classifyRequest('There is tension between the two plans', 'coach').complexity).toBeGreaterThan(plain);
+      expect(classifyRequest('What happens if he tires, then what do we change?', 'coach').complexity).toBeGreaterThan(plain);
+    });
+  });
+
   describe('Confidence scoring', () => {
     test('high confidence for clear Quick Round', () => {
       const result = classifyRequest('Hi', 'athlete');
