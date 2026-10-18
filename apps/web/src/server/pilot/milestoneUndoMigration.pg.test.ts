@@ -144,7 +144,8 @@ function upsert(client: Client, key: string, role: 'self' | 'coach', account: st
                              else pilot.athlete_milestones.awarded_at end,
            undone_at = null
        where pilot.athlete_milestones.undone_at is not null
-          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self')`,
+          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self'
+              and pilot.athlete_milestones.awarded_at >= now() - 10 * interval '1 minute')`,
     [ORG, ATHLETE, key, role, account],
   );
 }
@@ -326,6 +327,24 @@ describe('milestone undo migration (L43, F-133)', () => {
       expect(after).toMatchObject({ awarded_by_role: 'coach', awarded_by_account_id: COACH, undone_at: null });
       expect((after.awarded_at as Date).toISOString()).toBe((before.awarded_at as Date).toISOString());
       await expect(setUndone(client, SELF_KEY)).rejects.toMatchObject({ code: '23514', constraint: CHECK });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a coach's mark on the athlete's own award from before the undo window leaves it the athlete's", async () => {
+    const client = await freshDatabase('mundo_old_self');
+    try {
+      await award(client, SELF_KEY, 'self', ATHLETE_ACCOUNT);
+      await client.query(
+        `update pilot.athlete_milestones set awarded_at = now() - interval '11 minutes' where milestone_key = $1`,
+        [SELF_KEY],
+      );
+      const before = await awardsOf(client);
+
+      await upsert(client, SELF_KEY, 'coach', COACH);
+
+      expect(await awardsOf(client)).toEqual(before);
     } finally {
       await client.end();
     }
