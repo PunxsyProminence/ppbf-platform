@@ -65,6 +65,7 @@ export const SOURCE_LABEL: Record<SafetyEscalationSourceType, string> = {
   video_scan: 'Video Scan',
   compliance_violation: 'Compliance Violation',
   shadow_disclosure: 'SHADOW Disclosure',
+  sparring_symptom: 'Sparring Symptoms',
 };
 
 const STATUS_TABS: Array<{ value: EscalationStatus | 'all'; label: string }> = [

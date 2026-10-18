@@ -7,6 +7,7 @@ import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
+import SparringSymptomCheck from './SparringSymptomCheck';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
 import StepNotes from './IssuedWorkoutStepNotes';
@@ -1254,6 +1255,9 @@ export default function AthleteWorkspace() {
   const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
   // The session-type tag (Jason 2026-10-18), keyed to the session the same way.
   const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
+  // Set when a session tagged Sparring is checked out: the after-sparring
+  // symptom check shows until the page is left (Jason 2026-10-18).
+  const [afterSparringCheck, setAfterSparringCheck] = useState(false);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -2423,6 +2427,7 @@ export default function AthleteWorkspace() {
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
       setPostSessionType(null);
+      if (sessionType === 'sparring') setAfterSparringCheck(true);
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
       const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
@@ -3857,6 +3862,9 @@ export default function AthleteWorkspace() {
             />
           )}
           {activeTab === 'bio-checkin' && <MyInjuries />}
+          {/* The next-day sparring symptom check: renders nothing unless the
+              athlete sparred on the previous gym day. */}
+          {activeTab === 'bio-checkin' && <SparringSymptomCheck context="next_day" />}
 
 
           {/* DRILL LIBRARY */}
@@ -4254,6 +4262,12 @@ export default function AthleteWorkspace() {
         {shownSyncMessage ? (
           <div className={PANEL}>
             <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{shownSyncMessage}</p>
+          </div>
+        ) : null}
+
+        {afterSparringCheck ? (
+          <div className={PANEL}>
+            <SparringSymptomCheck context="after_sparring" />
           </div>
         ) : null}
 
