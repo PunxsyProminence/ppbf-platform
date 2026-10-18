@@ -11,6 +11,8 @@ import {
   autoCalculateForObservationContext,
   canTriggerStoredCalculation,
   detectSatisfiedFormulaInputs,
+  FOCUS_ATTAINMENT_WINDOW_DAYS,
+  focusAttainmentWindow,
   STORED_CALCULATION_TRIGGER_ROLES,
 } from './autoCalculation';
 import { FORMULA_INPUT_REQUIREMENTS } from './runner';
@@ -455,6 +457,12 @@ describe('the executor', () => {
     const contextRead = jest
       .spyOn(repository, 'getActiveObservationsForContext')
       .mockResolvedValue(sparringContext());
+    const windowRead = jest
+      .spyOn(repository, 'getActiveObservationsOfKindInWindow')
+      .mockResolvedValue([
+        observation({ id: 'earlier-focus', kind: 'focus_achieved', unit: 'boolean_0_1', value: 0, contextId: 'sparring_0' }),
+        sparringContext().find((item) => item.kind === 'focus_achieved')!,
+      ]);
     const run = jest
       .spyOn(runner, 'runStoredMvpFormula')
       .mockResolvedValue({ results: [] });
@@ -483,26 +491,42 @@ describe('the executor', () => {
         formulaId: 'MVP-04',
         observationIds: ['sparring_1-absorbed', 'sparring_1-landed'],
       },
+      // MVP-11 spans contexts: every session in the 28 days up to this one.
+      {
+        organizationId: 'org-1',
+        athleteId: 'athlete-1',
+        formulaId: 'MVP-11',
+        observationIds: ['earlier-focus', 'sparring_1-focus'],
+      },
     ]);
-    // No parameters and no policyVersion: neither MVP-03 nor MVP-04 is a
-    // policy formula, and runStoredMvpFormula rejects the pair outright for
+    expect(windowRead).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      kind: 'focus_achieved',
+      observedAfter: '2026-07-29T18:00:00.000Z',
+      observedAtOrBefore: '2026-08-26T18:00:00.000Z',
+    });
+    // No parameters and no policyVersion: none of MVP-03, MVP-04 or MVP-11 is
+    // a policy formula, and runStoredMvpFormula rejects the pair outright for
     // formulas that are not.
     expect(run.mock.calls.every(([input]) => (
       !('parameters' in input) && !('policyVersion' in input)
     ))).toBe(true);
   });
 
-  test('runs nothing when the context holds no satisfied set', async () => {
+  test('runs nothing when the context holds no satisfied set and no focus session', async () => {
     const repository = await import('./repository');
     const runner = await import('./runner');
     jest
       .spyOn(repository, 'getActiveObservationsForContext')
       .mockResolvedValue([observation({
-        id: 'only-focus',
-        kind: 'focus_achieved',
-        unit: 'boolean_0_1',
-        value: 1,
+        id: 'only-landed',
+        kind: 'punch_landed',
+        unit: 'count',
+        value: 3,
+        dimensions: { punchType: 'Jab' },
       })]);
+    const windowRead = jest.spyOn(repository, 'getActiveObservationsOfKindInWindow');
     const run = jest.spyOn(runner, 'runStoredMvpFormula');
 
     await expect(autoCalculateForObservationContext({
@@ -510,7 +534,56 @@ describe('the executor', () => {
       athleteId: 'athlete-1',
       contextId: 'sparring_1',
     })).resolves.toEqual([]);
+    expect(windowRead).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  // Jason 2026-10-17: focus rate over the last 28 days. Before this, a focus
+  // session completed no input set and MVP-11 never ran from the product.
+  test('a focus session alone runs MVP-11 over the 28 days up to it', async () => {
+    const repository = await import('./repository');
+    const runner = await import('./runner');
+    const focus = observation({ id: 'only-focus', kind: 'focus_achieved', unit: 'boolean_0_1', value: 1 });
+    jest.spyOn(repository, 'getActiveObservationsForContext').mockResolvedValue([focus]);
+    jest.spyOn(repository, 'getActiveObservationsOfKindInWindow').mockResolvedValue([focus]);
+    const run = jest.spyOn(runner, 'runStoredMvpFormula').mockResolvedValue({ results: [] });
+
+    await autoCalculateForObservationContext({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring_1',
+    });
+
+    expect(run.mock.calls.map(([input]) => input)).toEqual([{
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      formulaId: 'MVP-11',
+      observationIds: ['only-focus'],
+    }]);
+  });
+});
+
+describe('focusAttainmentWindow', () => {
+  const focus = (id: string, unit: FormulaUnit = 'boolean_0_1') => observation({
+    id,
+    kind: 'focus_achieved',
+    unit,
+    value: 1,
+    observedAt: '2026-10-17T15:00:00.000Z',
+  });
+
+  test('ends at the session and reaches back exactly 28 days', () => {
+    expect(FOCUS_ATTAINMENT_WINDOW_DAYS).toBe(28);
+    expect(focusAttainmentWindow([focus('f1')])).toEqual({
+      observedAfter: '2026-09-19T15:00:00.000Z',
+      observedAtOrBefore: '2026-10-17T15:00:00.000Z',
+    });
+  });
+
+  test('no window without exactly one focus session in the formula unit', () => {
+    expect(focusAttainmentWindow([])).toBeNull();
+    expect(focusAttainmentWindow([focus('f1'), focus('f2')])).toBeNull();
+    expect(focusAttainmentWindow([focus('f1', 'count')])).toBeNull();
   });
 });
 

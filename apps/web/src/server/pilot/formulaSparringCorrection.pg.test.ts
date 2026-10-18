@@ -123,6 +123,7 @@ async function observe(input: {
   kind: ObservationKind;
   value: number;
   observedAt: string;
+  unit?: 'count' | 'boolean_0_1';
   dimensions?: Record<string, string>;
   organizationId?: string;
   athleteId?: string;
@@ -137,7 +138,7 @@ async function observe(input: {
     contextId: input.contextId,
     kind: input.kind,
     value: input.value,
-    unit: 'count',
+    unit: input.unit ?? 'count',
     dimensions: input.dimensions ?? {},
     observedAt: input.observedAt,
     source: { type: 'manual', quality: 'moderate', referenceId: `ref-${idempotencyKey}` },
@@ -325,5 +326,65 @@ describe('listRecentSparringEntries', () => {
     ]);
     expect(await repository.listRecentSparringEntries({ organizationId: ORG_ID, athleteId: ATHLETE_ID, limit: 1 }))
       .toHaveLength(1);
+  });
+});
+
+describe('focus attainment (MVP-11) over the last 28 days', () => {
+  // Jason 2026-10-17: "A: Last 28 days (Recommended)".
+  test('a sparring session runs MVP-11 over the sessions in the 28 days up to it, and no older ones', async () => {
+    const focus = async (contextId: string, value: number, observedAt: string) => {
+      await observe({ contextId, kind: 'focus_achieved', value, unit: 'boolean_0_1', observedAt });
+    };
+    await focus('sparring_1000', 1, '2026-09-07T15:00:00.000Z'); // 40 days before: outside
+    await focus('sparring_2000', 0, '2026-10-07T15:00:00.000Z'); // 10 days before: inside
+    await focus('sparring_3000', 1, '2026-10-17T15:00:00.000Z'); // the session that ends the window
+    // Another athlete's session inside the window never counts.
+    await observe({
+      contextId: 'sparring_4000', kind: 'focus_achieved', value: 0, unit: 'boolean_0_1',
+      observedAt: '2026-10-16T15:00:00.000Z', athleteId: OTHER_ATHLETE_ID,
+    });
+
+    const results = await autoCalculation.autoCalculateForObservationContext({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId: 'sparring_3000',
+    });
+
+    expect(results.map((result) => [result.formulaId, result.value])).toEqual([['MVP-11', 50]]);
+    const inputs = await repository.getActiveFormulaObservationsByIds({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      observationIds: results[0].inputObservationIds,
+    });
+    expect(inputs.map((observation) => observation.contextId).sort()).toEqual(['sparring_2000', 'sparring_3000']);
+    expect((await latestValues())['MVP-11:value']).toBe(50);
+  });
+
+  test('recomputing the same window is a no-op even when completeness is 2/3', async () => {
+    // A focus answer of null (possible through the API, not the page) makes
+    // MVP-11 insufficient with completeness 2/3, which numeric(6,5) cannot hold
+    // exactly. Every observation of one submission recomputes the same window;
+    // the second computation must find its own row, not a conflict.
+    await observe({ contextId: 'sparring_1000', kind: 'focus_achieved', value: 1, unit: 'boolean_0_1', observedAt: '2026-10-10T15:00:00.000Z' });
+    await repository.saveFormulaObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId: 'sparring_2000',
+      kind: 'focus_achieved',
+      value: null,
+      unit: 'boolean_0_1',
+      observedAt: '2026-10-12T15:00:00.000Z',
+      source: { type: 'manual', quality: 'moderate', referenceId: 'ref-null-focus' },
+      idempotencyKey: 'sparring_2000-focus_achieved',
+      createdByAccountId: ACCOUNT_ID,
+    });
+    await observe({ contextId: 'sparring_3000', kind: 'focus_achieved', value: 1, unit: 'boolean_0_1', observedAt: '2026-10-17T15:00:00.000Z' });
+    const scope = { organizationId: ORG_ID, athleteId: ATHLETE_ID, contextId: 'sparring_3000' };
+
+    const first = await autoCalculation.autoCalculateForObservationContext(scope);
+    const second = await autoCalculation.autoCalculateForObservationContext(scope);
+
+    expect(first.map((result) => result.quality.completeness)).toEqual([0.66667]);
+    expect(second.map((result) => result.resultId)).toEqual(first.map((result) => result.resultId));
   });
 });
