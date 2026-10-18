@@ -34,9 +34,18 @@ const FAKE: readonly GymSaying[] = [
 describe('the shipped source', () => {
   it('carries the owner-approved lines, and only those', () => {
     // Owner-approved 2026-08-19 (Drive doc 2026-08-19_EGGS-LOAD-FIRST-12.md,
-    // "Jason execute pack"), egg 11 changed by D19 (OD-2026-10-08-009) — twelve
-    // lines, no more, no fewer, until the owner adds to them again.
-    expect(GYM_SAYINGS).toHaveLength(12);
+    // "Jason execute pack"), egg 11 changed by D19 (OD-2026-10-08-009), and
+    // line 13 added by the owner 2026-10-17 ("1 and add it to the approved
+    // list") — thirteen lines, no more, no fewer, until he adds to them again.
+    expect(GYM_SAYINGS).toHaveLength(13);
+  });
+
+  it("carries the owner's 2026-10-17 line, ADAPT AND OVERCOME, for after a hard session", () => {
+    expect(GYM_SAYINGS.find((s) => s.line === 'ADAPT AND OVERCOME')).toEqual({
+      line: 'ADAPT AND OVERCOME',
+      said_by: 'the wall',
+      shown: ['after-hard-session'],
+    });
   });
 
   it('matches the approved list after D19: Steel Town is off the wall, AMPLECTERE MISERIAM is on', () => {
