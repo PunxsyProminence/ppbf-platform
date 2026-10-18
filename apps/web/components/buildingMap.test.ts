@@ -521,7 +521,7 @@ describe('searchDoors', () => {
 
 describe('doorForPath', () => {
   it('finds an exact match', () => {
-    expect(doorForPath('/coach/drills')?.label).toBe('Drills');
+    expect(doorForPath('/coach/drills')?.label).toBe('Drill Library');
   });
 
   it('falls back to the longest matching prefix for a nested route', () => {

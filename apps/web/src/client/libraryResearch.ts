@@ -52,8 +52,10 @@ export function claimStatusLabel(status: LibraryClaimStatus, level?: LibraryConf
   if (status === 'weak' && level === 'low') {
     return 'Low confidence — closest passages only, logged as a research need';
   }
+  // How closely the passages match the question, not a calibrated confidence:
+  // the score cutoffs behind high and medium were never calibrated (audit item 11).
   if (status !== 'unsupported' && (level === 'high' || level === 'medium')) {
-    return `${claimStatusLabel(status)} (${level} confidence)`;
+    return `${claimStatusLabel(status)} (${level === 'high' ? 'close match' : 'partial match'})`;
   }
   switch (status) {
     case 'supported':

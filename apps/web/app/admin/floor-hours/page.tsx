@@ -287,7 +287,7 @@ export default function AdminFloorHoursPage() {
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Floor hours</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-            The ledger behind the public clock
+            Floor Hours Ledger
           </h1>
           <p className="t-body mt-[var(--s3)]">
             These are the per-person figures the organization totals on the public page are

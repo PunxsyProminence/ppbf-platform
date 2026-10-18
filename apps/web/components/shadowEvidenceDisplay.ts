@@ -11,11 +11,18 @@
 
 import type { ShadowEvidenceTier } from '@/src/server/pilot/shadowEvidenceTier';
 
+// What each grade measures: the strongest source the answer cites
+// (shadowEvidenceTier.ts). The old lines said EMERGING was "not yet fully
+// verified", but every passage SHADOW serves is approved and verified, and
+// PROVEN's "reviewed and approved" was true of every grade. Wording PROPOSED in
+// audit item 11, accepted with Jason's ruling A (relayed by Overwatch
+// 2026-10-17); EXPERIMENTAL also names low-tier sources, which the rule grades
+// there too.
 export const EVIDENCE_TIER_MEANINGS: Record<ShadowEvidenceTier, string> = {
-  PROVEN: 'Backed by verified evidence your organization has reviewed and approved.',
-  EMERGING: 'Early supporting evidence exists, but it is not yet fully verified.',
-  EXPERIMENTAL: 'Being tried and evaluated. Treat it as a hypothesis, not a conclusion.',
-  RESEARCH_NEEDED: 'No verified evidence yet. Treat this as unverified guidance.',
+  PROVEN: 'The strongest source cited is verified, boxing-specific evidence from a top-tier source.',
+  EMERGING: 'The strongest source cited is verified or strongly supported, but from a lower tier or another sport.',
+  EXPERIMENTAL: 'Cites only contested, hypothesis, film-study or low-tier material, or no Library source.',
+  RESEARCH_NEEDED: 'No approved evidence was found for this question.',
 };
 
 // Display order for the legend: most evidenced first, matching the visual
