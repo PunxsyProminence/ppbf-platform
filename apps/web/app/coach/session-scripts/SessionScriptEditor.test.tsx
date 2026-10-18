@@ -228,7 +228,7 @@ describe('the plan editor', () => {
 
   it.each([
     [401, 'Unauthorized', /You are signed out, so nothing was saved/],
-    [403, 'Forbidden: role not allowed', /Your account may not edit session scripts, so nothing was saved/],
+    [403, 'Forbidden: role not allowed', /Your account may not edit session plans, so nothing was saved/],
     [400, 'expected_updated_at', /The server refused, so nothing was saved/],
   ])('a %i from the route is a refusal with a plain sentence', async (status, error, sentence) => {
     const { onSaved } = setup(() => answer(status, { error }));
