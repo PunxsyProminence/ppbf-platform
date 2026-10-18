@@ -152,6 +152,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.athlete_contact_caps',
       // A child's own period start dates, athlete-only (Jason 2026-10-18).
       'pilot.athlete_cycle',
+      // A child's standing height, coach-entered, coach-only (OD-2026-10-17-026 (b)).
+      'pilot.athlete_heights',
       'pilot.athlete_injuries',
       // A coach's heat, weight-cut and supervision limits for one child (OD-2026-10-06-024 ruling 2).
       'pilot.athlete_minor_limits',
