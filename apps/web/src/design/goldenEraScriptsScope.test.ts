@@ -17,7 +17,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * 2. THE REAL CONTROL SET SURVIVES THE MOCKUP. The locked 004A reference draws
  *    a rail of bronze buttons reading NEW SCRIPT / LOAD / ASSIGN DRILL / SAVE /
  *    PRINT FLOOR CARD, and a header row reading Date / Group-Floor / Focus of
- *    the day. NONE of those exist on this route: session scripts are authored
+ *    the day. NONE of those exist on this route: session plans are authored
  *    upstream and this surface reads them, starts a live delivery and records
  *    what happened. Implementing the image literally would invent five controls
  *    with no server behind them.
@@ -144,7 +144,7 @@ const LABELS = [...controlLabels(PAGE), ...controlLabels(LIVE)];
    header above describes a removed case it is history, kept as the record of
    why the case was written. */
 
-describe('golden-era session scripts scope', () => {
+describe('golden-era session plans scope', () => {
 
   /* --locked means a medical stop; this states that the 004A block never
      reached for it while restyling a coaching surface. Red itself is not

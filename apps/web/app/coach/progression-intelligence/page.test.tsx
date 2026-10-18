@@ -156,7 +156,7 @@ describe('active training hold visibility (#5)', () => {
     ]));
 
     await screen.findByText('Active Training Hold');
-    expect(screen.getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+    expect(screen.getByText(/Training Hold on CONTACT WORK/)).toBeTruthy();
     expect(screen.getByText('Waiting on a doctor note before contact resumes.')).toBeTruthy();
   });
 
@@ -265,7 +265,7 @@ describe('request ordering when the coach changes athlete', () => {
     });
 
     expect(screen.getByText('Active Training Hold')).toBeTruthy();
-    expect(screen.getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+    expect(screen.getByText(/Training Hold on CONTACT WORK/)).toBeTruthy();
   });
 
   test("the previous athlete's hold banner does not stand over the newly selected athlete", async () => {
@@ -2557,7 +2557,7 @@ describe('drill assignment warns on an active training hold and does not block',
 
     const form = screen.getByLabelText('Drill').closest('div.mat-leather') as HTMLElement;
     expect(within(form).getByText('Active Training Hold')).toBeTruthy();
-    expect(within(form).getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+    expect(within(form).getByText(/Training Hold on CONTACT WORK/)).toBeTruthy();
     expect(within(form).getByText('Waiting on a doctor note before contact resumes.')).toBeTruthy();
     // Nothing blocked, nothing to confirm: the controls are live and unguarded.
     expect((screen.getByLabelText('Drill') as HTMLSelectElement).disabled).toBe(false);
