@@ -4,9 +4,9 @@ import { GET, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   adjustRoundTimer,
-  configureRoundTimer,
-  moveRoundTimer,
-  readOwnRoundTimer,
+  configureRoundTimerRevised,
+  moveRoundTimerRevised,
+  readOwnRoundTimerRevised,
   readRoundTimerRevision,
   type RoundTimerView,
 } from '@/src/server/pilot/roundTimers';
@@ -18,17 +18,17 @@ jest.mock('@/src/server/pilot/http', () => ({
 }));
 jest.mock('@/src/server/pilot/roundTimers', () => ({
   ...jest.requireActual('@/src/server/pilot/roundTimers'),
-  configureRoundTimer: jest.fn(),
-  moveRoundTimer: jest.fn(),
-  readOwnRoundTimer: jest.fn(),
+  configureRoundTimerRevised: jest.fn(),
+  moveRoundTimerRevised: jest.fn(),
+  readOwnRoundTimerRevised: jest.fn(),
   adjustRoundTimer: jest.fn(),
   readRoundTimerRevision: jest.fn(),
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
-const mockConfigure = jest.mocked(configureRoundTimer);
-const mockMove = jest.mocked(moveRoundTimer);
-const mockRead = jest.mocked(readOwnRoundTimer);
+const mockConfigure = jest.mocked(configureRoundTimerRevised);
+const mockMove = jest.mocked(moveRoundTimerRevised);
+const mockRead = jest.mocked(readOwnRoundTimerRevised);
 const mockAdjust = jest.mocked(adjustRoundTimer);
 const mockRevision = jest.mocked(readRoundTimerRevision);
 
@@ -72,10 +72,10 @@ const CONFIGURE = { action: 'configure', round_seconds: 180, rest_seconds: 60, r
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockConfigure.mockResolvedValue(TIMER);
-  mockMove.mockResolvedValue({ ...TIMER, state: 'running', phase: 'work', round: 1, seconds_left: 180 });
-  mockRead.mockResolvedValue(TIMER);
-  // No revision unless a test gives one: the answers below then read exactly as before.
+  // The revision rides with the timer it was read or written with (Codex review of #1742).
+  mockConfigure.mockResolvedValue({ timer: TIMER, revision: '11' });
+  mockMove.mockResolvedValue({ timer: { ...TIMER, state: 'running', phase: 'work', round: 1, seconds_left: 180 }, revision: '12' });
+  mockRead.mockResolvedValue({ timer: TIMER, revision: '13' });
   mockRevision.mockResolvedValue(null);
 });
 
@@ -85,7 +85,7 @@ describe('GET: the coach screens read the shared timer', () => {
     const response = await get();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({ timer: TIMER });
+    expect(await response.json()).toEqual({ timer: TIMER, revision: '13' });
     expect(mockRead).toHaveBeenCalledWith('org-1', 'acct-coach', 'ssrun_1');
   });
 
@@ -112,7 +112,7 @@ describe('POST: configure, start, pause, resume, end', () => {
       restSeconds: 60,
       roundsTotal: 3,
     });
-    expect(await response.json()).toEqual({ timer: TIMER });
+    expect(await response.json()).toEqual({ timer: TIMER, revision: '11' });
   });
 
   it.each(['start', 'pause', 'resume', 'end'])('%s is one named move', async (action) => {
@@ -235,25 +235,18 @@ describe('POST add_30 / repeat', () => {
     expect(await response.json()).toEqual({ error: code });
   });
 
-  it('every answer with a timer carries its revision, so the screen can send it back', async () => {
+  it('every answer with a timer carries the revision of that very timer, never a second read', async () => {
     as('coach');
-    mockRevision.mockResolvedValue('1760724000000009');
-    expect(await (await get()).json()).toEqual({ timer: TIMER, revision: '1760724000000009' });
-    expect(await (await post({ action: 'start' })).json()).toMatchObject({ revision: '1760724000000009' });
-    expect(await (await post(CONFIGURE)).json()).toMatchObject({ revision: '1760724000000009' });
+    mockRevision.mockResolvedValue('99');
+    expect(await (await get()).json()).toEqual({ timer: TIMER, revision: '13' });
+    expect(await (await post({ action: 'start' })).json()).toMatchObject({ revision: '12' });
+    expect(await (await post(CONFIGURE)).json()).toMatchObject({ revision: '11' });
+    expect(mockRevision).not.toHaveBeenCalled();
   });
 
   it('no timer, no revision', async () => {
     as('coach');
     mockRead.mockResolvedValue(null);
-    mockRevision.mockResolvedValue('1760724000000009');
     expect(await (await get()).json()).toEqual({ timer: null });
-  });
-
-  it('GET reads the revision before the timer, so a write between them reads as stale, never as current', async () => {
-    as('coach');
-    mockRevision.mockResolvedValue('1');
-    await get();
-    expect(mockRevision.mock.invocationCallOrder[0]).toBeLessThan(mockRead.mock.invocationCallOrder[0]);
   });
 });

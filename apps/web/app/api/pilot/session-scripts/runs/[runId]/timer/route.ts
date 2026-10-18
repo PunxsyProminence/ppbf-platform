@@ -4,10 +4,9 @@ import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/htt
 import {
   ROUND_TIMER_LIMITS,
   adjustRoundTimer,
-  configureRoundTimer,
-  moveRoundTimer,
-  readOwnRoundTimer,
-  readRoundTimerRevision,
+  configureRoundTimerRevised,
+  moveRoundTimerRevised,
+  readOwnRoundTimerRevised,
   type RoundTimerAction,
   type RoundTimerAdjustment,
 } from '@/src/server/pilot/roundTimers';
@@ -26,7 +25,8 @@ interface RouteContext {
 // ONE ACTION PER REQUEST, NAMED EXPLICITLY, as on the run route. The client never sends a time,
 // a state or a round: the server writes the instants with the database clock and derives the rest.
 // +30 SEC and REPEAT (add_30, repeat) also carry the revision the screen last read, which every
-// answer here includes beside the timer; a stale one is refused (roundTimers.ts adjustRoundTimer).
+// answer here includes beside the timer, read or written in the same statement as that timer; a
+// stale one is refused (roundTimers.ts adjustRoundTimer).
 const ROLES = ['coach', 'admin', 'organization_admin'] as const;
 const MOVES = ['start', 'pause', 'resume', 'end'] as const;
 const ADJUSTMENTS = ['add_30', 'repeat'] as const;
@@ -59,12 +59,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     requireRole(principal, [...ROLES]);
     const runId = await runIdOf(context);
     if (!runId) return badRequest('run_id');
-    // The revision is read FIRST: a write landing between the two reads then pairs an older
-    // revision with a newer timer, and a tap on it is refused as stale rather than let through.
-    const revision = await readRoundTimerRevision(principal.organizationId, runId);
-    const timer = await readOwnRoundTimer(principal.organizationId, principal.accountId, runId);
+    const read = await readOwnRoundTimerRevised(principal.organizationId, principal.accountId, runId);
     return NextResponse.json(
-      { timer, revision: timer ? (revision ?? undefined) : undefined },
+      { timer: read?.timer ?? null, revision: read?.revision },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
@@ -109,8 +106,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (restSeconds === null) return badRequest('rest_seconds');
       const roundsTotal = boundedInt(record.rounds_total, ROUND_TIMER_LIMITS.roundsTotal);
       if (roundsTotal === null) return badRequest('rounds_total');
-      const timer = await configureRoundTimer(organizationId, accountId, runId, { roundSeconds, restSeconds, roundsTotal });
-      return NextResponse.json({ timer, revision: (await readRoundTimerRevision(organizationId, runId)) ?? undefined });
+      return NextResponse.json(await configureRoundTimerRevised(organizationId, accountId, runId, { roundSeconds, restSeconds, roundsTotal }));
     }
 
     if (isAdjustment) {
@@ -119,8 +115,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(adjusted);
     }
 
-    const timer = await moveRoundTimer(organizationId, accountId, runId, action as RoundTimerAction);
-    return NextResponse.json({ timer, revision: (await readRoundTimerRevision(organizationId, runId)) ?? undefined });
+    return NextResponse.json(await moveRoundTimerRevised(organizationId, accountId, runId, action as RoundTimerAction));
   } catch (error) {
     return failure(error);
   }

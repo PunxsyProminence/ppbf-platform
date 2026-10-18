@@ -240,9 +240,20 @@ describe('releasedKeys: the bells still to come after +30 SEC', () => {
     expect(releasedKeys('run#0', read(60), read(178), CONFIG, 7)).toEqual([]);
   });
 
-  test('REPEAT while paused gives back the round\'s knock and end, so they ring once it resumes', () => {
+  test('REPEAT while paused gives back the round\'s start, knock and end, so they ring once it resumes', () => {
     expect(releasedKeys('run#0', read(60, 2, 'work', 'paused'), read(180, 2, 'work', 'paused'), CONFIG, 7).sort()).toEqual(
-      ['run#0:2:end', 'run#0:2:knock', 'run#0:3:start'],
+      ['run#0:2:end', 'run#0:2:knock', 'run#0:2:start', 'run#0:3:start'],
     );
+  });
+
+  test('Resume at the start of a round sounds its start bell (the key decides whether it rings)', () => {
+    // Paused right after a REPEAT, then resumed a second later.
+    expect(roundSounds('run#0', read(180, 2, 'work', 'paused'), read(179), CONFIG, 7)).toEqual([
+      { voice: 'bell', keys: ['run#0:2:start'] },
+    ]);
+  });
+
+  test('Resume well into a round sounds nothing', () => {
+    expect(roundSounds('run#0', read(100, 2, 'work', 'paused'), read(99), CONFIG, 7)).toEqual([]);
   });
 });

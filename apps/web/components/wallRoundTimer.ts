@@ -134,6 +134,9 @@ export function releasedKeys(
   if (setElapsed(prev, config) - setElapsed(next, config) < RELEASE_BACK_SECONDS) return [];
   const keys = [`${setKey}:${next.round + 1}:start`];
   if (next.phase === 'work') keys.push(`${setKey}:${next.round}:knock`, `${setKey}:${next.round}:end`);
+  // Back to the start of the round (REPEAT while paused): its start bell is ahead again too, and
+  // rings on Resume (roundSounds, resumed at the start).
+  if (next.phase === 'work' && periodAge(next, config) <= fresh) keys.push(`${setKey}:${next.round}:start`);
   return keys;
 }
 
@@ -157,7 +160,15 @@ export function roundSounds(
   fresh: number,
 ): WallRoundSound[] {
   if (!prevReading || next.state !== 'running') return [];
-  const prev = isNewSet(prevReading, next, config, fresh) ? BEFORE_START : prevReading;
+  // Resumed at the very start of a work round: the room starts the round now, so it sounds as a
+  // start. A start already rung for this round is not rung again (its key is spent); one given back
+  // by a REPEAT while paused (releasedKeys) rings here.
+  const resumedAtStart =
+    prevReading.state === 'paused'
+    && next.phase === 'work'
+    && position(next) === position(prevReading)
+    && periodAge(next, config) <= fresh;
+  const prev = isNewSet(prevReading, next, config, fresh) || resumedAtStart ? BEFORE_START : prevReading;
   const isFresh = periodAge(next, config) <= fresh;
   const movedOn = position(next) > position(prev);
   const bellKeys: string[] = [];
