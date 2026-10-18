@@ -270,7 +270,7 @@ interface FamilyNoteRow {
 // who later becomes an admin did not post as one (#1544 review). A note from
 // before that column has no role, and is said by name alone rather than with
 // a role invented for it.
-function staffFacingAuthorName(login: string | null, role: string | null): string {
+export function staffFacingAuthorName(login: string | null, role: string | null): string {
   const coachName = deriveCoachDisplayName(login);
   const bareName = coachName === 'Your coach' ? null : coachName.replace(/^Coach /, '');
   if (role === 'coach') return bareName ? coachName : 'A coach';
