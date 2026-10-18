@@ -441,6 +441,14 @@ describe('passbookObservationNoteTypes', () => {
     }
   });
 
+  test('a message to the athlete (FC-06) is on the staff list only, not the athlete or guardian list', () => {
+    // Staff already read these through /api/pilot/coach/athlete-messages; the
+    // athlete and guardians read them through their own inboxes, not here.
+    expect(PASSBOOK_STAFF_NOTE_TYPES).toContain('athlete_message');
+    expect(PASSBOOK_ATHLETE_NOTE_TYPES).not.toContain('athlete_message');
+    expect(PASSBOOK_GUARDIAN_NOTE_TYPES).not.toContain('athlete_message');
+  });
+
   test('an unrecognized role resolves to no note types rather than to the widest list', () => {
     for (const role of ['board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
       expect(passbookObservationNoteTypes(role)).toEqual([]);

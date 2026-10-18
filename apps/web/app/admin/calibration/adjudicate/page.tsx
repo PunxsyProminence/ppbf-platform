@@ -1,12 +1,12 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
+import BackHome from '@/components/BackHome';
 
 /**
  * SETTLING A DISAGREEMENT. One clip, one decision at a time.
@@ -847,7 +847,7 @@ function AdjudicationDesk() {
         )}
 
         <div className="mt-[var(--s6)]">
-          <Link href="/admin" className="btn btn--ghost">Back to the Front Office</Link>
+          <BackHome />
         </div>
       </div>
     </main>

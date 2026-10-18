@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, GYM_TIME_ZONE } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // The grant-obligation ledger (owner decision 2026-08-15: internal half
 // only). Deadlines first: the soonest-due open work leads, overdue is
@@ -446,7 +446,7 @@ export default function GrantObligationsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            <BackHome />
           </div>
         </div>
       </main>

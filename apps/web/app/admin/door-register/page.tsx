@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import Link from 'next/link';
 import ChromeLink from '@/components/ChromeLink';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
@@ -13,6 +12,7 @@ import {
 } from '@/components/buildingMap';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
+import BackHome from '@/components/BackHome';
 
 /**
  * THE DOOR REGISTER — a map of the building, NOT a window into an account.
@@ -173,7 +173,7 @@ export default function DoorRegisterPage() {
               nothing is requested on a previewed role&rsquo;s behalf.
             </p>
             <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-              <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+              <BackHome />
             </div>
           </header>
 

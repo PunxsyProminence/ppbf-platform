@@ -561,6 +561,8 @@ test('the refusal dictionary says the right sentence for every code the gym-tvs 
   for (const [code, status, expected] of table) {
     expect(describeRefusal(code, status)).toMatch(expected);
   }
-  expect(describeRefusal('SOMETHING_NEW', 409)).toBe('The server refused: SOMETHING_NEW');
-  expect(describeRefusal(undefined, 500)).toBe('The server refused the request (500).');
+  // An unknown code or a bare status is words, never the code or the number (UXB-09).
+  expect(describeRefusal('SOMETHING_NEW', 409)).toBe('That did not go through. Nothing was changed. Try again.');
+  // A 500 may have written: nothing is claimed about it.
+  expect(describeRefusal(undefined, 500)).toBe('That did not go through. Check what the screen shows before trying again.');
 });

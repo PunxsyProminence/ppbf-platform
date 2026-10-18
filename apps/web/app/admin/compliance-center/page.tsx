@@ -7,6 +7,7 @@ import ShadowDataDeletionQueue from '@/components/ShadowDataDeletionQueue';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
+import BackHome from '@/components/BackHome';
 
 interface ComplianceViolation {
   violation_id: string;
@@ -632,9 +633,7 @@ export default function AdminComplianceCenterPage() {
           <Link href="/admin/waiver-status?view=all" className="btn btn--ghost">
             Cleared tonight
           </Link>
-          <Link href="/admin" className="btn btn--ghost">
-            Back to Admin
-          </Link>
+          <BackHome />
         </div>
       </div>
     </RoleStandaloneView>

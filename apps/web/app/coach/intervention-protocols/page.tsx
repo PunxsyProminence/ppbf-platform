@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
+import { formatGymDateShort } from '@/src/lib/gymTime';
+import ClusterNav from '@/components/ClusterNav';
 
 // Intervention protocols (module 026 slice 1): the durable record of what
 // we INTENDED to do about a problem -- the hypothesis, the intervention as
@@ -232,6 +234,7 @@ export default function InterventionProtocolsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Intervention Protocols</h1>
+            <ClusterNav cluster="interventions" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               What we intend to do about a problem, written down before we do it: the hypothesis,
               the intervention as designed, and what would prove it wrong. A protocol is intent,
@@ -325,7 +328,7 @@ export default function InterventionProtocolsPage() {
                       )}
                       <span className="t-body font-semibold text-[color:var(--bone-100)]">{protocol.title}</span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {protocol.created_at.slice(0, 10)}
+                        v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {formatGymDateShort(protocol.created_at) ?? protocol.created_at}
                       </span>
                       {protocol.status === 'active' && (
                         <>
@@ -368,7 +371,7 @@ export default function InterventionProtocolsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

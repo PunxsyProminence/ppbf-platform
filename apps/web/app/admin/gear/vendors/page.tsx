@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 /**
  * The gym's supplier accounts: who it buys from, on what account, on what
@@ -171,12 +172,7 @@ function VendorConsole() {
           >
             Back to equipment
           </Link>
-          <Link
-            href="/admin"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
-          >
-            Back to admin
-          </Link>
+          <BackHome className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]" />
         </div>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -302,7 +298,7 @@ function VendorConsole() {
             onClick={() => { void save(); }}
             className="mt-4 min-h-[44px] w-full border-2 border-[var(--black)] bg-[color:var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save supplier'}
+            {isSaving ? 'Saving…' : 'Save supplier'}
           </button>
 
           {saveError ? (

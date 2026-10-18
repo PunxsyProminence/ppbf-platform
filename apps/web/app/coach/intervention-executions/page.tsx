@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
+import { formatGymDateShort } from '@/src/lib/gymTime';
+import ClusterNav from '@/components/ClusterNav';
 
 // Intervention executions (module 026 slice 2): what was ACTUALLY
 // delivered against a protocol. The planned column is a snapshot from the
@@ -337,6 +340,7 @@ export default function InterventionExecutionsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>The Work</h1>
+            <ClusterNav cluster="interventions" />
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               What actually got delivered against each protocol. The plan is frozen when work
               starts; what happened is recorded beside it — deviations named, stops explained,
@@ -361,14 +365,14 @@ export default function InterventionExecutionsPage() {
                 <label className="t-label" htmlFor="exec-athlete">Athlete</label>
                 <select id="exec-athlete" className="select" value={athleteId}
                   onChange={(e) => setAthleteId(e.target.value)}>
-                  <option value="">Select an athlete…</option>
+                  <option value="">Choose an athlete</option>
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label className="t-label" htmlFor="exec-protocol">Protocol (its intended exposure becomes the frozen plan)</label>
+                <label className="t-label" htmlFor="exec-protocol">Protocol</label>
                 <select id="exec-protocol" className="select" value={protocolId}
                   onChange={(e) => setProtocolId(e.target.value)}>
                   <option value="">Select a protocol…</option>
@@ -412,7 +416,7 @@ export default function InterventionExecutionsPage() {
                         {row.protocol_title ?? row.protocol_id} (v{row.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {row.athlete_name ?? row.athlete_id} · {row.created_at.slice(0, 10)}
+                        {row.athlete_name ?? row.athlete_id} · {formatGymDateShort(row.created_at) ?? row.created_at}
                         {row.version > 1 ? ` · corrected (v${row.version})` : ''}
                       </span>
                       {row.session_run_id && (
@@ -566,7 +570,7 @@ export default function InterventionExecutionsPage() {
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/intervention-protocols" className="btn btn--ghost">Protocols</Link>{' '}
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

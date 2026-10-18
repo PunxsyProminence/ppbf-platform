@@ -3,6 +3,9 @@
 | Field | Value |
 |-------|-------|
 | Status | **DRAFT** |
+| Status note | Was "DRAFT" until 2026-10-16. No engine exists; the athlete check-in motivation 1-5 column (infra/azure/pilot_slice_postgres_athlete_check_in_measures_migration.sql) belongs to the check-in module and is a single self-report, not a motivation/engagement capability. |
+| Code | none |
+| Tests | none |
 | Active | false |
 | Promotion required | true |
 | Category | Mental / Emotional / Behavioral (`mentalEmotionalBehavioral`) |
@@ -37,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-10-16 | Claude (lane L32) | Status set to **DRAFT** under the 2026-10-16 status vocabulary (DONE / MAPPED / CLAIMED-NO-CODE / DRAFT; Overwatch GO). Was "DRAFT". Code and Tests rows added; the capability status check in CI reads them. ManualVerification unchanged. |

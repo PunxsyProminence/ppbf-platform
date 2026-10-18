@@ -70,6 +70,18 @@ it.each(['athlete', 'parent', 'coach', 'volunteer', 'staff', 'board', 'admin', '
   },
 );
 
+// F-122: the role pill printed the session role raw ("platform_owner").
+it.each([
+  ['platform_owner', 'Platform Owner'],
+  ['organization_admin', 'Gym Admin'],
+  ['athlete', 'Athlete'],
+])('names a signed-in %s in plain words on the bar', (role, words) => {
+  renderAs(role);
+
+  expect(screen.getByText(words)).toBeTruthy();
+  expect(screen.queryByText(role)).toBeNull();
+});
+
 it('offers nothing to submit before anyone is signed in', () => {
   renderAs(null);
 
@@ -134,7 +146,7 @@ it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'])(
   (role) => {
     renderAs(role);
 
-    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
   },
 );
@@ -264,7 +276,7 @@ describe('the deny screen keeps this bar out of it', () => {
     renderAs('board');
 
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
   });
 
   it('is not fooled by a route the map has never heard of', () => {

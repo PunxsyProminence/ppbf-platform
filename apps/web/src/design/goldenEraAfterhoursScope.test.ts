@@ -194,7 +194,7 @@ describe('the 006 mockup did not delete or invent SHADOW controls', () => {
     'Upload PDF',
     'Submit Command',
     'telemetry and authority streams',
-    'Admin Hub',
+    'Capabilities',
   ] as const;
 
   test.each(LABELLED_CONTROLS)('the real control %s still exists', (label) => {

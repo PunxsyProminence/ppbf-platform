@@ -124,8 +124,6 @@ const FROZEN: Readonly<Record<string, number>> = {
   'apps/web/app/store/[organizationId]/page.tsx': 4,
   'apps/web/app/store/page.tsx': 2,
   'apps/web/components/AnnouncementBanner.tsx': 1,
-  'apps/web/components/AthleteWorkspace.tsx': 1,
-  'apps/web/components/CoachWorkspace.tsx': 1,
   'apps/web/components/FeedbackBox.tsx': 2,
   'apps/web/components/PaymentSetupBubble.tsx': 2,
   'apps/web/components/RabbitHole.tsx': 1,

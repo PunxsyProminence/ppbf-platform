@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import BackHome from '@/components/BackHome';
 
 // Community service tracker (module 128): service hours already recorded
 // in the activity log, read back per person. Verified and unverified
@@ -143,7 +143,7 @@ export default function CommunityServicePage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/admin" className="btn btn--ghost">Back to Admin</Link>
+            <BackHome />
           </div>
         </div>
       </main>

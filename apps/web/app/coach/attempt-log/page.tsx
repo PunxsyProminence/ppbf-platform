@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
 // attempt -- made OR failed -- because the failed ones are the point. "One
@@ -122,7 +123,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Review failed (${response.status})`);
+        throw new Error(refusalWords({ error: err.error, status: response.status }, {}, 'The review was not saved. Try again.'));
       }
       setMode('idle');
       setReason('');
@@ -435,7 +436,7 @@ export default function AttemptLogPage() {
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Record failed (${response.status})`);
+        throw new Error(refusalWords({ error: err.error, status: response.status }, {}, 'The attempt was not recorded. Try again.'));
       }
       setForm((f) => ({ ...f, target_value: '', achieved_value: '', note: '' }));
       await reloadAttempts(athleteId);
@@ -480,7 +481,7 @@ export default function AttemptLogPage() {
                     under the athlete it was recorded for. */}
                 <select id="attempt-athlete" className="select" value={athleteId} disabled={busy}
                   onChange={(e) => selectAthlete(e.target.value)}>
-                  <option value="">Select an athlete…</option>
+                  <option value="">Choose an athlete</option>
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                   ))}
@@ -554,7 +555,7 @@ export default function AttemptLogPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+            <BackHome />
           </div>
         </div>
       </main>

@@ -160,7 +160,7 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('coach session scripts page', () => {
+describe('coach session plans page', () => {
   it("shows the gym's finished sessions while no session is live, and not over a live one (F-067)", async () => {
     routedFetch({ runsGet: () => jsonResponse({ run: null }) });
     const { unmount } = render(<CoachSessionScriptsPage />);
@@ -190,7 +190,7 @@ describe('coach session scripts page', () => {
 
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText(/No session scripts in the list/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No session plans in the list/i)).toBeInTheDocument();
   });
 
   it('distinguishes a failed load from an empty set of scripts', async () => {
@@ -309,7 +309,7 @@ describe('coach session scripts page', () => {
     // Waiting on the second script's own settled content, not just on the first
     // one's absence -- absence alone passes during the loading frame and would
     // still pass if the new plan never arrived.
-    expect(await screen.findByText(/This script has no blocks yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/This plan has no blocks yet/i)).toBeInTheDocument();
     expect(screen.queryByText(/Eyes on the chest/)).not.toBeInTheDocument();
   });
 
@@ -520,7 +520,7 @@ describe('coach session scripts page', () => {
     expect(await screen.findByText('Completed')).toBeInTheDocument();
     expect(screen.getByText('Abandoned')).toBeInTheDocument();
     expect(screen.getByText('Recorded before live delivery tracking')).toBeInTheDocument();
-    expect(screen.getByText('2026-08-12')).toBeInTheDocument();
+    expect(screen.getByText('Aug 12, 2026')).toBeInTheDocument();
     expect(screen.getByText(/6 blocks completed\. 9 athletes present\. Reset protocol used\./)).toBeInTheDocument();
     expect(screen.getByText('Slip line clicked.')).toBeInTheDocument();
     expect(screen.getByText('Storm cleared the room.')).toBeInTheDocument();
@@ -589,7 +589,7 @@ describe('a plain session', () => {
     });
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+    expect(await screen.findByText('No session plans in the list.')).toBeInTheDocument();
     const start = await screen.findByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
@@ -692,7 +692,7 @@ describe('a coach-made plan', () => {
     routedFetch({ scripts: () => jsonResponse({ scripts: [] }) });
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+    expect(await screen.findByText('No session plans in the list.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Workout templates' })).toHaveAttribute('href', '/coach/workout-templates');
   });
 
@@ -820,7 +820,7 @@ describe('a coach-made plan', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save plan' }));
 
-    await screen.findByRole('button', { name: 'Saving...' });
+    await screen.findByRole('button', { name: 'Saving…' });
     expect(screen.getByRole('button', { name: 'Open plan' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Showing plan' })).toBeDisabled();
     expect(plain).toBeDisabled();
@@ -975,7 +975,7 @@ describe('retiring a plan', () => {
   it.each([
     [409, { error: 'SESSION_SCRIPT_CHANGED' }, /This plan was saved after you opened it, so it was not changed/],
     [409, { error: 'SESSION_SCRIPT_SUPERSEDED' }, /replaced by a newer version, so it was not changed/],
-    [403, { error: 'Forbidden: role not allowed' }, /Your account may not retire session scripts, so the plan was not changed/],
+    [403, { error: 'Forbidden: role not allowed' }, /Your account may not retire session plans, so the plan was not changed/],
     [400, { error: 'retired' }, /The server refused, so the plan was not changed/],
   ])('a refusal (%i %j) says the plan was not changed, in a plain sentence, and leaves it open', async (status, body, sentence) => {
     retireFetch(() => refusal(status, body));
@@ -1051,13 +1051,13 @@ describe('retiring a plan', () => {
     render(<CoachSessionScriptsPage />);
 
     // Every plan may be retired: the list is empty, which is not the same as there being none.
-    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+    expect(await screen.findByText('No session plans in the list.')).toBeInTheDocument();
     expect(screen.getByText('Retired plans are kept and are not shown here. Show retired plans lists them.')).toBeInTheDocument();
-    expect(screen.queryByText('No session scripts yet.')).toBeNull();
+    expect(screen.queryByText('No session plans yet.')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show retired plans' }));
 
-    expect(await screen.findByText('No session scripts yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No session plans yet.')).toBeInTheDocument();
     expect(screen.queryByText(/Retired plans are kept and are not shown here/)).toBeNull();
     expect(urls).toContain('/api/pilot/session-scripts?include_retired=true');
   });
@@ -1081,7 +1081,7 @@ describe('retiring a plan', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is retired. It is kept, and is left out of the list unless retired plans are shown.');
-    expect(await screen.findByText('No session scripts in the list.')).toBeInTheDocument();
+    expect(await screen.findByText('No session plans in the list.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show retired plans' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
@@ -1123,7 +1123,7 @@ describe('ordinary errors on this page', () => {
     });
     render(<CoachSessionScriptsPage />);
 
-    const loadError = await screen.findByText('The session scripts could not be loaded.');
+    const loadError = await screen.findByText('The session plans could not be loaded.');
     expect(loadError.className).not.toMatch(/locked/);
     expect(loadError.parentElement?.className).toMatch(/border-\[color:var\(--brass-300\)\]/);
 
@@ -1207,7 +1207,7 @@ describe('marking a plan reviewed', () => {
   it.each([
     [409, { error: 'SESSION_SCRIPT_RETIRED' }, /This plan is retired, so it was not marked reviewed\. Bring it back first\./],
     [409, { error: 'SESSION_SCRIPT_CHANGED' }, /This plan was saved after you opened it, so it was not changed/],
-    [403, { error: 'Forbidden: role not allowed' }, /Your account may not mark session scripts reviewed, so the plan was not changed/],
+    [403, { error: 'Forbidden: role not allowed' }, /Your account may not mark session plans reviewed, so the plan was not changed/],
   ])('a refusal (%i %j) says so in a plain sentence and leaves the plan open as a draft', async (status, body, sentence) => {
     reviewFetch('draft', () => ({ ok: false, status, json: async () => body }) as Response);
     await openPlan();
