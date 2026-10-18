@@ -406,15 +406,20 @@ export default function MembershipsPage() {
   /** Re-reads the list; true when it came back. A read that comes back clears
    *  "didn't refresh" and settles whatever was waiting on it. */
   const recheckList = async (): Promise<boolean> => {
+    // reload takes the next read number before its first await.
+    const mine = listSeq.current + 1;
     let rows: MembershipRow[];
     try {
       rows = await reload();
     } catch {
       return false;
     }
-    const clearStale = (current: Notice | null) => (current?.recheck === 'list' ? null : current);
-    setEnrollNotice(clearStale);
-    setRowNotice(clearStale);
+    // Only the read that repainted the table may say the table is current.
+    if (listSeq.current === mine) {
+      const clearStale = (current: Notice | null) => (current?.recheck === 'list' ? null : current);
+      setEnrollNotice(clearStale);
+      setRowNotice(clearStale);
+    }
     if (pendingSave) judgeSave(pendingSave, rows);
     if (pendingRow) judgeRow(pendingRow, rows);
     return true;
@@ -449,14 +454,20 @@ export default function MembershipsPage() {
     setPendingRow(null);
     try {
       const response = await sendWrite('PATCH', { membership_id: row.membership_id, ...change });
+      // One notice slot for the rows: the newest change speaks, and the
+      // table shows every row as the server holds it.
+      if (seq !== rowSeq.current) return;
       if (response && isRefusal(response.status)) {
-        setRowNotice({ tone: 'critical', text: await refusedWords(response, ROW_REFUSAL_WORDS), recheck: null });
+        const words = await refusedWords(response, ROW_REFUSAL_WORDS);
+        if (seq === rowSeq.current) setRowNotice({ tone: 'critical', text: words, recheck: null });
         return;
       }
       const payload = response?.ok ? ((await response.json().catch(() => null)) as { item?: Partial<MembershipRow> } | null) : null;
       if (payload?.item?.membership_id === row.membership_id && showsChange(payload.item, change)) {
         // The change is saved; a failed refresh is only a stale list.
-        if (!(await recheckList())) setRowNotice({ tone: 'warning', text: "Saved. The list didn't refresh.", recheck: 'list' });
+        if (!(await recheckList()) && seq === rowSeq.current) {
+          setRowNotice({ tone: 'warning', text: "Saved. The list didn't refresh.", recheck: 'list' });
+        }
         return;
       }
       // A 5xx, no answer, or a reply that does not show the change: not known yet.

@@ -678,6 +678,82 @@ describe('truthful roster and save states', () => {
     expect(screen.queryByText(/Not sure it was saved/)).toBeNull();
   });
 
+  test('an overtaken list read does not clear a newer "didn\'t refresh"', async () => {
+    const posts: Reply[] = [{ status: 502 }, { status: 200, body: { item: CASEY_ROW } }];
+    const base = scriptedFetch({
+      list: [
+        { status: 200, body: { items: [MEMBERSHIP] } },
+        { status: 500 },
+        { status: 200, body: { items: [MEMBERSHIP] } },
+        { status: 500 },
+      ],
+    });
+    let reads = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/admin/memberships') && init?.method === 'POST') {
+        const reply = posts.shift() as { status: number; body?: unknown };
+        return { ok: reply.status === 200, status: reply.status, json: async () => reply.body ?? {} } as Response;
+      }
+      // The third list read (the Check again) is held until after the second save's refresh fails.
+      if (url.includes('/admin/memberships') && (init?.method ?? 'GET') === 'GET' && ++reads === 3) {
+        const answer = base(input, init);
+        await gate;
+        return answer;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await renderPage();
+    await fillAndSave();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save membership' }));
+    });
+    expect(screen.getByText("Saved: Casey Stone in Youth Boxing. The list didn't refresh.")).toBeTruthy();
+
+    await act(async () => {
+      release();
+    });
+
+    expect(screen.getByText("Saved: Casey Stone in Youth Boxing. The list didn't refresh.")).toBeTruthy();
+  });
+
+  test("a late answer for one row's change does not speak over a newer change", async () => {
+    const OTHER = { ...MEMBERSHIP, membership_id: 'mem-3', athlete_id: 'ath-3', athlete_name: 'Riley Fox' };
+    const base = scriptedFetch({ list: [{ status: 200, body: { items: [MEMBERSHIP, OTHER] } }] });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH' && String(init.body).includes('mem-1')) {
+        // Jordan's change is held, then refused.
+        await gate;
+        return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await renderPage();
+    const [jordanLapse, rileyLapse] = screen.getAllByRole('button', { name: 'Mark lapsed' });
+    await act(async () => {
+      fireEvent.click(jordanLapse);
+    });
+    await act(async () => {
+      fireEvent.click(rileyLapse);
+    });
+    await act(async () => {
+      release();
+    });
+
+    expect(screen.queryByText('Not saved. That membership could not be found.')).toBeNull();
+  });
+
   test('a row change answered 200 without the change is not taken as saved: the list decides', async () => {
     global.fetch = scriptedFetch({
       patch: { status: 200, body: { item: {} } },
