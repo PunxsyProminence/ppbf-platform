@@ -198,9 +198,6 @@ export interface ShadowLibrarySearchResult {
   // as a passing grade.
   evidence_class: string | null;
   boxing_specificity: string | null;
-  // Where in the source the passage is (page, section or timestamp), when the
-  // curator gave one. The evidence bundle passes it on with the excerpt.
-  excerpt_locator?: string | null;
   // Which path found the passage, which decides how its score maps to a
   // confidence level: a semantic search also returns keyword matches from
   // passages the semantic index does not hold.
@@ -1577,7 +1574,7 @@ export async function searchShadowLibrary(
              s.title as source_title, s.publisher as source_publisher,
              s.source_type, s.authority_tier, s.status as source_status,
              s.publication_date::text as publication_date,
-             c.text_content, c.embedding, c.excerpt_locator,
+             c.text_content, c.embedding,
              c.metadata->>'evidence_class' as evidence_class,
              c.metadata->>'boxing_specificity' as boxing_specificity,
              0::float as score
@@ -1667,6 +1664,9 @@ export async function searchShadowLibrary(
   // another deployment. Returning from the semantic path left them findable by
   // nothing. An indexed passage was already judged by meaning and is never
   // re-admitted here on word overlap.
+  const unindexedOnlySql = semantic
+    ? 'and (c.embedding is null or c.embedding_model is distinct from $6::text)'
+    : '';
   const rows = terms.length === 0 ? [] : await query<ShadowLibrarySearchResult>(
     `select * from (
        select
@@ -1683,7 +1683,6 @@ export async function searchShadowLibrary(
          s.status as source_status,
          s.publication_date::text as publication_date,
          c.text_content,
-         c.excerpt_locator,
          c.metadata->>'evidence_class' as evidence_class,
          c.metadata->>'boxing_specificity' as boxing_specificity,
          (
@@ -1715,8 +1714,7 @@ export async function searchShadowLibrary(
          -- Held by the retention purge (F-086), as in the semantic path.
          and not (d.metadata ? 'subject_purged_at')
          and not (c.metadata ? 'subject_purged_at')
-         -- Null: the whole library. Set: only what the semantic index lacks.
-         and ($6::text is null or c.embedding is null or c.embedding_model is distinct from $6::text)
+         ${unindexedOnlySql}
      ) ranked
      where score > 0
      order by score desc, authority_tier asc, ordinal asc, chunk_id asc
@@ -1727,7 +1725,8 @@ export async function searchShadowLibrary(
       normalized.effectiveSubjectId,
       terms,
       limit,
-      semantic?.embeddingModel ?? null,
+      // Without a semantic answer the statement is the shipped keyword search, unchanged.
+      ...(semantic ? [semantic.embeddingModel] : []),
     ],
   );
   const keywordRows = rows.map((row) => ({ ...row, match_mode: 'keyword' as const }));
@@ -1915,7 +1914,12 @@ export async function createShadowLibraryClaim(input: {
     confidenceLevel,
     evidenceCount: counted.length,
     distinctSourceCount,
-    evidence,
+    // The response shape as before: which path found a passage stays internal.
+    evidence: evidence.map((item) => {
+      const row = { ...item };
+      delete row.match_mode;
+      return row;
+    }),
     researchRequirementId: claimResearchRequirement?.id ?? null,
   };
 }

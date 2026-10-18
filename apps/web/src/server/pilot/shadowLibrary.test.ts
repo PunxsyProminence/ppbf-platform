@@ -382,6 +382,9 @@ describe('SHADOW library semantic search', () => {
     // mockReturnValue state is cleared -- each test block re-states enablement
     // so no test depends on a neighbor's setting.
     mockIsSemanticEnabled.mockReturnValue(true);
+    // Every statement a test does not set returns no rows, the unindexed
+    // keyword statement included.
+    mockQuery.mockResolvedValue([] as never);
   });
 
   const candidateLoads = () => mockQuery.mock.calls.filter((call) => String(call[0]).includes('c.embedding is not null'));
@@ -563,6 +566,9 @@ describe('SHADOW library semantic search', () => {
     expect(mockEmbedText).not.toHaveBeenCalled();
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '(s|es)?\\M')");
+    // The shipped keyword statement: no embedding column, no sixth parameter.
+    expect(String(mockQuery.mock.calls[0][0])).not.toContain('c.embedding');
+    expect(mockQuery.mock.calls[0][1]).toHaveLength(5);
   });
 });
 
@@ -696,6 +702,8 @@ describe('SHADOW library claim honesty', () => {
     expect(result.evidenceCount).toBe(2);
     expect(result.distinctSourceCount).toBe(2);
     expect(result.confidence).toBe(0.78);    expect(result.confidenceLevel).toBe('high');
+    // Which path found a passage stays internal: the claim's rows are as before.
+    expect(result.evidence.some((row) => 'match_mode' in row)).toBe(false);
   });
 
   // JASON'S RULING 2026-10-03: below the relevance bar the closest passages are

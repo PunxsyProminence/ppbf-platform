@@ -108,24 +108,31 @@ export function excerptWindowStarts(normalized: string): number[] {
  * at the cap. Runs to the end of the text when the rest fits.
  */
 function excerptWindow(normalized: string, start: number): string {
+  return normalized.slice(start, excerptWindowEnd(normalized, start));
+}
+
+function excerptWindowEnd(normalized: string, start: number): number {
   const cap = start + MAX_EXCERPT_CHARS;
-  if (cap >= normalized.length) return normalized.slice(start);
+  if (cap >= normalized.length) return normalized.length;
   // The character at `cap` is read too: a sentence ending exactly at the cap
   // is recognized by the space after it.
   const sentenceEnd = sentenceEnds(normalized.slice(start, cap + 1))
     .map((end) => start + end)
     .filter((end) => end > start + MAX_EXCERPT_CHARS / 2 && end <= cap)
     .pop();
-  if (sentenceEnd !== undefined) return normalized.slice(start, sentenceEnd);
+  if (sentenceEnd !== undefined) return sentenceEnd;
   const space = normalized.lastIndexOf(' ', cap);
-  return normalized.slice(start, space > start ? space : cap);
+  return space > start ? space : cap;
 }
 
-/** Each place one of the question's words appears, matched as search matches them. */
+/** Each place one of the question's words appears, matched as search matches them, in text order. */
 function termHits(normalized: string, terms: string[]): Array<{ index: number; term: string }> {
-  const lower = normalized.toLowerCase();
-  return terms.flatMap((term) => [...lower.matchAll(new RegExp(`(?<![a-z0-9_])${term}(?:s|es)?(?![a-z0-9_])`, 'g'))]
-    .map((match) => ({ index: match.index, term })));
+  // Case-insensitive on the text itself: lowercasing it first can change its
+  // length (a dotted capital I becomes two code units) and shift every index.
+  return terms
+    .flatMap((term) => [...normalized.matchAll(new RegExp(`(?<![a-z0-9_])${term}(?:s|es)?(?![a-z0-9_])`, 'gi'))]
+      .map((match) => ({ index: match.index, term })))
+    .sort((a, b) => a.index - b.index);
 }
 
 /**
@@ -143,28 +150,41 @@ function termHits(normalized: string, terms: string[]): Array<{ index: number; t
  */
 export function selectExcerpt(text: string, terms: string[]): string {
   const normalized = normalizePassage(text);
-  if (normalized.length <= MAX_EXCERPT_CHARS) return normalized;
+  const { start, end } = selectExcerptSpan(normalized, terms);
+  return normalized.slice(start, end);
+}
+
+/** selectExcerpt's window as indexes into the already-normalized passage. */
+function selectExcerptSpan(normalized: string, terms: string[]): { start: number; end: number } {
+  if (normalized.length <= MAX_EXCERPT_CHARS) return { start: 0, end: normalized.length };
   const hits = termHits(normalized, terms);
-  if (hits.length === 0) return normalized.slice(0, MAX_EXCERPT_CHARS);
+  if (hits.length === 0) return { start: 0, end: MAX_EXCERPT_CHARS };
 
   const sentences = sentenceStarts(normalized).map((start, index, all) => ({
     start,
     end: all[index + 1] ?? normalized.length,
   }));
+  // One pass: hits and sentences are both in text order.
   let anchor = 0;
   let anchorScore = [-1, -1];
+  let next = 0;
   sentences.forEach((sentence, index) => {
-    const inside = hits.filter((hit) => hit.index >= sentence.start && hit.index < sentence.end);
-    const score = [new Set(inside.map((hit) => hit.term)).size, inside.length];
-    if (score[0] > anchorScore[0] || (score[0] === anchorScore[0] && score[1] > anchorScore[1])) {
+    const words = new Set<string>();
+    let count = 0;
+    for (; next < hits.length && hits[next].index < sentence.end; next += 1) {
+      words.add(hits[next].term);
+      count += 1;
+    }
+    if (words.size > anchorScore[0] || (words.size === anchorScore[0] && count > anchorScore[1])) {
       anchor = index;
-      anchorScore = score;
+      anchorScore = [words.size, count];
     }
   });
 
   const starts = excerptWindowStarts(normalized);
   const { start: anchorStart, end: anchorEnd } = sentences[anchor];
-  const firstHit = Math.min(...hits.filter((hit) => hit.index >= anchorStart && hit.index < anchorEnd).map((hit) => hit.index));
+  // The anchor holds at least one hit, so this finds one.
+  const firstHit = hits.find((hit) => hit.index >= anchorStart)!.index;
   let start = anchorStart;
   if (anchor > 0 && anchorEnd - sentences[anchor - 1].start <= MAX_EXCERPT_CHARS) {
     start = sentences[anchor - 1].start;
@@ -175,7 +195,7 @@ export function selectExcerpt(text: string, terms: string[]): string {
   if (normalized.length - start <= MAX_EXCERPT_CHARS) {
     start = starts.find((at) => normalized.length - at <= MAX_EXCERPT_CHARS) ?? start;
   }
-  return excerptWindow(normalized, start);
+  return { start, end: excerptWindowEnd(normalized, start) };
 }
 
 /** A citation as the chat API sends it; `excerpt` only within the rights rule. */
@@ -322,7 +342,8 @@ function buildEvidenceItems(
     }
     seenChunks.add(row.chunk_id);
     const passage = normalizePassage(row.text_content);
-    const excerpt = selectExcerpt(passage, terms);
+    const span = selectExcerptSpan(passage, terms);
+    const excerpt = passage.slice(span.start, span.end);
     // Never cut to fit: a shortened window could not be replayed. The budget
     // holds every item's full excerpt (MAX_BUNDLE_CHARS), so this never skips.
     if (!excerpt || excerpt.length > remainingChars) continue;
@@ -341,9 +362,8 @@ function buildEvidenceItems(
       authorityTier: row.authority_tier,
       evidenceClass: row.evidence_class,
       boxingSpecificity: row.boxing_specificity,
-      excerptLocator: row.excerpt_locator ? boundedText(row.excerpt_locator, 160) : null,
-      excerptCutBefore: !passage.startsWith(excerpt),
-      excerptCutAfter: !passage.endsWith(excerpt),
+      excerptCutBefore: span.start > 0,
+      excerptCutAfter: span.end < passage.length,
     });
     remainingChars -= excerpt.length;
   }
@@ -391,11 +411,12 @@ async function persistEvidenceBundle(input: {
   queryText: string;
   bundleId: string;
   items: ShadowEvidenceItem[];
-}): Promise<Set<string>> {
+}): Promise<{ displayable: Set<string>; locators: Map<string, string> }> {
   // Evidence ids whose passage is within PASSAGE_DISPLAY_RIGHTS, read by the
   // same statement that stores the item, so the rights and the stored row
-  // are one snapshot.
+  // are one snapshot. The chunk's locator is read there too.
   const displayable = new Set<string>();
+  const locators = new Map<string, string>();
   const availability: ShadowEvidenceAvailability = input.items.length > 0 ? 'available' : 'unavailable';
   await withTransaction(async (client) => {
     await client.query(
@@ -414,7 +435,7 @@ async function persistEvidenceBundle(input: {
     );
 
     for (const [index, item] of input.items.entries()) {
-      const inserted = await client.query<{ evidence_id: string; passage_displayable: boolean }>(
+      const inserted = await client.query<{ evidence_id: string; passage_displayable: boolean; excerpt_locator?: string | null }>(
         `with stored as (
          insert into pilot.shadow_evidence_items
            (evidence_id, bundle_id, organization_id, account_id, source_id, document_id, chunk_id, ordinal, excerpt_sha256, library_organization_id)
@@ -458,7 +479,8 @@ async function persistEvidenceBundle(input: {
                          -- Gym-wide text only, as the research bridge: a
                          -- passage filed against one athlete stays a title.
                          and c.subject_id is null
-                         and d.subject_id is null, false) as passage_displayable
+                         and d.subject_id is null, false) as passage_displayable,
+                c.excerpt_locator
            from stored
            left join pilot.shadow_library_sources s
              on s.source_id = stored.source_id
@@ -495,9 +517,11 @@ async function persistEvidenceBundle(input: {
       if (inserted.rows[0].passage_displayable === true) {
         displayable.add(inserted.rows[0].evidence_id);
       }
+      const locator = inserted.rows[0].excerpt_locator?.trim();
+      if (locator) locators.set(inserted.rows[0].evidence_id, boundedText(locator, 160));
     }
   });
-  return displayable;
+  return { displayable, locators };
 }
 
 export async function retrieveShadowEvidenceBundle(input: {
@@ -526,7 +550,7 @@ export async function retrieveShadowEvidenceBundle(input: {
   const items = buildEvidenceItems(rows, queryText);
   const bundleId = randomUUID();
 
-  const displayable = await persistEvidenceBundle({
+  const { displayable, locators } = await persistEvidenceBundle({
     actor: input.actor,
     subjectId,
     queryText,
@@ -535,6 +559,7 @@ export async function retrieveShadowEvidenceBundle(input: {
   });
   for (const item of items) {
     item.passageDisplayable = displayable.has(item.evidenceId);
+    item.excerptLocator = locators.get(item.evidenceId) ?? null;
   }
 
   if (items.length === 0) {

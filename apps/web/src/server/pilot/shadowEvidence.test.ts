@@ -253,7 +253,7 @@ describe('the excerpt is the part of the passage that answers the question', () 
   const QUESTION = 'How long should novice sparring rounds be?';
   const terms = tokenizeQuery(QUESTION);
 
-  function row(chunkId: string, text: string, locator: string | null = null) {
+  function row(chunkId: string, text: string) {
     return {
       chunk_id: chunkId,
       document_id: `doc-${chunkId}`,
@@ -268,17 +268,19 @@ describe('the excerpt is the part of the passage that answers the question', () 
       source_status: 'active',
       publication_date: null,
       text_content: text,
-      excerpt_locator: locator,
       evidence_class: null,
       boxing_specificity: null,
       score: 1,
     };
   }
 
-  function storeAccepting() {
+  // The store reads the chunk's locator in the statement that saves the item.
+  function storeAccepting(locator: string | null = null) {
     mockWithTransaction.mockImplementation(async (callback) => callback({
       query: jest.fn(async (sql: string, params: unknown[]) => ({
-        rows: sql.includes('returning evidence_id') ? [{ evidence_id: params[0], passage_displayable: true }] : [],
+        rows: sql.includes('returning evidence_id')
+          ? [{ evidence_id: params[0], passage_displayable: true, excerpt_locator: locator }]
+          : [],
       })),
     } as never));
   }
@@ -289,8 +291,8 @@ describe('the excerpt is the part of the passage that answers the question', () 
 
   it('carries an answer past character 900 to the model, with the qualification after it', async () => {
     expect(deepPassage.indexOf(ANSWER)).toBeGreaterThan(MAX_EXCERPT_CHARS);
-    mockSearchShadowLibrary.mockResolvedValue([row('chunk-deep', deepPassage, 'p. 12')] as never);
-    storeAccepting();
+    mockSearchShadowLibrary.mockResolvedValue([row('chunk-deep', deepPassage)] as never);
+    storeAccepting('p. 12');
 
     const bundle = await retrieveShadowEvidenceBundle({ actor, queryText: QUESTION });
 
@@ -308,6 +310,22 @@ describe('the excerpt is the part of the passage that answers the question', () 
     expect(excerpt.indexOf(ANSWER)).toBe(filler(1).length);
     expect(excerpt.endsWith('.')).toBe(true);
     expect(deepPassage).toContain(excerpt);
+  });
+
+  it('marks no cut on a window that is the whole passage, even in repetitive text', async () => {
+    const repeated = filler(5).trim();
+    mockSearchShadowLibrary.mockResolvedValue([row('chunk-whole', repeated)] as never);
+    storeAccepting();
+
+    const bundle = await retrieveShadowEvidenceBundle({ actor, queryText: 'tape wrist' });
+
+    expect(bundle.context).toContain(`Excerpt: ${repeated}`);
+    expect(bundle.context).not.toContain('…');
+  });
+
+  it('matches the question\'s words whatever their case', () => {
+    const shouted = deepPassage.replace(ANSWER, ANSWER.toUpperCase());
+    expect(selectExcerpt(shouted, terms)).toContain(ANSWER.toUpperCase());
   });
 
   it('gives a passage that fits whole, and one sharing no word with the question from its start, as before', () => {
