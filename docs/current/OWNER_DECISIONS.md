@@ -164,6 +164,84 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-020 -- Personal baseline and data completeness: "Sleep (Recommended)", "Energy", "Soreness" and his typed "What else can we put in if we need research do n it"; "80% / 50% (Recommended)"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15656, 2026-10-18T00:30:31.973Z; answered at line 15657, 2026-10-18T00:32:00.919Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-019, whose card left these two formulas unbuilt until a metric and cut-offs were named, and his question there (line 15613): *"How to we pick tho metric and cutoff "*. New; edits no earlier entry.
+
+**Question "Baseline"** (multi-select). Overwatch, as written: "OFFICIAL: Personal baseline formula (MVP-09). Which daily check-in number should it compare against the athlete's own normal (last 28 days, starting once they have 7 check-ins)? PLAIN: which number should the app watch for "unusual for this kid"?" Options as written: "Sleep (Recommended)": "Hours slept vs their own normal."; "Energy": "Daily energy rating vs their normal."; "Soreness": "Daily soreness rating vs their normal."; "Not now": "Leave the baseline formula unbuilt." Jason ticked *"Sleep (Recommended)"*, *"Energy"* and *"Soreness"*, and typed: *"What else can we put in if we need research do n it"*
+
+**Question "Completeness".** Overwatch, as written: "OFFICIAL: Data completeness formula (MVP-10) cut-offs for the share of expected entries actually logged. PLAIN: when do we call an athlete's data good enough to trust?" Options as written: "80% / 50% (Recommended)": "High 80%+, Moderate 50-79%, Low under 50%."; "90% / 60%": "Stricter: High 90%+, Moderate 60-89%."; "Not now": "Leave the completeness formula unbuilt." Jason: *"80% / 50% (Recommended)"*
+
+**Ruling:**
+
+1. Personal baseline (MVP-09): sleep, energy and soreness from the daily check-in are each compared with the athlete's own normal over the last 28 days, starting once they have 7 check-ins. "Not now" was not chosen.
+2. His typed *"What else can we put in if we need research do n it"* asks what other numbers could be added, and to research it if needed. It adds no metric by itself.
+3. Data completeness (MVP-10): High is 80% or more of expected entries logged, Moderate 50-79%, Low under 50%. Options "90% / 60%" and "Not now" were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed both rulings to lane L50 (line 15670) and asked for a PR-D plan before building. Its later message to L50 (line 15719) adds Overwatch's own technical calls on how the engine meets the 28-day window and which log boxes count; those are not his rulings. For his "what else", Overwatch started a research pass (line 15690), written to `Documents\PPBF-overwatch\research\BASELINE-METRICS-2026-10-18.md` and to be marked a research draft for his decision (line 15698). It is not a ruling, and no metric from it is ruled here.
+
+**Status:** ruled; not built at the time of writing. The research report was not read by this records pass.
+
+---
+
+## OD-2026-10-17-019 -- Punch counts go on the sparring log now: "B: Longer sparring form", not the recommended "A: Wait for video (Recommended)"
+
+**Provenance: PRIMARY.** The fourth question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q3 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Punch counts".** Overwatch, as written: "OFFICIAL: Four punch-rate formulas (punch output, offensive efficiency, work-rate consistency, round-to-round change) need total punches, minutes worked or per-round output, which no screen records. (A) leave them unbuilt until punch counting comes from video (the teach-AI piece); (B) add "total punches thrown", "total landed" and "minutes worked" to the sparring log now (unlocks 2 of the 4). Also: personal baseline and data-completeness formulas need a chosen metric and cut-offs — leave them unbuilt until named. PLAIN: wait for video to count punches, or make the sparring form longer now?" Options as written: "A: Wait for video (Recommended)": "Form stays short; the two needing cut-offs also wait."; "B: Longer sparring form": "Add 3 fields; unlocks 2 formulas." Jason: *"B: Longer sparring form"*, which is not the recommended option.
+
+**Ruling:** "total punches thrown", "total landed" and "minutes worked" are added to the sparring log now, which unlocks 2 of the 4 punch-rate formulas. Option A (wait for punch counting from video) was the recommended one and was not chosen.
+
+**Not ruled here:** the card's own text says the personal baseline and data-completeness formulas stay unbuilt until a metric and cut-offs are named; his pick did not change that. Overwatch read it the same way (line 15591): "Your B didn't change that, so I'm treating them as waiting." He then asked (line 15613, 2026-10-18T00:29:47.461Z): *"How to we pick tho metric and cutoff "* (ending in a space). Overwatch then put a follow-up card at line 15656 (2026-10-18T00:30:31.973Z, questions "Baseline" and "Completeness"); his answers to it are OD-2026-10-17-020.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "PR-C is GO: add total punches thrown, total landed and minutes worked to the sparring log. That unlocks MVP-02 and 05; 07 and 08 still need per-round output." It asked L50 for the form copy (PROPOSED) before building. Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-018 -- No weekly contact-exposure number; the coach's floor record stays counts only: "A: Counts only (Recommended)"
+
+**Provenance: PRIMARY.** The third question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q2 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Contact load".** Overwatch, as written: "OFFICIAL: Contact Exposure formula (contact level x rounds, 7-day and 4-week totals). (A) don't run it; the coach's floor exposure record stays the contact record, counts only, no cumulative risk number; (B) run it from the athlete's own sparring log, marked "incomplete" unless every week has an entry; (C) run it from the coach floor record (needs a contact-stage-to-level mapping). PLAIN: should the app add up a kid's sparring contact into a weekly number, and from whose entries? Today it only shows counts." Options as written: "A: Counts only (Recommended)": "No new weekly contact number."; "B: From athlete log": "Weekly number, often incomplete."; "C: From coach record": "Weekly number from the floor record." Jason: *"A: Counts only (Recommended)"*
+
+**Ruling:** the Contact Exposure formula is not run. The coach's floor exposure record stays the contact record, counts only, with no cumulative number. Options B (from the athlete's log) and C (from the coach's record) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "MVP-06 is not run."
+
+**Status:** ruled; nothing to build for this ruling.
+
+---
+
+## OD-2026-10-17-017 -- The Focus Attainment Rate counts the last 28 days: "A: Last 28 days (Recommended)"
+
+**Provenance: PRIMARY.** The second question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L50 (Q1 in overwatch's relay to L50 at line 15623). New; edits no earlier entry.
+
+**Question "Focus rate".** Overwatch, as written: "OFFICIAL: Focus Attainment Rate = % of an athlete's logged sparring sessions where they ticked "I did the thing we were working on". Which sessions count? (A) the last 28 days (matches the 4-week windows used elsewhere); (B) the last 10 logged sessions; (C) don't run it. PLAIN: "how often did they hit their focus" — over what stretch." Options as written: "A: Last 28 days (Recommended)": "Same 4-week window as elsewhere."; "B: Last 10 sessions": "Count by sessions, not days."; "C: Don't run it": "Leave unbuilt." Jason: *"A: Last 28 days (Recommended)"*
+
+**Ruling:** the Focus Attainment Rate (the share of an athlete's logged sparring sessions where they ticked "I did the thing we were working on") counts the athlete's sessions in the last 28 days. Options B (the last 10 sessions) and C (don't run it) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L50 (line 15623): "Q1, MVP-11 window: "A: Last 28 days (Recommended)". PR-B is GO." Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-016 -- SHADOW's evidence badge names its strongest source and lists the weaker ones: "A: Strongest + also-cites (Rec.)"
+
+**Provenance: PRIMARY.** The first question on a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15571, 2026-10-18T00:26:16.743Z; answered at line 15579, 2026-10-18T00:27:53.574Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The question came from lane L47 (item 11; overwatch's message to L47 at line 15556). New; edits no earlier entry.
+
+**Question "SHADOW badge".** Overwatch, as written: "OFFICIAL: SHADOW's evidence badge shows the grade of the STRONGEST source it cited ("Evidence: Proven"), even when other cited sources are weaker. (A) badge reads "Strongest source: Proven", plus a second line "Also cites: Emerging, Experimental" when sources differ, and the grade meanings rewritten to say what's measured; (B) badge wording and meanings only, no second line; (C) leave as is. PLAIN: today one strong source can make a mixed answer look fully proven. A says exactly what it is and lists the weaker sources too." Options as written: "A: Strongest + also-cites (Rec.)": "Clear badge plus mixed-evidence line."; "B: Wording only": "Clearer badge text, no second line."; "C: Leave as is": "No change." Jason: *"A: Strongest + also-cites (Rec.)"*
+
+**Ruling:** SHADOW's evidence badge reads "Strongest source: <grade>". When the cited sources differ in grade, a second line lists the others (Overwatch's wording at line 15621: "Also cites: …"), and the grade meanings are rewritten to say what is measured. Options B (wording only) and C (leave as is) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L47 (line 15621; its first send, at line 15583, was not delivered) to build it "as the label PR after PR 1". Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
 ## OD-2026-10-17-015 -- New athlete sign-in IDs are not the child's real name: "B: Change the guidance (Recommended)"
 
 **Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15425, 2026-10-18T00:22:46.582Z; answered at line 15435, 2026-10-18T00:23:41.567Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them, in the order it listed them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
