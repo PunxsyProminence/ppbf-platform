@@ -14651,5 +14651,62 @@
         "admin,coach,organization_admin"
       ]
     }
+  },
+  {
+    "id": "app/api/pilot/admin/learning-policies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/learning-policies",
+    "gate": "requirePrincipal + requireRole(READ_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Every version of the gym's learning-loop bars with their citations and signer; names no athlete. Staff read so a coach can see what the app's words rest on.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/learning-policies/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/learning-policies",
+    "gate": "requirePrincipal + requireRole(RATIFY_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. A gym admin ratifies a new cited version (Jason 2026-10-18 Q3 'Needs to be backed by research'); the library's coherence rules and the table's guard (ratifier of this gym, version chain, one in force) both apply.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
   }
 ]
