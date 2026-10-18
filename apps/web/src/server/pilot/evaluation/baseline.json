@@ -1,5 +1,7 @@
 {
   "routing": {
+    "complexity-continuance-is-not-nuance": "pass",
+    "complexity-exceptional-is-not-exception": "pass",
     "complexity-extension-is-not-tension": "pass",
     "complexity-plain-short-coach-question": "pass",
     "complexity-show-different-strengthen-is-not-a-condition": "pass",
@@ -22,6 +24,7 @@
     "topic-competition-competition": "pass",
     "topic-distance-is-not-stance": "pass",
     "topic-equipment-headgear": "pass",
+    "topic-equipment-uniform": "pass",
     "topic-fundamentals-is-not-mental": "pass",
     "topic-information-is-not-form": "pass",
     "topic-injury-prevention-is-safety": "pass",
@@ -42,6 +45,7 @@
     "topic-strategy-plan": "pass",
     "topic-technique-form": "pass",
     "topic-technique-stance": "pass",
+    "topic-training-digits-before-word": "pass",
     "topic-training-drills-plural": "pass",
     "topic-training-trained-past-tense": "pass",
     "topic-training-workout": "pass",

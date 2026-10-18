@@ -66,6 +66,32 @@ export function runOfflineEvaluation(): EvaluationResult[] {
   return [...runRoutingEvaluation()];
 }
 
+/**
+ * Read a baseline, refusing any outcome other than 'pass' or 'fail'. A typo
+ * ("passed") would otherwise match neither branch of the comparison, and the
+ * case would never be reported as moving.
+ */
+export function parseBaseline(text: string): EvaluationBaseline {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('evaluation baseline must be an object of suites');
+  }
+  const baseline: EvaluationBaseline = {};
+  for (const [suite, cases] of Object.entries(parsed)) {
+    if (!cases || typeof cases !== 'object' || Array.isArray(cases)) {
+      throw new Error(`evaluation baseline suite ${suite} must be an object of case outcomes`);
+    }
+    baseline[suite] = {};
+    for (const [id, outcome] of Object.entries(cases)) {
+      if (outcome !== 'pass' && outcome !== 'fail') {
+        throw new Error(`evaluation baseline ${suite}/${id} is ${JSON.stringify(outcome)}; expected "pass" or "fail"`);
+      }
+      baseline[suite][id] = outcome;
+    }
+  }
+  return baseline;
+}
+
 export function toBaseline(results: readonly EvaluationResult[]): EvaluationBaseline {
   const baseline: EvaluationBaseline = {};
   for (const suite of [...new Set(results.map((result) => result.suite))].sort()) {

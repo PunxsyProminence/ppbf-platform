@@ -8,9 +8,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { ROUTING_CASES } from './routingCases';
 import {
   compareWithBaseline,
   formatEvaluationReport,
+  parseBaseline,
   runOfflineEvaluation,
   toBaseline,
   type EvaluationBaseline,
@@ -20,7 +22,7 @@ import {
 const BASELINE_PATH = path.join(__dirname, 'baseline.json');
 
 function readBaseline(): EvaluationBaseline {
-  return JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8')) as EvaluationBaseline;
+  return parseBaseline(fs.readFileSync(BASELINE_PATH, 'utf8'));
 }
 
 describe('SHADOW offline evaluation', () => {
@@ -28,6 +30,11 @@ describe('SHADOW offline evaluation', () => {
     const results = runOfflineEvaluation();
 
     if (process.env.SHADOW_EVAL_UPDATE === '1') {
+      // Update mode rewrites the file it is about to compare against, so it
+      // passes whatever the code does. Never in CI.
+      if (process.env.CI) {
+        throw new Error('SHADOW_EVAL_UPDATE is set in CI; the baseline is updated locally and committed');
+      }
       fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(toBaseline(results), null, 2)}\n`);
     }
 
@@ -48,6 +55,21 @@ describe('SHADOW offline evaluation', () => {
   test('case ids are unique within a suite', () => {
     const keys = runOfflineEvaluation().map((r) => `${r.suite}/${r.id}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test('every routing case checks at least one thing', () => {
+    // An empty expectation passes against any code.
+    expect(ROUTING_CASES.filter((c) => Object.values(c.expect).every((v) => v === undefined)).map((c) => c.id))
+      .toEqual([]);
+  });
+});
+
+describe('baseline file', () => {
+  test('a value other than pass or fail is refused, so a typo cannot make a case immune', () => {
+    expect(() => parseBaseline('{"routing":{"a":"passed"}}')).toThrow('routing/a');
+    expect(() => parseBaseline('{"routing":{"a":"ok"}}')).toThrow('routing/a');
+    expect(() => parseBaseline('{"routing":["pass"]}')).toThrow('routing');
+    expect(parseBaseline('{"routing":{"a":"pass","b":"fail"}}')).toEqual({ routing: { a: 'pass', b: 'fail' } });
   });
 });
 

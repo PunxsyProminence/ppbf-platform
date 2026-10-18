@@ -229,6 +229,20 @@ export const ROUTING_CASES: readonly RoutingCase[] = [
     note: 'Headgear is gear.',
   },
   {
+    id: 'topic-equipment-uniform',
+    role: 'parent',
+    message: 'Where do we buy the team uniform?',
+    expect: { topic: 'equipment' },
+    note: '"form" inside "uniform" used to file this under technique.',
+  },
+  {
+    id: 'topic-training-digits-before-word',
+    role: 'coach',
+    message: 'Is 3sets of 10reps enough?',
+    expect: { topic: 'training' },
+    note: 'A word ends at a letter, not at a digit.',
+  },
+  {
     id: 'topic-no-topic-word-falls-back-to-role',
     role: 'coach',
     message: 'Who is on the card this Thursday?',
@@ -393,5 +407,19 @@ export const ROUTING_CASES: readonly RoutingCase[] = [
     message: 'Show me a different way to strengthen my legs',
     expect: { complexity: 0.2 },
     note: '"how" in "show", "if" in "different" and "then" in "strengthen" read as if/then logic.',
+  },
+  {
+    id: 'complexity-exceptional-is-not-exception',
+    role: 'coach',
+    message: 'The kid has exceptional reach',
+    expect: { complexity: 0.2 },
+    note: '"exception" inside "exceptional" added a complexity keyword.',
+  },
+  {
+    id: 'complexity-continuance-is-not-nuance',
+    role: 'coach',
+    message: 'We asked for a continuance on the bout',
+    expect: { complexity: 0.2 },
+    note: '"nuance" inside "continuance" added a complexity keyword.',
   },
 ];

@@ -187,6 +187,20 @@ describe('SHADOW Classifier', () => {
       ['How many sets and reps today?', 'training'],
       ['I trained twice yesterday', 'training'],
       ['He gets unfocused in the third round', 'mindset'],
+      ['Is it riskier to spar on Mondays?', 'safety'],
+      ['Could this endanger a beginner?', 'safety'],
+      ['Is overconfidence his problem?', 'mindset'],
+      ['He feared the bigger kid', 'mindset'],
+      ['Is he undertrained for this bout?', 'training'],
+      ['Are supersets worth it?', 'training'],
+      ['Should he reposition after the jab?', 'technique'],
+      ['How was the opponent approaching him?', 'strategy'],
+      ['He was restless all week', 'recovery'],
+      ['Should a clinician see this?', 'medical'],
+      ['Do the gloves come with shoelaces?', 'equipment'],
+      ['Is 3sets of 10reps enough?', 'training'],
+      ['What is good injury-prevention for shoulders?', 'safety'],
+      ['Where do we buy the team uniform?', 'equipment'],
     ] as const)('%s -> %s', (message, topic) => {
       expect(classifyRequest(message, 'admin').topic).toBe(topic);
     });
@@ -196,6 +210,13 @@ describe('SHADOW Classifier', () => {
     test('"extension" is not "tension"', () => {
       const reference = classifyRequest('The reach on my jab is short', 'coach').complexity;
       expect(classifyRequest('The extension on my jab is short', 'coach').complexity).toBe(reference);
+    });
+
+    test('"exceptional" is not "exception" and "continuance" is not "nuance"', () => {
+      const reference = classifyRequest('The reach on my jab is short', 'coach').complexity;
+      expect(classifyRequest('He has exceptional reach', 'coach').complexity).toBe(reference);
+      expect(classifyRequest('We asked for a continuance on the bout', 'coach').complexity).toBe(reference);
+      expect(classifyRequest('Any exceptions to the nuanced rule?', 'coach').complexity).toBeGreaterThan(reference);
     });
 
     test('"show ... different ... strengthen" is not if/then logic', () => {
