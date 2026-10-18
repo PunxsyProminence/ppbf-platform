@@ -15,6 +15,7 @@ import {
 } from '@/src/server/pilot/formulas/painReportAlert';
 import {
   FormulaRepositoryError,
+  listRecentSparringEntries,
   saveFormulaObservation,
 } from '@/src/server/pilot/formulas/repository';
 import {
@@ -27,7 +28,12 @@ import {
   type ObservationKind,
 } from '@/src/server/pilot/formulas/types';
 import { queryOne } from '@/src/server/pilot/db';
-import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import {
+  hiddenNotFound,
+  jsonError,
+  parseSafeLimit,
+  requirePrincipal,
+} from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 
 export const runtime = 'nodejs';
@@ -81,6 +87,54 @@ function normalizeDimensions(
 
 function invalidObservation(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
+}
+
+/**
+ * The sparring page's "Fix a number": one athlete's recent entries, so a
+ * mistyped count can be corrected through POST below (supersedesObservationId)
+ * without anybody assembling observation ids by hand.
+ *
+ * Same two gates as POST, in the same order. The answer is an ENUMERATED
+ * projection of the punch numbers only (listRecentSparringEntries): no body
+ * weight, no notes, no source reference.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['athlete', 'coach', 'organization_admin', 'admin']);
+
+    const athleteId = request.nextUrl.searchParams.get('athlete_id');
+    const limit = parseSafeLimit(request.nextUrl.searchParams.get('limit'), 5, 20);
+    if (!boundedString(athleteId, 300) || limit === null) {
+      return invalidObservation('Sparring entry query is invalid.');
+    }
+
+    await assertActorCanAccessAthlete(principal, athleteId);
+    await assertShadowRuntimeReadiness({ requiredTables: ['shadow_formula_observations'] });
+
+    const entries = await listRecentSparringEntries({
+      organizationId: principal.organizationId,
+      athleteId,
+      limit,
+    });
+    return NextResponse.json({
+      ok: true,
+      entries: entries.map((entry) => ({
+        contextId: entry.contextId,
+        observedAt: entry.observedAt,
+        observations: entry.observations.map((observation) => ({
+          observationId: observation.observationId,
+          kind: observation.kind,
+          value: observation.value,
+          unit: observation.unit,
+          dimensions: observation.dimensions ?? {},
+          observedAt: observation.observedAt,
+        })),
+      })),
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
