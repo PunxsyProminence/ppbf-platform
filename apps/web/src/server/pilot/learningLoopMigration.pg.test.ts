@@ -268,8 +268,8 @@ beforeAll(async () => {
     `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, status, created_by_account_id)
      values ($1, $3, 'Drops lead hand after the jab', 'SK-JAB-01', 'active', $4),
             ($1, $5, 'Old name for it', 'SK-JAB-01', 'retired', $4),
-            ($2, $3, 'Drops lead hand after the jab', 'SK-JAB-01', 'active', null)`,
-    [ORG, OTHER_ORG, KEY, COACH, RETIRED_KEY],
+            ($2, $3, 'Drops lead hand after the jab', 'SK-JAB-01', 'active', $6)`,
+    [ORG, OTHER_ORG, KEY, COACH, RETIRED_KEY, OTHER_GYM_COACH],
   );
 });
 
@@ -302,15 +302,22 @@ describe('the learning-loop migration', () => {
 
   test('a behaviour name is a slug under one skill code', async () => {
     const insertKey = (key: string, skill: string) => () => db.query(
-      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id) values ($1, $2, 'A name', $3)`,
-      [ORG, key, skill],
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, $2, 'A name', $3, $4)`,
+      [ORG, key, skill, COACH],
     );
     expect(await refusal(insertKey('Drops Hand', 'SK-JAB-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_key_check' });
     expect(await refusal(insertKey('drops_hand', 'SKILL-01'))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_skill_check' });
     expect(await refusal(() => db.query(
-      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id) values ($1, 'tabs_only', E'\t\t\t', 'SK-JAB-01')`,
-      [ORG],
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, 'tabs_only', E'\t\t\t', 'SK-JAB-01', $2)`,
+      [ORG, COACH],
     ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_label_check' });
+    // A new name is always someone's.
+    expect(await refusal(() => db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id) values ($1, 'nobodys', 'A name', 'SK-JAB-01')`,
+      [ORG],
+    ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_creator_of_this_gym' });
     expect(await refusal(() => db.query(
       `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
        values ($1, 'visitor_named', 'A name', 'SK-JAB-01', $2)`,
@@ -396,10 +403,14 @@ describe('the learning-loop migration', () => {
     expect(await refusal(() => report({
       athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: SECOND_COACH, supersedes: original,
     }))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_own_revision' });
+    // The same person's second report of the moment must revise their first.
+    expect(await refusal(() => report({ athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH })))
+      .toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_own_revision' });
     await report({ athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: original });
+    // And revises their LATEST: the original is already revised.
     expect(await refusal(() => report({
       athleteId: ATHLETE_B, episodeId: EPISODE_2, observer: COACH, supersedes: original,
-    }))).toEqual({ code: '23505', constraint: 'idx_behaviour_observations_one_successor' });
+    }))).toEqual({ code: '23514', constraint: 'pilot_behaviour_observations_own_revision' });
     // Never itself: the row is not there yet for its own trigger to find.
     const self = '33333333-3333-4333-8333-333333333333';
     expect(await refusal(() => report({
