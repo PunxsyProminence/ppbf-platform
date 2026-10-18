@@ -56,7 +56,9 @@ import { Client } from 'pg';
 // itself failed. Counts and role names only: no ids, emails, names or
 // document names are printed.
 
-// The roles that reach every athlete of their gym (access.ts).
+// The roles that reach every athlete of their gym (access.ts). Judged by the
+// asker's role now: the stored rows do not record the role they asked under,
+// so a parent later made a coach stops failing the check.
 const REACHES_EVERY_ATHLETE = ['coach', 'organization_admin', 'admin'];
 
 function required(name) {
@@ -219,7 +221,7 @@ export async function run() {
       ? ` ${citations.total} stored citation(s) of another athlete's document were asked by a coach or organization admin, who reach every athlete of the gym (OD-2026-10-11-007); see by_asker_role.`
       : ' No stored SHADOW answer cites a Library document filed against another athlete.';
     console.log(
-      `PILOT PRIVACY LEFTOVERS CHECK PASS:${coachRows} No login with an athlete record behind it holds a staff role, and no athlete login holds a staff membership (read-only; nothing changed)`,
+      `PILOT PRIVACY LEFTOVERS CHECK PASS:${coachRows} No login with an athlete record behind it holds a staff role, and no athlete login holds a staff membership; a promoted login whose athlete the purge has since removed is unlinked and not visible here (read-only; nothing changed)`,
     );
     return 0;
   }
