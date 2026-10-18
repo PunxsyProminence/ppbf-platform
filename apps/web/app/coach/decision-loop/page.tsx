@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
 import ArmedButton from '@/components/ArmedButton';
 import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
@@ -1816,6 +1817,7 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
+                <FamilyGoalsForStaff key={athleteId} athleteId={athleteId} />
               </section>
 
               {/* Message the athlete (#1542, FC-06): read on their Dashboard. */}

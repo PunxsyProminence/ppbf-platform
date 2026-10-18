@@ -91,6 +91,10 @@ interface Handlers {
   athletes?: () => Response | Promise<Response>;
   protocols?: () => Response | Promise<Response>;
   logPost?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  /** GET of the intervention ledger for one athlete (the before picture and the recovery read). */
+  logGet?: () => Response | Promise<Response>;
+  /** GET /runs?finished=true: the gym's finished sessions (the recovery read after a finish). */
+  finishedGet?: () => Response | Promise<Response>;
   roster?: () => Response | Promise<Response>;
   readinessBoard?: () => Response | Promise<Response>;
   /** GET /runs/[runId]/athletes: who is marked here, and the gym's athletes (F-067). */
@@ -106,6 +110,7 @@ function mockFetch(handlers: Handlers = {}) {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/pilot/coach/intervention-executions')) {
+      if (init?.method !== 'POST') return handlers.logGet ? handlers.logGet() : jsonResponse({ items: [] });
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       if (handlers.logPost) return handlers.logPost(body);
       return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
@@ -136,6 +141,10 @@ function mockFetch(handlers: Handlers = {}) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       if (handlers.patch) return handlers.patch(body);
       throw new Error(`Unexpected PATCH: ${url}`);
+    }
+    if (url.includes('/api/pilot/session-scripts/runs?finished=true')) {
+      if (handlers.finishedGet) return handlers.finishedGet();
+      throw new Error(`Unexpected finished GET: ${url}`);
     }
     if (url.includes('/api/pilot/session-scripts/runs')) {
       if (handlers.runsGet) return handlers.runsGet();
@@ -911,4 +920,359 @@ test('a plain session is not asked how many blocks it completed', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
   expect(screen.queryByLabelText('Blocks completed')).toBeNull();
   expect(screen.getByLabelText('Athletes present')).toBeTruthy();
+});
+
+// ChatGPT pilot audit 2026-10-17, item 1. A lost answer does not prove a write failed: the server
+// may already have committed it. Every write here now says one of three things -- refused (4xx,
+// in words), saved, or not saved -- and says "saved" or "not saved" only after reading what the
+// server holds. Never "nothing was changed" on a guess, and never an invitation to repeat a write
+// that already landed.
+describe('a write whose answer proves nothing is checked against the server (audit 2026-10-17 item 1)', () => {
+  const dropped = () => Promise.reject(new TypeError('Failed to fetch'));
+  const runsGetCalls = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/pilot/session-scripts/runs'));
+  const NOT_SAVED = 'No clear answer came back, and the server shows it was not saved. Try again.';
+  const UNCHECKED = 'No clear answer came back and the server could not be checked. Reload the page before trying again.';
+
+  const runActions = [
+    { action: 'pause', start: liveRun(), button: 'Pause session', saved: liveRun({ is_paused: true, paused_at: 'x' }), words: 'the session is paused', badge: 'PAUSED' },
+    { action: 'resume', start: liveRun({ is_paused: true, paused_at: 'x' }), button: 'Resume session', saved: liveRun(), words: 'the session is running', badge: 'RUNNING' },
+    { action: 'advance', start: liveRun(), button: 'Next block', saved: liveRun({ current_block_id: 'blk-3' }), words: 'the session is on Conditioning finish', badge: null },
+    { action: 'show_on_wall', start: liveRun(), button: 'Show on TV', saved: liveRun({ show_on_wall: true }), words: 'the session is on the TV', badge: 'ON THE TV' },
+  ] as const;
+
+  async function press(name: string) {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name }));
+    });
+  }
+
+  describe.each(runActions)('$action', ({ start, button, saved, words, badge }) => {
+    it('(a) the request never reached the server: the server shows it was not saved, so try again', async () => {
+      const { fetchMock } = await renderLive(start, { patch: dropped, runsGet: () => jsonResponse({ run: start }) });
+      await press(button);
+      expect(await screen.findByRole('alert')).toHaveTextContent(NOT_SAVED);
+      expect(screen.queryByText(/nothing was changed/i)).toBeNull();
+      expect(runsGetCalls(fetchMock)).toHaveLength(1);
+    });
+
+    it('(b) the server committed and the answer was lost: the screen says saved, shows it, and offers no repeat', async () => {
+      await renderLive(start, { patch: dropped, runsGet: () => jsonResponse({ run: saved }) });
+      await press(button);
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(`No clear answer came back, but the server shows it was saved: ${words}.`);
+      expect(alert).not.toHaveTextContent(/try again/i);
+      if (badge) expect(screen.getByText(badge)).toBeInTheDocument();
+    });
+
+    it('(c) a yes with no run in it is checked, not trusted or ignored', async () => {
+      await renderLive(start, { patch: () => jsonResponse({}), runsGet: () => jsonResponse({ run: saved }) });
+      await press(button);
+      expect(await screen.findByRole('alert')).toHaveTextContent(`the server shows it was saved: ${words}.`);
+    });
+
+    it('(d) a refusal is shown in words and needs no check', async () => {
+      const { fetchMock } = await renderLive(start, { patch: () => jsonResponse({ error: 'SOME_CODE' }, false, 422) });
+      await press(button);
+      expect(screen.getByRole('alert')).toHaveTextContent('That did not go through. Nothing was changed. Try again.');
+      expect(runsGetCalls(fetchMock)).toHaveLength(0);
+    });
+
+    it('a server failure (5xx) is checked: it may have written before failing', async () => {
+      await renderLive(start, {
+        patch: () => jsonResponse({ error: 'Internal server error' }, false, 500),
+        runsGet: () => jsonResponse({ run: saved }),
+      });
+      await press(button);
+      expect(await screen.findByRole('alert')).toHaveTextContent(`the server shows it was saved: ${words}.`);
+    });
+
+    it('when the check itself fails, the screen says it does not know', async () => {
+      await renderLive(start, { patch: dropped, runsGet: () => jsonResponse({}, false, 500) });
+      await press(button);
+      expect(await screen.findByRole('alert')).toHaveTextContent(UNCHECKED);
+    });
+  });
+
+  describe('finish', () => {
+    const settledSummary = { run_id: 'ssrun_1', script_id: 'scr-friday', run_state: 'completed', delivered_by_me: true };
+
+    async function finish() {
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await press('Record as completed');
+    }
+
+    it('(a) the request never reached the server: the session is still live, so try again', async () => {
+      const { onSettled } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: liveRun() }) });
+      await finish();
+      expect(await screen.findByRole('alert')).toHaveTextContent(NOT_SAVED);
+      expect(onSettled).not.toHaveBeenCalled();
+    });
+
+    it('(b) the server finished it and the answer was lost: it is handed over as settled, with the outcome the server holds', async () => {
+      const { onSettled, onRunGone } = await renderLive(liveRun(), {
+        patch: dropped,
+        runsGet: () => jsonResponse({ run: null }),
+        finishedGet: () => jsonResponse({ runs: [settledSummary] }),
+      });
+      await finish();
+      expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'ssrun_1', run_state: 'completed' }));
+      expect(onRunGone).not.toHaveBeenCalled();
+    });
+
+    it('(c) a yes with no run in it is checked the same way', async () => {
+      const { onSettled } = await renderLive(liveRun(), {
+        patch: () => jsonResponse({}),
+        runsGet: () => jsonResponse({ run: null }),
+        finishedGet: () => jsonResponse({ runs: [{ ...settledSummary, run_state: 'abandoned' }] }),
+      });
+      await finish();
+      expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'ssrun_1', run_state: 'abandoned' }));
+    });
+
+    it('(d) a refusal is shown in words and needs no check', async () => {
+      const { fetchMock, onSettled } = await renderLive(liveRun(), { patch: () => jsonResponse({ error: 'SOME_CODE' }, false, 422) });
+      await finish();
+      expect(screen.getByRole('alert')).toHaveTextContent('That did not go through. Nothing was changed. Try again.');
+      expect(runsGetCalls(fetchMock)).toHaveLength(0);
+      expect(onSettled).not.toHaveBeenCalled();
+    });
+
+    it('not live and not found among the finished sessions: the screen says it does not know', async () => {
+      const { onSettled } = await renderLive(liveRun(), {
+        patch: dropped,
+        runsGet: () => jsonResponse({ run: null }),
+        finishedGet: () => jsonResponse({}, false, 500),
+      });
+      await finish();
+      expect(await screen.findByRole('alert')).toHaveTextContent(UNCHECKED);
+      expect(onSettled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logging an intervention', () => {
+    const execution = (id: string) => ({
+      execution_id: id,
+      created_at: '2026-08-17T00:00:00.000Z',
+      session_run_id: 'ssrun_1',
+      protocol_id: 'proto-1',
+      athlete_id: 'ath-1',
+    });
+
+    async function pickAndLog() {
+      fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+      fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+      await press('Log intervention');
+    }
+
+    it('(a) the request never reached the server: the ledger shows nothing new, so try again', async () => {
+      await renderLive(liveRun(), { logPost: dropped, logGet: () => jsonResponse({ items: [] }) });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'No clear answer came back, and the server shows the intervention was not logged. Try again.',
+      );
+      expect(screen.queryByText('logged')).toBeNull();
+    });
+
+    it('(b) the server logged it and the answer was lost: it is listed once and no repeat is offered', async () => {
+      let committed = false;
+      const { fetchMock } = await renderLive(liveRun(), {
+        logPost: () => {
+          committed = true;
+          return dropped();
+        },
+        logGet: () => jsonResponse({ items: committed ? [execution('exec-new')] : [] }),
+      });
+      await pickAndLog();
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('No clear answer came back, but the server shows the intervention was logged.');
+      expect(alert).not.toHaveTextContent(/try again/i);
+      expect(screen.getAllByText('logged')).toHaveLength(1);
+      expect(logPostCalls(fetchMock)).toHaveLength(1);
+    });
+
+    it('an earlier log of the same pair in this run is not mistaken for this one', async () => {
+      // exec-old was logged before a reload, so this screen's own list does not hold it.
+      await renderLive(liveRun(), { logPost: dropped, logGet: () => jsonResponse({ items: [execution('exec-old')] }) });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was not logged. Try again.');
+      expect(screen.queryByText('logged')).toBeNull();
+    });
+
+    it('(c) a yes with no execution in it is checked, not read as a refusal', async () => {
+      let committed = false;
+      await renderLive(liveRun(), {
+        logPost: () => {
+          committed = true;
+          return jsonResponse({});
+        },
+        logGet: () => jsonResponse({ items: committed ? [execution('exec-new')] : [] }),
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was logged.');
+      expect(screen.getAllByText('logged')).toHaveLength(1);
+    });
+
+    it('(d) a refusal is shown in words and needs no check after it', async () => {
+      const { fetchMock } = await renderLive(liveRun(), { logPost: () => jsonResponse({ error: 'Not found' }, false, 404) });
+      await pickAndLog();
+      expect(screen.getByRole('alert')).toHaveTextContent('Not found');
+      const ledgerReads = fetchMock.mock.calls.filter(
+        (call) => String(call[0]).includes('/intervention-executions') && (call[1] as RequestInit | undefined)?.method !== 'POST',
+      );
+      // The before picture only.
+      expect(ledgerReads).toHaveLength(1);
+    });
+
+    it('a server failure (5xx) is checked: it may have written before failing', async () => {
+      let committed = false;
+      await renderLive(liveRun(), {
+        logPost: () => {
+          committed = true;
+          return jsonResponse({ error: 'Internal server error' }, false, 500);
+        },
+        logGet: () => jsonResponse({ items: committed ? [execution('exec-new')] : [] }),
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was logged.');
+    });
+
+    it('when the check fails, the screen says it does not know and where to look', async () => {
+      let posted = false;
+      await renderLive(liveRun(), {
+        logPost: () => {
+          posted = true;
+          return dropped();
+        },
+        logGet: () => (posted ? jsonResponse({}, false, 500) : jsonResponse({ items: [] })),
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'No clear answer came back and the server could not be checked. Check The Work before logging it again.',
+      );
+    });
+
+    it('a failed before picture never stops the log, and a record it cannot place is not called saved', async () => {
+      let posted = false;
+      const { fetchMock } = await renderLive(liveRun(), {
+        logPost: () => {
+          posted = true;
+          return dropped();
+        },
+        logGet: () => (posted ? jsonResponse({ items: [execution('exec-unplaced')] }) : jsonResponse({}, false, 500)),
+      });
+      await pickAndLog();
+      expect(logPostCalls(fetchMock)).toHaveLength(1);
+      expect(await screen.findByRole('alert')).toHaveTextContent('Check The Work before logging it again.');
+      expect(screen.queryByText('logged')).toBeNull();
+    });
+  });
+});
+
+describe('the check after a lost answer keeps the once-only locks and covers every branch (audit 2026-10-17 item 1)', () => {
+  const dropped = () => Promise.reject(new TypeError('Failed to fetch'));
+
+  it('a run action stays locked while the server is being checked: a second tap sends nothing', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const { fetchMock } = await renderLive(liveRun(), {
+      patch: dropped,
+      runsGet: () => new Promise<Response>((resolve) => { release = resolve; }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(release).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(patchCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      release?.(jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows it was saved: the session is paused.');
+    expect(patchCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('logging stays locked while the server is being checked: a second tap sends nothing', async () => {
+    let release: ((response: Response) => void) | undefined;
+    let ledgerReads = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: dropped,
+      logGet: () => {
+        ledgerReads += 1;
+        if (ledgerReads === 1) return jsonResponse({ items: [] });
+        return new Promise<Response>((resolve) => { release = resolve; });
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+    expect(release).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Logging...' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Logging...' }));
+    });
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      release?.(jsonResponse({ items: [] }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was not logged. Try again.');
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('a run action whose session is no longer live hands control back', async () => {
+    const { onRunGone } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: null }) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+    expect(onRunGone).toHaveBeenCalledWith(expect.stringContaining('no longer live'));
+  });
+
+  it('a run action whose session was replaced shows the live one and says the screen was out of date', async () => {
+    const other = liveRun({ run_id: 'ssrun_2', elapsed_seconds: 500 });
+    const { onRunGone } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: other }) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(onRunGone).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('out of date');
+    expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('8:20');
+  });
+
+  it('a finish whose live-session check fails says it could not be checked', async () => {
+    const { onSettled } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({}, false, 503) });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No clear answer came back and the server could not be checked. Reload the page before trying again.',
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it('a finish not live and not among the finished sessions says the server does not show how it ended', async () => {
+    const { onSettled } = await renderLive(liveRun(), {
+      patch: dropped,
+      runsGet: () => jsonResponse({ run: null }),
+      finishedGet: () => jsonResponse({ runs: [{ run_id: 'ssrun_other', script_id: null, run_state: 'completed' }] }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.',
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+  });
 });
