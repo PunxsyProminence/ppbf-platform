@@ -213,6 +213,12 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
     note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
   },
+  'sessions.session_type': {
+    tier: 'athlete_record',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'familyRecordView.ts#SESSION_WITHHELD_FROM_FAMILY_FIELDS'],
+    note: 'The athlete\'s own check-out tag (OD-2026-10-17-023). Staff reads as sessions.rpe; withheld from '
+      + 'every athlete and family session read until a screen reads it back.',
+  },
   'sessions.notes': {
     tier: 'athlete_record',
     enforcedBy: [

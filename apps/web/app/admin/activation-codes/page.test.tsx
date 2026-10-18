@@ -75,7 +75,7 @@ describe('ActivationCodesManagementPage', () => {
 
     render(<ActivationCodesManagementPage />);
 
-    expect(screen.getByText('Issue Athlete Activation Codes')).toBeInTheDocument();
+    expect(screen.getByText('Activation Codes')).toBeInTheDocument();
     expect(await screen.findByText('Account: ath-001')).toBeInTheDocument();
     expect(screen.getByText('Pending Redemption')).toBeInTheDocument();
   });

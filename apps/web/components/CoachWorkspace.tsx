@@ -609,7 +609,7 @@ function normalizeSessionReview(row: unknown): SessionReview | null {
  * "Not reported" and not "Not answered" (owner wording, 2026-09-22): it says
  * what the record holds -- no value for this measure -- without asserting what
  * the athlete did with the question.
- * sleepHours is hours -- a quantity, not a rating -- and the eight 1-5
+ * sleepHours is hours -- a quantity, not a rating -- and the nine 1-5
  * measures take their meaning from src/shared/wellnessScales.ts.
  *
  * NOTHING IS DERIVED FROM THESE. No band, no average, no "ready" -- the shared

@@ -56,7 +56,7 @@ export default function StoreIndexPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
       <div className="mx-auto max-w-3xl">
         <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Shop</p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment</h1>
+        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment Store</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           Buying gear here supports the gym directly.
         </p>

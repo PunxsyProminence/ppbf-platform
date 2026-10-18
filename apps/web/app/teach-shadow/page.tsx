@@ -425,7 +425,7 @@ export default function TeachShadowHomePage() {
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Teach Shadow</p>
             <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
-              Teaching Shadow to see boxing
+              Teach Shadow
             </h1>
             <ClusterNav cluster="film" />
             <p className="t-body mt-[var(--s3)] max-w-3xl">
