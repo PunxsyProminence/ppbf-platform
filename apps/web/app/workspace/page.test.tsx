@@ -132,9 +132,29 @@ it('links only to surfaces a staff or volunteer session is authorized for', asyn
 
   expect(hrefs).toContain('/shadow');
   expect(hrefs.length).toBeGreaterThan(0);
-  for (const href of hrefs) {
+  for (const href of hrefs.filter((h) => !ADMITS_STAFF.includes(h))) {
     for (const prefix of FORBIDDEN_HREF_PREFIXES) {
       expect(href.startsWith(prefix)).toBe(false);
     }
   }
+});
+
+/* Lane U2 (audit UX-A A-16): two pages under /coach admit staff and
+   volunteers, and their doors offer them, so the workspace links them. The
+   prefix rule above is a proxy; for these two the page's own gate decides. */
+const ADMITS_STAFF = ['/coach/credentials', '/coach/development'];
+
+it.each(ADMITS_STAFF)('links %s, whose own gate admits staff and volunteers', async (href) => {
+  global.fetch = fetchMock() as unknown as typeof fetch;
+  const { container } = render(<WorkspacePage />);
+  await waitFor(() => expect(screen.getByText('vol@example.com')).toBeTruthy());
+  expect(container.querySelector(`a[href="${href}"]`)).toBeTruthy();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const page = fs.readFileSync(path.resolve(__dirname, '..', href.slice(1), 'page.tsx'), 'utf8');
+  const gate = page.match(/allowedRoles=\{\[([^\]]*)\]\}/);
+  expect(gate?.[1]).toMatch(/'staff'/);
+  expect(gate?.[1]).toMatch(/'volunteer'/);
 });

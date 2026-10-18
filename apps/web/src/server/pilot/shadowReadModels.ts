@@ -1089,20 +1089,18 @@ export async function getShadowKnowledgeProjection(
   return events
     .map((event): ShadowKnowledgeProjectionItem | null => {
       const reviewState = toReviewState(event.event_name);
-      let type: ShadowKnowledgeProjectionItem['type'];
 
-      // An approved or promoted intake case is still an observation -- a
-      // reviewer accepted it, nothing validated it as a lesson. It used to be
-      // filed under 'Validated Lesson' on its review state alone. The review
-      // outcome travels in review_state, which the page shows as a badge; the
-      // Validated Lesson stream stays empty until something real feeds it.
-      if (event.event_name.toUpperCase().includes('PATTERN')) {
-        type = 'Pattern';
-      } else if (event.event_name.toUpperCase().includes('FINDING')) {
-        type = 'Finding';
-      } else {
-        type = 'Observation';
-      }
+      // Every audit event is an Observation. An approved or promoted intake
+      // case is still an observation -- a reviewer accepted it, nothing
+      // validated it as a lesson -- and it used to be filed under 'Validated
+      // Lesson' on its review state alone. The same went for 'Pattern' and
+      // 'Finding': an event whose NAME contained the word was filed there, with
+      // no evidence, counterexample, attribution or transfer consulted
+      // (docs/SHADOW_PATTERN_FORMATION_CONTRACT.md D1). A label read off a
+      // spelling is not a pattern. The review outcome travels in review_state,
+      // which the page shows as a badge; the Pattern, Finding and Validated
+      // Lesson streams stay empty until the evaluators in patterns/ feed them.
+      const type: ShadowKnowledgeProjectionItem['type'] = 'Observation';
 
       if (
         !event.event_name.toUpperCase().includes('SHADOW')

@@ -42,7 +42,8 @@ import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
 import { getVideoSessionForFilmStudyJob } from './videoSessions';
 import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type JobType } from './shadowJobQueue';
-import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
+import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, shadowIdentityLine, validateShadowResponse } from './shadowChat';
+import { getOperatingOrganizationProfileOrNull } from './organizationProfileStore';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import {
   consumeShadowReviewSlot,
@@ -857,7 +858,8 @@ async function executeHeavyBagJob(payload: Record<string, unknown>): Promise<Rec
   // register -- assumed minor, plain language -- and the same evidence
   // boundary the live chat enforces. Trusting stored prompt text would let a
   // stale snapshot outlive a role change; recomposing cannot.
-  const systemPrompt = `${composeShadowSystemPrompt({ role: trust.role, sessionType })}
+  const gym = await getOperatingOrganizationProfileOrNull();
+  const systemPrompt = `${composeShadowSystemPrompt({ role: trust.role, sessionType, gym })}
 
 ## EVIDENCE BOUNDARY
 Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.
@@ -892,7 +894,10 @@ async function executeScoutReportJob(payload: Record<string, unknown>): Promise<
     const message = payloadToText(payload.message, '');
     if (!message.trim()) throw new Error('SHADOW_JOB_INPUT_INVALID');
     const trust = requireAsyncTrustContext(payload);
-    const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
+    const gym = await getOperatingOrganizationProfileOrNull();
+    const systemPrompt = `${shadowIdentityLine(gym)}
+
+${SHADOW_SYSTEM_PROMPT}
 
 ## Scout Report Generation
 - Authenticated role: ${trust.role}
@@ -1186,7 +1191,10 @@ async function executeBoardSummaryJob(payload: Record<string, unknown>): Promise
   }
   const message = payloadToText(payload.message, '');
   if (!message.trim()) throw new Error('SHADOW_JOB_INPUT_INVALID');
-  const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
+  const gym = await getOperatingOrganizationProfileOrNull();
+  const systemPrompt = `${shadowIdentityLine(gym)}
+
+${SHADOW_SYSTEM_PROMPT}
 
 ## Board Summary Generation
 - Authenticated role: ${trust.role}

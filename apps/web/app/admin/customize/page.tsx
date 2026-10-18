@@ -5,7 +5,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
-import { GYM_PHOTO_SLOTS, gymPhotoSrc } from '@/src/shared/gymPhotos';
+import GymProfileForm from '@/components/GymProfileForm';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
+import { GYM_PHOTO_SLOTS, gymPhotoSlotText, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
 import { usePilotSession } from '@/components/usePilotSession';
 import BackHome from '@/components/BackHome';
@@ -68,6 +70,7 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
 ];
 
 export default function AdminCustomizePage() {
+  const gym = useOrganizationProfile();
   const pilotSession = usePilotSession();
   const isPlatformOwner = pilotSession.role === 'platform_owner';
   const [access, setAccess] = useState<'checking' | 'allowed' | 'denied'>('checking');
@@ -212,6 +215,22 @@ export default function AdminCustomizePage() {
         </p>
       </header>
 
+      {/* --------------------------------------------- 0. THE GYM PROFILE -- */}
+      {/* Lane L31 P3: the stored profile every page reads, edited here. */}
+      <section className="mt-[var(--s6)] max-w-[1000px]" aria-labelledby="customize-profile">
+        <h2 id="customize-profile" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+          The gym&apos;s profile
+        </h2>
+        <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
+          The names, website, contact details and addresses the homepage, the privacy page, print sheets, the wall
+          and the sign-in email use. Leave a line empty and the privacy page and print sheets leave it off; the
+          homepage still has a place for every line.
+        </p>
+        <div className="mt-[var(--s4)]">
+          <GymProfileForm />
+        </div>
+      </section>
+
       {/* ------------------------------------------------ 1. PHOTOGRAPHS -- */}
       <section className="mt-[var(--s6)] max-w-[1000px]" aria-labelledby="customize-photos">
         <h2 id="customize-photos" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
@@ -238,7 +257,7 @@ export default function AdminCustomizePage() {
                 <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                   <div>
                     <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{slot.title}</h3>
-                    <p className="t-muted mt-[var(--s1)]">{slot.caption}</p>
+                    <p className="t-muted mt-[var(--s1)]">{gymPhotoSlotText(slot, gym).caption}</p>
                   </div>
                   {hasUpload ? (
                     <span className="badge badge--cleared"><span aria-hidden="true">✓</span> PHOTOGRAPH UP</span>
@@ -253,7 +272,7 @@ export default function AdminCustomizePage() {
                         is session-scoped and must not pass through the optimizer's
                         shared cache. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewSrc} alt={slot.alt} loading="lazy" decoding="async" className="block w-full" />
+                    <img src={previewSrc} alt={gymPhotoSlotText(slot, gym).alt} loading="lazy" decoding="async" className="block w-full" />
                   </div>
                 )}
 

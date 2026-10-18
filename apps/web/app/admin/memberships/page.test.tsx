@@ -98,6 +98,9 @@ test('enrollments render with the scholarship shown as a discount, and the no-bi
 
   expect(await screen.findByText('Jordan Little')).toBeTruthy();
   expect(screen.getByText('100% scholarship')).toBeTruthy();
+  // A plain start date is its own calendar day at the gym, not the day before.
+  expect(screen.getByText(/since September 1, 2026/)).toBeTruthy();
+  expect(screen.queryByText(/8\/31\/2026|August 31, 2026/)).toBeNull();
   expect(screen.getByText(/No billing happens here/)).toBeTruthy();
   // Lane N4-02: fees are a plan, not a fact (paymentSetup.ts: no charging, no checkout).
   expect(screen.getByText(/fees are planned with the payment lanes, and nothing reads these records for billing yet\./)).toBeTruthy();
@@ -290,4 +293,246 @@ test('a failed programs read says so, never "No programs on record. Create the f
 
   expect(await screen.findByText('Programs could not be read')).toBeTruthy();
   expect(screen.queryByText('No programs on record')).toBeNull();
+});
+
+test('a failed roster read says so in the support picker, and Try again reads it again', async () => {
+  let rosterReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      rosterReads += 1;
+      return rosterReads === 1
+        ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+        : ({ ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response);
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Athletes could not be read')).toBeTruthy();
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['Choose an athlete']);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  });
+
+  expect(rosterReads).toBe(2);
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
+  expect(Array.from((screen.getByLabelText('Support for') as HTMLSelectElement).options).map((option) => option.textContent))
+    .toEqual(['Choose an athlete', 'Casey Stone']);
+});
+
+test("with the roster unread, a row's Support button still names its athlete in the picker", async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await screen.findByText('Athletes could not be read');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Support provided to Jordan Little' }));
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.value).toBe('ath-1');
+  expect(picker.options[picker.selectedIndex].textContent).toBe('Jordan Little');
+});
+
+test('the support picker says it is loading until the roster read comes back', async () => {
+  let answerRoster: (() => void) | null = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) {
+      await new Promise<void>((resolve) => { answerRoster = resolve; });
+      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
+    }
+    if (url.includes('/admin/memberships')) return { ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response;
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  const picker = screen.getByLabelText('Support for') as HTMLSelectElement;
+  expect(picker.disabled).toBe(true);
+  expect(picker.options[0].textContent).toBe('Loading athletes…');
+  expect(screen.queryByText('Athletes could not be read')).toBeNull();
+
+  await act(async () => {
+    answerRoster?.();
+  });
+  expect((screen.getByLabelText('Support for') as HTMLSelectElement).disabled).toBe(false);
+});
+
+// PH-12b: support the gym gave a family, recorded on this page.
+const SUPPORT_ROW = {
+  record_id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+  support_kind: 'Transportation to the October 12 tournament',
+  provided_on: '2026-10-12',
+  recorded_by_name: 'Jane Okafor',
+  created_at: '2026-10-12T15:00:00.000Z',
+};
+
+function mockSupportFetch(options: {
+  supportReadFails?: boolean;
+  sent?: Array<{ method: string; body: unknown }>;
+  /** Every POST/PATCH fails with this status and server message. */
+  writeFails?: { status: number; error: string };
+} = {}) {
+  const rest = mockFetch({});
+  // Stateful like the server: a retired row leaves the next read.
+  let live = [SUPPORT_ROW];
+  return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.includes('/admin/family-support')) return rest(input, init);
+    if (init?.method === 'POST' || init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body)) as { record_id?: string; action?: string };
+      options.sent?.push({ method: init.method, body });
+      // Held open a tick, so a second click lands while the first is in flight.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (options.writeFails) {
+        return { ok: false, status: options.writeFails.status, json: async () => ({ error: options.writeFails?.error }) } as Response;
+      }
+      if (init.method === 'PATCH') live = live.filter((row) => row.record_id !== body.record_id);
+      return { ok: true, json: async () => ({ item: { record_id: SUPPORT_ROW.record_id } }) } as Response;
+    }
+    if (options.supportReadFails) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    return { ok: true, json: async () => ({ items: live }) } as Response;
+  }) as unknown as typeof fetch;
+}
+
+const RETIRE_NAME = 'Retire: Transportation to the October 12 tournament, October 12, 2026';
+
+function supportReads(): number {
+  return (global.fetch as jest.Mock).mock.calls.filter(
+    ([url, init]) => String(url).includes('/admin/family-support?') && !(init as RequestInit | undefined)?.method,
+  ).length;
+}
+
+async function openSupportForJordan() {
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+  await screen.findByText('Jordan Little');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Support provided to Jordan Little' }));
+  });
+}
+
+test("a membership row opens that athlete's support: what, when and who recorded it, and the label says the family can see it", async () => {
+  global.fetch = mockSupportFetch();
+  await openSupportForJordan();
+
+  expect(await screen.findByText('Transportation to the October 12 tournament')).toBeTruthy();
+  expect(screen.getByText('Jane Okafor')).toBeTruthy();
+  // A calendar day, shown as that day -- not shifted into the day before.
+  expect(screen.getByText('October 12, 2026')).toBeTruthy();
+  expect(screen.getByLabelText('What the gym provided (the family will see this and the date)')).toBeTruthy();
+  expect(String((global.fetch as jest.Mock).mock.calls.map(([url]) => String(url)))).toContain('/api/pilot/admin/family-support?athlete_id=ath-1');
+});
+
+test('recording posts the athlete, what was provided and the date, once however fast it is clicked', async () => {
+  const sent: Array<{ method: string; body: unknown }> = [];
+  global.fetch = mockSupportFetch({ sent });
+  await openSupportForJordan();
+
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('What the gym provided (the family will see this and the date)'), { target: { value: 'Gloves and wraps' } });
+    fireEvent.change(screen.getByLabelText('Date provided'), { target: { value: '2026-09-30' } });
+  });
+  await act(async () => {
+    const button = screen.getByRole('button', { name: 'Record support' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(sent).toEqual([{ method: 'POST', body: { athlete_id: 'ath-1', support_kind: 'Gloves and wraps', provided_on: '2026-09-30' } }]);
+});
+
+test('Retire sends the one change there is -- retire, by record id -- and nothing is deleted', async () => {
+  const sent: Array<{ method: string; body: unknown }> = [];
+  global.fetch = mockSupportFetch({ sent });
+  await openSupportForJordan();
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: RETIRE_NAME }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(sent).toEqual([{ method: 'PATCH', body: { record_id: SUPPORT_ROW.record_id, action: 'retire' } }]);
+  expect((global.fetch as jest.Mock).mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(false);
+});
+
+test('each Retire button names its record, and the list is read again after a retire', async () => {
+  global.fetch = mockSupportFetch();
+  await openSupportForJordan();
+
+  const button = await screen.findByRole('button', { name: RETIRE_NAME });
+  expect(button.textContent).toBe('Retire');
+  const readsBefore = supportReads();
+  await act(async () => {
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(supportReads()).toBe(readsBefore + 1);
+  expect(screen.queryByText('Transportation to the October 12 tournament')).toBeNull();
+  expect(screen.getByText('No support recorded for this athlete.')).toBeTruthy();
+});
+
+test('a double-clicked Retire sends once', async () => {
+  const sent: Array<{ method: string; body: unknown }> = [];
+  global.fetch = mockSupportFetch({ sent });
+  await openSupportForJordan();
+
+  await act(async () => {
+    const button = await screen.findByRole('button', { name: RETIRE_NAME });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(sent).toEqual([{ method: 'PATCH', body: { record_id: SUPPORT_ROW.record_id, action: 'retire' } }]);
+});
+
+test("a refused record or retire shows the server's message", async () => {
+  global.fetch = mockSupportFetch({ writeFails: { status: 400, error: 'The date provided cannot be in the future.' } });
+  await openSupportForJordan();
+
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('What the gym provided (the family will see this and the date)'), { target: { value: 'Gloves' } });
+    fireEvent.change(screen.getByLabelText('Date provided'), { target: { value: '2026-09-30' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record support' }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(screen.getByRole('alert').textContent).toBe('The date provided cannot be in the future.');
+
+  global.fetch = mockSupportFetch({ writeFails: { status: 409, error: 'This record is already retired.' } });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: RETIRE_NAME }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(screen.getByRole('alert').textContent).toBe('This record is already retired.');
+});
+
+test('a failed support read says so, never "No support recorded"', async () => {
+  global.fetch = mockSupportFetch({ supportReadFails: true });
+  await openSupportForJordan();
+
+  expect(await screen.findByText('Support could not be read')).toBeTruthy();
+  expect(screen.queryByText('No support recorded for this athlete.')).toBeNull();
 });

@@ -26,7 +26,6 @@ export interface RoleRoute {
   role: ClubRole;
   label: string;
   description: string;
-  href: string;
 }
 
 export const ROLE_STORAGE_KEY = 'ppbf-club-role';
@@ -36,94 +35,80 @@ export const roleRoutes: RoleRoute[] = [
     role: 'athlete',
     label: 'Athlete',
     description: 'Opens the athlete dashboard and sparring surfaces.',
-    href: '/athlete/dashboard',
   },
   {
     role: 'coach',
     label: 'Coach',
     description: 'Opens the coach workspace: intake review, floor plans, and pain reports.',
-    href: '/coach/environment/intake-router',
   },
   {
     role: 'parent',
     label: 'Parent',
     description: 'Opens the parent hub to track child training progress.',
-    href: '/parent/dashboard',
   },
   {
     role: 'admin',
     label: 'Admin',
     description: 'Opens platform capability and governance controls.',
-    href: '/admin',
   },
   {
     role: 'staff',
     label: 'Staff',
     description: 'Opens the staff and volunteer workspace.',
-    href: '/workspace',
   },
   {
     role: 'volunteer',
     label: 'Volunteer',
     description: 'Opens the staff and volunteer workspace.',
-    href: '/workspace',
   },
   {
     role: 'board',
     label: 'Board',
     description: 'Opens the aggregate-only board governance hub.',
-    href: '/board',
   },
   {
     role: 'board-president',
     label: 'President',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-chair',
     label: 'Board Chair',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-vice-chair',
     label: 'Vice Chair',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-treasurer',
     label: 'Treasurer',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-secretary',
     label: 'Secretary',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-safety-director',
     label: 'Program & Safety Director',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-community-director',
     label: 'Community & Development Director',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
   {
     role: 'board-at-large',
     label: 'Director-at-Large',
     description: 'Opens the aggregate board hub (seat-specific access requires server-authorized board session).',
-    href: '/board',
   },
 ];
 
-export function getRoleRoute(role: ClubRole | string | null | undefined) {
-  return roleRoutes.find((item) => item.role === role)?.href ?? '/login';
-}
+/* No getRoleRoute (lane U2, audit UX-A A-14): it was a second table of
+   homes that disagreed with sign-in. Where a role lands is
+   getPilotRoleDestination (src/shared/pilotRoleRouting.ts), and the shared
+   back link (BackHome) asks the same function. */
