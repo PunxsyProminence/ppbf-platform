@@ -220,13 +220,13 @@ describe('reading your own plan', () => {
     await renderPage({ ok: false });
 
     expect(screen.getByText(/could not be loaded just now/i)).toBeTruthy();
-    expect(screen.queryByText(/has not written a development block/i)).toBeNull();
+    expect(screen.queryByText(/has not written a development plan/i)).toBeNull();
   });
 
   test('an athlete with genuinely none is told that, distinctly', async () => {
     await renderPage({ blocks: [] });
 
-    expect(screen.getByText(/has not written a development block/i)).toBeTruthy();
+    expect(screen.getByText(/has not written a development plan/i)).toBeTruthy();
     expect(screen.queryByText(/could not be loaded just now/i)).toBeNull();
   });
 

@@ -15,8 +15,8 @@
 // "until the retention purge". Three screens already behaved this way and are
 // PINNED here, not changed, so a later edit cannot quietly break them:
 //   safety flags         lists status 'open' only
-//   safety review page   lists active holds, unresolved escalations and open
-//                        violations
+//   safety review page   lists active holds, unresolved escalations, open
+//                        violations and (lane U2) open safety flags
 //   board escalation summary counts status 'open' only, names nobody
 // The eighth, the video-compliance publication queue, hid a deleted athlete's
 // publications at once in #1027 and is not revisited here.
@@ -477,6 +477,7 @@ interface SafetyReviewBody {
   failingGates: Array<{ athlete_id: string; gate_key: string }>;
   openEscalations: Array<{ escalation_id: string }>;
   openViolations: Array<{ violation_id: string }>;
+  openFlags: Array<{ athlete_id: string | null }>;
 }
 
 async function safetyReviewScreen(): Promise<string[]> {
@@ -487,6 +488,9 @@ async function safetyReviewScreen(): Promise<string[]> {
     ...body.failingGates.map((row) => `${row.athlete_id}:${row.gate_key}`),
     ...body.openEscalations.map((row) => row.escalation_id),
     ...body.openViolations.map((row) => row.violation_id),
+    // Lane U2: open safety flags are the rollup's fifth feed. One entry per
+    // open flag, so a resolved one showing up would be counted.
+    ...body.openFlags.map((row) => `${row.athlete_id}:open-flag`),
   ];
 }
 
@@ -607,6 +611,9 @@ afterAll(async () => {
 describe('before the deletion (the positive control)', () => {
   test("the safety review page lists both athletes' failing gate, and neither's cleared one", async () => {
     const shown = await safetyReviewScreen();
+    // Each athlete has one open and one acknowledged flag: only the open one is listed.
+    expect(shown.filter((item) => item === `${GONE}:open-flag`)).toHaveLength(1);
+    expect(shown.filter((item) => item === `${LIVE}:open-flag`)).toHaveLength(1);
     expect(shown).toEqual(expect.arrayContaining([`${GONE}:${GATE_FAILING}`, `${LIVE}:${GATE_FAILING}`]));
     expect(shown).not.toContain(`${GONE}:${GATE_CLEARED}`);
     expect(shown).not.toContain(`${LIVE}:${GATE_CLEARED}`);
@@ -1237,6 +1244,8 @@ describe('after deleteAthleteRecord(GONE)', () => {
 
   test("the safety review page still shows GONE's unresolved items, and none resolved", async () => {
     const shown = await safetyReviewScreen();
+    // GONE's open flag stays until resolved, as on the safety-flags queue itself.
+    expect(shown.filter((item) => item === `${GONE}:open-flag`)).toHaveLength(1);
     expect(shown).toEqual(
       expect.arrayContaining([
         `${GONE}:hold-active`,

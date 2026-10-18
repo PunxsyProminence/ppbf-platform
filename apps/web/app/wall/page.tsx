@@ -1,10 +1,7 @@
 import type { Metadata } from 'next';
 
 import WallDisplay from '@/components/WallDisplay';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
-
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
+import { getOperatingOrganizationProfileOrNull } from '@/src/server/pilot/organizationProfileStore';
 
 /**
  * /wall -- the gym's television.
@@ -24,13 +21,17 @@ const GYM = currentOrganizationProfile();
  * GET /api/pilot/tv/session behind the device cookie. components/WallDisplay.tsx
  * makes that choice on every poll.
  */
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  // The gym's legal name, from its stored profile (lane L31); left out if it cannot be read.
+  const gym = await getOperatingOrganizationProfileOrNull();
+  return {
   title: 'The Wall',
-  description: `${GYM.legalName} — the board on the gym floor.`,
+  ...(gym ? { description: `${gym.legalName} — the board on the gym floor.` } : {}),
   // A display, not a document. Nothing here should be indexed, and the names
   // a paired TV shows are gated for the room it is in, not for a search result.
   robots: { index: false, follow: false },
-};
+  };
+}
 
 export default function WallPage() {
   return <WallDisplay />;
