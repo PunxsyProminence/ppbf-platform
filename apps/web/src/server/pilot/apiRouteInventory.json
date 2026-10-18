@@ -4736,6 +4736,64 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-height/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-height",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + assertHeightAccess in readAthleteHeights",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads one athlete's coach-entered standing heights and the growth rate in cm/year (OD-2026-10-17-026 (b)); coach-only, reach enforced in athleteHeights.ts assertHeightAccess via membership role + assertActorCanAccessAthlete. No maturity labels.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-height/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/athlete-height",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + assertHeightAccess in recordAthleteHeight",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records one standing-height reading, or a correction naming the reading it replaces (append-only; the original stays); one row per request_key, a retry writes nothing and no audit row. Coach-only (OD-2026-10-17-026 (b)).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-minor-limits/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-minor-limits",
