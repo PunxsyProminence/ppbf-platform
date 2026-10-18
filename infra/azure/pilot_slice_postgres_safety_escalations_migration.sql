@@ -129,7 +129,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure', 'sparring_symptom')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -156,15 +156,16 @@ create table if not exists pilot.safety_escalations (
 -- Idempotent repair for a database where an earlier revision of this
 -- migration created the table with a narrower source_type vocabulary
 -- (pre-athlete_voice/#198, pre-training_hold/#82, pre-incident/#152, or
--- pre-video_scan, pre-compliance_violation, or pre-shadow_disclosure): the create-if-not-exists
+-- pre-video_scan, pre-compliance_violation, pre-shadow_disclosure, or
+-- pre-sparring_symptom): the create-if-not-exists
 -- above no-ops there, which would leave every newer source_type's
 -- escalation violating the stale CHECK -- and the filing code deliberately
 -- swallows that failure (oracle safety), so the loss would be silent.
 -- Re-running this migration must therefore widen the CHECK in place,
 -- straight to the current full vocabulary regardless of which earlier
 -- revision is on disk. The runner's readiness probe also refuses to PASS
--- until 'video_scan', 'compliance_violation' and 'shadow_disclosure' are in
--- the constraint,
+-- until 'video_scan', 'compliance_violation', 'shadow_disclosure' and
+-- 'sparring_symptom' are in the constraint,
 -- so a stale database fails loudly instead of dropping disclosures,
 -- incident reports, blocked/infected video verdicts, or compliance
 -- escalations.
@@ -180,13 +181,14 @@ begin
     and pg_get_constraintdef(oid) like '%''near_miss''%'
     and (pg_get_constraintdef(oid) not like '%''video_scan''%'
       or pg_get_constraintdef(oid) not like '%''compliance_violation''%'
-      or pg_get_constraintdef(oid) not like '%''shadow_disclosure''%');
+      or pg_get_constraintdef(oid) not like '%''shadow_disclosure''%'
+      or pg_get_constraintdef(oid) not like '%''sparring_symptom''%');
 
   if stale_constraint is not null then
     execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
-      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure'));
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure', 'sparring_symptom'));
   end if;
 end $$;
 
