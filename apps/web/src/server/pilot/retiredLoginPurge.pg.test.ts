@@ -157,6 +157,25 @@ interface Seeded {
  * conversation that a safeguarding review entry flagged, whose reply names
  * them and was rated. `words` marks every place their typed words can sit.
  */
+async function loginIdentity(accountId: string): Promise<Record<string, unknown>> {
+  const result = await db.query(
+    `select role, organization_id, athlete_id, active_flag, deleted_at is not null as deleted,
+            login_email, pin_hash, password_hash, password_set_at is not null as password_set,
+            microsoft_oid, microsoft_tid
+       from pilot.accounts where account_id = $1`,
+    [accountId],
+  );
+  return result.rows[0];
+}
+
+async function ringName(organizationId: string, accountId: string): Promise<string | null> {
+  const result = await db.query(
+    'select display_nickname from pilot.account_profiles where organization_id = $1 and account_id = $2',
+    [organizationId, accountId],
+  );
+  return (result.rows[0]?.display_nickname as string | null | undefined) ?? null;
+}
+
 async function seedPerson(
   organizationId: string, accountId: string, role: string, words: string, name: string,
 ): Promise<Seeded> {
@@ -408,6 +427,26 @@ beforeAll(async () => {
   seededGuardian = await seedPerson(ORG, GUARDIAN, 'parent', 'WORDS-G-4419', 'Gale Ortiz');
   // A's login is also active in the other gym: its rows there are that gym's.
   await seedPerson(OTHER_ORG, LOGIN_A, 'athlete', 'WORDS-AE-3131', 'Rosa');
+  // F-102: each athlete login carries every credential column and a ring
+  // name, so the purge has something to clear on A's and something to leave
+  // on B's. A also has a profile in the other gym, which is that gym's.
+  for (const [accountId, suffix, ring] of [[LOGIN_A, 'a', 'RingAlpha'], [LOGIN_B, 'b', 'RingBravo']]) {
+    await db.query(
+      `update pilot.accounts
+          set login_email = $2, pin_hash = $3, password_hash = $4, password_set_at = now(),
+              microsoft_oid = $5, microsoft_tid = 'tid-rl'
+        where account_id = $1`,
+      [accountId, `rl-${suffix}@example.test`, `pin-${suffix}`, `pw-${suffix}`, `oid-${suffix}`],
+    );
+    await db.query(
+      `insert into pilot.account_profiles (organization_id, account_id, display_nickname) values ($1, $2, $3)`,
+      [ORG, accountId, ring],
+    );
+  }
+  await db.query(
+    `insert into pilot.account_profiles (organization_id, account_id, display_nickname) values ($1, $2, 'RingAlphaOther')`,
+    [OTHER_ORG, LOGIN_A],
+  );
 
   // A conversation of A's held for safeguarding (Q7: identified until two
   // years after the deletion its subject_deleted_at records), with its own
@@ -557,6 +596,8 @@ describe("the retention purge and a purged person's remaining SHADOW rows", () =
     });
     expect(await wordsAnywhere('WORDS-A-7731')).toBe(6);
     expect(Object.keys(await loginRows(ORG, LOGIN_A))).toHaveLength(LOGIN_TABLES.length);
+    expect(await loginIdentity(LOGIN_A)).toMatchObject({ login_email: 'rl-a@example.test', pin_hash: 'pin-a' });
+    expect(await ringName(ORG, LOGIN_A)).toBe('RingAlpha');
   });
 
   test("after the purge no row in this gym carries the athlete's or the guardian's login, held rows apart", async () => {
@@ -808,6 +849,43 @@ describe("the retention purge and a purged person's remaining SHADOW rows", () =
       [seededB.feedbackId],
     );
     expect(live.rows).toEqual([{ human_review_required: true, correlation_id: seededB.assistantMessageId }]);
+  });
+
+  // F-102 (lane L44; OD-2026-10-08-009 D15). The retired row keeps its id,
+  // role, gym and deleted_at, which sign-in refusal and the purged-child
+  // filters read; nothing else on it names or signs in the child.
+  test('the retired athlete login keeps only what refusing its sign-in needs; its ring name goes', async () => {
+    expect(await loginIdentity(LOGIN_A)).toEqual({
+      role: 'athlete',
+      organization_id: ORG,
+      athlete_id: null,
+      active_flag: false,
+      deleted: true,
+      login_email: null,
+      pin_hash: null,
+      password_hash: null,
+      password_set: false,
+      microsoft_oid: null,
+      microsoft_tid: null,
+    });
+    expect(await ringName(ORG, LOGIN_A)).toBeNull();
+    // The other gym's profile of the same login is that gym's.
+    expect(await ringName(OTHER_ORG, LOGIN_A)).toBe('RingAlphaOther');
+    // A live athlete's login and ring name are untouched.
+    expect(await loginIdentity(LOGIN_B)).toEqual({
+      role: 'athlete',
+      organization_id: ORG,
+      athlete_id: ATHLETE_B,
+      active_flag: true,
+      deleted: false,
+      login_email: 'rl-b@example.test',
+      pin_hash: 'pin-b',
+      password_hash: 'pw-b',
+      password_set: true,
+      microsoft_oid: 'oid-b',
+      microsoft_tid: 'tid-rl',
+    });
+    expect(await ringName(ORG, LOGIN_B)).toBe('RingBravo');
   });
 
   test('the data_purged audit row carries the counts and no login or words', async () => {

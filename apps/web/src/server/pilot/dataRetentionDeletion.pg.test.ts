@@ -1283,8 +1283,10 @@ describe('a guardian who was actually recorded as one', () => {
       [STAFF_NOW, 'coach', false],
     ] as const) {
       await guardianClient.query(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, deleted_at)
-         values ($1, $2, $3, $4, 'ppbf_local', $5, case when $6 then now() - interval '3 years' else null end)`,
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, deleted_at,
+                                     login_email, pin_hash)
+         values ($1, $2, $3, $4, 'ppbf_local', $5, case when $6 then now() - interval '3 years' else null end,
+                 lower($1) || '@example.test', 'pin-kept')`,
         [`acct-${athleteId}`, role, G_ORG, athleteId, !deleted, deleted],
       );
     }
@@ -1340,17 +1342,20 @@ describe('a guardian who was actually recorded as one', () => {
     ]);
 
     const logins = await guardianClient.query(
-      `select account_id, athlete_id, role, active_flag, deleted_at is not null as deleted
+      `select account_id, athlete_id, role, active_flag, deleted_at is not null as deleted,
+              login_email is not null as has_email, pin_hash is not null as has_pin
          from pilot.accounts where account_id = any($1::text[]) order by account_id`,
       [[`acct-${NOMINATED}`, `acct-${PURGEABLE_ATHLETE}`, `acct-${STAFF_NOW}`]],
     );
     expect(logins.rows).toEqual([
       // Refused, rolled back: the login still names its athlete.
-      { account_id: `acct-${NOMINATED}`, athlete_id: NOMINATED, role: 'athlete', active_flag: false, deleted: true },
-      // Purged: the athlete login names nobody, and is retired with its athlete.
-      { account_id: `acct-${PURGEABLE_ATHLETE}`, athlete_id: null, role: 'athlete', active_flag: false, deleted: true },
-      // Purged: the coach's login names nobody, and is still the coach's.
-      { account_id: `acct-${STAFF_NOW}`, athlete_id: null, role: 'coach', active_flag: true, deleted: false },
+      { account_id: `acct-${NOMINATED}`, athlete_id: NOMINATED, role: 'athlete', active_flag: false, deleted: true, has_email: true, has_pin: true },
+      // Purged: the athlete login names nobody, and is retired with its athlete
+      // with no email or PIN left on it (F-102).
+      { account_id: `acct-${PURGEABLE_ATHLETE}`, athlete_id: null, role: 'athlete', active_flag: false, deleted: true, has_email: false, has_pin: false },
+      // Purged: the coach's login names nobody, and is still the coach's, so it
+      // keeps the email and PIN it signs in with.
+      { account_id: `acct-${STAFF_NOW}`, athlete_id: null, role: 'coach', active_flag: true, deleted: false, has_email: true, has_pin: true },
     ]);
 
     const gone = await guardianClient.query(
