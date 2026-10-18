@@ -36,6 +36,18 @@ jest.mock('./db', () => {
       if (!activeClient) throw new Error('test bug: no active embedded client');
       return (await activeClient.query(text, params)).rows[0] ?? null;
     }),
+    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      await activeClient.query('BEGIN');
+      try {
+        const result = await fn(activeClient);
+        await activeClient.query('COMMIT');
+        return result;
+      } catch (error) {
+        await activeClient.query('ROLLBACK');
+        throw error;
+      }
+    }),
   };
 });
 
@@ -47,6 +59,7 @@ jest.mock('./http', () => {
 import { GET, POST } from '@/app/api/pilot/athlete/cycle/route';
 
 import { addCycleEntry, cycleDayError } from './athleteCycle';
+import { deleteAthleteRecord, deleteGuardianAccount } from './dataDeletion';
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
 
@@ -304,6 +317,66 @@ describe('cycle tracking is opt-in and the athlete own', () => {
       expect((await call(athlete(), 'GET')).status).toBe(403);
       expect((await act({ action: 'add', day: '2026-10-02' })).status).toBe(403);
       // What was there stays until the purge deletes it with the athlete.
+      expect(await rows('athlete_cycle_entries')).toEqual([ATHLETE]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("deleting the athlete deletes their cycle dates at once, says nothing of them in the audit, and leaves others'", async () => {
+    const client = await freshDatabase('cycle_delete_athlete');
+    try {
+      const ADMIN = 'acct-cycle-admin';
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'organization_admin', $2, 'microsoft')`,
+        [ADMIN, ORG],
+      );
+      for (const id of [ATHLETE, OTHER_ATHLETE]) {
+        await act({ action: 'turn_on' }, id);
+        await act({ action: 'add', day: '2026-10-01' }, id);
+      }
+      await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, ATHLETE, 'Moved away');
+
+      // Jason: "A: Delete at once (Rec.)" -- gone now, not at the purge; the record is only soft-deleted.
+      expect(await rows('athlete_cycle_tracking')).toEqual([OTHER_ATHLETE]);
+      expect(await rows('athlete_cycle_entries')).toEqual([OTHER_ATHLETE]);
+      const athlete = await client.query(`select deleted_at is not null as deleted from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, ATHLETE]);
+      expect(athlete.rows[0].deleted).toBe(true);
+      const audit = await client.query(`select details::text as details from pilot.audit_events where event_type = 'data_deletion_initiated'`);
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0].details).not.toMatch(/cycle|period/i);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a child withdrawn by their guardian's deletion loses their cycle dates at once too", async () => {
+    const client = await freshDatabase('cycle_delete_guardian');
+    try {
+      const ADMIN = 'acct-cycle-admin';
+      const GUARDIAN = 'acct-cycle-guardian';
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, 'organization_admin', $3, 'microsoft'), ($2, 'parent', $3, 'magic_link')`,
+        [ADMIN, GUARDIAN, ORG],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, full_name, account_id, email) values ($1, 'parent-cycle', 'Parent', $2, 'parent@gym.test')`,
+        [ORG, GUARDIAN],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, 'parent-cycle', $2, 'parent')`,
+        [ORG, OTHER_ATHLETE],
+      );
+      for (const id of [ATHLETE, OTHER_ATHLETE]) {
+        await act({ action: 'turn_on' }, id);
+        await act({ action: 'add', day: '2026-10-01' }, id);
+      }
+      await deleteGuardianAccount({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, GUARDIAN, 'Family left');
+
+      const withdrawn = await client.query(`select deleted_at is not null as deleted from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, OTHER_ATHLETE]);
+      expect(withdrawn.rows[0].deleted).toBe(true);
+      expect(await rows('athlete_cycle_tracking')).toEqual([ATHLETE]);
       expect(await rows('athlete_cycle_entries')).toEqual([ATHLETE]);
     } finally {
       await client.end();

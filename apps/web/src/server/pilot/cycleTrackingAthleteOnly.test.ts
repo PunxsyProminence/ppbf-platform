@@ -47,8 +47,11 @@ const MAY_NAME_THE_TABLES = new Set([
   'apps/web/src/server/pilot/athleteCycle.pg.test.ts',
 ]);
 
-/** The athlete's own cycle route; nothing else may import the module (not even a sibling route). */
+/** The athlete's own cycle route; nothing else may import the module (not even a sibling route)... */
 const ATHLETE_CYCLE_ROUTE = 'apps/web/app/api/pilot/athlete/cycle/route.ts';
+/** ...except the athlete deletion paths, and only for the one delete function (Jason: "A: Delete at once"). */
+const DELETION_PATHS = 'apps/web/src/server/pilot/dataDeletion.ts';
+const DELETE_ONLY_IMPORT = /import\s*\{\s*deleteCycleTrackingForDeletedAthletes\s*\}\s*from\s*'\.\/athleteCycle';/;
 
 function sourcesUnder(dir: string): string[] {
   const out: string[] = [];
@@ -82,10 +85,18 @@ describe('cycle tracking is reachable only through the athlete', () => {
   test("only the athlete's own cycle route (and tests) import the cycle module", () => {
     const importing = files
       .filter((file) => !TEST.test(file.relative))
-      .filter((file) => file.relative !== ATHLETE_CYCLE_ROUTE)
+      .filter((file) => file.relative !== ATHLETE_CYCLE_ROUTE && file.relative !== DELETION_PATHS)
       .filter((file) => CYCLE_MODULE_IMPORT.test(fs.readFileSync(file.full, 'utf8')))
       .map((file) => file.relative);
     expect(importing).toEqual([]);
+  });
+
+  test('the deletion paths import only the delete function, and both soft-delete paths call it', () => {
+    const source = fs.readFileSync(path.join(REPO_ROOT, DELETION_PATHS), 'utf8');
+    const imports = source.match(new RegExp(CYCLE_MODULE_IMPORT.source, 'g')) ?? [];
+    expect(imports).toHaveLength(1);
+    expect(source).toMatch(DELETE_ONLY_IMPORT);
+    expect(source.match(/await deleteCycleTrackingForDeletedAthletes\(/g)).toHaveLength(2);
   });
 
   test('the patterns catch what they are meant to', () => {

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { gymDayIso, type GymTimeInput } from '../../lib/gymTime';
 
 import { query, queryOne } from './db';
@@ -21,8 +23,14 @@ import { query, queryOne } from './db';
 //   * NEVER CHANGES TRAINING: nothing here is read by any plan, limit, load or
 //     baseline computation. Dates only; nothing derived (no length, phase or
 //     prediction).
-//   * DELETED WITH THE ATHLETE (cascade), and by the athlete at any time:
-//     Remove takes one date away; turning tracking off deletes every date.
+//   * DELETED THE MOMENT THE ATHLETE IS (Jason: "A: Delete at once (Rec.)"):
+//     both athlete soft-delete paths in dataDeletion.ts call
+//     deleteCycleTrackingForDeletedAthletes in their own transaction, so the
+//     dates go when the athlete's record is deleted, not at the purge two
+//     years later. Restoring the athlete does not bring them back (accepted
+//     under the ruling). The purge's cascade stays as the backstop. And by the
+//     athlete at any time: Remove takes one date away; turning tracking off
+//     deletes every date.
 
 export interface CycleEntry {
   entry_id: string;
@@ -121,6 +129,25 @@ export async function addCycleEntry(
     `select entry_id, period_started_on::text as period_started_on from pilot.athlete_cycle_entries
      where organization_id = $1 and athlete_id = $2 and period_started_on = $3::date`,
     [organizationId, athleteId, startedOn],
+  );
+}
+
+/**
+ * Deletes the cycle opt-in rows of athletes being deleted, and every date with
+ * them (the entries' foreign key cascades), on the caller's transaction.
+ * Called only by the athlete soft-delete paths in dataDeletion.ts. Returns
+ * nothing on purpose: a count would end up in the deletion's audit details and
+ * say that a child tracked their cycle.
+ */
+export async function deleteCycleTrackingForDeletedAthletes(
+  client: Pick<PoolClient, 'query'>,
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<void> {
+  if (athleteIds.length === 0) return;
+  await client.query(
+    `delete from pilot.athlete_cycle_tracking where organization_id = $1 and athlete_id = any($2::text[])`,
+    [organizationId, [...athleteIds]],
   );
 }
 

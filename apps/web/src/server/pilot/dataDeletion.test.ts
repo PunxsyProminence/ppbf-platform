@@ -460,7 +460,7 @@ describe('scope B: what is tied to the athlete is marked in the same transaction
     expect(details).not.toHaveProperty('observations_retained');
   });
 
-  test('marking is not erasing: neither deletion issues a DELETE', async () => {
+  test('marking is not erasing: the one DELETE either deletion issues is the cycle tracking Jason ruled deleted at once', async () => {
     const athleteClient = capturingClient(null);
     useClient(athleteClient);
     await deleteAthleteRecord(actor, 'ath-1');
@@ -468,8 +468,13 @@ describe('scope B: what is tied to the athlete is marked in the same transaction
     useClient(guardianClient);
     await deleteGuardianAccount(actor, 'parent-1');
 
-    for (const sql of [...writes(athleteClient.statements), ...writes(guardianClient.statements)]) {
-      expect(sql).not.toMatch(/^\s*delete\b/i);
+    // Cycle tracking is the exception (Jason: "A: Delete at once (Rec.)"): a child's period dates go when
+    // the athlete is deleted, not at the purge. Everything else is marked, never erased.
+    const CYCLE_DELETE = /^\s*delete from pilot\.athlete_cycle_tracking where organization_id = \$1 and athlete_id = any\(\$2::text\[\]\)\s*$/i;
+    for (const client of [athleteClient, guardianClient]) {
+      const deletes = writes(client.statements).filter((sql) => /^\s*delete\b/i.test(sql));
+      expect(deletes).toHaveLength(1);
+      expect(deletes[0]).toMatch(CYCLE_DELETE);
     }
   });
 
