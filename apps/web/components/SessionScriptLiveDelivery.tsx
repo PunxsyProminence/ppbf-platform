@@ -124,6 +124,7 @@ function describeRunError(code: unknown, status?: number): string {
 // inviting a repeat that could log the same thing twice. All wording PROPOSED (lane L40).
 const RUN_NOT_SAVED = 'No clear answer came back, and the server shows it was not saved. Try again.';
 const RUN_UNCHECKED = 'No clear answer came back and the server could not be checked. Reload the page before trying again.';
+const RUN_END_UNKNOWN = 'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.';
 const LOG_SAVED = 'No clear answer came back, but the server shows the intervention was logged.';
 const LOG_NOT_SAVED = 'No clear answer came back, and the server shows the intervention was not logged. Try again.';
 const LOG_UNCHECKED = 'No clear answer came back and the server could not be checked. Check The Work before logging it again.';
@@ -289,13 +290,17 @@ export default function SessionScriptLiveDelivery({
   );
 
   // This athlete's executions already tied to this run under this protocol, newest first, from
-  // the existing ledger read; null when the read fails or its answer has no list.
+  // the existing ledger read; null when the read fails, times out, or its answer has no list.
   const readRunExecutions = useCallback(
-    async (athleteId: string, protocolId: string): Promise<{ execution_id: string; created_at: string }[] | null> => {
+    async (
+      athleteId: string,
+      protocolId: string,
+      signal?: AbortSignal,
+    ): Promise<{ execution_id: string; created_at: string }[] | null> => {
       try {
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/intervention-executions?athlete_id=${encodeURIComponent(athleteId)}`,
-          { method: 'GET', credentials: 'include', cache: 'no-store' },
+          { method: 'GET', credentials: 'include', cache: 'no-store', signal },
         );
         if (!response.ok) return null;
         const payload = (await response.json()) as {
@@ -330,8 +335,12 @@ export default function SessionScriptLiveDelivery({
     try {
       // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
       // log of the same pair in this run (from before a reload, say) must not read as this one.
-      // A failed read never stops the log.
-      const before = await readRunExecutions(logAthleteId, logProtocolId);
+      // A failed read never stops the log, and a slow one holds it back three seconds at most.
+      const before = await readRunExecutions(
+        logAthleteId,
+        logProtocolId,
+        typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
+      );
       try {
         const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
           method: 'POST',
@@ -455,6 +464,10 @@ export default function SessionScriptLiveDelivery({
           const settled = payload.runs?.find((item) => item.run_id === run.run_id);
           if (settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned')) {
             onSettled(settled);
+            return;
+          }
+          if (Array.isArray(payload.runs)) {
+            setActionError(RUN_END_UNKNOWN);
             return;
           }
         }

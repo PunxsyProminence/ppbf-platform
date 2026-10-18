@@ -1169,3 +1169,110 @@ describe('a write whose answer proves nothing is checked against the server (aud
     });
   });
 });
+
+describe('the check after a lost answer keeps the once-only locks and covers every branch (audit 2026-10-17 item 1)', () => {
+  const dropped = () => Promise.reject(new TypeError('Failed to fetch'));
+
+  it('a run action stays locked while the server is being checked: a second tap sends nothing', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const { fetchMock } = await renderLive(liveRun(), {
+      patch: dropped,
+      runsGet: () => new Promise<Response>((resolve) => { release = resolve; }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(release).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(patchCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      release?.(jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows it was saved: the session is paused.');
+    expect(patchCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('logging stays locked while the server is being checked: a second tap sends nothing', async () => {
+    let release: ((response: Response) => void) | undefined;
+    let ledgerReads = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: dropped,
+      logGet: () => {
+        ledgerReads += 1;
+        if (ledgerReads === 1) return jsonResponse({ items: [] });
+        return new Promise<Response>((resolve) => { release = resolve; });
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+    expect(release).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Logging...' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Logging...' }));
+    });
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      release?.(jsonResponse({ items: [] }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was not logged. Try again.');
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('a run action whose session is no longer live hands control back', async () => {
+    const { onRunGone } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: null }) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+    expect(onRunGone).toHaveBeenCalledWith(expect.stringContaining('no longer live'));
+  });
+
+  it('a run action whose session was replaced shows the live one and says the screen was out of date', async () => {
+    const other = liveRun({ run_id: 'ssrun_2', elapsed_seconds: 500 });
+    const { onRunGone } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: other }) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    });
+    expect(onRunGone).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('out of date');
+    expect(screen.getByLabelText('Elapsed delivery time')).toHaveTextContent('8:20');
+  });
+
+  it('a finish whose live-session check fails says it could not be checked', async () => {
+    const { onSettled } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({}, false, 503) });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No clear answer came back and the server could not be checked. Reload the page before trying again.',
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it('a finish not live and not among the finished sessions says the server does not show how it ended', async () => {
+    const { onSettled } = await renderLive(liveRun(), {
+      patch: dropped,
+      runsGet: () => jsonResponse({ run: null }),
+      finishedGet: () => jsonResponse({ runs: [{ run_id: 'ssrun_other', script_id: null, run_state: 'completed' }] }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record as completed' }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.',
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+});
