@@ -82,18 +82,19 @@ const DEFAULT_THRESHOLD_CONFIG: Record<ShadowFeatureKey, {
   },
 };
 
-// Whether the app has code that changes behaviour when the feature is on:
+// Whether turning the feature on can change anything the app does:
 // strong_personalization gates remembered facts and prompt personalization
-// (shadowLearningLoop.ts handlePositiveOutcome, shadowPersonalizationGate.ts),
-// auto_library_updates queues Library promote/demote proposals
-// (queueLibraryChangeForReview), aggressive_research_generation widens the
-// negative outcomes that open research requirements (handleNegativeOutcome).
-// No fine-tuning code exists anywhere in the app, so that one cannot be on
-// whatever its mode and counter say.
+// (shadowLearningLoop.ts handlePositiveOutcome, shadowPersonalizationGate.ts);
+// auto_library_updates queues Library promote/demote proposals on approval
+// (queueLibraryChangeForReview). aggressive_research_generation only widens
+// the negative outcomes that open research requirements to ignored_advice and
+// session_ended (handleNegativeOutcome), and nothing in the app produces
+// either: feedback is thumbs up or down (feedback/route.ts). No fine-tuning
+// code exists anywhere. Those two cannot be on whatever mode and counter say.
 export const SHADOW_FEATURE_IMPLEMENTED: Readonly<Record<ShadowFeatureKey, boolean>> = {
   strong_personalization: true,
   auto_library_updates: true,
-  aggressive_research_generation: true,
+  aggressive_research_generation: false,
   fine_tuning_pipeline: false,
 };
 

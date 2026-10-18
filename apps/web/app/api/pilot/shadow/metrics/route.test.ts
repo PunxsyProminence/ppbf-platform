@@ -194,7 +194,8 @@ describe('the platform owner is refused on every shape of the read', () => {
         unavailableReasons: { measuredPerformance: 'NOT_MEASURED' },
       },
       autoLibraryUpdates: notEvaluated,
-      aggressiveResearchGeneration: notEvaluated,
+      // Its only effect widens outcomes nothing in the app sends.
+      aggressiveResearchGeneration: { ...notEvaluated, implemented: false },
       // Enough data and switched on, but nothing to switch on: four facts,
       // not one "ready" flag.
       fineTuningPipeline: {

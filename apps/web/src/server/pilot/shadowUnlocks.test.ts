@@ -75,6 +75,8 @@ describe('SHADOW feature unlock governance', () => {
       unlocked: false,
       measuredPerformance: null,
     }));
+    expect(state.features.aggressive_research_generation.implemented).toBe(false);
+    expect(state.features.auto_library_updates.implemented).toBe(true);
     // A built feature in the same position does turn on.
     expect(state.features.strong_personalization).toEqual(expect.objectContaining({
       satisfied: true,

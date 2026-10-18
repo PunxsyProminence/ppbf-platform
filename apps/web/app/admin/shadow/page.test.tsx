@@ -130,7 +130,7 @@ const growthMetrics = {
   viewerUnlocks: {
     strongPersonalization: capabilityOff(true),
     autoLibraryUpdates: capabilityOff(true),
-    aggressiveResearchGeneration: capabilityOff(true),
+    aggressiveResearchGeneration: capabilityOff(false),
     fineTuningPipeline: capabilityOff(false),
   },
 };

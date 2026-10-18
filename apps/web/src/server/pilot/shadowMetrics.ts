@@ -37,8 +37,8 @@ export interface GrowthMetrics {
   filterRate: number | null;
   // Renamed from positiveOutcomeRate: the numerator is human-reviewed rows
   // whose outcome is 'improved', and 'improved' is what a reviewed thumbs-up
-  // (or a reported "followed the advice") is stored as
-  // (shadowLearningLoop.ts outcomeToCategory). It is the share of reviewed
+  // is stored as (shadowLearningLoop.ts outcomeToCategory; followed_advice
+  // maps there too, but nothing sends it). It is the share of reviewed
   // answers people rated helpful, not a measured improvement in anyone.
   reviewedHelpfulRate: number | null;
   unavailableReasons: Record<string, string>;

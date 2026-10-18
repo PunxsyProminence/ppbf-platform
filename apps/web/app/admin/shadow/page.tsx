@@ -646,6 +646,7 @@ const UNLOCK_METRIC_LABELS: Record<string, string> = {
 
 const NOT_BUILT_REASONS: Record<string, string> = {
   fine_tuning_pipeline: 'Not built: the app has no fine-tuning code.',
+  aggressive_research_generation: 'Not built: nothing in the app sends the signals this widens (ignored advice, session ended).',
 };
 
 function yesNo(value: boolean): string {
@@ -900,7 +901,7 @@ function FeatureUnlockPanel() {
         </button>
       </div>
       <p className="t-muted mt-[var(--s2)]">
-        A feature unlocks only when its activation mode is <span className="font-mono">enabled</span> AND its counter has reached the threshold. In <span className="font-mono">observation</span> or <span className="font-mono">disabled</span>, the counter is tracked but the feature can never unlock — raising it changes nothing.
+        A feature unlocks only when the app has code for it, its activation mode is <span className="font-mono">enabled</span> AND its counter has reached the threshold. In <span className="font-mono">observation</span> or <span className="font-mono">disabled</span>, the counter is tracked but the feature can never unlock — raising it changes nothing.
       </p>
       <div className="mt-3 space-y-2">
         {loading ? <p className="t-muted">Loading thresholds…</p> : null}
