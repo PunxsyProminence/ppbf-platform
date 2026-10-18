@@ -191,13 +191,9 @@ export interface WallSessionBlock {
 }
 
 /**
- * THE SHOWN LIVE SESSION (lane L39 PR 2; the workout walk-through, OD-2026-10-06-014 Q1). The paired
- * read has carried the plan's blocks, where the coach is in it and whether the run is paused since
- * S2b; this screen used only its round timer until now. Only a session the coach has put on this TV
- * arrives at all (Show on TV, then send to a TV), and only on the paired read.
- *
- * Built field by field from the names below, never by spreading the payload, so a field added to
- * the server's allowlist later still has to be added here before it can reach the room.
+ * THE SHOWN LIVE SESSION (lane L39; the workout walk-through, OD-2026-10-06-014 Q1): only a run the
+ * coach has put on this TV, only on the paired read. Built field by field by name, never by
+ * spreading the payload, so nothing the server adds later reaches the room without a line here.
  */
 export interface WallLiveSession {
   run_id: string;
@@ -255,8 +251,8 @@ export function pickLiveSession(session: PairedResponse['session']): WallLiveSes
 
 /**
  * Thrown by readBoard when the paired read worked but its board did not (the server's best-effort
- * miss). The round timer and the session in that same answer are good and are kept: a coach's
- * Pause or Next must still reach the wall while the board is having trouble.
+ * miss). The round timer and session in that same answer are good and are kept: a coach's Pause or
+ * Next must still reach the wall while the board is having trouble.
  */
 export class BoardMissError extends Error {
   readonly timer: WallRoundTimer | null;
@@ -390,7 +386,7 @@ export default function WallDisplay() {
   // Bumped for each new set of rounds on a run, so a second set rings its own bells.
   const setEpoch = useRef(0);
   // The shown live session from the last paired read that carried one, and when it was read.
-  const [live, setLive] = useState<(WallLiveSession & { readAt: number }) | null>(null);
+  const [live, setLive] = useState<ShownSession | null>(null);
 
   /* The clock is read from the browser, not from the payload and not from the
      server. The television is in the room; its clock is the gym's clock, and it
@@ -827,19 +823,10 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
 
 /* ----------------------------------------------------------- live board --- */
 
-function LiveBoard({
-  board,
-  zone,
-  daily,
-  live,
-  now,
-}: {
-  board: WallBoard;
-  zone?: string;
-  daily: DailySaying | null;
-  live: (WallLiveSession & { readAt: number }) | null;
-  now: number | null;
-}) {
+type ShownSession = WallLiveSession & { readAt: number };
+
+function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying | null; live: ShownSession | null; now: number | null }) {
+  const { board, zone, daily, live, now } = props;
   return (
     <>
       {/* The golden section, not a half: 1.618 to 1. As fractions rather than
@@ -923,11 +910,7 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
 /** How many blocks the strip shows at once: a plan can run to sixty, a TV row cannot. */
 export const SESSION_STRIP_MAX = 7;
 
-/**
- * Which blocks the strip shows: the one before the current block, the current one, and what comes
- * after, slid back at the end of the plan so the row stays full. Before the coach reaches a block,
- * the first ones.
- */
+/** The block before the current one, the current one and what follows; slid back at the end to stay full. */
 export function stripWindow(blocks: readonly WallSessionBlock[], currentId: string | null): WallSessionBlock[] {
   const at = blocks.findIndex((block) => block.block_id === currentId);
   const start = Math.max(0, Math.min(at - 1, blocks.length - SESSION_STRIP_MAX));
@@ -953,7 +936,7 @@ function KindMark({ kind }: { kind: string }) {
 }
 
 /** NOW: the block the coach is on, its drill, plan time left, PAUSED; and the strip of blocks. */
-function SessionNow({ live, now }: { live: WallLiveSession & { readAt: number }; now: number | null }) {
+function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
   const current = live.blocks.find((block) => block.block_id === live.current_block_id) ?? null;
   const elapsed = now === null || live.is_paused ? 0 : Math.max(0, Math.floor((now - live.readAt) / 1000));
   const left = live.scheduled_seconds_left === null ? null : Math.max(0, live.scheduled_seconds_left - elapsed);
