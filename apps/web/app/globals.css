@@ -2050,9 +2050,10 @@ h6 {
         for more than a moment. It is far below the threshold at which a person
         notices anything moved.
      2. The marquee travels continuously, which covers the brightest band.
-     3. No large flat field of maximum luminance anywhere: the ground is the
-        brick room, the type is bone rather than white, and the panels have no
-        filled backgrounds at all.
+     3. No large flat field of maximum luminance anywhere: the type is bone
+        rather than white, the boards' fields are dark steel over the room,
+        and the only light fill is the small cream enamel caps (the wall-board
+        kit, design-system/current/ppbf-golden-era.css section 011).
    All of it stands down under prefers-reduced-motion, which also covers the
    accessibility case where the drift itself would be the problem. */
 
@@ -2079,6 +2080,18 @@ h6 {
 [data-surface="wall"] .wall-board {
   color: var(--wall-ink);
   animation: wall-drift 1200s linear infinite;
+  /* Restated on the board, which carries the wall-board kit's scope
+     (.ge-wallboard): set only on the surface above, the rule would resolve the
+     ramp there, before the scope moves it, and paint the old gold beside the
+     kit's bronze. */
+  --wall-rule: rgb(var(--brass-400-rgb) / .30);
+}
+
+/* The pair box and the sound switch are worked with a remote. The app's ring
+   (brass-700) is chosen for light grounds; on this dark board it falls under
+   3:1, so the wall takes a lighter rung. */
+[data-surface="wall"] .wall-board :focus-visible {
+  outline-color: var(--brass-300);
 }
 
 @keyframes wall-drift {
@@ -2091,8 +2104,36 @@ h6 {
 
 /* --- Masthead ------------------------------------------------------------ */
 
+/* The header plate: Jason's two lines on the engraved plate (.ge-plate). One
+   line, centred, at a screen-title rung so the back of the room can read it. */
+[data-surface="wall"] .wall-motto {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: var(--s5);
+  margin: 0;
+  padding: var(--s2) var(--s7);
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-motto-mark {
+  font-size: var(--t-lg);
+  color: var(--brass-400);
+}
+
+/* One line, whatever the gym's name: a long one ends in an ellipsis rather
+   than pushing the clock onto two lines. */
 [data-surface="wall"] .wall-eyebrow {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
   letter-spacing: .34em;
@@ -2119,7 +2160,9 @@ h6 {
 }
 
 [data-surface="wall"] .wall-clock {
+  flex: none;
   margin: 0;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 400;
   line-height: .9;
@@ -2132,30 +2175,95 @@ h6 {
   text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
+/* The round clock hangs in a bezel: brass ring, dark face. */
+[data-surface="wall"] .wall-round {
+  flex: none;
+  padding: var(--s2) var(--s6);
+  border: 3px solid var(--brass-600);
+  border-radius: 10px;
+  background-color: rgb(var(--frame-field-rgb) / .88);
+  box-shadow:
+    var(--shadow-contact),
+    inset 0 0 0 1px rgba(0, 0, 0, .6),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .22);
+}
+
+/* Set leading, so the bezel is no taller than the day and date beside it and
+   the boards below keep their rows. */
+[data-surface="wall"] .wall-round__label,
+[data-surface="wall"] .wall-round__time {
+  margin: 0;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
 /* --- Panels -------------------------------------------------------------- */
+
+/* Each panel is a board hung on the wall (.ge-frame); this is its inside. */
+[data-surface="wall"] .wall-panel {
+  padding: var(--s3) var(--s5);
+}
 
 [data-surface="wall"] .wall-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s4);
   margin: 0 0 var(--s4);
-  padding-bottom: var(--s3);
-  border-bottom: 3px solid var(--wall-rule);
-  font-family: var(--font-mono, var(--font-data));
+}
+
+/* The board's name on a cream enamel sign band (.ge-enamel--sign) across the
+   top of the board, edge to edge inside the frame. */
+[data-surface="wall"] .wall-heading.ge-enamel {
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s5)) var(--s4);
+  padding: var(--s3) var(--s5);
+  border-radius: 0;
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-heading-cap {
+  font-size: var(--t-2xl);
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-count {
+  font-size: var(--t-2xl);
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
+[data-surface="wall"] .wall-heading-cap {
+  font-family: var(--font-ui);
   font-size: var(--t-xl);
-  font-weight: 600;
-  letter-spacing: .26em;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--brass-300);
+}
+
+/* The wall clock on its enamel plate: ink figures on cream. */
+[data-surface="wall"] .wall-clock.ge-enamel {
+  padding: var(--s2) var(--s5) var(--s1);
+  border-radius: 6px;
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
+/* Inside the screen frame: the marquee runs between the side rails, and the
+   last row sits clear of the bottom rail. */
+[data-surface="wall"] .ge-screenframe > .marquee {
+  margin-inline: 22px;
+}
+[data-surface="wall"] .ge-screenframe > :last-child {
+  margin-bottom: 14px;
 }
 
 [data-surface="wall"] .wall-count {
   margin-left: auto;
   font-family: var(--font-display);
-  font-size: var(--t-2xl);
+  font-size: var(--t-3xl);
+  line-height: 1;
   letter-spacing: 0;
-  color: var(--bone-200);
+  color: var(--brass-200);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
 [data-surface="wall"] .wall-quiet {
@@ -2253,6 +2361,7 @@ h6 {
   grid-area: meta;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
+  line-height: 1.2;
   letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--bone-400);
