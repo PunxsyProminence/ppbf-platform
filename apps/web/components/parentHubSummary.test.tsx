@@ -179,6 +179,11 @@ test('the status panel has no Current Track row, and still names the child', asy
   installFetch();
   await renderHub();
   expect(screen.queryByText('Current Track')).toBeNull();
+  // The panel's help, opened, names what the panel shows.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Child Overview/ }));
+  });
+  expect(screen.getByText('Review membership, scholarship and support status')).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/current track/i);
   expect(screen.getByText('Child Name')).toBeInTheDocument();
 });
