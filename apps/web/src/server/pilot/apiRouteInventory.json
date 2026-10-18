@@ -12311,7 +12311,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed only (no body weight, notes or source reference), enumerated projection.",
+    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed/punch_count/active_time only (no body weight, notes or source reference), enumerated projection.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12567,6 +12567,64 @@
       ],
       "roleLiterals": [
         "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/library/archive-original/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/shadow/library/archive-original",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "archive-original/route.ts GET: tells a curator whether filing in the SharePoint Research Archive is on here (on/off/unavailable). Reads configuration only. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/library/archive-original/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/shadow/library/archive-original",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "archive-original/route.ts POST: files an uploaded research PDF in the SharePoint Research Archive (create-only Graph write via the app's managed identity) and records its archive identity in pilot.shadow_library_archived_originals; shelf by resolveLibraryShelf('write'); rate-limited. OFF (503) unless configured. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
       ]
     }
   },
