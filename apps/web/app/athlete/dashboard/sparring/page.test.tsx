@@ -697,9 +697,9 @@ describe('fix a number, whole-session counts', () => {
       return { ok: true, json: async () => ({ ok: true }) } as Response;
     }) as unknown as typeof fetch;
     render(<SparringTelemetryPage />);
-    const show = await screen.findByRole('button', { name: 'Show recent entries' });
-    await waitFor(() => expect((show as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(show);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
     const section = screen.getByRole('region', { name: 'Fix a number' });
     fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
 
@@ -761,9 +761,9 @@ describe('whole session review fixes', () => {
       return { ok: true, json: async () => ({ ok: true }) } as Response;
     }) as unknown as typeof fetch;
     render(<SparringTelemetryPage />);
-    const show = await screen.findByRole('button', { name: 'Show recent entries' });
-    await waitFor(() => expect((show as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(show);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
     const section = screen.getByRole('region', { name: 'Fix a number' });
     fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
 
