@@ -47,60 +47,92 @@ function keyIs(table, name, type, columns, references) {
     )`;
 }
 
-function columnIs(table, column, type) {
+function columnIs(table, column, type, nullable) {
   return `exists (
       select 1 from information_schema.columns
        where table_schema = 'pilot' and table_name = '${table}'
-         and column_name = '${column}' and data_type = '${type}' and is_nullable = 'YES'
+         and column_name = '${column}' and data_type = '${type}' and is_nullable = '${nullable ? 'YES' : 'NO'}'
     )`;
 }
 
 const SYMPTOMS = ['headache', 'dizzy', 'nausea', 'foggy', 'vision', 'ringing', 'hard_head_shot'];
 const SESSION_TYPES = ['technique', 'bag_pads', 'conditioning', 'sparring', 'mixed', 'other'];
+const ESCALATION_SOURCES = [
+  'near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice',
+  'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure', 'sparring_symptom',
+];
 const anyText = (values) => `ARRAY[${values.map((value) => `'${value}'::text`).join(', ')}]`;
 
-// Readiness asserts the result, not the attempt.
+// Readiness asserts the result, not the attempt. Each name says which object failed.
 const READINESS_QUERY = `
   select
-    ${columnIs('athlete_check_ins', 'mood', 'integer')} as mood_column_ready,
+    ${columnIs('athlete_check_ins', 'mood', 'integer', true)} as mood_column_ready,
     ${checkIs('pilot.athlete_check_ins', 'pilot_athlete_check_ins_mood_check',
       'CHECK (((mood IS NULL) OR ((mood >= 1) AND (mood <= 5))))')} as mood_check_ready,
-    ${columnIs('sessions', 'session_type', 'text')} as session_type_column_ready,
+    ${columnIs('sessions', 'session_type', 'text', true)} as session_type_column_ready,
     ${checkIs('pilot.sessions', 'pilot_sessions_session_type_check',
       `CHECK (((session_type IS NULL) OR (session_type = ANY (${anyText(SESSION_TYPES)}))))`)} as session_type_check_ready,
     ${keyIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_pkey', 'p', ['organization_id'])} as settings_pkey_ready,
     ${keyIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_org_fk', 'f', ['organization_id'], 'pilot.organizations')} as settings_org_fk_ready,
-    ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_role_check',
-      `CHECK ((recipient_role = ANY (${anyText(['coach', 'organization_admin', 'admin'])})))`)} as settings_role_check_ready,
-    exists (
+    ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_not_platform_check',
+      "CHECK ((organization_id <> '__platform__'::text))")} as settings_not_platform_ready,
+    ${checkIs('pilot.organization_symptom_flag_settings', 'pilot_org_symptom_flag_settings_protocol_check',
+      'CHECK ((char_length(protocol_text) <= 1000))')} as settings_protocol_check_ready,
+    not exists (
+      -- Jason ruled the flag goes to "Their coach": no per-gym recipient to route it elsewhere.
       select 1 from information_schema.columns
        where table_schema = 'pilot' and table_name = 'organization_symptom_flag_settings'
-         and column_name = 'recipient_role' and column_default = '''coach''::text'
-    ) as settings_default_coach_ready,
+         and column_name like '%recipient%'
+    ) as settings_no_recipient_column,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_pkey', 'p', ['organization_id', 'report_id'])} as symptom_pkey_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_athlete_fk', 'f', ['organization_id', 'athlete_id'], 'pilot.athletes')} as symptom_athlete_fk_ready,
     ${keyIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_one_per_day', 'u', ['organization_id', 'athlete_id', 'reported_on', 'context'])} as symptom_one_per_day_ready,
+    ${columnIs('sparring_symptom_reports', 'symptoms', 'ARRAY', false)} as symptom_list_column_ready,
+    ${columnIs('sparring_symptom_reports', 'reported_on', 'date', false)} as symptom_day_column_ready,
     ${checkIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_context_check',
       `CHECK ((context = ANY (${anyText(['after_sparring', 'next_day'])})))`)} as symptom_context_check_ready,
     ${checkIs('pilot.sparring_symptom_reports', 'pilot_sparring_symptom_reports_symptoms_check',
       `CHECK (((array_position(symptoms, NULL::text) IS NULL) AND (symptoms <@ ${anyText(SYMPTOMS)})))`)} as symptom_list_check_ready,
     exists (
+      -- BEFORE (bit 2) ROW (bit 1) UPDATE (bit 16), firing in ordinary sessions, this function.
+      select 1 from pg_trigger t
+       where t.tgrelid = to_regclass('pilot.sparring_symptom_reports')
+         and t.tgname = 'trg_sparring_symptom_reports_guard' and not t.tgisinternal
+         and t.tgenabled in ('O', 'A')
+         and (t.tgtype & 2) = 2 and (t.tgtype & 1) = 1 and (t.tgtype & 16) = 16
+         and t.tgfoid = to_regprocedure('pilot.sparring_symptom_reports_guard()')
+    ) as symptom_ticks_kept_guard_ready,
+    exists (
+      -- Every value this file needs, not the exact list: a later source type widens the same
+      -- check (in the escalations file and the base schema), and this gate must not refuse it.
+      select 1 from pg_constraint c
+       where c.conrelid = to_regclass('pilot.safety_escalations')
+         and c.contype = 'c' and c.convalidated
+         and c.conname = 'safety_escalations_source_type_check'
+         ${ESCALATION_SOURCES.map((source) => `and pg_get_constraintdef(c.oid) like '%''${source}''%'`).join(' ')}
+    ) as escalation_source_ready,
+    not exists (
       select 1 from pg_constraint
        where conrelid = to_regclass('pilot.safety_escalations')
          and contype = 'c'
          and pg_get_constraintdef(oid) like '%source_type%'
-         and pg_get_constraintdef(oid) like '%''sparring_symptom''%'
-    ) as escalation_source_ready,
+         and pg_get_constraintdef(oid) not like '%''sparring_symptom''%'
+    ) as escalation_no_narrower_source_check,
     ${keyIs('pilot.athlete_cycle_tracking', 'pilot_athlete_cycle_tracking_pkey', 'p', ['organization_id', 'athlete_id'])} as cycle_tracking_pkey_ready,
     ${keyIs('pilot.athlete_cycle_tracking', 'pilot_athlete_cycle_tracking_athlete_fk', 'f', ['organization_id', 'athlete_id'], 'pilot.athletes')} as cycle_tracking_athlete_fk_ready,
     ${keyIs('pilot.athlete_cycle_entries', 'pilot_athlete_cycle_entries_pkey', 'p', ['organization_id', 'entry_id'])} as cycle_entries_pkey_ready,
     ${keyIs('pilot.athlete_cycle_entries', 'pilot_athlete_cycle_entries_tracking_fk', 'f', ['organization_id', 'athlete_id'], 'pilot.athlete_cycle_tracking')} as cycle_entries_opt_in_fk_ready,
-    ${keyIs('pilot.athlete_cycle_entries', 'pilot_athlete_cycle_entries_one_per_day', 'u', ['organization_id', 'athlete_id', 'period_started_on'])} as cycle_entries_one_per_day_ready
+    ${keyIs('pilot.athlete_cycle_entries', 'pilot_athlete_cycle_entries_one_per_day', 'u', ['organization_id', 'athlete_id', 'period_started_on'])} as cycle_entries_one_per_day_ready,
+    ${columnIs('athlete_cycle_entries', 'period_started_on', 'date', false)} as cycle_entries_day_column_ready
 `;
 
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // ALTERs on pilot.athlete_check_ins and pilot.sessions take a brief exclusive lock. Rather than
+    // queue behind a long transaction (and hold up every check-in behind this one), give up and let
+    // the operator re-run in a quieter moment. Nothing is half-applied: it is one transaction.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);
     const row = readiness.rows[0];

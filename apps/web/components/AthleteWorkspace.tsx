@@ -49,7 +49,7 @@ import {
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
-import AthleteImHere from './AthleteImHere';
+import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -579,36 +579,16 @@ type ScheduleReadPayload = { ok?: boolean; classes?: ScheduleClassRow[]; registr
  * that is not cancelled, from the same scheduler read the Schedule tab makes.
  * It said "Nothing posted yet." always, while Schedule listed real bookings.
  * Words only, never a number that did not come from a read. PROPOSED wording.
+ * The read is the one Today shares with the I'm here card (F-127).
  */
-function useNextSessionLine(enabled: boolean): string {
-  const [line, setLine] = useState('Checking...');
-
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
-        const payload = (await response.json().catch(() => null)) as ScheduleReadPayload;
-        if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
-          throw new Error('unreadable');
-        }
-        const next = scheduleLists(payload.classes, payload.registrations, Date.now())
-          .booked.find(({ item }) => item.status !== 'cancelled');
-        if (!live) return;
-        setLine(next
-          ? `${next.item.title} · ${classWhen(next.item)}${next.registration.status === 'waitlisted' ? ' (waitlist)' : ''}`
-          : 'Nothing booked.');
-      } catch {
-        if (live) setLine('Unavailable');
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [enabled]);
-
-  return line;
+function nextSessionLineFrom(read: TodaySchedulerRead): string {
+  if (read.state === 'loading') return 'Checking...';
+  if (read.state === 'failed') return 'Unavailable';
+  const next = scheduleLists(read.classes as ScheduleClassRow[], read.registrations, read.readAt)
+    .booked.find(({ item }) => item.status !== 'cancelled');
+  return next
+    ? `${next.item.title} · ${classWhen(next.item)}${next.registration.status === 'waitlisted' ? ' (waitlist)' : ''}`
+    : 'Nothing booked.';
 }
 
 /** The Schedule tab's lists. Reads when mounted -- the tab mounts it only while open -- and again on Try again. */
@@ -1451,7 +1431,17 @@ export default function AthleteWorkspace() {
     ? CHECKED_IN_FLOOR_OPEN
     : backendSyncMessage;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length + ownWordsActive;
-  const nextSessionRead = useNextSessionLine(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const todaySchedule = useTodaySchedulerRead(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const { reload: reloadTodaySchedule } = todaySchedule;
+  // Back on Today, the I'm here card reads afresh, as it did when it held its
+  // own read; the first visit is the read above.
+  const wasOnToday = useRef(activeGroup === 'today');
+  useEffect(() => {
+    const onToday = activeGroup === 'today';
+    if (onToday && !wasOnToday.current) void reloadTodaySchedule();
+    wasOnToday.current = onToday;
+  }, [activeGroup, reloadTodaySchedule]);
+  const nextSessionRead = nextSessionLineFrom(todaySchedule.read);
   const nextSessionLine = athleteIdentityState === 'unavailable'
     || (athleteIdentityState === 'resolved' && backendAthleteId === null)
     ? 'Unavailable'
@@ -2946,7 +2936,9 @@ export default function AthleteWorkspace() {
         {/* Attendance where the athlete already is (lane U2, audit UX-A A-4;
             Jason 2026-10-17, "A: Rename + I'm here on Today"): one "I'm here"
             for today's class on every Today tab. */}
-        {activeGroup === 'today' && <AthleteImHere athleteId={backendAthleteId} />}
+        {activeGroup === 'today' && (
+          <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
+        )}
 
         {/* TAB CONTENT */}
         <div className="space-y-6">

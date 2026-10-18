@@ -167,20 +167,22 @@ describe('ci.yml is wired to the gate', () => {
     expect(validate!.body).toMatch(/\n {10}grep -qx 'validate: GREEN' "\$RUNNER_TEMP\/validate-gate\.txt"\n/);
   });
 
-  it('leaves no other pull-request workflow a job that could answer to `validate`', () => {
+  it('leaves no other workflow a job that could answer to `validate`', () => {
     // Branch protection matches the required check by name. Since the split,
     // ci.yml's `validate` appears only once every part has finished, so a
     // green job of the same name elsewhere -- research-bridge-ci.yml's was one,
-    // done in ~40 s on any package.json PR -- could satisfy it first.
+    // done in ~40 s on any package.json PR -- could satisfy it first. Not only
+    // pull-request workflows: a dispatch run on a PR's branch posts its checks
+    // on that PR's head too (seed-reference-data.yml's was one, F-130).
     const dir = path.dirname(workflowPath);
     const clashes = fs
       .readdirSync(dir)
       .filter((file) => /\.ya?ml$/.test(file) && file !== 'ci.yml')
       .filter((file) => {
         const text = fs.readFileSync(path.join(dir, file), 'utf8');
-        const on = text.slice(text.search(/^on:/m), text.search(/^jobs:/m));
-        if (!/\n {2}pull_request(_target)?:/.test(on)) return false;
-        return /^ {2}validate:\s*$/m.test(text) || /^ {4}name:\s*['"]?validate['"]?\s*$/m.test(text);
+        // A key or a job name, quoted or not, with or without a comment after it.
+        return /^ {2}['"]?validate['"]?:\s*(?:#.*)?$/im.test(text)
+          || /^ {4}name:\s*['"]?validate['"]?\s*(?:#.*)?$/im.test(text);
       });
 
     expect(clashes).toEqual([]);
