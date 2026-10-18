@@ -41,6 +41,7 @@ import {
   assertGuardianMediaConsentWithClient,
   assertNewPublicationConsentPath,
   ATHLETE_SELF_SIGNED_BY_ROLE,
+  readAdultOwnMediaConsent,
   callerParentIdSet,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
@@ -593,6 +594,37 @@ describe('assertNewPublicationConsentPath (OD-2026-10-08-015)', () => {
     expect(mockLock.mock.invocationCallOrder[0]).toBeLessThan(client.query.mock.invocationCallOrder[0]);
     expect(client.query).toHaveBeenCalledTimes(2);
     expect(client.query.mock.calls[0][0]).toMatch(/from pilot\.athletes/);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('readAdultOwnMediaConsent (OD-2026-10-08-015)', () => {
+  const mockQuery = query as jest.Mock;
+  beforeEach(() => mockQuery.mockReset());
+  const row = { status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-10-01T00:00:00Z', recorded_by_own_login: true };
+
+  test("an adult's own row is returned", async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: '2000-01-01' }]).mockResolvedValueOnce([row]);
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1')).resolves.toMatchObject({ status: 'signed', coversVideo: true, recordedByOwnLogin: true });
+  });
+
+  test.each([
+    ['a minor', [{ dob: '2015-01-01' }]],
+    ['an unknown date of birth', [{ dob: null }]],
+    ['a missing athlete', []],
+  ])('%s gets null, and their own rows are not read', async (_label, athleteRows) => {
+    mockQuery.mockResolvedValueOnce(athleteRows);
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1')).resolves.toBeNull();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('with a client both reads go through it, and it takes no lock itself', async () => {
+    const mockLock = jest.mocked(lockConsentSet);
+    mockLock.mockClear();
+    const client = { query: jest.fn().mockResolvedValueOnce({ rows: [{ dob: '2000-01-01' }] }).mockResolvedValueOnce({ rows: [] }) };
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1', client)).resolves.toBeNull();
+    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(mockLock).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });

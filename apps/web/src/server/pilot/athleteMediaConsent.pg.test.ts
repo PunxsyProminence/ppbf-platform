@@ -366,6 +366,46 @@ describe('the adult records their own consent, and only they can', () => {
   });
 });
 
+describe("playback follows the adult's own decision once they make one (PR C)", () => {
+  const playbackOutcome = () => outcomeOf(playback.mintUnderPlaybackConsent(ORG_ID, [ADULT_ID], () => 'sas'));
+
+  async function guardianEraGrantsVideo(): Promise<void> {
+    await client.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+          signed_by_role, signed_at, consent_version, status, covers_video, created_at)
+       values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Era Guardian', 'parent', now(), 'v1', 'signed', true, clock_timestamp())`,
+      [ORG_ID, ADULT_ID, GUARDIAN_ID],
+    );
+  }
+
+  test('CONTROL: with no decision of their own, the guardian-era withdrawal still refuses playback (existing reading untouched)', async () => {
+    expect(await playbackOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+  });
+
+  test('their own video consent plays, through the real transaction, though the guardian-era row is withdrawn', async () => {
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: true, publicUseAllowed: false });
+    expect(await playbackOutcome()).toBe('ok');
+  });
+
+  test('CONTROL: with no decision of their own, a guardian-era video grant still plays', async () => {
+    await guardianEraGrantsVideo();
+    expect(await playbackOutcome()).toBe('ok');
+  });
+
+  test('their own withdrawal refuses playback, though the guardian-era row grants video', async () => {
+    await guardianEraGrantsVideo();
+    await own.withdrawOwnMediaConsent(adult);
+    expect(await playbackOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+  });
+
+  test('their own photo-only consent refuses playback, though the guardian-era row grants video', async () => {
+    await guardianEraGrantsVideo();
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: false, publicUseAllowed: false });
+    expect(await playbackOutcome()).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+  });
+});
+
 describe("the adult's withdrawal takes published video down, and is never outrun by a publish", () => {
   test('withdrawal retracts the published publication and suppresses its shelf row, in one transaction', async () => {
     await own.grantOwnMediaConsent({ ...adult, coversVideo: true, publicUseAllowed: false });
