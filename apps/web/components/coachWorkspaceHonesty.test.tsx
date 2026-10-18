@@ -5,6 +5,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { GYM_TIME_ZONE, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
@@ -871,16 +872,37 @@ describe('safety escalations inbox', () => {
     // The panel's own button: off the Dashboard, where the board is absent.
     openTab('Goals');
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
-    });
+    pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
+    await act(async () => {});
 
     expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
     expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
     expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
   });
 
-  test('a double-click sends exactly one acknowledge request', async () => {
+  test('acknowledge takes the armed second press, as on the board (F-129): one press sends nothing', async () => {
+    const posted: unknown[] = [];
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+      escalationsPost: (body) => {
+        posted.push(body);
+        return jsonResponse({ ok: true, escalation: escalation({ status: 'acknowledged' }) });
+      },
+    });
+    openTab('Goals');
+
+    // A fast double tap as the button appears does not even arm it.
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    expect(posted).toHaveLength(0);
+
+    armOnly(screen.getByRole('button', { name: 'Acknowledge' }));
+    expect(posted).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Press again: acknowledge Jordan P.' })).toBeTruthy();
+  });
+
+  test('a press while the acknowledge is in flight sends nothing more', async () => {
     let release: (() => void) | undefined;
     const posted: unknown[] = [];
     await renderWorkspace({
@@ -895,8 +917,8 @@ describe('safety escalations inbox', () => {
     });
     openTab('Goals');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
-    fireEvent.click(screen.getByRole('button', { name: /Acknowledg/ }));
+    pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
+    pressArmed(screen.getByRole('button', { name: /Acknowledg/ }));
     expect(posted).toHaveLength(1);
 
     await act(async () => {
@@ -913,9 +935,8 @@ describe('safety escalations inbox', () => {
     });
     openTab('Goals');
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
-    });
+    pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
+    await act(async () => {});
 
     expect(screen.queryByText('Missing escalation record')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeNull();

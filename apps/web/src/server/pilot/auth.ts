@@ -1532,6 +1532,29 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
   });
 }
 
+const ATHLETE_LOGIN_REFUSAL = 'Forbidden: an athlete account is administered by their own gym';
+
+// The same boundary for the two admin promotions (F-098). Neither checked it,
+// so the platform owner could make a child's PIN login the gym's
+// organization_admin with athlete_id kept, and a transfer could then demote it
+// to coach. Each promotion's WHERE carries notAthleteLoginSql, so the refusal
+// is structural; this only names it once that UPDATE has matched nothing.
+function notAthleteLoginSql(alias: string): string {
+  return `${alias}.role <> 'athlete' and ${alias}.athlete_id is null`;
+}
+
+async function refuseIfAthleteLogin(client: PoolClient, accountId: string, organizationId: string): Promise<void> {
+  const found = await client.query(
+    `select 1 from pilot.accounts a
+     where a.account_id = $1 and a.organization_id = $2
+       and not (${notAthleteLoginSql('a')})`,
+    [accountId, organizationId],
+  );
+  if (found.rows.length > 0) {
+    throw new Error(ATHLETE_LOGIN_REFUSAL);
+  }
+}
+
 export async function upsertOrganizationMembership(accountId: string, organizationId: string, role: PilotRole, activeFlag: boolean): Promise<void> {
   await withTransaction(async (client) => {
     // LOCK ORDER: THE ACCOUNT ROW, THEN ITS MEMBERSHIP -- the order
@@ -1564,7 +1587,7 @@ export async function upsertOrganizationMembership(accountId: string, organizati
     );
     const targetRow = target.rows[0];
     if (targetRow?.athlete_login === true) {
-      throw new Error('Forbidden: an athlete account is administered by their own gym');
+      throw new Error(ATHLETE_LOGIN_REFUSAL);
     }
     if (targetRow?.platform_owner === true) {
       throw new Error('Forbidden: the platform owner account is not managed through organization memberships');
@@ -1646,6 +1669,7 @@ export async function transferOrganizationAdmin(
          and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and ${notAthleteLoginSql('a')}
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [toAccountId, organizationId],
@@ -1653,6 +1677,7 @@ export async function transferOrganizationAdmin(
 
     if (promotedRows.rows.length === 0) {
       await refuseIfLoginDeleted(client, toAccountId, organizationId);
+      await refuseIfAthleteLogin(client, toAccountId, organizationId);
       throw new Error('Missing target account for admin transfer');
     }
 
@@ -1798,6 +1823,7 @@ export async function promoteAccountToOrganizationAdmin(accountId: string, organ
          and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and ${notAthleteLoginSql('a')}
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [accountId, organizationId],
@@ -1805,6 +1831,7 @@ export async function promoteAccountToOrganizationAdmin(accountId: string, organ
 
     if (rows.rows.length === 0) {
       await refuseIfLoginDeleted(client, accountId, organizationId);
+      await refuseIfAthleteLogin(client, accountId, organizationId);
       throw new Error('Missing target account in organization');
     }
 
