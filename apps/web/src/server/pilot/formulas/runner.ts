@@ -33,6 +33,7 @@ import {
   CHECK_IN_BASELINE_POLICY,
   CHECK_IN_CONTEXT_PREFIX,
   SESSION_TOTAL_DIMENSIONS,
+  SPARRING_LOG_FIELD_KEYS,
 } from './types';
 import type {
   FormulaBaselineSnapshot,
@@ -103,7 +104,24 @@ export interface FormulaInputRequirement {
    * read -- without either formula having to pick between them.
    */
   readonly dimensionValues: Readonly<Partial<Record<ObservationKind, Readonly<Record<string, string>>>>>;
+  /**
+   * Kinds whose observation counts only when it carries a value. The sparring
+   * page sends a blank "Whole session" box as null (it is a gap MVP-10
+   * counts), and MVP-02/04/05 run only when the box was filled in (Overwatch,
+   * MVP-04: "only when filled in"). Every other kind still passes a null
+   * through to an explicit `insufficient` result, as before.
+   */
+  readonly nonNullKinds: readonly ObservationKind[];
+  /** The policy a policy formula runs under, or null for the others. */
+  readonly policy: Readonly<{
+    parameters: Readonly<Record<string, unknown>>;
+    policyVersion: string;
+  }> | null;
 }
+
+/** Jason 2026-10-17 (OD-2026-10-17-020), completeness: "80% / 50% (Recommended)":
+ *  High 80%+, Moderate 50-79%, Low under 50% (lowAt 0: never INSUFFICIENT). */
+export const SPARRING_COMPLETENESS_POLICY_VERSION = 'sparring-log-completeness-2026-10-17';
 
 
 /**
@@ -124,8 +142,8 @@ export interface FormulaInputRequirement {
  * entry here back through `calculateStoredFormula` so the two cannot drift
  * apart without a test going red.
  *
- * SCOPE: MVP-02, MVP-03, MVP-04 and MVP-05; the others are absent for
- * stated reasons (traced by lane L50, 2026-10-17):
+ * SCOPE: MVP-02, MVP-03, MVP-04, MVP-05 and MVP-10; the others are absent
+ * for stated reasons (traced by lane L50, 2026-10-17):
  *   - MVP-01 and MVP-12 are already calculated where they are read, not
  *     stored here: session load as rpe x duration_minutes over pilot.sessions
  *     (performanceAnalytics.ts, weeklySessionLoad.ts; the load migration
@@ -139,7 +157,9 @@ export interface FormulaInputRequirement {
  *     Longer sparring form".)
  *   - MVP-06 is not run: contact stays counts-only (Jason, 2026-10-17, "A:
  *     Counts only").
- *   - MVP-09/MVP-10 wait on a named metric and named cut-offs.
+ *   - MVP-09 runs from the check-in, not from a context
+ *     (checkInBaseline.ts). MVP-10 counts the sparring log's three optional
+ *     boxes (entry below).
  *   - MVP-11 spans contexts, so it is not an entry here: it runs over the
  *     athlete's last 28 days of sessions (Jason, 2026-10-17), selected by
  *     autoCalculation.ts#focusAttainmentWindow.
@@ -157,6 +177,8 @@ export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Ob
     requiredDimensionKeys: Object.freeze([]),
     groupByDimensionKey: null,
     dimensionValues: Object.freeze({}),
+    nonNullKinds: Object.freeze(['punch_count', 'round_count', 'active_time'] as const),
+    policy: null,
   }),
   Object.freeze({
     formulaId: 'MVP-03' as const,
@@ -170,6 +192,8 @@ export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Ob
     requiredDimensionKeys: Object.freeze(['punchType']),
     groupByDimensionKey: 'punchType',
     dimensionValues: Object.freeze({}),
+    nonNullKinds: Object.freeze([]),
+    policy: null,
   }),
   Object.freeze({
     formulaId: 'MVP-04' as const,
@@ -183,6 +207,8 @@ export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Ob
     requiredDimensionKeys: Object.freeze([]),
     groupByDimensionKey: null,
     dimensionValues: Object.freeze({ punch_landed: SESSION_TOTAL_DIMENSIONS }),
+    nonNullKinds: Object.freeze(['punch_landed'] as const),
+    policy: null,
   }),
   Object.freeze({
     formulaId: 'MVP-05' as const,
@@ -193,6 +219,41 @@ export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Ob
     requiredDimensionKeys: Object.freeze([]),
     groupByDimensionKey: null,
     dimensionValues: Object.freeze({ punch_landed: SESSION_TOTAL_DIMENSIONS }),
+    nonNullKinds: Object.freeze(['punch_landed', 'active_time'] as const),
+    policy: null,
+  }),
+  Object.freeze({
+    formulaId: 'MVP-10' as const,
+    // The three "Whole session" boxes, one each, blank (null) included: a
+    // blank is a gap this formula counts, not a missing input.
+    kinds: Object.freeze({ punch_count: 1, punch_landed: 1, active_time: 1 }),
+    units: Object.freeze({
+      punch_count: 'count' as const,
+      punch_landed: 'count' as const,
+      active_time: 'minutes' as const,
+    }),
+    // calculateDataCompleteness hard-blocks INVALID_DIMENSION without one.
+    requiredDimensionKeys: Object.freeze(['fieldKey']),
+    groupByDimensionKey: null,
+    dimensionValues: Object.freeze({
+      punch_count: Object.freeze({ ...SESSION_TOTAL_DIMENSIONS, fieldKey: SPARRING_LOG_FIELD_KEYS.allThrown }),
+      punch_landed: Object.freeze({ ...SESSION_TOTAL_DIMENSIONS, fieldKey: SPARRING_LOG_FIELD_KEYS.allLanded }),
+      active_time: Object.freeze({ ...SESSION_TOTAL_DIMENSIONS, fieldKey: SPARRING_LOG_FIELD_KEYS.minutesWorked }),
+    }),
+    nonNullKinds: Object.freeze([]),
+    policy: Object.freeze({
+      parameters: Object.freeze({
+        expectedFieldKeys: Object.freeze([
+          SPARRING_LOG_FIELD_KEYS.allThrown,
+          SPARRING_LOG_FIELD_KEYS.allLanded,
+          SPARRING_LOG_FIELD_KEYS.minutesWorked,
+        ]),
+        highAt: 0.8,
+        moderateAt: 0.5,
+        lowAt: 0,
+      }),
+      policyVersion: SPARRING_COMPLETENESS_POLICY_VERSION,
+    }),
   }),
 ]);
 
@@ -671,7 +732,13 @@ function calculateStoredFormula(
       const { policy, policyVersion } = parseCompletenessPolicy(input);
       return {
         results: [calculateDataCompleteness({
-          observations,
+          // In a fixed order: the engine keys the result on its inputs in the
+          // order given, and detection (sorted ids) and a correction (the
+          // replacement swapped in place) would otherwise store the same
+          // completeness twice under two keys (lane L50 review).
+          observations: [...observations].sort(
+            (left, right) => left.observationId.localeCompare(right.observationId),
+          ),
           policy,
           policyVersion,
           computedAt: input.computedAt,
@@ -795,8 +862,26 @@ export async function recalculateForSupersededObservation(input: {
     if (!calculations.has(key)) calculations.set(key, result);
   }
 
+  // A whole-session box cleared to null (Fix a number) is "not counted": the
+  // formulas that run only when it is filled in (nonNullKinds: MVP-02/04/05)
+  // are retired rather than re-run into an "insufficient" row. Their prior
+  // results already drop out of every reader once the input is superseded.
+  const replacement = calculations.size > 0
+    ? (await getActiveFormulaObservationsByIds({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      observationIds: [input.replacementObservationId],
+    }))[0]
+    : undefined;
+  const retiredByNull = (formulaId: string) => replacement != null
+    && replacement.value == null
+    && FORMULA_INPUT_REQUIREMENTS.some((requirement) => (
+      requirement.formulaId === formulaId && requirement.nonNullKinds.includes(replacement.kind)
+    ));
+
   const recalculated: FormulaResult[] = [];
   for (const prior of calculations.values()) {
+    if (retiredByNull(prior.formulaId)) continue;
     const replacementIds = prior.inputObservationIds.map((observationId) => (
       observationId === input.supersededObservationId
         ? input.replacementObservationId
