@@ -58,22 +58,16 @@ export default function ShadowCoachRecommendationDraft({
   const [selected, setSelected] = useState('');
   const [question, setQuestion] = useState('');
   const [preview, setPreview] = useState<DraftPreview | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
-    setChoices([]);
-    setOrigins({});
-    setPreview(null);
-    setQuestion('');
-    setSelected('');
-    setError('');
-    setMessage('');
+    // Parent keys this component by athleteId. Per-athlete state therefore
+    // starts empty without synchronously resetting it during an effect.
     if (!athleteId) return () => controller.abort();
-    setLoading(true);
     void (async () => {
       try {
         const response = await fetch(apiBase() + ENDPOINT + '?athleteId=' + encodeURIComponent(athleteId), {
