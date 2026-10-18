@@ -39,7 +39,7 @@ const MESSAGES = [
 
 type Handler = (init?: RequestInit) => Promise<Response>;
 
-function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; athleteMessages?: unknown[] } = {}): jest.Mock {
+function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; athleteMessages?: unknown[]; messages?: unknown[] } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none unless a test gives some.
@@ -70,7 +70,7 @@ function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; at
       }
       return options.repliesGet ? options.repliesGet(init) : jsonResponse({ ok: true, items: [] });
     }
-    if (url.includes('/api/pilot/parent/messages')) return jsonResponse({ ok: true, items: MESSAGES });
+    if (url.includes('/api/pilot/parent/messages')) return jsonResponse({ ok: true, items: options.messages ?? MESSAGES });
     if (url.includes('/api/pilot/scheduler')) {
       return jsonResponse({ ok: true, classes: [], registrations: [], attendance: [] });
     }
@@ -104,6 +104,22 @@ function replyPosts(fetchMock: jest.Mock): Array<Record<string, unknown>> {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+// F-120 (LIVE-AUDIT 2026-10-17): every card said only "FROM COACH".
+describe('a message card names who sent it', () => {
+  test('shows the sender name the server gives, and the role word when it gives none', async () => {
+    installFetch({
+      messages: [
+        { ...MESSAGES[0]!, sender_name: 'Coach Rivera' },
+        { ...MESSAGES[1]!, sender_name: null },
+      ],
+    });
+    await openMessages();
+
+    expect(within(card('Bring gloves Thursday.')).getByText('From Coach Rivera')).toBeInTheDocument();
+    expect(within(card('Medical form is due.')).getByText('From Admin')).toBeInTheDocument();
+  });
 });
 
 describe('replying to a coach message (FC-03)', () => {
