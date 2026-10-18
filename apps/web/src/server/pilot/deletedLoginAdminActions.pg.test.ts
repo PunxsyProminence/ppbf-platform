@@ -893,6 +893,82 @@ describe('privilege to a deleted login', () => {
   });
 });
 
+// F-098 (lane L44): an athlete's login is administered by their own gym, the
+// boundary upsertOrganizationMembership already held (audit CL-A5). Neither
+// admin promotion checked it: assign-admin made a child's PIN login the gym's
+// organization_admin with athlete_id kept, and a transfer could then demote it
+// to coach. The refusal is in each UPDATE's own WHERE, so only real Postgres
+// shows it.
+describe('an athlete\'s login is never made the gym\'s admin', () => {
+  const ATHLETE_REFUSAL = 'Forbidden: an athlete account is administered by their own gym';
+
+  async function adminMembershipCount(accountId: string): Promise<number> {
+    const rows = await db.query(
+      `select 1 from pilot.organization_memberships
+       where account_id = $1 and organization_id = $2 and role in ('organization_admin', 'admin')`,
+      [accountId, ORG],
+    );
+    return rows.length;
+  }
+
+  test('assign-admin on a child\'s PIN login is refused and the login is left as it was', async () => {
+    await insertAthlete('ath-minor');
+    await insertAccount('acct-minor', 'athlete', { athleteId: 'ath-minor' });
+    const before = await accountRow('acct-minor');
+
+    await expect(auth.promoteAccountToOrganizationAdmin('acct-minor', ORG)).rejects.toThrow(ATHLETE_REFUSAL);
+    expect(await accountRow('acct-minor')).toEqual(before);
+    expect(await adminMembershipCount('acct-minor')).toBe(0);
+  });
+
+  test('a login still linked to an athlete record is refused whatever its role', async () => {
+    await insertAthlete('ath-linked');
+    await insertAccount('acct-linked', 'volunteer', { athleteId: 'ath-linked', microsoft: true });
+
+    await expect(auth.promoteAccountToOrganizationAdmin('acct-linked', ORG)).rejects.toThrow(ATHLETE_REFUSAL);
+    expect((await accountRow('acct-linked'))?.role).toBe('volunteer');
+  });
+
+  test('an athlete login with no record behind it is refused by its role', async () => {
+    await insertAccount('acct-athlete-only', 'athlete');
+
+    await expect(auth.promoteAccountToOrganizationAdmin('acct-athlete-only', ORG)).rejects.toThrow(ATHLETE_REFUSAL);
+    expect((await accountRow('acct-athlete-only'))?.role).toBe('athlete');
+  });
+
+  test('transfer-admin to a child\'s PIN login is refused and the gym keeps its admin', async () => {
+    await insertAccount('acct-admin', 'organization_admin', { microsoft: true });
+    await insertAthlete('ath-minor');
+    await insertAccount('acct-minor', 'athlete', { athleteId: 'ath-minor' });
+    const before = await accountRow('acct-minor');
+
+    await expect(auth.transferOrganizationAdmin('acct-admin', 'acct-minor', ORG, 'coach')).rejects.toThrow(
+      ATHLETE_REFUSAL,
+    );
+    expect(await accountRow('acct-minor')).toEqual(before);
+    expect((await accountRow('acct-admin'))?.role).toBe('organization_admin');
+    expect(await adminMembershipCount('acct-admin')).toBe(1);
+    expect(await adminMembershipCount('acct-minor')).toBe(0);
+  });
+
+  test('a deleted athlete login still answers as deleted, not as an athlete', async () => {
+    await insertAccount('acct-gone-athlete', 'athlete', { deleted: true });
+
+    await expect(auth.promoteAccountToOrganizationAdmin('acct-gone-athlete', ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+    });
+  });
+
+  test('an athlete login in another gym gets the not-found answer, not the athlete one', async () => {
+    await insertAccount('acct-other-athlete', 'athlete', { organizationId: OTHER_ORG });
+
+    await expect(auth.promoteAccountToOrganizationAdmin('acct-other-athlete', ORG)).rejects.toThrow(
+      'Missing target account in organization',
+    );
+  });
+});
+
 // The three routed paths DATA_RETENTION.md listed as still open. The athlete
 // shell only inserts, so it never wrote to a deleted login; it answered
 // "already linked" or "already exists" and said nothing about why. The
