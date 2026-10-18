@@ -150,9 +150,9 @@ const TRAINING_HOLD_GATE_KEY = 'training_hold';
 const TRAINING_HOLD_ROW_NAME = 'Active Training Hold';
 
 const HOLD_ROW_LABEL: Record<TrainingHoldScope, string> = {
-  all_training: 'Paused',
-  contact_only: 'Contact paused',
-  conditioning_only: 'Conditioning paused',
+  all_training: 'Training hold',
+  contact_only: 'Training hold: contact',
+  conditioning_only: 'Training hold: conditioning',
 };
 
 /* The clearance gate's last evaluation says whether clearance was current
@@ -178,7 +178,7 @@ function holdRow(hold: AthleteFacingHold | null): SafetyCheckRow {
         glyph: '▲',
         badge: 'badge--restricted',
       }
-    : { key: TRAINING_HOLD_GATE_KEY, name: TRAINING_HOLD_ROW_NAME, label: 'No pause', glyph: '✓', badge: 'badge--cleared' };
+    : { key: TRAINING_HOLD_GATE_KEY, name: TRAINING_HOLD_ROW_NAME, label: 'No training hold', glyph: '✓', badge: 'badge--cleared' };
 }
 
 /** The rows the page can answer from what it was sent: the hold row, then
@@ -341,7 +341,7 @@ export default function GuardianSafetyPage() {
                       />
                     </div>
                   ) : (
-                    <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training pause on file right now.</p>
+                    <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training hold on file right now.</p>
                   )}
 
                   <SafetyChecks rows={safetyCheckRows(item)} />

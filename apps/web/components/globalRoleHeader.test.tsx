@@ -146,7 +146,7 @@ it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'])(
   (role) => {
     renderAs(role);
 
-    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
   },
 );
@@ -276,7 +276,7 @@ describe('the deny screen keeps this bar out of it', () => {
     renderAs('board');
 
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
   });
 
   it('is not fooled by a route the map has never heard of', () => {

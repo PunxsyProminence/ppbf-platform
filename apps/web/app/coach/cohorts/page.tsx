@@ -202,7 +202,7 @@ function CoachCohorts() {
             hours change. Nothing here is a saved list.
           </p>
           <Link href="/coach/session-scripts" className="btn btn--ghost mt-[var(--s4)]">
-            Back to session scripts
+            Back to Session Plans
           </Link>
         </header>
 
