@@ -130,6 +130,25 @@ function award(client: Client, key: string, role: 'self' | 'coach' | 'parent', a
   );
 }
 
+/** The award statement the application uses (achievements.ts awardMilestone), rehearsed against this schema. */
+function upsert(client: Client, key: string, role: 'self' | 'coach', account: string) {
+  return client.query(
+    `insert into pilot.athlete_milestones (organization_id, athlete_id, milestone_key, awarded_by_role, awarded_by_account_id, note)
+     values ($1, $2, $3, $4, $5, '')
+     on conflict (organization_id, athlete_id, milestone_key) do update
+       set awarded_by_role = excluded.awarded_by_role,
+           awarded_by_account_id = excluded.awarded_by_account_id,
+           note = case when pilot.athlete_milestones.undone_at is not null then excluded.note
+                       else coalesce(nullif(excluded.note, ''), pilot.athlete_milestones.note) end,
+           awarded_at = case when pilot.athlete_milestones.undone_at is not null then now()
+                             else pilot.athlete_milestones.awarded_at end,
+           undone_at = null
+       where pilot.athlete_milestones.undone_at is not null
+          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self')`,
+    [ORG, ATHLETE, key, role, account],
+  );
+}
+
 function setUndone(client: Client, key: string) {
   return client.query(
     `update pilot.athlete_milestones set undone_at = now()
@@ -280,22 +299,47 @@ describe('milestone undo migration (L43, F-133)', () => {
       await award(client, SELF_KEY, 'self', ATHLETE_ACCOUNT);
       await setUndone(client, SELF_KEY);
 
-      // The upsert shape the application uses to revive an undone row.
-      await client.query(
-        `insert into pilot.athlete_milestones (organization_id, athlete_id, milestone_key, awarded_by_role, awarded_by_account_id)
-         values ($1, $2, $3, 'coach', $4)
-         on conflict (organization_id, athlete_id, milestone_key) do update
-           set awarded_by_role = excluded.awarded_by_role,
-               awarded_by_account_id = excluded.awarded_by_account_id,
-               awarded_at = now(),
-               undone_at = null
-         where pilot.athlete_milestones.undone_at is not null`,
-        [ORG, ATHLETE, SELF_KEY, COACH],
-      );
+      await upsert(client, SELF_KEY, 'coach', COACH);
 
       const rows = await awardsOf(client);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ milestone_key: SELF_KEY, awarded_by_role: 'coach', awarded_by_account_id: COACH, undone_at: null });
+      await expect(setUndone(client, SELF_KEY)).rejects.toMatchObject({ code: '23514', constraint: CHECK });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a coach's mark on the athlete's own standing award makes it the coach's, first date kept, and no undo of it can be stored", async () => {
+    const client = await freshDatabase('mundo_promote');
+    try {
+      await award(client, SELF_KEY, 'self', ATHLETE_ACCOUNT);
+      await client.query(
+        `update pilot.athlete_milestones set awarded_at = now() - interval '3 minutes' where milestone_key = $1`,
+        [SELF_KEY],
+      );
+      const [before] = await awardsOf(client);
+
+      await upsert(client, SELF_KEY, 'coach', COACH);
+
+      const [after] = await awardsOf(client);
+      expect(after).toMatchObject({ awarded_by_role: 'coach', awarded_by_account_id: COACH, undone_at: null });
+      expect((after.awarded_at as Date).toISOString()).toBe((before.awarded_at as Date).toISOString());
+      await expect(setUndone(client, SELF_KEY)).rejects.toMatchObject({ code: '23514', constraint: CHECK });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("the athlete marking a coach's standing award changes nothing", async () => {
+    const client = await freshDatabase('mundo_coach_stands');
+    try {
+      await award(client, COACH_KEY, 'coach', COACH);
+      const before = await awardsOf(client);
+
+      await upsert(client, COACH_KEY, 'self', ATHLETE_ACCOUNT);
+
+      expect(await awardsOf(client)).toEqual(before);
     } finally {
       await client.end();
     }
@@ -348,12 +392,38 @@ describe('milestone undo migration (L43, F-133)', () => {
       await unmigrate(client);
       await client.query('alter table pilot.athlete_milestones add column undone_at date null');
       await expect(applyRunner(client, migrationSql)).rejects.toThrow('MILESTONE_UNDO_NOT_READY: undone_at_ready');
+      // The migration's own check was added inside the refused run: rolled back, it is not there.
+      const check = await client.query(
+        `select 1 from pg_constraint where conname = $1 and conrelid = 'pilot.athlete_milestones'::regclass`,
+        [CHECK],
+      );
+      expect(check.rows).toHaveLength(0);
 
       // The refused run rolled back, so only the hand-made date column is left to take away.
       await client.query('alter table pilot.athlete_milestones drop column undone_at');
       await client.query(`alter table pilot.athlete_milestones add column undone_at timestamptz not null default now()`);
       // On an empty table the check holds over a NOT NULL column; readiness must still refuse it.
       await expect(applyRunner(client, migrationSql)).rejects.toThrow('MILESTONE_UNDO_NOT_READY: undone_at_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a column that would hide every new award: a default on undone_at', async () => {
+    const client = await freshDatabase('mundo_default');
+    try {
+      await client.query('alter table pilot.athlete_milestones alter column undone_at set default now()');
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('MILESTONE_UNDO_NOT_READY: undone_at_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a nullable awarded_by_role, which the check would wave through', async () => {
+    const client = await freshDatabase('mundo_role_null');
+    try {
+      await client.query('alter table pilot.athlete_milestones alter column awarded_by_role drop not null');
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('MILESTONE_UNDO_NOT_READY: awarded_by_role_not_null');
     } finally {
       await client.end();
     }
