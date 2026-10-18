@@ -164,6 +164,89 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-024 -- SHADOW F2, the recommendation producer: ChatGPT owns it (*"Yes you do recommendations and give me a prompt telling claude what you are doing"*), and Option A (*"Yes opti I n A"*), both as relayed from ChatGPT
+
+**Provenance: RECONSTRUCTED (REPORTED).** His words appear only inside two ChatGPT-written messages that Jason pasted into the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`): "PPBF — SHADOW F2 — LANE COORDINATION" (queued at line 16112, 2026-10-18T00:53:34.390Z) and "PPBF — SHADOW F2 — OWNER DECISION UPDATE" (queued at line 16257, 2026-10-18T01:04:38.055Z). ChatGPT's question and options as put to him are not in the transcript; only ChatGPT's account of them is. Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His words are quoted exactly as they appear in the pasted text, spelling and spacing kept. The id carries 2026-10-17 because these UTC times are the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**First relay (ownership).** ChatGPT, as written: "Jason has assigned ChatGPT responsibility for the missing SHADOW recommendations capability (F2)." His instruction, as quoted there: *"Yes you do recommendations and give me a prompt telling claude what you are doing"*. The same message: "ChatGPT owns the F2 recommendation-producer design, isolated development, evidence/provenance validation, evaluation cases and implementation review." On the open question of what may originate a recommendation: "ChatGPT recommends starting with coach-requested drafts from a selected stored formula result and authorized evidence, followed by explicit human review and approval. This is a recommendation, not an approved owner decision."
+
+**Second relay (the choice).** ChatGPT, as written: "Jason selected Option A. His exact words: "Yes opti I n A"." and "This answers ChatGPT's question approving a coach-requested, evidence-backed recommendation for an athlete, with the coach retaining the final decision."
+
+**Ruling:**
+
+1. ChatGPT does F2, the SHADOW recommendations, and gives Jason a prompt telling Claude what it is doing. What that covers (design, isolated development, evidence and provenance validation, evaluation cases, implementation review) is ChatGPT's account, not his words.
+2. Option A, as ChatGPT describes it: a recommendation for an athlete is coach-requested and evidence-backed, and the coach keeps the final decision. An automatic trigger is not ruled.
+
+**Not his words:** the boundary that Claude does not start a competing F2 producer, duplicate endpoints or schemas, or change the F2 contract is ChatGPT's text in the first relay ("CLAUDE'S BOUNDARY"). Overwatch applied it (below).
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L49 to drop F2 from its design (line 16132), and again after the Option A relay (line 16267): "no recommendation endpoints, schema, source columns, producers or "Send to Decision Loop" drafting". It told lane L50 (line 16271) not to create recommendations from formula results. Its note to Jason (line 16294) says ChatGPT's work order and prototype ZIP will be checked against the live code before anything is built. ChatGPT's prototype is outside the repository and is not integrated.
+
+**Status:** ruled. A later paste, "PPBF — SHADOW F2 — APPROVED INTEGRATION WORK ORDER" (queued at line 16434, 2026-10-18T01:13:04.521Z), quotes his *"Ok I approve"* for ChatGPT's F2 integration work order; this entry does not record that approval. Whether anything in the repository builds F2 was not checked by this records pass.
+
+---
+
+## OD-2026-10-17-023 -- The daily check-in from the research draft: four additions and his typed "Research if there are other useful metrics"; baseline rule "Yes, all three (Rec.)"; cycle tracking "C: Now", not the recommended "A: Later, private (Rec.)"; devices "Yes, adult pilot later (Rec.)"
+
+**Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16114, 2026-10-18T00:53:39.775Z; answered at line 16115, 2026-10-18T00:56:01.039Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The card rests on overwatch's research draft `Documents\PPBF-overwatch\research\BASELINE-METRICS-2026-10-18.md` (not read by this records pass). It amends OD-2026-10-17-020 item 1 (see the ruling). New.
+
+**Question "Add to check-in"** (multi-select). Overwatch, as written: "OFFICIAL: Research (draft, sources attached) recommends adding to the daily check-in, each compared with the athlete's own normal: mood, perceived stress, sleep HOURS (separate from sleep quality), session effort after training (0-10 x minutes, with a session-type tag), and a post-sparring symptom flag (a flag only: no score, no diagnosis; a fixed message sends the athlete to the coach and the gym's rules). Which should be added? PLAIN: about five extra taps that research supports best; tick the ones you want." Options as written: "Mood + stress (Rec.)": "Completes the 5-item wellness set."; "Sleep hours (Rec.)": "Hours, separate from quality."; "Session effort (Rec.)": "0-10 after training x minutes."; "Sparring symptom flag (Rec.)": "Flag to the coach only; no diagnosis.". Jason ticked *"Mood + stress (Rec.)"*, *"Sleep hours (Rec.)"*, *"Session effort (Rec.)"*, *"Sparring symptom flag (Rec.)"*, and typed: *"Research if there are other useful metrics"*
+
+**Question "Baseline rule".** Overwatch, as written: "OFFICIAL: Change the baseline rule to cut false alarms: (a) show "provisional" until about 14 entries; (b) no alert from a single item at +/-1 SD (with 5 items that flags ~58% of days by chance) -- use a combined score, two items together, or repeats on consecutive days; (c) a minimum spread for coarse 1-5 scales. PLAIN: with only 7 entries "normal" is shaky, and checking 5 numbers one at a time would flag most days. These keep coaches trusting the flags." Options as written: "Yes, all three (Rec.)": "Provisional to 14, combined alerts, spread floor."; "Keep 7 / single items": "As first ruled.". Jason: *"Yes, all three (Rec.)"*
+
+**Question "Cycle".** Overwatch, as written: "OFFICIAL: Menstrual-cycle tracking: (A) later, opt-in, private to the athlete, no automatic training changes; (B) never; (C) now. PLAIN: it's the most private item and research shows phase barely changes performance; if built, the athlete sees their own pattern, coaches don't act on it." Options as written: "A: Later, private (Rec.)": "Opt-in, athlete-only."; "B: Never": "Don't build."; "C: Now": "Build now.". Jason: *"C: Now"*, which is not the recommended option.
+
+**Question "Devices".** Overwatch, as written: "OFFICIAL: Device measures (heart-rate variability, resting heart rate) and weekly jump tests: pilot with a few adult volunteers first, later? PLAIN: they need straps/phones or staff time, and research in teens is thin; test with adults before kids." Options as written: "Yes, adult pilot later (Rec.)": "Small adult group first."; "No": "Skip devices and jump tests.". Jason: *"Yes, adult pilot later (Rec.)"*
+
+**Ruling:**
+
+1. The daily check-in adds mood and perceived stress, sleep hours (separate from sleep quality), session effort after training (0-10 times minutes, with a session-type tag), and a post-sparring symptom flag (a flag only: no score, no diagnosis; a fixed message sends the athlete to the coach and the gym's rules), each compared with the athlete's own normal.
+2. His typed *"Research if there are other useful metrics"* asks for more research on other metrics. It adds no metric by itself.
+3. The baseline rule changes, all three parts: (a) "provisional" is shown until about 14 entries; (b) no alert from a single item at +/-1 SD, using a combined score, two items together, or repeats on consecutive days instead; (c) a minimum spread for coarse 1-5 scales. This amends OD-2026-10-17-020 item 1. "Keep 7 / single items" was not chosen. Whether the baseline still begins at 7 check-ins, shown as provisional, is not stated on the card; the card did not ask which items are compared.
+4. Menstrual-cycle tracking is built now. The card's A ("later, opt-in, private to the athlete, no automatic training changes") was the recommended option and was not chosen; B ("never") was not chosen either. His pick says only "Now"; how it is built is not ruled here.
+5. Device measures (heart-rate variability, resting heart rate) and weekly jump tests: a pilot with a few adult volunteers first, later. "No" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed a lane chip, L58, for the new check-in items (line 16155); L58 was running by line 16334, Overwatch's first message to it. Overwatch relayed the baseline rule to lane L50 (lines 16136 and 16271), telling L50 the new items are L58's. For cycle tracking, Overwatch told Jason (line 16172) it is building it opt-in and visible only to the athlete, and told L58 (line 16334) to keep it out of any baseline or coach-visible input; those are Overwatch's calls, not his words. For his typed request, Overwatch started a second research pass (line 16157), to be written to `Documents\PPBF-overwatch\research\MORE-ATHLETE-METRICS-2026-10-18.md`; no metric from it is ruled here.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-022 -- The habit and lesson engine (lane L49): "A: Shared growing list (Rec.)"; "A: Staff only (Rec.)"; the habit bar: his typed "Needs to be backed by research"
+
+**Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15987, 2026-10-18T00:44:34.917Z; answered at line 15990, 2026-10-18T00:51:16.111Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Habit names".** Overwatch, as written: "OFFICIAL: Behaviour names for pattern counting (L49). (A) each name sits under one skill in the existing 67-skill graph; coaches pick from the gym's list or add a new name there, then it's reused; (B) a fixed list PPBF ships; (C) free text. PLAIN: the app can only see that "drops his hand after the jab" keeps happening if every coach names it the same way. A gives coaches a shared list they can grow; C makes every spelling a different habit." Options as written: "A: Shared growing list (Rec.)": "Names under the skill graph; coaches add."; "B: Fixed list": "PPBF ships the list."; "C: Free text": "Any wording.". Jason: *"A: Shared growing list (Rec.)"*
+
+**Question "Lessons seen".** Overwatch, as written: "OFFICIAL: Who sees validated lessons and patterns about an athlete? (A) staff only for now (matches today's intervention ledger: nothing shown to athletes or parents); (B) the athlete sees their own and a minor's parent sees their child's, in plain words; (C) the athlete only. PLAIN: is "what we learned works for you" a coaches' tool, or also something the kid and family read?" Options as written: "A: Staff only (Rec.)": "Coaches' tool for now."; "B: Athlete + parent": "Plain-words version for families."; "C: Athlete only": "Not parents.". Jason: *"A: Staff only (Rec.)"*
+
+**Question "Habit bar".** Overwatch, as written: "OFFICIAL: The pattern/lesson engine needs a bar (how many times, across how many sessions and drills, by how many coaches, before something counts as a habit or as "it worked"). Who sets it? (A) the organization admin (ppbf@) on an admin form, versioned; coaches see the bar; counts still show before it's set; (B) any coach; (C) Jason gives the numbers now. PLAIN: someone has to decide what counts as a habit. With A the gym admin decides and can change it." Options as written: "A: Gym admin sets it (Rec.)": "Versioned admin form."; "B: Any coach": "Coaches set it."; "C: I'll give numbers": "Jason sets them now.". Jason typed: *"Needs to be backed by research"*, choosing none of the three options.
+
+**Ruling:**
+
+1. Behaviour names for pattern counting form a shared list the gym's coaches can grow: each name sits under one skill in the existing skill graph, and coaches pick from the list or add a new name there, which is then reused. A fixed shipped list (B) and free text (C) were not chosen.
+2. Validated lessons and patterns about an athlete are seen by staff only, for now. The athlete-and-parent (B) and athlete-only (C) options were not chosen.
+3. The bar for what counts as a habit, or as "it worked", must be backed by research. He did not pick who sets it: A (gym admin), B (any coach) and C (he gives the numbers now) were all left unpicked.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed all three to lane L49 (line 16009). For the bar, it told L49 to build versioned storage and an admin form with no numbers, counts showing before any bar is set, and started a research pass on evidence-based thresholds whose numbers go to Jason for approval (lines 16009 and 16027). It later said organization-admin ratification is its working default, to be confirmed with Jason when the numbers arrive (line 16267). Those are Overwatch's calls, not his words.
+
+**Status:** ruled; not built at the time of writing. No bar numbers are ruled.
+
+---
+
+## OD-2026-10-17-021 -- Freeing the laptop: "Close non-app programs", not the recommended "Archive 4 waiting lanes (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15868, 2026-10-18T00:40:30.434Z; answered at line 15876, 2026-10-18T00:41:24.046Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Free laptop"** (multi-select). Overwatch, as written: "OFFICIAL: To free the laptop, which should I do? (1) Close non-app programs: ChatGPT Classic (duplicate of ChatGPT), Microsoft Teams, NVIDIA Overlay -- about 0.3 GB, unsaved work in them could be lost. (2) Archive 4 lanes that are only waiting or planning (Intervention key L55 waits on another PR; Archive plan L57; Pattern-engine design L49; Drill evidence L56) -- each can be reopened later from the sidebar; frees roughly 1-2 GB. Remote Desktop, ChatGPT and your 4 Chrome test windows stay open. PLAIN: the lanes are what's slowing the laptop; pausing the ones that are just waiting helps most." Options as written: "Archive 4 waiting lanes (Rec.)": "L55, L57, L49, L56; reopen later."; "Close non-app programs": "ChatGPT Classic, Teams, NVIDIA Overlay.". Jason ticked only *"Close non-app programs"*.
+
+**Ruling:** close the non-app programs named on the card (ChatGPT Classic, Microsoft Teams, NVIDIA Overlay). Archiving the four waiting lanes (L55, L57, L49, L56) was the recommended option and was not chosen. A one-time action; it sets no standing rule.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch reported (line 15892, 2026-10-18T00:42:47.425Z): "**Microsoft Teams:** closed." and "**ChatGPT Classic and NVIDIA Overlay:** still running. They didn't close when asked, and I didn't force them because that could lose unsaved work."
+
+**Status:** done in part, as Overwatch reported; not re-checked by this records pass.
+
+---
+
 ## OD-2026-10-17-020 -- Personal baseline and data completeness: "Sleep (Recommended)", "Energy", "Soreness" and his typed "What else can we put in if we need research do n it"; "80% / 50% (Recommended)"
 
 **Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15656, 2026-10-18T00:30:31.973Z; answered at line 15657, 2026-10-18T00:32:00.919Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-019, whose card left these two formulas unbuilt until a metric and cut-offs were named, and his question there (line 15613): *"How to we pick tho metric and cutoff "*. New; edits no earlier entry.
@@ -181,6 +264,8 @@ and should not try to.
 **Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed both rulings to lane L50 (line 15670) and asked for a PR-D plan before building. Its later message to L50 (line 15719) adds Overwatch's own technical calls on how the engine meets the 28-day window and which log boxes count; those are not his rulings. For his "what else", Overwatch started a research pass (line 15690), written to `Documents\PPBF-overwatch\research\BASELINE-METRICS-2026-10-18.md` and to be marked a research draft for his decision (line 15698). It is not a ruling, and no metric from it is ruled here.
 
 **Status:** ruled; not built at the time of writing. The research report was not read by this records pass.
+
+**Status (2026-10-17):** item 1 is amended by OD-2026-10-17-023 item 3: "provisional" shown until about 14 entries, no single-item +/-1 SD alert, and a minimum spread for coarse 1-5 scales.
 
 ---
 
