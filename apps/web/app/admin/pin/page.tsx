@@ -289,13 +289,18 @@ function PinManagementPageContent() {
                 <label htmlFor="create-account-id" className="t-label">
                   New Account ID
                 </label>
+                {/* F-102 (Jason: "B: Change the guidance (Recommended)"): the
+                    sign-in ID outlives the athlete's record. Wording PROPOSED. */}
+                <p className="t-muted mb-[var(--s2)]">
+                  What the athlete types to sign in. Use their ring name or a number, not their real name.
+                </p>
                 <input
                   id="create-account-id"
                   type="text"
                   value={createAccountId}
                   onChange={(event) => setCreateAccountId(event.target.value)}
                   className="input font-mono"
-                  placeholder="athlete-account-id"
+                  placeholder="southpaw12"
                 />
               </div>
 

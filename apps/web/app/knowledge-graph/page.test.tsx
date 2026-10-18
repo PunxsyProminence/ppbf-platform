@@ -145,8 +145,10 @@ test('the streams say the window they were projected from', async () => {
   render(<KnowledgeGraphPage />);
 
   expect(
-    await screen.findByText(/projected from the 120 most recent SHADOW events/i),
+    await screen.findByText(/Observations are projected from the 120 most recent SHADOW events/i),
   ).toBeTruthy();
+  // The other three streams are no longer filled by an event's name (contract D1).
+  expect(screen.getByText(/Patterns, findings and validated lessons are not read from events/i)).toBeTruthy();
 });
 
 // The window line is a statement about rows, so it belongs to rows. The empty
