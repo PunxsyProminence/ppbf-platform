@@ -6,6 +6,7 @@ import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { PASSAGE_DISPLAY_RIGHTS, replayCitedPassage } from './shadowEvidence';
+import { alsoCitedTiers, gradeableEvidence, type ShadowEvidenceTier } from './shadowEvidenceTier';
 
 // This query's `s` is the chat session, so the source predicate is written
 // against `ls`, the cited source, here.
@@ -49,6 +50,8 @@ export interface ShadowConversationMessage {
   content: string;
   responseState: ShadowStoredResponseState | null;
   evidenceTier: ShadowStoredEvidenceTier | null;
+  /** The other cited sources' grades, below the headline ("Also cites"); graded again on load. */
+  evidenceAlsoCites: ShadowEvidenceTier[];
   handoff: string | null;
   createdAt: string;
   citations?: Array<{
@@ -566,6 +569,9 @@ export async function loadConversationMessages(input: {
       documentName: string;
       passageSource?: string;
       passageSha?: string;
+      evidenceClass?: string;
+      boxingSpecificity?: string;
+      authorityTier?: number;
     }>;
   }>(
     `select
@@ -595,7 +601,12 @@ export async function loadConversationMessages(input: {
                 and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
                then c.text_content
              end,
-             'passageSha', ei.excerpt_sha256
+             'passageSha', ei.excerpt_sha256,
+             -- What grades the source on its own, for "Also cites" below.
+             -- Read and dropped here; never sent.
+             'evidenceClass', c.metadata->>'evidence_class',
+             'boxingSpecificity', c.metadata->>'boxing_specificity',
+             'authorityTier', ls.authority_tier
            ))
            order by mc.ordinal
          ) filter (where mc.evidence_id is not null),
@@ -643,21 +654,38 @@ export async function loadConversationMessages(input: {
      limit $4`,
     [input.actor.organizationId, input.actor.accountId, input.conversationId, limit, PASSAGE_DISPLAY_RIGHTS],
   );
-  return rows.reverse().map((row) => ({
-    messageId: row.message_id,
-    role: row.role,
-    content: row.content,
-    responseState: row.response_state,
-    evidenceTier: row.evidence_tier,
-    handoff: row.handoff,
-    createdAt: row.created_at.toISOString(),
-    citations: (Array.isArray(row.citations) ? row.citations : []).map(({ passageSource, passageSha, ...citation }) => {
-      const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
-        ? replayCitedPassage(passageSource, passageSha)
-        : undefined;
-      return excerpt ? { ...citation, excerpt } : citation;
-    }),
-  }));
+  return rows.reverse().map((row) => {
+    const cited = Array.isArray(row.citations) ? row.citations : [];
+    // The headline is the stored grade, what the answer was shown with. The
+    // line under it is not stored, so it is graded again from the cited rows
+    // and keeps only grades below the stored headline.
+    const gradeable = gradeableEvidence(cited
+      .filter((citation) => typeof citation.authorityTier === 'number')
+      .map((citation) => ({
+        evidenceClass: citation.evidenceClass ?? null,
+        boxingSpecificity: citation.boxingSpecificity ?? null,
+        authorityTier: citation.authorityTier as number,
+      })));
+    return {
+      messageId: row.message_id,
+      role: row.role,
+      content: row.content,
+      responseState: row.response_state,
+      evidenceTier: row.evidence_tier,
+      evidenceAlsoCites: row.role === 'assistant' && row.evidence_tier ? alsoCitedTiers(row.evidence_tier, gradeable) : [],
+      handoff: row.handoff,
+      createdAt: row.created_at.toISOString(),
+      // Named fields only: the passage source, its hash and the grading
+      // fields stay on the server.
+      citations: cited.map(({ evidenceId, token, sourceTitle, documentName, passageSource, passageSha }) => {
+        const citation = { evidenceId, token, sourceTitle, documentName };
+        const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
+          ? replayCitedPassage(passageSource, passageSha)
+          : undefined;
+        return excerpt ? { ...citation, excerpt } : citation;
+      }),
+    };
+  });
 }
 
 export async function listConversations(

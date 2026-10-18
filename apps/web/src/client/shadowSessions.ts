@@ -45,6 +45,7 @@ export interface StoredShadowConversationMessage {
   content: string;
   responseState: StoredShadowResponseState | null;
   evidenceTier: StoredShadowEvidenceTier | null;
+  evidenceAlsoCites?: StoredShadowEvidenceTier[];
   handoff: string | null;
   createdAt: string;
   citations: StoredShadowCitation[];
@@ -57,6 +58,7 @@ export interface RestoredShadowMessage {
   timestamp: string;
   state?: StoredShadowResponseState;
   evidenceTier: StoredShadowEvidenceTier;
+  evidenceAlsoCites?: StoredShadowEvidenceTier[];
   handoff?: string;
   citations?: StoredShadowCitation[];
   feedbackEligible: boolean;
@@ -179,10 +181,21 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
     content: requiredString(value, 'content'),
     responseState,
     evidenceTier: isStoredEvidenceTier(evidenceTier) ? evidenceTier : null,
+    evidenceAlsoCites: parseAlsoCites(value.evidenceAlsoCites),
     handoff: typeof handoff === 'string' && handoff.trim() ? handoff : null,
     createdAt: requiredIsoTimestamp(value, 'createdAt'),
     citations: parseCitations(value.citations),
   };
+}
+
+// Absent (a server older than this client) is no line; anything but a list of
+// grades is malformed.
+function parseAlsoCites(value: unknown): StoredShadowEvidenceTier[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || !value.every(isStoredEvidenceTier)) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+  }
+  return value;
 }
 
 // An absent field is not malformed -- rows written before citations were
@@ -484,6 +497,9 @@ export function mapStoredShadowMessage(
     evidenceTier: message.role === 'assistant'
       ? (message.evidenceTier ?? RESTORED_MESSAGE_FALLBACK_TIER)
       : RESTORED_MESSAGE_FALLBACK_TIER,
+    evidenceAlsoCites: message.role === 'assistant' && message.evidenceAlsoCites?.length
+      ? message.evidenceAlsoCites
+      : undefined,
     handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,
     // Receipts belong to SHADOW's answers only, and an empty list stays
     // undefined so the renderer draws no empty Sources block.

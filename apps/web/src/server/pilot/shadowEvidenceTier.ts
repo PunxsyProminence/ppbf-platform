@@ -103,15 +103,15 @@ export function deriveEvidenceTier(input: {
   return 'EXPERIMENTAL';
 }
 
-// Rank order for reducing a multi-citation response to the single
-// strongest citation deriveEvidenceTier grades on. Higher is stronger.
-// This is a DESIGN DECISION the spec's own worked example (one claim, one
-// evidence_class/authority_tier/boxing_specificity triple) left open for a
-// multi-citation chat response: the BEST evidence actually cited can carry
-// the tier, the same way one Cochrane review among three weaker citations
-// is still a Cochrane review. It does not mean the response's OTHER
-// citations are hidden -- every citation is still shown in Sources; this
-// selection only decides what grades the headline tier label.
+// Rank order for breaking a tie between citations that earn the same grade.
+// Higher is stronger.
+// Reducing a multi-citation response to one citation is a DESIGN DECISION the
+// spec's own worked example (one claim, one
+// evidence_class/authority_tier/boxing_specificity triple) left open: the BEST
+// evidence actually cited carries the tier, the same way one Cochrane review
+// among three weaker citations is still a Cochrane review. It does not mean the
+// response's OTHER citations are hidden -- every citation is still shown in
+// Sources, and their own grades in the "Also cites" line (alsoCitedTiers).
 const EVIDENCE_CLASS_RANK: Record<ShadowEvidenceClass, number> = {
   'VERIFIED EVIDENCE': 4,
   'STRONG EVIDENCE-SUPPORTED INFERENCE': 3,
@@ -121,6 +121,30 @@ const EVIDENCE_CLASS_RANK: Record<ShadowEvidenceClass, number> = {
   'INSUFFICIENT EVIDENCE': 1,
 };
 
+const TIER_STRENGTH: Record<ShadowEvidenceTier, number> = {
+  PROVEN: 4,
+  EMERGING: 3,
+  EXPERIMENTAL: 2,
+  RESEARCH_NEEDED: 1,
+};
+
+/** The grade one cited source earns on its own, by deriveEvidenceTier's rule. */
+export function gradeCitedEvidence(evidence: ShadowEvidenceQuality): ShadowEvidenceTier {
+  return deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', strongestEvidence: evidence });
+}
+
+/**
+ * The cited source with the best grade of its own; class rank, then the lower
+ * authority tier, break a tie. It used to be the best class rank, then tier,
+ * which ignored boxing specificity and so could name a source that grades
+ * BELOW another one cited: VERIFIED tier 1 transferred (Emerging) was picked
+ * over VERIFIED tier 2 boxing-specific (Proven), and VERIFIED tier 4
+ * (Experimental) over STRONG INFERENCE tier 1 (Emerging). The headline reads
+ * "Strongest source", so it is now the strongest grade and never sits below an
+ * "Also cites" grade (Jason, audit item 11 "A: Strongest + also-cites", relayed
+ * by Overwatch 2026-10-17). Proven still needs a verified, boxing-specific,
+ * tier 1-2 source.
+ */
 export function selectStrongestEvidence(
   candidates: ShadowEvidenceQuality[],
 ): ShadowEvidenceQuality | null {
@@ -130,14 +154,44 @@ export function selectStrongestEvidence(
       strongest = candidate;
       continue;
     }
+    const candidateGrade = TIER_STRENGTH[gradeCitedEvidence(candidate)];
+    const strongestGrade = TIER_STRENGTH[gradeCitedEvidence(strongest)];
     const candidateRank = EVIDENCE_CLASS_RANK[candidate.evidenceClass];
     const strongestRank = EVIDENCE_CLASS_RANK[strongest.evidenceClass];
     if (
-      candidateRank > strongestRank
-      || (candidateRank === strongestRank && candidate.authorityTier < strongest.authorityTier)
+      candidateGrade > strongestGrade
+      || (candidateGrade === strongestGrade && candidateRank > strongestRank)
+      || (candidateGrade === strongestGrade && candidateRank === strongestRank && candidate.authorityTier < strongest.authorityTier)
     ) {
       strongest = candidate;
     }
   }
   return strongest;
+}
+
+/**
+ * The grades the answer's other cited sources earn, below the headline,
+ * strongest first: the "Also cites" line. Empty when every cited source grades
+ * the same as the headline, or the headline is not a grade of citations at all
+ * (a withheld answer grades Research Needed, and nothing is below it).
+ */
+export function alsoCitedTiers(headline: ShadowEvidenceTier, cited: ShadowEvidenceQuality[]): ShadowEvidenceTier[] {
+  const below = new Set(cited.map(gradeCitedEvidence).filter((tier) => TIER_STRENGTH[tier] < TIER_STRENGTH[headline]));
+  return [...below].sort((a, b) => TIER_STRENGTH[b] - TIER_STRENGTH[a]);
+}
+
+/**
+ * The cited rows the tier can grade: those whose chunk metadata carries both
+ * fields. A row without them is not gradeable, never a passing grade.
+ */
+export function gradeableEvidence(
+  rows: Array<{ evidenceClass: string | null; boxingSpecificity: string | null; authorityTier: number }>,
+): ShadowEvidenceQuality[] {
+  return rows
+    .filter((row) => row.evidenceClass !== null && row.boxingSpecificity !== null)
+    .map((row) => ({
+      evidenceClass: row.evidenceClass as ShadowEvidenceClass,
+      authorityTier: row.authorityTier,
+      boxingSpecificity: row.boxingSpecificity as ShadowBoxingSpecificity,
+    }));
 }

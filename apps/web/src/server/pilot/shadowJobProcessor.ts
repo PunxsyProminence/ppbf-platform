@@ -52,10 +52,10 @@ import {
   type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
 import {
+  alsoCitedTiers,
   deriveEvidenceTier,
+  gradeableEvidence,
   selectStrongestEvidence,
-  type ShadowBoxingSpecificity,
-  type ShadowEvidenceClass,
 } from './shadowEvidenceTier';
 import { resolveHandoff } from './shadowHandoff';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
@@ -236,22 +236,16 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       // nonBundleEvidenceIdSet strip.
       const catalogIdSet = new Set(binding.citationCatalog.map((item) => item.evidenceId));
       const bundleCitationIds = citationIds.filter((citationId) => catalogIdSet.has(citationId));
+      const citedQuality = gradeableEvidence(
+        binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
+      );
       const evidenceTier = deriveEvidenceTier({
         isAnsweredState: !bindingFiltered,
         evidenceAvailability: binding.availability,
         // Same reduction as the synchronous chat route: the strongest
         // citation actually shown grades the tier. See
         // selectStrongestEvidence's own comment for why.
-        strongestEvidence: selectStrongestEvidence(
-          binding.citationCatalog
-            .filter((item) => bundleCitationIds.includes(item.evidenceId))
-            .filter((item) => item.evidenceClass !== null && item.boxingSpecificity !== null)
-            .map((item) => ({
-              evidenceClass: item.evidenceClass as ShadowEvidenceClass,
-              authorityTier: item.authorityTier,
-              boxingSpecificity: item.boxingSpecificity as ShadowBoxingSpecificity,
-            })),
-        ),
+        strongestEvidence: selectStrongestEvidence(citedQuality),
       });
       // Same banner the synchronous path stores: the response's own topic
       // wins (a benign question can draw an answer that volunteers weight-cut
@@ -295,6 +289,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         conversationId: binding.conversationId,
         assistantMessageId,
         evidenceTier,
+        evidenceAlsoCites: alsoCitedTiers(evidenceTier, citedQuality),
         responseState: bindingFiltered ? 'filtered' : 'ok',
         handoff,
         citations: binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
@@ -580,6 +575,8 @@ function jobFailureCode(error: unknown): string {
 // safe-filtered text -- the better the evidence, the surer the self-filter.
 const OUTPUT_LABEL_KEYS = new Set([
   'evidenceTier',
+  // The other cited sources' grades: the same labels, so 'PROVEN' again.
+  'evidenceAlsoCites',
   'responseState',
   'resultStatus',
   'safetyStatus',

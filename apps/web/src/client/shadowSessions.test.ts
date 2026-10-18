@@ -397,3 +397,43 @@ describe('restored passages through the parser (A-Q11)', () => {
       .rejects.toMatchObject({ status: 502 });
   });
 });
+
+// Audit item 11, Jason's ruling A: the other cited sources' grades under the
+// "Strongest source" badge, on a reopened conversation too.
+describe('restored "Also cites" grades through the parser', () => {
+  function storedWith(extra: Record<string, unknown>) {
+    return jest.fn().mockResolvedValue(jsonResponse({
+      success: true,
+      messages: [{
+        messageId: '09475aaf-e9d6-43c8-af6f-10181f2917ab',
+        role: 'assistant',
+        content: 'Pivot off the lead foot.',
+        responseState: 'ok',
+        evidenceTier: 'PROVEN',
+        createdAt: '2026-07-24T12:00:01.000Z',
+        citations: [],
+        ...extra,
+      }],
+    }));
+  }
+
+  test('keeps the grades the server sends', async () => {
+    const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['EMERGING', 'EXPERIMENTAL'] }));
+    expect(message.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+    expect(mapStoredShadowMessage(message).evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+  });
+
+  test('absent or empty is no line', async () => {
+    const [absent] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({}));
+    expect(mapStoredShadowMessage(absent).evidenceAlsoCites).toBeUndefined();
+    const [empty] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: [] }));
+    expect(mapStoredShadowMessage(empty).evidenceAlsoCites).toBeUndefined();
+  });
+
+  test('anything but a list of grades is malformed, not rendered', async () => {
+    await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['VERY_GOOD'] })))
+      .rejects.toMatchObject({ status: 502 });
+    await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: 'EMERGING' })))
+      .rejects.toMatchObject({ status: 502 });
+  });
+});

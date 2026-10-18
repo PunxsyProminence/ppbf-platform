@@ -139,6 +139,38 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     mockRefundRateLimit.mockResolvedValue(true);
   });
 
+  // Audit item 11, Jason's ruling A: the queued answer carries the same
+  // "Also cites" grades as a live one, and the safety sweep reads them as
+  // labels, not as the model's words.
+  test('carries the other cited sources\' grades as "Also cites"', async () => {
+    const SECOND_ID = '44444444-4444-4444-8444-444444444444';
+    const job = heavyBagJob();
+    const snapshot = job.inputPayload.evidenceSnapshot as {
+      allowedEvidenceIds: string[];
+      citationCatalog: Array<Record<string, unknown>>;
+    };
+    snapshot.allowedEvidenceIds.push(SECOND_ID);
+    snapshot.citationCatalog.push({
+      evidenceId: SECOND_ID,
+      token: 'E2',
+      sourceTitle: 'Older survey',
+      documentName: 'Survey',
+      // VERIFIED EVIDENCE at tier 4 grades EXPERIMENTAL.
+      authorityTier: 4,
+      evidenceClass: 'VERIFIED EVIDENCE',
+      boxingSpecificity: 'boxing_specific',
+    });
+    mockClaimNextJob.mockResolvedValue(job);
+    llmReply(`The rotation the gym already logged supports a tighter pivot drill. [E:${LIBRARY_ID}] An older survey agrees. [E:${SECOND_ID}]`);
+
+    await processNextShadowJob();
+
+    const completedOutput = mockCompleteJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(completedOutput.resultStatus).toBe('ok');
+    expect(completedOutput.evidenceTier).toBe('EMERGING');
+    expect(completedOutput.evidenceAlsoCites).toEqual(['EXPERIMENTAL']);
+  });
+
   test('persists only library citation ids against the bundle; near-miss ids stay prose', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
     llmReply(`The rotation the gym already logged supports a tighter pivot drill. [E:${LIBRARY_ID}] [E:${NEAR_MISS_ID}] RESEARCH NEEDED.`);
