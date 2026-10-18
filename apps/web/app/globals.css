@@ -2127,8 +2127,13 @@ h6 {
   color: var(--brass-400);
 }
 
+/* One line, whatever the gym's name: a long one ends in an ellipsis rather
+   than pushing the clock onto two lines. */
 [data-surface="wall"] .wall-eyebrow {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
   letter-spacing: .34em;
@@ -2155,7 +2160,9 @@ h6 {
 }
 
 [data-surface="wall"] .wall-clock {
+  flex: none;
   margin: 0;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 400;
   line-height: .9;
@@ -2170,6 +2177,7 @@ h6 {
 
 /* The round clock hangs in a bezel: brass ring, dark face. */
 [data-surface="wall"] .wall-round {
+  flex: none;
   padding: var(--s2) var(--s6);
   border: 3px solid var(--brass-600);
   border-radius: 10px;
@@ -2186,6 +2194,7 @@ h6 {
 [data-surface="wall"] .wall-round__time {
   margin: 0;
   line-height: 1.05;
+  white-space: nowrap;
 }
 
 /* --- Panels -------------------------------------------------------------- */

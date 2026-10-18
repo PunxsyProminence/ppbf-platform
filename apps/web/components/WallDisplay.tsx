@@ -707,7 +707,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
     <header className="flex shrink-0 flex-col gap-[var(--s3)] px-[var(--s7)] pt-[var(--s4)]">
       <MottoPlate />
       <div className="flex items-end justify-between gap-[var(--s6)]">
-        <div>
+        <div className="min-w-0">
           <p className="wall-eyebrow">{gym?.brand ?? HELD}</p>
           <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
           <p className="wall-date text-4xl">
