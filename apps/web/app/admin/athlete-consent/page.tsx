@@ -313,7 +313,7 @@ export default function AthleteConsentAuditPage() {
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
               style={{ fontSize: 'var(--t-2xl)' }}
             >
-              Guardian Media Consent Audit
+              Media Consent Audit
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every athlete in the organization and whether every one of their guardians has a current photo/video

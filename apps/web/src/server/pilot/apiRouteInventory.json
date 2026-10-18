@@ -4468,6 +4468,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-attendance/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-attendance",
+    "gate": "requirePrincipal + requireRole(ATTENDANCE_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "One athlete's attendance over the last 28 days (present / (present + absent) marked days, excused not counted, null with no register) and days since the last present day, from pilot.attendance_reconciled via attendancePrecedence.ts getAttendanceLast28Days. Coaches only = coach + organization_admin + admin (OD-2026-10-17-026 (c)). Read-only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-body-mass/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-body-mass",
@@ -5887,6 +5917,65 @@
       "authorizationGates": [
         "requireRole",
         "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-reply-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-reply-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller's OWN seen guardian replies on one athlete's parent messages (familyReplyReads.ts listOwnReplyReads; #1542 FC-09b). Keyed on the session's organization and account, never another staff member's reads. Scoped by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-reply-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-reply-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the reply's athlete (in familyReplyReads.recordFamilyReplyRead)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller records the first time they saw one guardian reply in their own gym (half of it on screen in the coach panel, FC-05 Q-1 A applied to replies; #1542 FC-09b). A forged id, another gym's reply or an unreachable athlete is the same 404; the database guard also requires an active staff seat. Written on conflict do nothing, so the first time stays (FC-09).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
@@ -9434,6 +9523,33 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/support-status/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/support-status",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on athlete_id (getSupportStatusForGuardian)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads one linked under-18 child's membership standing per program with its dates, scholarship as yes/none_recorded (percent reduced to a boolean in SQL), and live family support records with their dates (PH-13, Q-D A). Never scholarship_percent, scholarship_note, notes or any staff id. Another family's child, an 18+ child, a deleted child or another gym's child is the same 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/passbook/gaps/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/passbook/gaps",
@@ -12229,6 +12345,37 @@
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/formulas/observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/shadow/formulas/observations",
+    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "athlete",
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed only (no body weight, notes or source reference), enumerated projection.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
       ]
     }
   },

@@ -14,6 +14,14 @@ jest.mock('@/src/server/pilot/http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+import { findLibrarySourceByUrl } from '@/src/server/pilot/libraryIntakeRecovery';
+
+jest.mock('@/src/server/pilot/libraryIntakeRecovery', () => ({
+  ...jest.requireActual('@/src/server/pilot/libraryIntakeRecovery'),
+  findLibrarySourceByUrl: jest.fn(),
+}));
+const mockFindByUrl = jest.mocked(findLibrarySourceByUrl);
+
 jest.mock('@/src/server/pilot/shadowLibrary', () => ({
   createShadowLibrarySource: jest.fn(),
   listShadowLibrarySources: jest.fn(),
@@ -65,6 +73,7 @@ beforeEach(() => {
   mockRequirePrincipal.mockReset();
   mockCreate.mockResolvedValue({ source_id: 'source_1' } as never);
   mockList.mockResolvedValue([]);
+  mockFindByUrl.mockResolvedValue(null);
 });
 
 describe('POST /api/pilot/shadow/library/sources', () => {
@@ -188,6 +197,44 @@ describe('POST /api/pilot/shadow/library/sources', () => {
     const response = await POST(postRequest({ ...validBody, url: 'https://example.org/a' }));
 
     expect(response.status).toBe(409);
+  });
+
+  // L54 (audit 2026-10-17 item 3).
+  test('a URL held by another registration is a conflict that names that source', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockRejectedValueOnce(
+      new Error('duplicate key value violates unique constraint "shadow_library_sources_organization_id_url_key"'),
+    );
+    mockFindByUrl.mockResolvedValueOnce({ source_id: 'source_held', title: 'The Paper Already Here' });
+
+    const response = await POST(postRequest({ ...validBody, url: ' https://example.org/a ', request_id: 'req-1234-abcd' }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual(expect.objectContaining({
+      code: 'SHADOW_LIBRARY_SOURCE_URL_TAKEN',
+      existing_source: { source_id: 'source_held', title: 'The Paper Already Here' },
+    }));
+    expect(mockFindByUrl).toHaveBeenCalledWith('org-real', 'https://example.org/a');
+  });
+
+  test('a retry of a registration already saved answers 200 recovered', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ source_id: 'source_first', recovered: true } as never);
+
+    const response = await POST(postRequest({ ...validBody, request_id: 'req-1234-abcd' }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, recovered: true, source: { source_id: 'source_first' } });
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1234-abcd' }));
+  });
+
+  test('refuses a malformed request_id before writing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, request_id: 'no' }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
 

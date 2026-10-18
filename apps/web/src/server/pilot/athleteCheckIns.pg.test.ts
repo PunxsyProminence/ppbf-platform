@@ -105,6 +105,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let measuresMigrationSql: string;
+let selfReportMigrationSql: string;
 let baseSchemaSql: string;
 
 function connectionStringFor(database: string): string {
@@ -203,6 +204,10 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
   measuresMigrationSql = await fs.readFile(path.join(INFRA_DIR, MEASURES_MIGRATION_FILE), 'utf8');
+  selfReportMigrationSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_athlete_self_report_measures_migration.sql'),
+    'utf8',
+  );
 });
 
 afterAll(async () => {
@@ -346,6 +351,8 @@ describe('wellnessValueError', () => {
 async function applyModuleSchema(client: Client): Promise<void> {
   await client.query(migrationSql);
   await client.query(measuresMigrationSql);
+  // ...and mood, from the self-report measures migration.
+  await client.query(selfReportMigrationSql);
 }
 
 // The tests above prove the migration's schema. These prove the module:

@@ -11,10 +11,13 @@
  * repository six months from now -- which, after a week spent removing exactly
  * those, is the whole reason this platform authenticates to Azure this way.
  *
- * The token this returns is only useful for sending mail as
+ * The token this returns is useful for two things. Sending mail as
  * Admin@punxsyprominence.org: Mail.Send is restricted to that one mailbox by
  * an Exchange Application Access Policy, verified Denied against three other
- * real mailboxes before the permission was granted.
+ * real mailboxes before the permission was granted. And, once Jason grants
+ * it, filing research originals in the SharePoint Research Archive: Graph
+ * ListItems.SelectedOperations.Selected with write on that one folder
+ * (researchArchiveWrite.ts; lane L57 plan section 4).
  */
 
 const GRAPH_RESOURCE = 'https://graph.microsoft.com';

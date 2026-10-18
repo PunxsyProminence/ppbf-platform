@@ -397,3 +397,56 @@ describe('restored passages through the parser (A-Q11)', () => {
       .rejects.toMatchObject({ status: 502 });
   });
 });
+
+// Audit item 11, Jason's ruling A: the other cited sources' grades under the
+// "Strongest source" badge, on a reopened conversation too.
+describe('restored "Also cites" grades through the parser', () => {
+  function storedWith(extra: Record<string, unknown>) {
+    return jest.fn().mockResolvedValue(jsonResponse({
+      success: true,
+      messages: [{
+        messageId: '09475aaf-e9d6-43c8-af6f-10181f2917ab',
+        role: 'assistant',
+        content: 'Pivot off the lead foot.',
+        responseState: 'ok',
+        evidenceTier: 'PROVEN',
+        createdAt: '2026-07-24T12:00:01.000Z',
+        citations: [],
+        ...extra,
+      }],
+    }));
+  }
+
+  test('names the badge kind: a graded source, a graded answer, or no grade at all', async () => {
+    const [sourced] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceSourceGraded: true }));
+    expect(mapStoredShadowMessage(sourced).evidenceBadge).toBe('source');
+    const [unsourced] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceSourceGraded: false }));
+    expect(mapStoredShadowMessage(unsourced).evidenceBadge).toBe('answer');
+    // Written before grades existed: no badge rather than a made-up one.
+    const [ungraded] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceTier: null }));
+    expect(mapStoredShadowMessage(ungraded).evidenceBadge).toBeUndefined();
+    // Withheld: graded by its state, not by evidence.
+    const [withheld] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ responseState: 'filtered', evidenceTier: 'RESEARCH_NEEDED' }));
+    expect(mapStoredShadowMessage(withheld).evidenceBadge).toBeUndefined();
+  });
+
+  test('keeps the grades the server sends', async () => {
+    const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['EMERGING', 'EXPERIMENTAL'] }));
+    expect(message.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+    expect(mapStoredShadowMessage(message).evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+  });
+
+  test('absent or empty is no line', async () => {
+    const [absent] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({}));
+    expect(mapStoredShadowMessage(absent).evidenceAlsoCites).toBeUndefined();
+    const [empty] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: [] }));
+    expect(mapStoredShadowMessage(empty).evidenceAlsoCites).toBeUndefined();
+  });
+
+  test('a grade this client does not know is left out; a value that is not a list is malformed', async () => {
+    const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['VERY_GOOD', 'EMERGING'] }));
+    expect(message.evidenceAlsoCites).toEqual(['EMERGING']);
+    await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: 'EMERGING' })))
+      .rejects.toMatchObject({ status: 502 });
+  });
+});
