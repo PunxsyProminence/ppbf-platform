@@ -94,6 +94,18 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// F-102, Jason: "B: Change the guidance (Recommended)". The sign-in ID outlives
+// the athlete's record, so the create form steers away from a real name.
+describe('the athlete sign-in ID guidance', () => {
+  it('asks for a ring name or a number, not the athlete\'s real name', async () => {
+    installFetch({ ok: true });
+    render(<PinManagementPage />);
+
+    expect(await screen.findByText(/Use their ring name or a number, not their real name/)).toBeInTheDocument();
+    expect(screen.getByLabelText('New Account ID')).toHaveAttribute('placeholder', 'southpaw12');
+  });
+});
+
 describe('the athlete credential desk', () => {
   /* WHAT LEAVES THE BROWSER. The route ignores `pin` and `mode`, so sending
      them is not merely useless -- it is the shape that let this page believe,
