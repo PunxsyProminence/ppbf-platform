@@ -26,15 +26,15 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
-import type { ObservationKind } from './types';
+import type { ObservationKind } from './formulas/types';
 
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-sparring-correction-pg-test-${Date.now()}`);
-const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../../scripts/test-embedded-pg-server.mjs');
-const BASE_SQL_PATH = path.resolve(__dirname, '../../../../../../infra/azure/pilot_slice_postgres.sql');
+const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const BASE_SQL_PATH = path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres.sql');
 const TEST_DB_NAME = 'ppbf_test_sparring_correction';
 
 const ORG_ID = 'org-sparring-fix';
@@ -47,9 +47,9 @@ const OTHER_ATHLETE_ID = 'ATH-FIX-2';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let repository: typeof import('./repository');
-let runner: typeof import('./runner');
-let autoCalculation: typeof import('./autoCalculation');
+let repository: typeof import('./formulas/repository');
+let runner: typeof import('./formulas/runner');
+let autoCalculation: typeof import('./formulas/autoCalculation');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -222,13 +222,13 @@ beforeAll(async () => {
   // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
 
-  repository = await import('./repository');
-  runner = await import('./runner');
-  autoCalculation = await import('./autoCalculation');
+  repository = await import('./formulas/repository');
+  runner = await import('./formulas/runner');
+  autoCalculation = await import('./formulas/autoCalculation');
 });
 
 afterAll(async () => {
-  const { closePool } = await import('../db');
+  const { closePool } = await import('./db');
   await closePool();
   await new Promise<void>((resolve) => {
     let done = false;

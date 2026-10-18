@@ -139,7 +139,7 @@
     "test:migrations:athlete-intelligence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteIntelligence.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-intelligence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachIntelligence.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-drill-exposure": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDrillExposure.pg.test.ts --testTimeout=180000",
-    "test:migrations:sparring-correction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/formulas/sparringCorrection.pg.test.ts --testTimeout=180000",
+    "test:migrations:sparring-correction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/formulaSparringCorrection.pg.test.ts --testTimeout=180000",
     "test:migrations:magic-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/magicLinkRedemption.pg.test.ts --testTimeout=180000",
     "test:migrations:magic-link-reissue": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/magicLinkReissue.pg.test.ts --testTimeout=180000",
     "test:migrations:attendance-trend": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendanceReporting.pg.test.ts --testTimeout=180000",
