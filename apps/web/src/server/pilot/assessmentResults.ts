@@ -56,7 +56,8 @@ export const SKILL_RATING_LEVELS: ReadonlyArray<{ level: 1 | 2 | 3 | 4 | 5; labe
   { level: 5, label: 'Sharp', description: 'Uses it automatically in hard sparring and bouts, and adapts it' },
 ];
 
-const PROTOCOL_VERSION = 1;
+/** The version every PPBF protocol row is written at; the test day writes against the same rows. */
+export const PROTOCOL_VERSION = 1;
 const SOURCE_REF = 'ppbf-coach-entry-v1';
 
 export function skillRubricProtocolId(familyId: SkillFamilyId): string {

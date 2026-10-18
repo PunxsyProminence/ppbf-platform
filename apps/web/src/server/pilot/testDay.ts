@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ActorIdentity } from './access';
 import {
   JUMP_PROTOCOL_IDS,
+  PROTOCOL_VERSION,
   SHUTTLE_LEVEL_MAX,
   SHUTTLE_NUMBER_MAX,
   SHUTTLE_PROTOCOL_ID,
@@ -41,7 +42,6 @@ import { ConflictError, ForbiddenError, ValidationError } from './errors';
  */
 
 export const TEST_DAY_MAX_ROWS = 100;
-const PROTOCOL_VERSION = 1;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const JUMP_FIELDS = { cmj_cm: 'ppbf-jump-cmj-height', broad_cm: 'ppbf-jump-broad-distance' } as const;
@@ -173,8 +173,7 @@ const NOT_PERMITTED = () => new ForbiddenError(
 );
 
 const KEY_REUSED = () => new ConflictError(
-  'This save was already recorded with different numbers, and the first numbers are kept. '
-  + 'To change one, correct that reading on the athlete\'s own page; do not enter the test day again.',
+  'This save was already recorded with different numbers. The first numbers are kept, and nothing from this attempt was saved.',
   'TEST_DAY_REQUEST_KEY_REUSED',
 );
 
