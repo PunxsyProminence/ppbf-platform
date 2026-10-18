@@ -329,7 +329,7 @@ test('the title and eyebrow are on the wood header, not the wall', async () => {
   render(<LabelAgreementPage />);
 
   await screen.findByRole('link', { name: 'Cut a study clip' });
-  const header = screen.getByRole('heading', { level: 1, name: 'Label agreement' }).closest('header');
+  const header = screen.getByRole('heading', { level: 1, name: 'Label Agreement' }).closest('header');
   expect(header).toHaveClass('mat-wood');
   expect(header).toHaveTextContent('Teach Shadow');
 });

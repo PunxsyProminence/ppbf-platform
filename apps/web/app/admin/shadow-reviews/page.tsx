@@ -298,7 +298,7 @@ function ShadowReviewsConsole() {
           className="t-gothic text-[color:var(--bone-100)]"
           style={{ fontSize: 'var(--t-2xl)' }}
         >
-          SHADOW human review
+          SHADOW Human Review
         </h1>
         <p className="t-body mt-[var(--s3)] max-w-4xl">
           {'SHADOW chats sent for a human look. A ticket can come from a high-risk request, a generated answer that was withheld or replaced, or another route condition that needs review — not necessarily because SHADOW failed.'}
