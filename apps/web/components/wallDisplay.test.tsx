@@ -12,6 +12,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { OrganizationProfileProvider } from '@/components/OrganizationProfileProvider';
+import { PPBF_PROFILE } from '@/src/testing/organizationProfileFixtures';
+
 import WallDisplay, {
   WALL_ABANDON_MS,
   WALL_POLL_MS,
@@ -177,7 +180,7 @@ describe('WallDisplay', () => {
     // The standing state. It must be true without a network, because that is
     // the one moment it has to carry the room on its own.
     fetchMock.mockImplementation(() => new Promise(() => {}));
-    render(<WallDisplay />);
+    render(<OrganizationProfileProvider profile={PPBF_PROFILE}><WallDisplay /></OrganizationProfileProvider>);
     expect(screen.getByText(/Punxsy Prominence/i)).toBeTruthy();
     expect(screen.getByText(/coming up/i)).toBeTruthy();
   });
@@ -267,7 +270,8 @@ describe('WallDisplay', () => {
     // instant until hydration -- on the one screen in the building whose entire
     // job is to be true. The masthead holds space instead and the first tick
     // fills it.
-    const html = renderToStaticMarkup(<WallDisplay />);
+    // The gym's name comes from the root layout's provider (lane L31).
+    const html = renderToStaticMarkup(<OrganizationProfileProvider profile={PPBF_PROFILE}><WallDisplay /></OrganizationProfileProvider>);
     expect(html).toContain('Punxsy Prominence');
     expect(html).not.toMatch(/\b(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b/);
     expect(html).not.toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/i);

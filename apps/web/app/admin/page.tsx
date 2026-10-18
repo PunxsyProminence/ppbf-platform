@@ -1593,13 +1593,12 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 OPERATIONS
               </Link>
               {/*
-                The "(PLANNED)" that used to be baked into this label is real
-                signalling and it stays -- automated monitoring behind this
-                surface is not built. What changes is how it speaks: a
-                parenthetical in a button label is a Jira ticket, and Law 7
-                says governance speaks in ink. The claim moves onto the design
-                system's stamp, the same treatment CoachWorkspace uses for
-                every surface that is drawn but not yet wired.
+                No "Planned" stamp (lane U2, audit UX-A A-2; Overwatch
+                2026-10-17): the Compliance Center reads and records
+                violations today, so the button opens a working page. What is
+                not built is the automated monitoring behind it, and the
+                "Planned -- Not Yet Implemented" note further down this page
+                still says so.
               */}
               {canOpenComplianceCenter && (
                 <Link
@@ -1607,7 +1606,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   className="btn btn--ghost"
                 >
                   COMPLIANCE CENTER
-                  <span className="stamp stamp--brass stamp--flat">Planned</span>
                 </Link>
               )}
               <button
@@ -1790,7 +1788,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   backend. The buttons below take you to each surface exactly as it stands today.
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <Link href="/public" className="btn btn--ghost">
+                  <Link href="/" className="btn btn--ghost">
                     Edit Public Page Surface
                   </Link>
                   <Link href="/login" className="btn btn--ghost">
