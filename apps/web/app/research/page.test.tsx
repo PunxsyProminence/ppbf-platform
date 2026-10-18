@@ -378,8 +378,11 @@ describe('general research intake', () => {
 
         await fillAndRegister();
         expect(screen.getByText(/did not confirm the registration\. Press Register general research again/)).toBeTruthy();
-        // The draft is kept for the retry.
+        // The draft is kept for the retry, and locked: an edit sent under the
+        // same id would be answered with the source the first request saved.
         expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Youth safeguarding review');
+        expect((screen.getByLabelText('Title') as HTMLInputElement).disabled).toBe(true);
+        expect((screen.getByLabelText('Classification domain') as HTMLSelectElement).disabled).toBe(true);
 
         await act(async () => {
           fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
@@ -391,6 +394,30 @@ describe('general research intake', () => {
         expect(screen.getByText(/the retry found the saved source instead of adding a second one/)).toBeTruthy();
       },
     );
+
+    test('Start a different registration unlocks the form and the next registration gets a new id', async () => {
+      const posts: Array<Record<string, unknown>> = [];
+      global.fetch = mockRegistration([
+        { status: 503, json: { error: 'unavailable' } },
+        { status: 201, json: { ok: true, source: { source_id: 'source_b' } } },
+      ], posts);
+
+      await fillAndRegister();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start a different registration' }));
+      });
+      expect((screen.getByLabelText('Title') as HTMLInputElement).disabled).toBe(false);
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'A different paper' } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+      });
+
+      expect(posts).toHaveLength(2);
+      expect(posts[1].request_id).not.toBe(posts[0].request_id);
+      expect(posts[1].title).toBe('A different paper');
+    });
 
     test('a URL another registration holds names that source', async () => {
       const posts: Array<Record<string, unknown>> = [];

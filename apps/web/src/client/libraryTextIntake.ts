@@ -291,6 +291,8 @@ export function validateIntakeInput(input: IntakeInput): string | null {
 // The excerpt budget's refusal code (shadowLibrary.ts EXCERPT_BUDGET_EXCEEDED_CODE;
 // not imported, so this client module carries no server import).
 const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
+// The chunk route's answer when different text is stored at that part (L54).
+const CHUNK_CONFLICT_CODE = 'SHADOW_LIBRARY_CHUNK_CONFLICT';
 
 function serverError(payload: unknown): { error: string | null; code: string | null } {
   if (typeof payload !== 'object' || payload === null) return { error: null, code: null };
@@ -456,17 +458,29 @@ export async function submitLibraryTextIntake(
     // earlier, whose answer was lost.
     const createdId = created.status === 201 || created.status === 200 ? documentIdFrom(created.payload) : null;
     if (!createdId) {
-      // Only a 4xx is a refusal, and only a refusal proves nothing new was
-      // stored. No answer, a 5xx, or a success without an id can each follow
-      // a document that WAS written, so they offer Finish saving, which asks
-      // again with the same request id instead of filing the text twice.
+      // On a first attempt only a 4xx is a refusal, and only a refusal proves
+      // nothing was stored. No answer, a 5xx, or a success without an id can
+      // each follow a document that WAS written, so they offer Finish saving,
+      // which asks again with the same request id instead of filing the text
+      // twice. On Finish saving even a refusal proves nothing about the FIRST
+      // request (a session that expired since, a rate limit), so the entry
+      // stays resumable and locked to what was first sent.
       const refused = created.status >= 400 && created.status < 500;
+      if (refused && resume === null) {
+        return {
+          ok: false,
+          message: `${refusalMessage(created.status, 'source', shelf, created.payload)} Nothing was saved.`,
+          resume: null,
+          writtenChunks: 0,
+          totalChunks: chunks.length,
+        };
+      }
       return {
         ok: false,
         message: refused
-          ? `${refusalMessage(created.status, 'source', shelf, created.payload)} Nothing was saved.`
+          ? `${refusalMessage(created.status, 'source', shelf, created.payload)} ${INTAKE_RECOVERY_WORDS.documentUnconfirmed}`
           : INTAKE_RECOVERY_WORDS.documentUnconfirmed,
-        resume: refused ? null : resumeFrom(0, null),
+        resume: resumeFrom(0, null),
         writtenChunks: 0,
         totalChunks: chunks.length,
       };
@@ -490,7 +504,9 @@ export async function submitLibraryTextIntake(
     if (written.status !== 201 && !alreadyStoredFrom(written.status, written.payload)) {
       // Different text is already stored at this part: retrying cannot change
       // that, so no Finish saving is offered, and it is never counted as saved.
-      if (written.status === 409) {
+      // Only the route's own comparison says so; any other 409 (a document
+      // that moved source mid-save) is an ordinary failure, resumable.
+      if (written.status === 409 && serverError(written.payload).code === CHUNK_CONFLICT_CODE) {
         return {
           ok: false,
           message: INTAKE_RECOVERY_WORDS.chunkConflict(index, chunks.length),

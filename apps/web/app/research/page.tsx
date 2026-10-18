@@ -172,6 +172,8 @@ const SOURCE_REGISTRATION_WORDS = {
   recovered: 'Source registered. The first answer was lost; the retry found the saved source instead of adding a second one.',
   unconfirmed: 'The Library did not confirm the registration. Press Register general research again: it finds the saved source instead of adding a second one.',
   urlTaken: (title: string) => `This URL is already registered as "${title}". Choose it from the source list.`,
+  // PROPOSED (L54 review): unlocks the form for a different registration.
+  startOver: 'Start a different registration',
 };
 
 export default function ResearchIntakePage() {
@@ -259,6 +261,10 @@ export default function ResearchIntakePage() {
   // after a lost answer sends the same id and gets the source already saved,
   // never a second one.
   const generalRequestIdRef = useRef<string | null>(null);
+  // Set while a registration is unconfirmed: the form is locked so the retry
+  // sends what the first request sent. An edited draft under the same id would
+  // be answered with the source the first request saved, and the edit lost.
+  const [generalUnconfirmed, setGeneralUnconfirmed] = useState(false);
   const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
   // The correction list reads a SERVER-FILTERED general-research page, not a
   // client-side sift of the newest-200 overall list -- in a corpus of
@@ -492,6 +498,7 @@ export default function ResearchIntakePage() {
         });
       } catch {
         // No answer: the source may have been saved. The same id goes again.
+        setGeneralUnconfirmed(true);
         setGeneralMessage(SOURCE_REGISTRATION_WORDS.unconfirmed);
         return;
       }
@@ -504,12 +511,17 @@ export default function ResearchIntakePage() {
       const heldTitle = payload.existing_source?.title;
       const takenBy = payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' && typeof heldTitle === 'string' ? heldTitle : null;
       if (response.status === 409 && takenBy !== null) {
+        // Another registration holds the URL; this request id saved nothing
+        // (a retry of a saved one is answered as recovered before any insert).
+        generalRequestIdRef.current = null;
+        setGeneralUnconfirmed(false);
         setGeneralMessage(SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
         await refreshCuratorSources();
         await refreshGeneralSources();
         return;
       }
       if (response.status >= 500) {
+        setGeneralUnconfirmed(true);
         setGeneralMessage(SOURCE_REGISTRATION_WORDS.unconfirmed);
         return;
       }
@@ -517,6 +529,7 @@ export default function ResearchIntakePage() {
         throw new Error(payload.error || `Registration failed (${response.status})`);
       }
       generalRequestIdRef.current = null;
+      setGeneralUnconfirmed(false);
       setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
       setGeneralMessage(payload.recovered === true
         ? SOURCE_REGISTRATION_WORDS.recovered
@@ -1303,12 +1316,12 @@ export default function ResearchIntakePage() {
             <div className="grid gap-[var(--s3)] md:grid-cols-2">
               <label className="field md:col-span-2">
                 <span className="t-label">Title</span>
-                <input className="input" value={generalDraft.title}
+                <input className="input" value={generalDraft.title} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, title: event.target.value }))} />
               </label>
               <label className="field">
                 <span className="t-label">Source type</span>
-                <select className="select" value={generalDraft.sourceType}
+                <select className="select" value={generalDraft.sourceType} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, sourceType: event.target.value }))}>
                   {GENERAL_SOURCE_TYPES.map((type) => (
                     <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>
@@ -1317,7 +1330,7 @@ export default function ResearchIntakePage() {
               </label>
               <label className="field">
                 <span className="t-label">Classification domain</span>
-                <select aria-label="Classification domain" className="select" value={generalDraft.classification}
+                <select aria-label="Classification domain" className="select" value={generalDraft.classification} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, classification: event.target.value }))}>
                   <option value="">Choose a domain…</option>
                   {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
@@ -1327,22 +1340,22 @@ export default function ResearchIntakePage() {
               </label>
               <label className="field md:col-span-2">
                 <span className="t-label">URL (optional)</span>
-                <input className="input" value={generalDraft.url}
+                <input className="input" value={generalDraft.url} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, url: event.target.value }))} />
               </label>
               <label className="field">
                 <span className="t-label">DOI / PMID</span>
-                <input className="input" value={generalDraft.doi}
+                <input className="input" value={generalDraft.doi} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, doi: event.target.value }))} />
               </label>
               <label className="field">
                 <span className="t-label">Provider</span>
-                <input className="input" value={generalDraft.provider}
+                <input className="input" value={generalDraft.provider} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, provider: event.target.value }))} />
               </label>
               <label className="field md:col-span-2">
                 <span className="t-label">Original filename</span>
-                <input className="input" value={generalDraft.filename}
+                <input className="input" value={generalDraft.filename} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
               </label>
             </div>
@@ -1350,6 +1363,16 @@ export default function ResearchIntakePage() {
               <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral()}>
                 {generalBusy ? 'Registering…' : 'Register general research'}
               </button>
+              {generalUnconfirmed && !generalBusy ? (
+                <button type="button" className="btn btn--ghost"
+                  onClick={() => {
+                    generalRequestIdRef.current = null;
+                    setGeneralUnconfirmed(false);
+                    setGeneralMessage('');
+                  }}>
+                  {SOURCE_REGISTRATION_WORDS.startOver}
+                </button>
+              ) : null}
               {generalMessage ? <p className="t-muted" role="status">{generalMessage}</p> : null}
             </div>
 

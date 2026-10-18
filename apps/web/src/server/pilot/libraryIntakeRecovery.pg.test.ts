@@ -365,6 +365,29 @@ describe('a source registration whose answer is lost (real database)', () => {
     expect(await eventCount(rows[0].source_id)).toBe(1);
   });
 
+  // Proves the advisory lock: without it both transactions find nothing and
+  // both insert (nothing else makes the request id unique).
+  test('two requests with one id at the same moment make one source', async () => {
+    const title = 'Two requests at once';
+    const body = { title, source_type: 'peer_reviewed', request_id: 'req-source-concurrent-0001' };
+
+    const answers = await Promise.all([post(SOURCES, body), post(SOURCES, body), post(SOURCES, body)]);
+
+    expect(answers.map((answer) => answer.status).sort()).toEqual([200, 200, 201]);
+    const rows = await rawQuery('select 1 from pilot.shadow_library_sources where organization_id = $1 and title = $2', [GYM_ID, title]);
+    expect(rows).toHaveLength(1);
+  });
+
+  test('a request key in metadata is refused; only request_id sets it', async () => {
+    const response = await post(SOURCES, {
+      title: 'Smuggled request key',
+      source_type: 'peer_reviewed',
+      metadata: { registration_request_id: 'req-smuggled-0001' },
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   test('a URL another registration holds is a conflict that names that source', async () => {
     const url = 'https://example.org/held-by-someone';
     const first = await post(SOURCES, { title: 'The Paper Already Here', source_type: 'peer_reviewed', url, request_id: 'req-held-0001' });
@@ -479,6 +502,21 @@ describe('an excerpt whose answers are lost part-way (real database)', () => {
 
     expect(finished.ok).toBe(true);
     expect((await storedText(stopped.resume.documentId as string)).ordinals).toHaveLength(20);
+  });
+
+  test('two document requests with one id at the same moment make one document', async () => {
+    const sourceId = await registerSource('Concurrent document source');
+    const body = {
+      source_id: sourceId,
+      document_name: 'Concurrent document',
+      metadata: { intake_method: 'manual_text', locator: 'p. 1', chunk_count: 1 },
+      request_id: 'req-document-concurrent-0001',
+    };
+
+    const answers = await Promise.all([post(DOCUMENTS, body), post(DOCUMENTS, body), post(DOCUMENTS, body)]);
+
+    expect(answers.map((answer) => answer.status).sort()).toEqual([200, 200, 201]);
+    expect(await documentsNamed(sourceId, 'Concurrent document')).toHaveLength(1);
   });
 
   test('an entry started under one source cannot be finished under another', async () => {

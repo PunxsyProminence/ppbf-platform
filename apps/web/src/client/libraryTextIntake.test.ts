@@ -300,7 +300,33 @@ describe('submitLibraryTextIntake', () => {
   it('does not treat a 409 on a first attempt as written', async () => {
     const { impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 409 }));
     const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
-    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: null });
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0 });
+  });
+
+  // L54 review: only the route's own comparison makes a 409 a conflict. Any
+  // other 409 (a document that moved source mid-save) stays resumable.
+  it('a 409 without the conflict code is an ordinary, resumable failure', async () => {
+    const { impl } = recordingFetch((_call, index) => (index === 0
+      ? created
+      : { status: 409, json: { error: 'This document moved to another source while the text was being saved. Try again.' } }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+    expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { documentId: 'doc_1', nextOrdinal: 0 } });
+    expect(result.ok === false && result.message).not.toMatch(/different text/);
+  });
+
+  // L54 review: a refusal on Finish saving proves nothing about the FIRST
+  // request, which may have saved the document before its answer was lost.
+  it.each([[401], [429], [404]])('a %s on Finish saving keeps the entry resumable and never says nothing was saved', async (status) => {
+    const lost = recordingFetch(() => 'throw');
+    const stopped = await submitLibraryTextIntake('', INPUT, { fetchImpl: lost.impl });
+    if (stopped.ok || !stopped.resume) throw new Error('expected a resumable failure');
+
+    const refused = recordingFetch(() => ({ status }));
+    const result = await submitLibraryTextIntake('', INPUT, { resume: stopped.resume, fetchImpl: refused.impl });
+
+    expect(result).toMatchObject({ ok: false, resume: { documentId: null, requestId: stopped.resume.requestId } });
+    expect(result.ok === false && result.message).toContain(INTAKE_RECOVERY_WORDS.documentUnconfirmed);
+    expect(result.ok === false && result.message).not.toMatch(/Nothing was saved/);
   });
 
   // L54 (audit 2026-10-17 item 2): during Finish saving, a 409 means different

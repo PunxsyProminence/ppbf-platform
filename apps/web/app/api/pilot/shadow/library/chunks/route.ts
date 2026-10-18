@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import { PilotError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { findStoredLibraryChunk, isSameLibraryChunk } from '@/src/server/pilot/libraryIntakeRecovery';
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
@@ -61,6 +62,9 @@ function excerptLocatorFrom(body: { excerpt_locator?: unknown; metadata?: unknow
 }
 
 const CHUNK_CONFLICT_CODE = 'SHADOW_LIBRARY_CHUNK_CONFLICT';
+// shadowLibrary.ts EXCERPT_BUDGET_EXCEEDED_CODE, repeated so this route's
+// tests can mock that module whole.
+const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
 
 // A REPEATED WRITE (L54; audit 2026-10-17 item 2). A curator's "Finish
 // saving" resends parts whose first answer may have been lost after they were
@@ -166,6 +170,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, chunk }, { status: 201 });
   } catch (error) {
+    // A repeat that raced its original past the stored-part check waits on the
+    // source lock, then counts the original's part against the excerpt budget.
+    // At the cap that refuses a part that is in fact saved, so the stored part
+    // decides here too.
+    if (repeat && error instanceof PilotError && error.code === EXCERPT_BUDGET_EXCEEDED_CODE) {
+      const settled = await settleRepeatedChunk(repeat.organizationId, repeat.documentId, repeat.ordinal, repeat.attempt)
+        .catch(() => null);
+      if (settled) return settled;
+    }
     const refusal = rightsRefusalMessage(error);
     if (refusal) {
       return NextResponse.json({ ok: false, error: refusal }, { status: 422 });
@@ -181,9 +194,10 @@ export async function POST(request: NextRequest) {
         const settled = repeat
           ? await settleRepeatedChunk(repeat.organizationId, repeat.documentId, repeat.ordinal, repeat.attempt).catch(() => null)
           : null;
+        // Not compared (the check itself failed): not a conflict, and retryable.
         return settled ?? NextResponse.json(
-          { ok: false, error: 'A chunk with this ordinal already exists for this document', code: CHUNK_CONFLICT_CODE },
-          { status: 409 },
+          { ok: false, error: 'The Library could not check the part already saved here. Try again.' },
+          { status: 503 },
         );
       }
     }

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { PilotError } from '@/src/server/pilot/errors';
 import { findStoredLibraryChunk } from '@/src/server/pilot/libraryIntakeRecovery';
 import { createShadowLibraryChunk } from '@/src/server/pilot/shadowLibrary';
 
@@ -182,6 +183,18 @@ describe('POST /api/pilot/shadow/library/chunks', () => {
 
   test('reports a repeated ordinal as a conflict', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
+    // L54: the part that won the race holds other text.
+    mockFindStored.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      chunk_id: 'chunk_other',
+      document_id: 'doc_1',
+      source_id: 'source_1',
+      ordinal: 0,
+      text_content: 'Other words stored at this ordinal.',
+      excerpt_locator: null,
+      text_kind: 'full_text',
+      metadata: {},
+      created_at: '2026-10-18T00:00:00Z',
+    });
     mockCreate.mockRejectedValueOnce(
       new Error('duplicate key value violates unique constraint "shadow_library_chunks_document_id_ordinal_key"'),
     );
@@ -252,6 +265,42 @@ describe('a repeated chunk write on POST /api/pilot/shadow/library/chunks', () =
 
     expect(response.status).toBe(200);
     expect((await response.json()).already_stored).toBe(true);
+  });
+
+  test('a duplicate whose comparison cannot run is retryable, not a conflict', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockFindStored.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('connection reset'));
+    mockCreate.mockRejectedValueOnce(
+      new Error('duplicate key value violates unique constraint "shadow_library_chunks_document_id_ordinal_key"'),
+    );
+
+    const response = await POST(postRequest(intakeBody));
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBeUndefined();
+  });
+
+  // The repeat raced its original past the check, then met the excerpt cap
+  // counting the original's part: the stored part decides.
+  test('a repeat refused at the excerpt cap is answered by the part already stored', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockFindStored.mockResolvedValueOnce(null).mockResolvedValueOnce(stored);
+    mockCreate.mockRejectedValueOnce(new PilotError(422, 'over the limit', 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED'));
+
+    const response = await POST(postRequest(intakeBody));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).already_stored).toBe(true);
+  });
+
+  test('a write refused at the excerpt cap with nothing stored there stays refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockRejectedValueOnce(new PilotError(422, 'over the limit', 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED'));
+
+    const response = await POST(postRequest(intakeBody));
+
+    expect(response.status).toBe(422);
+    expect((await response.json()).code).toBe('SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED');
   });
 });
 

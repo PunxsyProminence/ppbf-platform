@@ -591,6 +591,15 @@ function assertNoReservedProvenance(metadata: Record<string, unknown> | undefine
 // on every retry; it is kept in the source's metadata under this key.
 export const SOURCE_REGISTRATION_REQUEST_KEY = 'registration_request_id';
 
+// The request keys are written only from the request id, never taken from a
+// caller's metadata: a key slipped in there would let a later request with
+// that id "recover" a row it did not make.
+function assertNoRequestKey(metadata: Record<string, unknown> | undefined, key: string): void {
+  if (metadata && Object.hasOwn(metadata, key)) {
+    throw new ValidationError(`metadata.${key} is set only from request_id.`);
+  }
+}
+
 // One transaction-scoped advisory lock per (organization, request): a retry
 // that arrives while the first request is still inside its transaction waits
 // for it, then finds what it wrote instead of writing a second row.
@@ -620,6 +629,7 @@ export async function createShadowLibrarySource(input: {
   // hold of it, so it is the reviewer tier's call, as on the rights PATCH.
   if (input.rightsStatus && input.rightsStatus !== 'unknown') requireEvidenceReviewer(input.actorRole as PilotRole);
   assertNoReservedProvenance(input.metadata);
+  assertNoRequestKey(input.metadata, SOURCE_REGISTRATION_REQUEST_KEY);
   const requestId = input.requestId?.trim() || null;
   if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
     throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
@@ -1051,6 +1061,7 @@ export async function createShadowLibraryDocument(input: {
   requestId?: string | null;
 }): Promise<ShadowLibraryDocumentRow & { recovered?: true }> {
   assertNoReservedProvenance(input.metadata);
+  assertNoRequestKey(input.metadata, DOCUMENT_INTAKE_REQUEST_KEY);
   const requestId = input.requestId?.trim() || null;
   if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
     throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
@@ -1069,6 +1080,8 @@ export async function createShadowLibraryDocument(input: {
       const existing = await client.query<ShadowLibraryDocumentRow>(
         `select * from pilot.shadow_library_documents
           where organization_id = $1 and created_by_account_id = $2 and metadata->>'${DOCUMENT_INTAKE_REQUEST_KEY}' = $3
+            -- A document the retention purge held takes no new chunk (F-086).
+            and not (metadata ? 'subject_purged_at')
           order by created_at
           limit 1`,
         [input.organizationId, input.actorAccountId, requestId],
