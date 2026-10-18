@@ -237,7 +237,6 @@ on:
           - parent-resources
           - family-support-records
           - family-reply-reads
-          - family-support-records
 
 permissions:
   id-token: write
