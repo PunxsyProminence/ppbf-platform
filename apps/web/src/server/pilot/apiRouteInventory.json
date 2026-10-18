@@ -225,7 +225,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole :224 (writers incl. athlete); assertActorCanAccessAthlete :233 (athlete = self only); awarded_by role derived from session (:237); audit written.",
+    "notes": "requireRole :224 (writers incl. athlete); assertActorCanAccessAthlete :233 (athlete = self only); awarded_by role derived from session (:237); audit written. A coach's mark on the athlete's own standing award makes it the coach's (first date kept). With undo: true (OD-2026-10-17-003, lane L43) requireRole athlete only, then undoSelfMilestone keys athlete, the signed-in account, awarded_by_role self and the 10-minute window (DB clock) into one statement, sets undone_at (no delete) and writes its audit event in the same transaction; anything else answers 409 MILESTONE_UNDO_CLOSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -235,7 +235,8 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "admin,athlete,coach,organization_admin",
+        "athlete"
       ]
     }
   },
@@ -12819,7 +12820,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "documents/route.ts:41-42 gate; :121-123 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
+    "notes": "documents/route.ts:46 gate; :149 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -15106,6 +15107,124 @@
       ],
       "roleLiterals": [
         "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Adds a name under one skill from the skill graph, created by the caller, with a server-minted key; the same name under the same skill returns the existing key. The table's guard requires a live staff creator and keeps a name's meaning fixed.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Files a report as the caller in the caller's role; recordBehaviourObservation builds session, drill and episode keys from this gym's records and the table's guard re-checks staff membership and the athlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
       ]
     }
   }

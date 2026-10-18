@@ -104,6 +104,8 @@ export function canTriggerStoredCalculation(role: PilotRole): boolean {
 export interface DetectedFormulaCalculation {
   readonly formulaId: FormulaInputRequirement['formulaId'];
   readonly observationIds: readonly string[];
+  /** Present for a policy formula (MVP-10): what it runs under. */
+  readonly policy?: FormulaInputRequirement['policy'];
 }
 
 /** The switch's own reading of a dimension: absent and non-string are ''. */
@@ -118,6 +120,7 @@ function isCandidate(
   observation: NumericObservation,
   requirement: FormulaInputRequirement,
 ): boolean {
+  if (observation.value == null && requirement.nonNullKinds.includes(observation.kind)) return false;
   const wanted = requirement.dimensionValues[observation.kind];
   if (!wanted) return true;
   return Object.entries(wanted).every(([key, value]) => dimensionString(observation, key) === value);
@@ -192,6 +195,7 @@ export function detectSatisfiedFormulaInputs(
         observationIds: Object.freeze(
           members.map((member) => member.observationId).sort(),
         ),
+        ...(requirement.policy ? { policy: requirement.policy } : {}),
       }));
     }
   }
@@ -253,6 +257,9 @@ export async function autoCalculateForObservationContext(input: {
       athleteId: input.athleteId,
       formulaId: calculation.formulaId,
       observationIds: calculation.observationIds,
+      ...(calculation.policy
+        ? { parameters: calculation.policy.parameters, policyVersion: calculation.policy.policyVersion }
+        : {}),
     });
     results.push(...output.results);
   }

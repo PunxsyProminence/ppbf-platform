@@ -214,6 +214,27 @@ describe('stored MVP formula runner', () => {
     expect(mockSaveResults).toHaveBeenCalledWith(transactionClient, expect.any(Array));
   });
 
+  test('a whole-session box cleared to null retires MVP-02 instead of re-running it (lane L50)', async () => {
+    const oldPunches = observation({ id: 'punches-old', kind: 'punch_count', unit: 'count', value: 100 });
+    const cleared = observation({ id: 'punches-null', kind: 'punch_count', unit: 'count', value: null });
+    const rounds = observation({ id: 'rounds', kind: 'round_count', unit: 'count', value: 3 });
+    const active = observation({ id: 'active', kind: 'active_time', unit: 'minutes', value: 6 });
+    mockFindResults.mockResolvedValue([...calculatePunchOutput({
+      punches: oldPunches, rounds, activeTime: active, computedAt: '2026-07-27T12:00:00.000Z',
+    })]);
+    mockGetObservations.mockResolvedValue([cleared]);
+
+    const recalculated = await recalculateForSupersededObservation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      supersededObservationId: 'punches-old',
+      replacementObservationId: 'punches-null',
+    });
+
+    expect(recalculated).toEqual([]);
+    expect(mockSaveResults).not.toHaveBeenCalled();
+  });
+
   test('deduplicates multi-output history when recalculating a superseded observation', async () => {
     const oldPunches = observation({
       id: 'punches-old',
@@ -256,8 +277,11 @@ describe('stored MVP formula runner', () => {
       computedAt: '2026-07-28T12:00:00.000Z',
     });
 
-    expect(mockGetObservations).toHaveBeenCalledTimes(1);
-    expect(mockGetObservations).toHaveBeenCalledWith(expect.objectContaining({
+    // One RUN for the two outputs (the other read is the replacement lookup
+    // a cleared box needs; see the next test).
+    const runReads = mockGetObservations.mock.calls.filter(([arg]) => arg.observationIds.length > 1);
+    expect(runReads).toHaveLength(1);
+    expect(runReads[0][0]).toEqual(expect.objectContaining({
       observationIds: ['punches-new', 'rounds', 'active'],
     }));
     expect(recalculated.map((result) => result.value)).toEqual([40, 20]);
@@ -313,5 +337,31 @@ describe('stored MVP formula runner', () => {
         observationIds: ['a', 'b'], parameters, policyVersion,
       })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
     });
+  });
+});
+
+describe('data completeness (MVP-10) does not depend on input order (lane L50)', () => {
+  test('the same three boxes in two orders store one calculation', async () => {
+    jest.clearAllMocks();
+    mockWithTransaction.mockImplementation(async (callback) => callback(transactionClient as never));
+    mockSaveResults.mockImplementation(async (_client, results) => [...results]);
+    const box = (id: string, kind: 'punch_count' | 'punch_landed' | 'active_time', fieldKey: string) => observation({
+      id, kind, unit: kind === 'active_time' ? 'minutes' : 'count', value: 1, contextId: 'sparring_1',
+      dimensions: { scope: 'session_total', fieldKey },
+    });
+    const boxes = [box('a', 'punch_count', 'all_thrown'), box('x', 'punch_landed', 'all_landed'), box('c', 'active_time', 'minutes_worked')];
+    const policy = {
+      parameters: { expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'], highAt: 0.8, moderateAt: 0.5, lowAt: 0 },
+      policyVersion: 'sparring-log-completeness-2026-10-17',
+    };
+    const keyFor = async (order: typeof boxes) => {
+      mockGetObservations.mockResolvedValueOnce(order);
+      const output = await runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-10',
+        observationIds: order.map((item) => item.observationId), ...policy,
+      });
+      return output.results[0].calculationKey;
+    };
+    expect(await keyFor([boxes[0], boxes[1], boxes[2]])).toBe(await keyFor([boxes[0], boxes[2], boxes[1]]));
   });
 });

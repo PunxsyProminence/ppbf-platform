@@ -113,6 +113,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
   // The sources route now writes rights_status (source rights).
   'pilot_slice_postgres_source_rights_migration.sql',
+  // The excerpt-to-filed-original link (lane L57).
+  'pilot_slice_postgres_research_archive_originals_migration.sql',
 ];
 
 let PG_PORT: number;
@@ -520,5 +522,85 @@ describe('a retried submission registers nothing twice (real database)', () => {
     expect(document.approval_state).toBe('pending_review');
     expect(document.verification_state).toBe('unverified');
     expect(document.ingest_state).toBe('chunking');
+  });
+});
+
+// Lane L57 (issue #345). The link from an excerpt to the Research Archive
+// original it was read from, through the documents route: accepted for the
+// excerpt's own source, refused for any other, never on a document about an
+// athlete -- and, like custody itself, it approves nothing.
+describe('an excerpt is linked to its filed original through the documents route (real database)', () => {
+  const ARC = 'arc_11111111-2222-3333-4444-555555555555';
+  let linkedSource: string;
+  let otherSource: string;
+
+  function postExcerpt(sourceId: string, extra: Record<string, unknown>): Promise<Response> {
+    return routes.postDocument(jsonRequest('/api/pilot/shadow/library/documents', 'POST', {
+      source_id: sourceId,
+      document_name: 'Excerpt, page 2',
+      metadata: { intake_method: 'manual_text', text_origin: 'pdf_page', locator: 'p. 2' },
+      ...extra,
+    }));
+  }
+
+  test('two sources, and one PDF filed for the first', async () => {
+    linkedSource = (await (await registerSource('https://example.org/linked/a', 'Linked paper')).json()).source.source_id;
+    otherSource = (await (await registerSource('https://example.org/linked/b', 'Other paper')).json()).source.source_id;
+    await rawQuery(
+      `insert into pilot.shadow_library_archived_originals
+         (archived_original_id, organization_id, source_id, site_id, drive_id, item_id, archive_root_item_id,
+          archive_domain_code, archive_filename, original_filename, content_sha256, byte_size,
+          acquisition_provider, acquisition_channel, acquired_at, created_by_account_id, created_by_role)
+       values ($1, $2, $3, 'site', 'b!drive', 'ITEM', 'ROOT', 'R19', 'paper--bbbbbbbbbbbb.pdf', 'paper.pdf', $4, 10,
+               'Penn State University Libraries', 'library_database', now(), $5, 'organization_admin')`,
+      [ARC, ORG_ID, linkedSource, 'b'.repeat(64), ACCOUNT_ID],
+    );
+  });
+
+  test('an excerpt of its own source is linked, and is as pending as any other', async () => {
+    const response = await postExcerpt(linkedSource, { archived_original_id: ARC });
+    expect(response.status).toBe(201);
+    const { document } = await response.json();
+
+    const [row] = await rawQuery<ReviewColumns & { archived_original_id: string | null }>(
+      `select archived_original_id, approval_state, verification_state, approved_by_account_id, approved_at,
+              verified_by_account_id, verified_at
+         from pilot.shadow_library_documents where document_id = $1`,
+      [document.document_id],
+    );
+    expect(row.archived_original_id).toBe(ARC);
+    expect(row.approval_state).toBe('pending_review');
+    expect(row.verification_state).toBe('unverified');
+  });
+
+  test("an excerpt of another source naming that PDF is refused 409, and nothing is written", async () => {
+    const before = await rawQuery<{ n: number }>('select count(*)::int as n from pilot.shadow_library_documents');
+    const response = await postExcerpt(otherSource, { archived_original_id: ARC });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/not one of this source's originals on this shelf/);
+    const after = await rawQuery<{ n: number }>('select count(*)::int as n from pilot.shadow_library_documents');
+    expect(after[0].n).toBe(before[0].n);
+  });
+
+  test.each([
+    ['a malformed id', { archived_original_id: "arc_x'; drop table" }, /must be a filed original id/],
+    ['a link on a document about an athlete', { archived_original_id: ARC, subject_id: 'ATH-1' }, /about an athlete is not linked/],
+    ['a link on an excerpt not taken from a PDF page', { archived_original_id: ARC, metadata: { intake_method: 'manual_text', locator: 'p. 2' } }, /taken from a page of the filed PDF/],
+  ])('%s is refused 400 before anything is written', async (_label, extra, message) => {
+    const response = await postExcerpt(linkedSource, extra);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(message);
+  });
+
+  test('an excerpt with no link is written exactly as before', async () => {
+    const response = await postExcerpt(otherSource, {});
+    expect(response.status).toBe(201);
+    const { document } = await response.json();
+    const [row] = await rawQuery<{ archived_original_id: string | null }>(
+      'select archived_original_id from pilot.shadow_library_documents where document_id = $1',
+      [document.document_id],
+    );
+    expect(row.archived_original_id).toBeNull();
   });
 });
