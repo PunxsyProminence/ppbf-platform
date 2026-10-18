@@ -114,6 +114,7 @@ async function observe(input: {
   kind: ObservationKind;
   value: number;
   observedAt: string;
+  unit?: 'count' | 'boolean_0_1';
   dimensions?: Record<string, string>;
   organizationId?: string;
   athleteId?: string;
@@ -128,7 +129,7 @@ async function observe(input: {
     contextId: input.contextId,
     kind: input.kind,
     value: input.value,
-    unit: 'count',
+    unit: input.unit ?? 'count',
     dimensions: input.dimensions ?? {},
     observedAt: input.observedAt,
     source: { type: 'manual', quality: 'moderate', referenceId: `ref-${idempotencyKey}` },
@@ -316,5 +317,37 @@ describe('listRecentSparringEntries', () => {
     ]);
     expect(await repository.listRecentSparringEntries({ organizationId: ORG_ID, athleteId: ATHLETE_ID, limit: 1 }))
       .toHaveLength(1);
+  });
+});
+
+describe('focus attainment (MVP-11) over the last 28 days', () => {
+  // Jason 2026-10-17: "A: Last 28 days (Recommended)".
+  test('a sparring session runs MVP-11 over the sessions in the 28 days up to it, and no older ones', async () => {
+    const focus = async (contextId: string, value: number, observedAt: string) => {
+      await observe({ contextId, kind: 'focus_achieved', value, unit: 'boolean_0_1', observedAt });
+    };
+    await focus('sparring_1000', 1, '2026-09-07T15:00:00.000Z'); // 40 days before: outside
+    await focus('sparring_2000', 0, '2026-10-07T15:00:00.000Z'); // 10 days before: inside
+    await focus('sparring_3000', 1, '2026-10-17T15:00:00.000Z'); // the session that ends the window
+    // Another athlete's session inside the window never counts.
+    await observe({
+      contextId: 'sparring_4000', kind: 'focus_achieved', value: 0, unit: 'boolean_0_1',
+      observedAt: '2026-10-16T15:00:00.000Z', athleteId: OTHER_ATHLETE_ID,
+    });
+
+    const results = await autoCalculation.autoCalculateForObservationContext({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId: 'sparring_3000',
+    });
+
+    expect(results.map((result) => [result.formulaId, result.value])).toEqual([['MVP-11', 50]]);
+    const inputs = await repository.getActiveFormulaObservationsByIds({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      observationIds: results[0].inputObservationIds,
+    });
+    expect(inputs.map((observation) => observation.contextId).sort()).toEqual(['sparring_2000', 'sparring_3000']);
+    expect((await latestValues())['MVP-11:value']).toBe(50);
   });
 });
