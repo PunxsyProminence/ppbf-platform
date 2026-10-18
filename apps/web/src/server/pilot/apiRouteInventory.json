@@ -1050,6 +1050,90 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/family-support/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Live family support records for one athlete (kind, date provided, recorder display name; no account ids or emails) via familySupportRecords.ts. Gate at route.ts:22-23; organization from the session.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/family-support/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records support the gym provided (PH-12b) via familySupportRecords.ts recordSupport; the database guard re-checks an active organization_admin/admin seat in this gym (refusal answered 403). Gate at route.ts:37-38; organization from the session. No audit event written in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/family-support/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Retires one support record (the only change; never edited or deleted) via familySupportRecords.ts retireSupport; the database guard re-checks the retirer's seat. Gate at route.ts:54-55; organization from the session. No audit event written in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/admin/floor-hours/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/floor-hours",
@@ -9460,7 +9544,7 @@
     "id": "app/api/pilot/platform/organizations/assign-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/assign-admin",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9473,7 +9557,7 @@
     "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9487,7 +9571,7 @@
     "id": "app/api/pilot/platform/organizations/memberships/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/memberships",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9500,7 +9584,7 @@
     "notes": "Upserts an organization membership with a role from MANAGEABLE_ROLES (excludes athlete and platform_owner); gate memberships/route.ts:22-23.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
