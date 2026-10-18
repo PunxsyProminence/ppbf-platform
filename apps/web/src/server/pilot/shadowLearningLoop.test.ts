@@ -35,18 +35,31 @@ const mockRememberFact = jest.mocked(upsertRememberedFact);
 const mockWithTransaction = jest.mocked(withTransaction);
 
 // The once-only effects run in a transaction under a lock on the feedback
-// row. Its client answers the lock with `effectsDone` and sends every other
-// statement through mockQuery, so the SQL assertions below see them all.
+// row. Its client answers the lock with `effectsDone` and the row's current
+// judgment (`lockedOutcome`, defaulting to the signal's), and sends every
+// other statement through mockQuery, so the SQL assertions below see them all.
 let effectsDone: string[] = [];
+let lockedOutcome: string | null = null;
+let lockedPending = true;
+let lastOutcome = 'thumbs_up';
 const transactionClient = {
   async query(sql: string, params?: unknown[]) {
     if (sql.includes('FROM pilot.shadow_feedback') && sql.includes('FOR UPDATE')) {
-      return { rows: [{ learning_effects_done: effectsDone }] };
+      return { rows: [{
+        learning_effects_done: effectsDone,
+        outcome_signal: lockedOutcome ?? lastOutcome,
+        comment: null,
+        human_review_required: lockedPending,
+      }] };
     }
     return { rows: (await mockQuery(sql, params as never)) ?? [] };
   },
 };
 const sqlCalls = () => mockQuery.mock.calls.map(([sql]) => String(sql));
+const runLoop = (signal: Parameters<typeof processLearningSignal>[0]) => {
+  lastOutcome = signal.outcome;
+  return processLearningSignal(signal);
+};
 
 const baseSignal = {
   feedbackId: 12,
@@ -70,11 +83,13 @@ describe('SHADOW learning-loop trust gates', () => {
     mockFeatureEnabled.mockReturnValue(true);
     mockRememberFact.mockResolvedValue(undefined);
     effectsDone = [];
+    lockedOutcome = null;
+    lockedPending = true;
     mockWithTransaction.mockImplementation(async (fn) => fn(transactionClient as never));
   });
 
   test('rejects unverified signals without recording effectiveness or profile facts', async () => {
-    const result = await processLearningSignal({
+    const result = await runLoop({
       ...baseSignal,
       verificationState: 'unverified',
     });
@@ -87,7 +102,7 @@ describe('SHADOW learning-loop trust gates', () => {
   });
 
   test('records durable client feedback but only queues a human review', async () => {
-    const result = await processLearningSignal({
+    const result = await runLoop({
       ...baseSignal,
       outcome: 'thumbs_down',
       verificationState: 'durable_client',
@@ -107,7 +122,7 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(mockQuery.mock.calls.some(([sql]) =>
       typeof sql === 'string' && sql.includes("review_state, flagged_at")
     )).toBe(true);
-    expect(sqlCalls().some((sql) => sql.includes('flag_count + $8::int'))).toBe(true);
+    expect(sqlCalls().some((sql) => sql.includes('flag_count = pilot.shadow_library_review_flags.flag_count + 1'))).toBe(true);
     expect(result.actions.join(' ')).toContain('no learning was promoted');
     expect(result.complete).toBe(true);
   });
@@ -133,7 +148,7 @@ describe('SHADOW learning-loop trust gates', () => {
       // neither, so it is not negative here.
       ['ignored_advice', false],
     ] as const)('%s -> flag written: %s', async (outcome, flagged) => {
-      const result = await processLearningSignal({
+      const result = await runLoop({
         ...baseSignal,
         outcome,
         verificationState: 'durable_client',
@@ -163,7 +178,7 @@ describe('SHADOW learning-loop trust gates', () => {
   });
 
   test('human-reviewed feedback may update personalization but still queues library changes', async () => {
-    const result = await processLearningSignal({
+    const result = await runLoop({
       ...baseSignal,
       verificationState: 'human_reviewed',
     });
@@ -200,7 +215,7 @@ describe('SHADOW learning-loop trust gates', () => {
     // and the audit trail says observation mode explicitly.
     mockFeatureEnabled.mockReturnValue(false);
 
-    const result = await processLearningSignal({
+    const result = await runLoop({
       ...baseSignal,
       verificationState: 'human_reviewed',
     });
@@ -217,7 +232,7 @@ describe('SHADOW learning-loop trust gates', () => {
     mockFeatureEnabled.mockReturnValue(false);
     mockResearch.mockRejectedValue(new Error('research write failed'));
 
-    const result = await processLearningSignal({
+    const result = await runLoop({
       ...baseSignal,
       outcome: 'thumbs_down' as const,
       verificationState: 'human_reviewed',
@@ -231,7 +246,7 @@ describe('SHADOW learning-loop trust gates', () => {
 
   test('a human-reviewed negative flag clears a pending promote proposal on the topic', async () => {
     mockFeatureEnabled.mockReturnValue(false);
-    await processLearningSignal({
+    await runLoop({
       ...baseSignal,
       outcome: 'escalated_to_human' as const,
       verificationState: 'human_reviewed',
@@ -253,7 +268,7 @@ describe('SHADOW learning-loop trust gates', () => {
 
     test('a failed fact write leaves the approval incomplete, unmarked, and not complete', async () => {
       mockRememberFact.mockRejectedValue(new Error('profile write failed'));
-      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      const result = await runLoop({ ...baseSignal, verificationState: 'human_reviewed' });
       expect(result.actions).toContain('Fact extraction failed');
       expect(result.complete).toBe(false);
       expect(markWritten('facts')).toBe(false);
@@ -261,29 +276,44 @@ describe('SHADOW learning-loop trust gates', () => {
     });
 
     test('facts are counted inside the marking transaction, and not again once marked', async () => {
-      await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      await runLoop({ ...baseSignal, verificationState: 'human_reviewed' });
       expect(mockRememberFact).toHaveBeenCalledWith('account-1', 'org-1', expect.objectContaining({ key: 'engaged_topic_footwork' }), transactionClient);
       expect(markWritten('facts')).toBe(true);
 
       jest.clearAllMocks();
       effectsDone = ['facts'];
-      const retry = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      const retry = await runLoop({ ...baseSignal, verificationState: 'human_reviewed' });
       expect(mockRememberFact).not.toHaveBeenCalled();
       expect(retry.actions).toContain('Facts from this feedback were already counted');
       expect(retry.complete).toBe(true);
     });
 
-    test('a topic flag this feedback already counted is re-written with +0 and not re-marked', async () => {
+    test('a topic flag this feedback already counted is not re-written, reopened or re-marked', async () => {
       effectsDone = ['library_flag'];
-      await processLearningSignal({ ...baseSignal, outcome: 'thumbs_down', verificationState: 'human_reviewed' });
-      const flag = mockQuery.mock.calls.find(([sql]) => String(sql).includes('latest_outcome_signal = $6'));
-      expect(flag?.[1]?.[7]).toBe(0);
+      await runLoop({ ...baseSignal, outcome: 'thumbs_down', verificationState: 'human_reviewed' });
+      expect(sqlCalls().some((sql) => sql.includes('INSERT INTO pilot.shadow_library_review_flags'))).toBe(false);
+      const refresh = sqlCalls().find((sql) => sql.includes('SET user_note = $4'));
+      expect(refresh).toContain("AND review_state = 'pending' AND proposed_action IS NULL");
       expect(markWritten('library_flag')).toBe(false);
+    });
+
+    test('a client projection follows the row it locked, not a stale caller', async () => {
+      lockedOutcome = 'thumbs_up';
+      const result = await runLoop({ ...baseSignal, outcome: 'thumbs_down', verificationState: 'durable_client' });
+      expect(result.libraryFlagged).toBe(false);
+      expect(sqlCalls().some((sql) => sql.includes('INSERT INTO pilot.shadow_library_review_flags'))).toBe(false);
+    });
+
+    test('a client projection leaves a reviewed row to the approval path', async () => {
+      lockedPending = false;
+      const result = await runLoop({ ...baseSignal, outcome: 'thumbs_down', verificationState: 'durable_client' });
+      expect(result.libraryFlagged).toBe(false);
+      expect(sqlCalls().some((sql) => sql.includes('shadow_library_review_flags'))).toBe(false);
     });
 
     test('an unreadable unlock state is a retryable failure, not a reason to skip effects', async () => {
       mockEvaluateUnlocks.mockRejectedValue(new Error('unlock read failed'));
-      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      const result = await runLoop({ ...baseSignal, verificationState: 'human_reviewed' });
       expect(result.actions).toContain('Unlock state unavailable');
       expect(result.complete).toBe(false);
       expect(completeWritten()).toBe(false);
@@ -294,14 +324,14 @@ describe('SHADOW learning-loop trust gates', () => {
         if (sql.includes('INSERT INTO pilot.shadow_learning_events')) throw new Error('log failed');
         return [];
       });
-      const result = await processLearningSignal({ ...baseSignal, verificationState: 'human_reviewed' });
+      const result = await runLoop({ ...baseSignal, verificationState: 'human_reviewed' });
       expect(result.complete).toBe(false);
       expect(completeWritten()).toBe(false);
     });
 
     test('a client signal no longer negative withdraws the flag it counted', async () => {
       effectsDone = ['library_flag'];
-      const result = await processLearningSignal({ ...baseSignal, outcome: 'thumbs_up', verificationState: 'durable_client' });
+      const result = await runLoop({ ...baseSignal, outcome: 'thumbs_up', verificationState: 'durable_client' });
       expect(sqlCalls().some((sql) => sql.includes('FROM pilot.shadow_library_review_flags') && sql.includes('FOR UPDATE'))).toBe(true);
       expect(mockQuery.mock.calls.some(([sql, params]) =>
         String(sql).includes('array_remove(learning_effects_done, $3::text)') && Array.isArray(params) && params[2] === 'library_flag')).toBe(true);
@@ -318,7 +348,7 @@ describe('SHADOW learning-loop trust gates', () => {
     test('approved thumbs-up loads the durable response text and writes the style', async () => {
       mockQueryOne.mockResolvedValue({ content: 'Keep your guard up between combinations.' });
 
-      const result = await processLearningSignal({
+      const result = await runLoop({
         ...baseSignal,
         verificationState: 'human_reviewed',
       });
@@ -337,7 +367,7 @@ describe('SHADOW learning-loop trust gates', () => {
     test('a missing durable message skips the style update without failing the loop', async () => {
       mockQueryOne.mockResolvedValue(null);
 
-      const result = await processLearningSignal({
+      const result = await runLoop({
         ...baseSignal,
         verificationState: 'human_reviewed',
       });
@@ -349,7 +379,7 @@ describe('SHADOW learning-loop trust gates', () => {
     });
 
     test('durable-client feedback never touches the durable message text', async () => {
-      await processLearningSignal({
+      await runLoop({
         ...baseSignal,
         verificationState: 'durable_client',
       });

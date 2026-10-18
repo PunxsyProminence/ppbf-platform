@@ -2,8 +2,9 @@
 // non-video ML audit, 2026-10-17), driven through the feedback and metrics
 // routes and checked in the RECORDS, not only the HTTP answer.
 //
-// Item 1, feedback processing completes once. Each learning write is made to
-// fail on its own (a trigger that raises on the table), the approval is
+// Item 1, feedback processing completes once. Each learning table in turn is
+// made to fail (a trigger that raises on it; the profiles table carries both
+// the facts and the communication style), the approval is
 // retried after the trigger is dropped, and the rows must show every effect
 // exactly once: one observation in remembered facts, one flag count, one
 // research requirement, the learning log, the reviewed effectiveness row and
@@ -81,6 +82,7 @@ import { GET as metricsGET } from '@/app/api/pilot/shadow/metrics/route';
 
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
+import { processLearningSignal } from './shadowLearningLoop';
 
 jest.setTimeout(180_000);
 
@@ -211,9 +213,10 @@ async function observationsOf(key: string): Promise<number | null> {
   return fact ? (fact.observationCount ?? 1) : null;
 }
 
-async function flagOf(topic: string): Promise<{ flag_count: number; feedback_id: string | null; review_state: string } | null> {
-  const { rows } = await client.query<{ flag_count: number; feedback_id: string | null; review_state: string }>(
-    `select flag_count, feedback_id, review_state from pilot.shadow_library_review_flags
+type FlagRow = { flag_count: number; feedback_id: string | null; review_state: string; proposed_action: string | null };
+async function flagOf(topic: string): Promise<FlagRow | null> {
+  const { rows } = await client.query<FlagRow>(
+    `select flag_count, feedback_id, review_state, proposed_action from pilot.shadow_library_review_flags
      where organization_id = $1 and topic = $2`,
     [ORG_ID, topic],
   );
@@ -470,5 +473,101 @@ describe('item 2: an edit before review is reflected everywhere, once', () => {
     expect((await approve(feedbackId)).status).toBe(200);
     expect((await flagOf('uppercut'))?.flag_count).toBe(2);
     expect(await concernedTopics()).toContain('uppercut');
+  });
+});
+
+// Review of #1738 (reviewer 1): a repeat must never be a new observation, a
+// flag nothing supports must go, a proposal is counted once across retries,
+// and a projection follows the row it locked.
+describe('repeats, withdrawals and races', () => {
+  test('a resubmitted rating and its approval never reopen a flag a curator resolved', async () => {
+    const messageId = await seedAnswer('slip');
+    const { feedbackId } = await rate(messageId, false, ATHLETE, 'Too vague');
+    await client.query(
+      `update pilot.shadow_library_review_flags set review_state = 'resolved', reviewed_at = now()
+       where organization_id = $1 and topic = 'slip'`,
+      [ORG_ID],
+    );
+
+    await rate(messageId, false, ATHLETE, 'Still too vague');
+    expect(await flagOf('slip')).toMatchObject({ flag_count: 1, review_state: 'resolved' });
+    expect(await concernedTopics()).not.toContain('slip');
+
+    expect((await approve(feedbackId)).status).toBe(200);
+    expect(await flagOf('slip')).toMatchObject({ flag_count: 1, review_state: 'resolved' });
+    expect(await concernedTopics()).not.toContain('slip');
+  });
+
+  test('a flag goes when its last supporting feedback is withdrawn, whoever the row names', async () => {
+    const mine = await seedAnswer('bob');
+    const theirs = await seedAnswer('bob', OTHER_ATHLETE);
+    await rate(mine, false);
+    await rate(theirs, false, OTHER_ATHLETE);
+    await rate(theirs, true, OTHER_ATHLETE);
+    expect(await flagOf('bob')).toMatchObject({ flag_count: 1, feedback_id: null });
+
+    await rate(mine, true);
+    expect(await flagOf('bob')).toBeNull();
+    expect(await concernedTopics()).not.toContain('bob');
+  });
+
+  test('with Library proposals on, a retried approval counts its proposal once', async () => {
+    await client.query(
+      `insert into pilot.shadow_feature_thresholds
+         (organization_id, feature_key, metric_key, min_value, activation_mode, description,
+          created_by_account_id, updated_by_account_id)
+       values ($1, 'auto_library_updates', 'org_recommendation_outcomes', 0, 'enabled', 'test', $2, $2)`,
+      [ORG_ID, ADMIN],
+    );
+    try {
+      const { feedbackId } = await rate(await seedAnswer('parry'), true);
+      await breakTable('shadow_learning_events');
+      try {
+        expect((await approve(feedbackId)).status).toBe(503);
+      } finally {
+        await heal('shadow_learning_events');
+      }
+      expect(await flagOf('parry')).toMatchObject({ flag_count: 1, proposed_action: 'promote' });
+
+      expect((await approve(feedbackId)).status).toBe(200);
+      expect(await flagOf('parry')).toMatchObject({ flag_count: 1, proposed_action: 'promote' });
+      expect(await effectsOf(feedbackId)).toEqual(['complete', 'facts', 'library_flag']);
+    } finally {
+      await client.query(
+        `delete from pilot.shadow_feature_thresholds where organization_id = $1 and feature_key = 'auto_library_updates'`,
+        [ORG_ID],
+      );
+    }
+  });
+
+  // Reviewer 2: the approval used to add +1 whenever another feedback had
+  // flagged the topic after this one, so a client flag and its own approval
+  // counted the same feedback twice.
+  test('a client flag and its own approval count one feedback once when another flag landed between', async () => {
+    const mine = await seedAnswer('cover');
+    const { feedbackId } = await rate(mine, false);
+    await rate(await seedAnswer('cover', OTHER_ATHLETE), false, OTHER_ATHLETE);
+    expect((await flagOf('cover'))?.flag_count).toBe(2);
+
+    expect((await approve(feedbackId)).status).toBe(200);
+    expect((await flagOf('cover'))?.flag_count).toBe(2);
+  });
+
+  test('a client projection follows the row it locks, not the value a slower request carried', async () => {
+    const { feedbackId } = await rate(await seedAnswer('weave'), true);
+    // The earlier tap of a quick down-then-up, arriving last.
+    await processLearningSignal({
+      feedbackId,
+      messageId: crypto.randomUUID(),
+      userId: ATHLETE,
+      organizationId: ORG_ID,
+      role: 'athlete',
+      topic: 'weave',
+      sessionType: 'quick_round',
+      outcome: 'thumbs_down',
+      verificationState: 'durable_client',
+    });
+    expect(await flagOf('weave')).toBeNull();
+    expect(await concernedTopics()).not.toContain('weave');
   });
 });
