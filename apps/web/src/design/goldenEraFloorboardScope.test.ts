@@ -53,7 +53,8 @@ describe('the 002 mockup did not delete or invent coach tabs', () => {
   const REAL_TABS = [
     'Dashboard',
     'Floor',
-    'Development',
+    // Renamed from Development (lane U2, Jason's glossary 2026-10-17): the coach's own growth.
+    'Your Growth',
     'Goals',
     'Tasks',
     'Assessments',

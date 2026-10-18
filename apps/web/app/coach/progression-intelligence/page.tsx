@@ -170,7 +170,7 @@ function HoldStatusNotice({ hold }: { hold: ActiveHoldSummary | 'unreadable' }) 
     >
       <p className="t-eyebrow">Active Training Hold</p>
       <p className="t-body mt-[var(--s2)] font-semibold">
-        {HOLD_SCOPE_LABEL[hold.scope]} is currently paused for this athlete ({hold.reason_category}).
+        Training Hold on {HOLD_SCOPE_LABEL[hold.scope]} for this athlete ({hold.reason_category}).
       </p>
       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{hold.athlete_explanation}</p>
       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">

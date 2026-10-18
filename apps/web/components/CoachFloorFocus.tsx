@@ -572,7 +572,7 @@ export default function CoachFloorFocus({
             </>
           ) : (
             <Link href={SESSIONS_HREF} className="btn coach-floor-focus__btn">
-              {sessionState !== 'loaded' ? 'Open Session Scripts' : 'Return to live delivery'}
+              {sessionState !== 'loaded' ? 'Open Session Plans' : 'Return to live delivery'}
             </Link>
           )}
           <div role="group" aria-label="Session mode" className="coach-floor-focus__row">

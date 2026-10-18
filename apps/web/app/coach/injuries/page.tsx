@@ -287,7 +287,7 @@ export default function CoachInjuriesPage() {
           </h1>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Record what the athlete, a parent, a coach or a clinician reported, and say which. This is a record, not a
-            diagnosis, and it does not pause training: place a training hold for that, then link it here.
+            diagnosis, and it does not stop training: place a Training Hold for that, then link it here.
           </p>
         </div>
 
