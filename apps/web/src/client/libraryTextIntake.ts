@@ -70,6 +70,10 @@ export interface IntakeInput {
   // sentence shown when it is not; the panel owns the wording.
   pdfPage?: { num: number; text: string; notOnPageMessage: string };
   shelf?: IntakeShelf;
+  // The Research Archive original the PDF was filed as (lane L57). Sent only
+  // with pdfPage: an excerpt is linked to a filed PDF only when it was read
+  // from that PDF in this session.
+  archivedOriginalId?: string;
 }
 
 // Everything needed to finish a submission whose chunks do not all exist yet.
@@ -202,7 +206,9 @@ export interface PdfPageText {
 }
 
 export type PdfReadResult =
-  | { ok: true; pages: PdfPageText[]; emptyPageCount: number }
+  // contentSha256: of the bytes the reader parsed, so a filed original can be
+  // matched to the file the pages came from. Null if the server sent none.
+  | { ok: true; pages: PdfPageText[]; emptyPageCount: number; contentSha256: string | null }
   // serverMessage is the route's own sentence for a refusal it authored (a
   // too-long or unreadable PDF); null when there was none or no answer at all.
   | { ok: false; status: number; serverMessage: string | null };
@@ -243,10 +249,12 @@ export async function readLibraryPdf(
         }
         pages.push({ num: row.num, text: row.text });
       }
+      const sha = body.content_sha256;
       return {
         ok: true,
         pages,
         emptyPageCount: pages.filter((page) => page.text === '').length,
+        contentSha256: typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha) ? sha : null,
       };
     }
     return {
@@ -437,6 +445,7 @@ export async function submitLibraryTextIntake(
         chunk_count: chunks.length,
         text_length: rejoinIntakeChunks(chunks).length,
       },
+      ...(input.pdfPage && input.archivedOriginalId ? { archived_original_id: input.archivedOriginalId } : {}),
       request_id: requestId,
       ...shelfField(shelf),
     };
@@ -541,4 +550,148 @@ export async function submitLibraryTextIntake(
   }
 
   return { ok: true, documentId, chunkCount: chunks.length };
+}
+
+// ---------------------------------------------------------------------------
+// Filing the PDF in the SharePoint Research Archive (lane L57, issue #345).
+// The archive-original route files it and records where it went; the app keeps
+// no copy. ON only where the deployment and the shelf are set up for it.
+
+export type ArchiveFilingStatus = 'on' | 'off' | 'unavailable';
+
+export const ARCHIVE_ACQUISITION_CHANNELS = [
+  'library_database',
+  'publisher_site',
+  'open_access_repository',
+  'author_copy',
+  'ppbf_created',
+  'other',
+] as const;
+export type ArchiveAcquisitionChannel = (typeof ARCHIVE_ACQUISITION_CHANNELS)[number];
+
+export const ARCHIVE_VERSION_KINDS = [
+  'version_of_record',
+  'accepted_manuscript',
+  'author_original',
+  'corrected_version_of_record',
+  'other',
+  'unknown',
+] as const;
+export type ArchiveVersionKind = (typeof ARCHIVE_VERSION_KINDS)[number];
+
+export interface FiledOriginal {
+  archivedOriginalId: string;
+  sourceId: string;
+  archiveDomainCode: string;
+  archiveFilename: string;
+  webUrl: string | null;
+  contentSha256: string;
+}
+
+export type ArchiveFilingResult =
+  | { ok: true; alreadyFiled: boolean; original: FiledOriginal }
+  | { ok: false; status: number; serverMessage: string | null; code: string | null };
+
+/** Whether this shelf files originals here. Never throws; no answer reads as unavailable. */
+export async function readArchiveFilingStatus(
+  apiBaseUrl: string,
+  shelf: IntakeShelf | undefined,
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<ArchiveFilingStatus> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const response = await fetchImpl(
+      `${apiBaseUrl}/api/pilot/shadow/library/archive-original${shelf === 'platform' ? '?shelf=platform' : ''}`,
+      { method: 'GET', credentials: 'include' },
+    );
+    const payload = (await response.json().catch(() => null)) as { archive?: unknown } | null;
+    const archive = payload?.archive;
+    if (response.status === 200 && (archive === 'on' || archive === 'off' || archive === 'unavailable')) return archive;
+    // A role that cannot file sees no filing at all.
+    return response.status === 403 ? 'off' : 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+// One upload of up to 10 MB plus a SharePoint write.
+const ARCHIVE_FILING_TIMEOUT_MS = 90_000;
+
+/** Files the PDF for this source. Never throws. */
+export async function fileLibraryPdfOriginal(
+  apiBaseUrl: string,
+  file: File,
+  fields: {
+    sourceId: string;
+    acquisitionProvider: string;
+    acquisitionChannel: ArchiveAcquisitionChannel;
+    versionKind: ArchiveVersionKind;
+    acquiredAt: string;
+    shelf?: IntakeShelf;
+  },
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<ArchiveFilingResult> {
+  if (file.size > PDF_READ_MAX_BYTES) return { ok: false, status: 413, serverMessage: null, code: null };
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const form = new FormData();
+  form.append('file', file);
+  form.append('source_id', fields.sourceId);
+  form.append('acquisition_provider', fields.acquisitionProvider);
+  form.append('acquisition_channel', fields.acquisitionChannel);
+  form.append('version_kind', fields.versionKind);
+  if (fields.acquiredAt.trim()) form.append('acquired_at', fields.acquiredAt.trim());
+  if (fields.shelf === 'platform') form.append('shelf', 'platform');
+  try {
+    const response = await fetchImpl(`${apiBaseUrl}/api/pilot/shadow/library/archive-original`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ARCHIVE_FILING_TIMEOUT_MS) : undefined,
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+    const row = typeof body.archived_original === 'object' && body.archived_original !== null
+      ? (body.archived_original as Record<string, unknown>)
+      : null;
+    if (
+      (response.status === 201 || response.status === 200)
+      && body.ok === true
+      && row
+      && typeof row.archived_original_id === 'string'
+      && typeof row.source_id === 'string'
+      && typeof row.archive_domain_code === 'string'
+      && typeof row.archive_filename === 'string'
+      && typeof row.content_sha256 === 'string'
+    ) {
+      return {
+        ok: true,
+        alreadyFiled: body.status === 'already_filed',
+        original: {
+          archivedOriginalId: row.archived_original_id,
+          sourceId: row.source_id,
+          archiveDomainCode: row.archive_domain_code,
+          archiveFilename: row.archive_filename,
+          webUrl: typeof row.web_url === 'string' ? row.web_url : null,
+          contentSha256: row.content_sha256,
+        },
+      };
+    }
+    const { error, code } = serverError(payload);
+    return { ok: false, status: response.status, serverMessage: error, code };
+  } catch {
+    return { ok: false, status: 0, serverMessage: null, code: null };
+  }
+}
+
+/**
+ * The filed original an excerpt may be linked to: only one filed for the
+ * excerpt's own source, from the very bytes the pages were read from.
+ */
+export function linkableOriginal(
+  filed: FiledOriginal | null,
+  sourceId: string,
+  readSha256: string | null,
+): FiledOriginal | null {
+  if (!filed || readSha256 === null) return null;
+  return filed.sourceId === sourceId && filed.contentSha256 === readSha256 ? filed : null;
 }

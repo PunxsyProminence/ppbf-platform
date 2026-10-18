@@ -368,3 +368,73 @@ describe('the safeguarding red is not spent on an arithmetic failure', () => {
     expect(screen.getByText('some_new_state')).toBeTruthy();
   });
 });
+
+// PERSONAL BASELINE (MVP-09, lane L50; copy PROPOSED). Each check-in item is
+// named, a 7-13 entry baseline says it is provisional, and under 7 the card
+// says what is missing in words. No colour or verdict is added.
+describe('personal baseline cards', () => {
+  const baseline = (metricKey: string, resultOverrides: Record<string, unknown> = {}) => entry({}, {
+    formulaId: 'MVP-09',
+    outputKey: 'raw_change',
+    parameters: { metricKey, windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 },
+    value: -1.5,
+    unit: 'hours',
+    ...resultOverrides,
+  });
+
+  it('names the item and marks a short baseline provisional', async () => {
+    await renderAndPick(model({
+      formulaOutputs: {
+        availability: 'available',
+        items: [baseline('sleep_hours', { validation: { state: 'warning', hardBlocks: [], warnings: ['SHORT_BASELINE'] } })],
+      },
+    }));
+
+    expect(screen.getByText(/MVP-09 · Sleep \(hours\) · raw_change/)).toBeTruthy();
+    expect(screen.getByTestId('baseline-provisional').textContent)
+      .toContain('Provisional: fewer than 14 check-ins in the last 28 days');
+  });
+
+  it('an adequate baseline carries no provisional mark', async () => {
+    await renderAndPick(model({
+      formulaOutputs: { availability: 'available', items: [baseline('energy')] },
+    }));
+
+    expect(screen.getByText(/MVP-09 · Energy \(1-5\) · raw_change/)).toBeTruthy();
+    expect(screen.queryByTestId('baseline-provisional')).toBeNull();
+  });
+
+  it('under 7 check-ins says what is needed', async () => {
+    await renderAndPick(model({
+      formulaOutputs: {
+        availability: 'available',
+        items: [baseline('soreness', {
+          value: null,
+          unavailableReason: 'INSUFFICIENT_HISTORY',
+          validation: { state: 'insufficient', hardBlocks: ['INSUFFICIENT_HISTORY'], warnings: [] },
+        })],
+      },
+    }));
+
+    expect(screen.getByTestId('no-value').textContent).toContain('Needs 7 check-ins in the last 28 days');
+  });
+});
+
+describe('the older 8-12 entry baseline is not given check-in wording', () => {
+  it('shows neither the item label nor the provisional mark', async () => {
+    await renderAndPick(model({
+      formulaOutputs: {
+        availability: 'available',
+        items: [entry({}, {
+          formulaId: 'MVP-09',
+          outputKey: 'raw_change',
+          parameters: { metricKey: 'jab_count', windowSize: 8, minimumHistory: 4, adequateHistory: 8 },
+          validation: { state: 'warning', hardBlocks: [], warnings: ['SHORT_BASELINE'] },
+        })],
+      },
+    }));
+
+    expect(screen.getByText(/MVP-09 · raw_change/)).toBeTruthy();
+    expect(screen.queryByTestId('baseline-provisional')).toBeNull();
+  });
+});
