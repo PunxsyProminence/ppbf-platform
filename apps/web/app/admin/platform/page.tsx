@@ -781,7 +781,7 @@ export default function PlatformConsole() {
             <label className="field">
               <span className="t-label">Account ID (how they&apos;ll sign in)</span>
               {/* F-102 (Jason: "B: Change the guidance (Recommended)"). Wording PROPOSED. */}
-              <span className="t-muted">Their ring name or a number, not their real name.</span>
+              <span className="t-muted block mb-[var(--s2)]">Their ring name or a number, not their real name.</span>
               <input
                 type="text"
                 value={athleteAccountId}

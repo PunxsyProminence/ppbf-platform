@@ -2173,8 +2173,8 @@ function PeopleConsoleContent() {
                   sign-in ID outlives the athlete's record, so it should not
                   be the child's real name. Wording PROPOSED. */}
               <p className="t-muted mb-[var(--s2)]">
-                What the athlete types to sign in. Use their ring name or a number, not their real name,
-                like <code>southpaw12</code>. Keep it simple and unique.
+                What the athlete types to sign in. Use their ring name or a number, not their real name.
+                Example: <code>southpaw12</code>. Keep it simple and unique.
               </p>
               <input
                 id="athlete-account-id"
