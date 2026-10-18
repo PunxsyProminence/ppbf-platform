@@ -51,7 +51,7 @@ const REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
 
 const REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
   401: 'You are signed out, so nothing was saved. Sign in, open the plan again and make your changes.',
-  403: 'Your account may not edit session scripts, so nothing was saved.',
+  403: 'Your account may not edit session plans, so nothing was saved.',
 };
 
 const REFUSALS: Readonly<Record<string, string>> = {
