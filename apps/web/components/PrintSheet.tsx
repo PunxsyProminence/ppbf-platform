@@ -2,7 +2,8 @@
 
 import React, { type ReactNode } from 'react';
 import { formatGymDate } from '@/src/lib/gymTime';
-import { currentOrganizationProfile, physicalAddressLine } from '@/src/shared/organizationProfile';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
+import { physicalAddressLine } from '@/src/shared/organizationProfile';
 
 /**
  * ONE SHEET OF US LETTER.
@@ -60,24 +61,34 @@ export interface PrintSheetProps {
   readonly className?: string;
 }
 
-// The gym's name and address, from its one profile (#1469, N9-01).
-const GYM = currentOrganizationProfile();
-export const GYM_NAME = GYM.brand;
-export const GYM_ADDRESS = physicalAddressLine(GYM);
+/** The gym's name and street address for a printed page, from its stored profile (lane L31). */
+export function useGymPrintIdentity(): { name: string; address: string } | null {
+  const gym = useOrganizationProfile();
+  if (!gym) return null;
+  return { name: gym.brand, address: gym.physical.street ? physicalAddressLine(gym) : '' };
+}
+
+/** "<name>, Registered Office: <address>", or the name alone, or nothing without a profile. */
+export function GymRegisteredOfficeLine({ className }: { readonly className?: string }) {
+  const gym = useGymPrintIdentity();
+  if (!gym) return null;
+  return <footer className={className}>{gym.address ? `${gym.name}, Registered Office: ${gym.address}` : gym.name}</footer>;
+}
 
 export default function PrintSheet({ eyebrow, title, footNote, children, className = '' }: PrintSheetProps) {
+  const gym = useGymPrintIdentity();
   return (
     <article className={`print-sheet ${className}`.trim()}>
       <header className="print-sheet-head">
         <p className="print-sheet-eyebrow">{eyebrow}</p>
-        <p className="print-sheet-gym">{GYM_NAME}</p>
+        {gym ? <p className="print-sheet-gym">{gym.name}</p> : null}
         <h2 className="print-sheet-title">{title}</h2>
       </header>
 
       <div className="print-sheet-body">{children}</div>
 
       <footer className="print-sheet-foot">
-        <p className="print-sheet-address">{GYM_ADDRESS}</p>
+        {gym?.address ? <p className="print-sheet-address">{gym.address}</p> : null}
         <p className="print-sheet-note">{footNote}</p>
       </footer>
     </article>

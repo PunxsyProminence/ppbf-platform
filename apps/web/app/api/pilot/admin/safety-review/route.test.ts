@@ -42,7 +42,7 @@ beforeEach(() => {
     openHolds: [],
     failingGates: [],
     openEscalations: [],
-    openViolations: [],
+    openViolations: [], openFlags: [],
     violationsReadLimit: 200,
     violationsTruncated: false,
   });
@@ -54,7 +54,7 @@ test('an admin gets the rolled-up review, spread at the top level', async () => 
     openHolds: [{ hold_id: 'hold-1' } as never],
     failingGates: [],
     openEscalations: [],
-    openViolations: [],
+    openViolations: [], openFlags: [],
     violationsReadLimit: 200,
     violationsTruncated: false,
   });

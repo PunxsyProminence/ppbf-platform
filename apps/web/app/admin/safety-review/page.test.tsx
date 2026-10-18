@@ -37,7 +37,7 @@ afterEach(() => {
 // the all-clear.
 test('nothing open renders the all-clear empty state', async () => {
   global.fetch = jest.fn().mockResolvedValue(
-    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: false }),
   ) as unknown as typeof fetch;
 
   render(<SafetyReviewPage />);
@@ -52,7 +52,7 @@ test('an active hold renders in its own section with a count', async () => {
       openHolds: [{ hold_id: 'hold-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', scope: 'all_training', reason_category: 'medical', placed_by_role: 'coach', placed_at: '2026-08-01T00:00:00.000Z' }],
       failingGates: [],
       openEscalations: [],
-      openViolations: [],
+      openViolations: [], openFlags: [],
     }),
   ) as unknown as typeof fetch;
 
@@ -69,7 +69,7 @@ test('a failing gate renders in its own section', async () => {
       openHolds: [],
       failingGates: [{ athlete_id: 'ath-1', athlete_name: 'Jordan T.', gate_name: 'Contact Requires Medical Clearance', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00.000Z' }],
       openEscalations: [],
-      openViolations: [],
+      openViolations: [], openFlags: [],
     }),
   ) as unknown as typeof fetch;
 
@@ -85,7 +85,7 @@ test('an open escalation renders with a severity badge and links to the full que
       openHolds: [],
       failingGates: [],
       openEscalations: [{ escalation_id: 'esc-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', source_type: 'near_miss', severity: 'critical', status: 'open', created_at: '2026-08-01T00:00:00.000Z' }],
-      openViolations: [],
+      openViolations: [], openFlags: [],
     }),
   ) as unknown as typeof fetch;
 
@@ -110,8 +110,8 @@ test('a failed load shows the error state, never a false all-clear', async () =>
 test.each<[string, Response]>([
   ['an unparseable body', { ok: true, json: async () => { throw new SyntaxError('bad'); } } as unknown as Response],
   ['an empty body', jsonResponse({})],
-  ...(['openHolds', 'failingGates', 'openEscalations', 'openViolations'] as const).map((missing) => {
-    const lists: Record<string, unknown> = { openHolds: [], failingGates: [], openEscalations: [], openViolations: [] };
+  ...(['openHolds', 'failingGates', 'openEscalations', 'openViolations', 'openFlags'] as const).map((missing) => {
+    const lists: Record<string, unknown> = { openHolds: [], failingGates: [], openEscalations: [], openViolations: [], openFlags: [] };
     delete lists[missing];
     return [`a body missing ${missing}`, jsonResponse({ ok: true, ...lists, violationsReadLimit: 200, violationsTruncated: false })] as [string, Response];
   }),
@@ -135,7 +135,7 @@ test('a severity badge carries a glyph, not colour alone (Law 3)', async () => {
         { escalation_id: 'esc-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', source_type: 'near_miss', severity: 'critical', status: 'open', created_at: '2026-08-01T00:00:00.000Z' },
         { escalation_id: 'esc-2', athlete_id: 'ath-2', athlete_name: 'Sam R.', source_type: 'near_miss', severity: 'moderate', status: 'open', created_at: '2026-08-01T00:00:00.000Z' },
       ],
-      openViolations: [],
+      openViolations: [], openFlags: [],
     }),
   ) as unknown as typeof fetch;
 
@@ -179,7 +179,7 @@ test('a failed load is not stamped as a medical emergency', async () => {
 // test goes red naming it; drop the truncation notice and the second does.
 test('the rollup header never calls a capped read everything open', async () => {
   global.fetch = jest.fn().mockResolvedValue(
-    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: false }),
   ) as unknown as typeof fetch;
 
   render(<SafetyReviewPage />);
@@ -188,14 +188,14 @@ test('the rollup header never calls a capped read everything open', async () => 
   const header = heading.closest('header') as HTMLElement;
   // Not vacuous: this really is the page's own header.
   expect(header).toBeTruthy();
-  expect(within(header).getByText(/four safety systems/i)).toBeTruthy();
+  expect(within(header).getByText(/five safety systems/i)).toBeTruthy();
 
   expect(header.textContent ?? '').not.toMatch(/everything open/i);
 });
 
 test('a truncated violations feed says so instead of claiming nothing is open', async () => {
   global.fetch = jest.fn().mockResolvedValue(
-    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: true }),
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: true }),
   ) as unknown as typeof fetch;
 
   render(<SafetyReviewPage />);
@@ -211,7 +211,7 @@ test('a truncated violations feed says so instead of claiming nothing is open', 
 
 test('an untruncated all-clear still reads as an all-clear', async () => {
   global.fetch = jest.fn().mockResolvedValue(
-    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: false }),
   ) as unknown as typeof fetch;
 
   render(<SafetyReviewPage />);
@@ -232,7 +232,7 @@ test('a pain-report escalation badge reads "Pain report", keeps its colour, and 
         { ...escalation, escalation_id: 'esc-2', athlete_name: 'Sam R.', severity: 'high', metadata: { trigger_key: 'athlete_pain_report' } },
         { ...escalation, escalation_id: 'esc-3', athlete_name: 'Alex P.', severity: 'moderate', metadata: null },
       ],
-      openViolations: [],
+      openViolations: [], openFlags: [],
       violationsReadLimit: 200,
       violationsTruncated: false,
     }),
@@ -257,4 +257,40 @@ test('a pain-report escalation badge reads "Pain report", keeps its colour, and 
   const other = badgeFor('Alex P.');
   expect(other.textContent).toBe('◉moderate');
   expect(other.className).toContain('badge--monitor');
+});
+
+// Lane U2 (audit UX-A A-2): open safety flags are the fifth feed. An open flag
+// used to appear only on /admin/safety-flags, which nothing linked to.
+test('open safety flags are listed, worst first, and lead to the flags queue', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [],
+      openFlags: [
+        { flag_id: 'f1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', flag_code: 'medical_clearance_missing', severity: 'blocking_display', created_at: '2026-10-01T00:00:00.000Z' },
+        { flag_id: 'f2', athlete_id: null, athlete_name: null, flag_code: 'credential_lapsed', severity: 'advisory', created_at: '2026-10-01T00:00:00.000Z' },
+      ],
+      violationsReadLimit: 200, violationsTruncated: false,
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  const heading = await screen.findByRole('heading', { name: 'Open Safety Flags (2)' });
+  const section = heading.closest('section') as HTMLElement;
+  expect(within(section).getByText('Jordan T.')).toBeTruthy();
+  expect(within(section).getByText('An account (no athlete record)')).toBeTruthy();
+  expect(within(section).getByText('blocking')).toBeTruthy();
+  expect(within(section).getByRole('link', { name: 'Open the safety flags queue' }).getAttribute('href')).toBe('/admin/safety-flags');
+  expect(screen.queryByText('Nothing open right now')).toBeNull();
+});
+
+test('a review without the flags list is a failed read, never an all-clear', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  expect(await screen.findByText('The review could not be loaded')).toBeTruthy();
+  expect(screen.queryByText('Nothing open right now')).toBeNull();
 });

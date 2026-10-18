@@ -149,7 +149,7 @@ const SIGNED_IN_GATE: readonly ClubRole[] = [
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
-  { href: '/dashboard', label: 'Bell', room: 'office', roles: OPEN,
+  { href: '/dashboard', label: 'Home', room: 'office', roles: OPEN,
     keywords: 'home start landing bell', hint: 'The front desk — where a session starts.' },
   /* roles: ['admin'], NOT ADMIN_GATE: the capability routes behind this
      console refuse platform_owner (OD-2026-10-10-004 ruling 3), and the page
@@ -281,7 +281,7 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
-  { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/system', label: 'System', room: 'office', roles: ['admin', 'platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
     hint: 'The routes and jobs the platform is built from. Read-only; no row says a route or job is working.' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
@@ -327,7 +327,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/parent/video', label: 'Your Athlete\u2019s Film', room: 'office', roles: ['parent'],
     keywords: 'video film rounds coach notes child watch',
     hint: 'Rounds a coach put up for your child, and the coach\u2019s notes on them.' },
-  { href: '/parent/development-blocks', label: 'Development Plan', room: 'office', roles: ['parent'],
+  { href: '/parent/development-blocks', label: 'Their Development Plan', room: 'office', roles: ['parent'],
     keywords: 'development block plan multi week coach plan objectives child training emphasis',
     hint: 'The plan your child\u2019s coach wrote for them, in the coach\u2019s own words. Exactly what your child sees.' },
   { href: '/parent/mental-skills', label: 'Mental Skills', room: 'office', roles: ['parent'],
@@ -503,10 +503,10 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/intervention-review', label: 'What We Learned', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intervention review evidence outcome hypothesis learning loop decision counterevidence',
     hint: 'Decision, plan, delivery, evidence, verdict — the whole loop, three honest answers.' },
-  { href: '/coach/session-scripts', label: 'Session Scripts', room: 'floor', roles: ['coach', 'admin'],
+  { href: '/coach/session-scripts', label: 'Session Plans', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'session script lesson plan block minute run sheet class plan cheat sheet reset protocol',
     hint: 'The plan for a session, block by block. Minutes from the start, not clock times.' },
-  { href: '/coach/development-blocks', label: 'Development Blocks', room: 'floor', roles: ['coach', 'admin'],
+  { href: '/coach/development-blocks', label: 'Development Plans', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'development block multi week plan periodization athlete plan training emphasis window macrocycle',
     hint: 'What you intend for one athlete over the next several weeks, in your own words.' },
   { href: '/coach/assessments', label: 'Jump Test & Skill Ratings', room: 'floor', roles: ['coach', 'admin'],
@@ -518,7 +518,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/sparring-exposure', label: 'Sparring Record', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'sparring exposure head contact time under impact rounds stop rule after sparring presentation',
     hint: 'What you saw in a sparring segment, for one athlete. Counts only, no score; shows the coach-set cap and warns when a segment goes over it.' },
-  { href: '/coach/development', label: 'Your Development', room: 'floor',
+  { href: '/coach/development', label: 'Your Coaching Growth', room: 'floor',
     roles: ['coach', 'admin', 'staff', 'volunteer'],
     keywords: 'coach development goal own growth course clinic workshop training record education topic mentorship professional learning',
     hint: 'Your own coaching goals and the development work you did. Not your certifications -- those live on your credentials page.' },
@@ -655,12 +655,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/escalations', label: 'Escalations', room: 'clinic', roles: ['admin', 'coach'],
     keywords: 'safety red flag near miss pain report escalation queue safeguarding',
     hint: 'Safety, near-miss, and pain-report escalations — the only place they surface.' },
-  /* Same surface as the door above -- the page is a redirect() to it -- so it
-     stands in the same room. Two doors onto one queue, filed under two rooms,
-     is the catalog describing a building that does not exist. */
-  { href: '/admin/safety-escalations', label: 'Safety Escalations', room: 'clinic', roles: ['admin', 'coach'],
-    keywords: 'safety escalations admin queue legacy alias safeguarding',
-    hint: 'Alias for the escalations queue that preserves the safety-escalations route.' },
+  /* No door for /admin/safety-escalations: the page is a redirect() to the
+     queue above, and a second door listed one queue twice (lane U2, audit
+     UX-A A-13). The route stays for old bookmarks. */
   { href: '/admin/athlete-consent', label: 'Media Consent Audit', room: 'clinic', roles: ['admin', 'coach'],
     keywords: 'guardian photo video consent audit safeguarding record paper form',
     hint: 'Which athletes have full guardian consent for photo/video use, and where a signed paper form is recorded.' },
