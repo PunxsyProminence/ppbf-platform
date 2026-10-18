@@ -4050,12 +4050,14 @@ describe("the session-type tag is the athlete's pick at check-out, or nothing", 
     for (const label of ['Technique', 'Bag or pads', 'Conditioning', 'Sparring', 'Mixed', 'Other']) {
       expect(screen.getByRole('button', { name: `${TYPE_Q} ${label}` }).getAttribute('aria-pressed')).toBe('false');
     }
-    expect(screen.getByText('Not picked — you can skip this.')).toBeTruthy();
+    expect(screen.getByText('Not picked — you can skip this. It goes on the session when you check out.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Sparring` }));
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
     expect(checkOutBodies()[0].session_type).toBe('sparring');
+    // Said back on the confirmation, since no session read returns it to the athlete.
+    expect(await screen.findByText(/Tagged: Sparring\./)).toBeTruthy();
   });
 
   test('a cleared pick is sent as null', async () => {

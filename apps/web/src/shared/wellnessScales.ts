@@ -80,7 +80,7 @@ export const WELLNESS_SCALES: readonly WellnessScale[] = [
     direction: 'higher_is_better',
   },
   {
-    // Jason 2026-10-18, "Mood + stress (Rec.)". Copy PROPOSED.
+    // OD-2026-10-17-023, "Mood + stress (Rec.)". Copy PROPOSED.
     key: 'mood',
     question: 'How is your mood?',
     anchors: ['Really down', 'Low', 'Okay', 'Good', 'Great'],

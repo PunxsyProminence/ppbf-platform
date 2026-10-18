@@ -1,8 +1,8 @@
 // What kind of session an athlete says it was, tagged at check-out beside the
-// effort answer (Jason 2026-10-18, "Session effort (Rec.)" with a session-type
-// tag). Effort x minutes means different things on a sparring night and a
-// technique night, so a personal baseline of session load is read per tag
-// (research draft BASELINE-METRICS-2026-10-18, section 3.1).
+// effort answer (OD-2026-10-17-023, "Session effort (Rec.)" with a
+// session-type tag). Effort x minutes means different things on a sparring
+// night and a technique night, so a personal baseline of session load is read
+// per tag (research draft BASELINE-METRICS-2026-10-18, section 3.1).
 //
 // SHARED so the server validates against the same list the athlete picks from,
 // and matched to pilot_sessions_session_type_check in

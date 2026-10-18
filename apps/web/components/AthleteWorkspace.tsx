@@ -2426,6 +2426,10 @@ export default function AthleteWorkspace() {
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
       const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
+      // Said back, because no session read sends the tag to the athlete yet.
+      const typeLine = sessionType === null
+        ? ''
+        : ` Tagged: ${SESSION_TYPES.find((type) => type.key === sessionType)?.label ?? sessionType}.`;
       // Session load is shown only when both of the athlete's own answers are
       // there, and labelled for what it is: arithmetic, not a verdict.
       const loadLine = rpe === null || durationMinutes === null
@@ -2436,7 +2440,7 @@ export default function AthleteWorkspace() {
       // same lie in the other direction.
       setBackendSyncMessage((isSystemCheckInNote(storedNote)
         ? "Logged. That one is on your card."
-        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + loadLine);
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + typeLine + loadLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -3288,7 +3292,7 @@ export default function AthleteWorkspace() {
                       </div>
                       {answeredSessionType === null ? (
                         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not picked — you can skip this.
+                          Not picked — you can skip this. It goes on the session when you check out.
                         </p>
                       ) : (
                         <button
