@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
 import StepNotes from './IssuedWorkoutStepNotes';
@@ -1251,6 +1252,8 @@ export default function AthleteWorkspace() {
   // The minutes box, keyed to the session like the effort answer above so a
   // draft can never drift onto a later session.
   const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
+  // The session-type tag (Jason 2026-10-18), keyed to the session the same way.
+  const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -1372,6 +1375,10 @@ export default function AthleteWorkspace() {
   const answeredEffort = postSessionEffort !== null && activeSessionRecord !== null
     && postSessionEffort.sessionId === activeSessionRecord.sessionId
     ? postSessionEffort.value
+    : null;
+  const answeredSessionType = postSessionType !== null && activeSessionRecord !== null
+    && postSessionType.sessionId === activeSessionRecord.sessionId
+    ? postSessionType.value
     : null;
   const minutesDraft = postSessionMinutesDraft !== null && activeSessionRecord !== null
     && postSessionMinutesDraft.sessionId === activeSessionRecord.sessionId
@@ -2346,6 +2353,7 @@ export default function AthleteWorkspace() {
        stored is what the athlete shared, and check-out preserves it. */
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
+    const sessionType = answeredSessionType;
     // An invalid minutes entry holds check-out (the button is disabled too);
     // a typed answer is never thrown away in favour of "not recorded".
     if (parsedMinutes.status === 'invalid') {
@@ -2387,6 +2395,9 @@ export default function AthleteWorkspace() {
           // The athlete's own minutes, or null for "not given" -- sent
           // explicitly so check-out is the one write that sets it.
           duration_minutes: durationMinutes,
+          // The athlete's tag, or null for "not said" -- sent explicitly so
+          // check-out is the one write that sets it, like the minutes.
+          session_type: sessionType,
           // The last PUBLISHED value, replayed unchanged: check-out never
           // reads the box, so checking out neither publishes a draft nor
           // erases what was shared. Read AFTER the wait above, so a
@@ -2411,9 +2422,14 @@ export default function AthleteWorkspace() {
       // Cleared only now, after the server took it -- a refused check-out
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
+      setPostSessionType(null);
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
       const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
+      // Said back, because no session read sends the tag to the athlete yet.
+      const typeLine = sessionType === null
+        ? ''
+        : ` Tagged: ${SESSION_TYPES.find((type) => type.key === sessionType)?.label ?? sessionType}.`;
       // Session load is shown only when both of the athlete's own answers are
       // there, and labelled for what it is: arithmetic, not a verdict.
       const loadLine = rpe === null || durationMinutes === null
@@ -2424,7 +2440,7 @@ export default function AthleteWorkspace() {
       // same lie in the other direction.
       setBackendSyncMessage((isSystemCheckInNote(storedNote)
         ? "Logged. That one is on your card."
-        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + loadLine);
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + typeLine + loadLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -3248,6 +3264,44 @@ export default function AthleteWorkspace() {
                           className="btn btn--ghost"
                         >
                           Clear my answer
+                        </button>
+                      )}
+                    </fieldset>
+                    {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
+                        selected until the athlete picks; only Check Out
+                        writes it. Copy PROPOSED. */}
+                    <fieldset className="space-y-[var(--s2)]">
+                      <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
+                        {SESSION_TYPES.map((type) => {
+                          const selected = answeredSessionType === type.key;
+                          return (
+                            <button
+                              key={type.key}
+                              type="button"
+                              aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
+                              aria-pressed={selected}
+                              disabled={isCheckingOut}
+                              onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
+                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                            >
+                              {type.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answeredSessionType === null ? (
+                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                          Not picked — you can skip this. It goes on the session when you check out.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPostSessionType(null)}
+                          disabled={isCheckingOut}
+                          className="btn btn--ghost"
+                        >
+                          Clear session type
                         </button>
                       )}
                     </fieldset>
