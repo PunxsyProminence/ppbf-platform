@@ -48,11 +48,32 @@ interface ViolationItem {
   created_at: string;
 }
 
+// Open safety flags (lane U2, audit UX-A A-2): their own queue, separate from
+// the escalation ladder, and the fifth feed this rollup reads.
+type FlagSeverity = 'advisory' | 'attention' | 'blocking_display';
+
+interface FlagItem {
+  flag_id: string;
+  athlete_id: string | null;
+  athlete_name: string | null;
+  flag_code: string;
+  severity: FlagSeverity;
+  created_at: string;
+}
+
+// The same rungs, glyphs and words /admin/safety-flags uses for this union.
+const FLAG_BADGE: Record<FlagSeverity, { rung: string; glyph: string; label: string }> = {
+  blocking_display: { rung: 'badge--locked', glyph: '✕', label: 'blocking' },
+  attention: { rung: 'badge--restricted', glyph: '▲', label: 'attention' },
+  advisory: { rung: 'badge--monitor', glyph: '◉', label: 'advisory' },
+};
+
 interface SafetyReview {
   openHolds: HoldItem[];
   failingGates: GateFailureItem[];
   openEscalations: EscalationItem[];
   openViolations: ViolationItem[];
+  openFlags: FlagItem[];
   // The compliance-violations feed is the one capped read of the four --
   // safetyReview.ts reads violationsReadLimit rows newest-first and filters to
   // open statuses afterwards. Carried to the screen so this page can state its
@@ -96,6 +117,7 @@ export default function SafetyReviewPage() {
         || !Array.isArray(payload.failingGates)
         || !Array.isArray(payload.openEscalations)
         || !Array.isArray(payload.openViolations)
+        || !Array.isArray(payload.openFlags)
       ) {
         throw new Error('The safety review could not be read.');
       }
@@ -104,6 +126,7 @@ export default function SafetyReviewPage() {
         failingGates: payload.failingGates,
         openEscalations: payload.openEscalations,
         openViolations: payload.openViolations,
+        openFlags: payload.openFlags,
         violationsReadLimit: payload.violationsReadLimit ?? 0,
         // A response that does not say whether it was cut is treated as cut.
         // Fail closed: the expensive mistake here is a false all-clear.
@@ -125,6 +148,7 @@ export default function SafetyReviewPage() {
   const isLoading = review === null && !errorMessage;
   const totalOpen = review
     ? review.openHolds.length + review.failingGates.length + review.openEscalations.length + review.openViolations.length
+      + review.openFlags.length
     : 0;
 
   return (
@@ -152,11 +176,11 @@ export default function SafetyReviewPage() {
                 violationsReadLimit rows newest-first and only then filters to
                 the open statuses), so on a gym past that window an open
                 violation can be missing from this page. Three feeds are
-                whole; one is a window, and the sentence now says which. */}
+                whole (four, with safety flags); one is a window, and the sentence now says which. */}
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              What is open across the four safety systems: training holds, safety-gate checks, the
-              red-flag escalation ladder, and compliance violations. Holds, gate checks and escalations
-              are read in full. Each item links to the page that can act on it -- this view only rolls
+              What is open across the five safety systems: training holds, safety-gate checks, the
+              red-flag escalation ladder, compliance violations, and safety flags. Holds, gate checks,
+              escalations and safety flags are read in full. Each item links to the page that can act on it -- this view only rolls
               them up.
             </p>
             {review && review.violationsTruncated ? (
@@ -203,7 +227,7 @@ export default function SafetyReviewPage() {
               <div className="empty-glyph" aria-hidden="true">◌</div>
               <div className="empty-title">Nothing open in what this page could read</div>
               <div className="empty-msg">
-                No active holds, failing gate checks or open escalations — those three are read in full.
+                No active holds, failing gate checks, open escalations or open safety flags — those four are read in full.
                 Compliance violations were not, so this is not an all-clear on them.
               </div>
             </div>
@@ -211,7 +235,7 @@ export default function SafetyReviewPage() {
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">✓</div>
               <div className="empty-title">Nothing open right now</div>
-              <div className="empty-msg">No active holds, failing gate checks, open escalations, or open compliance violations.</div>
+              <div className="empty-msg">No active holds, failing gate checks, open escalations, open compliance violations, or open safety flags.</div>
             </div>
           ) : (
             <div className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
@@ -264,6 +288,31 @@ export default function SafetyReviewPage() {
                 </section>
               )}
 
+              {review!.openFlags.length > 0 && (
+                <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
+                  <h2 className="t-command text-[length:var(--t-lg)]">Open Safety Flags ({review!.openFlags.length})</h2>
+                  <ul className="mt-[var(--s3)] divide-y divide-[color:var(--hide-800)]">
+                    {review!.openFlags.map((flag) => (
+                      <li key={flag.flag_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
+                        <span className="t-body">
+                          {flag.athlete_id ? displayName(flag.athlete_id, flag.athlete_name) : 'An account (no athlete record)'}
+                        </span>
+                        <span className="flex flex-wrap items-center gap-[var(--s2)]">
+                          <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{flag.flag_code}</span>
+                          <span className={`badge ${(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).rung}`}>
+                            <i aria-hidden="true">{(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).glyph}</i>
+                            {(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).label}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href="/admin/safety-flags" className="t-body mt-[var(--s3)] inline-block underline">
+                    Open the safety flags queue
+                  </Link>
+                </section>
+              )}
+
               {review!.openViolations.length > 0 && (
                 <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
                   <h2 className="t-command text-[length:var(--t-lg)]">Open Compliance Violations ({review!.openViolations.length})</h2>
@@ -289,6 +338,9 @@ export default function SafetyReviewPage() {
             </Link>
             <Link href="/admin/compliance-center" className="btn btn--ghost">
               Compliance Center
+            </Link>
+            <Link href="/admin/safety-flags" className="btn btn--ghost">
+              Safety Flags
             </Link>
             <BackHome />
           </div>
