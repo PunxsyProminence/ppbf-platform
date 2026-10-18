@@ -26,7 +26,7 @@
 //   evidence_label: working notes about a case or a source, not the question.
 //
 // WHO SEES WHICH ROW is not decided here. The routes scope first
-// (scopeToReachableSubjects, mayReadRequirement); this shapes what is left.
+// (scopeToReachableSubjects, readableRequirement); this shapes what is left.
 
 import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
@@ -140,6 +140,15 @@ export const ASKER_QUESTION_EVENT = 'shadow_unanswered_question';
 // PROPOSED copy.
 export const ASKER_QUESTION_COACH_SENTENCE =
   'A question from an athlete or parent that SHADOW could not answer. The gym administrator can read it.';
+/* The free text staff write ON such a row (the closing note, a submission's
+ * note and its review note) can quote or answer the question, so a coach gets
+ * this in place of any of them, and nothing where there was none (lane L52,
+ * Overwatch 2026-10-18 on the ruling above). PROPOSED copy. */
+export const ASKER_QUESTION_NOTE_SENTENCE = 'The gym administrator can read this note.';
+
+function coachNote(note: unknown): string {
+  return typeof note === 'string' && note.trim() !== '' ? ASKER_QUESTION_NOTE_SENTENCE : '';
+}
 
 export function isAskerFiledQuestion(
   row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
@@ -151,11 +160,12 @@ export function isAskerFiledQuestion(
 /** The stored row as a COACH receives it when it is an asker's question.
  *  Built from NAMED fields, like the family view: a column a later writer adds
  *  stays out until someone names it here. The kind of asker (created_by_role),
- *  the key, the account id, the label and the metadata are not named. */
+ *  the key, the account id, the label and the metadata are not named; a
+ *  closing note is replaced, not copied. */
 export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowResearchRequirementRow {
   const meta = row.metadata ?? {};
   const closing: Record<string, unknown> = {};
-  if (typeof meta.closing_note === 'string') closing.closing_note = meta.closing_note;
+  if (coachNote(meta.closing_note)) closing.closing_note = ASKER_QUESTION_NOTE_SENTENCE;
   if (typeof meta.closing_submission_id === 'string') closing.closing_submission_id = meta.closing_submission_id;
   return {
     research_requirement_id: row.research_requirement_id,
@@ -201,10 +211,38 @@ export function researchRequirementsForReader(
   return rows.some(isAskerFiledQuestion) ? rows.map((row) => wholeResearchRowFor(reader.role, row)) : rows;
 }
 
+/** A submission on an asker's question as a COACH receives it: the source,
+ *  the verdict and when, not what anyone wrote about the case. Named fields;
+ *  the submitter and reviewer are staff, never the asker. */
+export function toCoachAskerSubmission(row: ResearchSubmissionRow): ResearchSubmissionRow {
+  return {
+    organization_id: row.organization_id,
+    submission_id: row.submission_id,
+    research_requirement_id: row.research_requirement_id,
+    source_id: row.source_id,
+    document_id: row.document_id,
+    provenance: {},
+    submission_note: coachNote(row.submission_note),
+    applicability_state: row.applicability_state,
+    reviewed_by_account_id: row.reviewed_by_account_id,
+    reviewed_at: row.reviewed_at,
+    review_note: coachNote(row.review_note),
+    submitted_by_account_id: row.submitted_by_account_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/** `requirement` is the stored row the submissions hang off, as the route
+ *  read it to scope the request: whether it is an asker's question is a fact
+ *  about that row, not about the submissions. */
 export function researchSubmissionsForReader(
   reader: Pick<ResearchReader, 'role'>,
   rows: ResearchSubmissionRow[],
   onPlatformShelf: boolean,
+  requirement: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
 ): Array<ResearchSubmissionRow | FamilyResearchSubmission> {
-  return readsWholeResearchSubmissions(reader.role, onPlatformShelf) ? rows : rows.map(toFamilyResearchSubmission);
+  if (!readsWholeResearchSubmissions(reader.role, onPlatformShelf)) return rows.map(toFamilyResearchSubmission);
+  if (reader.role && isOrganizationAdminRole(reader.role)) return rows;
+  return isAskerFiledQuestion(requirement) ? rows.map(toCoachAskerSubmission) : rows;
 }

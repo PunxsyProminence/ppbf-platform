@@ -2,6 +2,8 @@
 // from a client component: the plan page, the live screen and the server's template-to-script
 // step all use it, so a word on screen and a word written to a block cannot drift.
 
+import type { SessionScriptRenderingFormat } from '@/src/server/pilot/sessionScripts';
+
 const STATE_WORDS: Readonly<Record<string, string>> = {
   draft: 'Draft',
   coach_reviewed: 'Coach reviewed',
@@ -57,4 +59,29 @@ export function explainLine(explain: string): { label: string; value: string } {
     return { label: 'Explain', value: stored[2] ? `${section}, ${stored[2]} reps` : section };
   }
   return { label: 'Explain', value: explain };
+}
+
+/**
+ * The coach formats a plan re-renders from its blocks when it is edited (audit 2026-10-17 item 8,
+ * Overwatch Q8 "A"). Never a family format: a block's title is the coach's free text, withheld from
+ * families (Jason, 2026-10-12: "strip them").
+ */
+export const BLOCK_RENDERED_FORMATS: readonly string[] = [
+  'cheat_sheet',
+  'class_plan',
+  'instructor_script',
+  'class_flow',
+] satisfies readonly SessionScriptRenderingFormat[];
+
+/** A rendering's format as a coach would say it: 'cheat_sheet' is "Cheat sheet". */
+export function renderingFormatWords(format: string): string {
+  return tidy(format);
+}
+
+/** Whether a rendering follows edits to the plan's blocks, as the plan page says it. */
+export function renderingOriginWords(format: string, generatedFromBlocks: boolean): string {
+  if (!generatedFromBlocks) return 'Written by hand. Edits to the blocks do not change it.';
+  return BLOCK_RENDERED_FORMATS.includes(format)
+    ? 'Made from the blocks.'
+    : 'Made from the blocks when it was written. Edits to the blocks do not change it.';
 }

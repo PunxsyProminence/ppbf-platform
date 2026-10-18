@@ -2019,6 +2019,77 @@ h6 {
   }
 }
 
+/* ===================================================== THE COACH'S CONSOLE ===
+   The live-session console on /coach/session-scripts in look B (lane L39
+   PR 3). Its sizes come from the kiosk surface it sits on; what is set here is
+   the top row's layout, the tiles' caps, and the controls as brass plates. No
+   rule here sets a font size on a kiosk voice (.t-label, .t-data, .badge ...):
+   kioskTypeFloor.test.ts owns those. */
+.coach-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+.coach-tiles__group {
+  min-width: 0;
+}
+.coach-tiles__cap {
+  display: flex;
+  margin: 0 0 var(--s3);
+  padding: var(--s2) var(--s4);
+  font-family: var(--font-ui);
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+/* A badge's word may wrap inside a narrow tile instead of spilling into the next. */
+.coach-tiles .badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.coach-tiles__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coach-tiles__note {
+  margin: 0;
+  font-size: var(--t-md);
+  color: var(--bone-300);
+}
+/* The controls as brass plates: the same buttons, the same handlers. Ink on
+   brass-300 to brass-400 reads 6:1 or better across the plate; the press and
+   hover feedback the plain button had stays. */
+.coach-live .coach-live-controls .btn,
+.coach-live .coach-live-timer .btn:not(.btn--ghost) {
+  border: 1px solid var(--brass-700);
+  background-image: linear-gradient(180deg, var(--brass-300), var(--brass-400));
+  color: var(--enamel-ink);
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .45);
+  box-shadow: var(--shadow-contact), inset 0 1px 0 rgb(var(--brass-200-rgb) / .5);
+}
+.coach-live .coach-live-controls .btn:hover:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.coach-live .coach-live-controls .btn:active:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35);
+}
+.coach-live .coach-live-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-lg);
+}
+
 /* ============================================================== THE WALL ===
    Scoped entirely to [data-surface="wall"], the marker app/wall/layout.tsx
    puts on its subtree. Nothing here can reach another page: no other element

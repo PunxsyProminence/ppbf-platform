@@ -1288,11 +1288,24 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       shadowHere.behaviourObservations = behaviourHere;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
+          /* A retired athlete login keeps only what refusing its sign-in needs:
+             the row, its role, its gym and deleted_at (deletedAccountSignIn.ts,
+             deletedAthletes.ts). Its email, PIN and any password or Microsoft
+             binding go with the child (F-102, OD-2026-10-08-009 D15: "Build the
+             removals"); each pair is cleared together, as its check requires.
+             A login that is not the athlete's role is still in use and keeps
+             them. */
           await client.query(
             `update pilot.accounts
                 set athlete_id = null,
                     deleted_at = case when role = 'athlete' then coalesce(deleted_at, now()) else deleted_at end,
                     active_flag = case when role = 'athlete' then false else active_flag end,
+                    login_email = case when role = 'athlete' then null else login_email end,
+                    pin_hash = case when role = 'athlete' then null else pin_hash end,
+                    password_hash = case when role = 'athlete' then null else password_hash end,
+                    password_set_at = case when role = 'athlete' then null else password_set_at end,
+                    microsoft_oid = case when role = 'athlete' then null else microsoft_oid end,
+                    microsoft_tid = case when role = 'athlete' then null else microsoft_tid end,
                     updated_at = now()
               where account_id = $1`,
             [login.account_id],
@@ -1549,10 +1562,18 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         ],
       });
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
-         cleared the way a reviewer's removal clears it (profileDb.ts). */
+         cleared the way a reviewer's removal clears it (profileDb.ts). So does
+         the ring name (F-102): the scrub above already treats it as one of the
+         child's names, and it is read there, before this clears it. */
       const portraitPaths = [];
       if (removed.rows.length > 0 && tables.profiles) {
         for (const login of linked.rows.filter((row) => row.role === 'athlete')) {
+          await client.query(
+            `update pilot.account_profiles
+                set display_nickname = null, updated_at = now()
+              where organization_id = $1 and account_id = $2 and display_nickname is not null`,
+            [athlete.organization_id, login.account_id],
+          );
           const portrait = await client.query(
             `select photo_blob_path from pilot.account_profiles
               where organization_id = $1 and account_id = $2 and photo_blob_path is not null

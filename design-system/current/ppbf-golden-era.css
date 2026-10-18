@@ -1417,8 +1417,9 @@
 .ge-scripts article h3 { min-width: 0; overflow-wrap: anywhere; }
 
 /* THE LIVE RUN (screen 3b). The console a coach runs a session from stays a
-   dark leather panel -- it carries the failure panels, and its ground does
-   not flip -- and takes the same stitched edge as the board it sits on.
+   dark panel -- it carries the failure panels, and its ground does not flip.
+   Since look B (lane L39 PR 3) it is a board in the wall-board kit's frame
+   (section 011) rather than leather with a stitched edge.
    Sizes come from data-surface="kiosk" on its wrapper; what is stated here is
    only what that device does not get right on this console. The rules hang
    on a class the section carries (.ge-scripts-live), not on its aria-label,
@@ -5773,4 +5774,72 @@
   border: 4px solid #15181A;
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px rgb(var(--brass-300-rgb) / .14), 0 0 0 1px rgba(0, 0, 0, .65);
+}
+
+/* A pictogram roundel: a struck brass ring on the dark field, the drawing in
+   polished brass (components/blockKindIcons.tsx). Sized by font-size. */
+.ge-wallboard .ge-pictogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 2px solid var(--brass-600);
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 35% 30%, rgb(var(--brass-300-rgb) / .14), transparent 60%),
+    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .92), rgb(var(--frame-field-rgb) / .92));
+  color: var(--brass-200);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .25), 0 1px 0 rgba(0, 0, 0, .6);
+}
+
+/* A count tile (the coach's top row, lane L39 PR 3): a big figure on the dark
+   field, its word under it. A tile that could not be read is never drawn; the
+   group says so in words instead (CoachLiveTiles.tsx). */
+.ge-wallboard .ge-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid rgb(var(--brass-600-rgb) / .45);
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, .25);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .10);
+}
+.ge-wallboard .ge-tile__value {
+  font-family: var(--font-display);
+  font-size: var(--t-3xl);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-100);
+}
+.ge-wallboard .ge-tile__label {
+  font-family: var(--font-ui);
+  font-size: var(--t-md);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+}
+
+/* The coach's console in the board frame: the frame is its edge now, so the
+   stitched outline it wore as a leather panel stands down, and the label voice
+   keeps the lift it had on the leather (bone-200: 4.5:1 and more on this field). */
+.ge-scripts .ge-scripts-live.ge-frame {
+  outline: none;
+}
+.ge-scripts .ge-scripts-live.ge-frame .t-label {
+  color: var(--bone-200);
+}
+/* ...except the lit row's "Current", which stays the metal voice it is everywhere else. */
+.ge-scripts .ge-scripts-live.ge-frame [aria-current="step"] .t-label {
+  color: var(--brass-200);
+}
+/* On a phone the band thins, so the frame does not take the content's width. */
+@media (max-width: 640px) {
+  .ge-wallboard {
+    --frame-band: 8px;
+  }
 }
