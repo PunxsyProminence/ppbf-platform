@@ -5,31 +5,22 @@
 // that table out of the shipped markdown and asserts it equals this constant,
 // so the two cannot drift apart.
 //
-// `archiveCode` IS A DOCUMENTATION CROSSWALK THAT NOTHING ENFORCES.
+// `archiveCode` NAMES THE SUBJECT FOLDER A SOURCE'S ORIGINAL IS FILED IN.
 //
-// Corrected 2026-08-24. This comment read "UNVERIFIED ... NOT ARCHIVE TRUTH"
-// and said section 1 of that document was "an unconfirmed proposal: no
-// manifest, export, connector record, or configuration value anywhere in this
-// repository corroborates that those folders exist". The R01-R19 structure is
-// now verified to exist in the permanent SharePoint archive, so that ground is
-// gone.
+// Since lane L57 (issue #345), filing a research PDF in the permanent SharePoint
+// Research Archive (src/server/pilot/researchArchiveFiling.ts) takes its folder
+// from the source's classification through this code: `R19` files under the
+// archive root's one folder named `R19 - ...`, found by item id
+// (researchArchiveWrite.ts). That is the only thing it decides. It is filing,
+// not routing authority, evidence grade or a promotion decision, and
+// reclassifying a source later does not move a file already filed.
 //
-// THE CONCLUSION IS UNCHANGED, for the half of the original reason that was
-// always the load-bearing half: NO RESEARCH-SPECIFIC ROUTE OR CONFIGURATION IS
-// WIRED TO THE PERMANENT RESEARCH ARCHIVE, AND NO RUNTIME CODE ROUTES OR FILES
-// RESEARCH BY `archiveCode`. Nothing derives a destination from a subject code,
-// and no test asserts where an `adaptive_inclusive_practice` source lands.
-//
-// Stated that precisely because the blunter version -- "no code in this
-// repository reads or writes them" -- is not true. The generic uploader in
-// server/document-intake/sharepoint.ts takes a CONFIGURABLE destination
-// (`SHAREPOINT_FOLDER_PATH`, defaulting to `PPBF/Intake`), so a configuration
-// value could in principle aim it at the archive. What does not exist is a
-// research-specific path that does so.
-//
-// "The folder exists" and "this mapping is wired to it" are two claims, and
-// only the first one changed. Do not build routing, filing, or upload behavior
-// on `archiveCode` as though the destination were wired.
+// History, kept because it explains the shape: until then this comment said
+// "a documentation crosswalk that nothing enforces", and the R01-R19 folders
+// were verified to exist (2026-08-24) long before anything was wired to them.
+// The generic uploader in server/document-intake/sharepoint.ts is still a
+// different path with its own configurable destination, and never files by
+// this code.
 //
 // R00 (Unsorted Drop) and R98 (Duplicate Hold) are workflow states, not subject
 // domains, so neither belongs in this list -- by code and by key alike. Note

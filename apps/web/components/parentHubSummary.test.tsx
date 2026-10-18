@@ -173,6 +173,21 @@ test('the page heading is the door name, Parent Hub', async () => {
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(door!.label);
 });
 
+// #1593: "Current Track" had no source and read Unavailable for every child,
+// so the row is gone (Overwatch ruling B); the status panel keeps what is real.
+test('the status panel has no Current Track row, and still names the child', async () => {
+  installFetch();
+  await renderHub();
+  expect(screen.queryByText('Current Track')).toBeNull();
+  // The panel's help, opened, names what the panel shows.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Child Overview/ }));
+  });
+  expect(screen.getByText('Review membership, scholarship and support status')).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/current track/i);
+  expect(screen.getByText('Child Name')).toBeInTheDocument();
+});
+
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
   test('the tile and the status row show the selected child’s own record, and move with the selection', async () => {
     installFetch();
