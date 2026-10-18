@@ -514,7 +514,7 @@ export const BUILDING: readonly Door[] = [
     hint: "One athlete's jump result and your 1-5 skill ratings, with their own history. Nothing ranked." },
   { href: '/coach/test-day', label: 'Test Day', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'test day quarterly fitness shuttle beep 20-m 20m height growth jump cmj broad group',
-    hint: "The group's standing height, jumps and 20-m shuttle for one date, in one save. Heights are coaches only." },
+    hint: "The group's standing height, jumps and 20-m shuttle for one date, in one save. Heights are staff only." },
   { href: '/coach/mental-skills', label: 'Mental Skills', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'mental skills self-talk cue imagery visualisation visualization athlete log',
     hint: 'An athlete’s self-talk cue and imagery sessions, in their words. Read-only.' },
