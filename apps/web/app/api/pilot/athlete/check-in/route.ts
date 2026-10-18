@@ -9,6 +9,7 @@ import {
 } from '@/src/server/pilot/athleteBodyMass';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ValidationError } from '@/src/server/pilot/errors';
+import { recordCheckInBaselines } from '@/src/server/pilot/formulas/checkInBaseline';
 import { FormulaRepositoryError } from '@/src/server/pilot/formulas/repository';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -159,6 +160,35 @@ export async function POST(request: NextRequest) {
           });
         }
       }
+    }
+
+    // PERSONAL BASELINE (MVP-09; Jason 2026-10-17, OD-2026-10-17-020): sleep,
+    // energy, soreness, stress and mood against the athlete's own last 28 days. Read from
+    // the STORED row, so a repeat submission the same day writes the same
+    // keyed observations and never a second set. Same doctrine as the weight
+    // above: the check-in is committed, so a failure here is logged and never
+    // turned into a 500 the athlete would read as "check-in failed".
+    try {
+      await recordCheckInBaselines({
+        organizationId: principal.organizationId,
+        athleteId,
+        checkInId: result.row.check_in_id,
+        observedAt: new Date(result.row.created_at).toISOString(),
+        accountId: principal.accountId,
+        values: {
+          sleep_hours: result.row.sleep_hours,
+          energy: result.row.energy,
+          soreness: result.row.soreness,
+          stress: result.row.stress,
+          mood: result.row.mood,
+        },
+      });
+    } catch (error) {
+      console.error({
+        event: 'check-in-baseline-write-failed',
+        check_in_id: result.row.check_in_id,
+        errorClass: error instanceof Error ? error.name : typeof error,
+      });
     }
 
     return NextResponse.json({

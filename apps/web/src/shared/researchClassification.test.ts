@@ -27,10 +27,11 @@ import {
 // with no manifest, export, or connector record". The R01-R19 structure is now
 // verified to exist in the permanent SharePoint archive. What this test can
 // prove did not change -- it reads a markdown table and a TypeScript constant,
-// and neither is the archive. archiveCode remains a documentation crosswalk
-// rather than verified archive conformance, now because nothing in this
-// repository is wired to it rather than because the folders were in doubt.
-// The test names below say only what is actually asserted.
+// and neither is the archive. Since lane L57, filing picks the subject folder
+// through archiveCode (researchArchiveFiling.ts), and the writer resolves the
+// live `R## - ...` folder by item id; whether the folder exists is decided
+// there, at filing time, not here. The test names below say only what is
+// actually asserted.
 
 const ARCHITECTURE_DOC = path.resolve(
   __dirname,
