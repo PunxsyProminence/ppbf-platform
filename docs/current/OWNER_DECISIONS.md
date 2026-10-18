@@ -470,6 +470,8 @@ Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Op
 
 **Status:** ruled; whether it is built was not checked by this records pass.
 
+**Status (2026-10-18), applied (OBSERVED from the run, housekeeping lane HK):** the move ran in production. `move-policy-shelf` run 39077227359 (workflow_dispatch, TARGET production, mode apply, conclusion success, completed 2026-10-17T23:30:21Z) logged `library.policy_move.completed`: moved 22 sources, 7 documents and 49 chunks from `ppbf-default-org` to `punxsy_prominence`; detached 2 evidence items and 0 message citations; after the move `ppbf-default-org` holds 0 of each and `punxsy_prominence` 22 / 7 / 49. The hold narrowing it needed was #1694.
+
 ---
 
 ## OD-2026-10-17-001 -- UX coherence cards: "A: Use these words (Recommended)"; "A: Rename + I'm here on Today (Recommended)"; "A: Cross-link now (Recommended)"; "B: Keep one", corrected to "Im Ment A"
