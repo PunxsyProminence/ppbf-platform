@@ -496,6 +496,13 @@ describe('repeats, withdrawals and races', () => {
     expect((await approve(feedbackId)).status).toBe(200);
     expect(await flagOf('slip')).toMatchObject({ flag_count: 1, review_state: 'resolved' });
     expect(await concernedTopics()).not.toContain('slip');
+    // The audit trail says what happened, not that the topic was flagged again.
+    const { rows } = await client.query<{ actions_taken: string[] }>(
+      `select actions_taken from pilot.shadow_learning_events where feedback_id = $1 and verification_state = 'human_reviewed'`,
+      [feedbackId],
+    );
+    expect(rows[0].actions_taken).toContain('Library flag already counted for this feedback (topic: slip)');
+    expect(rows[0].actions_taken).not.toContain('Library entry flagged for review (topic: slip)');
   });
 
   test('a flag goes when its last supporting feedback is withdrawn, whoever the row names', async () => {
@@ -569,5 +576,10 @@ describe('repeats, withdrawals and races', () => {
     });
     expect(await flagOf('weave')).toBeNull();
     expect(await concernedTopics()).not.toContain('weave');
+    const effectiveness = await client.query<{ outcome: string }>(
+      'select outcome from pilot.shadow_recommendation_effectiveness where feedback_id = $1',
+      [feedbackId],
+    );
+    expect(effectiveness.rows).toEqual([{ outcome: 'improved' }]);
   });
 });

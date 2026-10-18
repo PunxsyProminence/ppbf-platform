@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, queryOne } from './db';
 
 export type RecommendationVerificationState = 'unverified' | 'durable_client' | 'human_reviewed';
@@ -38,6 +40,9 @@ export interface GrowthMetrics {
 
 export async function recordRecommendationEffectiveness(
   data: RecommendationEffectivenessInput,
+  // A transaction the caller holds: the learning loop writes a client
+  // signal's row under the feedback row's lock, with its flag and log.
+  transaction?: PoolClient,
 ): Promise<void> {
   const outcomeToScore: Record<RecommendationEffectivenessInput['outcome'], number | null> = {
     improved: 1,
@@ -50,7 +55,8 @@ export async function recordRecommendationEffectiveness(
     throw new Error('Effectiveness score must be between 0 and 1');
   }
 
-  await query(
+  await queryOn(
+    transaction,
     `INSERT INTO pilot.shadow_recommendation_effectiveness
        (organization_id, account_id, feedback_id, recommendation_id,
         recommendation_type, outcome, effectiveness_score,
@@ -104,6 +110,10 @@ export async function recordRecommendationEffectiveness(
       data.humanReviewRequired,
     ],
   );
+}
+
+function queryOn(transaction: PoolClient | undefined, text: string, params: unknown[]): Promise<unknown> {
+  return transaction ? transaction.query(text, params) : query(text, params);
 }
 
 export async function getGrowthMetrics(

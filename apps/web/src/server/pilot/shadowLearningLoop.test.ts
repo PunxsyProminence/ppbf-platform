@@ -110,12 +110,13 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(result.metricsRecorded).toBe(true);
     expect(result.profileUpdated).toBe(false);
     expect(result.humanReviewRequired).toBe(true);
+    // Written in the projection's transaction, under the feedback lock.
     expect(mockRecordMetrics).toHaveBeenCalledWith(expect.objectContaining({
       feedbackId: 12,
       recommendationId: 'durable-message-1',
       verificationState: 'durable_client',
       humanReviewRequired: true,
-    }));
+    }), transactionClient);
     expect(mockEvaluateUnlocks).not.toHaveBeenCalled();
     expect(mockRememberFact).not.toHaveBeenCalled();
     expect(mockResearch).not.toHaveBeenCalled();
@@ -157,7 +158,7 @@ describe('SHADOW learning-loop trust gates', () => {
       expect(mockRecordMetrics).toHaveBeenCalledWith(expect.objectContaining({
         feedbackId: 12,
         verificationState: 'durable_client',
-      }));
+      }), transactionClient);
       expect(result.metricsRecorded).toBe(true);
       expect(result.libraryFlagged).toBe(flagged);
       expect(flagWritten()).toBe(flagged);
