@@ -499,9 +499,11 @@ describe('fix a number', () => {
   async function openFix() {
     global.fetch = mockFixFetch() as unknown as typeof fetch;
     render(<SparringTelemetryPage />);
-    const show = await screen.findByRole('button', { name: 'Show recent entries' });
-    await waitFor(() => expect((show as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(show);
+    // Re-queried: the section remounts once the athlete is known (it is keyed
+    // by athlete), so a node found before that is not the one on screen.
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
     const section = screen.getByRole('region', { name: 'Fix a number' });
     fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
     return section;

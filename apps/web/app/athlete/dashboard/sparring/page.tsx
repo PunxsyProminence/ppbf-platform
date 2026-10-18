@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
@@ -188,19 +188,6 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  // A coach switching athletes must never be looking at the previous child's
-  // entries with a Fix button under them -- including entries whose request
-  // was still in flight when the picker changed, which is why every response
-  // below is checked against the athlete selected NOW before it is shown.
-  const subjectRef = useRef(athleteId);
-  useEffect(() => {
-    subjectRef.current = athleteId;
-    setEntries([]);
-    setListState('idle');
-    setEditing(null);
-    setMessage('');
-  }, [athleteId]);
-
   async function loadEntries(subject: string) {
     setListState('loading');
     try {
@@ -210,11 +197,9 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
       );
       if (!response.ok) throw new Error('entries');
       const payload = (await response.json()) as { entries?: SparringEntry[] };
-      if (subjectRef.current !== subject) return;
       setEntries(payload.entries ?? []);
       setListState('loaded');
     } catch {
-      if (subjectRef.current !== subject) return;
       setEntries([]);
       setListState('unavailable');
     }
@@ -265,7 +250,6 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
     let safetyLesson: string | null | undefined;
     try {
       for (const { observation, value } of changes) {
-        if (subjectRef.current !== subject) break;
         const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
           method: 'POST',
           credentials: 'include',
@@ -297,7 +281,6 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
       setSaving(false);
     }
 
-    if (subjectRef.current !== subject) return;
     setEditing(null);
     const outcome = saved === changes.length
       ? 'Fixed. The old number stays on record as replaced.'
@@ -876,7 +859,11 @@ export default function SparringTelemetryPage() {
         </div>
       </form>
 
-      <FixSparringEntry athleteId={athleteId} />
+      {/* Keyed by athlete: a coach switching athletes gets a fresh section,
+          so the previous child's entries -- including a list or a fix still
+          in flight when the picker changed -- can never appear under the new
+          one. A late response lands on the unmounted instance and is dropped. */}
+      <FixSparringEntry key={athleteId ?? 'no-athlete'} athleteId={athleteId} />
 
       {/* Reuses PrintSheet's gym identity -- same fix as
           coach/environment/passbook-check/page.tsx, same reason. */}
