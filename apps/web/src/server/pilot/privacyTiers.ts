@@ -501,6 +501,20 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
       + 'attendance view or report (CT-13). A mark taken back keeps its row.',
   },
+  'behaviour_observations.note': {
+    tier: 'organization',
+    enforcedBy: [
+      '../../../app/api/pilot/coach/behaviour-observations/route.ts#GET',
+      'access.ts#assertActorCanAccessAthlete',
+      'behaviourObservations.ts#listBehaviourObservations',
+    ],
+    note:
+      'A coach\'s note beside a behaviour report on one athlete (lane L49): what the coach saw in a drill, '
+      + 'in the coach\'s words. Staff only (Jason 2026-10-18 Q2, "A: Staff only"): coach, organization_admin '
+      + 'or admin AND assertActorCanAccessAthlete for that athlete; athletes, guardians, board and '
+      + 'platform_owner are refused. At the purge the child\'s names are scrubbed from it and it is kept '
+      + '(Jason 2026-10-07, "Scrub the child\'s name, keep").',
+  },
   'session_staff_notes.note': {
     tier: 'organization',
     enforcedBy: ['sessionStaffNotes.ts#assertStaffNoteAccess'],

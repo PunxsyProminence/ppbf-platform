@@ -14533,5 +14533,123 @@
       "authorizationGates": [],
       "roleLiterals": []
     }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1). Names a behaviour, not an athlete: no athlete data. Staff only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Adds a name under one skill code, created by the caller; the table's guard requires the creator to be staff of the gym and keeps a name's meaning fixed.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Files a report as the caller in the caller's role; recordBehaviourObservation builds session, drill and episode keys from this gym's records and the table's guard re-checks staff membership and the athlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
   }
 ]
