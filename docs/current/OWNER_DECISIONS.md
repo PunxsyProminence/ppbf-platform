@@ -164,6 +164,34 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-033 -- Cycle tracking data when an athlete's account is deleted: "A: Delete at once (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 18893, 2026-10-18T03:29:53.807Z; answered at line 18903, 2026-10-18T03:36:41.200Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-023 item 4 (cycle tracking is built now). New; edits no earlier entry.
+
+**Question "Cycle data".** Overwatch, as written: "Cycle tracking data when an athlete's account is deleted. Today the purge removes an athlete's cycle entries with the rest of their records, 2 years after the account is soft-deleted (the athlete can delete their own entries any time; nobody else can ever read them). A: delete cycle entries immediately when the account is deleted. B: keep the standard 2-year purge like everything else." Options as written: "A: Delete at once (Rec.)": "Only the athlete could ever read it, so holding it 2 years serves no one and is the most sensitive data in the app."; "B: Standard 2 years": "Same timing as the rest of the athlete's records.". Jason: *"A: Delete at once (Rec.)"*
+
+**Ruling:** an athlete's cycle entries are deleted immediately when the athlete's account is deleted, not at the standard 2-year purge. "B: Standard 2 years" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L58 (line 18913): "An athlete's cycle tracking row and its entries are deleted immediately when the athlete's account is deleted (soft delete), not at the 2-year purge." It asked for the delete in the same transaction as the soft delete, with a test.
+
+**Status:** ruled; not checked as built by this records pass.
+
+---
+
+## OD-2026-10-17-032 -- The +30 SEC false-bell edge case: "A: Keep 30 sec (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 18326, 2026-10-18T03:02:33.125Z; answered at line 18327, 2026-10-18T03:04:33.704Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-030 (+30 SEC from 30 seconds, no migration). New; edits no earlier entry.
+
+**Question "+30 bell".** Overwatch, as written: "Gym TV +30 SEC edge case: pressed 30-37 seconds into a round, it can ring the TV's start bell once, because the TV can't tell it from a restart. A: keep +30 available from 30 seconds and accept that rare extra bell. B: make +30 available from 38 seconds, so the TV never rings a false bell." Options as written: "A: Keep 30 sec (Rec.)": "As you picked. Rarely, a coach adding time right at the 30-second mark gets one extra bell on the TV."; "B: Open at 38 sec": "No false bell; coaches wait 8 more seconds before +30 works.". Jason: *"A: Keep 30 sec (Rec.)"*
+
+**Ruling:** +30 SEC stays available from 30 seconds into a round. The rare extra start bell on the TV, when +30 is pressed 30-37 seconds in, is accepted. "B: Open at 38 sec" was not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 18330): "#1742 stays as built, and the rare extra bell is documented in its body."
+
+**Status:** ruled; whether #1742 merged was not checked by this records pass.
+
+---
+
 ## OD-2026-10-17-031 -- CI is backed up: "A: I'll check + upgrade (Rec.)"
 
 **Provenance: PRIMARY.** The second question of a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 17252, 2026-10-18T02:11:40.258Z; answered at line 17253, 2026-10-18T02:12:39.637Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
@@ -211,6 +239,8 @@ and should not try to.
 **Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L58 (line 16947) the two defaults and "So build PR-3 with those defaults." It gave L58 and L50 (line 16948) its other answers under its reading of item 3; those answers are Overwatch's.
 
 **Status:** ruled; not built at the time of writing.
+
+**Status (2026-10-17), build note (lane L58's and Overwatch's, not a ruling):** the default recipient of the sparring symptom flag is the coach, and the setting is stored per gym so a gym can change it once L58's PR-3b editor exists. Lane L58's database change (#1750, still open, head `b5f8b96541b2b7af725cf38a8f146464b2fa13a9`) stores `recipient_role` with default 'coach' and allowed values coach, organization_admin and admin (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:104` and `:113` at that head). L58 had dropped the setting after its reviewers' advice (line 18870; Overwatch accepted it at line 18913) and restored it at that head (line 19154, 2026-10-18T03:50:07.175Z): "recipient_role is BACK (default 'coach'). The recorded ruling OD-2026-10-17-029 quotes your card "each gym can change the setting later", so the reviewers' advice to drop it would have contradicted it." and "PR-3b's editor will edit both recipient and protocol text." PR-3b was not built at the time of writing.
 
 ---
 
@@ -8946,6 +8976,8 @@ own answer to each. Times UTC.
 Not decisions: the defaults and the questions in the session's 16:57Z report.
 Jason has not answered them; they are open questions in
 `docs/current/ACTIVE_WORK.md`.
+
+**Status (2026-10-17), citation (housekeeping lane HK):** R3's `.github/workflows/seed-reference-data.yml:65` was that line at `f597a4a5`; on main `ab0224e2` the same comment ("universal-stop-rules is loadable but has no committed file yet") is at `:69`. His quoted words are unchanged.
 
 ---
 

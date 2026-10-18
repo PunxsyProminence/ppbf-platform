@@ -14,6 +14,7 @@ import {
   listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
 import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
+import { resolveDrillGroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import type { ReferenceLifecycle } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -48,6 +49,10 @@ jest.mock('@/src/server/pilot/drillFloorValidations', () => ({
   listFloorValidations: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/drillGroundingEvidence', () => ({
+  resolveDrillGroundingEvidence: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/drillLibraryV3', () => {
   const actual = jest.requireActual('@/src/server/pilot/drillLibraryV3');
   return {
@@ -67,6 +72,7 @@ const mockAthleteList = listAthleteDrillLibrary as jest.Mock;
 const mockAthleteDetail = getAthleteDrillDetail as jest.Mock;
 const mockLifecycles = listReferenceLifecycles as jest.Mock;
 const mockFloorTested = listFloorValidations as jest.Mock;
+const mockGrounding = resolveDrillGroundingEvidence as jest.Mock;
 
 beforeEach(() => {
   // W-D4C. Every AUTHOR read (coach, organization_admin, admin) now also asks
@@ -78,6 +84,9 @@ beforeEach(() => {
   mockLifecycles.mockResolvedValue({});
   // Same for this gym's floor-tested marks (OD-2026-10-06-026 ruling 3).
   mockFloorTested.mockResolvedValue({});
+  // And what the drill's grounding claim ids point at (audit 2026-10-17 item
+  // 11): nothing, unless a case says otherwise.
+  mockGrounding.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -617,6 +626,7 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
       drill: { drill_id: 'drl-9', name: 'Catch and Return' },
       lifecycle: OPERATIONAL,
       floor_tested: null,
+      grounding_evidence: [],
     });
     expect(mockLifecycles.mock.calls).toEqual([['org-1', ['drl-9']]]);
   });
@@ -655,6 +665,51 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
     expect(mockFloorTested.mock.calls).toEqual([['org-1', ['drl-9']]]);
   });
 
+  it("answers staff detail with what this drill's grounding claim ids point at, read in the session organization", async () => {
+    // Audit 2026-10-17 item 11: an id is opened, not shown bare. The route
+    // owns no resolution of its own -- it hands the drill's own ids, in the
+    // drill's order, to the resolver and returns its answer untouched.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9', grounding_claim_ids: ['A2-063', 'Z9-999'] });
+    const evidence = [
+      { claimId: 'A2-063', status: 'found', record: { claim: 'Judging is partly subjective.' } },
+      { claimId: 'Z9-999', status: 'not_found' },
+    ];
+    mockGrounding.mockResolvedValue(evidence);
+
+    const response = await GET(getRequest('drill_id=drl-9&organization_id=org-victim'));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).grounding_evidence).toEqual(evidence);
+    expect(mockGrounding.mock.calls).toEqual([['org-1', ['A2-063', 'Z9-999']]]);
+  });
+
+  it('answers the drill with grounding_evidence null when the Library read fails, rather than failing the drill', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9', grounding_claim_ids: ['A2-063'] });
+    mockGrounding.mockRejectedValue(Object.assign(new Error('library down'), { code: '57P01' }));
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await GET(getRequest('drill_id=drl-9'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.drill).toEqual({ drill_id: 'drl-9', grounding_claim_ids: ['A2-063'] });
+    expect(body.grounding_evidence).toBeNull();
+    expect(logged).toHaveBeenCalledWith({ event: 'drill-grounding-evidence-read-failed', drill_id: 'drl-9', code: '57P01' });
+    logged.mockRestore();
+  });
+
+  it('asks about no claim ids for a drill that cites none', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9' });
+
+    const response = await GET(getRequest('drill_id=drl-9'));
+
+    expect((await response.json()).grounding_evidence).toEqual([]);
+    expect(mockGrounding.mock.calls).toEqual([['org-1', []]]);
+  });
+
   it('answers a detail whose lifecycle was not found with an explicit null, not a missing key', async () => {
     // The page reads a null lifecycle as "status could not be read" and offers
     // no action. An omitted key would be indistinguishable, over JSON, from a
@@ -667,7 +722,7 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(['drill', 'floor_tested', 'lifecycle']);
+    expect(Object.keys(body).sort()).toEqual(['drill', 'floor_tested', 'grounding_evidence', 'lifecycle']);
     expect(body.lifecycle).toBeNull();
     expect(body.floor_tested).toBeNull();
   });
@@ -742,8 +797,13 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(Object.keys(body)).toEqual(['drill', 'lifecycle', 'floor_tested']);
-      expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' }, lifecycle: OPERATIONAL, floor_tested: null });
+      expect(Object.keys(body)).toEqual(['drill', 'lifecycle', 'floor_tested', 'grounding_evidence']);
+      expect(body).toEqual({
+        drill: { drill_id: 'drl-9', name: 'Catch and Return' },
+        lifecycle: OPERATIONAL,
+        floor_tested: null,
+        grounding_evidence: [],
+      });
       expect(mockFloorTested.mock.calls).toEqual([['org-session-7', ['drl-9']]]);
       expect(mockDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
       expect(mockLifecycles.mock.calls).toEqual([['org-session-7', ['drl-9']]]);
@@ -780,6 +840,8 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' } });
       expect(mockLifecycles).not.toHaveBeenCalled();
       expect(mockFloorTested).not.toHaveBeenCalled();
+      // The grounding claim ids are coach-only, so what they point at is too.
+      expect(mockGrounding).not.toHaveBeenCalled();
       expect(mockAthleteDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
       expect(mockDetail).not.toHaveBeenCalled();
     });
