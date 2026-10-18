@@ -10,8 +10,8 @@ import {
   isAttendanceWindow,
 } from '@/src/lib/attendanceWords';
 
-// The picked athlete's attendance over the last 28 days and the days since
-// their last session, from the class register (OD-2026-10-17-026 (c),
+// The picked athlete's attendance over the last 28 days and the last day they
+// were marked present, from the class register (OD-2026-10-17-026 (c),
 // coaches only). Shown in the coach's wellness view; the route refuses
 // everyone but staff of the gym. A failed read is never shown as "no
 // register". Keyed by athlete where it is mounted, and each read is dropped
