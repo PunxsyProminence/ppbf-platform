@@ -44,10 +44,6 @@ const TITLE_NOT_LITERAL: Record<string, string> = {
   '/board/community-director': 'seat page, see below', '/board/at-large': 'seat page, see below',
 };
 
-/** Doors that still differ from their title because the title is in another lane's file. */
-const KNOWN_MISMATCH: Record<string, string> = {
-  '/parent/dashboard': "ParentHub.tsx (another lane's file) titles it Family Development Dashboard; the door stays Parent Hub until that lane aligns it",
-};
 
 const NOT_A_TITLE = /^Loading|Access Required|managed per gym|set per gym/;
 
@@ -94,14 +90,10 @@ test('the scan reaches enough doors to mean something', () => {
   expect(CHECKED.length).toBeGreaterThan(120);
 });
 
-test.each(CHECKED.filter(([href]) => !(href in KNOWN_MISMATCH)))('%s: the door "%s" is the page title', (_href, label, titles) => {
+test.each(CHECKED)('%s: the door "%s" is the page title', (_href, label, titles) => {
   expect(titles).toContain(label);
 });
 
-test.each(Object.keys(KNOWN_MISMATCH))('%s is a named mismatch, still true: its door and title differ', (href) => {
-  const row = SCANNED.find(([h]) => h === href);
-  expect(row?.[2]).not.toContain(row?.[1]);
-});
 
 test('each board seat door names its seat page, "<seatLabel> Workspace"', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
