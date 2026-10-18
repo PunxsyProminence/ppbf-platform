@@ -2202,15 +2202,48 @@ h6 {
   margin: 0 0 var(--s4);
 }
 
-/* The panel's name on a cream enamel cap (.ge-enamel). */
+/* The board's name on a cream enamel sign band (.ge-enamel--sign) across the
+   top of the board, edge to edge inside the frame. */
+[data-surface="wall"] .wall-heading.ge-enamel {
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s5)) var(--s4);
+  padding: var(--s3) var(--s5);
+  border-radius: 0;
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-heading-cap {
+  font-size: var(--t-2xl);
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-count {
+  font-size: var(--t-2xl);
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
 [data-surface="wall"] .wall-heading-cap {
-  padding: var(--s2) var(--s5);
   font-family: var(--font-ui);
   font-size: var(--t-xl);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.15;
-  letter-spacing: .16em;
+  letter-spacing: .18em;
   text-transform: uppercase;
+}
+
+/* The wall clock on its enamel plate: ink figures on cream. */
+[data-surface="wall"] .wall-clock.ge-enamel {
+  padding: var(--s2) var(--s5) var(--s1);
+  border-radius: 6px;
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
+/* Inside the screen frame: the marquee runs between the side rails, and the
+   last row sits clear of the bottom rail. */
+[data-surface="wall"] .ge-screenframe > .marquee {
+  margin-inline: 22px;
+}
+[data-surface="wall"] .ge-screenframe > :last-child {
+  margin-bottom: 14px;
 }
 
 [data-surface="wall"] .wall-count {

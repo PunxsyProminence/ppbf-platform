@@ -83,6 +83,13 @@ describe('the header plate', () => {
     await settle();
   });
 
+  it('carries cream enamel only on the boards\' sign bands and the clock plate (burn-in)', async () => {
+    const { container } = render(<WallDisplay />);
+    await settle();
+    const enamelled = [...container.querySelectorAll('.ge-enamel')].map((el) => `${el.tagName.toLowerCase()}.${el.classList[0]}`);
+    expect(enamelled.sort()).toEqual(['h2.wall-heading', 'h2.wall-heading', 'p.wall-clock']);
+  });
+
   it('puts the board in the wall-board kit\'s scope, so its materials apply', async () => {
     const { container } = render(<WallDisplay />);
     expect(container.querySelector('.wall-board')?.classList.contains('ge-wallboard')).toBe(true);

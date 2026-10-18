@@ -456,7 +456,7 @@ export default function WallDisplay() {
   });
 
   return (
-    <div className="wall-board ge-wallboard flex h-screen w-screen flex-col overflow-hidden">
+    <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden">
       <Masthead
         now={now}
         zone={zone}
@@ -719,7 +719,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
         {/* aria-hidden: a clock that announces itself every minute is hostile to
             anyone running a reader near this screen, and the time is not the
             reason a person would be listening to a wall. */}
-        <p className="wall-clock text-8xl" aria-hidden="true">
+        <p className="wall-clock ge-enamel ge-enamel--plate text-8xl" aria-hidden="true">
           {stamp ? formatIn(stamp, zone, { hour: 'numeric', minute: '2-digit' }) : HELD}
         </p>
       </div>
@@ -762,8 +762,8 @@ function OnTheFloor({ board }: { board: WallBoard }) {
 
   return (
     <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="On the floor">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">On the floor</span>
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">On the floor</span>
         {board.on_floor_total > 0 && <span className="wall-count">{board.on_floor_total}</span>}
       </h2>
 
@@ -801,8 +801,8 @@ function OnTheFloor({ board }: { board: WallBoard }) {
 function Today({ sessions, zone }: { sessions: readonly WallSession[]; zone?: string }) {
   return (
     <section className="wall-panel ge-frame flex min-h-0 flex-col" aria-label="Today">
-      <h2 className="wall-heading">
-        <span className="wall-heading-cap ge-enamel">Today</span>
+      <h2 className="wall-heading ge-enamel ge-enamel--sign">
+        <span className="wall-heading-cap">Today</span>
       </h2>
 
       {sessions.length === 0 ? (
