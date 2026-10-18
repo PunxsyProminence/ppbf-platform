@@ -17,10 +17,28 @@ describe('refusalWords (UXB-09)', () => {
       { error: 'UNEXPECTED_FIELD: note', status: 400 },
       { error: 'action:expected one of start, pause', status: 400 },
       { error: 'Missing athlete_id', status: 400 },
-      { error: 'max_hard_open_sessions_per_7_days must be a whole number, 0 or more', status: 400 },
+      // A field no screen labels, next to codes that are not words, is builder text.
+      { error: 'highest_allowed_stage must be one of: none, light_technical, open_sparring', status: 400 },
     ]) {
       expect(refusalWords(input)).toBe(NOTHING_CHANGED);
     }
+  });
+
+  it('keeps the server\'s reason when a field name in it is one a screen labels, in the label\'s words (F-125)', () => {
+    // The contact-cap panel showed "The cap was not saved. Try again." with no
+    // reason: one field name made the whole sentence read as a code.
+    expect(refusalWords(
+      { error: 'max_hard_open_sessions_per_7_days must be a whole number, 0 or more', status: 400 },
+      {},
+      'The cap was not saved. Try again.',
+    )).toBe('Most hard or open sparring sessions in any 7 days must be a whole number, 0 or more');
+    // Mid-sentence the label's words are not capitalised.
+    expect(refusalWords({ error: 'Send a whole number for max_hard_open_sessions_per_7_days.', status: 400 }))
+      .toBe('Send a whole number for most hard or open sparring sessions in any 7 days.');
+    // Builder text stays builder text, whatever field it names.
+    expect(refusalWords({ error: 'UNEXPECTED_FIELD: max_hard_open_sessions_per_7_days', status: 400 })).toBe(NOTHING_CHANGED);
+    // The field name alone is still not a sentence.
+    expect(refusalWords({ error: 'max_hard_open_sessions_per_7_days', status: 400 })).toBe(NOTHING_CHANGED);
   });
 
   it('claims nothing about what changed when the server failed or did not answer', () => {

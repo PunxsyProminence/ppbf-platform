@@ -12,7 +12,7 @@ import path from 'node:path';
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import AthleteImHere, { todaysClassesFor } from './AthleteImHere';
+import AthleteImHere, { todaysClassesFor, useTodaySchedulerRead } from './AthleteImHere';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -60,9 +60,15 @@ const REGISTERED = {
   attendance: [],
 };
 
+/** The card as the workspace draws it: from the one read Today shares (F-127). */
+function OnToday({ athleteId }: { readonly athleteId: string | null }) {
+  const { read, reload } = useTodaySchedulerRead(athleteId !== null);
+  return <AthleteImHere athleteId={athleteId} schedule={read} onReload={reload} />;
+}
+
 async function mount() {
   await act(async () => {
-    render(<AthleteImHere athleteId="ath_1" />);
+    render(<OnToday athleteId="ath_1" />);
   });
 }
 
@@ -160,6 +166,13 @@ test('not registered for a class today: no button, and the way to the schedule',
   expect(screen.getByRole('link', { name: 'Open the schedule' }).getAttribute('href')).toBe('/schedule');
 });
 
+test('a reply without attendance cannot say whether the athlete is marked: it says it could not read', async () => {
+  serve({ ...REGISTERED, attendance: undefined });
+  await mount();
+  expect(screen.getByText(/could not be read/)).toBeTruthy();
+  expect(screen.queryByRole('button')).toBeNull();
+});
+
 test('a failed read says so, never "no class"', async () => {
   serve('fail');
   await mount();
@@ -172,14 +185,14 @@ test('nothing renders without an athlete identity', async () => {
   const calls = serve(REGISTERED);
   let container: HTMLElement | undefined;
   await act(async () => {
-    ({ container } = render(<AthleteImHere athleteId={null} />));
+    ({ container } = render(<OnToday athleteId={null} />));
   });
   expect(container!.innerHTML).toBe('');
   expect(calls).toHaveLength(0);
 });
 
 describe('todaysClassesFor', () => {
-  const reg = [{ class_id: 'a', athlete_id: 'ath_1', status: 'registered' as const }];
+  const reg = [{ registration_id: 'reg_a', class_id: 'a', athlete_id: 'ath_1', status: 'registered' as const }];
   test('today only, registered only; a cancelled class is kept so the card can say so', () => {
     expect(todaysClassesFor('ath_1', [klass({ class_id: 'a', start_at: '2099-01-03T15:00:00.000Z' }) as never], reg, NOW)).toEqual([]);
     expect(todaysClassesFor('ath_1', [klass({ class_id: 'a' }) as never], [{ ...reg[0], status: 'waitlisted' as never }], NOW)).toEqual([]);
@@ -195,8 +208,9 @@ describe('where it sits and what it is called', () => {
   const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
   test('on every Today tab of the athlete workspace', () => {
     expect(read('components/AthleteWorkspace.tsx')).toContain(
-      "{activeGroup === 'today' && <AthleteImHere athleteId={backendAthleteId} />}",
+      '<AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />',
     );
+    expect(read('components/AthleteWorkspace.tsx')).toMatch(/\{activeGroup === 'today' && \(\s*<AthleteImHere /);
   });
   test('the same write /schedule makes for a family', () => {
     expect(read('app/schedule/page.tsx')).toContain(
