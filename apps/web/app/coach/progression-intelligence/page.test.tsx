@@ -504,7 +504,7 @@ describe('deterministic gap suggestions', () => {
       render(<CoachProgressionIntelligencePage />);
     });
 
-    await screen.findByText(/Progression Gaps → Drills → Verification/);
+    await screen.findByRole('heading', { name: 'Progression Intelligence' });
     expect(screen.queryByText('Suggested Gaps')).toBeNull();
   });
 });

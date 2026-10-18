@@ -33,7 +33,7 @@ Response `200`:
              "energy": 4, "soreness": null, "focus": 3,
              "sleep_hours": 7.5, "hydration": 4, "motivation": null,
              "mental_clarity": 3, "stress": 2, "nutrition_compliance": 4,
-             "note": "", "created_at": "…" } | null,
+             "mood": 4, "note": "", "created_at": "…" } | null,
   "recent": [ /* same shape, newest first, up to 14 days — the athlete's OWN history */ ]
 }
 ```
@@ -43,11 +43,11 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
 ```json
 { "energy": 1-5, "soreness": 1-5, "focus": 1-5,
   "hydration": 1-5, "motivation": 1-5, "mental_clarity": 1-5,
-  "stress": 1-5, "nutrition_compliance": 1-5,
+  "stress": 1-5, "nutrition_compliance": 1-5, "mood": 1-5,
   "sleep_hours": 0-24, "note": "string",
   "body_mass": number, "body_mass_unit": "lb" | "kg" }
 ```
-- The eight wellness values must be whole numbers 1–5 when present; anything else
+- The nine wellness values must be whole numbers 1–5 when present; anything else
   is a `400` with the reason. **Omitted means omitted** — the UI must not default a
   skipped slider to a value, and must render stored `null` as "not reported",
   never as 0 or 3.

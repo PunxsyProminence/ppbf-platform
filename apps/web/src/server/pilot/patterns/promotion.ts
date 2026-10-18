@@ -146,7 +146,9 @@ export function evaluatePatternCandidate(
     behaviourKey: input.behaviourKey,
   };
 
-  const { admitted, excluded } = admitObservations(scope, input.observations);
+  // Admission applies asOf, so every count, statistic and the candidate key
+  // below see only what had been observed by the evaluation instant.
+  const { admitted, excluded } = admitObservations(scope, input.observations, asOf);
   const evidence = summarizeEvidence(admitted);
   const contextDiversity = summarizeContextDiversity(admitted);
   const attribution = summarizeAttribution(admitted);

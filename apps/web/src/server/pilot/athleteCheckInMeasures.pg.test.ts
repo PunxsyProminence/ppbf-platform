@@ -75,6 +75,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string;
 let baseMigrationSql: string;
 let measuresMigrationSql: string;
+let selfReportMigrationSql: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -140,6 +141,9 @@ async function freshDatabase(name: string): Promise<Client> {
 async function applyBoth(client: Client): Promise<void> {
   await client.query(baseMigrationSql);
   await client.query(measuresMigrationSql);
+  // mood (self-report measures migration), which checkIn writes and
+  // WELLNESS_COLUMNS names.
+  await client.query(selfReportMigrationSql);
 }
 
 function insertRaw(client: Client, checkInId: string, values: Record<string, number | string | null> = {}) {
@@ -189,6 +193,10 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   baseMigrationSql = await fs.readFile(path.join(INFRA_DIR, BASE_MIGRATION_FILE), 'utf8');
   measuresMigrationSql = await fs.readFile(path.join(INFRA_DIR, MEASURES_MIGRATION_FILE), 'utf8');
+  selfReportMigrationSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_athlete_self_report_measures_migration.sql'),
+    'utf8',
+  );
 });
 
 afterAll(async () => {
@@ -485,6 +493,7 @@ describe('the module round-trips every measure', () => {
         mentalClarity: 3,
         stress: 2,
         nutritionCompliance: 5,
+        mood: 3,
         note: 'slept well',
       });
 
@@ -500,6 +509,7 @@ describe('the module round-trips every measure', () => {
           mental_clarity: 3,
           stress: 2,
           nutrition_compliance: 5,
+          mood: 3,
           note: 'slept well',
         },
       });
@@ -544,6 +554,7 @@ describe('the module round-trips every measure', () => {
           mental_clarity: null,
           stress: null,
           nutrition_compliance: null,
+          mood: null,
           note: '',
         },
       });
