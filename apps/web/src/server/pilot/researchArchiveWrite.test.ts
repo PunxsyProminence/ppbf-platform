@@ -149,6 +149,19 @@ describe('the research archive write refuses rather than replaces', () => {
     expect(calls()).toEqual([`GET ${LIST_URL}`, `GET ${FOLDER_LIST_URL}`]);
   });
 
+  test('a file whose folder facet is null is still a file, so the same bytes are still found', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, ROOT_CHILDREN))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { value: [{ id: 'earlier-copy', name: `Old name--${EXPECTED_SHA256.slice(0, 12)}.pdf`, folder: null }] }),
+      );
+
+    const error = await archiveResearchOriginal(INPUT).catch((e: unknown) => e);
+
+    expect((error as ResearchArchiveConflictError).existingItemId).toBe('earlier-copy');
+    expect(calls()).toEqual([`GET ${LIST_URL}`, `GET ${FOLDER_LIST_URL}`]);
+  });
+
   test('a FOLDER with the name is not an original, and does not stop the write', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, ROOT_CHILDREN))
@@ -240,7 +253,7 @@ describe('the research archive write refuses rather than replaces', () => {
     await expect(archiveResearchOriginal(INPUT)).rejects.toThrow(/no item id/i);
   });
 
-  test('a 200 (Graph replaced an existing item) is never recorded as filed', async () => {
+  test('anything but 201 Created from the create-only write is not recorded as filed', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, ROOT_CHILDREN))
       .mockResolvedValueOnce(jsonResponse(200, EMPTY_FOLDER))

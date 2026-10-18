@@ -22,7 +22,8 @@ export const runtime = 'nodejs';
 // no blob, no database copy of the file or its text (OD-2026-10-02-013 4A).
 // The row it writes is the archive identity in
 // pilot.shadow_library_archived_originals; researchArchiveFiling.ts has the
-// order of operations and why nothing is ever filed twice.
+// order of operations and how a repeat is found (researchArchiveWrite.ts says
+// where a second copy can still be filed).
 //
 // Same curator gate and shelf rule as the other library write routes: the
 // platform owner files to the platform shelf only, a gym's admin to the gym's

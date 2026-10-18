@@ -120,8 +120,9 @@ export type FileResearchOriginalResult =
 
 const ACQUIRED_AT_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const ISO_DATE_OR_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
-// Text that cannot be stored: Postgres text holds no NUL, and none of these belong in a name.
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+// Text that cannot be stored or would display misleadingly: Postgres text holds
+// no NUL, and no C0/C1 control or bidirectional override belongs in a name.
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 
 /**
  * An ISO date or timestamp, and only one that means what it says. `new Date`
