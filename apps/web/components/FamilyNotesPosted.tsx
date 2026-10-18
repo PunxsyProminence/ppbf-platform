@@ -32,6 +32,17 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * above the list says how opens are recorded.
  * Never which guardian. Read from GET /api/pilot/coach/family-message-reads on
  * its own, like the replies: a failed read says so once and the notes stay.
+ *
+ * NEW TO ME (FC-09b): a reply this staff member had not seen when the panel
+ * loaded carries a small "New", kept for the visit. "Seen" is each staff
+ * member's own (GET /api/pilot/coach/family-reply-reads); one coach seeing a
+ * reply does not make it seen for another. A reply is recorded as seen when at
+ * least half of it is on screen here (the FC-05 rule) -- loading the panel is
+ * not a read. If the seen read fails, no New is drawn and one muted line says
+ * it could not be loaded: the panel never claims every reply is new, or none
+ * is. Replies are still recorded as seen. That line's Check again re-runs the
+ * panel's reads. A failed write is not shown and is tried again when the panel
+ * next reloads.
  */
 export interface FamilyNoteRow {
   note_id: string;
@@ -59,7 +70,24 @@ type ReadState =
     items: FamilyNoteRow[];
     replies: FamilyReplyRow[] | null | 'loading';
     opened: Map<string, string> | null | 'loading';
+    // The reply ids this staff member had already seen; null when that read failed.
+    seen: Set<string> | null | 'loading';
   };
+
+async function readSeen(athleteId: string): Promise<Set<string> | null> {
+  try {
+    const response = await fetch(
+      `${apiBase()}/api/pilot/coach/family-reply-reads?athlete_id=${encodeURIComponent(athleteId)}`,
+      { credentials: 'include' },
+    );
+    const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
+    if (!response.ok || !Array.isArray(payload.items)) return null;
+    const ids = (payload.items as Array<{ reply_id?: unknown }>).map((item) => item?.reply_id);
+    return ids.every((id): id is string => typeof id === 'string') ? new Set(ids) : null;
+  } catch {
+    return null;
+  }
+}
 
 async function readOpened(athleteId: string): Promise<Map<string, string> | null> {
   try {
@@ -96,18 +124,39 @@ export default function FamilyNotesPosted({
   // Only the newest read lands: switching athletes while a read is slow must
   // not leave one child's notes under another's name.
   const seq = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Replies whose read was sent on this visit; a failed write leaves the set.
+  const readsSentRef = useRef<Set<string>>(new Set());
+  // Replies a newer watch saw while their read was still on its way (a reload
+  // came in between). If that read fails, the reply is watched afresh, so a
+  // reply still on screen is sent again without waiting for it to move.
+  const seenWhileSendingRef = useRef<Set<string>>(new Set());
+  // Which watch sent each read in flight: only a newer watch's sighting counts
+  // above, so one batch naming a reply twice never re-arms it.
+  const sentByRef = useRef<Map<string, IntersectionObserver>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  // What this staff member had seen when they opened this athlete: a reload
+  // after a post keeps it, so New stays for the visit.
+  const visitRef = useRef<{ athleteId: string; seen: Set<string> | null }>({ athleteId: '', seen: null });
   // Bumped by Check again on the notes: the same reads, nothing else on the page.
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!athleteId) return;
     const mine = ++seq.current;
+    if (visitRef.current.athleteId !== athleteId) {
+      visitRef.current = { athleteId, seen: null };
+      readsSentRef.current = new Set();
+      seenWhileSendingRef.current = new Set();
+      sentByRef.current = new Map();
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRead({ state: 'loading' });
     void (async () => {
       try {
         const repliesRead = readReplies(athleteId);
         const openedRead = readOpened(athleteId);
+        const seenRead = readSeen(athleteId);
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/family-notes?athlete_id=${encodeURIComponent(athleteId)}`,
           { credentials: 'include' },
@@ -121,11 +170,18 @@ export default function FamilyNotesPosted({
         // The notes show as soon as they answer; the replies fill in when
         // their own read settles, so a slow or failed replies read never
         // holds the notes back.
-        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies: 'loading', opened: 'loading' });
+        setRead({ state: 'loaded', athleteId, items: payload.items as FamilyNoteRow[], replies: 'loading', opened: 'loading', seen: 'loading' });
         // Each fills in when its own read settles, in whichever order they answer.
         void openedRead.then((opened) => {
           if (mine !== seq.current) return;
           setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? { ...held, opened } : held));
+        });
+        void seenRead.then((fetched) => {
+          if (mine !== seq.current) return;
+          const kept = visitRef.current.athleteId === athleteId ? visitRef.current.seen : null;
+          const seen = fetched && kept ? kept : fetched;
+          if (seen) visitRef.current = { athleteId, seen };
+          setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? { ...held, seen } : held));
         });
         const replies = await repliesRead;
         if (mine !== seq.current) return;
@@ -157,13 +213,78 @@ export default function FamilyNotesPosted({
     });
   }
 
+  /* SEEING A REPLY (FC-09b). The FC-05 rule from the parent hub: at least half
+     of the reply on screen -- or, for a reply taller than the screen, half the
+     screen filled with it. Watched only once this staff member's earlier reads
+     have answered (or failed), so a write cannot race the read that decides
+     what is New. Each reply is sent once per visit; the server keeps the
+     first time. */
+  useEffect(() => {
+    if (read.state !== 'loaded' || read.athleteId !== athleteId) return;
+    if (!Array.isArray(read.replies) || read.replies.length === 0 || read.seen === 'loading') return;
+    if (typeof IntersectionObserver === 'undefined' || !listRef.current) return;
+    const seenAtLoad = read.seen;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const fillsHalfTheScreen = entry.rootBounds !== null
+          && entry.intersectionRect.height >= 0.5 * entry.rootBounds.height;
+        if (!entry.isIntersecting || (entry.intersectionRatio < 0.5 && !fillsHalfTheScreen)) continue;
+        const replyId = (entry.target as HTMLElement).dataset.readReply;
+        if (!replyId) continue;
+        if (readsSentRef.current.has(replyId)) {
+          if (sentByRef.current.get(replyId) !== observer) seenWhileSendingRef.current.add(replyId);
+          continue;
+        }
+        readsSentRef.current.add(replyId);
+        sentByRef.current.set(replyId, observer);
+        observer.unobserve(entry.target);
+        const sent = readsSentRef.current;
+        const seenWhileSending = seenWhileSendingRef.current;
+        const sentBy = sentByRef.current;
+        const failed = () => {
+          sent.delete(replyId);
+          sentBy.delete(replyId);
+          if (!seenWhileSending.delete(replyId) || sent !== readsSentRef.current) return;
+          // Watched afresh: observing again hands the watch the reply's place on screen now.
+          const watching = observerRef.current;
+          const element = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-read-reply]') ?? [])]
+            .find((candidate) => candidate.dataset.readReply === replyId);
+          if (!watching || !element) return;
+          watching.unobserve(element);
+          watching.observe(element);
+        };
+        void fetch(`${apiBase()}/api/pilot/coach/family-reply-reads`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reply_id: replyId }),
+        })
+          .then((response) => {
+            if (!response.ok) failed();
+          })
+          .catch(failed);
+      }
+    // Every 1%: a tall reply changes its visible share only a little as it
+    // scrolls, so coarse steps could miss it filling half the screen.
+    }, { threshold: Array.from({ length: 101 }, (_, step) => step / 100) });
+    listRef.current.querySelectorAll<HTMLElement>('[data-read-reply]').forEach((element) => {
+      if (seenAtLoad instanceof Set && seenAtLoad.has(element.dataset.readReply ?? '')) return;
+      observer.observe(element);
+    });
+    observerRef.current = observer;
+    return () => {
+      observer.disconnect();
+      if (observerRef.current === observer) observerRef.current = null;
+    };
+  }, [read, athleteId]);
+
   if (!athleteId) return null;
   // What is on screen belongs to the athlete selected now, or it reads as
   // loading: the render after a switch must not show the last child's notes.
   const shown: ReadState = read.state !== 'loading' && read.athleteId !== athleteId ? { state: 'loading' } : read;
 
   return (
-    <div className="mt-[var(--s4)]">
+    <div ref={listRef} className="mt-[var(--s4)]">
       <h3 className="t-label">On the family&apos;s page</h3>
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading what was posted…</p>
@@ -206,6 +327,17 @@ export default function FamilyNotesPosted({
             </button>
           </div>
         ) : null}
+        {shown.seen === null && Array.isArray(shown.replies) && shown.replies.length > 0 ? (
+          // PROPOSED copy. Check again re-runs the panel's reads (UXB-05: never Reload).
+          <div className="mt-[var(--s2)]">
+            <p className="t-muted">
+              Which replies are new to you could not be loaded. This is not a statement that there are none.
+            </p>
+            <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setAttempt((n) => n + 1)}>
+              Check again
+            </button>
+          </div>
+        ) : null}
         <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
           {shown.items.map((note) => {
             const replies = Array.isArray(shown.replies)
@@ -236,9 +368,13 @@ export default function FamilyNotesPosted({
                 {replies.length > 0 ? (
                   <ul aria-label="Family replies" className="mt-[var(--s2)] space-y-[var(--s2)] border-l-2 border-[color:var(--brass-600)] pl-[var(--s3)]">
                     {replies.map((reply) => (
-                      <li key={reply.reply_id}>
+                      <li key={reply.reply_id} data-read-reply={reply.reply_id}>
                         <p className="t-label">
                           {reply.author_name} replied · {formatGymDateTimeShort(reply.created_at) ?? reply.created_at}
+                          {shown.seen instanceof Set && !shown.seen.has(reply.reply_id) ? (
+                            // PROPOSED copy
+                            <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i><span>New</span></span>
+                          ) : null}
                         </p>
                         <p className="t-body whitespace-pre-wrap">{reply.reply_text}</p>
                       </li>

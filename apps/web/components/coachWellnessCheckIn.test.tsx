@@ -99,6 +99,7 @@ const MEASURE_LABELS: Readonly<Record<WellnessScaleKey, string>> = {
   mental_clarity: 'Mental clarity',
   stress: 'Stress',
   nutrition_compliance: 'Nutrition compliance',
+  mood: 'Mood',
 };
 
 const JORDAN_NOTE = 'Left knee is "tight" after sparring.\nStill want to work pads.';
@@ -119,6 +120,7 @@ function checkInRow(athleteId: string, overrides: Record<string, unknown> = {}):
     mental_clarity: 2,
     stress: 5,
     nutrition_compliance: 4,
+    mood: 3,
     note: JORDAN_NOTE,
     created_at: '2026-09-22T21:05:00.000Z',
     ...overrides,
@@ -137,6 +139,7 @@ function bareRow(athleteId: string): Record<string, unknown> {
     mental_clarity: null,
     stress: null,
     nutrition_compliance: null,
+    mood: null,
     note: '',
   });
 }
@@ -223,6 +226,16 @@ function installFetch(
     // Map items 20 and 10: the selected athlete's sleep trend and bout history.
     if (url.includes('/api/pilot/coach/athlete-sleep-trend')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/coach/athlete-competition-history')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/coach/athlete-attendance')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return jsonResponse({
+        ok: true,
+        attendance: {
+          athlete_id: athleteId, window_from: '2026-09-21', window_to: '2026-10-18', days_present: 3, days_absent: 1,
+          days_excused: 0, attendance_rate: 0.75, last_present_day: '2026-10-06', days_since_last_present: 12,
+        },
+      });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -395,6 +408,17 @@ describe('the read starts from a deliberate pick', () => {
   });
 });
 
+describe('the attendance lines (OD-2026-10-17-026 (c)) sit in the picked athlete\'s wellness view', () => {
+  it('asks the attendance route for the picked athlete and shows the register\'s numbers', async () => {
+    const fetchMock = await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }));
+    await pickAthlete('Sam R.');
+    const calls = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/coach/athlete-attendance'));
+    expect(calls).toEqual([expect.stringContaining('athlete_id=ath_2')]);
+    const lines = await within(panel()).findByTestId('coach-athlete-attendance');
+    expect(within(lines).getByText(/75% \(present 3 of 4 days marked on the class register\)/)).not.toBeNull();
+  });
+});
+
 describe('a check-in that exists is read back exactly as stored', () => {
   it('shows the date, every measure, sleep in hours and the note verbatim', async () => {
     await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
@@ -418,6 +442,7 @@ describe('a check-in that exists is read back exactly as stored', () => {
     // is a visible diff here and not only a silent re-derivation.
     expect(measure('Stress')).toBe('5 — Very stressed');
     expect(measure('Soreness')).toBe('2 — A little stiff');
+    expect(measure('Mood')).toBe('3 — Okay');
 
     const noteLabel = within(panel()).getByText("Athlete's note");
     expect(noteLabel.nextElementSibling?.textContent).toBe(JORDAN_NOTE);

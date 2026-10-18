@@ -39,6 +39,8 @@ let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
 /* The athlete's own bookings the scheduler answers with (UXB-17's Next Session tile). */
 let schedulerRegistrations: Array<Record<string, unknown>> = [];
+/* Today's class and the attendance rows, when a test needs the I'm here card live (F-127). */
+let schedulerToday: { classes: Array<Record<string, unknown>>; attendance: Array<Record<string, unknown>> } | null = null;
 
 /* Two buttons say "Check in" on Today and do the same thing: the corner's and the
    Session Log's (UXB-19, one verb). Each test names the one it means. */
@@ -233,6 +235,7 @@ beforeEach(() => {
   storedSessions = [];
   sessionListFails = false;
   schedulerRegistrations = [];
+  schedulerToday = null;
   sessionListHangs = false;
   sessionUpdateFails = false;
   persistSessionUpdates = false;
@@ -309,13 +312,15 @@ beforeEach(() => {
       return jsonResponse({ ok: true, announcements: liveAnnouncements.filter((item) => item.kind === kind) });
     }
     if (/\/api\/pilot\/scheduler$/.test(url)) {
+      if ((init?.method ?? 'GET') === 'POST') return jsonResponse({ ok: true, recorded: true });
       return jsonResponse({
         ok: true,
         classes: [{
           class_id: 'cls_far', title: 'Saturday Footwork', start_at: '2099-01-03T15:00:00.000Z',
           end_at: '2099-01-03T16:00:00.000Z', location: 'Main ring', capacity: 10, status: 'open', registered_count: 2,
-        }],
+        }, ...(schedulerToday?.classes ?? [])],
         registrations: schedulerRegistrations,
+        ...(schedulerToday ? { attendance: schedulerToday.attendance } : {}),
       });
     }
     if (url.includes('/api/pilot/auth/session')) {
@@ -581,21 +586,56 @@ describe('athlete workspace honesty', () => {
     expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
-  test("the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it for Next Session and for I'm here (lane U2)", async () => {
+  test("the Schedule tab reads the unified scheduler when it is opened (WO-N5-01); Today reads it ONCE for Next Session and I'm here (F-127)", async () => {
     await renderWorkspace();
     const schedulerReads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler(\?|$)/.test(call.url));
-    // Two on Today: the Next Session tile (UXB-17) and the I'm here card (lane U2,
-    // Jason 2026-10-17); no more until the tab opens.
-    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
+    // One on Today, shared by the Next Session tile (UXB-17) and the I'm here
+    // card (lane U2, Jason 2026-10-17); no more until the tab opens.
+    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    await act(async () => {});
+    expect(schedulerReads()).toHaveLength(1);
 
     openTab('Schedule');
 
-    await waitFor(() => expect(schedulerReads()).toHaveLength(3));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(2));
     // The lists render inside the workspace, from that read.
     expect(await screen.findByText('Saturday Footwork')).toBeTruthy();
     expect(screen.getByText('8 spots left')).toBeTruthy();
     // Booking stays in the unified scheduler: the tab sends no POST.
     expect(schedulerReads().every((call) => call.method === 'GET')).toBe(true);
+
+    // Back on Today the shared read is taken afresh, once.
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() => expect(schedulerReads()).toHaveLength(3));
+    await act(async () => {});
+    expect(schedulerReads()).toHaveLength(3);
+  });
+
+  test("an I'm here press re-reads the one Today read that the card and Next Session share (F-127)", async () => {
+    const start = new Date(Date.now() + 60_000).toISOString();
+    const end = new Date(Date.now() + 3_660_000).toISOString();
+    schedulerRegistrations = [{ registration_id: 'reg_today', class_id: 'cls_today', athlete_id: 'ath_test', status: 'registered' }];
+    schedulerToday = {
+      classes: [{
+        class_id: 'cls_today', title: 'Youth Boxing', start_at: start, end_at: end,
+        location: 'Main ring', capacity: 10, status: 'open', registered_count: 3,
+      }],
+      attendance: [],
+    };
+    await renderWorkspace();
+    const reads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler$/.test(call.url) && call.method === 'GET');
+    const button = await screen.findByRole('button', { name: "I'm here" });
+    await waitFor(() => expect(reads()).toHaveLength(1));
+
+    schedulerToday.attendance = [{ class_id: 'cls_today', athlete_id: 'ath_test', status: 'present' }];
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => expect(reads()).toHaveLength(2));
+    expect(await screen.findByText('You are marked here. Your coach can see it.')).toBeTruthy();
+    const tile = (await screen.findByText('Next Session')).parentElement as HTMLElement;
+    expect(tile.textContent).toMatch(/Youth Boxing/);
   });
 
   test('the Schedule tab no longer apologises for itself over the working link', async () => {
@@ -2173,8 +2213,8 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Nothing behind them works yet/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Your Film' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open My Film' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open My Progression' })).toBeTruthy();
   });
 
   test('the sparring log is reachable from the workspace, not only by typing the URL', async () => {
@@ -3785,10 +3825,12 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
 
     expect(Object.keys(body).sort()).toEqual([
       'athlete_id', 'completed_flag', 'created_at', 'date', 'duration_minutes', 'notes', 'rpe', 'rpe_method',
-      'session_id', 'updated_at',
+      'session_id', 'session_type', 'updated_at',
     ]);
     // Empty box is "not given" -- never a default, never the check-in-to-now gap.
     expect(body.duration_minutes).toBeNull();
+    // No tag picked is "not said", sent as null rather than a guessed type.
+    expect(body.session_type).toBeNull();
     expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
   });
 
@@ -3981,6 +4023,60 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
 
     openTab('Dashboard');
     expect((await screen.findByLabelText(MINUTES_Q) as HTMLInputElement).value).toBe('');
+  });
+});
+
+// The session-type tag (Jason 2026-10-18, "Session effort (Rec.)" with a
+// session-type tag), asked at check-out beside effort and minutes and stored as
+// pilot.sessions.session_type. Optional, nothing picked until the athlete
+// picks, and only check-out carries it.
+describe("the session-type tag is the athlete's pick at check-out, or nothing", () => {
+  const TYPE_Q = 'What kind of session was it?';
+
+  function checkOutBodies(): Array<Record<string, unknown>> {
+    return postedTo('/api/pilot/sessions/update')
+      .map((call) => call.body)
+      .filter((body) => body.completed_flag === true);
+  }
+
+  async function openSession() {
+    storedSessions = [openSessionRow({ rpe: null })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'End training' });
+  }
+
+  test('nothing is picked on an open session, and a pick is sent at check-out', async () => {
+    await openSession();
+    for (const label of ['Technique', 'Bag or pads', 'Conditioning', 'Sparring', 'Mixed', 'Other']) {
+      expect(screen.getByRole('button', { name: `${TYPE_Q} ${label}` }).getAttribute('aria-pressed')).toBe('false');
+    }
+    expect(screen.getByText('Not picked — you can skip this. It goes on the session when you check out.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Sparring` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].session_type).toBe('sparring');
+    // Said back on the confirmation, since no session read returns it to the athlete.
+    expect(await screen.findByText(/Tagged: Sparring\./)).toBeTruthy();
+  });
+
+  test('a cleared pick is sent as null', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Bag or pads` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear session type' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].session_type).toBeNull();
+  });
+
+  test('a note publication never carries the tag, even with one picked', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Technique` }));
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    expect('session_type' in postedTo('/api/pilot/sessions/update')[0].body).toBe(false);
   });
 });
 

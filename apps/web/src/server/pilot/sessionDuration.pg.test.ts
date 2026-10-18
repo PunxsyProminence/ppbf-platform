@@ -77,6 +77,10 @@ const PREREQUISITE_MIGRATIONS = [
   'pilot_slice_postgres_readiness_provenance_migration.sql',
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_close_migration.sql',
+  // upsertSession also writes session_type (self-report measures; that file
+  // also alters athlete_check_ins, so its table comes first).
+  'pilot_slice_postgres_athlete_check_ins_migration.sql',
+  'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_session_duration_migration.sql';
 
