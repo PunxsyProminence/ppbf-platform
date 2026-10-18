@@ -417,6 +417,16 @@ describe('restored "Also cites" grades through the parser', () => {
     }));
   }
 
+  test('names the badge kind: a graded source, a graded answer, or no grade at all', async () => {
+    const [sourced] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceSourceGraded: true }));
+    expect(mapStoredShadowMessage(sourced).evidenceBadge).toBe('source');
+    const [unsourced] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceSourceGraded: false }));
+    expect(mapStoredShadowMessage(unsourced).evidenceBadge).toBe('answer');
+    // Written before grades existed: no badge rather than a made-up one.
+    const [ungraded] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceTier: null }));
+    expect(mapStoredShadowMessage(ungraded).evidenceBadge).toBeUndefined();
+  });
+
   test('keeps the grades the server sends', async () => {
     const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['EMERGING', 'EXPERIMENTAL'] }));
     expect(message.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);

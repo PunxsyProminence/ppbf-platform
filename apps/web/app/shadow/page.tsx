@@ -30,6 +30,7 @@ import {
   renameOwnedShadowSession,
   ShadowSessionsRequestError,
   type OwnedShadowConversation,
+  type ShadowEvidenceBadgeKind,
 } from '@/client/shadowSessions';
 import { formatGymClock24, formatGymDateShort } from '@/src/lib/gymTime';
 import { roleWords } from '@/src/shared/roleWords';
@@ -69,6 +70,8 @@ interface ShadowMessage {
   evidenceTier?: ShadowEvidenceTier;
   // The other cited sources' grades, below the headline ("Also cites").
   evidenceAlsoCites?: ShadowEvidenceTier[];
+  // Which badge, if any: see ShadowEvidenceBadgeKind.
+  evidenceBadge?: ShadowEvidenceBadgeKind;
   evidenceNotice?: string;
   researchFiled?: boolean;
   handoff?: string;
@@ -91,6 +94,7 @@ interface ShadowAIResult {
   evidenceTier?: ShadowEvidenceTier;
   // The other cited sources' grades, below the headline ("Also cites").
   evidenceAlsoCites?: ShadowEvidenceTier[];
+  evidenceSourceGraded?: boolean;
   evidenceNotice?: string;
   researchFiled?: boolean;
   handoff?: string;
@@ -824,7 +828,7 @@ function ShadowChatPageContent() {
     return '';
   }
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceAlsoCites' | 'evidenceNotice' | 'researchFiled' | 'handoff' | 'citations'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceAlsoCites' | 'evidenceBadge' | 'evidenceNotice' | 'researchFiled' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -890,6 +894,7 @@ function ShadowChatPageContent() {
           // "Talk to someone about this" banner.
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           evidenceAlsoCites: mapped.type === 'shadow' ? mapped.evidenceAlsoCites : undefined,
+          evidenceBadge: mapped.type === 'shadow' ? mapped.evidenceBadge : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
           citations: mapped.type === 'shadow' ? mapped.citations : undefined,
           // A live reply's facts, not stored with the message: a reopened
@@ -1239,6 +1244,11 @@ function ShadowChatPageContent() {
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
       evidenceAlsoCites: alsoCitedFrom(data.evidenceAlsoCites),
+      // No badge when the server did not grade the answer, or when the lookup
+      // failed: the outage notice below says so on its own.
+      evidenceBadge: data.evidenceTier && data.evidenceNotice !== 'EVIDENCE_RETRIEVAL_UNAVAILABLE'
+        ? (data.evidenceSourceGraded === true ? 'source' : 'answer')
+        : undefined,
       evidenceNotice: data.evidenceNotice,
       researchFiled: data.researchFiled === true,
       handoff: data.handoff,
@@ -1344,6 +1354,9 @@ function ShadowChatPageContent() {
                 state: safeCompletion ? 'ok' : 'degraded',
                 evidenceTier: safeCompletion && outputResponse ? gradedTier : NO_SERVER_EVIDENCE_TIER,
                 evidenceAlsoCites: safeCompletion && outputResponse ? alsoCitedFrom(output.evidenceAlsoCites) : undefined,
+                evidenceBadge: safeCompletion && outputResponse && gradedTier === outputTier
+                  ? (output.evidenceSourceGraded === true ? 'source' : 'answer')
+                  : undefined,
                 citations: safeCompletion && outputCitations.length > 0 ? outputCitations : undefined,
                 feedbackEligible: Boolean(safeCompletion && serverMessageId && outputResponse),
               }
@@ -1865,17 +1878,22 @@ function ShadowChatPageContent() {
                   ) : (
                     <p className="max-w-[66ch] text-[16px] leading-[1.6]">{msg.text}</p>
                   )}
-                  {msg.type === 'shadow' && msg.evidenceTier ? (
+                  {/* "Strongest source" names a source, so it appears only when
+                      a cited source graded the answer; a graded answer with no
+                      cited source reads "Evidence"; an answer the server never
+                      graded has no badge (Overwatch 2026-10-18, under Jason's
+                      "Strongest + also-cites" ruling on audit item 11). */}
+                  {msg.type === 'shadow' && msg.evidenceTier && msg.evidenceBadge ? (
                     <p
                       className="t-label mt-[var(--s3)]"
                       title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
                     >
-                      Strongest source: {getEvidenceTierLabel(msg.evidenceTier)}
+                      {msg.evidenceBadge === 'source' ? 'Strongest source' : 'Evidence'}: {getEvidenceTierLabel(msg.evidenceTier)}
                     </p>
                   ) : null}
                   {/* The answer's other sources, when they grade differently
                       (Jason, audit item 11 "A: Strongest + also-cites"). */}
-                  {msg.type === 'shadow' && msg.evidenceTier && msg.evidenceAlsoCites?.length ? (
+                  {msg.type === 'shadow' && msg.evidenceTier && msg.evidenceBadge === 'source' && msg.evidenceAlsoCites?.length ? (
                     <p className="t-label mt-[var(--s1)]">
                       Also cites: {msg.evidenceAlsoCites.map(getEvidenceTierLabel).join(', ')}
                     </p>

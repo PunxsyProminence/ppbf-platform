@@ -46,10 +46,16 @@ export interface StoredShadowConversationMessage {
   responseState: StoredShadowResponseState | null;
   evidenceTier: StoredShadowEvidenceTier | null;
   evidenceAlsoCites?: StoredShadowEvidenceTier[];
+  evidenceSourceGraded?: boolean;
   handoff: string | null;
   createdAt: string;
   citations: StoredShadowCitation[];
 }
+
+// Which evidence badge an answer carries: "Strongest source: <grade>" when a
+// cited source graded it, "Evidence: <grade>" when the server graded it from
+// no cited source, none when the server never graded it.
+export type ShadowEvidenceBadgeKind = 'source' | 'answer';
 
 export interface RestoredShadowMessage {
   id: string;
@@ -59,6 +65,7 @@ export interface RestoredShadowMessage {
   state?: StoredShadowResponseState;
   evidenceTier: StoredShadowEvidenceTier;
   evidenceAlsoCites?: StoredShadowEvidenceTier[];
+  evidenceBadge?: ShadowEvidenceBadgeKind;
   handoff?: string;
   citations?: StoredShadowCitation[];
   feedbackEligible: boolean;
@@ -182,6 +189,7 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
     responseState,
     evidenceTier: isStoredEvidenceTier(evidenceTier) ? evidenceTier : null,
     evidenceAlsoCites: parseAlsoCites(value.evidenceAlsoCites),
+    evidenceSourceGraded: value.evidenceSourceGraded === true,
     handoff: typeof handoff === 'string' && handoff.trim() ? handoff : null,
     createdAt: requiredIsoTimestamp(value, 'createdAt'),
     citations: parseCitations(value.citations),
@@ -500,6 +508,10 @@ export function mapStoredShadowMessage(
       : RESTORED_MESSAGE_FALLBACK_TIER,
     evidenceAlsoCites: message.role === 'assistant' && message.evidenceAlsoCites?.length
       ? message.evidenceAlsoCites
+      : undefined,
+    // A row stored with no grade (written before grades existed) shows no badge.
+    evidenceBadge: message.role === 'assistant' && message.evidenceTier
+      ? (message.evidenceSourceGraded ? 'source' : 'answer')
       : undefined,
     handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,
     // Receipts belong to SHADOW's answers only, and an empty list stays

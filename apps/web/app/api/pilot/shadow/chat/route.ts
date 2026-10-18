@@ -1576,6 +1576,9 @@ async function handleShadowChat(
     });
     // The other cited sources' grades, under the headline ("Also cites").
     const evidenceAlsoCites = alsoCitedTiers(persistedEvidenceTier, citedQuality);
+    // Whether a cited source graded the answer, so the badge may name one
+    // ("Strongest source"); otherwise it reads "Evidence".
+    const evidenceSourceGraded = state === 'ok' && evidenceBundle.availability === 'available' && citedQuality.length > 0;
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({
       requiresHumanReview: persistedRequiresHumanReview,
@@ -1806,6 +1809,7 @@ async function handleShadowChat(
       highRiskTopic: responseTopic,
       evidenceTier: persistedEvidenceTier,
       evidenceAlsoCites,
+      evidenceSourceGraded,
       // Three distinct situations, and the tier alone cannot tell them apart --
       // all three grade RESEARCH_NEEDED:
       //   * the lookup itself failed, so the grade is not a statement about the

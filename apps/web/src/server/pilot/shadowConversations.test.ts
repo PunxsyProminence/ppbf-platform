@@ -247,6 +247,7 @@ describe('SHADOW durable conversation isolation', () => {
     expect(String(mockedQuery.mock.calls[1][0])).toContain("'evidenceClass', c.metadata->>'evidence_class'");
     expect(message.evidenceTier).toBe('PROVEN');
     expect(message.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+    expect(message.evidenceSourceGraded).toBe(true);
     for (const sent of message.citations ?? []) {
       expect(Object.keys(sent).sort()).toEqual(['documentName', 'evidenceId', 'sourceTitle', 'token']);
     }
@@ -279,6 +280,8 @@ describe('SHADOW durable conversation isolation', () => {
     expect(retiered.evidenceAlsoCites).toEqual([]);
     expect(withheld.evidenceTier).toBe('RESEARCH_NEEDED');
     expect(withheld.evidenceAlsoCites).toEqual([]);
+    // A withheld answer was graded by its state, not by a source.
+    expect(withheld.evidenceSourceGraded).toBe(false);
   });
 
   it('reuses a pending deletion request instead of creating duplicates', async () => {

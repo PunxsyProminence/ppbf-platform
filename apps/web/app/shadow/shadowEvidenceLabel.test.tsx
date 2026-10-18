@@ -94,7 +94,7 @@ async function ask() {
 }
 
 test('the badge names the strongest source, and the other grades follow', async () => {
-  mockServer({ evidenceTier: 'PROVEN', evidenceAlsoCites: ['EMERGING', 'EXPERIMENTAL'] });
+  mockServer({ evidenceTier: 'PROVEN', evidenceAlsoCites: ['EMERGING', 'EXPERIMENTAL'], evidenceSourceGraded: true });
   await ask();
 
   expect(await screen.findByText('Strongest source: Proven')).toBeTruthy();
@@ -103,11 +103,38 @@ test('the badge names the strongest source, and the other grades follow', async 
 });
 
 test('no "Also cites" line when every cited source grades the same, or a grade is not one the page knows', async () => {
-  mockServer({ evidenceTier: 'EMERGING', evidenceAlsoCites: ['VERY_GOOD'] });
+  mockServer({ evidenceTier: 'EMERGING', evidenceAlsoCites: ['VERY_GOOD'], evidenceSourceGraded: true });
   await ask();
 
   expect(await screen.findByText('Strongest source: Emerging')).toBeTruthy();
   expect(screen.queryByText(/^Also cites:/)).toBeNull();
+});
+
+// Overwatch 2026-10-18, under Jason's "Strongest + also-cites" ruling:
+// "Strongest source" names a source, so it appears only when one graded the answer.
+test('a graded answer with no graded cited source reads "Evidence", with no "Also cites" line', async () => {
+  mockServer({ evidenceTier: 'EXPERIMENTAL', evidenceAlsoCites: ['RESEARCH_NEEDED'], evidenceSourceGraded: false, citations: [] });
+  await ask();
+
+  expect(await screen.findByText('Evidence: Experimental')).toBeTruthy();
+  expect(screen.queryByText(/^Strongest source:/)).toBeNull();
+  expect(screen.queryByText(/^Also cites:/)).toBeNull();
+});
+
+test('no badge when the evidence lookup failed; the outage notice stands alone', async () => {
+  mockServer({ evidenceTier: 'RESEARCH_NEEDED', evidenceNotice: 'EVIDENCE_RETRIEVAL_UNAVAILABLE', citations: [] });
+  await ask();
+
+  expect(await screen.findByText(/Evidence lookup temporarily unavailable/)).toBeTruthy();
+  expect(screen.queryByText(/^(Strongest source|Evidence): /)).toBeNull();
+});
+
+test('no badge when the server never graded the answer', async () => {
+  mockServer({ evidenceTier: undefined, citations: [] });
+  await ask();
+
+  expect((await screen.findAllByText(/Pivot off the lead foot/)).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/^(Strongest source|Evidence): /)).toBeNull();
 });
 
 test('the legend says what each grade measures', async () => {
@@ -135,6 +162,7 @@ test('a reopened conversation shows the same badge and "Also cites" line', async
     responseState: 'ok',
     evidenceTier: 'EMERGING',
     evidenceAlsoCites: ['EXPERIMENTAL'],
+    evidenceSourceGraded: true,
     handoff: null,
     createdAt: '2026-10-12T10:00:01.000Z',
     citations: [],

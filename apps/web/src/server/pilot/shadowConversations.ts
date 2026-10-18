@@ -59,6 +59,8 @@ export interface ShadowConversationMessage {
   evidenceTier: ShadowStoredEvidenceTier | null;
   /** The other cited sources' grades, below the headline ("Also cites"); graded again on load. */
   evidenceAlsoCites?: ShadowEvidenceTier[];
+  /** Whether a cited source grades the answer, so the badge may name one ("Strongest source"). */
+  evidenceSourceGraded?: boolean;
   handoff: string | null;
   createdAt: string;
   citations?: Array<{
@@ -698,6 +700,7 @@ export async function loadConversationMessages(input: {
       responseState: row.response_state,
       evidenceTier: headline,
       evidenceAlsoCites: alsoCites,
+      evidenceSourceGraded: row.role === 'assistant' && row.response_state === 'ok' && current !== null,
       handoff: row.handoff,
       createdAt: row.created_at.toISOString(),
       // Named fields only: the passage source, its hash and the grading

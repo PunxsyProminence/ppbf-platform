@@ -1803,6 +1803,7 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(payload.state).toBe('ok');
     expect(payload.evidenceTier).toBe('PROVEN');
     expect(payload.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
+    expect(payload.evidenceSourceGraded).toBe(true);
     // The stored grade is the one the reader was shown.
     expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({ evidenceTier: 'PROVEN' }));
   });
@@ -2491,6 +2492,8 @@ describe('Omega cross-organization breadth', () => {
     expect(payload.citations ?? []).toEqual([]);
     expect(payload.evidenceTier).not.toBe('PROVEN');
     expect(payload.evidenceTier).not.toBe('EMERGING');
+    // No Library source graded it, so the badge may not name one.
+    expect(payload.evidenceSourceGraded).toBe(false);
   });
 
   test('no other role reaches the block, even asking the same question', async () => {

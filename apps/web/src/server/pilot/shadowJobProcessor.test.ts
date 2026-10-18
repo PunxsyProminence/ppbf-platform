@@ -169,6 +169,7 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(completedOutput.resultStatus).toBe('ok');
     expect(completedOutput.evidenceTier).toBe('EMERGING');
     expect(completedOutput.evidenceAlsoCites).toEqual(['EXPERIMENTAL']);
+    expect(completedOutput.evidenceSourceGraded).toBe(true);
   });
 
   test('persists only library citation ids against the bundle; near-miss ids stay prose', async () => {

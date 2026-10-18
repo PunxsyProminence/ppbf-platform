@@ -290,6 +290,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         assistantMessageId,
         evidenceTier,
         evidenceAlsoCites: alsoCitedTiers(evidenceTier, citedQuality),
+        evidenceSourceGraded: !bindingFiltered && binding.availability === 'available' && citedQuality.length > 0,
         responseState: bindingFiltered ? 'filtered' : 'ok',
         handoff,
         citations: binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
