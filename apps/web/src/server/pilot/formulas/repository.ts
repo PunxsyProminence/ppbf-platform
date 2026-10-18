@@ -191,6 +191,19 @@ function existingObservationIdentity(row: FormulaObservationRow) {
   };
 }
 
+/**
+ * completeness is stored as numeric(6,5) (pilot_slice_postgres.sql), so a
+ * stored row reads back at five decimals. A recomputed result compared at full
+ * double precision then never matches its own stored row whenever the ratio
+ * does not end within five decimals -- 2/3, 5/7, 6/7 -- and the conflict path
+ * below refused an identical recomputation as IDEMPOTENCY_CONFLICT. MVP-11 with
+ * an unanswered session in the window (lane L50 review) and MVP-10 reach those
+ * ratios. Compared at the precision the column keeps.
+ */
+function storedCompleteness(value: number): number {
+  return Math.round(value * 100_000) / 100_000;
+}
+
 function formulaResultIdentity(result: FormulaResult) {
   return {
     resultId: result.resultId,
@@ -208,7 +221,7 @@ function formulaResultIdentity(result: FormulaResult) {
     inputObservationIds: result.inputObservationIds,
     provenance: result.provenance,
     validation: result.validation,
-    quality: result.quality,
+    quality: { ...result.quality, completeness: storedCompleteness(result.quality.completeness) },
     unavailableReason: result.unavailableReason,
     humanReviewRequired: result.humanReviewRequired,
   };
@@ -444,6 +457,46 @@ export async function getActiveObservationsForContext(input: {
        )
      order by o.observed_at asc, o.observation_id asc`,
     [input.organizationId, input.athleteId, input.contextId],
+  );
+  return rows.map(rowToObservation);
+}
+
+/**
+ * Every active observation of one kind for one athlete inside a time window,
+ * across contexts: (observedAfter, observedAtOrBefore]. The supersession
+ * predicate is the one getActiveObservationsForContext uses, unchanged.
+ */
+export async function getActiveObservationsOfKindInWindow(input: {
+  organizationId: string;
+  athleteId: string;
+  kind: ObservationKind;
+  observedAfter: string;
+  observedAtOrBefore: string;
+}): Promise<NumericObservation[]> {
+  if (
+    !input.organizationId.trim()
+    || !input.athleteId.trim()
+    || !Number.isFinite(Date.parse(input.observedAfter))
+    || !Number.isFinite(Date.parse(input.observedAtOrBefore))
+  ) {
+    throw new TypeError('Formula observation window read requires an organization, athlete, and window.');
+  }
+  const rows = await query<FormulaObservationRow>(
+    `select o.*
+     from pilot.shadow_formula_observations o
+     where o.organization_id = $1
+       and o.athlete_id = $2
+       and o.observation_kind = $3
+       and o.observed_at > $4::timestamptz
+       and o.observed_at <= $5::timestamptz
+       and not exists (
+         select 1
+         from pilot.shadow_formula_observations successor
+         where successor.organization_id = o.organization_id
+           and successor.supersedes_observation_id = o.observation_id
+       )
+     order by o.observed_at asc, o.observation_id asc`,
+    [input.organizationId, input.athleteId, input.kind, input.observedAfter, input.observedAtOrBefore],
   );
   return rows.map(rowToObservation);
 }
