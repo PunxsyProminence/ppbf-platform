@@ -191,9 +191,10 @@ async function insertByHand(values: { destination?: string; program_id?: string 
   const result = await activeClient!.query(
     `insert into pilot.parent_resources (organization_id, title, summary, resource_type, destination_kind, destination,
        program_id, created_by_account_id, created_by_role)
-     values ($1, 'By hand', 'Stored before.', 'guide', 'internal', $2, $3, $4, 'coach')
+     values ($1, 'By hand', 'Stored before.', 'guide', $5, $2, $3, $4, 'coach')
      returning resource_id::text as resource_id`,
-    [ORG_ID, values.destination ?? '/help', values.program_id ?? null, COACH],
+    [ORG_ID, values.destination ?? '/help', values.program_id ?? null, COACH,
+      (values.destination ?? '/help').startsWith('https://') ? 'external' : 'internal'],
   );
   return result.rows[0].resource_id as string;
 }
@@ -422,7 +423,7 @@ describe('parent resources, staff publish (PH-11b)', () => {
 
   test('an internal link parents cannot open is refused, and a link that is not a full https address', async () => {
     for (const destination of ['/admin', '/coach/drills', '/dashboard/../admin', 'help', 'https://usaboxing.org@evil', 'http://usaboxing.org',
-      'https://usaboxing.org:65536/path', 'https://usaboxing.org:99999']) {
+      'https://usaboxing.org:65536/path', 'https://usaboxing.org:99999', 'https://usaboxing.org:0/']) {
       await expect(staff.createResource(coach, fields({ destination }), true)).rejects.toMatchObject({ status: 400 });
     }
     const mine = await staff.createResource(coach, fields({ destination: '/parent/safety' }), false);
@@ -436,6 +437,14 @@ describe('parent resources, staff publish (PH-11b)', () => {
         .rejects.toMatchObject({ status: 400, message: 'That app link is over 2000 characters or has a space or backslash in it.' });
     }
     expect((await staff.listResourcesForStaff(ORG_ID)).items).toEqual([]);
+  });
+
+  test('a stored https link no browser opens (a port past 65535) is not published until it changes', async () => {
+    const id = await insertByHand({ destination: 'https://usaboxing.org:99999/guide' });
+    await expect(publish(coach, id)).rejects.toMatchObject({ status: 400 });
+    expect(await stored(id)).toMatchObject({ state: 'draft', published_at: null, updated_by_account_id: null });
+    await edit(coach, id, { destination: 'https://usaboxing.org/guide' });
+    expect((await publish(coach, id)).state).toBe('published');
   });
 
   test('a stored link parents cannot open is marked, and is not published until it changes', async () => {
@@ -501,8 +510,9 @@ describe('parent resources, staff publish (PH-11b)', () => {
       const [outcome] = await Promise.allSettled([running]);
       return { outcome, settledEarly };
     } finally {
-      running?.catch(() => {});
       await archiver.query('rollback').catch(() => {});
+      // The write is settled before the next test's database: never left running into it.
+      if (running) await Promise.allSettled([running]);
       await archiver.end();
     }
   }
@@ -510,7 +520,7 @@ describe('parent resources, staff publish (PH-11b)', () => {
   test('a program archived while a resource is being added to it: the add waits, then is refused, and nothing is stored', async () => {
     const { outcome, settledEarly } = await whileArchiving(() => staff.createResource(coach, fields({ program_id: JUNIOR }), true));
     expect(settledEarly).toBe(false);
-    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400 } });
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400, message: staff.NOT_ACTIVE_PROGRAM_MESSAGE } });
     expect((await staff.listResourcesForStaff(ORG_ID)).items).toEqual([]);
   });
 
@@ -518,7 +528,7 @@ describe('parent resources, staff publish (PH-11b)', () => {
     const draft = await staff.createResource(coach, fields(), false);
     const { outcome, settledEarly } = await whileArchiving(() => edit(coach, draft.resource_id, { program_id: JUNIOR }));
     expect(settledEarly).toBe(false);
-    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400 } });
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { status: 400, message: staff.NOT_ACTIVE_PROGRAM_MESSAGE } });
     expect(await stored(draft.resource_id)).toMatchObject({ program_id: null, updated_by_account_id: null });
   });
 

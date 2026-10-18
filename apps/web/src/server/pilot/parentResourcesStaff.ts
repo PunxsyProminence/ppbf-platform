@@ -157,7 +157,7 @@ async function programIsActive(organizationId: string, programId: string): Promi
 function parsesAsHttps(destination: string): boolean {
   try {
     const url = new URL(destination);
-    return url.protocol === 'https:' && url.hostname.length > 0;
+    return url.protocol === 'https:' && url.hostname.length > 0 && url.port !== '0';
   } catch {
     return false;
   }
@@ -170,7 +170,7 @@ const PROGRAM_STILL_ACTIVE = (organization: string, program: string) =>
   `exists (select 1 from pilot.programs p
             where p.organization_id = ${organization} and p.program_id = ${program} and p.status = 'active'
             for share)`;
-const NOT_ACTIVE_PROGRAM_MESSAGE = "That program is not one of this gym's active programs.";
+export const NOT_ACTIVE_PROGRAM_MESSAGE = "That program is not one of this gym's active programs.";
 
 // Characters as Postgres counts them (char_length): code points, not UTF-16 units.
 const characters = (text: string) => [...text].length;
@@ -307,6 +307,9 @@ export async function setResourceState(
     if (current.destination_kind === 'internal' && !parentMayOpenPath(current.destination)) {
       throw new ValidationError('Parents cannot open that page in the app. Change the link before publishing.');
     }
+    if (current.destination_kind === 'external' && !parsesAsHttps(current.destination)) {
+      throw new ValidationError('That link is not a full https address. Change the link before publishing.');
+    }
     if (current.program_id !== null && !(await programIsActive(writer.organizationId, current.program_id))) {
       throw new ValidationError(PROGRAM_ARCHIVED_MESSAGE);
     }
@@ -348,6 +351,7 @@ async function write(
   }
   if (rows.length !== 1) {
     // Checked active a moment ago: an archive since then is the program's words, not a stale version.
+    // (A stale version whose program was also archived answers with the program: both are true.)
     if (activeProgram && !(await programIsActive(writer.organizationId, activeProgram.programId))) {
       throw new ValidationError(activeProgram.message);
     }
