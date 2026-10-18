@@ -106,10 +106,12 @@ async function submitDeepTrackObservations(input: {
   // landed count from the per-type one above (runner.ts, MVP-04/MVP-05).
   const sessionTotal = { ...SESSION_TOTAL_DIMENSIONS };
   if (input.allThrown != null) {
-    observations.push(
-      { kind: 'punch_count', value: input.allThrown, unit: 'count', dimensions: sessionTotal },
-      { kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: sessionTotal },
-    );
+    observations.push({ kind: 'punch_count', value: input.allThrown, unit: 'count', dimensions: sessionTotal });
+    // A cleared rounds box reads as 0; that is not a count of rounds, so it
+    // is not sent (punches per round then simply does not run).
+    if (input.totalRoundsCompleted >= 1) {
+      observations.push({ kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: sessionTotal });
+    }
   }
   if (input.allLanded != null) {
     observations.push({ kind: 'punch_landed', value: input.allLanded, unit: 'count', dimensions: sessionTotal, keySuffix: 'session_total' });
@@ -186,8 +188,8 @@ async function submitDeepTrackObservations(input: {
    Corrections go one at a time, in order. Each one re-runs the calculations
    its old number fed, and a later one must see the earlier one stored.
    Copy in this block is PROPOSED (lane L50). */
-type CorrectableKind = 'punch_attempted' | 'punch_landed' | 'punch_absorbed' | 'punch_count' | 'active_time';
-type CorrectableField = 'thrown' | 'landed' | 'taken' | 'allThrown' | 'allLanded' | 'minutesWorked';
+type CorrectableKind = 'punch_attempted' | 'punch_landed' | 'punch_absorbed' | 'punch_count' | 'round_count' | 'active_time';
+type CorrectableField = 'thrown' | 'landed' | 'taken' | 'allThrown' | 'rounds' | 'allLanded' | 'minutesWorked';
 
 /* `sessionTotal` separates the whole-session counts from the per-type ones:
    one entry can hold two punch_landed numbers. */
@@ -196,6 +198,7 @@ const CORRECTABLE_FIELDS: ReadonlyArray<{ field: CorrectableField; kind: Correct
   { field: 'landed', kind: 'punch_landed', sessionTotal: false, label: 'Landed' },
   { field: 'taken', kind: 'punch_absorbed', sessionTotal: false, label: 'Punches taken' },
   { field: 'allThrown', kind: 'punch_count', sessionTotal: true, label: 'All punches thrown' },
+  { field: 'rounds', kind: 'round_count', sessionTotal: true, label: 'Rounds you finished' },
   { field: 'allLanded', kind: 'punch_landed', sessionTotal: true, label: 'All punches landed' },
   { field: 'minutesWorked', kind: 'active_time', sessionTotal: true, label: 'Minutes of actual work' },
 ];
@@ -298,6 +301,10 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
       setMessage('Counts are whole numbers, 0 or more.');
       return;
     }
+    if (changes.some(({ field, value }) => field === 'rounds' && value < 1)) {
+      setMessage('Rounds you finished has to be at least 1.');
+      return;
+    }
     if (changes.some(({ field, value }) => field === 'minutesWorked' && (!Number.isFinite(value) || value < 1 || value > MINUTES_WORKED_MAX))) {
       setMessage(`Minutes of actual work has to be between 1 and ${MINUTES_WORKED_MAX}.`);
       return;
@@ -316,6 +323,21 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
     const wholeLanded = finalValue('allLanded');
     if (wholeThrown != null && wholeLanded != null && wholeLanded > wholeThrown) {
       setMessage("All punches landed can't be more than all punches thrown. Check those two numbers.");
+      return;
+    }
+    // The same two checks the log itself makes (onSubmit).
+    const typeName = (() => {
+      const punchType = entryObservation(entry, 'thrown')?.dimensions.punchType;
+      return typeof punchType === 'string' && punchType in PUNCH_TYPE_PLURAL
+        ? PUNCH_TYPE_PLURAL[punchType as PunchType]
+        : 'punches';
+    })();
+    if (wholeThrown != null && thrown != null && wholeThrown < thrown) {
+      setMessage(`All punches thrown can't be fewer than the ${typeName} you threw above. Check those numbers.`);
+      return;
+    }
+    if (wholeLanded != null && landed != null && wholeLanded < landed) {
+      setMessage(`All punches landed can't be fewer than the ${typeName} you landed above. Check those numbers.`);
       return;
     }
     if (changes.length === 0) {
