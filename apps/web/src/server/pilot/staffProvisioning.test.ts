@@ -40,6 +40,7 @@ import {
   listOrganizationMembers,
   removeGuardianLink,
   requireGuardianLinkForParentInvite,
+  RoleChangeUnconfirmedError,
 } from './staffProvisioning';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
@@ -295,6 +296,105 @@ describe('takeover and escalation guards', () => {
 
     expect(result.role).toBe('board');
     expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  describe('lane L31: a role change from the People page needs its confirmation', () => {
+    const COACH = {
+      account_id: 'coach-1',
+      organization_id: 'org-1',
+      role: 'coach',
+      auth_provider: 'microsoft',
+      is_platform_owner: false,
+    };
+
+    test('with no confirmation, a change is refused naming the current role, and nothing is written', async () => {
+      stubLookups({ existingByEmail: COACH });
+      const refusal = createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'coach@example.com',
+        organizationId: 'org-1',
+        role: 'volunteer',
+        roleChangeConfirmedFrom: null,
+      });
+      await expect(refusal).rejects.toBeInstanceOf(RoleChangeUnconfirmedError);
+      await expect(refusal).rejects.toMatchObject({ status: 409, code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'coach' });
+      expect(accountUpsertCalls()).toHaveLength(0);
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('a confirmation naming a different role than the account holds is refused', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'coach@example.com',
+          organizationId: 'org-1',
+          role: 'volunteer',
+          roleChangeConfirmedFrom: 'staff',
+        }),
+      ).rejects.toMatchObject({ code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'coach' });
+      expect(accountUpsertCalls()).toHaveLength(0);
+    });
+
+    test('confirmed from the role it holds, the change is made', async () => {
+      stubLookups({ existingByEmail: COACH });
+      const result = await createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'coach@example.com',
+        organizationId: 'org-1',
+        role: 'volunteer',
+        roleChangeConfirmedFrom: 'coach',
+      });
+      expect(result.role).toBe('volunteer');
+      expect(accountUpsertCalls()).toHaveLength(1);
+    });
+
+    test('the same role needs no confirmation', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'coach@example.com', organizationId: 'org-1', role: 'coach', roleChangeConfirmedFrom: null }),
+      ).resolves.toMatchObject({ role: 'coach' });
+    });
+
+    test('a new address needs no confirmation', async () => {
+      stubLookups({ existingByEmail: null });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'new@example.com', organizationId: 'org-1', role: 'staff', roleChangeConfirmedFrom: null }),
+      ).resolves.toMatchObject({ role: 'staff' });
+    });
+
+    test('peer protection still refuses first: a gym admin is not offered a confirmation', async () => {
+      stubLookups({ existingByEmail: { ...COACH, role: 'organization_admin' } });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'admin@example.com', organizationId: 'org-1', role: 'coach', roleChangeConfirmedFrom: null }),
+      ).rejects.toThrow('Forbidden: this account holds a role you cannot assign');
+    });
+
+    test('a role changed between the read and the write is named, not overwritten', async () => {
+      stubLookups({ existingByEmail: COACH });
+      currentClient = fakeClient((sql) => {
+        // Another admin made them staff after the read: the conditioned write matches nothing.
+        if (sql.includes('insert into pilot.accounts')) return { rows: [], rowCount: 0 };
+        if (sql.includes('select role')) return { rows: [{ role: 'staff', account_deleted: false }], rowCount: 1 };
+        return undefined;
+      });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'coach@example.com',
+          organizationId: 'org-1',
+          role: 'volunteer',
+          roleChangeConfirmedFrom: 'coach',
+        }),
+      ).rejects.toMatchObject({ code: 'ROLE_CHANGE_UNCONFIRMED', currentRole: 'staff' });
+      const [upsertSql, upsertParams] = accountUpsertCalls()[0] as [string, unknown[]];
+      expect(upsertSql).toContain('(not $7::boolean or acct.role = excluded.role or acct.role = $8::text)');
+      expect(upsertParams.slice(6)).toEqual([true, 'coach']);
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('callers that do not pass it are unchanged', async () => {
+      stubLookups({ existingByEmail: COACH });
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'coach@example.com', organizationId: 'org-1', role: 'volunteer' }),
+      ).resolves.toMatchObject({ role: 'volunteer' });
+    });
   });
 
   test('a caller holding the wider set may still re-role a board member', async () => {
@@ -1473,7 +1573,7 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
       expect(sql).toContain('and acct.organization_id = excluded.organization_id');
       expect(sql).toContain('and (not $5::boolean or acct.active_flag)');
       expect(sql).toContain('and (not $6::boolean or acct.role = excluded.role)');
-      expect(params?.slice(4)).toEqual([true, true]);
+      expect(params?.slice(4, 6)).toEqual([true, true]);
     });
 
     test('an invite passes neither intake condition', async () => {
@@ -1481,7 +1581,7 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
 
       await createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' });
 
-      expect(accountUpsertCalls()[0][1]?.slice(4)).toEqual([false, false]);
+      expect(accountUpsertCalls()[0][1]?.slice(4, 6)).toEqual([false, false]);
     });
 
     // The reason is looked up only inside the caller's organization. A login

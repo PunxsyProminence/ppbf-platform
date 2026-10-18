@@ -21,7 +21,7 @@ import { roleRoutes } from '@/components/roleRoutes';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { parseInstantAsGymTime } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
 
 /**
  * A seat reads as the seat, not as its slug.
@@ -592,9 +592,7 @@ function NoticesAuthoringPage() {
           <Link href="/chalkboard" className="btn btn--ghost">
             The boards, as they hang
           </Link>
-          <OperationsLink className="btn btn--ghost">
-            Back to Mission Control
-          </OperationsLink>
+          <BackHome />
         </div>
       </div>
     </main>

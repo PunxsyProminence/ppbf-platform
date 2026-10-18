@@ -4,7 +4,8 @@
  */
 
 import { issueMagicLink, type MagicLinkAccount, type MagicLinkDependencies } from '@/src/server/pilot/magicLink';
-import { SHADOW_SYSTEM_PROMPT } from '@/src/server/pilot/shadowChat';
+import { composeShadowSystemPrompt } from '@/src/server/pilot/shadowChat';
+import { PPBF_PROFILE } from '@/src/testing/organizationProfileFixtures';
 
 test('the sign-in email reads as it did', async () => {
   const sent: Array<{ to: string; subject: string; body: string }> = [];
@@ -28,6 +29,8 @@ test('the sign-in email reads as it did', async () => {
     now: () => new Date('2026-08-08T12:00:00.000Z'),
     createToken: () => 'test-token-value',
     appOrigin: 'https://www.punxsyprominence.org',
+    // The stored row, as the migration seeds it (lane L31).
+    gymProfile: async () => PPBF_PROFILE,
   } as unknown as MagicLinkDependencies);
 
   expect(sent[0].subject).toBe('Your PPBF sign-in link');
@@ -35,5 +38,7 @@ test('the sign-in email reads as it did', async () => {
 });
 
 test("SHADOW's system prompt opens as it did", () => {
-  expect(SHADOW_SYSTEM_PROMPT.split('\n')[0]).toBe('You are SHADOW, the organizational intelligence system for Punxsy Prominence Boxing & Fitness.');
+  const prompt = composeShadowSystemPrompt({ role: 'coach', sessionType: 'heavy_bag', gym: PPBF_PROFILE });
+  expect(prompt.split('\n')[0]).toBe('You are SHADOW, the organizational intelligence system for Punxsy Prominence Boxing & Fitness.');
+  expect(prompt.split('\n')[2]).toBe('PRIMARY ROLE:');
 });

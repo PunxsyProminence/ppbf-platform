@@ -376,7 +376,7 @@ it('puts no ghost button on the paper', async () => {
     .map((el) => el.textContent?.trim());
   expect(ghostsOnPaper).toEqual([]);
 
-  // The one ghost this page states is the header's Back-to-admin link, and the
+  // The one ghost this page states is the header's back link (BackHome), and the
   // header is leather. Counted off the source because the next/link mock above
   // renders a bare <a href> and drops className, so a rendered check here
   // would pass on a page that had none.

@@ -14,16 +14,22 @@ jest.mock('./compliance', () => ({
   getOrganizationViolations: jest.fn(),
 }));
 
+jest.mock('./safetyFlags', () => ({
+  listOpenSafetyFlags: jest.fn(),
+}));
+
 import { getOrganizationSafetyReview, VIOLATION_ROLLUP_READ_LIMIT } from './safetyReview';
 import { query } from './db';
 import { listTrainingHolds } from './trainingHolds';
 import { listEscalations } from './escalationLadder';
 import { getOrganizationViolations } from './compliance';
+import { listOpenSafetyFlags } from './safetyFlags';
 
 const mockQuery = jest.mocked(query);
 const mockListHolds = jest.mocked(listTrainingHolds);
 const mockListEscalations = jest.mocked(listEscalations);
 const mockGetViolations = jest.mocked(getOrganizationViolations);
+const mockListFlags = jest.mocked(listOpenSafetyFlags);
 
 const ATHLETES_ROW = [{ athlete_id: 'ath-1', full_name: 'Jordan T.' }];
 
@@ -92,6 +98,7 @@ beforeEach(() => {
   mockListHolds.mockResolvedValue([]);
   mockListEscalations.mockResolvedValue([]);
   mockGetViolations.mockResolvedValue([]);
+  mockListFlags.mockResolvedValue([]);
   mockQuery.mockResolvedValue([]);
 });
 
@@ -138,6 +145,36 @@ describe('getOrganizationSafetyReview', () => {
     expect(review.openViolations.map((v) => v.violation_id).sort()).toEqual(['v-ack', 'v-esc', 'v-new']);
   });
 
+  // Lane U2 (audit UX-A A-2): open safety flags were never in this rollup, so
+  // an open flag could sit unseen by an admin's morning check.
+  test('open safety flags are rolled up, whole and worst first, with the athlete name', async () => {
+    const flag = (overrides: Record<string, unknown>) => ({
+      organization_id: 'org-1', flag_id: 'f', athlete_id: 'ath-1', person_account_id: null,
+      flag_class: 'system_guidance', flag_code: 'code', severity: 'attention', triggered_by: 'human_entry',
+      trigger_detail: '', evidence_basis: '', confidence_note: '', source_activity_id: null, source_reference: null,
+      status: 'open', resolution: null, resolved_by_account_id: null, resolved_by_role: null, resolved_at: null,
+      coach_note: null, created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z',
+      ...overrides,
+    });
+    mockListFlags.mockResolvedValueOnce([
+      flag({ flag_id: 'f-block', severity: 'blocking_display' }) as never,
+      flag({ flag_id: 'f-person', athlete_id: null, person_account_id: 'acct-9', severity: 'advisory' }) as never,
+    ]);
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce(ATHLETES_ROW);
+
+    const review = await getOrganizationSafetyReview('org-1');
+
+    expect(mockListFlags).toHaveBeenCalledWith('org-1');
+    expect(review.openFlags.map((f) => [f.flag_id, f.athlete_name])).toEqual([
+      ['f-block', 'Jordan T.'],
+      ['f-person', null],
+    ]);
+    // Only what the rollup shows; the flag's free text stays on its own queue.
+    expect(Object.keys(review.openFlags[0]).sort()).toEqual(
+      ['athlete_id', 'athlete_name', 'created_at', 'flag_class', 'flag_code', 'flag_id', 'severity'],
+    );
+  });
+
   test('an athlete with no roster row falls back to a null name, not a crash', async () => {
     mockListHolds.mockResolvedValueOnce([hold({ athlete_id: 'ath-unknown' }) as never]);
     mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
@@ -165,6 +202,7 @@ describe('getOrganizationSafetyReview', () => {
       failingGates: [],
       openEscalations: [],
       openViolations: [],
+      openFlags: [],
       violationsReadLimit: VIOLATION_ROLLUP_READ_LIMIT,
       violationsTruncated: false,
     });

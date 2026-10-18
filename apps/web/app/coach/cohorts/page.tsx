@@ -10,6 +10,7 @@ import type {
   CohortDefinitionRow,
   CompetenceLevelRow,
 } from '@/src/server/pilot/competenceCohorts';
+import BackHome from '@/components/BackHome';
 
 // Which room an athlete stands in, and why.
 //
@@ -194,13 +195,14 @@ function CoachCohorts() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Cohorts</h1>
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
             Athletes group by what they can do and how long they have actually trained -- not by age.
             A cohort is a rule, so an athlete moves rooms as soon as their assessed level or logged
             hours change. Nothing here is a saved list.
           </p>
           <Link href="/coach/session-scripts" className="btn btn--ghost mt-[var(--s4)]">
-            Back to session scripts
+            Back to Session Plans
           </Link>
         </header>
 
@@ -329,7 +331,7 @@ function CoachCohorts() {
                       disabled={saving || levelKey === ''}
                       className="btn disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {saving ? 'Saving...' : 'Save level'}
+                      {saving ? 'Saving…' : 'Save level'}
                     </button>
                   </div>
                   {saveError && (

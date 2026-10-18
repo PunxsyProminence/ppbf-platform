@@ -1050,6 +1050,90 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/family-support/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Live family support records for one athlete (kind, date provided, recorder display name; no account ids or emails) via familySupportRecords.ts. Gate at route.ts:22-23; organization from the session.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/family-support/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records support the gym provided (PH-12b) via familySupportRecords.ts recordSupport; the database guard re-checks an active organization_admin/admin seat in this gym (refusal answered 403). Gate at route.ts:37-38; organization from the session. No audit event written in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/family-support/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/family-support",
+    "gate": "requirePrincipal + requireRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Retires one support record (the only change; never edited or deleted) via familySupportRecords.ts retireSupport; the database guard re-checks the retirer's seat. Gate at route.ts:54-55; organization from the session. No audit event written in the route.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SUPPORT_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/admin/floor-hours/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/floor-hours",
@@ -2544,6 +2628,34 @@
       ],
       "authorizationGates": [
         "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/coach-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/coach-messages",
+    "gate": "requirePrincipal + requireRole(athlete) + assertActorCanAccessAthlete(principal.athleteId)",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The athlete's own athlete_message notes (what their coaches wrote to them), newest first, staff-written rows only (author_role coach, organization_admin or admin), named by the writer's login-derived name, never an account id (OD-2026-10-06-025); the athlete id comes from the session, never the request (athleteCoachMessages.ts; #1542 FC-06). Guardians of an athlete under 18 read a copy through /api/pilot/parent/athlete-messages (FC-06 Q-2, OD-2026-10-14-002); not for 18+.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
         "athlete"
@@ -5462,6 +5574,95 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-goals/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-goals/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Adds a staff goal written with the session's account and role (the database checks the active seat); read-only to the family.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-goals/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the goal's athlete (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Edit, tick done, untick or retire a staff-written goal, written with the session's account and role (the database checks the active seat); a guardian's goal is the same 404 as a forged id; never a delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-message-replies/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-message-replies",
@@ -5488,6 +5689,63 @@
       ],
       "roleLiterals": [
         "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-messages",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "What the gym's staff wrote to one athlete (athlete_message notes, staff-written only, newest first, named, no account id) for the coach's 'Sent to this athlete' list on /coach/decision-loop (athleteCoachMessages.ts; #1542 FC-06). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym since #1480).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/athlete-messages/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/athlete-messages",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's read-only copy of what the gym's staff wrote to their children under 18 (athlete_message notes, staff-written only, newest first, named, no account id), for 'Sent to your athlete' on the parent hub (athleteCoachMessages.ts; #1542 FC-06 Q-2 ruled B). Scope is guardianAthleteIds resolved on each request: linked, not deleted, under 18; nothing for an athlete 18 or over; organization in the query.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
       ]
     }
   },
@@ -7640,7 +7898,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped.",
+    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped. With undo: true (UXB Q1 B, lane U3 L5b) it takes back the athlete's own own-words mark within 10 minutes: undoPersonalGoalReached keys owner, window (server clock) and goal_kind into one statement, sets reached_at back to null (no delete), and writes its audit event in the same transaction; anything else answers 409 PERSONAL_GOAL_UNDO_CLOSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8823,6 +9081,87 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/family-goals/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-goals/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Adds a goal written as role parent by the session's account.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-goals/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/parent/family-goals",
+    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian's family goals for one child (pilot.family_goals; familyGoals.ts; #1593 PH-06). The child must be linked to this guardian on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. A guardian reads their own goals and staff goals, never the other guardian's (OD-2026-10-12-024 principle); changes only goals they wrote (Q-2 A). Staff names only, no account ids. Edit, tick done, untick or retire a goal this guardian wrote; never a delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/resources/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/resources",
@@ -8837,6 +9176,33 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "The resources a gym has published for one linked child's family (pilot.parent_resources; parentResources.ts; #1593 PH-11): published for every family plus those for a program the child is an active member of (program_memberships matched to an active pilot.programs row by canonical name). Drafts and archived never; internal links only to pages the building map lists for parents. The child must be linked on this request (isGuardianLinkedToAthlete: linked, not deleted, under 18), else 404. No writer or account id.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/message-reads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/message-reads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scoping",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian reads only their own opens (reader_account_id = caller), on parent messages about children in guardianAthleteIds now; a co-guardian's opens are never returned. The hub marks the rest New (familyMessageReads.ts listOwnMessageReads; #1542 FC-08).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9265,7 +9631,7 @@
     "id": "app/api/pilot/platform/organizations/assign-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/assign-admin",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9278,7 +9644,7 @@
     "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9292,7 +9658,7 @@
     "id": "app/api/pilot/platform/organizations/memberships/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/memberships",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9305,7 +9671,7 @@
     "notes": "Upserts an organization membership with a role from MANAGEABLE_ROLES (excludes athlete and platform_owner); gate memberships/route.ts:22-23.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9400,7 +9766,7 @@
     "id": "app/api/pilot/platform/organizations/transfer-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/transfer-admin",
-    "gate": "requirePrincipal + requireRole([platform_owner])",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([platform_owner])",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9410,10 +9776,10 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Moves the organization_admin seat from one account to another and demotes the old one (route.ts:19-42). No athlete data; membership/role writes only, audited.",
+    "notes": "Moves the organization_admin seat from one account to another and demotes the old one to coach, staff or volunteer; the old one must hold the seat (lane L31). Microsoft-authenticated platform owner only. No athlete data; membership/role writes only, audited.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9653,6 +10019,31 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Streams the portrait of the coach of record on a fight card, addressed by the card's subject (account_id or athlete_id, as /profile/card) so a family's card needs no coach account id (OD-2026-10-06-025 ruling 2). The card subject is gated exactly as /profile/card (assertViewerMayReachSubject; relationship none -> 404); the coach is resolved on the server and gated from the viewer's standpoint by resolveRelationship + decidePortrait, as profile/photo/[accountId]. All refusals hiddenNotFound.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertViewerMayReachSubject"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/profile/card/photo/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/profile/card/photo",
+    "gate": "requirePrincipal + assertViewerMayReachSubject + resolveRelationship (none -> 404) + decidePortrait",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Streams the portrait of a fight card's own subject, addressed by the card's handle (account_id or athlete_id, or none for the caller's own card; resolveCardSubjectAccountId), so a family's card needs no account id (F-119). Calls the same gates as profile/photo/[accountId] in the same order (assertViewerMayReachSubject, resolveRelationship, decidePortrait), plus the card's relationship none -> 404. All refusals hiddenNotFound.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -14401,6 +14792,62 @@
       "sessionGates": [],
       "authorizationGates": [],
       "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Reads pilot.organization_profiles and the legal name (read-only). Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Validates every field against the table's rules (400 naming the field), upserts the row and writes an audit row (entity organization_profile) in one transaction; the legal name is not written. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   }
 ]

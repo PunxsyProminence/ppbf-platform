@@ -6,8 +6,7 @@ import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
-import { getRoleRoute } from '@/components/roleRoutes';
-import { mapPilotRoleToClubRole } from '@/components/roleSession';
+import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 
@@ -55,13 +54,13 @@ const INVITABLE_ROLES = [
   { value: 'board', label: 'Board' },
 ];
 
+// What the outgoing admin becomes: the three staff roles the transfer route
+// accepts (lane L31). 'Admin' left two admins; 'Athlete' and 'Parent' made
+// accounts with no roster record or child to sign in to.
 const DEMOTE_ROLES = [
   { value: 'coach', label: 'Coach' },
-  { value: 'admin', label: 'Admin' },
   { value: 'staff', label: 'Staff' },
   { value: 'volunteer', label: 'Volunteer' },
-  { value: 'parent', label: 'Parent / Guardian' },
-  { value: 'athlete', label: 'Athlete' },
 ];
 
 type ArmedAction = 'invite' | 'athlete' | 'promote' | 'transfer' | 'disable' | 'restore' | 'grant' | 'revoke';
@@ -600,15 +599,16 @@ export default function PlatformConsole() {
   }
 
   if (!hasPlatformAccess) {
-    // The way back from this refusal is the visitor's own home: /admin for a
-    // gym admin, their workspace for any other signed-in role. A signed-out
-    // visitor, or a platform owner not signed in with Microsoft, has no home
-    // to go to here; Sign In is their way forward.
-    const workspaceHref = getRoleRoute(mapPilotRoleToClubRole(sessionRole));
+    // The way back from this refusal is the visitor's own home, the same one
+    // sign-in gives (lane U2): the Gym Office for a gym admin, their workspace
+    // for any other signed-in role. A signed-out visitor, or a platform owner
+    // not signed in with Microsoft (whose home is this page), has no home to
+    // go to here; Sign In is their way forward.
+    const homeHref = sessionRole === 'platform_owner' ? null : getPilotRoleDestination(sessionRole);
     const wayBack = isOrganizationAdminSessionRole(sessionRole)
-      ? { href: '/admin', label: 'Go To Admin Dashboard' }
-      : workspaceHref !== '/login'
-        ? { href: workspaceHref, label: 'Go To My Workspace' }
+      ? { href: '/admin/people', label: 'Back to Gym Office' }
+      : homeHref
+        ? { href: homeHref, label: 'Go To My Workspace' }
         : null;
     return (
       <main className="room room--office room--lit-center grid min-h-screen place-items-center px-[var(--s5)]">
@@ -780,11 +780,13 @@ export default function PlatformConsole() {
           <div className="mt-[var(--s4)] space-y-[var(--s4)]">
             <label className="field">
               <span className="t-label">Account ID (how they&apos;ll sign in)</span>
+              {/* F-102 (Jason: "B: Change the guidance (Recommended)"). Wording PROPOSED. */}
+              <span className="t-muted block mb-[var(--s2)]">Their ring name or a number, not their real name.</span>
               <input
                 type="text"
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value)}
-                placeholder="Account ID (how they'll sign in)"
+                placeholder="southpaw12"
                 className="input"
               />
             </label>

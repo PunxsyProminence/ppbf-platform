@@ -4,6 +4,12 @@ import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
 import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { OrganizationProfileProvider } from "@/components/OrganizationProfileProvider";
+import {
+  getOperatingOrganizationProfile,
+  getOperatingOrganizationProfileOrNull,
+  OrganizationProfileUnavailableError,
+} from "@/src/server/pilot/organizationProfileStore";
 
 /* Golden-era pass: every face is now served from files in this repo — no
    Google Fonts fetch at build time or run time. That matches the design
@@ -33,21 +39,51 @@ const geistMono = localFont({
 /* metadataBase: without it Next resolves og:image and twitter:image against
    localhost:3000, which is what production served until now. www is the
    public homepage (Jason, 2026-10-03: "Www.punxsyprominence.org is the public
-   page that will be the home page"). */
-export const metadata: Metadata = {
-  metadataBase: new URL("https://www.punxsyprominence.org"),
-  title: {
-    default: "PPBF Platform",
-    template: "%s | PPBF Platform",
-  },
-  description: "Punxsy Prominence Boxing and Fitness ecosystem platform.",
-};
+   page that will be the home page"). The address, the short name in the title
+   and the legal name all come from the gym's stored profile (lane L31,
+   #1469); the website is a required https origin there, so `new URL` holds. */
+/* RENDERED PER REQUEST. The metadata reads the stored profile, and the image
+   build has no database to read it from, so nothing under this layout is
+   prerendered at build time. The read is cached in-process for 60 seconds
+   (organizationProfileStore.ts). */
+export const dynamic = "force-dynamic";
 
-export default function RootLayout({
+export async function generateMetadata(): Promise<Metadata> {
+  let gym;
+  try {
+    gym = await getOperatingOrganizationProfile();
+  } catch (error) {
+    // Every page sits under this layout, sign-in included. If the profile
+    // cannot be read (production, no row, no database, nothing cached), the
+    // pages that state the gym's facts refuse on their own; the rest keep
+    // working under a plain title that carries none of them. (Line comments:
+    // fontTokenScope.test.ts strips block comments with a pattern that a
+    // block comment opening a brace-delimited block would carry too far.)
+    if (error instanceof OrganizationProfileUnavailableError) {
+      return { title: { default: "Platform", template: "%s" } };
+    }
+    throw error;
+  }
+  return {
+    // Validated on save (organizationProfileWrite.ts); if a stored value still cannot be
+    // parsed, the pages go on without a metadata base rather than fail.
+    ...(URL.canParse(gym.url) ? { metadataBase: new URL(gym.url) } : {}),
+    title: {
+      default: `${gym.shortName} Platform`,
+      template: `%s | ${gym.shortName} Platform`,
+    },
+    description: `${gym.legalName} ecosystem platform.`,
+  };
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The gym's profile for every browser component under this layout (print
+  // sheets, the interest form, the wall, the names board, photo captions).
+  const gym = await getOperatingOrganizationProfileOrNull();
   return (
     /* THE FONT VARIABLES BELONG ON <html>, NOT ON <body>, AND THE DIFFERENCE
        WAS NOT COSMETIC. globals.css declares --font-stencil, --font-body,
@@ -77,8 +113,10 @@ export default function RootLayout({
               component, and the PLATES section of design-system/ppbf.css for
               the cascade half. */}
           <PlateVariantGround>
-            <GlobalRoleHeader />
-            {children}
+            <OrganizationProfileProvider profile={gym}>
+              <GlobalRoleHeader />
+              {children}
+            </OrganizationProfileProvider>
           </PlateVariantGround>
         </ThemeProvider>
       </body>

@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort, gymDayIso } from '@/src/lib/gymTime';
+import BackHome from '@/components/BackHome';
 
 const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
@@ -67,7 +68,7 @@ const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label:
 };
 
 const HOLD_SCOPE_WORDS: Record<string, string> = {
-  all_training: 'all training paused',
+  all_training: 'all training',
   contact_only: 'no contact',
   conditioning_only: 'conditioning only, recorded; the app does not act on this scope',
 };
@@ -391,7 +392,6 @@ export default function WaiverComplianceAuditPage() {
             >
               Waiver Compliance
             </h1>
-            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | pilot.waivers</p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Every athlete in the organization against every tracked waiver type -- general, medical release,
               photo &amp; media, travel -- so a missing waiver is visible without looking up athletes one at a
@@ -576,9 +576,7 @@ export default function WaiverComplianceAuditPage() {
             <Link href="/admin/athlete-consent" className="btn btn--ghost">
               Photo &amp; Media Consent Audit
             </Link>
-            <Link href="/operations" className="btn btn--ghost">
-              Back to Mission Control
-            </Link>
+            <BackHome />
           </div>
         </div>
       </main>

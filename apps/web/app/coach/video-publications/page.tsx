@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import ClusterNav from '@/components/ClusterNav';
 
 interface VideoPublication {
   publication_id: string;
@@ -287,6 +288,7 @@ export default function CoachVideoPublicationsPage() {
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Management</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Publication Workflow</h1>
+          <ClusterNav cluster="film" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Publish coaching videos to the research library. You create the publication and submit it for review, an
             organization admin records a compliance check, and a passing check clears it for you to publish.

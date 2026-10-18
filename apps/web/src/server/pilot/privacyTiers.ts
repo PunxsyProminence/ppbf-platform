@@ -490,6 +490,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunAthletes.ts#listPresentAthletes',
       'sessionRunAthletes.ts#staffPermittedAthleteIds',
       'sessionRunAthletes.ts#staffPermittedAthletes',
+      'sessionNotes.ts#isSessionRunningForAthleteToday',
     ],
     note:
       'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
@@ -626,6 +627,11 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
   'pilot.athlete_pathway_stages',
+  // A child's own period start dates: athlete-only (Jason 2026-10-18, cycle
+  // tracking "C: Now"). Prefix: covers athlete_cycle_tracking and _entries.
+  'pilot.athlete_cycle',
+  // What a child ticked after sparring (head symptoms): a safety record.
+  'pilot.sparring_symptom_reports',
 ];
 
 /**

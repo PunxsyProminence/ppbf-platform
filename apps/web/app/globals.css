@@ -332,7 +332,8 @@ input[type="password"],
 input[type="email"],
 input[type="tel"],
 input[type="search"],
-input[type="date"] {
+input[type="date"],
+input:not([type]) {
   min-height: 44px;
 }
 
@@ -352,7 +353,11 @@ input[type="date"] {
    Scoped to /athlete rather than applied globally: 55px everywhere would push
    dense admin tables around for no gain, and the people using those are at a
    desk. /activate is the other gym-floor surface and opts in per control with
-   .btn--kiosk today. */
+   .btn--kiosk today. The coach and SHADOW floor pages carry the same marker
+   through components/KioskSurface.tsx in their route layouts (UXB-08).
+
+   input:not([type]) is listed because an input with no type attribute is a
+   text box, but matches none of the input[type=...] selectors (UXB-08). */
 [data-surface="kiosk"] button,
 [data-surface="kiosk"] [role="button"],
 [data-surface="kiosk"] select,
@@ -361,9 +366,11 @@ input[type="date"] {
 [data-surface="kiosk"] input[type="text"],
 [data-surface="kiosk"] input[type="number"],
 [data-surface="kiosk"] input[type="password"],
+[data-surface="kiosk"] input[type="email"],
 [data-surface="kiosk"] input[type="tel"],
 [data-surface="kiosk"] input[type="search"],
-[data-surface="kiosk"] input[type="date"] {
+[data-surface="kiosk"] input[type="date"],
+[data-surface="kiosk"] input:not([type]) {
   min-height: var(--tap);
 }
 }
@@ -2012,6 +2019,77 @@ h6 {
   }
 }
 
+/* ===================================================== THE COACH'S CONSOLE ===
+   The live-session console on /coach/session-scripts in look B (lane L39
+   PR 3). Its sizes come from the kiosk surface it sits on; what is set here is
+   the top row's layout, the tiles' caps, and the controls as brass plates. No
+   rule here sets a font size on a kiosk voice (.t-label, .t-data, .badge ...):
+   kioskTypeFloor.test.ts owns those. */
+.coach-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+.coach-tiles__group {
+  min-width: 0;
+}
+.coach-tiles__cap {
+  display: flex;
+  margin: 0 0 var(--s3);
+  padding: var(--s2) var(--s4);
+  font-family: var(--font-ui);
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+/* A badge's word may wrap inside a narrow tile instead of spilling into the next. */
+.coach-tiles .badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.coach-tiles__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coach-tiles__note {
+  margin: 0;
+  font-size: var(--t-md);
+  color: var(--bone-300);
+}
+/* The controls as brass plates: the same buttons, the same handlers. Ink on
+   brass-300 to brass-400 reads 6:1 or better across the plate; the press and
+   hover feedback the plain button had stays. */
+.coach-live .coach-live-controls .btn,
+.coach-live .coach-live-timer .btn:not(.btn--ghost) {
+  border: 1px solid var(--brass-700);
+  background-image: linear-gradient(180deg, var(--brass-300), var(--brass-400));
+  color: var(--enamel-ink);
+  text-shadow: 0 1px 0 rgb(var(--brass-200-rgb) / .45);
+  box-shadow: var(--shadow-contact), inset 0 1px 0 rgb(var(--brass-200-rgb) / .5);
+}
+.coach-live .coach-live-controls .btn:hover:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.coach-live .coach-live-controls .btn:active:not(:disabled),
+.coach-live .coach-live-timer .btn:not(.btn--ghost):active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35);
+}
+.coach-live .coach-live-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-lg);
+}
+
 /* ============================================================== THE WALL ===
    Scoped entirely to [data-surface="wall"], the marker app/wall/layout.tsx
    puts on its subtree. Nothing here can reach another page: no other element
@@ -2043,9 +2121,10 @@ h6 {
         for more than a moment. It is far below the threshold at which a person
         notices anything moved.
      2. The marquee travels continuously, which covers the brightest band.
-     3. No large flat field of maximum luminance anywhere: the ground is the
-        brick room, the type is bone rather than white, and the panels have no
-        filled backgrounds at all.
+     3. No large flat field of maximum luminance anywhere: the type is bone
+        rather than white, the boards' fields are dark steel over the room,
+        and the only light fill is the small cream enamel caps (the wall-board
+        kit, design-system/current/ppbf-golden-era.css section 011).
    All of it stands down under prefers-reduced-motion, which also covers the
    accessibility case where the drift itself would be the problem. */
 
@@ -2072,6 +2151,18 @@ h6 {
 [data-surface="wall"] .wall-board {
   color: var(--wall-ink);
   animation: wall-drift 1200s linear infinite;
+  /* Restated on the board, which carries the wall-board kit's scope
+     (.ge-wallboard): set only on the surface above, the rule would resolve the
+     ramp there, before the scope moves it, and paint the old gold beside the
+     kit's bronze. */
+  --wall-rule: rgb(var(--brass-400-rgb) / .30);
+}
+
+/* The pair box and the sound switch are worked with a remote. The app's ring
+   (brass-700) is chosen for light grounds; on this dark board it falls under
+   3:1, so the wall takes a lighter rung. */
+[data-surface="wall"] .wall-board :focus-visible {
+  outline-color: var(--brass-300);
 }
 
 @keyframes wall-drift {
@@ -2084,8 +2175,36 @@ h6 {
 
 /* --- Masthead ------------------------------------------------------------ */
 
+/* The header plate: Jason's two lines on the engraved plate (.ge-plate). One
+   line, centred, at a screen-title rung so the back of the room can read it. */
+[data-surface="wall"] .wall-motto {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: var(--s5);
+  margin: 0;
+  padding: var(--s2) var(--s7);
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-motto-mark {
+  font-size: var(--t-lg);
+  color: var(--brass-400);
+}
+
+/* One line, whatever the gym's name: a long one ends in an ellipsis rather
+   than pushing the clock onto two lines. */
 [data-surface="wall"] .wall-eyebrow {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
   letter-spacing: .34em;
@@ -2112,7 +2231,9 @@ h6 {
 }
 
 [data-surface="wall"] .wall-clock {
+  flex: none;
   margin: 0;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 400;
   line-height: .9;
@@ -2125,30 +2246,95 @@ h6 {
   text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
+/* The round clock hangs in a bezel: brass ring, dark face. */
+[data-surface="wall"] .wall-round {
+  flex: none;
+  padding: var(--s2) var(--s6);
+  border: 3px solid var(--brass-600);
+  border-radius: 10px;
+  background-color: rgb(var(--frame-field-rgb) / .88);
+  box-shadow:
+    var(--shadow-contact),
+    inset 0 0 0 1px rgba(0, 0, 0, .6),
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .22);
+}
+
+/* Set leading, so the bezel is no taller than the day and date beside it and
+   the boards below keep their rows. */
+[data-surface="wall"] .wall-round__label,
+[data-surface="wall"] .wall-round__time {
+  margin: 0;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
 /* --- Panels -------------------------------------------------------------- */
+
+/* Each panel is a board hung on the wall (.ge-frame); this is its inside. */
+[data-surface="wall"] .wall-panel {
+  padding: var(--s3) var(--s5);
+}
 
 [data-surface="wall"] .wall-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s4);
   margin: 0 0 var(--s4);
-  padding-bottom: var(--s3);
-  border-bottom: 3px solid var(--wall-rule);
-  font-family: var(--font-mono, var(--font-data));
+}
+
+/* The board's name on a cream enamel sign band (.ge-enamel--sign) across the
+   top of the board, edge to edge inside the frame. */
+[data-surface="wall"] .wall-heading.ge-enamel {
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s5)) var(--s4);
+  padding: var(--s3) var(--s5);
+  border-radius: 0;
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-heading-cap {
+  font-size: var(--t-2xl);
+}
+
+[data-surface="wall"] .wall-heading.ge-enamel .wall-count {
+  font-size: var(--t-2xl);
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
+[data-surface="wall"] .wall-heading-cap {
+  font-family: var(--font-ui);
   font-size: var(--t-xl);
-  font-weight: 600;
-  letter-spacing: .26em;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--brass-300);
+}
+
+/* The wall clock on its enamel plate: ink figures on cream. */
+[data-surface="wall"] .wall-clock.ge-enamel {
+  padding: var(--s2) var(--s5) var(--s1);
+  border-radius: 6px;
+  color: var(--enamel-ink);
+  text-shadow: none;
+}
+
+/* Inside the screen frame: the marquee runs between the side rails, and the
+   last row sits clear of the bottom rail. */
+[data-surface="wall"] .ge-screenframe > .marquee {
+  margin-inline: 22px;
+}
+[data-surface="wall"] .ge-screenframe > :last-child {
+  margin-bottom: 14px;
 }
 
 [data-surface="wall"] .wall-count {
   margin-left: auto;
   font-family: var(--font-display);
-  font-size: var(--t-2xl);
+  font-size: var(--t-3xl);
+  line-height: 1;
   letter-spacing: 0;
-  color: var(--bone-200);
+  color: var(--brass-200);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
 }
 
 [data-surface="wall"] .wall-quiet {
@@ -2246,6 +2432,7 @@ h6 {
   grid-area: meta;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
+  line-height: 1.2;
   letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--bone-400);

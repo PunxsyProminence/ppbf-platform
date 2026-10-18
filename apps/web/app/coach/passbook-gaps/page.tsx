@@ -7,7 +7,8 @@ import RefusalStamp from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateShort } from '@/src/lib/gymTime';
-import OperationsLink from '@/components/OperationsLink';
+import BackHome from '@/components/BackHome';
+import ClusterNav from '@/components/ClusterNav';
 
 // PASSBOOK GAPS -- the first page over `/api/pilot/passbook/gaps`.
 //
@@ -144,6 +145,7 @@ export default function CoachPassbookGapsPage() {
           <header className="mb-[var(--s5)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Passbook Gaps</h1>
+            <ClusterNav cluster="who-needs-me" />
             <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
               Every open gap in your athletes&rsquo; books, worst attendance first. Each row carries the
               day that athlete was last in the gym and how many recorded absent days have gone by since.
@@ -246,9 +248,7 @@ export default function CoachPassbookGapsPage() {
           )}
 
           <div className="mt-[var(--s5)]">
-            <OperationsLink className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]">
-              Back to Operations
-            </OperationsLink>
+            <BackHome className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]" />
           </div>
         </div>
       </main>

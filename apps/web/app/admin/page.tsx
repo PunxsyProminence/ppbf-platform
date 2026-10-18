@@ -240,7 +240,7 @@ const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; grou
   },
   {
     capabilityId: 'OPS-001',
-    name: 'Mission Control Operations Hub',
+    name: 'Operations',
     group: 'Program Operations',
     status: 'ACTIVE',
     owner: 'Operations',
@@ -1450,9 +1450,9 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   This is a desk, and .t-eyebrow is the label voice every other
                   office surface uses -- /admin/customize included. */}
               <p className="t-eyebrow">PPBF ADMIN DESK</p>
-              <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">The Capability Room</h1>
+              <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">Capabilities</h1>
               <p className="mt-2 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--bone-300)]">
-                Decide what this gym can do, who gets to do it, and what is still on the bench.
+                A record of what this gym can do, who gets to do it, and what is still on the bench.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -1471,6 +1471,12 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   className="btn"
                 >
                   PEOPLE
+                </Link>
+              )}
+              {/* Lane L31 P5: what is left before the gym's first class. */}
+              {canManagePeople && (
+                <Link href="/admin/setup" className="btn btn--ghost">
+                  GYM SETUP
                 </Link>
               )}
               {/*
@@ -1584,16 +1590,15 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
               >
-                MISSION CONTROL
+                OPERATIONS
               </Link>
               {/*
-                The "(PLANNED)" that used to be baked into this label is real
-                signalling and it stays -- automated monitoring behind this
-                surface is not built. What changes is how it speaks: a
-                parenthetical in a button label is a Jira ticket, and Law 7
-                says governance speaks in ink. The claim moves onto the design
-                system's stamp, the same treatment CoachWorkspace uses for
-                every surface that is drawn but not yet wired.
+                No "Planned" stamp (lane U2, audit UX-A A-2; Overwatch
+                2026-10-17): the Compliance Center reads and records
+                violations today, so the button opens a working page. What is
+                not built is the automated monitoring behind it, and the
+                "Planned -- Not Yet Implemented" note further down this page
+                still says so.
               */}
               {canOpenComplianceCenter && (
                 <Link
@@ -1601,7 +1606,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   className="btn btn--ghost"
                 >
                   COMPLIANCE CENTER
-                  <span className="stamp stamp--brass stamp--flat">Planned</span>
                 </Link>
               )}
               <button
@@ -1784,7 +1788,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   backend. The buttons below take you to each surface exactly as it stands today.
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <Link href="/public" className="btn btn--ghost">
+                  <Link href="/" className="btn btn--ghost">
                     Edit Public Page Surface
                   </Link>
                   <Link href="/login" className="btn btn--ghost">
@@ -1805,8 +1809,17 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>The Switchboard</h2>
+                    {/* RECORD ONLY (lane L31, Overwatch Q2 A: "label the switchboard
+                        'record only'. Nothing on a screen may claim to do what
+                        it doesn't"). These switches save to
+                        admin_capability_registry and admin_gym_capability_access,
+                        and no feature reads either: switching one off turns
+                        nothing off. */}
+                    <p className="t-eyebrow mt-[var(--s2)]">Record Only</p>
                     <p className="t-body mt-[var(--s3)]">
-                      Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
+                      Mark which capabilities are live, and which ones gym admins may mark, so the record shows
+                      it. These switches are a record only: no feature reads them, and switching one off does not
+                      turn that feature off.
                     </p>
                   </div>
                 </div>
@@ -1861,9 +1874,9 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   </div>
 
                   <div className="space-y-3">
-                    <p className="t-eyebrow">What Gym Admins Can Flip</p>
+                    <p className="t-eyebrow">What The Record Says Gym Admins May Mark</p>
                     <p className="text-[length:var(--t-sm)] leading-6 text-[var(--bone-400)]">
-                      Grant a gym admin the same capability access, then let them flip it on or off inside their organization.
+                      Record whether a gym admin may mark the same capability inside their organization.
                     </p>
                     {switchboardCapabilities.length === 0 && (
                       <div className="empty border border-[var(--hide-700)] bg-[var(--hide-900)]">
@@ -1871,8 +1884,8 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                         <div className="empty-title">Nothing to hand over yet</div>
                         <p className="empty-msg mx-auto">
                           {switchboardEmptiedByArchive
-                            ? 'There is no live capability to grant. Bring one back from Archived and it becomes grantable again.'
-                            : 'Once this gym has a capability on file, you decide here whether its admins get to flip it themselves.'}
+                            ? 'There is no live capability to record. Bring one back from Archived and it can be marked again.'
+                            : 'Once this gym has a capability on file, you can record here whether its admins may mark it.'}
                         </p>
                       </div>
                     )}
@@ -1891,7 +1904,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                                 ? gymCapabilityStoreError
                                   ? 'Gym admin access could not be read.'
                                   : 'Reading gym admin access...'
-                                : `Gym admins can ${allowed ? 'toggle this capability' : 'not yet toggle this capability'}.`}
+                                : `Recorded as ${allowed ? 'one gym admins may mark' : 'not marked for gym admins'}.`}
                             </p>
                           </div>
                           <button
@@ -1904,7 +1917,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                                 : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
-                            {accessUnread ? 'Unknown' : allowed ? 'Enabled' : 'Disabled'}
+                            {accessUnread ? 'Unknown' : allowed ? 'Marked' : 'Not Marked'}
                           </button>
                         </div>
                       );
@@ -3021,7 +3034,7 @@ function CapabilityRoomWrongRoleNotice() {
     <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
         <p className="t-eyebrow">Different Console</p>
-        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>The Capability Room is set per gym</h1>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Capabilities are set per gym</h1>
         <p className="t-body">
           This room holds one organization&apos;s capabilities and what its admins may switch. As platform owner you
           create organizations and appoint their admins, and they set it from there.

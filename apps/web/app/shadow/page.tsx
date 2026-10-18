@@ -31,7 +31,8 @@ import {
   ShadowSessionsRequestError,
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
-import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymClock24, formatGymDateShort } from '@/src/lib/gymTime';
+import { roleWords } from '@/src/shared/roleWords';
 import { researchQuestionKey } from '@/src/shared/researchQuestionKey';
 import {
   SHADOW_MESSAGE_TOO_LONG_RESPONSE,
@@ -370,6 +371,28 @@ function buildHeading(mode: ShadowChatMode, subject: string) {
 
 // Scout / Architect / Omega -- the three labels this room is allowed to show.
 // No definite article, and never "Master".
+/* A saved session's type in words, never its stored code (UXB-21). These are
+   the room's own names for its session kinds. PROPOSED. */
+const SESSION_TYPE_WORDS: Readonly<Record<string, string>> = {
+  quick_round: 'Quick Round',
+  heavy_bag: 'Heavy Bag',
+  film_study: 'Film Study',
+  scout_report: 'Scout Report',
+  board_summary: 'Board Summary',
+  recovery_round: 'Recovery Round',
+};
+
+function sessionTypeWords(sessionType: string): string {
+  return SESSION_TYPE_WORDS[sessionType] ?? 'Session';
+}
+
+/* A response that is not a plain answer, in words (UXB-21). PROPOSED. */
+function responseStateWords(state: string): string {
+  if (state === 'filtered') return 'Not answered';
+  if (state === 'queued') return 'Waiting for an answer';
+  return 'SHADOW could not answer';
+}
+
 function getModeHeadingLabel(mode: ShadowChatMode): string {
   if (mode === 'omega') return 'Omega';
   return mode === 'master' ? 'Architect' : 'Scout';
@@ -400,7 +423,9 @@ function ShadowChatPageContent() {
   const entryParams = useSearchParams();
   const context = sanitizeEntryParam(entryParams.get('context'));
   const subject = sanitizeEntryParam(entryParams.get('subject'));
-  const roleLabel = (userRole || 'guest').toUpperCase();
+  // Plain words, never the raw role (F-122: "ROLE: PLATFORM_OWNER"). The
+  // welcome line keeps its capitals; isFamilyFacingRole lowercases what it gets.
+  const roleLabel = (roleWords(userRole) || 'Guest').toUpperCase();
   const built = buildHeading(mode, subject);
   const familyFacing = mode === 'scoped' && isFamilyFacingRole(userRole);
   const { heading, scopeSummary } = built;
@@ -545,7 +570,7 @@ function ShadowChatPageContent() {
             setMessages([{
               id: '0',
               type: 'shadow',
-              text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), context, subject),
+              text: buildWelcomeMessage('scoped', (roleWords(userRole) || 'Guest').toUpperCase(), context, subject),
               timestamp: formatTimestamp(),
             }]);
             setCapabilitiesLoaded(true);
@@ -575,7 +600,7 @@ function ShadowChatPageContent() {
           setMessages([{
             id: '0',
             type: 'shadow',
-            text: buildWelcomeMessage(serverMode, (userRole || 'guest').toUpperCase(), context, subject),
+            text: buildWelcomeMessage(serverMode, (roleWords(userRole) || 'Guest').toUpperCase(), context, subject),
             timestamp: formatTimestamp(),
           }]);
           setCapabilitiesLoaded(true);
@@ -588,7 +613,7 @@ function ShadowChatPageContent() {
           setMessages([{
             id: '0',
             type: 'shadow',
-            text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), '', ''),
+            text: buildWelcomeMessage('scoped', (roleWords(userRole) || 'Guest').toUpperCase(), '', ''),
             timestamp: formatTimestamp(),
           }]);
           setCapabilitiesLoaded(true);
@@ -850,7 +875,7 @@ function ShadowChatPageContent() {
           tier: mapped.type === 'shadow' ? restoredTier : undefined,
           // evidenceTier and handoff come from the stored row, so a reopened
           // conversation shows the grade the answer was given and keeps its
-          // "Human Handoff Required" banner.
+          // "Talk to someone about this" banner.
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
           citations: mapped.type === 'shadow' ? mapped.citations : undefined,
@@ -1369,7 +1394,7 @@ function ShadowChatPageContent() {
         setConversationAthleteId(undefined);
         addMessage(
           'shadow',
-          'This conversation no longer exists on the server, so it cannot be continued. Your next message starts a new conversation.',
+          'This chat no longer exists, so it cannot be continued. Your next message starts a new chat.',
           { state: 'filtered', evidenceTier: NO_SERVER_EVIDENCE_TIER },
         );
         return;
@@ -1384,7 +1409,7 @@ function ShadowChatPageContent() {
 
     addMessage(
       'shadow',
-      'SHADOW could not reach the secure chat service. No generated or fallback guidance was displayed.',
+      'SHADOW could not be reached. No answer was shown.',
       { state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER },
     );
   }
@@ -1425,7 +1450,7 @@ function ShadowChatPageContent() {
             <p className="t-eyebrow">SHADOW</p>
             <RefusalStamp
               kind="wrong_door"
-              detail={`your signed-in role (${userRole || 'unknown'}) cannot use SHADOW chat`}
+              detail="this account cannot use SHADOW chat"
               className="mt-[var(--s3)]"
             />
             <p className="t-muted mt-[var(--s4)] max-w-md">
@@ -1460,8 +1485,7 @@ function ShadowChatPageContent() {
       <main className="room room--night min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-300)]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center border border-[color:var(--brass-900)] rounded-none px-6">
           <div className="text-center">
-            <p className="t-eyebrow">Secure Session</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-lg)' }}>Opening SHADOW</h1>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Opening SHADOW</h1>
           </div>
         </div>
       </main>
@@ -1473,7 +1497,9 @@ function ShadowChatPageContent() {
       <header className="border-b border-[color:var(--brass-900)]">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
-            <p className="t-eyebrow">{getModeHeadingLabel(mode)}</p>
+            {/* A family member sees no mode name, role code or LIVE marker:
+                none of them is something an athlete or parent acts on (UXB-21). */}
+            {familyFacing ? null : <p className="t-eyebrow">{getModeHeadingLabel(mode)}</p>}
             <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>{heading}</h1>
             <p className="t-muted mt-[var(--s2)]">{intro}</p>
           </div>
@@ -1484,13 +1510,15 @@ function ShadowChatPageContent() {
               costs an in-progress conversation. The refusal screen below keeps
               its own Logout: the global bar suppresses itself there, so that
               one is the only way out. */}
-          <div className="flex flex-wrap items-center gap-[var(--s4)] text-right">
-            <div>
-              <p className="t-label">Role: {roleLabel}</p>
-              {context && !familyFacing ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
-              <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
+          {familyFacing ? null : (
+            <div className="flex flex-wrap items-center gap-[var(--s4)] text-right">
+              <div>
+                <p className="t-label">Role: {roleLabel}</p>
+                {context ? <p className="t-label mt-[var(--s1)]">Context: {context}</p> : null}
+                <p className="t-data mt-[var(--s2)] uppercase tracking-[0.12em] text-[color:var(--bone-300)]">LIVE</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </header>
 
@@ -1532,7 +1560,9 @@ function ShadowChatPageContent() {
             <div>
               <p className="t-eyebrow">Saved sessions</p>
               <p className="t-muted mt-[var(--s2)]">
-                Your server-stored conversation history. Chat content is not stored in this browser.
+                {familyFacing
+                  ? 'Your past chats.'
+                  : 'Your server-stored conversation history. Chat content is not stored in this browser.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-[var(--s2)]">
@@ -1604,7 +1634,7 @@ function ShadowChatPageContent() {
                         This asks a gym admin to clear every SHADOW conversation on this account.
                         It is a request, not a deletion — nothing goes until an admin works it.
                         Your account, your sessions and your training records are not affected. To
-                        remove one chat now, use Delete beside it above.
+                        remove one chat now, use Delete beside it in the list below.
                       </p>
                       <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
                         <button
@@ -1718,7 +1748,7 @@ function ShadowChatPageContent() {
                             {restoring ? 'Restoring…' : session.title}
                           </span>
                           <span className="t-label mt-[var(--s1)] block">
-                            {session.sessionType.replaceAll('_', ' ')} · {formatGymDateNumeric(session.updatedAt)}
+                            {sessionTypeWords(session.sessionType)} · {formatGymDateShort(session.updatedAt)}
                           </span>
                         </button>
                         <div className="flex flex-wrap items-center gap-[var(--s3)] border-t border-[color:var(--brass-900)] p-[var(--s3)]">
@@ -1902,7 +1932,7 @@ function ShadowChatPageContent() {
                     <p className="mt-[var(--s3)]">
                       <span className={`badge ${msg.state === 'queued' ? 'badge--filed' : 'badge--restricted'}`}>
                         <i aria-hidden="true">{msg.state === 'queued' ? '◌' : '▲'}</i>
-                        {msg.state === 'filtered' ? 'Withheld' : msg.state}
+                        {responseStateWords(msg.state)}
                       </span>
                     </p>
                   ) : null}
@@ -1910,7 +1940,7 @@ function ShadowChatPageContent() {
                     <div className="mt-[var(--s3)]">
                       <span className="badge badge--restricted">
                         <i aria-hidden="true">▲</i>
-                        Human Handoff Required
+                        Talk to someone about this
                       </span>
                       <p className="mt-[var(--s2)] max-w-[66ch] text-[16px] leading-[1.6] text-[color:var(--bone-300)]">
                         {msg.handoff}
@@ -1943,7 +1973,9 @@ function ShadowChatPageContent() {
                       between the answer and the controls at full contrast.
                       Behind one disclosure, in the order someone debugging
                       would want them. */}
-                  {msg.type === 'shadow' && (msg.tier || msg.modelUsed) ? (
+                  {/* Staff only: the model and tier are for whoever debugs an
+                      answer, not for an athlete or parent (UXB-21). */}
+                  {msg.type === 'shadow' && !familyFacing && (msg.tier || msg.modelUsed) ? (
                     <ShadowDisclosure label="Details" className="mt-[var(--s3)] border-t border-[color:var(--brass-900)]">
                       <ul className="space-y-[var(--s1)]">
                         {msg.tier ? (

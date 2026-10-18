@@ -380,10 +380,10 @@ describe('lane N4-02: the refusal sends each visitor to their own home (#1430 le
     return [...container.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
   }
 
-  test('an organization admin is offered the admin dashboard', () => {
+  test('an organization admin is offered the Gym Office, their home (lane U2)', () => {
     expect(refusalHrefs({ role: 'organization_admin', authProvider: 'microsoft' })).toEqual([
       ['Sign In With Microsoft', '/login'],
-      ['Go To Admin Dashboard', '/admin'],
+      ['Back to Gym Office', '/admin/people'],
     ]);
   });
 
@@ -455,7 +455,7 @@ describe('F-084: no desk write without the gym named at the press', () => {
       button: 'Prepare The Account',
       route: '/api/pilot/platform/athlete-shell',
       fill: () => {
-        fireEvent.change(screen.getByPlaceholderText("Account ID (how they'll sign in)"), { target: { value: 'kid-1' } });
+        fireEvent.change(screen.getByPlaceholderText('southpaw12'), { target: { value: 'kid-1' } });
         fireEvent.change(screen.getByPlaceholderText('Existing athlete roster ID'), { target: { value: 'roster-1' } });
       },
       armed: /^Press again: prepare kid-1 in Punxsy Prominence$/,
@@ -645,5 +645,17 @@ describe('F-084: no desk write without the gym named at the press', () => {
 
     expect(screen.queryByRole('button', { name: 'Open This Gym' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Open Second Street Boxing' })).toBeInTheDocument();
+  });
+});
+
+// F-102, Jason: "B: Change the guidance (Recommended)". An athlete's sign-in ID
+// outlives their record, so the athlete shell steers away from a real name.
+describe('the athlete sign-in ID guidance', () => {
+  test('asks for a ring name or a number, not the athlete\'s real name', async () => {
+    mountDesk();
+    await chooseGym();
+
+    expect(screen.getByText('Their ring name or a number, not their real name.')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('southpaw12')).toBeInTheDocument();
   });
 });

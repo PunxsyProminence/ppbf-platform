@@ -67,6 +67,8 @@ type Handler = (init?: RequestInit) => Promise<Response>;
 function installFetch(options: { messages?: Handler; messagesPost?: Handler; roster?: Handler } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
+    // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
+    if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/athletes/list')) {
       if (options.roster) return options.roster(init);
       return jsonResponse({
@@ -133,6 +135,10 @@ function textsIn(element: HTMLElement | null): string[] {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // The hub opens on the child remembered last (src/lib/chosenChild.ts); one
+  // test's pick must not choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('the week, and what carries forward', () => {

@@ -11,6 +11,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDay, formatGymStamp } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
+import BackHome from '@/components/BackHome';
 
 // A rabbit hole renders as a paper note pinned to the leather panel, so it
 // takes the design system's paper material (which carries its own dark ink)
@@ -169,7 +170,7 @@ function HoldStatusNotice({ hold }: { hold: ActiveHoldSummary | 'unreadable' }) 
     >
       <p className="t-eyebrow">Active Training Hold</p>
       <p className="t-body mt-[var(--s2)] font-semibold">
-        {HOLD_SCOPE_LABEL[hold.scope]} is currently paused for this athlete ({hold.reason_category}).
+        Training Hold on {HOLD_SCOPE_LABEL[hold.scope]} for this athlete ({hold.reason_category}).
       </p>
       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{hold.athlete_explanation}</p>
       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
@@ -1519,9 +1520,7 @@ export default function CoachProgressionIntelligencePage() {
         )}
 
         <div className="flex flex-wrap gap-[var(--s3)]">
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost">
-            Back to Coach Workspace
-          </Link>
+          <BackHome />
           <Link href="/rabbit-holes" className="btn btn--ghost">
             Write a Rabbit Hole
           </Link>

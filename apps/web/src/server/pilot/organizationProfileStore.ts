@@ -1,0 +1,269 @@
+/**
+ * THE GYM'S PROFILE, READ FROM ITS ONE STORE (lane L31, issue #1469).
+ *
+ * pilot.organization_profiles holds the display names, contact details,
+ * addresses and head coach; pilot.organizations.organization_name holds the
+ * incorporated name, the gym's name of record. Every screen that names the
+ * gym reads them through here, so a change the organization admin saves is
+ * what every page shows.
+ *
+ * WHICH GYM. The public surfaces (homepage, privacy page, site metadata,
+ * robots, sitemap) have no signed-in person to resolve a gym from. They name
+ * the operating organization, punxsy_prominence (OD-2026-09-28-007), and it
+ * is named here once (Overwatch GO 2026-10-16, Q5: "named explicitly in one
+ * place, not getPilotDefaultOrganizationId()").
+ *
+ * WHEN THERE IS NO ROW.
+ * - Production (NODE_ENV=production): the read fails with
+ *   OrganizationProfileUnavailableError. There is no code copy of the gym's
+ *   facts to fall back to; a second copy is what this store replaces.
+ * - Anywhere else (local dev, the e2e dev server with no database, the
+ *   offline runtime whose only gym is ppbf-offline-demo, jest): the labelled
+ *   DEVELOPMENT_PROFILE below, an example gym at example.org. It is not the
+ *   gym's facts, so it cannot drift from them, and production never reaches it.
+ *
+ * CACHE. The last row read is fresh for 60 seconds. After that it is still
+ * served at once while one background read refreshes it, so a slow or hung
+ * database never holds a page render; it is kept if that read fails. Every
+ * read gives up after READ_TIMEOUT_MS (db.ts sets no connect timeout, so a
+ * black-holed database would otherwise wait forever), and concurrent callers
+ * share one read in flight until the query itself settles, not just until the
+ * caller stopped waiting. A failed or empty read is remembered for
+ * FAILURE_HOLD_MS, so with no row or no database every page answers at once
+ * instead of each starting a query that waits out the timeout. It is the same
+ * source, held briefly, not a second.
+ */
+
+import { queryOne } from '@/src/server/pilot/db';
+import type { OrganizationProfile } from '@/src/shared/organizationProfile';
+
+export const OPERATING_ORGANIZATION_ID = 'punxsy_prominence';
+
+const CACHE_MS = 60_000;
+const READ_TIMEOUT_MS = 2_500;
+const FAILURE_HOLD_MS = 20_000;
+
+export class OrganizationProfileUnavailableError extends Error {
+  constructor(organizationId: string, cause?: unknown) {
+    super(`ORGANIZATION_PROFILE_UNAVAILABLE: no profile could be read for organization ${organizationId}`);
+    this.name = 'OrganizationProfileUnavailableError';
+    if (cause !== undefined) (this as { cause?: unknown }).cause = cause;
+  }
+}
+
+/** Outside production only, when there is no row or no database. Not the gym's facts. */
+export const DEVELOPMENT_PROFILE: OrganizationProfile = Object.freeze({
+  brand: 'Example Gym & Fitness (development profile)',
+  legalName: 'Example Gym and Fitness',
+  shortName: 'EXGYM',
+  commonName: 'Example Gym',
+  ein: '00-0000000',
+  url: 'https://www.example.org',
+  domain: 'example.org',
+  email: 'office@example.org',
+  donationsEmail: 'donate@example.org',
+  grantsEmail: 'grants@example.org',
+  established: '2000',
+  town: 'Exampletown',
+  serviceArea: 'Exampletown and the surrounding area',
+  serviceAreaShort: 'Exampletown and the surrounding area',
+  physical: { street: '1 Example St', city: 'Exampletown', region: 'PA', postalCode: '00000' },
+  mailing: 'PO Box 1, Exampletown, PA 00000',
+  headCoachName: 'Example Coach',
+}) as OrganizationProfile;
+
+interface ProfileRow {
+  organization_name: string;
+  brand: string;
+  short_name: string;
+  common_name: string;
+  website_url: string;
+  domain: string;
+  ein: string;
+  contact_email: string;
+  donations_email: string;
+  grants_email: string;
+  established: string;
+  town: string;
+  service_area: string;
+  service_area_short: string;
+  physical_street: string;
+  physical_city: string;
+  physical_region: string;
+  physical_postal_code: string;
+  mailing_address: string;
+  head_coach_name: string;
+}
+
+function toProfile(row: ProfileRow): OrganizationProfile {
+  return {
+    brand: row.brand,
+    legalName: row.organization_name,
+    shortName: row.short_name,
+    commonName: row.common_name,
+    ein: row.ein,
+    url: row.website_url,
+    domain: row.domain,
+    email: row.contact_email,
+    donationsEmail: row.donations_email,
+    grantsEmail: row.grants_email,
+    established: row.established,
+    town: row.town,
+    serviceArea: row.service_area,
+    serviceAreaShort: row.service_area_short,
+    physical: {
+      street: row.physical_street,
+      city: row.physical_city,
+      region: row.physical_region,
+      postalCode: row.physical_postal_code,
+    },
+    mailing: row.mailing_address,
+    headCoachName: row.head_coach_name,
+  };
+}
+
+const cache = new Map<string, { profile: OrganizationProfile; readAt: number }>();
+const inFlight = new Map<string, Promise<OrganizationProfile | null>>();
+const failedAt = new Map<string, number>();
+// Bumped by forgetOrganizationProfile: a read begun before a save lands as stale and is dropped.
+const generation = new Map<string, number>();
+
+/** Test seam: forget every cached row, every read in flight and every remembered failure. */
+export function clearOrganizationProfileCache(): void {
+  cache.clear();
+  inFlight.clear();
+  failedAt.clear();
+}
+
+/** After a save (organizationProfileWrite.ts): the next read of this gym goes to the database. */
+export function forgetOrganizationProfile(organizationId: string): void {
+  generation.set(organizationId, (generation.get(organizationId) ?? 0) + 1);
+  cache.delete(organizationId);
+  inFlight.delete(organizationId);
+  failedAt.delete(organizationId);
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ORGANIZATION_PROFILE_READ_TIMEOUT after ${ms} ms`)), ms);
+    (timer as { unref?: () => void }).unref?.();
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * One query per organization at a time, held until it settles; each caller
+ * waits for it at most timeoutMs. A found row is cached when it lands; a
+ * failed or empty one is remembered.
+ */
+function sharedRead(organizationId: string, now: () => number, timeoutMs: number): Promise<OrganizationProfile | null> {
+  let pending = inFlight.get(organizationId);
+  if (!pending) {
+    const startedIn = generation.get(organizationId) ?? 0;
+    const current = () => (generation.get(organizationId) ?? 0) === startedIn;
+    pending = readRow(organizationId)
+      .then(
+        (profile) => {
+          if (!current()) return profile;
+          if (profile) {
+            cache.set(organizationId, { profile, readAt: now() });
+            failedAt.delete(organizationId);
+          } else {
+            failedAt.set(organizationId, now());
+          }
+          return profile;
+        },
+        (error: unknown) => {
+          if (current()) failedAt.set(organizationId, now());
+          throw error;
+        },
+      )
+      .finally(() => {
+        if (current()) inFlight.delete(organizationId);
+      });
+    inFlight.set(organizationId, pending);
+  }
+  return withTimeout(pending, timeoutMs);
+}
+
+async function readRow(organizationId: string): Promise<OrganizationProfile | null> {
+  const row = await queryOne<ProfileRow>(
+    `select o.organization_name,
+            p.brand, p.short_name, p.common_name, p.website_url, p.domain, p.ein,
+            p.contact_email, p.donations_email, p.grants_email, p.established, p.town,
+            p.service_area, p.service_area_short,
+            p.physical_street, p.physical_city, p.physical_region, p.physical_postal_code,
+            p.mailing_address, p.head_coach_name
+       from pilot.organization_profiles p
+       join pilot.organizations o on o.organization_id = p.organization_id
+      where p.organization_id = $1`,
+    [organizationId],
+  );
+  return row ? toProfile(row) : null;
+}
+
+export async function getOrganizationProfile(
+  organizationId: string,
+  options: { now?: () => number; production?: boolean; timeoutMs?: number; databaseConfigured?: boolean } = {},
+): Promise<OrganizationProfile> {
+  const now = options.now ?? Date.now;
+  const production = options.production ?? process.env.NODE_ENV === 'production';
+  // Outside production with no database configured at all (the e2e dev server, a fresh
+  // checkout), go straight to the development profile. Asking the database layer would log
+  // a missing-environment error on every render, which the dev server replays in the
+  // browser as an error.
+  const databaseConfigured = options.databaseConfigured ?? Boolean(process.env.AZURE_POSTGRES_CONNECTION_STRING?.trim());
+  if (!production && !databaseConfigured) return DEVELOPMENT_PROFILE;
+  const timeoutMs = options.timeoutMs ?? READ_TIMEOUT_MS;
+  const cached = cache.get(organizationId);
+  if (cached) {
+    if (now() - cached.readAt >= CACHE_MS) {
+      // Stale: served now, refreshed behind it. A failed or empty refresh keeps the last good row.
+      sharedRead(organizationId, now, timeoutMs).catch(() => undefined);
+    }
+    return cached.profile;
+  }
+
+  // A read that just failed, or found no row, is not tried again for a while.
+  const failed = failedAt.get(organizationId);
+  if (failed !== undefined && now() - failed < FAILURE_HOLD_MS && !inFlight.has(organizationId)) {
+    if (!production) return DEVELOPMENT_PROFILE;
+    throw new OrganizationProfileUnavailableError(organizationId);
+  }
+
+  let profile: OrganizationProfile | null;
+  try {
+    profile = await sharedRead(organizationId, now, timeoutMs);
+  } catch (error) {
+    // A caller that stopped waiting still counts as a failure for the hold.
+    failedAt.set(organizationId, now());
+    if (!production) return DEVELOPMENT_PROFILE;
+    throw new OrganizationProfileUnavailableError(organizationId, error);
+  }
+  if (!profile) {
+    if (!production) return DEVELOPMENT_PROFILE;
+    throw new OrganizationProfileUnavailableError(organizationId);
+  }
+  return profile;
+}
+
+/** The operating gym's profile, for the surfaces no signed-in person resolves (OD-2026-09-28-007). */
+export function getOperatingOrganizationProfile(): Promise<OrganizationProfile> {
+  return getOrganizationProfile(OPERATING_ORGANIZATION_ID);
+}
+
+/**
+ * The same, or null when it cannot be read. For the surfaces that must keep
+ * working without it -- every page's layout, the sign-in email, SHADOW -- which
+ * then leave the gym's name out rather than invent one. Any other failure
+ * still throws.
+ */
+export async function getOperatingOrganizationProfileOrNull(): Promise<OrganizationProfile | null> {
+  try {
+    return await getOperatingOrganizationProfile();
+  } catch (error) {
+    if (error instanceof OrganizationProfileUnavailableError) return null;
+    throw error;
+  }
+}

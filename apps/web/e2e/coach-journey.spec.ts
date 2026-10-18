@@ -52,7 +52,12 @@ test.describe('Coach journey', () => {
     // It names the open surface now (approved board AF-09), so the coach
     // landing's heading is the tab it opens on; the workspace's own name
     // moved to the line under it, which this checks too.
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    //
+    // One h1 on the page (lane U2, audit UX-A A-16): "Coach Workspace", the
+    // name the door and every back link use. The tab masthead is an h2.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1, name: 'Coach Workspace' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Dashboard' })).toBeVisible();
     await expect(page.getByText('Coach workspace · Live session management')).toBeVisible();
 
     // The two live safety reads a coach scans first. Their presence is the
@@ -544,7 +549,7 @@ test.describe('Coach journey', () => {
           effects never fire. This line is the browser-level corroboration of
           it, not the proof itself. */
     await page.goto('/operations');
-    await expect(page.getByRole('heading', { name: 'The Ring' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'WORKSPACES' })).toHaveCount(0);
     await expect(page).toHaveURL(/\/coach\/environment\/intake-router$/);
 
@@ -553,7 +558,7 @@ test.describe('Coach journey', () => {
           bar itself must still be there, which is the half that catches a
           removal that took its neighbours with it. */
     await expect(page.getByRole('link', { name: 'Operations' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
 
     /* 3. NOT IN THE CATALOG, however plainly a coach asks for it. The door
           carried `roles: OPEN`, and the catalog searches labels, keywords and
@@ -563,7 +568,7 @@ test.describe('Coach journey', () => {
     const search = catalog.getByRole('combobox');
     for (const query of ['operations', 'mission control', 'hub']) {
       await search.fill(query);
-      await expect(catalog.getByText('Operations Hub')).toHaveCount(0);
+      await expect(catalog.getByText('Operations', { exact: true })).toHaveCount(0);
     }
     /* The path prefix is not the gate: these two carry their own
        ['coach', 'admin'], and after this change the catalog and the corridor
@@ -645,14 +650,14 @@ test.describe('Coach journey', () => {
 
     await page.goto('/coach/development-blocks');
 
-    await expect(page.getByRole('heading', { level: 1, name: 'The Next Several Weeks' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Development Plans' })).toBeVisible();
 
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
     await page.getByLabel('Title').fill('Winter technical block');
     await page.getByLabel('Training emphasis').fill('Guard recovery off the jab.');
     await page.getByLabel('Starts on').fill('2026-09-01');
     await page.getByLabel('Ends on').fill('2026-10-13');
-    await page.getByRole('button', { name: 'Save block' }).click();
+    await page.getByRole('button', { name: 'Save plan' }).click();
 
     // Filed against the athlete the coach chose, attributed by the server.
     await expect.poll(() => written).toHaveLength(1);
@@ -697,7 +702,7 @@ test.describe('Coach journey', () => {
      `flex-grow`, so on a narrow viewport the route ate the row and the NAME
      was squeezed to nothing. Measured on a Pixel 7 before the fix, at a 393px
      row: "The Work" and "Progression Intelligence" 0px wide, "Community
-     Service" 2px, "Intervention Protocols" 10px, "Session Scripts" 54px wide
+     Service" 2px, "Intervention Protocols" 10px, "Session Plans" 54px wide
      by 199px tall -- a title shredded one letter per line, overflowing a box
      of no width. Playwright reported those titles `hidden`, which is how this
      was found at all.
@@ -717,7 +722,7 @@ test.describe('Coach journey', () => {
   test('every catalog row gives its title a real column, at any viewport', async ({ page }) => {
     await installPilotApi(page, { session: { role: 'coach' } });
     await page.goto('/coach/environment/intake-router');
-    await expect(page.getByRole('link', { name: 'Bell' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
 
     await page.keyboard.press('Meta+k');
     const catalog = page.getByRole('dialog');
@@ -998,7 +1003,7 @@ test.describe('Coach journey', () => {
     // The panels load when a coach opens them; opening is what a coach does.
     await page.getByRole('button', { name: 'Sessions' }).first().click();
 
-    await expect(page.getByText('Sessions that worked this block')).toBeVisible();
+    await expect(page.getByText('Sessions that worked this plan')).toBeVisible();
     // The run's own words about itself, carried through rather than summarised.
     await expect(page.getByText('What worked: Guard held up in round three.')).toBeVisible();
     await expect(page.getByText('Cut the last round short.')).toBeVisible();

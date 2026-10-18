@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from 'react';
-import Link from 'next/link';
 
 import RefusalStamp from '@/components/RefusalStamp';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import type { PlanUnitView, PlanView } from '@/src/server/pilot/contentImport/upload';
+import BackHome from '@/components/BackHome';
 
 /**
  * The screen over POST /api/pilot/admin/content-import (IMP-12; R1 "for
@@ -72,7 +72,7 @@ const DATASET_LABEL: Record<string, string> = {
   'drill-library': 'Drill library',
   'universal-stop-rules': 'Universal stop rules',
   'workout-templates': 'Workout templates',
-  'session-scripts': 'Session scripts',
+  'session-scripts': 'Session plans',
   'transfer-claims': 'Transfer claims',
   'assessment-protocols': 'Assessment protocols',
 };
@@ -313,7 +313,7 @@ function ContentImportScreen() {
           <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Load Gym Content</h1>
           <p className="t-body max-w-3xl">
             Choose the content files &mdash; disciplines, competence levels, cohorts, drills, stop rules,
-            workout templates, session scripts &mdash; and check them. Nothing is written until you have
+            workout templates, session plans &mdash; and check them. Nothing is written until you have
             seen what they would do and pressed Apply. A changed item gets a new version and the old one
             is kept; an item missing from your files is left alone; nothing is deleted.
           </p>
@@ -589,9 +589,7 @@ function ContentImportScreen() {
         ) : null}
 
         <div className="mt-[var(--s6)]">
-          <Link href="/operations" className="btn btn--ghost">
-            Back to Mission Control
-          </Link>
+          <BackHome />
         </div>
       </div>
     </main>
