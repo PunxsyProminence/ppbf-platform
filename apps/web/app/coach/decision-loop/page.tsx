@@ -1521,10 +1521,13 @@ export default function DecisionLoopReviewPage() {
                 {errorUnder('recommendation')}
               </section>
 
-              <ShadowCoachRecommendationDraft
-                athleteId={athleteId}
-                onSaved={() => { void refreshAll(athleteId); }}
-              />
+              {athleteId && (
+                <ShadowCoachRecommendationDraft
+                  key={athleteId}
+                  athleteId={athleteId}
+                  onSaved={() => { void refreshAll(athleteId); }}
+                />
+              )}
 
               {/* Decisions */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
