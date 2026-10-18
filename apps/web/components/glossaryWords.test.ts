@@ -98,5 +98,7 @@ describe('the ruled words', () => {
 
   test("the coach's own growth is not called Development, which is the athlete's plan", () => {
     expect(read('components/CoachWorkspace.tsx')).toContain("{ id: 'development', label: 'Your Growth' },");
+    // The staff workspace link names it as its door does (#1703 added the link).
+    expect(read('app/workspace/page.tsx')).toContain("label: 'Your Coaching Growth',");
   });
 });
