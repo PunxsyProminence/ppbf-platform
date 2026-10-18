@@ -76,7 +76,12 @@ async function renderHub() {
   });
 }
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  // The hub remembers the child on screen for other pages (chosenChild.ts); each test starts with none.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+});
 
 test('each program with its standing and dates, scholarship yes, supports with their dates', async () => {
   installFetch(async () => jsonResponse(FULL));
