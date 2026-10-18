@@ -1320,6 +1320,45 @@ describe('the staff name on a training hold, for a family reader', () => {
   const ADMIN_NAMED = 'admin.named@example.test';
   const ADMIN_NAMELESS = 'admin.nameless.5521@example.test';
 
+  /* The placer's digits must be in no part of the reply a person could read,
+     but a timestamp's microseconds or a generated uuid can hold any four
+     digits: "placed_at ... 36.991175+00" failed #1663 with correct code
+     (F-124). So the digits are looked for in every key and string value
+     except those two shapes; the whole id is still looked for everywhere. */
+  const TIMESTAMP = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function readableStrings(raw: string): string[] {
+    const found: string[] = [];
+    const walk = (value: unknown): void => {
+      if (typeof value === 'string') {
+        if (!TIMESTAMP.test(value) && !UUID.test(value)) found.push(value);
+      } else if (Array.isArray(value)) {
+        value.forEach(walk);
+      } else if (value !== null && typeof value === 'object') {
+        for (const [key, inner] of Object.entries(value)) {
+          found.push(key);
+          walk(inner);
+        }
+      }
+    };
+    walk(JSON.parse(raw));
+    return found;
+  }
+  function digitsShown(raw: string, digits: RegExp): string[] {
+    return readableStrings(raw).filter((text) => digits.test(text));
+  }
+
+  it('the digit check skips a timestamp and a uuid, and still finds the digits anywhere else', () => {
+    const raw = JSON.stringify({
+      placed_at: '2026-10-17 12:34:36.991175+00',
+      updated_at: '2026-10-17T12:34:36.441100Z',
+      event_id: '0f3a4411-9911-4c1e-8a55-215521000000',
+      hold: { placed_by_name: 'Coach 4411' },
+    });
+    expect(raw).toMatch(/4411|9911/);
+    expect(digitsShown(raw, /4411|9911/)).toEqual(['Coach 4411']);
+  });
+
   beforeAll(async () => {
     for (const [accountId, loginEmail, role] of [
       [NAMELESS, null, 'coach'],
@@ -1335,12 +1374,17 @@ describe('the staff name on a training hold, for a family reader', () => {
         [accountId, ORG, loginEmail, role],
       );
     }
+    // The placers' digits are put in the hold's own timestamps on purpose
+    // (".441199", ".5521"), so the digit checks below cannot pass by luck of
+    // the clock (F-124).
     await db.query(
       `insert into pilot.training_holds
          (organization_id, hold_id, athlete_id, scope, reason_category, reason_text, athlete_explanation,
-          lift_condition_text, placed_by_account_id, placed_by_role)
+          lift_condition_text, placed_by_account_id, placed_by_role, placed_at, expires_at)
        values ($1, 'hold-names-1', $2, 'contact_only', 'medical', 'Staff detail.', 'Rest the hand this week.',
-               'Clearance from the doctor.', $3, 'coach')`,
+               'Clearance from the doctor.', $3, 'coach',
+               date_trunc('second', now()) - interval '1 minute' + interval '441199 microseconds',
+               date_trunc('second', now()) + interval '30 days' + interval '552100 microseconds')`,
       [ORG, ATHLETE, NAMELESS],
     );
   });
@@ -1380,7 +1424,7 @@ describe('the staff name on a training hold, for a family reader', () => {
       expect(status).toBe(200);
       expect(JSON.parse(raw).hold.placed_by_name).toBe('Your coach');
       expect(raw).not.toContain(placer);
-      expect(raw).not.toMatch(/4411|9911/);
+      expect(digitsShown(raw, /4411|9911/)).toEqual([]);
     }
   });
 
@@ -1428,11 +1472,13 @@ describe('the staff name on a training hold, for a family reader', () => {
     for (const actor of [AS.athlete(), AS.guardianA()]) {
       const { raw } = await readHold(actor);
       expect(JSON.parse(raw).hold.placed_by_name).toBe('The gym');
-      expect(raw).not.toMatch(/5521|admin\.nameless/);
+      expect(raw).not.toMatch(/admin\.nameless/);
+      expect(digitsShown(raw, /5521/)).toEqual([]);
     }
     const { name, raw } = await readSafetyHoldName(AS.guardianB());
     expect(name).toBe('The gym');
-    expect(raw).not.toMatch(/5521|admin\.nameless/);
+    expect(raw).not.toMatch(/admin\.nameless/);
+    expect(digitsShown(raw, /5521/)).toEqual([]);
   });
 
   it('control: the coach reads the hold as before, the placer\'s account id included', async () => {

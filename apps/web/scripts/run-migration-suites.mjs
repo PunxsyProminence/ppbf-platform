@@ -26,9 +26,11 @@
 // not just claimed here.
 //
 // This matters more than a test script usually would: `npm run test:migrations`
-// runs inside deploy-production.yml and pre-release-migrations.yml. A runner
-// that quietly skipped a suite would drop a migration guard immediately before
-// a production deploy.
+// is ci.yml's pg job (one --shard per matrix leg), and pre-release-migrations.yml
+// runs the same suites, found by discoverSuiteScripts below, one at a time so
+// it can report every failure. deploy-production.yml runs neither. A runner
+// that quietly skipped a suite would drop a migration guard from every PR and
+// from the nightly pre-release check.
 //
 // ORDER is package.json definition order -- deterministic, and no list anybody
 // has to maintain. Each suite provisions its own disposable database, so no
