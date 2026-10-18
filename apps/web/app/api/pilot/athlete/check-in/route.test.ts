@@ -160,7 +160,7 @@ test('the extended measures reach the data layer under their own names', async (
 
   await POST(postRequest({
     energy: 4, soreness: 2, focus: 3, sleep_hours: 8,
-    hydration: 5, motivation: 4, mental_clarity: 3, stress: 1, nutrition_compliance: 2,
+    hydration: 5, motivation: 4, mental_clarity: 3, stress: 1, nutrition_compliance: 2, mood: 5,
   }));
 
   expect(mockCheckIn).toHaveBeenCalledWith(expect.objectContaining({
@@ -173,7 +173,18 @@ test('the extended measures reach the data layer under their own names', async (
     mentalClarity: 3,
     stress: 1,
     nutritionCompliance: 2,
+    mood: 5,
   }));
+});
+
+test('mood is a whole number 1-5 or omitted, like every other rating', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  for (const mood of [0, 6, 2.5, 'great']) {
+    const response = await POST(postRequest({ mood }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('mood');
+  }
+  expect(mockCheckIn).not.toHaveBeenCalled();
 });
 
 test('a repeat check-in is idempotent: acknowledged, not double-counted, not re-audited', async () => {

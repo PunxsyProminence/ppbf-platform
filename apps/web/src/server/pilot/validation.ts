@@ -13,6 +13,7 @@ import {
   type PilotSession,
   type SessionRpeMethod,
 } from './contracts';
+import { SESSION_TYPE_KEYS, isSessionType } from '@/src/shared/sessionTypes';
 
 function asRecord(payload: unknown): Record<string, unknown> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -222,6 +223,13 @@ export function assertDurationWrittenByAthlete(role: string, session: PilotSessi
       'Forbidden: duration_minutes is recorded only by the athlete at check-out',
     );
   }
+  // session_type is the same kind of field: the athlete's own tag, read later
+  // as theirs (a session-load baseline per tag). Same rule, same reason.
+  if (session.session_type !== undefined && role !== 'athlete') {
+    throw new Error(
+      'Forbidden: session_type is recorded only by the athlete at check-out',
+    );
+  }
 }
 
 export function validateSessionPayload(payload: unknown): PilotSession {
@@ -260,6 +268,14 @@ export function validateSessionPayload(payload: unknown): PilotSession {
   // those. Only a caller that sends the key (check-out) sets or clears it.
   if (Object.prototype.hasOwnProperty.call(record, 'duration_minutes')) {
     session.duration_minutes = requireSessionDurationMinutes(record.duration_minutes, 'duration_minutes');
+  }
+  // Same absent-versus-null rule: only check-out sends it.
+  if (Object.prototype.hasOwnProperty.call(record, 'session_type')) {
+    const sessionType = record.session_type;
+    if (sessionType !== null && !isSessionType(sessionType)) {
+      throw new Error(`Request body field session_type must be one of ${SESSION_TYPE_KEYS.join(', ')}, or null`);
+    }
+    session.session_type = sessionType === null ? null : sessionType;
   }
   return session;
 }

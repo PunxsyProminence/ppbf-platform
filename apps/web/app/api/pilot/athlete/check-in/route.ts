@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
       mentalClarity: body.mental_clarity as number | undefined,
       stress: body.stress as number | undefined,
       nutritionCompliance: body.nutrition_compliance as number | undefined,
+      mood: body.mood as number | undefined,
       note: typeof body.note === 'string' ? body.note : '',
     });
     if (!result) return hiddenNotFound();

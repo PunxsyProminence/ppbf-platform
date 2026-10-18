@@ -344,8 +344,12 @@ describe('coach session plans page', () => {
     expect(screen.getByText(/already in progress was restored/)).toBeInTheDocument();
     // The browse-and-start flow is out of the way while a session is live.
     expect(screen.queryByRole('button', { name: /open plan/i })).not.toBeInTheDocument();
-    // Restoration is a read. Reloading must never create a second run.
-    const posts = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST');
+    // Restoration is a read. Reloading must never create a second run. The one POST the console
+    // makes on load is the SHADOW queue's count (CoachLiveTiles), a read that route takes as POST.
+    const posts = fetchMock.mock.calls.filter(
+      (call) =>
+        (call[1] as RequestInit | undefined)?.method === 'POST' && String(call[0]) !== '/api/pilot/shadow/review-projection',
+    );
     expect(posts).toHaveLength(0);
   });
 
@@ -1217,5 +1221,51 @@ describe('marking a plan reviewed', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
     expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Mark reviewed' })).not.toBeDisabled());
+  });
+});
+
+// AUDIT 2026-10-17 ITEM 8. The plan's other formats were listed by name and
+// could not be read. Each now opens on the page and says whether an edit to
+// the blocks reaches it (Overwatch Q8 "A").
+describe("a plan's other formats", () => {
+  it('each format opens to its text, and says whether edits to the blocks change it', async () => {
+    mockFetch((url) => (url.includes('script_id')
+      ? jsonResponse({ script: detail({ renderings: [
+        { rendering_id: 'ren-1', format: 'cheat_sheet', audience_note: 'Coach, in hand', body: 'Friday sparring\n\n0-10 min  Arrival', generated_from_blocks: true },
+        { rendering_id: 'ren-2', format: 'instructor_script', audience_note: '', body: 'Say this first.', generated_from_blocks: false },
+        { rendering_id: 'ren-3', format: 'parent_summary', audience_note: 'Families', body: 'Tonight we worked on defence.', generated_from_blocks: true },
+      ] }) })
+      : jsonResponse({ scripts: [FRIDAY] })));
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    const formats = await screen.findByRole('region', { name: 'Other formats of this plan' });
+    const [sheet, script, parent] = within(formats).getAllByRole('group');
+    expect(within(sheet).getByText('Cheat sheet')).toBeInTheDocument();
+    expect(within(sheet).getByText('Made from the blocks.')).toBeInTheDocument();
+    expect(within(sheet).getByText('Coach, in hand')).toBeInTheDocument();
+    // The text as written, line breaks and spacing kept.
+    expect(within(sheet).getByText('Friday sparring' + String.fromCharCode(10, 10) + '0-10 min  Arrival', { normalizer: (text) => text })).toHaveClass('whitespace-pre-wrap');
+    expect(within(script).getByText('Instructor script')).toBeInTheDocument();
+    expect(within(script).getByText('Written by hand. Edits to the blocks do not change it.')).toBeInTheDocument();
+    expect(within(script).getByText('Say this first.')).toBeInTheDocument();
+    expect(within(script).queryByText('For:')).not.toBeInTheDocument();
+    // A family format made from the blocks is not re-rendered by an edit, and says so.
+    expect(within(parent).getByText('Made from the blocks when it was written. Edits to the blocks do not change it.')).toBeInTheDocument();
+    expect(within(parent).getByText('Tonight we worked on defence.')).toBeInTheDocument();
+    expect(screen.queryByText(/Also authored for/)).not.toBeInTheDocument();
+  });
+
+  it('a plan with no other formats shows no formats section', async () => {
+    mockFetch((url) => (url.includes('script_id')
+      ? jsonResponse({ script: detail({ renderings: [] }) })
+      : jsonResponse({ scripts: [FRIDAY] })));
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+
+    expect(await screen.findByText('0-10 min')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Other formats of this plan' })).not.toBeInTheDocument();
   });
 });

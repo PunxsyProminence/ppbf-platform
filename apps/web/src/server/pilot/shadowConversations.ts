@@ -6,6 +6,14 @@ import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { PASSAGE_DISPLAY_RIGHTS, replayCitedPassage } from './shadowEvidence';
+import {
+  alsoCitedTiers,
+  gradeableEvidence,
+  gradeCitedEvidence,
+  higherTier,
+  selectStrongestEvidence,
+  type ShadowEvidenceTier,
+} from './shadowEvidenceTier';
 
 // This query's `s` is the chat session, so the source predicate is written
 // against `ls`, the cited source, here.
@@ -49,6 +57,10 @@ export interface ShadowConversationMessage {
   content: string;
   responseState: ShadowStoredResponseState | null;
   evidenceTier: ShadowStoredEvidenceTier | null;
+  /** The other cited sources' grades, below the headline ("Also cites"); graded again on load. */
+  evidenceAlsoCites?: ShadowEvidenceTier[];
+  /** Whether a cited source grades the answer, so the badge may name one ("Strongest source"). */
+  evidenceSourceGraded?: boolean;
   handoff: string | null;
   createdAt: string;
   citations?: Array<{
@@ -566,6 +578,9 @@ export async function loadConversationMessages(input: {
       documentName: string;
       passageSource?: string;
       passageSha?: string;
+      evidenceClass?: string;
+      boxingSpecificity?: string;
+      authorityTier?: number;
     }>;
   }>(
     `select
@@ -595,7 +610,12 @@ export async function loadConversationMessages(input: {
                 and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
                then c.text_content
              end,
-             'passageSha', ei.excerpt_sha256
+             'passageSha', ei.excerpt_sha256,
+             -- What grades the source on its own, for "Also cites" below.
+             -- Read and dropped here; never sent.
+             'evidenceClass', c.metadata->>'evidence_class',
+             'boxingSpecificity', c.metadata->>'boxing_specificity',
+             'authorityTier', ls.authority_tier
            ))
            order by mc.ordinal
          ) filter (where mc.evidence_id is not null),
@@ -643,21 +663,57 @@ export async function loadConversationMessages(input: {
      limit $4`,
     [input.actor.organizationId, input.actor.accountId, input.conversationId, limit, PASSAGE_DISPLAY_RIGHTS],
   );
-  return rows.reverse().map((row) => ({
-    messageId: row.message_id,
-    role: row.role,
-    content: row.content,
-    responseState: row.response_state,
-    evidenceTier: row.evidence_tier,
-    handoff: row.handoff,
-    createdAt: row.created_at.toISOString(),
-    citations: (Array.isArray(row.citations) ? row.citations : []).map(({ passageSource, passageSha, ...citation }) => {
-      const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
-        ? replayCitedPassage(passageSource, passageSha)
-        : undefined;
-      return excerpt ? { ...citation, excerpt } : citation;
-    }),
-  }));
+  return rows.reverse().map((row) => {
+    const cited = Array.isArray(row.citations) ? row.citations : [];
+    // "Also cites" is not stored, so the cited rows are graded again here.
+    const gradeable = gradeableEvidence(cited
+      .filter((citation) => typeof citation.authorityTier === 'number')
+      .map((citation) => ({
+        evidenceClass: citation.evidenceClass ?? null,
+        boxingSpecificity: citation.boxingSpecificity ?? null,
+        authorityTier: citation.authorityTier as number,
+      })));
+    // The badge reads "Strongest source", so a reopened answer shows the higher
+    // of its stored grade and the best grade its cited rows earn now, never
+    // lower than stored (Overwatch 2026-10-17, "A", under Jason's ruling on
+    // audit item 11). A grade stored before the best-grade pick could name a
+    // weaker source than one it cited. Answered ('ok') rows only: a withheld
+    // answer keeps its stored grade, whatever it cites.
+    const strongest = selectStrongestEvidence(gradeable);
+    const current = strongest ? gradeCitedEvidence(strongest) : null;
+    const headline = row.role === 'assistant' && row.response_state === 'ok' && row.evidence_tier && current
+      ? higherTier(row.evidence_tier, current)
+      : row.evidence_tier;
+    // Both lines from one grading snapshot (Codex review of #1736): when today's
+    // best grade is the headline, "Also cites" lists today's grades below it.
+    // When a cited source was re-tiered down since, the headline is the stored
+    // grade, today's grades describe another snapshot, and listing them could
+    // put the same source on both lines ("Strongest source: Proven / Also cites:
+    // Emerging"), so there is no line.
+    const alsoCites = row.role === 'assistant' && headline && current === headline
+      ? alsoCitedTiers(headline, gradeable)
+      : [];
+    return {
+      messageId: row.message_id,
+      role: row.role,
+      content: row.content,
+      responseState: row.response_state,
+      evidenceTier: headline,
+      evidenceAlsoCites: alsoCites,
+      evidenceSourceGraded: row.role === 'assistant' && row.response_state === 'ok' && current !== null,
+      handoff: row.handoff,
+      createdAt: row.created_at.toISOString(),
+      // Named fields only: the passage source, its hash and the grading
+      // fields stay on the server.
+      citations: cited.map(({ evidenceId, token, sourceTitle, documentName, passageSource, passageSha }) => {
+        const citation = { evidenceId, token, sourceTitle, documentName };
+        const excerpt = typeof passageSource === 'string' && typeof passageSha === 'string'
+          ? replayCitedPassage(passageSource, passageSha)
+          : undefined;
+        return excerpt ? { ...citation, excerpt } : citation;
+      }),
+    };
+  });
 }
 
 export async function listConversations(

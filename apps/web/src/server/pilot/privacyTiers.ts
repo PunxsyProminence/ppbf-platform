@@ -213,6 +213,12 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
     note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
   },
+  'sessions.session_type': {
+    tier: 'athlete_record',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete', 'familyRecordView.ts#SESSION_WITHHELD_FROM_FAMILY_FIELDS'],
+    note: 'The athlete\'s own check-out tag (OD-2026-10-17-023). Staff reads as sessions.rpe; withheld from '
+      + 'every athlete and family session read until a screen reads it back.',
+  },
   'sessions.notes': {
     tier: 'athlete_record',
     enforcedBy: [
@@ -649,6 +655,11 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
   'pilot.athlete_pathway_stages',
+  // A child's own period start dates: athlete-only (Jason 2026-10-18, cycle
+  // tracking "C: Now"). Prefix: covers athlete_cycle_tracking and _entries.
+  'pilot.athlete_cycle',
+  // What a child ticked after sparring (head symptoms): a safety record.
+  'pilot.sparring_symptom_reports',
 ];
 
 /**

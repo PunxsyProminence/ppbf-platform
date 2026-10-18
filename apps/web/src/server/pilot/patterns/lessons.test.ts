@@ -11,6 +11,7 @@ import {
   assertAthleteLessonPolicy,
   assertLessonIsNotMethodology,
   evaluateValidatedAthleteLesson,
+  summarizeRetentionEvidence,
   type AthleteLessonPolicy,
 } from './lessons';
 import type {
@@ -244,6 +245,145 @@ describe('validated athlete lesson evaluation', () => {
     expect(() => evaluateValidatedAthleteLesson(base)).toThrow(/valid asOf timestamp/);
     expect(() => evaluateValidatedAthleteLesson({ ...base, asOf: 'whenever' }))
       .toThrow(/valid asOf timestamp/);
+  });
+
+  test('observations recorded after asOf do not change the lesson at asOf', () => {
+    const atAsOf = [improvement(1, 'task-sparring', '2026-06-03T10:00:00.000Z')];
+    const later = [
+      // Transfer and retention that had not happened yet in July...
+      improvement(2, 'task-bag', '2026-08-01T10:00:00.000Z'),
+      improvement(3, 'task-sparring', '2026-08-02T10:00:00.000Z'),
+      // ...and a relapse in the trained drill that had not happened either.
+      improvement(4, 'task-mitts', '2026-08-03T10:00:00.000Z', { polarity: 'occurrence' }),
+    ];
+    expect(evaluate({ postObservations: [...atAsOf, ...later] }))
+      .toEqual(evaluate({ postObservations: atAsOf }));
+  });
+
+  test.each([
+    ['another organization', { organizationId: 'org-2' }, 'ORGANIZATION_SCOPE_MISMATCH'],
+    ['another athlete', { athleteId: 'athlete-2' }, 'ATHLETE_SCOPE_MISMATCH'],
+    ['another behaviour', { behaviourKey: 'other_behaviour' }, 'BEHAVIOUR_KEY_MISMATCH'],
+  ] as const)("improvement recorded for %s is not this athlete's lesson", (_label, overrides, reason) => {
+    const transfersAndRetains = [
+      improvement(1, 'task-sparring', '2026-06-18T10:00:00.000Z', overrides),
+      improvement(2, 'task-sparring', '2026-06-21T10:00:00.000Z', overrides),
+    ];
+    const result = evaluate({ postObservations: transfersAndRetains });
+    expect(result.eligible).toBe(false);
+    expect(result.transfer.count).toBe(0);
+    expect(result.blockers).toEqual(expect.arrayContaining(['NO_TRANSFER_EVIDENCE', 'NO_RETENTION_EVIDENCE']));
+    expect(result.excluded).toEqual([
+      { kind: 'observation', id: 'post-1', reason },
+      { kind: 'observation', id: 'post-2', reason },
+    ]);
+  });
+
+  const transfersAndRetains = [
+    improvement(1, 'task-sparring', '2026-06-18T10:00:00.000Z'),
+    improvement(2, 'task-sparring', '2026-06-21T10:00:00.000Z'),
+  ];
+
+  test.each([
+    ['another organization', { organizationId: 'org-2' }, 'ORGANIZATION_SCOPE_MISMATCH'],
+    ['another athlete', { athleteId: 'athlete-2' }, 'ATHLETE_SCOPE_MISMATCH'],
+    ['another behaviour', { behaviourKey: 'other_behaviour' }, 'BEHAVIOUR_KEY_MISMATCH'],
+  ] as const)('an intervention on %s is not this lesson\'s intervention', (_label, overrides, reason) => {
+    const result = evaluate({ intervention: { ...intervention, ...overrides }, postObservations: transfersAndRetains });
+    expect(result.eligible).toBe(false);
+    expect(result.blockers).toEqual(expect.arrayContaining(['NO_INTERVENTION', 'OUTCOME_NOT_HUMAN_REVIEWED']));
+    // Its outcome has nothing left to belong to.
+    expect(result.excluded).toEqual([
+      { kind: 'intervention', id: 'intervention-1', reason },
+      { kind: 'outcome', id: 'outcome-1', reason: 'OUTCOME_INTERVENTION_MISMATCH' },
+    ]);
+  });
+
+  test('an outcome reviewed for another intervention does not validate this one', () => {
+    const result = evaluate({
+      outcome: { ...reviewedOutcome, interventionId: 'intervention-2' },
+      postObservations: transfersAndRetains,
+    });
+    expect(result.eligible).toBe(false);
+    expect(result.blockers).toContain('OUTCOME_NOT_HUMAN_REVIEWED');
+    expect(result.outcomeMatchState).toBeNull();
+    expect(result.excluded).toEqual([{ kind: 'outcome', id: 'outcome-1', reason: 'OUTCOME_INTERVENTION_MISMATCH' }]);
+    // Same post-evidence with the right outcome validates, so the outcome is what blocked it.
+    expect(evaluate({ postObservations: transfersAndRetains }).eligible).toBe(true);
+  });
+
+  test.each([
+    ['in scope', {}],
+    // Not reported as out of scope either: at asOf it did not exist yet.
+    ['for another athlete', { athleteId: 'athlete-2' }],
+  ])('an intervention %s that started after asOf, and its outcome, did not exist at asOf', (_label, overrides) => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    const result = evaluate({
+      intervention: { ...intervention, ...overrides, startedAt: '2026-07-15T00:00:00.000Z' },
+      postObservations,
+    });
+    expect(result.blockers).toEqual(expect.arrayContaining(['NO_INTERVENTION', 'OUTCOME_NOT_HUMAN_REVIEWED']));
+    expect(result).toEqual(evaluate({ intervention: null, outcome: null, postObservations }));
+  });
+
+  test('an outcome of a not-yet-started intervention is not reported, even with an unreadable review time', () => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    const result = evaluate({
+      intervention: { ...intervention, startedAt: '2026-07-15T00:00:00.000Z' },
+      outcome: { ...reviewedOutcome, reviewedAt: 'not-a-date' },
+      postObservations,
+    });
+    expect(result).toEqual(evaluate({ intervention: null, outcome: null, postObservations }));
+  });
+
+  test('an intervention whose start nobody can place is absent and reported', () => {
+    const result = evaluate({
+      intervention: { ...intervention, startedAt: 'not-a-date' },
+      postObservations: [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')],
+    });
+    expect(result.blockers).toContain('NO_INTERVENTION');
+    expect(result.excluded).toEqual([
+      { kind: 'intervention', id: 'intervention-1', reason: 'INVALID_TIMESTAMP' },
+      { kind: 'outcome', id: 'outcome-1', reason: 'OUTCOME_INTERVENTION_MISMATCH' },
+    ]);
+  });
+
+  test('an unreviewed outcome of another intervention is reported, not kept', () => {
+    const result = evaluate({
+      outcome: { ...reviewedOutcome, interventionId: 'intervention-2', reviewedByAccountId: null, reviewedAt: null },
+      postObservations: transfersAndRetains,
+    });
+    expect(result.outcomeMatchState).toBeNull();
+    expect(result.excluded).toEqual([{ kind: 'outcome', id: 'outcome-1', reason: 'OUTCOME_INTERVENTION_MISMATCH' }]);
+  });
+
+  test.each([
+    ['after asOf', '2026-07-15T00:00:00.000Z', []],
+    ['at a time nobody can place', 'not-a-date', [{ kind: 'outcome', id: 'outcome-1', reason: 'INVALID_TIMESTAMP' }]],
+  ])('an outcome reviewed %s had not been reviewed at asOf', (_label, reviewedAt, reported) => {
+    const result = evaluate({ outcome: { ...reviewedOutcome, reviewedAt }, postObservations: transfersAndRetains });
+    const absent = evaluate({ outcome: null, postObservations: transfersAndRetains });
+    expect(result.eligible).toBe(false);
+    expect(result.blockers).toContain('OUTCOME_NOT_HUMAN_REVIEWED');
+    expect(result.excluded).toEqual(reported);
+    expect({ ...result, excluded: [] }).toEqual(absent);
+  });
+
+  test('an intervention started, or an outcome reviewed, exactly at asOf counts', () => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    expect(evaluate({ intervention: { ...intervention, startedAt: AS_OF }, postObservations }).blockers)
+      .not.toContain('NO_INTERVENTION');
+    expect(evaluate({ outcome: { ...reviewedOutcome, reviewedAt: AS_OF }, postObservations }).blockers)
+      .not.toContain('OUTCOME_NOT_HUMAN_REVIEWED');
+  });
+
+  test('retention evidence is bounded by asOf when summarised directly', () => {
+    const retention = summarizeRetentionEvidence(intervention, [
+      improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z'),
+      improvement(2, 'task-sparring', '2026-08-01T10:00:00.000Z'),
+    ], policy, AS_OF);
+    expect(retention.count).toBe(1);
+    expect(retention.latestAt).toBe('2026-06-21T10:00:00.000Z');
   });
 
   test('absence of observations is not improvement', () => {

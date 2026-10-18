@@ -61,6 +61,7 @@ export interface AthleteCheckInRecord {
   mental_clarity: number | null;
   stress: number | null;
   nutrition_compliance: number | null;
+  mood: number | null;
   note: string;
 }
 

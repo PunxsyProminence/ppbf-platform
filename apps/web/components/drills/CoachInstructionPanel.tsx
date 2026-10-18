@@ -22,10 +22,13 @@ export default function CoachInstructionPanel({
   loading,
   failed,
   opened,
+  chosenScale = null,
 }: {
   loading: boolean;
   failed: boolean;
   opened: OpenedInstruction | null;
+  /** The scale level the work chose, opened in the drill (DrillDetail chosenScale). */
+  chosenScale?: string | null;
 }) {
   return (
     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
@@ -56,7 +59,7 @@ export default function CoachInstructionPanel({
         {opened?.view && <span className="sr-only">{`${opened.view.name}: instructions open below.`}</span>}
       </div>
       {opened?.view && (
-        <DrillDetail view={opened.view} audience="coach" focusOnMount actions={lifecycleNotes(opened)} />
+        <DrillDetail view={opened.view} audience="coach" focusOnMount actions={lifecycleNotes(opened)} chosenScale={chosenScale} />
       )}
     </div>
   );
