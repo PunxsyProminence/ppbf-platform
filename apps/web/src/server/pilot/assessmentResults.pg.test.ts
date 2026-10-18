@@ -235,9 +235,10 @@ describe('assessment results against real Postgres', () => {
        from pilot.assessment_protocols order by protocol_id`,
     );
     expect(rows.rows).toHaveLength(PPBF_ASSESSMENT_PROTOCOLS.length);
-    expect(PPBF_ASSESSMENT_PROTOCOLS).toHaveLength(14);
+    // Two jumps, the 20-m shuttle (OD-2026-10-17-026) and twelve skill families.
+    expect(PPBF_ASSESSMENT_PROTOCOLS).toHaveLength(15);
     expect(rows.rows.every((r) => r.organization_id === ORG_A)).toBe(true);
-    expect(rows.rows.filter((r) => r.measure_kind === 'physical_test')).toHaveLength(2);
+    expect(rows.rows.filter((r) => r.measure_kind === 'physical_test')).toHaveLength(3);
     expect(rows.rows.filter((r) => r.measure_kind === 'skill_rubric')).toHaveLength(12);
     expect(rows.rows.find((r) => r.protocol_id === 'ppbf-jump-cmj-height')?.protocol_summary).toBe('coach edited');
     // No invented measurement properties.

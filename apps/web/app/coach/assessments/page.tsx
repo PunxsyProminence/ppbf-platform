@@ -56,9 +56,11 @@ interface RatingLevel {
 interface HistoryEntry {
   assessment_id: string;
   protocol_id: string;
-  kind: 'jump' | 'skill_rating';
+  kind: 'jump' | 'skill_rating' | 'shuttle';
   administered_on: string;
   value: number;
+  /** Shuttle only: the shuttle within the level in `value`. */
+  shuttle?: number | null;
   skill_family_id: string | null;
   note: string;
 }
@@ -521,6 +523,19 @@ export default function CoachAssessmentsPage() {
                       </div>
                     );
                   })}
+                  {data.history.some((h) => h.kind === 'shuttle') && (
+                    <div>
+                      <h3 className="t-label">20-m shuttle run</h3>
+                      <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
+                        {data.history.filter((h) => h.kind === 'shuttle').map((h) => (
+                          <li key={h.assessment_id}>
+                            {day(h.administered_on)}: <span className="font-semibold">Level {h.value}, shuttle {h.shuttle}</span>
+                            {h.note ? <span className="text-[color:var(--bone-300)]"> — {h.note}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {data.skill_families.map((family) => {
                     const rows = data.history.filter((h) => h.skill_family_id === family.skill_family_id);
                     if (rows.length === 0) return null;
