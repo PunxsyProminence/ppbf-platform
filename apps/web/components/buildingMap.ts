@@ -204,7 +204,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ['admin'],
     keywords: 'photos photographs wall pictures upload building frames banners boards chalk customization appearance',
     hint: 'Photographs, boards, and notices — the gym’s look and voice, one desk.' },
-  { href: '/admin/organizations', label: 'Organizations', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/organizations', label: 'Get Your Gym Online', room: 'office', roles: ['platform_owner'],
     keywords: 'orgs tenants gyms affiliates' },
   { href: '/admin/grants', label: 'Grant Obligations', room: 'office', roles: ['admin'],
     keywords: 'grants funder deadlines reports deliverables renewals filings compliance obligations',
@@ -221,7 +221,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/quotes', label: 'Quotes', room: 'office', roles: ['admin'],
     keywords: 'quotes sayings motivational boxing chalkboard wall tv library',
     hint: "The gym's sayings and quotes. Switch off, never delete." },
-  { href: '/admin/data-quality', label: 'Data Quality', room: 'office', roles: ['admin'],
+  { href: '/admin/data-quality', label: 'Duplicate Guardians', room: 'office', roles: ['admin'],
     keywords: 'data quality duplicates guardians split records',
     hint: 'Split guardian records and who they hide. Reports only — merging is a human call.' },
   /* roles: ['admin'], NOT ADMIN_GATE -- the same reason as Floor Hours above.
@@ -386,14 +386,14 @@ export const BUILDING: readonly Door[] = [
      three real roles also moves this door INSIDE buildingMapDoorGate.test.ts,
      which skips every OPEN door -- so the fix is checked from here on rather
      than merely correct today. */
-  { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor',
+  { href: '/athlete/dashboard/sparring', label: 'Sparring Log', room: 'floor',
     roles: ['athlete', 'coach', 'admin'],
     keywords: 'sparring contact rounds partner' },
   { href: '/athlete/progression-intelligence', label: 'My Progression', room: 'floor',
     roles: ['athlete'], keywords: 'progress load profile improvement' },
-  { href: '/athlete/video-analysis', label: 'My Video', room: 'floor', roles: ['athlete'],
+  { href: '/athlete/video-analysis', label: 'My Film', room: 'floor', roles: ['athlete'],
     keywords: 'film footage review video' },
-  { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
+  { href: '/coach/decision-loop', label: 'SHADOW Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'praise credit caught being good character mentorship pairing well done',
@@ -409,7 +409,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/cards', label: 'Coach Cards', room: 'floor', roles: ['coach'],
     keywords: 'card issue assign work homework drill program group athlete verify dispute',
     hint: 'Issue work to one athlete or a whole program, then verify what comes back.' },
-  { href: '/coach/performance-analytics', label: 'Performance Analytics', room: 'floor',
+  { href: '/coach/performance-analytics', label: 'Who to See First', room: 'floor',
     roles: ['coach', 'admin'], keywords: 'analytics rollup readiness trend rpe training days sessions roster report',
     hint: 'Roster rollup: sessions, RPE, readiness trend, training days, drill completion. Read-only.' },
   { href: '/coach/video-analysis', label: 'Video Analysis', room: 'floor',
@@ -459,7 +459,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/passbook', label: 'Passbook', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook book athlete record attendance sessions readiness goals corner gaps one athlete',
     hint: 'One athlete\u2019s book: attendance, sessions, readiness, goals, corner and gaps.' },
-  { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
+  { href: '/coach/drills', label: 'Drill Library', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'drills exercises techniques practice assign library catalogue',
     hint: 'Drill library and programming.' },
   { href: '/coach/cue-library', label: 'Cue Library', room: 'floor', roles: ['coach', 'admin'],
@@ -509,7 +509,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/development-blocks', label: 'Development Plans', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'development block multi week plan periodization athlete plan training emphasis window macrocycle',
     hint: 'What you intend for one athlete over the next several weeks, in your own words.' },
-  { href: '/coach/assessments', label: 'Jump Test & Skill Ratings', room: 'floor', roles: ['coach', 'admin'],
+  { href: '/coach/assessments', label: 'Jump Test and Skill Ratings', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'assessment test jump countermovement cmj broad jump power skill rating rubric 1-5 skill family history',
     hint: "One athlete's jump result and your 1-5 skill ratings, with their own history. Nothing ranked." },
   { href: '/coach/mental-skills', label: 'Mental Skills', room: 'floor', roles: ['coach', 'admin'],
@@ -583,7 +583,7 @@ export const BUILDING: readonly Door[] = [
      watching the totals is governance. (compliance-monitoring still carries a
      stale comment calling itself the clinic room while painting .room--board:
      a page edit, for whoever owns that file.) */
-  { href: '/board/compliance-monitoring', label: 'Compliance Register', room: 'board',
+  { href: '/board/compliance-monitoring', label: 'Hand-Filed Compliance Register', room: 'board',
     roles: ['board'], keywords: 'compliance register hand-filed monitoring governance' },
   { href: '/board/escalation-monitoring', label: 'Escalation Ladder', room: 'board',
     roles: ['board'], keywords: 'escalation ladder safety open severity counts' },
@@ -615,19 +615,19 @@ export const BUILDING: readonly Door[] = [
      and ungated, every one stays reachable by URL, and the data behind each
      is guarded by its own API checks (verified by audit). Hiding these rows
      protects nothing, and that is fine -- that was never their job. */
-  { href: '/simulator', label: 'Simulator', room: 'file', roles: ADMIN_GATE,
+  { href: '/simulator', label: 'Validation Sandbox', room: 'file', roles: ADMIN_GATE,
     keywords: 'scenario model what-if simulate' },
   { href: '/research', label: 'Research Inbox', room: 'file', roles: RESEARCH_GATE,
     keywords: 'research intake requirements gaps evidence labels' },
-  { href: '/research/chat', label: 'Research Chat', room: 'file', roles: RESEARCH_GATE,
+  { href: '/research/chat', label: 'The Library', room: 'file', roles: RESEARCH_GATE,
     keywords: 'ask research question chat' },
   { href: '/research/review', label: 'Submission Review', room: 'file', roles: ADMIN_GATE,
     keywords: 'submission review responsive partially responsive not responsive duplicate applicability curator' },
-  { href: '/evidence', label: 'Evidence Review', room: 'file', roles: ADMIN_GATE,
+  { href: '/evidence', label: 'Evidence Review Queue', room: 'file', roles: ADMIN_GATE,
     keywords: 'shadow evidence sources citations provenance' },
   /* ADMIN_GATE, not OPEN: the Operations V1 lab narrowing recorded at the
      /simulator entry above. */
-  { href: '/knowledge-graph', label: 'Knowledge Graph', room: 'file', roles: ADMIN_GATE,
+  { href: '/knowledge-graph', label: 'Concept Relationship Map', room: 'file', roles: ADMIN_GATE,
     keywords: 'concepts relationships map observations findings lessons' },
   { href: '/audit', label: 'Audit Trace', room: 'file', roles: ['admin', 'coach'],
     keywords: 'audit log ledger trace continuity history immutable',
@@ -669,7 +669,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'Everything open right now across holds, gates, escalations, and compliance.' },
   { href: '/admin/video-compliance', label: 'Video Compliance Review', room: 'clinic', roles: ['admin'],
     keywords: 'publication compliance approve reject request changes video safeguarding' },
-  { href: '/coach/sports-medicine', label: 'Sports Medicine', room: 'clinic', roles: ['coach', 'admin'],
+  { href: '/coach/sports-medicine', label: 'Clearance Board', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'medical injury concussion clearance return-to-training physio holds cleared restricted board clinic',
     hint: 'Clearance status and active holds for your roster — what the athlete reads, nothing more.' },
   { href: '/coach/injuries', label: 'Injury Record', room: 'clinic', roles: ['coach', 'admin'],
@@ -703,7 +703,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'Layer 20 — asks, and refuses when it should.' },
   { href: '/shadow/scout', label: 'Shadow Scout', room: 'night', roles: SCOUT_GATE,
     keywords: 'scout discover shadow' },
-  { href: '/admin/shadow', label: 'Shadow Console', room: 'night', roles: ADMIN_GATE,
+  { href: '/admin/shadow', label: 'SHADOW Admin Console', room: 'night', roles: ADMIN_GATE,
     keywords: 'shadow admin intake metrics feedback moderation' },
 ];
 

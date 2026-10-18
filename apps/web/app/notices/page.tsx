@@ -275,7 +275,7 @@ function NoticesAuthoringPage() {
               /admin and /admin/people hang theirs. */}
           <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
           <p className="t-eyebrow">Gym Communications</p>
-          <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Notices and Motivation</h1>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Notices</h1>
           <p className="t-body max-w-[68ch]">
             Coaches and admins write what the app says. Pick the surface it belongs on, give it a window if it should
             only run for a while, and retire it when it is done.

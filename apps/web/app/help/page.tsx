@@ -83,7 +83,7 @@ export default async function HelpCenterPage() {
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="space-y-4 border-b-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] pb-6">
           <p className="t-eyebrow tracking-[0.35em]">Help Center</p>
-          <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>PPBF MASTER TUTORIAL</h1>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Help</h1>
           <p className="max-w-4xl text-base leading-7 text-[color:var(--hide-800)] md:text-lg">
             Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
           </p>

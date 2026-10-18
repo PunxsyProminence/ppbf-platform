@@ -198,7 +198,7 @@ export default function PerformanceAnalyticsPage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-[var(--s5)]">
           <p className="t-eyebrow">Your floor</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Who to see first</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Who to See First</h1>
           <ClusterNav cluster="who-needs-me" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Session logs, readiness check-ins, training days, and drill work over the window you pick, one card

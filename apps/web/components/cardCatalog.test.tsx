@@ -253,7 +253,7 @@ describe('Corridor', () => {
     pathname = '/coach/drills';
     render(<Corridor />);
     expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Gym Floor');
-    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Drills');
+    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Drill Library');
   });
 
   it('opens to the rooms the session can enter, and no others', () => {
@@ -296,7 +296,7 @@ describe('Corridor', () => {
     pathname = '/coach/drills';
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    const link = screen.getByRole('link', { name: 'Drills' });
+    const link = screen.getByRole('link', { name: 'Drill Library' });
     expect(link.getAttribute('aria-current')).toBe('page');
   });
 

@@ -448,7 +448,7 @@ function AdjudicationDesk() {
         <header className="mb-[var(--s5)]">
           <p className="t-eyebrow">Front Office · Calibration</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-            Settle a disagreement
+            Calibration Adjudication
           </h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record what a disagreement between the two coaches actually was. Neither reading is

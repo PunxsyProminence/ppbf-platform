@@ -912,7 +912,7 @@ export default function CoachProgressionIntelligencePage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Progression Gaps → Drills → Verification</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Progression Intelligence</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Detect performance gaps, assign drills, and track athlete completion and progression.
           </p>

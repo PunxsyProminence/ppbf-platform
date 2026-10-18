@@ -204,7 +204,7 @@ function PinManagementPageContent() {
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Credential Control</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Issue an Athlete Activation Code</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>PIN Management</h1>
           <p className="t-body mt-[var(--s3)]">
             Select an athlete and issue a one-time code. They redeem it and choose a PIN only they
             know -- no administrator sets or sees an athlete&apos;s PIN.
