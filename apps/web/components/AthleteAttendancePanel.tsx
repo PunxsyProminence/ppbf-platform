@@ -17,14 +17,19 @@ import {
 // register". Keyed by athlete where it is mounted, and each read is dropped
 // if the athlete changes before it lands.
 
-type Reading = { state: 'loading' } | { state: 'unavailable' } | { state: 'loaded'; attendance: AttendanceWindowView };
+// Each answer carries the athlete it is for; one for another athlete reads
+// as still loading (derived, so the effect sets no state before its fetch).
+type Reading =
+  | { state: 'loading' }
+  | { state: 'unavailable'; athleteId: string }
+  | { state: 'loaded'; athleteId: string; attendance: AttendanceWindowView };
 
 export default function AthleteAttendancePanel({ athleteId }: { athleteId: string }) {
-  const [reading, setReading] = useState<Reading>({ state: 'loading' });
+  const [answer, setAnswer] = useState<Reading>({ state: 'loading' });
+  const reading: Reading = answer.state !== 'loading' && answer.athleteId === athleteId ? answer : { state: 'loading' };
 
   useEffect(() => {
     let current = true;
-    setReading({ state: 'loading' });
     void (async () => {
       try {
         const response = await fetch(
@@ -33,11 +38,11 @@ export default function AthleteAttendancePanel({ athleteId }: { athleteId: strin
         );
         const payload = response.ok ? ((await response.json().catch(() => null)) as { attendance?: unknown } | null) : null;
         if (!current) return;
-        setReading(payload && isAttendanceWindow(payload.attendance)
-          ? { state: 'loaded', attendance: payload.attendance }
-          : { state: 'unavailable' });
+        setAnswer(payload && isAttendanceWindow(payload.attendance)
+          ? { state: 'loaded', athleteId, attendance: payload.attendance }
+          : { state: 'unavailable', athleteId });
       } catch {
-        if (current) setReading({ state: 'unavailable' });
+        if (current) setAnswer({ state: 'unavailable', athleteId });
       }
     })();
     return () => {
