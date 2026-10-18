@@ -970,7 +970,10 @@ describe('getShadowKnowledgeProjection stream placement', () => {
     expect(items[0].review_state).toBe(reviewState);
   });
 
-  test('nothing an event name can say puts it in the Validated Lesson stream', async () => {
+  // Nor in Pattern or Finding: those were filed by spelling, an event whose
+  // name contained the word (contract D1). Only the pattern evaluators may
+  // fill them.
+  test('nothing an event name can say puts it in the Pattern, Finding or Validated Lesson stream', async () => {
     answerCoachRoster([]);
     mockQuery.mockResolvedValueOnce([
       intakeEvent('SHADOW_INTAKE_CASE_APPROVED'),
@@ -983,7 +986,7 @@ describe('getShadowKnowledgeProjection stream placement', () => {
     const items = await getShadowKnowledgeProjection(context({}));
 
     expect(items.map((item) => item.type)).toEqual([
-      'Observation', 'Observation', 'Observation', 'Pattern', 'Finding',
+      'Observation', 'Observation', 'Observation', 'Observation', 'Observation',
     ]);
   });
 });
