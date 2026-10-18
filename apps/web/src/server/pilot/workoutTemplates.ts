@@ -691,6 +691,11 @@ async function planTemplateIssue(
  * Refused as before the transaction: the template under its own code; a
  * reference as the library having changed, so the next attempt plans against
  * what is there now and names the drill with its reason.
+ *
+ * LOCK ORDER: the references first, then the template, the order content
+ * import takes the same rows in (drill library before templates,
+ * contentImport/specs/index.ts), so an import revising both while a coach
+ * issues cannot deadlock against this read.
  */
 async function assertIssueStillCurrent(
   client: PoolClient,
@@ -698,6 +703,22 @@ async function assertIssueStillCurrent(
   templateId: string,
   adoptedReferenceIds: readonly string[],
 ): Promise<void> {
+  if (adoptedReferenceIds.length > 0) {
+    // In drill-id order, the order the plan sorts adoptions in, so two issues lock alike.
+    const references = await client.query<{ drill_id: string; active: boolean; superseded_at: string | null }>(
+      `select drill_id, active, superseded_at from pilot.drill_library
+        where organization_id = $1 and drill_id = any($2::text[])
+        order by drill_id
+          for share`,
+      [organizationId, [...adoptedReferenceIds]],
+    );
+    const current = new Set(
+      references.rows.filter((reference) => reference.active && reference.superseded_at === null).map((reference) => reference.drill_id),
+    );
+    if (adoptedReferenceIds.some((referenceId) => !current.has(referenceId))) {
+      throw new ConflictError(LIBRARY_CHANGED_MESSAGE, 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED');
+    }
+  }
   const template = await client.query<{ active: boolean; superseded_at: string | null }>(
     `select active, superseded_at from pilot.workout_templates
       where organization_id = $1 and template_id = $2
@@ -707,23 +728,6 @@ async function assertIssueStillCurrent(
   const row = template.rows[0];
   if (!row || !row.active || row.superseded_at !== null) {
     throw new ConflictError(TEMPLATE_NOT_CURRENT_MESSAGE, 'WORKOUT_TEMPLATE_NOT_CURRENT');
-  }
-  if (adoptedReferenceIds.length === 0) {
-    return;
-  }
-  // In drill-id order, the order the plan sorts adoptions in, so two issues lock alike.
-  const references = await client.query<{ drill_id: string; active: boolean; superseded_at: string | null }>(
-    `select drill_id, active, superseded_at from pilot.drill_library
-      where organization_id = $1 and drill_id = any($2::text[])
-      order by drill_id
-        for share`,
-    [organizationId, [...adoptedReferenceIds]],
-  );
-  const current = new Set(
-    references.rows.filter((reference) => reference.active && reference.superseded_at === null).map((reference) => reference.drill_id),
-  );
-  if (adoptedReferenceIds.some((referenceId) => !current.has(referenceId))) {
-    throw new ConflictError(LIBRARY_CHANGED_MESSAGE, 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED');
   }
 }
 

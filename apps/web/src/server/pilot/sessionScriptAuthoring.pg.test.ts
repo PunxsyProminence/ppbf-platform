@@ -1239,7 +1239,12 @@ describe('audit 2026-10-17: version names, the template under lock, and renderin
   test('a block is titled with the drill version it links, though a newer version renamed the drill (item 4)', async () => {
     const gym = await newGym('version-name');
     await insertTemplate(gym);
-    // A newer version of the jab drill, renamed. The template still names v1.
+    // A newer version of the jab drill, renamed. The template still names v1,
+    // which the revision supersedes (one head per lineage).
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-jab'`,
+      [gym.organizationId],
+    );
     await client.query(
       `insert into pilot.drill_library
          (organization_id, drill_id, lineage_id, version, supersedes_drill_id, name, discipline, category, difficulty,

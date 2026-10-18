@@ -1325,6 +1325,9 @@ describe('currentness is asked again under lock inside the transaction', () => {
     expect(await written(gym)).toEqual(NOTHING);
   });
 
+  // A positive control, not a proof of the new path: the key is found before
+  // the template is read, as on main. The retry that races the re-check is in
+  // workoutTemplateIssue.test.ts.
   test('a legitimate retry of a workout already issued still returns that issue, after the template is replaced', async () => {
     const gym = await newGym('lock-replay');
     await insertReference(gym, 'ref-a', 'Lock Alpha');

@@ -1527,11 +1527,12 @@ describe('currentness is asked again inside the transaction', () => {
 
     await issueWorkoutTemplate(PARAMS);
 
-    const [templateRead, referenceRead] = transactionClient.query.mock.calls;
-    expect(templateRead[0]).toMatch(/from pilot\.workout_templates[\s\S]*for share/);
-    expect(templateRead[1]).toEqual([ORG, TEMPLATE_ID]);
+    // References first, then the template: the order content import locks the same rows in.
+    const [referenceRead, templateRead] = transactionClient.query.mock.calls;
     expect(referenceRead[0]).toMatch(/from pilot\.drill_library[\s\S]*for share/);
     expect(referenceRead[1]).toEqual([ORG, ['ref-1', 'ref-2']]);
+    expect(templateRead[0]).toMatch(/from pilot\.workout_templates[\s\S]*for share/);
+    expect(templateRead[1]).toEqual([ORG, TEMPLATE_ID]);
     expect(transactionClient.query.mock.invocationCallOrder[1]).toBeLessThan(mockPromote.mock.invocationCallOrder[0]);
   });
 
