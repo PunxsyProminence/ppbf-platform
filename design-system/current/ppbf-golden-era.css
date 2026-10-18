@@ -5702,23 +5702,6 @@
   text-shadow: none;
 }
 
-<<<<<<< HEAD
-/* A pictogram roundel: a struck brass ring on the dark field, the drawing in
-   polished brass (components/blockKindIcons.tsx). Sized by font-size. */
-.ge-wallboard .ge-pictogram {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7em;
-  height: 1.7em;
-  border: 2px solid var(--brass-600);
-  border-radius: 50%;
-  background-image:
-    radial-gradient(circle at 35% 30%, rgb(var(--brass-300-rgb) / .14), transparent 60%),
-    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .92), rgb(var(--frame-field-rgb) / .92));
-  color: var(--brass-200);
-  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .25), 0 1px 0 rgba(0, 0, 0, .6);
-=======
 /* Worn enamel: chips knocked out of the edge down to the steel, the grain of
    the coat, and a pinstripe inside the rim. Signs and plates only; a small
    cap stays clean. */
@@ -5790,5 +5773,21 @@
   border: 4px solid #15181A;
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px rgb(var(--brass-300-rgb) / .14), 0 0 0 1px rgba(0, 0, 0, .65);
->>>>>>> local/l39-wall-style
+}
+
+/* A pictogram roundel: a struck brass ring on the dark field, the drawing in
+   polished brass (components/blockKindIcons.tsx). Sized by font-size. */
+.ge-wallboard .ge-pictogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 2px solid var(--brass-600);
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 35% 30%, rgb(var(--brass-300-rgb) / .14), transparent 60%),
+    linear-gradient(180deg, rgb(var(--frame-field-rgb) / .92), rgb(var(--frame-field-rgb) / .92));
+  color: var(--brass-200);
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .25), 0 1px 0 rgba(0, 0, 0, .6);
 }
