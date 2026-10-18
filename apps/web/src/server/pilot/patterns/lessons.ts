@@ -157,7 +157,7 @@ export function summarizeRetentionEvidence(
   const retained = postObservations.filter((observation) => {
     if (!isImprovement(observation)) return false;
     const observedMs = Date.parse(observation.observedAt);
-    return Number.isFinite(observedMs) && observedMs - startedMs >= windowMs;
+    return Number.isFinite(observedMs) && observedMs - startedMs >= windowMs && observedMs <= asOfMs;
   });
 
   const latestMs = retained

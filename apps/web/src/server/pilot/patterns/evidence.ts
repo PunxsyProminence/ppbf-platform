@@ -107,7 +107,8 @@ function groupByOpportunity(
  * auditable act, and erasing the original would hide the revision. Only a
  * record that is admissible in its own right can supersede: another
  * athlete's revision, a mis-keyed import or a failed capture has no standing
- * to remove evidence it was never part of.
+ * to remove evidence it was never part of. (A record naming itself is
+ * malformed and stays excluded, as it always was.)
  *
  * With `asOf`, records observed after that instant are left out entirely --
  * not listed as exclusions -- because at `asOf` they had not been made yet.
@@ -145,9 +146,7 @@ export function admitObservations(
     standingIds.add(observation.observationId);
     if (scopeFailure(scope, observation) !== null || observation.source.quality === 'failed') continue;
     const target = observation.supersedesObservationId;
-    if (typeof target === 'string' && target.length > 0 && target !== observation.observationId) {
-      supersededIds.add(target);
-    }
+    if (typeof target === 'string' && target.length > 0) supersededIds.add(target);
   }
 
   const seenIds = new Set<string>();

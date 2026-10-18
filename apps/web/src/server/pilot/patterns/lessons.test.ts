@@ -11,6 +11,7 @@ import {
   assertAthleteLessonPolicy,
   assertLessonIsNotMethodology,
   evaluateValidatedAthleteLesson,
+  summarizeRetentionEvidence,
   type AthleteLessonPolicy,
 } from './lessons';
 import type {
@@ -300,6 +301,23 @@ describe('validated athlete lesson evaluation', () => {
     expect(result.eligible).toBe(false);
     expect(result.blockers).toContain('OUTCOME_NOT_HUMAN_REVIEWED');
     expect(result).toEqual(evaluate({ outcome: null, postObservations }));
+  });
+
+  test('an intervention started, or an outcome reviewed, exactly at asOf counts', () => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    expect(evaluate({ intervention: { ...intervention, startedAt: AS_OF }, postObservations }).blockers)
+      .not.toContain('NO_INTERVENTION');
+    expect(evaluate({ outcome: { ...reviewedOutcome, reviewedAt: AS_OF }, postObservations }).blockers)
+      .not.toContain('OUTCOME_NOT_HUMAN_REVIEWED');
+  });
+
+  test('retention evidence is bounded by asOf when summarised directly', () => {
+    const retention = summarizeRetentionEvidence(intervention, [
+      improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z'),
+      improvement(2, 'task-sparring', '2026-08-01T10:00:00.000Z'),
+    ], policy, AS_OF);
+    expect(retention.count).toBe(1);
+    expect(retention.latestAt).toBe('2026-06-21T10:00:00.000Z');
   });
 
   test('absence of observations is not improvement', () => {

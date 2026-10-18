@@ -96,19 +96,21 @@ describe('observation admission', () => {
       .toEqual(['SUPERSEDED_OBSERVATION', 'SUPERSEDED_OBSERVATION']);
   });
 
-  test('a record naming itself as superseded does not erase itself', () => {
+  test('a record naming itself as superseded stays excluded, as it always was', () => {
     const admission = admitObservations(SCOPE, [obs(1, { supersedesObservationId: 'obs-1' })]);
-    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1']);
-    expect(admission.excluded).toEqual([]);
+    expect(admission.admitted).toEqual([]);
+    expect(admission.excluded).toEqual([{ observationId: 'obs-1', reason: 'SUPERSEDED_OBSERVATION' }]);
   });
 
   test('with asOf, later records are left out and a later revision does not apply yet', () => {
     const admission = admitObservations(SCOPE, [
       obs(1),
+      // Observed exactly at asOf: already made, so admitted.
+      obs(10, { observedAt: '2026-06-10T00:00:00.000Z' }),
       obs(20, { supersedesObservationId: 'obs-1' }),
       obs(13, { observedAt: 'not-a-date' }),
     ], '2026-06-10T00:00:00.000Z');
-    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1']);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1', 'obs-10']);
     // Unreadable timestamps are still reported; they cannot be placed after asOf.
     expect(admission.excluded).toEqual([{ observationId: 'obs-13', reason: 'INVALID_TIMESTAMP' }]);
     expect(() => admitObservations(SCOPE, [obs(1)], 'whenever')).toThrow(/valid timestamp/);
@@ -262,6 +264,11 @@ describe('disagreement detection', () => {
       obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
       obs(2, { ...SAME_REP, opportunityKey, observerAccountId: 'coach-b', polarity: 'counterexample' }),
     ])).toBe(false);
+    // Neither reading identified: still nothing to compare.
+    expect(detectObserverDisagreement([
+      obs(1, { ...SAME_REP, opportunityKey, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, opportunityKey, observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ])).toBe(false);
     expect(detectVideoContradiction([
       obs(1, { ...SAME_REP, opportunityKey }),
       obs(2, { ...SAME_REP, polarity: 'counterexample', observerAccountId: null, source: CLIP }),
@@ -311,5 +318,8 @@ describe('recency', () => {
   test('an occurrence recorded after asOf is not recent evidence at asOf', () => {
     const observations = [obs(1, { observedAt: '2026-08-01T00:00:00.000Z' })];
     expect(recentOccurrenceCount(observations, '2026-07-01T00:00:00.000Z', 90)).toBe(0);
+    // Observed exactly at asOf still counts.
+    expect(recentOccurrenceCount([obs(2, { observedAt: '2026-07-01T00:00:00.000Z' })], '2026-07-01T00:00:00.000Z', 90))
+      .toBe(1);
   });
 });
