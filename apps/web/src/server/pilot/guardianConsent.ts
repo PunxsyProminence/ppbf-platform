@@ -314,6 +314,29 @@ export async function readOwnMediaConsent(
   };
 }
 
+/*
+ * The adult's own latest row, only when the athlete is 18 or older on the
+ * gym's day; null for a minor, an unknown date of birth (read as a minor), a
+ * missing athlete row, or an adult with no row of their own. One function so
+ * callers that mock this module at its boundary (the playback gate's callers'
+ * suites) mock one read. Lock first if the caller needs ordering: it takes
+ * none itself.
+ */
+export async function readAdultOwnMediaConsent(
+  organizationId: string,
+  athleteId: string,
+  client?: QueryExecutor,
+): Promise<OwnMediaConsent | null> {
+  const rows = await readRows<{ dob: string | null }>(
+    client,
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  if (rows[0] === undefined || !guardianLinkEnded(rows[0].dob)) return null;
+  return readOwnMediaConsent(organizationId, athleteId, client);
+}
+
 /** Signed (normalised as every media gate reads it), covering video, recorded by the athlete's own login. */
 export function ownConsentCoversNewPublication(own: OwnMediaConsent | null): boolean {
   return own !== null
