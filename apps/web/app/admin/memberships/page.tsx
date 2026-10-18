@@ -75,6 +75,8 @@ const showsChange = (row: Partial<MembershipRow> | undefined, change: RowChange)
 /** What a write is known to have done. `recheck`: Check again re-reads the
  *  list ('list'), or re-reads it to settle a write whose answer was lost. */
 type Notice = { tone: 'critical' | 'warning' | 'success'; text: string; recheck: 'list' | 'settle' | null };
+type PendingSave = { seq: number; sent: EnrollForm };
+type PendingRow = { seq: number; membershipId: string; athleteName: string; change: RowChange };
 
 // The enrollment route's own refusals, in words an office admin can act on
 // (route.ts POST). The duplicate-active sentence is already words and passes
@@ -179,9 +181,13 @@ export default function MembershipsPage() {
   // action never wipes what an unsettled enrollment still needs to say.
   const [enrollNotice, setEnrollNotice] = useState<Notice | null>(null);
   const [rowNotice, setRowNotice] = useState<Notice | null>(null);
-  const [pendingSave, setPendingSave] = useState<EnrollForm | null>(null);
-  const [pendingRow, setPendingRow] = useState<{ membershipId: string; athleteName: string; change: RowChange } | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [pendingRow, setPendingRow] = useState<PendingRow | null>(null);
   const [checking, setChecking] = useState(false);
+  // Each write and each list read takes a number; only the newest may speak.
+  const saveSeq = useRef(0);
+  const rowSeq = useRef(0);
+  const listSeq = useRef(0);
   // The form as typed now, for a reply that lands after the admin kept typing.
   const formRef = useRef(form);
   useEffect(() => {
@@ -194,6 +200,7 @@ export default function MembershipsPage() {
   const [catalogProgramName, setCatalogProgramName] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal): Promise<MembershipRow[]> => {
+    const seq = ++listSeq.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
         method: 'GET',
@@ -205,13 +212,16 @@ export default function MembershipsPage() {
       // A reply without a list is not a list of none.
       if (!Array.isArray(payload.items)) throw new Error('Unable to load memberships.');
       const rows = payload.items as MembershipRow[];
-      setItems(rows);
-      setListRead(true);
+      // A read that a later one overtook does not repaint the table.
+      if (seq === listSeq.current) {
+        setItems(rows);
+        setListRead(true);
+      }
       return rows;
     } catch (error) {
       // A failed re-read after a write leaves the list stale: rows on screen
       // stay, but an empty list is no longer a record of none.
-      setListRead(false);
+      if (seq === listSeq.current) setListRead(false);
       throw error;
     }
   }, []);
@@ -360,36 +370,80 @@ export default function MembershipsPage() {
     }
   };
 
-  /** Re-reads the list; true when it came back. A "didn't refresh" notice clears once it does. */
-  const recheckList = async (): Promise<boolean> => {
-    try {
-      await reload();
-      const clearStale = (current: Notice | null) => (current?.recheck === 'list' ? null : current);
-      setEnrollNotice(clearStale);
-      setRowNotice(clearStale);
-      return true;
-    } catch {
-      return false;
-    }
+  /** Closes and clears the form only if it still holds what was sent. */
+  const clearFormIfSent = (sent: EnrollForm) => {
+    if (!sameForm(formRef.current, sent)) return;
+    setShowForm(false);
+    setForm(EMPTY_FORM);
   };
 
-  /** Settles a row change whose answer was lost by saying what the list now shows. PROPOSED copy. */
-  const settleRow = async (pending: { membershipId: string; athleteName: string; change: RowChange }) => {
-    let rows: MembershipRow[];
-    try {
-      rows = await reload();
-    } catch {
-      setPendingRow(pending);
-      setRowNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before trying again.', recheck: 'settle' });
+  // Says what a list read shows about an unsettled save. Rows read after the
+  // write was answered are fresh enough; a newer save owns the outcome.
+  const judgeSave = (pending: PendingSave, rows: MembershipRow[]) => {
+    if (pending.seq !== saveSeq.current) return;
+    setPendingSave(null);
+    const { sent } = pending;
+    const program = sent.program_name.trim();
+    const shown = rows.find((row) => row.athlete_id === sent.athlete_id && row.program_name === program && row.status === 'active');
+    if (!shown) {
+      const pickedName = athletes.find((athlete) => athlete.athlete_id === sent.athlete_id)?.full_name ?? 'this athlete';
+      setEnrollNotice({ tone: 'critical', text: `Not saved: the list does not show ${pickedName} active in ${program}. Save again when ready.`, recheck: null });
       return;
     }
+    setEnrollNotice({ tone: 'success', text: `The list now shows ${shown.athlete_name} active in ${shown.program_name}. No need to save again.`, recheck: null });
+    clearFormIfSent(sent);
+  };
+
+  // The same for an unsettled row change. PROPOSED copy.
+  const judgeRow = (pending: PendingRow, rows: MembershipRow[]) => {
+    if (pending.seq !== rowSeq.current) return;
     setPendingRow(null);
     setRowNotice(showsChange(rows.find((row) => row.membership_id === pending.membershipId), pending.change)
       ? { tone: 'success', text: `Saved: the list now shows the change for ${pending.athleteName}.`, recheck: null }
       : { tone: 'critical', text: `Not saved: the list does not show the change for ${pending.athleteName}. Try again when ready.`, recheck: null });
   };
 
+  /** Re-reads the list; true when it came back. A read that comes back clears
+   *  "didn't refresh" and settles whatever was waiting on it. */
+  const recheckList = async (): Promise<boolean> => {
+    let rows: MembershipRow[];
+    try {
+      rows = await reload();
+    } catch {
+      return false;
+    }
+    const clearStale = (current: Notice | null) => (current?.recheck === 'list' ? null : current);
+    setEnrollNotice(clearStale);
+    setRowNotice(clearStale);
+    if (pendingSave) judgeSave(pendingSave, rows);
+    if (pendingRow) judgeRow(pendingRow, rows);
+    return true;
+  };
+
+  /** Settles a write whose answer was lost: read the list, then say what it shows. */
+  const settle = async (pending: { kind: 'save'; at: PendingSave } | { kind: 'row'; at: PendingRow }) => {
+    let rows: MembershipRow[];
+    try {
+      rows = await reload();
+    } catch {
+      if (pending.kind === 'save') {
+        if (pending.at.seq !== saveSeq.current) return;
+        // The form keeps what was typed until the list can be read.
+        setPendingSave(pending.at);
+        setEnrollNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before saving again.', recheck: 'settle' });
+      } else {
+        if (pending.at.seq !== rowSeq.current) return;
+        setPendingRow(pending.at);
+        setRowNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before trying again.', recheck: 'settle' });
+      }
+      return;
+    }
+    if (pending.kind === 'save') judgeSave(pending.at, rows);
+    else judgeRow(pending.at, rows);
+  };
+
   const patch = async (row: MembershipRow, change: RowChange) => {
+    const seq = ++rowSeq.current;
     setBusyId(row.membership_id);
     setRowNotice(null);
     setPendingRow(null);
@@ -406,44 +460,15 @@ export default function MembershipsPage() {
         return;
       }
       // A 5xx, no answer, or a reply that does not show the change: not known yet.
-      await settleRow({ membershipId: row.membership_id, athleteName: row.athlete_name, change });
+      await settle({ kind: 'row', at: { seq, membershipId: row.membership_id, athleteName: row.athlete_name, change } });
     } finally {
       setBusyId(null);
     }
   };
 
-  /** Closes and clears the form only if it still holds what was sent. */
-  const clearFormIfSent = (sent: EnrollForm) => {
-    if (!sameForm(formRef.current, sent)) return;
-    setShowForm(false);
-    setForm(EMPTY_FORM);
-  };
-
-  /** Settles a save whose answer was lost by saying what the list now shows. */
-  const settleSave = async (sent: EnrollForm) => {
-    const program = sent.program_name.trim();
-    const pickedName = athletes.find((athlete) => athlete.athlete_id === sent.athlete_id)?.full_name ?? 'this athlete';
-    let rows: MembershipRow[];
-    try {
-      rows = await reload();
-    } catch {
-      // The form keeps what was typed until the list can be read.
-      setPendingSave(sent);
-      setEnrollNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before saving again.', recheck: 'settle' });
-      return;
-    }
-    setPendingSave(null);
-    const shown = rows.find((row) => row.athlete_id === sent.athlete_id && row.program_name === program && row.status === 'active');
-    if (!shown) {
-      setEnrollNotice({ tone: 'critical', text: `Not saved: the list does not show ${pickedName} active in ${program}. Save again when ready.`, recheck: null });
-      return;
-    }
-    setEnrollNotice({ tone: 'success', text: `The list now shows ${shown.athlete_name} active in ${shown.program_name}. No need to save again.`, recheck: null });
-    clearFormIfSent(sent);
-  };
-
   const handleCreate = async () => {
     const sent = form;
+    const seq = ++saveSeq.current;
     setBusyId('new');
     setEnrollNotice(null);
     setPendingSave(null);
@@ -468,22 +493,20 @@ export default function MembershipsPage() {
         return;
       }
       // A 5xx, no answer, or a reply that does not show the row: not known yet.
-      await settleSave(sent);
+      await settle({ kind: 'save', at: { seq, sent } });
     } finally {
       setBusyId(null);
     }
   };
 
-  const runCheck = async (check: () => Promise<unknown>) => {
+  const checkAgain = async () => {
     setChecking(true);
     try {
-      await check();
+      await recheckList();
     } finally {
       setChecking(false);
     }
   };
-  const checkEnrollAgain = () => runCheck(() => (enrollNotice?.recheck === 'settle' && pendingSave ? settleSave(pendingSave) : recheckList()));
-  const checkRowAgain = () => runCheck(() => (rowNotice?.recheck === 'settle' && pendingRow ? settleRow(pendingRow) : recheckList()));
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
@@ -515,7 +538,7 @@ export default function MembershipsPage() {
             </button>
           </div>
 
-          {enrollNotice && <OutcomeNotice notice={enrollNotice} checking={checking} onCheckAgain={() => void checkEnrollAgain()} />}
+          {enrollNotice && <OutcomeNotice notice={enrollNotice} checking={checking} onCheckAgain={() => void checkAgain()} />}
 
           {showForm && (
             /* "Paper forms" is this room's Feel line and mat-paper appeared on
@@ -577,14 +600,14 @@ export default function MembershipsPage() {
                 </div>
               </div>
               <div className="mt-[var(--s4)]">
-                <button type="button" className="btn" disabled={busyId === 'new' || checking} onClick={() => void handleCreate()}>
+                <button type="button" className="btn" disabled={busyId === 'new'} onClick={() => void handleCreate()}>
                   {busyId === 'new' ? 'Saving…' : 'Save membership'}
                 </button>
               </div>
             </section>
           )}
 
-          {rowNotice && <OutcomeNotice notice={rowNotice} checking={checking} onCheckAgain={() => void checkRowAgain()} />}
+          {rowNotice && <OutcomeNotice notice={rowNotice} checking={checking} onCheckAgain={() => void checkAgain()} />}
 
           {loading ? (
             <div className="flex justify-center py-[var(--s7)]">
@@ -594,7 +617,7 @@ export default function MembershipsPage() {
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">Couldn&apos;t load memberships.</div>
-                <button type="button" className="btn btn--ghost mt-[var(--s3)]" disabled={checking} onClick={() => void runCheck(recheckList)}>
+                <button type="button" className="btn btn--ghost mt-[var(--s3)]" disabled={checking} onClick={() => void checkAgain()}>
                   {checking ? 'Checking…' : 'Check again'}
                 </button>
               </div>

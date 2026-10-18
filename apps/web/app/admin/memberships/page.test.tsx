@@ -588,10 +588,11 @@ describe('truthful roster and save states', () => {
     expect(screen.getByText('Not saved: the list does not show the change for Jordan Little. Try again when ready.')).toBeTruthy();
   });
 
-  test('a row change never wipes what an unsettled enrollment still has to say', async () => {
+  test('a refused row change never wipes what an unsettled enrollment still has to say', async () => {
     global.fetch = scriptedFetch({
       post: { status: 502 },
-      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }, { status: 200, body: { items: [MEMBERSHIP] } }],
+      patch: { status: 404, body: { error: 'Not found' } },
+      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }],
     });
     await renderPage();
     await fillAndSave();
@@ -601,35 +602,102 @@ describe('truthful roster and save states', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Mark lapsed' }));
     });
 
+    expect(screen.getByText('Not saved. That membership could not be found.')).toBeTruthy();
     expect(screen.getByText('Not sure it was saved, and the list could not be read. Check before saving again.')).toBeTruthy();
   });
 
-  test('Save waits while a Check again is reading the list', async () => {
-    const base = scriptedFetch({
+  test('any list read that comes back settles an unsettled enrollment, so "could not be read" never goes stale', async () => {
+    global.fetch = scriptedFetch({
       post: { status: 502 },
-      list: [{ status: 200, body: { items: [MEMBERSHIP] } }, { status: 500 }, { status: 200, body: { items: [MEMBERSHIP] } }],
+      list: [
+        { status: 200, body: { items: [MEMBERSHIP] } },
+        { status: 500 },
+        { status: 200, body: { items: [{ ...MEMBERSHIP, status: 'lapsed' }, CASEY_ROW] } },
+      ],
+    });
+    await renderPage();
+    await fillAndSave();
+    expect(screen.getByText(/Not sure it was saved/)).toBeTruthy();
+
+    // A row change's refresh is a list read like any other.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark lapsed' }));
+    });
+
+    expect(screen.queryByText(/Not sure it was saved/)).toBeNull();
+    expect(screen.getByText('The list now shows Casey Stone active in Youth Boxing. No need to save again.')).toBeTruthy();
+  });
+
+  test('a Check again that lands after a newer save neither repaints the list nor overwrites that save', async () => {
+    const posts: Reply[] = [{ status: 502 }, { status: 200, body: { item: CASEY_ROW } }];
+    const base = scriptedFetch({
+      list: [
+        { status: 200, body: { items: [MEMBERSHIP] } },
+        { status: 500 },
+        { status: 200, body: { items: [MEMBERSHIP] } },
+        { status: 200, body: { items: [MEMBERSHIP, CASEY_ROW] } },
+      ],
     });
     let reads = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // The third list read (the Check again) is held open.
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('/admin/memberships') && !init?.method?.match(/POST|PATCH/) && ++reads === 3) await gate;
+      const url = String(input);
+      if (url.includes('/admin/memberships') && init?.method === 'POST') {
+        const reply = posts.shift()!;
+        return { ok: reply !== 'network' && reply.status === 200, status: reply === 'network' ? 0 : reply.status, json: async () => (reply === 'network' ? {} : reply.body ?? {}) } as Response;
+      }
+      // The third list read (the Check again) is held until after the second save.
+      if (url.includes('/admin/memberships') && (init?.method ?? 'GET') === 'GET' && ++reads === 3) {
+        const answer = base(input, init);
+        await gate;
+        return answer;
+      }
       return base(input, init);
     }) as unknown as typeof fetch;
     await renderPage();
     await fillAndSave();
+    expect(screen.getByText(/Not sure it was saved/)).toBeTruthy();
+
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
     });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save membership' }));
+    });
+    expect(screen.getByRole('cell', { name: 'Casey Stone' })).toBeTruthy();
 
-    expect((screen.getByRole('button', { name: 'Save membership' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => {
       release();
     });
-    expect((screen.getByRole('button', { name: 'Save membership' }) as HTMLButtonElement).disabled).toBe(false);
+
+    expect(screen.getByRole('cell', { name: 'Casey Stone' })).toBeTruthy();
+    expect(screen.queryByText(/Not saved: the list does not show/)).toBeNull();
+    expect(screen.queryByText(/Not sure it was saved/)).toBeNull();
+  });
+
+  test('a row change answered 200 without the change is not taken as saved: the list decides', async () => {
+    global.fetch = scriptedFetch({
+      patch: { status: 200, body: { item: {} } },
+      list: [{ status: 200, body: { items: [MEMBERSHIP] } }],
+    });
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark lapsed' }));
+    });
+
+    expect(screen.getByText('Not saved: the list does not show the change for Jordan Little. Try again when ready.')).toBeTruthy();
+    expect(screen.queryByText("Saved. The list didn't refresh.")).toBeNull();
+  });
+
+  test('a memberships reply without a list is a failed read, not "No memberships on record"', async () => {
+    global.fetch = scriptedFetch({ list: [{ status: 200, body: {} }] });
+    await renderPage();
+
+    expect(screen.getByText("Couldn't load memberships.")).toBeTruthy();
+    expect(screen.queryByText('No memberships on record')).toBeNull();
   });
 
   test('the loading lines end in an ellipsis, not three dots', async () => {
