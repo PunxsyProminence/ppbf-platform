@@ -164,6 +164,69 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-027 -- Habit and lesson thresholds from the research report: "A: Adopt as written (Rec.)"; "A: Those three (Rec.)"; "A: Not until calibrated (Rec.)"
+
+**Provenance: PRIMARY.** Questions 2 to 4 of a four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16689, 2026-10-18T01:23:28.742Z; answered at line 16707, 2026-10-18T01:46:02.698Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The card rests on overwatch's research report `Documents\PPBF-overwatch\research\HABIT-AND-LESSON-THRESHOLDS-2026-10-18.md` (section 8 per Overwatch; not read by this records pass). It follows OD-2026-10-17-022 item 3 (the bar must be backed by research). New; edits no earlier entry.
+
+**Question "Pattern bar".** Overwatch, as written: "Thresholds 1. Adopt a three-level label for coach-observed patterns: Emerging (3 sessions), Pattern (5 sessions, 80%+ of at least 8 chances, 2+ settings, 14+ days, second coach check), Established (7 sessions)? Note: 'Emerging' is already a SHADOW evidence-grade word." Options as written: "A: Adopt as written (Rec.)": "The app says how sure it is, based on how much it has seen. The builder flags the shared 'Emerging' word if it confuses."; "B: Speak up at 3": "Same labels, but 'Pattern' at 3 sessions: sooner, on thinner evidence."; "C: Hold for coach trial": "No labels until coaches try it.". Jason: *"A: Adopt as written (Rec.)"*
+
+**Question "Lesson result".** Overwatch, as written: "Thresholds 2. Labels for whether a lesson worked: 'Improved after lesson' (1 before/after), 'Likely worked' (2 staggered + a delayed re-check), 'Worked, replicated' (3)?" Options as written: "A: Those three (Rec.)": "One before/after can't prove the lesson caused the change, so it says 'improved after' until there's more."; "B: Improved / not": "Just two labels."; "C: 'Worked' after one": "Simpler, but overclaims.". Jason: *"A: Those three (Rec.)"*
+
+**Question "Calibration".** Overwatch, as written: "Thresholds 3. Do notes from a coach pair that hasn't passed calibration (watching the same clips and mostly agreeing) count toward patterns?" Options as written: "A: Not until calibrated (Rec.)": "Notes stay visible but marked unverified and don't build patterns until the pair agrees."; "B: Count but flag": "Quicker for the gym; disagreement can slip in."; "C: Count freely": "No calibration step.". Jason: *"A: Not until calibrated (Rec.)"*
+
+**Ruling:**
+
+1. Coach-observed patterns carry three labels, as the card wrote them: Emerging (3 sessions), Pattern (5 sessions, 80%+ of at least 8 chances, 2+ settings, 14+ days, second coach check), Established (7 sessions). The card noted that 'Emerging' is already a SHADOW evidence-grade word. "Speak up at 3" and "Hold for coach trial" were not chosen.
+2. Whether a lesson worked carries three labels: 'Improved after lesson' (1 before/after), 'Likely worked' (2 staggered + a delayed re-check), 'Worked, replicated' (3). "Improved / not" and "'Worked' after one" were not chosen.
+3. Notes from a coach pair that has not passed calibration do not count toward patterns until the pair is calibrated; per the option text they stay visible, marked unverified. "Count but flag" and "Count freely" were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch relayed all three to lane L49 (line 16768), adding detail from the research report that is not on the card (for example, how many points each side of a before/after, and that a pattern lapses after 3 straight misses). That detail is the report's and Overwatch's, not his words.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-026 -- More athlete metrics from the research report: "A: All three (Rec.)"; "A: 20-m shuttle (Rec.)"; "A: That order (Rec.)"; the skip list: his typed "Keep", then "Keep them in the app", not the recommended "A: Keep them out (Rec.)"
+
+**Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 16665, 2026-10-18T01:20:59.413Z; answered at line 16674, 2026-10-18T01:22:57.990Z), and the first question of a follow-up card (put at line 16689, 2026-10-18T01:23:28.742Z; answered at line 16707, 2026-10-18T01:46:02.698Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His picks and typed words are quoted exactly, spelling and spacing kept; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. The cards rest on overwatch's second research report `Documents\PPBF-overwatch\research\MORE-ATHLETE-METRICS-2026-10-18.md` (section 5 per Overwatch; not read by this records pass), which answers his *"Research if there are other useful metrics"* (OD-2026-10-17-023 item 2). New; edits no earlier entry.
+
+**Question "Add now".** Overwatch, as written: "Metrics D1. Add the ADD NOW set: (a) a 1-5 enjoyment tap beside the end-of-session effort rating, (b) coach-entered standing height about every 3 months (growth rate only, no maturity labels), (c) attendance rate over 28 days plus days since last session, worked out from the class register, coaches only?" Options as written: "A: All three (Rec.)": "One extra tap after training, a tape-measure moment each quarter, and a 'hasn't been in for 3 weeks' number the app works out itself."; "B: Enjoy + attendance": "Skip height for now."; "C: None now": "Keep the check-in as it is.". Jason: *"A: All three (Rec.)"*
+
+**Question "Fitness test".** Overwatch, as written: "Metrics D2. Which aerobic test goes on a quarterly test-day form (beside the jump tests you already ruled)?" Options as written: "A: 20-m shuttle (Rec.)": "Beep test with cones; best evidence in young people; 10-15 min for a whole class."; "B: Yo-Yo IR1": "Stop-start version already in the repo's test list; its youth evidence wasn't verified."; "C: No test day now": "No quarterly fitness form yet.". Jason: *"A: 20-m shuttle (Rec.)"*
+
+**Question "Later queue".** Overwatch, as written: "Metrics D3. Queue the ADD LATER items in this order, building none until ADD NOW is live: 1 weekly injury/illness check, 2 monthly sport hours + exam-week tag, 3 bout-day nerves/confidence, 4 quarterly burnout screen, 5 bedtime/screen time?" Options as written: "A: That order (Rec.)": "A priority list so builders start with the most useful items, not the fiddly ones."; "B: Different order": "Tell me the order in Other.". Jason: *"A: That order (Rec.)"*
+
+**Question "Skip list".** Overwatch, as written: "Metrics D4. Keep these out of the app: reaction-time, King-Devick, movement screens (FMS), eating-disorder questionnaires, skinfolds/body fat, predicted maturity and bio-banding, mental-toughness scale, push-up/plank counts, work-rate tests, heart-rate recovery?" Options as written: "A: Keep them out (Rec.)": "Research says unproven for kids, doesn't predict what it claims, or risks labels and body-image harm. Nobody re-researches them."; "B: Move some to queue": "Name which ones in Other.". Jason typed: *"Keep"*
+
+**Follow-up question "D4 meaning".** Overwatch, as written: "Metrics D4 clarification: you typed "Keep". Should the skip-list items (reaction-time, King-Devick, FMS, eating-disorder questionnaires, skinfolds, maturity prediction/bio-banding, mental-toughness, push-up/plank, work-rate, heart-rate recovery) stay OUT of the app?" Options as written: "A: Keep them out (Rec.)": "None of these get built; nobody re-researches them."; "B: Keep them as options": "They move to the ADD LATER queue instead.". Jason typed: *"Keep them in the app"*
+
+**Ruling:**
+
+1. Added now: (a) a 1-5 enjoyment tap beside the end-of-session effort rating, (b) coach-entered standing height about every 3 months (growth rate only, no maturity labels), (c) attendance rate over 28 days plus days since last session, worked out from the class register, coaches only. "B: Enjoy + attendance" and "C: None now" were not chosen.
+2. The quarterly test-day form's aerobic test is the 20-m shuttle. "B: Yo-Yo IR1" and "C: No test day now" were not chosen.
+3. The ADD LATER items are queued in the card's order, none built until ADD NOW is live: 1 weekly injury/illness check, 2 monthly sport hours + exam-week tag, 3 bout-day nerves/confidence, 4 quarterly burnout screen, 5 bedtime/screen time.
+4. The skip-list items (reaction-time, King-Devick, FMS, eating-disorder questionnaires, skinfolds, maturity prediction/bio-banding, mental-toughness, push-up/plank, work-rate, heart-rate recovery) stay in the app. "A: Keep them out (Rec.)" was the recommended answer on both cards and was not chosen. His words name no queue position or build order. Overwatch's reading (its message to this records pass, line 16758): they stay in app scope, queued after the D3 list, nothing built until ADD NOW is live; that matches the follow-up card's option B text ("They move to the ADD LATER queue instead"), which he did not press.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch proposed a lane chip, L60, "Add enjoyment, height, attendance and a shuttle test day" (line 16780).
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-025 -- SHADOW F2 integration work order: *"Ok I approve"* (as relayed from ChatGPT), then withdrawn: *"Nvm chat gpt was confused it will handle m it"*
+
+**Provenance: RECONSTRUCTED (REPORTED) for the approval; PRIMARY for the withdrawal.** In the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`). The approval appears only inside a ChatGPT-written message Jason pasted, "PPBF — SHADOW F2 — APPROVED INTEGRATION WORK ORDER" (queued at line 16434, 2026-10-18T01:13:04.521Z); the work order it approves is not in the transcript. The withdrawal is his own typed message (queued at line 16465, 2026-10-18T01:14:25.384Z). Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His words are quoted exactly, spelling and spacing kept. The id carries 2026-10-17 because these UTC times are the evening of 2026-10-17 Eastern. It follows OD-2026-10-17-024. New; edits no earlier entry.
+
+**The approval, as relayed.** ChatGPT, as written: "Jason's exact authorization: "Ok I approve"." and "This approves the SHADOW F2 Option A integration work order presented immediately before that response."
+
+**What followed.** Overwatch proposed a lane chip, L59, "Integrate SHADOW F2: coach-requested recommendations" (line 16448, 2026-10-18T01:13:45.496Z). Jason then typed: *"Nvm chat gpt was confused it will handle m it"*. Overwatch withdrew the chip (line 16535; result at line 16537, 2026-10-18T01:16:34.400Z: "Task task_9fda4e60 withdrawn — the chip is no longer shown to the user.").
+
+**Ruling:** a reading (Overwatch's, line 16758, and this records pass) of his *"Nvm chat gpt was confused it will handle m it"*: the approval of the F2 integration work order is withdrawn, F2 goes back to ChatGPT under OD-2026-10-17-024, and no F2 integration lane is started from the withdrawn approval.
+
+**Status:** ruled; no F2 integration lane exists at the time of writing (the chip was withdrawn before it was started).
+
+---
+
 ## OD-2026-10-17-024 -- SHADOW F2, the recommendation producer: ChatGPT owns it (*"Yes you do recommendations and give me a prompt telling claude what you are doing"*), and Option A (*"Yes opti I n A"*), both as relayed from ChatGPT
 
 **Provenance: RECONSTRUCTED (REPORTED).** His words appear only inside two ChatGPT-written messages that Jason pasted into the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`): "PPBF — SHADOW F2 — LANE COORDINATION" (queued at line 16112, 2026-10-18T00:53:34.390Z) and "PPBF — SHADOW F2 — OWNER DECISION UPDATE" (queued at line 16257, 2026-10-18T01:04:38.055Z). ChatGPT's question and options as put to him are not in the transcript; only ChatGPT's account of them is. Read by script (housekeeping lane HK, 2026-10-17, at Overwatch's request). His words are quoted exactly as they appear in the pasted text, spelling and spacing kept. The id carries 2026-10-17 because these UTC times are the evening of 2026-10-17 Eastern. New; edits no earlier entry.
