@@ -7,6 +7,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { newIntakeRequestId } from '@/src/client/libraryTextIntake';
 import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
 import {
@@ -164,6 +165,15 @@ const GENERAL_SOURCE_TYPES = [
   'peer_reviewed', 'clinical_guideline', 'governing_body', 'textbook', 'media', 'other',
 ] as const;
 
+// L54 (audit 2026-10-17 item 3): what a registration says when its answer was
+// lost, when a retry found the saved source, and when the URL is taken.
+// Accepted by Overwatch 2026-10-18.
+const SOURCE_REGISTRATION_WORDS = {
+  recovered: 'Source registered. The first answer was lost; the retry found the saved source instead of adding a second one.',
+  unconfirmed: 'The Library did not confirm the registration. Press Register general research again: it finds the saved source instead of adding a second one.',
+  urlTaken: (title: string) => `This URL is already registered as "${title}". Choose it from the source list.`,
+};
+
 export default function ResearchIntakePage() {
   // RINT-05b (OD-2026-10-02-013 1B; OD-2026-10-02-015 D2/D3). The platform
   // owner's curator block works the platform shelf and only that shelf: every
@@ -245,6 +255,10 @@ export default function ResearchIntakePage() {
   });
   const [generalBusy, setGeneralBusy] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
+  // One id per registration, kept until the server confirms it (L54). A retry
+  // after a lost answer sends the same id and gets the source already saved,
+  // never a second one.
+  const generalRequestIdRef = useRef<string | null>(null);
   const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
   // The correction list reads a SERVER-FILTERED general-research page, not a
   // client-side sift of the newest-200 overall list -- in a corpus of
@@ -455,29 +469,58 @@ export default function ResearchIntakePage() {
       if (generalDraft.doi.trim()) provenance.doi_or_pmid = generalDraft.doi.trim();
       if (generalDraft.provider.trim()) provenance.provider = generalDraft.provider.trim();
       if (generalDraft.filename.trim()) provenance.original_filename = generalDraft.filename.trim();
+      generalRequestIdRef.current ??= newIntakeRequestId();
 
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: generalDraft.title.trim(),
-          source_type: generalDraft.sourceType,
-          url: generalDraft.url.trim() || null,
-          metadata: {
-            general_research: true,
-            classification_domain: generalDraft.classification,
-            provenance,
-          },
-          ...shelfBody,
-        }),
-      });
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Registration failed (${response.status})`);
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources`, {
+          credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: generalDraft.title.trim(),
+            source_type: generalDraft.sourceType,
+            url: generalDraft.url.trim() || null,
+            metadata: {
+              general_research: true,
+              classification_domain: generalDraft.classification,
+              provenance,
+            },
+            request_id: generalRequestIdRef.current,
+            ...shelfBody,
+          }),
+        });
+      } catch {
+        // No answer: the source may have been saved. The same id goes again.
+        setGeneralMessage(SOURCE_REGISTRATION_WORDS.unconfirmed);
+        return;
       }
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        recovered?: boolean;
+        existing_source?: { title?: unknown } | null;
+      };
+      const heldTitle = payload.existing_source?.title;
+      const takenBy = payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' && typeof heldTitle === 'string' ? heldTitle : null;
+      if (response.status === 409 && takenBy !== null) {
+        setGeneralMessage(SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
+        await refreshCuratorSources();
+        await refreshGeneralSources();
+        return;
+      }
+      if (response.status >= 500) {
+        setGeneralMessage(SOURCE_REGISTRATION_WORDS.unconfirmed);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(payload.error || `Registration failed (${response.status})`);
+      }
+      generalRequestIdRef.current = null;
       setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
-      setGeneralMessage('Source registered and classified. Evidence review still decides what becomes citable.');
+      setGeneralMessage(payload.recovered === true
+        ? SOURCE_REGISTRATION_WORDS.recovered
+        : 'Source registered and classified. Evidence review still decides what becomes citable.');
       await refreshCuratorSources();
       await refreshGeneralSources();
     } catch (error) {

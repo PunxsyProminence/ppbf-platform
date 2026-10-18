@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { findStoredLibraryChunk, isSameLibraryChunk } from '@/src/server/pilot/libraryIntakeRecovery';
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import { trimLocator } from '@/src/server/pilot/locatorWhitespace';
 import { createShadowLibraryChunk } from '@/src/server/pilot/shadowLibrary';
@@ -59,7 +60,35 @@ function excerptLocatorFrom(body: { excerpt_locator?: unknown; metadata?: unknow
   return trimLocator(fromMetadata) || undefined;
 }
 
+const CHUNK_CONFLICT_CODE = 'SHADOW_LIBRARY_CHUNK_CONFLICT';
+
+// A REPEATED WRITE (L54; audit 2026-10-17 item 2). A curator's "Finish
+// saving" resends parts whose first answer may have been lost after they were
+// stored. The part already at this ordinal decides the answer: the same text,
+// locator and separator is this write, already done -- 200 with
+// already_stored, nothing written, so the document is not sent back to review
+// and the excerpt budget does not count the part twice. Anything else there is
+// a conflict, never reported as saved. Null: nothing is stored there yet.
+async function settleRepeatedChunk(
+  organizationId: string,
+  documentId: string,
+  ordinal: number,
+  attempt: { textContent: string; excerptLocator: string | null; metadata?: Record<string, unknown> },
+): Promise<NextResponse | null> {
+  const stored = await findStoredLibraryChunk(organizationId, documentId, ordinal);
+  if (!stored) return null;
+  if (isSameLibraryChunk(stored, attempt)) {
+    return NextResponse.json({ ok: true, chunk: stored, already_stored: true }, { status: 200 });
+  }
+  return NextResponse.json(
+    { ok: false, error: 'Different text is already saved at this part of the document', code: CHUNK_CONFLICT_CODE },
+    { status: 409 },
+  );
+}
+
 export async function POST(request: NextRequest) {
+  // Kept for the duplicate-key answer, which compares what won the race.
+  let repeat: { organizationId: string; documentId: string; ordinal: number; attempt: Parameters<typeof settleRepeatedChunk>[3] } | null = null;
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
@@ -111,6 +140,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    repeat = {
+      organizationId,
+      documentId: body.document_id,
+      ordinal: body.ordinal as number,
+      attempt: {
+        textContent: body.text_content,
+        excerptLocator: excerptLocator || null,
+        metadata: body.metadata as Record<string, unknown> | undefined,
+      },
+    };
+    const settled = await settleRepeatedChunk(repeat.organizationId, repeat.documentId, repeat.ordinal, repeat.attempt);
+    if (settled) return settled;
+
     const chunk = await createShadowLibraryChunk({
       organizationId,
       actorAccountId: principal.accountId,
@@ -134,10 +176,13 @@ export async function POST(request: NextRequest) {
       if (error.message === 'Document does not exist in this organization.') {
         return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
       }
-      // unique (document_id, ordinal)
+      // unique (document_id, ordinal): another request stored this part first.
       if (error.message.includes('duplicate key value')) {
-        return NextResponse.json(
-          { ok: false, error: 'A chunk with this ordinal already exists for this document' },
+        const settled = repeat
+          ? await settleRepeatedChunk(repeat.organizationId, repeat.documentId, repeat.ordinal, repeat.attempt).catch(() => null)
+          : null;
+        return settled ?? NextResponse.json(
+          { ok: false, error: 'A chunk with this ordinal already exists for this document', code: CHUNK_CONFLICT_CODE },
           { status: 409 },
         );
       }
