@@ -9,10 +9,8 @@ import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot
 import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
 import useGymSound, { playGymSound } from './useGymSound';
 import { advanceRoundTimer, isNewSet, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
 
 /**
  * THE WALL — the board on the gym's television.
@@ -681,11 +679,12 @@ function WallSound() {
 const HELD = ' ';
 
 function Masthead({ now, zone, round }: { now: number | null; zone?: string; round?: ReactNode }) {
+  const gym = useOrganizationProfile();
   const stamp = now === null ? null : new Date(now);
   return (
     <header className="flex shrink-0 items-end justify-between gap-[var(--s6)] px-[var(--s7)] pt-[var(--s5)]">
       <div>
-        <p className="wall-eyebrow">{GYM.brand}</p>
+        <p className="wall-eyebrow">{gym?.brand ?? HELD}</p>
         <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
         <p className="wall-date text-4xl">
           {stamp ? formatIn(stamp, zone, { month: 'long', day: 'numeric', year: 'numeric' }) : HELD}
@@ -919,12 +918,15 @@ function Marquee({ board, daily }: { board: WallBoard; daily: DailySaying | null
 export const WALL_STANDING_SEED = 'wall-standing';
 
 function StandingBoard({ health }: { health: WallHealth }) {
+  const gym = useOrganizationProfile();
   const saying = pickSaying('anywhere', WALL_STANDING_SEED);
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[var(--s5)] px-[var(--s7)] text-center">
-      <p className="wall-standing-crest" aria-hidden="true">
-        {GYM.shortName}
-      </p>
+      {gym ? (
+        <p className="wall-standing-crest" aria-hidden="true">
+          {gym.shortName}
+        </p>
+      ) : null}
       {saying ? (
         <p className="wall-standing-line text-6xl" data-testid="wall-standing-saying">
           {saying.line}

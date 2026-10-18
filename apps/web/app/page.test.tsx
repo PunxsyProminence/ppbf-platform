@@ -2,7 +2,9 @@
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import HomePage, { generateMetadata } from './page';
-import { generateMetadata as generateRootMetadata } from './layout';
+import RootLayout, { generateMetadata as generateRootMetadata } from './layout';
+import { OrganizationProfileProvider } from '@/components/OrganizationProfileProvider';
+import { PPBF_PROFILE } from '@/src/testing/organizationProfileFixtures';
 
 jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 jest.mock('./globals.css', () => ({}));
@@ -13,6 +15,7 @@ jest.mock('@/components/ThemeProvider', () => ({ ThemeProvider: ({ children }: {
 // The stored profile as the migration seeds it for the operating gym (lane L31, #1469).
 jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
   getOperatingOrganizationProfile: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
+  getOperatingOrganizationProfileOrNull: async () => jest.requireActual('@/src/testing/organizationProfileFixtures').PPBF_PROFILE,
   // The real module loads pg, which jsdom cannot; the layout only needs the class to compare with.
   OrganizationProfileUnavailableError: class OrganizationProfileUnavailableError extends Error {},
 }));
@@ -121,6 +124,20 @@ test('with no readable profile the root layout keeps every page up under a plain
   } finally {
     store.getOperatingOrganizationProfile = original;
   }
+});
+
+test('the root layout hands the stored profile to every browser component', async () => {
+  const tree = await RootLayout({ children: 'page' });
+  const found: unknown[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    const element = node as { type?: unknown; props?: { children?: unknown; profile?: unknown } };
+    if (element.type === OrganizationProfileProvider) found.push(element.props?.profile);
+    walk(element.props?.children);
+  };
+  walk(tree);
+  expect(found).toEqual([PPBF_PROFILE]);
 });
 
 test('the share-card alt text claims youth are free, not every family', () => {

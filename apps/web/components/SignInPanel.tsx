@@ -479,7 +479,7 @@ export default function SignInPanel({
               Close
             </button>
           ) : (
-            <Link href="/public" className="btn btn--ghost">
+            <Link href="/" className="btn btn--ghost">
               Public Page
             </Link>
           )}

@@ -9,11 +9,8 @@ import { ForbiddenError } from './errors';
 import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
-import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+import type { OrganizationProfile } from '@/src/shared/organizationProfile';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
-
-// The gym's identity, from its one profile (#1469, N9-01B).
-const GYM = currentOrganizationProfile();
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -1613,10 +1610,18 @@ export function validateShadowResponse(
   };
 }
 
-// SHADOW System Prompt — the gym's identity, from its one profile (#1469)
-export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for ${GYM.brand}.
+/**
+ * The first line of every SHADOW prompt: who SHADOW is, for which gym. The
+ * gym's name comes from its stored profile (lane L31, #1469), read by the
+ * caller per request; with no profile it says "this gym" rather than a name
+ * nobody stored. The doctrine below never varies by gym.
+ */
+export function shadowIdentityLine(gym: Pick<OrganizationProfile, 'brand'> | null): string {
+  return `You are SHADOW, the organizational intelligence system for ${gym ? gym.brand : 'this gym'}.`;
+}
 
-PRIMARY ROLE:
+// SHADOW System Prompt -- the doctrine. Sent after shadowIdentityLine.
+export const SHADOW_SYSTEM_PROMPT = `PRIMARY ROLE:
 Your primary role is organizational learning, not automatic knowledge or canned recommendations.
 Recommendations are NOT your primary purpose.
 Observations are the atomic unit of learning, not automatic knowledge.
@@ -1808,8 +1813,14 @@ You are speaking with staff. Use the full technical register: precise terminolog
  * SHADOW_SYSTEM_PROMPT export stays untouched -- tests pin its contents, and
  * the doctrine must never vary by audience; only length and register do.
  */
-export function composeShadowSystemPrompt(input: { role: string; sessionType: string }): string {
-  return `${SHADOW_SYSTEM_PROMPT}
+export function composeShadowSystemPrompt(input: {
+  role: string;
+  sessionType: string;
+  gym: Pick<OrganizationProfile, 'brand'> | null;
+}): string {
+  return `${shadowIdentityLine(input.gym)}
+
+${SHADOW_SYSTEM_PROMPT}
 
 ${buildResponseLengthPrompt(input.sessionType)}
 
