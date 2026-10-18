@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
@@ -134,6 +134,247 @@ async function submitDeepTrackObservations(input: {
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
     safetyReviewLesson: fulfilled.find((value) => value.safetyReviewLesson)?.safetyReviewLesson,
   };
+}
+
+/* FIX A NUMBER. A mistyped count used to be permanent from this screen: the
+   observations route has always accepted a correction (supersedesObservationId,
+   re-running every calculation the old number fed), but nothing here sent one,
+   so the only fix was an API call with hand-copied observation ids. This lists
+   the recent entries (GET on the same route, punch numbers only) and posts a
+   correction per changed number. The old number stays on record as replaced.
+
+   Corrections go one at a time, in order. Each one re-runs the calculations
+   its old number fed, and a later one must see the earlier one stored.
+   Copy in this block is PROPOSED (lane L50). */
+type CorrectableKind = 'punch_attempted' | 'punch_landed' | 'punch_absorbed';
+
+const CORRECTABLE_FIELDS: ReadonlyArray<{ kind: CorrectableKind; label: string }> = [
+  { kind: 'punch_attempted', label: 'Thrown' },
+  { kind: 'punch_landed', label: 'Landed' },
+  { kind: 'punch_absorbed', label: 'Punches taken' },
+];
+
+interface SparringEntryObservation {
+  observationId: string;
+  kind: string;
+  value: number | null;
+  unit: string;
+  dimensions: Record<string, string | number | boolean | null>;
+  observedAt: string;
+}
+
+interface SparringEntry {
+  contextId: string;
+  observedAt: string;
+  observations: SparringEntryObservation[];
+}
+
+function entryObservation(entry: SparringEntry, kind: CorrectableKind) {
+  return entry.observations.find((observation) => observation.kind === kind);
+}
+
+function entryLabel(entry: SparringEntry): string {
+  const punchType = entryObservation(entry, 'punch_attempted')?.dimensions.punchType
+    ?? entryObservation(entry, 'punch_landed')?.dimensions.punchType;
+  const when = formatGymDateTimeShort(entry.observedAt) ?? 'Unknown time';
+  return typeof punchType === 'string' ? `${when} · ${punchType}` : when;
+}
+
+function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
+  const [entries, setEntries] = useState<SparringEntry[]>([]);
+  const [listState, setListState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Partial<Record<CorrectableKind, string>>>({});
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function loadEntries(subject: string) {
+    setListState('loading');
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/formulas/observations?athlete_id=${encodeURIComponent(subject)}&limit=5`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('entries');
+      const payload = (await response.json()) as { entries?: SparringEntry[] };
+      setEntries(payload.entries ?? []);
+      setListState('loaded');
+    } catch {
+      setEntries([]);
+      setListState('unavailable');
+    }
+  }
+
+  function startEditing(entry: SparringEntry) {
+    const values: Partial<Record<CorrectableKind, string>> = {};
+    for (const { kind } of CORRECTABLE_FIELDS) {
+      const observation = entryObservation(entry, kind);
+      if (observation) values[kind] = observation.value == null ? '' : String(observation.value);
+    }
+    setDraft(values);
+    setEditing(entry.contextId);
+    setMessage('');
+  }
+
+  async function saveFix(entry: SparringEntry) {
+    if (!athleteId) return;
+    const changes = CORRECTABLE_FIELDS.flatMap(({ kind }) => {
+      const observation = entryObservation(entry, kind);
+      const raw = draft[kind];
+      if (!observation || raw === undefined || raw.trim() === '') return [];
+      const value = Number(raw);
+      return value === observation.value ? [] : [{ observation, value }];
+    });
+    if (changes.some(({ value }) => !Number.isInteger(value) || value < 0)) {
+      setMessage('Counts are whole numbers, 0 or more.');
+      return;
+    }
+    const finalValue = (kind: CorrectableKind) => {
+      const change = changes.find(({ observation }) => observation.kind === kind);
+      return change ? change.value : entryObservation(entry, kind)?.value ?? null;
+    };
+    const thrown = finalValue('punch_attempted');
+    const landed = finalValue('punch_landed');
+    if (thrown != null && landed != null && landed > thrown) {
+      setMessage('You cannot land more than you threw. Check those two numbers.');
+      return;
+    }
+    if (changes.length === 0) {
+      setMessage('Nothing changed.');
+      return;
+    }
+
+    const subject = athleteId;
+    setSaving(true);
+    let saved = 0;
+    let safetyLesson: string | null | undefined;
+    try {
+      for (const { observation, value } of changes) {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            athleteId: subject,
+            contextId: entry.contextId,
+            kind: observation.kind,
+            value,
+            unit: observation.unit,
+            dimensions: observation.dimensions,
+            observedAt: observation.observedAt,
+            // One key per replaced observation: a retry of this exact fix is
+            // the same record, and fixing the fix replaces the new one.
+            idempotencyKey: `${entry.contextId}-${observation.kind}-fix-${observation.observationId}`,
+            supersedesObservationId: observation.observationId,
+          }),
+        }).catch(() => null);
+        if (!response?.ok) break;
+        saved += 1;
+        // The route's contact gate runs on a correction exactly as on a new
+        // entry; when it raises a review, say so the way the log above does.
+        const payload = (await response.json().catch(() => ({}))) as {
+          safetyReview?: { raised?: boolean; lesson?: string };
+        };
+        if (payload.safetyReview?.raised) safetyLesson = payload.safetyReview.lesson ?? null;
+      }
+    } finally {
+      setSaving(false);
+    }
+
+    setEditing(null);
+    const outcome = saved === changes.length
+      ? 'Fixed. The old number stays on record as replaced.'
+      : saved === 0
+        ? 'That fix did not save. Check your connection and try again.'
+        : 'Only part of that fix saved. The numbers below are what is on record now.';
+    setMessage(safetyLesson !== undefined
+      ? `${outcome} There is no current medical clearance on file for this athlete, so your coach has been asked to look at it.${safetyLesson ? ` ${safetyLesson}` : ''}`
+      : outcome);
+    await loadEntries(subject);
+  }
+
+  return (
+    <section aria-labelledby="fixEntryHeading" className="px-[var(--s5)] pb-[var(--s6)]">
+      <div className="mat-leather grid gap-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]">
+        <h2 id="fixEntryHeading" className="t-command m-0" style={{ fontSize: 'var(--t-lg)' }}>Fix a number</h2>
+        <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+          Typed a count wrong? Open a recent entry and put the right number in.
+        </p>
+        <button
+          type="button"
+          onClick={() => { if (athleteId) void loadEntries(athleteId); }}
+          disabled={!athleteId || listState === 'loading'}
+          className="btn btn--ghost min-h-[var(--tap)] justify-self-start disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {listState === 'loading' ? 'Loading…' : 'Show recent entries'}
+        </button>
+        {message && <p className="m-0 text-[length:var(--t-md)] text-[color:var(--bone-200)]" role="status">{message}</p>}
+        {listState === 'unavailable' && (
+          <p className="m-0 text-[length:var(--t-sm)] text-[var(--restricted-ink)]">
+            Recent entries could not be loaded. Try again.
+          </p>
+        )}
+        {listState === 'loaded' && entries.length === 0 && (
+          <p className="m-0 text-[length:var(--t-sm)] text-[color:var(--bone-300)]">No sparring entries yet.</p>
+        )}
+        {entries.length > 0 && (
+          <ul className="m-0 grid list-none gap-[var(--s3)] p-0">
+            {entries.map((entry) => (
+              <li key={entry.contextId} className="mat-leather--raised grid gap-[var(--s3)] rounded-[var(--r-md)] p-[var(--s4)]">
+                <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+                  <p className="t-label m-0">{entryLabel(entry)}</p>
+                  {editing !== entry.contextId && (
+                    <button
+                      type="button"
+                      onClick={() => startEditing(entry)}
+                      disabled={saving}
+                      className="btn btn--ghost min-h-[var(--tap)]"
+                    >
+                      Fix
+                    </button>
+                  )}
+                </div>
+                {editing === entry.contextId ? (
+                  <div className="grid gap-[var(--s3)]">
+                    <div className="grid gap-[var(--s3)] sm:grid-cols-3">
+                      {CORRECTABLE_FIELDS.filter(({ kind }) => draft[kind] !== undefined).map(({ kind, label }) => (
+                        <div key={kind} className="field">
+                          <label htmlFor={`fix-${entry.contextId}-${kind}`} className="t-label">{label}</label>
+                          <input
+                            id={`fix-${entry.contextId}-${kind}`}
+                            type="number"
+                            min={0}
+                            value={draft[kind] ?? ''}
+                            onChange={(event) => setDraft((current) => ({ ...current, [kind]: event.target.value }))}
+                            className="input input--kiosk"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-[var(--s3)]">
+                      <button type="button" onClick={() => void saveFix(entry)} disabled={saving} className="btn min-h-[var(--tap)]">
+                        {saving ? 'Saving…' : 'Save fix'}
+                      </button>
+                      <button type="button" onClick={() => setEditing(null)} disabled={saving} className="btn btn--ghost min-h-[var(--tap)]">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="t-data m-0 text-[length:var(--t-md)]">
+                    {CORRECTABLE_FIELDS
+                      .filter(({ kind }) => entryObservation(entry, kind))
+                      .map(({ kind, label }) => `${label} ${entryObservation(entry, kind)?.value ?? '—'}`)
+                      .join(' · ')}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -290,13 +531,11 @@ export default function SparringTelemetryPage() {
 
       const timestamp = formatGymTimeOfDay(new Date()) ?? '';
       setLastSubmitted(timestamp);
-      // The ordinary-path copy may not claim a coach sees this. Nothing reads
-      // ordinary sparring observations back out: /shadow/formulas/results has
-      // no client caller, and no coach surface or SHADOW context queries
-      // shadow_formula_observations. What IS true is that the safety
-      // exceptions reach a coach -- missing medical clearance, or contact
-      // during a hold, file a flagged near miss -- so that branch keeps
-      // saying so, because that one is backed.
+      // The ordinary-path copy does not tell the athlete a coach sees this
+      // (Jason, D10: "No"), although /coach/athlete-intelligence now reads the
+      // results calculated from it. The safety exceptions are different --
+      // missing medical clearance, or contact during a hold, file a flagged
+      // near miss a coach really receives -- so that branch keeps saying so.
       const savedMessage = safetyReviewRaised
         ? 'Saved. There is no current medical clearance on file for this athlete, so '
           + 'your coach has been asked to look at it. What you wrote is kept -- do not put it in again.'
@@ -619,6 +858,12 @@ export default function SparringTelemetryPage() {
           </aside>
         </div>
       </form>
+
+      {/* Keyed by athlete: a coach switching athletes gets a fresh section,
+          so the previous child's entries -- including a list or a fix still
+          in flight when the picker changed -- can never appear under the new
+          one. A late response lands on the unmounted instance and is dropped. */}
+      <FixSparringEntry key={athleteId ?? 'no-athlete'} athleteId={athleteId} />
 
       {/* Reuses PrintSheet's gym identity -- same fix as
           coach/environment/passbook-check/page.tsx, same reason. */}
