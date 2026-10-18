@@ -302,7 +302,7 @@ test('the title and introduction are on the wood header, not the wall', async ()
   const { container } = render(<CutStudyClipPage />);
 
   await screen.findByText('take-2-front.webm');
-  const header = screen.getByRole('heading', { level: 1, name: 'Cut a study clip' }).closest('header');
+  const header = screen.getByRole('heading', { level: 1, name: 'Cut Study Clips' }).closest('header');
   expect(header).toHaveClass('mat-wood');
   expect(header).toHaveTextContent('Teach Shadow');
   expect(header).toHaveTextContent(/Nothing here scores an athlete\./);

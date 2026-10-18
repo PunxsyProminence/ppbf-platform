@@ -29,7 +29,8 @@ import { query, queryOne } from './db';
 //
 // Wellness self-reports are optional -- skipping them is legal and stored as
 // null, never defaulted. The set grew from three (energy / soreness / focus)
-// to nine by owner decision 2026-08-28, one migration per measure decided;
+// to nine by owner decision 2026-08-28 and ten with mood (Jason 2026-10-18),
+// one migration per measure decided;
 // what each 1-5 number MEANS lives in src/shared/wellnessScales.ts, which the
 // athlete's screen labels from and this module validates against.
 
@@ -50,6 +51,8 @@ export interface AthleteCheckInRow {
   mental_clarity: number | null;
   stress: number | null;
   nutrition_compliance: number | null;
+  // Jason 2026-10-18, "Mood + stress (Rec.)" (stress was already stored).
+  mood: number | null;
   note: string;
   created_at: string;
 }
@@ -74,6 +77,7 @@ export const WELLNESS_COLUMNS = [
   'mental_clarity',
   'stress',
   'nutrition_compliance',
+  'mood',
 ] as const;
 
 export type WellnessColumn = (typeof WELLNESS_COLUMNS)[number];
@@ -192,6 +196,7 @@ export async function checkIn(input: {
   mentalClarity?: number | null;
   stress?: number | null;
   nutritionCompliance?: number | null;
+  mood?: number | null;
   note?: string;
   /**
    * The instant the gym day is read off, defaulting to now.
@@ -226,8 +231,8 @@ export async function checkIn(input: {
     `insert into pilot.athlete_check_ins
        (organization_id, check_in_id, athlete_id, checked_in_on,
         energy, soreness, focus, sleep_hours, hydration, motivation,
-        mental_clarity, stress, nutrition_compliance, note)
-     values ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        mental_clarity, stress, nutrition_compliance, mood, note)
+     values ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      on conflict (organization_id, athlete_id, checked_in_on) do nothing
      returning check_in_id`,
     [
@@ -244,6 +249,7 @@ export async function checkIn(input: {
       input.mentalClarity ?? null,
       input.stress ?? null,
       input.nutritionCompliance ?? null,
+      input.mood ?? null,
       input.note ?? '',
     ],
   );
@@ -271,7 +277,7 @@ const CHECK_IN_COLUMNS = `
   organization_id, check_in_id, athlete_id, checked_in_on::text as checked_in_on,
   energy, soreness, focus,
   sleep_hours::float8 as sleep_hours,
-  hydration, motivation, mental_clarity, stress, nutrition_compliance,
+  hydration, motivation, mental_clarity, stress, nutrition_compliance, mood,
   note, created_at
 `;
 

@@ -588,7 +588,7 @@ export default function AthleteProgressionIntelligencePage() {
               over a kid's shoulder. The register keeps its name; this page
               says what it is. */}
           <p className="t-eyebrow">Drills</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>My Progression</h1>
           <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             What your coach wants you working on, and somewhere to say when you have done it.
