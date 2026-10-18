@@ -30,7 +30,6 @@ type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' |
 interface Child {
   id: string;
   name: string;
-  track: string;
 
   /* Identity. A guardian is inside their own child's circle, so a released
      portrait reaches them -- and only their own children's, because the server
@@ -743,7 +742,6 @@ export default function ParentHub() {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
-            track: 'Unavailable',
             photoPath: null,
             initials: '\u2014',
             photoAvailable: false,
@@ -1479,7 +1477,7 @@ export default function ParentHub() {
                 title="Child Overview"
                 description="Quick snapshot of your child's current training status, progress, and upcoming events."
                 usage={[
-                  'Review current track and skill level',
+                  'Review membership, scholarship and support status',
                   'Check attendance and progress summary',
                   'See upcoming events and important dates',
                   'Review coach messages'
@@ -1499,10 +1497,6 @@ export default function ParentHub() {
                       <div>
                         <p className="t-label mb-[var(--s2)]">Child Name</p>
                         <p className="t-body font-semibold">{activeChild.name}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Current Track</p>
-                        <p className="t-body font-semibold">{activeChild.track}</p>
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Progress</p>
