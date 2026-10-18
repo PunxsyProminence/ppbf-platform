@@ -334,6 +334,11 @@ describe('the learning-loop migration', () => {
     await db.query(
       `update pilot.behaviour_keys set status = 'retired' where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
     );
+    // The purge's name scrub is the one change to a label: it gains a [name].
+    await db.query(
+      `update pilot.behaviour_keys set label = '[name] squares up on the hook'
+        where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
+    );
     expect(await refusal(() => db.query(
       `delete from pilot.behaviour_keys where organization_id = $1 and behaviour_key = 'squares_up_on_the_hook'`, [ORG],
     ))).toEqual({ code: '23514', constraint: 'pilot_behaviour_keys_no_delete' });
@@ -450,8 +455,11 @@ describe('the learning-loop migration', () => {
     ))).toEqual({ code: '23514', constraint: 'pilot_learning_policies_versioned' });
     expect(await refusal(() => db.query('delete from pilot.learning_policies where policy_id = $1', [v2])))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_no_delete' });
-    // The other kind has its own chain and its own bar in force.
+    // Each other kind has its own chain and its own bar in force.
     await expect(policy({ kind: 'athlete_lesson' })).resolves.toEqual(expect.any(String));
+    await expect(policy({ kind: 'observer_calibration' })).resolves.toEqual(expect.any(String));
+    expect(await refusal(() => policy({ kind: 'something_else' })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_kind_check' });
   });
 
   test('the new intervention columns hold real behaviour names and the observation context shape', async () => {
@@ -477,6 +485,12 @@ describe('the retention purge and a purged child\'s behaviour reports', () => {
     // Another child's report whose note names A (a drill partner): A's name
     // leaves it too, gym-wide.
     await report({ athleteId: ATHLETE_B, episodeId: 'attempt:att-ll-3', observer: COACH, note: NOTE_B_NAMING_A });
+    // A behaviour name typed with A's name in it: the name goes, the behaviour stays.
+    await db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, 'rosas_low_guard', 'Rosa keeps a low guard', 'SK-GUARD-01', $2)`,
+      [ORG, COACH],
+    );
     // A coach's chat turn about A, so A's two tokens can be compared.
     await db.query(
       `insert into pilot.shadow_chat_audit (organization_id, user_id, user_role, athlete_id, user_message, shadow_response)
@@ -497,6 +511,7 @@ describe('the retention purge and a purged child\'s behaviour reports', () => {
     expect(dry.blocked_by ?? {}).toEqual({});
     expect(dry.would_deidentify_behaviour_observations).toBe(3);
     expect(dry.would_scrub_behaviour_observation_notes_names).toBe(1);
+    expect(dry.would_scrub_behaviour_key_labels_names).toBe(1);
     expect(await namingA()).toBe(3);
   });
 
@@ -507,6 +522,11 @@ describe('the retention purge and a purged child\'s behaviour reports', () => {
     expect(event.athletes).toBe(1);
     expect(event.behaviour_observations_deidentified).toBe(3);
     expect(event.behaviour_observation_notes_names_scrubbed).toBe(1);
+    expect(event.behaviour_key_labels_names_scrubbed).toBe(1);
+    const label = await db.query(
+      `select label from pilot.behaviour_keys where organization_id = $1 and behaviour_key = 'rosas_low_guard'`, [ORG],
+    );
+    expect(label.rows).toEqual([{ label: '[name] keeps a low guard' }]);
     expect(await namingA()).toBe(0);
 
     const kept = await db.query(
