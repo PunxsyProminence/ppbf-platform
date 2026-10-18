@@ -26,9 +26,10 @@ function literalTitles(href: string): string[] | null {
   const file = path.join(WEB, 'app', ...href.split('/').filter(Boolean), 'page.tsx');
   if (!fs.existsSync(file)) return null;
   const source = fs.readFileSync(file, 'utf8');
-  const titles = [...source.matchAll(/<h1[^>]*>\s*([^<{]+?)\s*<\/h1>/g)].map((m) =>
-    m[1].replace(/&apos;|&rsquo;/g, "'").replace(/&amp;/g, '&'),
-  );
+  const titles = [...source.matchAll(/<h1[^>]*>\s*([^<{]+?)\s*<\/h1>/g)]
+    .map((m) => m[1].replace(/&apos;|&rsquo;/g, "'").replace(/&amp;/g, '&'))
+    // A notice for a refused role or a holding state is not the page's title.
+    .filter((title) => !/^Loading|Access Required|managed per gym|set per gym/.test(title));
   return titles.length > 0 ? titles : null;
 }
 
@@ -37,7 +38,7 @@ const CHECKED = BUILDING.filter((door) => !/[?#]/.test(door.href) && !(door.href
   .filter(([, , titles]) => titles !== null);
 
 test('the scan reaches enough doors to mean something', () => {
-  expect(CHECKED.length).toBeGreaterThan(80);
+  expect(CHECKED.length).toBeGreaterThan(110);
 });
 
 test.each(CHECKED)('%s: the door "%s" is the page title', (_href, label, titles) => {

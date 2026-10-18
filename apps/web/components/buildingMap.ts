@@ -173,7 +173,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/door-register', label: 'Door Register', room: 'office', roles: ADMIN_GATE,
     keywords: 'view as preview role structure navigation tabs doors rooms register map building sitemap routes',
     hint: 'Every door each role holds, by room. Route structure only — never another person’s records.' },
-  { href: '/admin/pin', label: 'PIN Management', room: 'office', roles: ['admin'],
+  { href: '/admin/pin', label: 'Reset Athlete Sign-In', room: 'office', roles: ['admin'],
     keywords: 'pin codes credentials reset kiosk access' },
   { href: '/admin/activation-codes', label: 'Activation Codes', room: 'office', roles: ['admin'],
     keywords: 'activation codes onboarding invite new athlete' },
