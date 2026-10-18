@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import { getOrganizationName } from '@/src/server/pilot/staffProvisioning';
 import { OPERATING_ORGANIZATION_ID } from '@/src/server/pilot/organizationProfileStore';
@@ -17,9 +17,7 @@ export const runtime = 'nodejs';
 
 async function requireGymAdmin(request: NextRequest) {
   const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-  if (!isOrganizationAdminRole(principal.role)) {
-    throw new Error('Forbidden: role not allowed');
-  }
+  requireRole(principal, ['organization_admin', 'admin']);
   return principal;
 }
 

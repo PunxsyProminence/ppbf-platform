@@ -14457,7 +14457,7 @@
     "id": "app/api/pilot/admin/organization-profile/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/organization-profile",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + isOrganizationAdminRole",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
     "rolesAdmitted": [
       "organization_admin",
       "admin"
@@ -14473,15 +14473,19 @@
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
       ],
-      "authorizationGates": [],
-      "roleLiterals": []
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
     "id": "app/api/pilot/admin/organization-profile/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/organization-profile",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + isOrganizationAdminRole",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
     "rolesAdmitted": [
       "organization_admin",
       "admin"
@@ -14497,8 +14501,12 @@
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
       ],
-      "authorizationGates": [],
-      "roleLiterals": []
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   }
 ]
