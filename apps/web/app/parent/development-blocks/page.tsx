@@ -185,7 +185,7 @@ export default function ParentDevelopmentBlocksPage() {
               blocks={blocks}
               state={state}
               subjectLabel="their plan"
-              emptyMessage="No development block has been written yet. That is normal — a coach writes one when they are planning a stretch of weeks, not for every session."
+              emptyMessage="No development plan has been written yet. That is normal — a coach writes one when they are planning a stretch of weeks, not for every session."
             />
           </section>
         )}
