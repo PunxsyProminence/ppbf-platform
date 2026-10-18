@@ -6,6 +6,7 @@ import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRos
 import { getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getPerformanceRollup } from '@/src/server/pilot/performanceAnalytics';
+import { getAttendanceLast28Days } from '@/src/server/pilot/attendancePrecedence';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -34,11 +35,16 @@ jest.mock('@/src/server/pilot/performanceAnalytics', () => {
   return { ...actual, getPerformanceRollup: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/attendancePrecedence', () => ({
+  getAttendanceLast28Days: jest.fn(async () => new Map()),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
 const mockForOrg = organizationActionableRoster as jest.Mock;
 const mockRollup = getPerformanceRollup as jest.Mock;
+const mockAttendance = getAttendanceLast28Days as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -170,5 +176,33 @@ describe('window clamping', () => {
   test('a non-numeric window falls back to the default', async () => {
     const payload = await (await GET(getRequest('window_days=soon'))).json();
     expect(payload.window_days).toBe(28);
+  });
+});
+
+describe('attendance over the last 28 days (OD-2026-10-17-026 (c))', () => {
+  test('is read for exactly the athletes the rollup covers and attached to each item, whatever the window', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-9' }));
+    mockForCoach.mockResolvedValue([
+      { athlete_id: 'ath-1', full_name: 'Jordan Doe' },
+      { athlete_id: 'ath-2', full_name: 'Riley Doe' },
+    ]);
+    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockRollup.mockResolvedValue([ROLLUP_ROW]);
+    const window = {
+      athlete_id: 'ath-1', window_from: '2026-09-20', window_to: '2026-10-17', days_present: 3, days_absent: 1,
+      days_excused: 0, attendance_rate: 0.75, last_present_day: '2026-10-15', days_since_last_present: 2,
+    };
+    mockAttendance.mockResolvedValue(new Map([['ath-1', window]]));
+
+    const payload = await (await GET(getRequest('window_days=90'))).json();
+
+    expect(mockAttendance).toHaveBeenCalledWith('org-1', ['ath-1'], expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+    expect(payload.items[0].attendance_28d).toEqual(window);
+  });
+
+  test('a role refused at the door reads no attendance either', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent' as PilotPrincipal['role'] }));
+    await GET(getRequest());
+    expect(mockAttendance).not.toHaveBeenCalled();
   });
 });

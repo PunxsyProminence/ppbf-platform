@@ -64,6 +64,7 @@ import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
+import AthleteAttendancePanel from './AthleteAttendancePanel';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import { BUILDING } from './buildingMap';
 
@@ -3934,6 +3935,13 @@ export default function CoachWorkspace() {
                         Whether this athlete is under a training hold is UNKNOWN. Do not read this as &quot;no hold&quot;.
                       </p>
                     </div>
+                  )}
+
+                  {/* Last 28 days from the class register and days since the
+                      last session, coaches only (OD-2026-10-17-026 (c)). It
+                      reads its own route; keyed by athlete. */}
+                  {wellnessShown?.status === 'loaded' && (
+                    <AthleteAttendancePanel key={wellnessShown.athleteId} athleteId={wellnessShown.athleteId} />
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today === null && (

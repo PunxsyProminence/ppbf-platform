@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { findLibrarySourceByUrl, readLibraryRequestId } from '@/src/server/pilot/libraryIntakeRecovery';
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibrarySource,
@@ -129,6 +130,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Kept for the conflict answer, which names the source that holds the URL.
+  let organizationId: string | null = null;
+  let url: string | null = null;
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
@@ -144,8 +148,9 @@ export async function POST(request: NextRequest) {
       rights_status?: unknown;
       metadata?: unknown;
       shelf?: unknown;
+      request_id?: unknown;
     };
-    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
+    organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (typeof body.title !== 'string' || !body.title.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source title' }, { status: 400 });
@@ -215,7 +220,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
     }
 
-    const source = await createShadowLibrarySource({
+    // The client's id for this registration (L54). A retry that sends it again
+    // gets the source the first request saved, answered 200 with recovered:
+    // true, instead of a second source or a URL conflict.
+    const requestId = readLibraryRequestId(body.request_id);
+    if (requestId === undefined) {
+      return NextResponse.json({ ok: false, error: 'request_id must be 8 to 100 letters, digits or hyphens' }, { status: 400 });
+    }
+    url = typeof body.url === 'string' && body.url.trim() ? body.url.trim() : null;
+
+    const { recovered, ...source } = await createShadowLibrarySource({
       organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
@@ -228,15 +242,31 @@ export async function POST(request: NextRequest) {
       status: body.status as ShadowLibrarySourceStatus | undefined,
       rightsStatus: body.rights_status as ShadowLibraryRightsStatus | undefined,
       metadata: body.metadata as Record<string, unknown> | undefined,
+      requestId,
     });
 
+    if (recovered) return NextResponse.json({ ok: true, source, recovered: true }, { status: 200 });
     return NextResponse.json({ ok: true, source }, { status: 201 });
   } catch (error) {
     // shadow_library_sources has unique (organization_id, url). Re-registering
-    // the same URL is a caller conflict, not a server fault.
+    // the same URL is a caller conflict, not a server fault. The answer names
+    // the source that holds it, so the curator can choose that one.
     if (error instanceof Error && error.message.includes('duplicate key value')) {
+      let existing: { source_id: string; title: string } | null = null;
+      if (organizationId && url) {
+        try {
+          existing = await findLibrarySourceByUrl(organizationId, url);
+        } catch {
+          // The conflict still stands; it just cannot name the source.
+        }
+      }
       return NextResponse.json(
-        { ok: false, error: 'A source with this URL is already registered in this organization' },
+        {
+          ok: false,
+          error: 'A source with this URL is already registered in this organization',
+          code: 'SHADOW_LIBRARY_SOURCE_URL_TAKEN',
+          existing_source: existing,
+        },
         { status: 409 },
       );
     }

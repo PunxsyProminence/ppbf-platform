@@ -329,6 +329,134 @@ describe('general research intake', () => {
     expect(screen.getByText(/Evidence review still decides what becomes citable/)).toBeTruthy();
   });
 
+  // L54 (audit 2026-10-17 item 3): a registration whose answer was lost is
+  // retried with the SAME request id, so the server can answer with the source
+  // the first request saved instead of filing a second one.
+  describe('a registration whose answer is lost', () => {
+    function mockRegistration(answers: Array<{ status: number; json: unknown } | 'throw'>, posts: Array<Record<string, unknown>>) {
+      return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/pilot/auth/session')) {
+          return { ok: true, json: async () => ({ authenticated: true, role: 'organization_admin', auth_provider: 'microsoft' }) } as Response;
+        }
+        if (url.includes('/library/sources') && init?.method === 'POST') {
+          posts.push(JSON.parse(String(init.body)));
+          const answer = answers.shift();
+          if (!answer || answer === 'throw') throw new Error('network down');
+          return { ok: answer.status >= 200 && answer.status < 300, status: answer.status, json: async () => answer.json } as Response;
+        }
+        if (url.includes('/library/sources')) {
+          return { ok: true, json: async () => ({ items: [GENERAL_SOURCE] }) } as Response;
+        }
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }) as unknown as typeof fetch;
+    }
+
+    async function fillAndRegister() {
+      await act(async () => {
+        render(<ResearchIntakePage />);
+      });
+      await screen.findByText('General Research Intake');
+      openTab('General Research');
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Youth safeguarding review' } });
+        fireEvent.change(screen.getByLabelText('Classification domain'), { target: { value: 'youth_development_safeguarding' } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+      });
+    }
+
+    test.each([['a 500', { status: 500, json: { error: 'boom' } }], ['no answer', 'throw' as const]])(
+      'after %s, Register again sends the same request id and reports the saved source',
+      async (_label, firstAnswer) => {
+        const posts: Array<Record<string, unknown>> = [];
+        global.fetch = mockRegistration(
+          [firstAnswer, { status: 200, json: { ok: true, recovered: true, source: { source_id: 'source_first' } } }],
+          posts,
+        );
+
+        await fillAndRegister();
+        expect(screen.getByText(/did not confirm the registration\. Press Register general research again/)).toBeTruthy();
+        // The draft is kept for the retry, and locked: an edit sent under the
+        // same id would be answered with the source the first request saved.
+        expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Youth safeguarding review');
+        expect((screen.getByLabelText('Title') as HTMLInputElement).disabled).toBe(true);
+        expect((screen.getByLabelText('Classification domain') as HTMLSelectElement).disabled).toBe(true);
+
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+        });
+
+        expect(posts).toHaveLength(2);
+        expect(typeof posts[0].request_id).toBe('string');
+        expect(posts[1].request_id).toBe(posts[0].request_id);
+        expect(screen.getByText(/the retry found the saved source instead of adding a second one/)).toBeTruthy();
+      },
+    );
+
+    test('Start a different registration unlocks the form and the next registration gets a new id', async () => {
+      const posts: Array<Record<string, unknown>> = [];
+      global.fetch = mockRegistration([
+        { status: 503, json: { error: 'unavailable' } },
+        { status: 201, json: { ok: true, source: { source_id: 'source_b' } } },
+      ], posts);
+
+      await fillAndRegister();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start a different registration' }));
+      });
+      expect((screen.getByLabelText('Title') as HTMLInputElement).disabled).toBe(false);
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'A different paper' } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+      });
+
+      expect(posts).toHaveLength(2);
+      expect(posts[1].request_id).not.toBe(posts[0].request_id);
+      expect(posts[1].title).toBe('A different paper');
+    });
+
+    test('a URL another registration holds names that source', async () => {
+      const posts: Array<Record<string, unknown>> = [];
+      global.fetch = mockRegistration([{
+        status: 409,
+        json: {
+          ok: false,
+          error: 'A source with this URL is already registered in this organization',
+          code: 'SHADOW_LIBRARY_SOURCE_URL_TAKEN',
+          existing_source: { source_id: 'source_held', title: 'The Paper Already Here' },
+        },
+      }], posts);
+
+      await fillAndRegister();
+
+      expect(screen.getByText('This URL is already registered as "The Paper Already Here". Choose it from the source list.')).toBeTruthy();
+    });
+
+    test('a confirmed registration starts the next one with a new request id', async () => {
+      const posts: Array<Record<string, unknown>> = [];
+      global.fetch = mockRegistration([
+        { status: 201, json: { ok: true, source: { source_id: 'source_a' } } },
+        { status: 201, json: { ok: true, source: { source_id: 'source_b' } } },
+      ], posts);
+
+      await fillAndRegister();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Second paper' } });
+        fireEvent.change(screen.getByLabelText('Classification domain'), { target: { value: 'youth_development_safeguarding' } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+      });
+
+      expect(posts).toHaveLength(2);
+      expect(posts[1].request_id).not.toBe(posts[0].request_id);
+    });
+  });
+
   // THE TAXONOMY'S ONLY UI CONSUMER, PINNED. Widening the constant to R01-R19 is
   // pointless if the page that renders it truncates the list -- and until this
   // test existed, changing the render to `.slice(0, 14).map(...)` left the whole
