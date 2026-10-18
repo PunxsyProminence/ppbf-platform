@@ -37,6 +37,7 @@ let saveAnswers: Array<Response | Error>;
 let fetchMock: jest.Mock;
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   saveAnswers = [];
   fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
@@ -289,4 +290,73 @@ test('two athletes with the same name are told apart', async () => {
   await renderPage();
   expect(screen.getByLabelText('Sam Lee (1001): Height (cm)')).toBeTruthy();
   expect(screen.getByLabelText('Sam Lee (2002): Height (cm)')).toBeTruthy();
+});
+
+test('the saved line names the test date', async () => {
+  await renderPage();
+  fireEvent.change(screen.getByLabelText('Test date'), { target: { value: '2026-10-03' } });
+  type('Ana Boxer: Height (cm)', '151.4');
+  await pressSave();
+  expect(screen.getByRole('status').textContent).toMatch(/^Test day for 10\/3\/2026 saved: 1 result\./);
+  expect(saves()[0].administered_on).toBe('2026-10-03');
+});
+
+test('centimetres are rounded as the server rounds them before the bounds are checked', async () => {
+  await renderPage();
+  type('Ana Boxer: CMJ (cm)', '0.04');
+  await pressSave();
+  expect(screen.getByRole('alert').textContent).toMatch(/CMJ \(cm\) "0\.04" must be more than 0/);
+  type('Ana Boxer: CMJ (cm)', '31.46');
+  await pressSave();
+  expect(saves()[0].rows).toEqual([{ athlete_id: 'ath-1', cmj_cm: 31.5 }]);
+});
+
+test('more than 100 athletes in one save is refused before sending', async () => {
+  const many = Array.from({ length: 101 }, (_, i) => ({ athlete_id: `ath-m${i}`, full_name: `Athlete ${i}` }));
+  fetchMock.mockImplementation(async (input: unknown, init?: RequestInit) => {
+    if (String(input).includes('/api/pilot/athletes/list')) return respond(200, { items: many });
+    const body = JSON.parse(String(init?.body ?? '{}'));
+    if (body.action === 'accessible_athletes') return respond(200, { ok: true, athlete_ids: body.athlete_ids });
+    return respond(201, { ok: true, written: 1, already_saved: 0, earlier_not_on_form: [] });
+  });
+  await renderPage();
+  // One query, then every athlete's first box (Height): five boxes per card.
+  const boxes = screen.getAllByRole('textbox');
+  for (let i = 0; i < boxes.length; i += 5) fireEvent.change(boxes[i], { target: { value: '150' } });
+  await pressSave();
+  expect(screen.getByRole('alert').textContent).toBe('At most 100 athletes per save; save this group in two parts. Nothing was sent.');
+  expect(saves()).toHaveLength(0);
+}, 30_000);
+
+test('the access check runs in chunks of 1000 ids', async () => {
+  const many = Array.from({ length: 1500 }, (_, i) => ({ athlete_id: `ath-c${i}`, full_name: `C ${i}` }));
+  const chunks: number[] = [];
+  fetchMock.mockImplementation(async (input: unknown, init?: RequestInit) => {
+    if (String(input).includes('/api/pilot/athletes/list')) return respond(200, { items: many });
+    const body = JSON.parse(String(init?.body ?? '{}'));
+    chunks.push(body.athlete_ids.length);
+    return respond(200, { ok: true, athlete_ids: body.athlete_ids.slice(0, 1) });
+  });
+  await renderPage();
+  expect(chunks).toEqual([1000, 500]);
+  expect(screen.getByText('C 0')).toBeTruthy();
+  expect(screen.getByText('C 1000')).toBeTruthy();
+});
+
+test('an unanswered press is still the same save after the page is opened again in this tab', async () => {
+  saveAnswers = [new Error('network'), respond(201, { ok: true, written: 0, already_saved: 1, earlier_not_on_form: [] })];
+  let first: ReturnType<typeof render> | null = null;
+  await act(async () => {
+    first = render(<TestDayPage />);
+  });
+  type('Ana Boxer: Height (cm)', '151.4');
+  await pressSave();
+  first!.unmount();
+  await renderPage();
+  type('Ana Boxer: Height (cm)', '151.4');
+  await pressSave();
+  const [a, b] = saves();
+  expect(b.request_key).toBe(a.request_key);
+  // Settled: the stored key is gone.
+  expect(window.sessionStorage.getItem('ppbf.testDay.pendingSave')).toBeNull();
 });

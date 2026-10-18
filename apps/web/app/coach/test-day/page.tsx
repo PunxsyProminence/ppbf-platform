@@ -71,6 +71,29 @@ function boundsProblem(key: FieldKey, value: number): string | null {
   }
 }
 
+// The save in progress survives a reload or a sign-in in this tab, so a press
+// that went unanswered is still the same save afterwards. Per-tab, best effort:
+// storage can be missing or refuse, and then the key lives in memory only.
+const PENDING_STORE = 'ppbf.testDay.pendingSave';
+type Pending = { key: string; uncertain: boolean } | null;
+function readPending(): Pending {
+  try {
+    if (typeof window === 'undefined') return null;
+    const parsed = JSON.parse(window.sessionStorage.getItem(PENDING_STORE) ?? 'null') as Pending;
+    return parsed && typeof parsed.key === 'string' && typeof parsed.uncertain === 'boolean' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function writePending(value: Pending): void {
+  try {
+    if (value) window.sessionStorage.setItem(PENDING_STORE, JSON.stringify(value));
+    else window.sessionStorage.removeItem(PENDING_STORE);
+  } catch {
+    // Memory only; nothing else depends on it.
+  }
+}
+
 function newKey(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -98,7 +121,11 @@ function TestDayForm() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'saved' | 'refused'; text: string; also?: string[] } | null>(null);
   // The save in progress: its key, and whether any press on it went unanswered.
-  const pending = useRef<{ key: string; uncertain: boolean } | null>(null);
+  const pending = useRef<Pending>(readPending());
+  const setPending = (value: Pending) => {
+    pending.current = value;
+    writePending(value);
+  };
 
   useEffect(() => {
     void (async () => {
@@ -145,7 +172,10 @@ function TestDayForm() {
       const row: Record<string, unknown> = { athlete_id: athlete.athlete_id };
       for (const field of filled) {
         const text = (typed[field.key] ?? '').trim();
-        const value = /^\d+(\.\d+)?$/.test(text) ? Number(text) : Number.NaN;
+        const raw = /^\d+(\.\d+)?$/.test(text) ? Number(text) : Number.NaN;
+        // Centimetres are rounded to one decimal, as the server stores them,
+        // before the bounds are checked; shuttle boxes must be whole as typed.
+        const value = field.key.startsWith('shuttle') ? raw : Math.round(raw * 10) / 10;
         const problem = Number.isFinite(value) ? boundsProblem(field.key, value) : 'is not a number';
         if (problem) {
           setMessage({ kind: 'refused', text: `${nameOf(athlete.athlete_id)}: ${field.label} "${text}" ${problem}. Nothing was sent.` });
@@ -168,10 +198,10 @@ function TestDayForm() {
       return;
     }
     const key = pending.current?.key ?? newKey();
-    pending.current = { key, uncertain: pending.current?.uncertain ?? false };
+    setPending({ key, uncertain: pending.current?.uncertain ?? false });
     setBusy(true);
     const unknown = () => {
-      pending.current = { key, uncertain: true };
+      setPending({ key, uncertain: true });
       setMessage({
         kind: 'refused',
         text: 'That did not go through, and it may or may not have saved. Press Save test day again: a retry is the same save and never saves anything twice.',
@@ -186,7 +216,7 @@ function TestDayForm() {
       });
       const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
       if (response.ok && payload?.ok === true && typeof payload.written === 'number') {
-        pending.current = null;
+        setPending(null);
         const written = payload.written;
         const already = typeof payload.already_saved === 'number' ? payload.already_saved : 0;
         const earlier = Array.isArray(payload.earlier_not_on_form)
@@ -206,15 +236,19 @@ function TestDayForm() {
       if (response.status === 409) {
         // An earlier press landed with other numbers. Those are kept; resending
         // this form under a new key would save the whole group twice.
-        pending.current = null;
+        setPending(null);
         setCells({});
-        setMessage({ kind: 'refused', text: refusalWords({ error: payload?.error, status: 409 }, {}, 'An earlier press already saved this test day. The first numbers are kept.') });
+        setMessage({
+          kind: 'refused',
+          text: `${refusalWords({ error: payload?.error, status: 409 }, {}, 'An earlier press already saved this test day. The first numbers are kept.')} `
+            + 'Anything you added or changed after that press was not saved: enter only the missing boxes again.',
+        });
         return;
       }
       if (response.status >= 400 && response.status < 500) {
         // Nothing from THIS press was written. Keep the key if an earlier press
         // went unanswered, so the next try is still the same save.
-        if (!pending.current?.uncertain) pending.current = null;
+        if (!pending.current?.uncertain) setPending(null);
         setMessage({
           kind: 'refused',
           text: refusalWords({ error: payload?.error, status: response.status }, {}, 'Nothing from this press was saved. Check the boxes and try again.'),
