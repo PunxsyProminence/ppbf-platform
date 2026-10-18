@@ -191,7 +191,7 @@ Recorded, **not retuned**. Nothing in this branch changes any value below.
 | 10 | Profile keeps the top **20** facts by confidence, pruning the rest | `shadowUserProfile.ts:93-96` | None found | **heuristic** | Prompt-budget measurement; also: pruning by confidence silently deletes low-confidence *disconfirming* facts |
 | 11 | Effectiveness category→score: improved 1, neutral 0.5, degraded 0, unknown **null** | `shadowMetrics.ts:42-47` | `unknown → null` is correct and deliberate (no fake zero) | **heuristic** (the 0.5) / **sound** (the null) | Same as #7 |
 | 12 | Evidence tier: `VERIFIED EVIDENCE` + `authority_tier <= 2` + boxing-specific → PROVEN; `<= 3` → EMERGING; contested/hypothesis/interpretation → EXPERIMENTAL | `shadowEvidenceTier.ts:64-104` | **Yes** — `EVIDENCE_TIER_SPEC.md`, and the comment records verification against the real 1,193-chunk corpus producing the spec's section 4 distribution (122/821/195/55 since 2026-09-29, graded on each claim's source-row tier as runtime is; it read 115/796/227/55 graded on the chunk-metadata copy before) | **policy, corpus-verified** | Best-evidenced rule in the SHADOW surface. Leave alone |
-| 13 | Multi-citation responses graded by the single strongest citation (`EVIDENCE_CLASS_RANK`) | `shadowEvidenceTier.ts:115-143` | Comment explicitly flags this as a **design decision** the spec left open | **policy (declared)** | Whether "best citation carries the tier" matches reviewer judgement on mixed-quality responses |
+| 13 | Multi-citation responses graded by the citation with the best grade of its own (`selectStrongestEvidence`; `EVIDENCE_CLASS_RANK` then authority tier break ties), the other grades shown as "Also cites" (`alsoCitedTiers`) | `shadowEvidenceTier.ts`, `selectStrongestEvidence` / `alsoCitedTiers` | Comment explicitly flags this as a **design decision** the spec left open; best grade per audit item 11 (Jason's ruling A, 2026-10-17). It used to pick by class rank alone, which could name a citation grading below another one | **policy (declared)** | Whether "best citation carries the tier" matches reviewer judgement on mixed-quality responses |
 | 14 | Evidence bundle caps: 4 items, 900 chars/excerpt, 3,200 chars/bundle | `shadowEvidence.ts:8-10` | None found | **heuristic** (prompt budget) | Retrieval recall vs token cost |
 | 15 | Provisional recommendations expire after **72h** | `shadowRecommendations.ts:22` | None found; the lazy-expiry-on-read design is well reasoned | **policy** | Observed coach response latency |
 | 16 | Personal baseline: window 8–12, `minimumHistory` **4** (literal type), `adequateHistory` 8–window | `formulas/baseline.ts:13-19,78-119` | Spec-derived; **injected and version-stamped**, validated not hard-coded | **policy, injected** | The model the new `patterns/` policy follows |
@@ -209,6 +209,10 @@ substring-matching audit **event names** (`includes('PATTERN')`,
 check, no attribution, no transfer or retention is consulted. This is the exact
 surface the new module exists to give a real basis, and the highest-value place
 to wire it in next.
+*Status 2026-10-18 (lane L49): the labels are gone, half CLOSED. Every
+projected event is now an Observation (the 'Validated Lesson' label had already
+gone); the Pattern and Finding streams stay empty until the evaluator feeds
+them (N1's other half, not built).*
 
 **D2 — Profile facts never decay and never supersede.** `upsertRememberedFact`
 writes a confidence and an `updatedAt` and nothing ever revisits either.

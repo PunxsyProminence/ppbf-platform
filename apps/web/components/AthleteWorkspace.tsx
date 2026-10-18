@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
 import StepNotes from './IssuedWorkoutStepNotes';
@@ -48,7 +49,7 @@ import {
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
-import AthleteImHere from './AthleteImHere';
+import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -578,36 +579,16 @@ type ScheduleReadPayload = { ok?: boolean; classes?: ScheduleClassRow[]; registr
  * that is not cancelled, from the same scheduler read the Schedule tab makes.
  * It said "Nothing posted yet." always, while Schedule listed real bookings.
  * Words only, never a number that did not come from a read. PROPOSED wording.
+ * The read is the one Today shares with the I'm here card (F-127).
  */
-function useNextSessionLine(enabled: boolean): string {
-  const [line, setLine] = useState('Checking...');
-
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
-        const payload = (await response.json().catch(() => null)) as ScheduleReadPayload;
-        if (!response.ok || !payload?.ok || !Array.isArray(payload.classes) || !Array.isArray(payload.registrations)) {
-          throw new Error('unreadable');
-        }
-        const next = scheduleLists(payload.classes, payload.registrations, Date.now())
-          .booked.find(({ item }) => item.status !== 'cancelled');
-        if (!live) return;
-        setLine(next
-          ? `${next.item.title} · ${classWhen(next.item)}${next.registration.status === 'waitlisted' ? ' (waitlist)' : ''}`
-          : 'Nothing booked.');
-      } catch {
-        if (live) setLine('Unavailable');
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [enabled]);
-
-  return line;
+function nextSessionLineFrom(read: TodaySchedulerRead): string {
+  if (read.state === 'loading') return 'Checking...';
+  if (read.state === 'failed') return 'Unavailable';
+  const next = scheduleLists(read.classes as ScheduleClassRow[], read.registrations, read.readAt)
+    .booked.find(({ item }) => item.status !== 'cancelled');
+  return next
+    ? `${next.item.title} · ${classWhen(next.item)}${next.registration.status === 'waitlisted' ? ' (waitlist)' : ''}`
+    : 'Nothing booked.';
 }
 
 /** The Schedule tab's lists. Reads when mounted -- the tab mounts it only while open -- and again on Try again. */
@@ -1271,6 +1252,8 @@ export default function AthleteWorkspace() {
   // The minutes box, keyed to the session like the effort answer above so a
   // draft can never drift onto a later session.
   const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
+  // The session-type tag (Jason 2026-10-18), keyed to the session the same way.
+  const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -1393,6 +1376,10 @@ export default function AthleteWorkspace() {
     && postSessionEffort.sessionId === activeSessionRecord.sessionId
     ? postSessionEffort.value
     : null;
+  const answeredSessionType = postSessionType !== null && activeSessionRecord !== null
+    && postSessionType.sessionId === activeSessionRecord.sessionId
+    ? postSessionType.value
+    : null;
   const minutesDraft = postSessionMinutesDraft !== null && activeSessionRecord !== null
     && postSessionMinutesDraft.sessionId === activeSessionRecord.sessionId
     ? postSessionMinutesDraft.draft
@@ -1444,7 +1431,17 @@ export default function AthleteWorkspace() {
     ? CHECKED_IN_FLOOR_OPEN
     : backendSyncMessage;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length + ownWordsActive;
-  const nextSessionRead = useNextSessionLine(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const todaySchedule = useTodaySchedulerRead(athleteIdentityState === 'resolved' && backendAthleteId !== null);
+  const { reload: reloadTodaySchedule } = todaySchedule;
+  // Back on Today, the I'm here card reads afresh, as it did when it held its
+  // own read; the first visit is the read above.
+  const wasOnToday = useRef(activeGroup === 'today');
+  useEffect(() => {
+    const onToday = activeGroup === 'today';
+    if (onToday && !wasOnToday.current) void reloadTodaySchedule();
+    wasOnToday.current = onToday;
+  }, [activeGroup, reloadTodaySchedule]);
+  const nextSessionRead = nextSessionLineFrom(todaySchedule.read);
   const nextSessionLine = athleteIdentityState === 'unavailable'
     || (athleteIdentityState === 'resolved' && backendAthleteId === null)
     ? 'Unavailable'
@@ -2356,6 +2353,7 @@ export default function AthleteWorkspace() {
        stored is what the athlete shared, and check-out preserves it. */
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
+    const sessionType = answeredSessionType;
     // An invalid minutes entry holds check-out (the button is disabled too);
     // a typed answer is never thrown away in favour of "not recorded".
     if (parsedMinutes.status === 'invalid') {
@@ -2397,6 +2395,9 @@ export default function AthleteWorkspace() {
           // The athlete's own minutes, or null for "not given" -- sent
           // explicitly so check-out is the one write that sets it.
           duration_minutes: durationMinutes,
+          // The athlete's tag, or null for "not said" -- sent explicitly so
+          // check-out is the one write that sets it, like the minutes.
+          session_type: sessionType,
           // The last PUBLISHED value, replayed unchanged: check-out never
           // reads the box, so checking out neither publishes a draft nor
           // erases what was shared. Read AFTER the wait above, so a
@@ -2421,9 +2422,14 @@ export default function AthleteWorkspace() {
       // Cleared only now, after the server took it -- a refused check-out
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
+      setPostSessionType(null);
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
       const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
+      // Said back, because no session read sends the tag to the athlete yet.
+      const typeLine = sessionType === null
+        ? ''
+        : ` Tagged: ${SESSION_TYPES.find((type) => type.key === sessionType)?.label ?? sessionType}.`;
       // Session load is shown only when both of the athlete's own answers are
       // there, and labelled for what it is: arithmetic, not a verdict.
       const loadLine = rpe === null || durationMinutes === null
@@ -2434,7 +2440,7 @@ export default function AthleteWorkspace() {
       // same lie in the other direction.
       setBackendSyncMessage((isSystemCheckInNote(storedNote)
         ? "Logged. That one is on your card."
-        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + loadLine);
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + typeLine + loadLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -2934,7 +2940,9 @@ export default function AthleteWorkspace() {
         {/* Attendance where the athlete already is (lane U2, audit UX-A A-4;
             Jason 2026-10-17, "A: Rename + I'm here on Today"): one "I'm here"
             for today's class on every Today tab. */}
-        {activeGroup === 'today' && <AthleteImHere athleteId={backendAthleteId} />}
+        {activeGroup === 'today' && (
+          <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
+        )}
 
         {/* TAB CONTENT */}
         <div className="space-y-6">
@@ -3256,6 +3264,44 @@ export default function AthleteWorkspace() {
                           className="btn btn--ghost"
                         >
                           Clear my answer
+                        </button>
+                      )}
+                    </fieldset>
+                    {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
+                        selected until the athlete picks; only Check Out
+                        writes it. Copy PROPOSED. */}
+                    <fieldset className="space-y-[var(--s2)]">
+                      <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
+                        {SESSION_TYPES.map((type) => {
+                          const selected = answeredSessionType === type.key;
+                          return (
+                            <button
+                              key={type.key}
+                              type="button"
+                              aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
+                              aria-pressed={selected}
+                              disabled={isCheckingOut}
+                              onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
+                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                            >
+                              {type.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answeredSessionType === null ? (
+                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                          Not picked — you can skip this. It goes on the session when you check out.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPostSessionType(null)}
+                          disabled={isCheckingOut}
+                          className="btn btn--ghost"
+                        >
+                          Clear session type
                         </button>
                       )}
                     </fieldset>
@@ -4279,17 +4325,17 @@ export default function AthleteWorkspace() {
           <summary className="t-label cursor-pointer">More in your workspace</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Film</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
               <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Your Film
+                Open My Film
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Progression</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
               <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
               <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Your Progression
+                Open My Progression
               </Link>
             </article>
             {/* /athlete/dashboard/sparring existed with a real, tested,

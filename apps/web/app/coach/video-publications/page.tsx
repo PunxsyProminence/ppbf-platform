@@ -287,7 +287,7 @@ export default function CoachVideoPublicationsPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Video Management</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Publication Workflow</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Video Publications</h1>
           <ClusterNav cluster="film" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Publish coaching videos to the research library. You create the publication and submit it for review, an

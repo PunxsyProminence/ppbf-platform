@@ -125,12 +125,22 @@ function toProfile(row: ProfileRow): OrganizationProfile {
 const cache = new Map<string, { profile: OrganizationProfile; readAt: number }>();
 const inFlight = new Map<string, Promise<OrganizationProfile | null>>();
 const failedAt = new Map<string, number>();
+// Bumped by forgetOrganizationProfile: a read begun before a save lands as stale and is dropped.
+const generation = new Map<string, number>();
 
 /** Test seam: forget every cached row, every read in flight and every remembered failure. */
 export function clearOrganizationProfileCache(): void {
   cache.clear();
   inFlight.clear();
   failedAt.clear();
+}
+
+/** After a save (organizationProfileWrite.ts): the next read of this gym goes to the database. */
+export function forgetOrganizationProfile(organizationId: string): void {
+  generation.set(organizationId, (generation.get(organizationId) ?? 0) + 1);
+  cache.delete(organizationId);
+  inFlight.delete(organizationId);
+  failedAt.delete(organizationId);
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
@@ -150,9 +160,12 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 function sharedRead(organizationId: string, now: () => number, timeoutMs: number): Promise<OrganizationProfile | null> {
   let pending = inFlight.get(organizationId);
   if (!pending) {
+    const startedIn = generation.get(organizationId) ?? 0;
+    const current = () => (generation.get(organizationId) ?? 0) === startedIn;
     pending = readRow(organizationId)
       .then(
         (profile) => {
+          if (!current()) return profile;
           if (profile) {
             cache.set(organizationId, { profile, readAt: now() });
             failedAt.delete(organizationId);
@@ -162,11 +175,13 @@ function sharedRead(organizationId: string, now: () => number, timeoutMs: number
           return profile;
         },
         (error: unknown) => {
-          failedAt.set(organizationId, now());
+          if (current()) failedAt.set(organizationId, now());
           throw error;
         },
       )
-      .finally(() => inFlight.delete(organizationId));
+      .finally(() => {
+        if (current()) inFlight.delete(organizationId);
+      });
     inFlight.set(organizationId, pending);
   }
   return withTimeout(pending, timeoutMs);

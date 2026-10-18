@@ -1235,3 +1235,123 @@ describe("the optional client on promoteReferenceDrill and issueCoachCard joins 
     expect(await written(gym)).toMatchObject({ drills: 1, assignments: 1 });
   });
 });
+
+/**
+ * Holds `statement` uncommitted on a connection of its own, starts `act`, and
+ * commits as soon as `act` is seen waiting on that connection's lock -- or
+ * once `act` has finished without ever waiting. Says which happened.
+ */
+async function whileUncommitted<T>(
+  statement: string,
+  values: unknown[],
+  act: () => Promise<T>,
+): Promise<{ waited: boolean; outcome: PromiseSettledResult<T> }> {
+  const holder = new Client({ connectionString: activeConnectionString as string });
+  await holder.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query(statement, values);
+    const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+    let finished = false;
+    const settled: Promise<PromiseSettledResult<T>> = act().then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (reason: unknown) => ({ status: 'rejected' as const, reason }),
+    );
+    void settled.then(() => {
+      finished = true;
+    });
+    let waited = false;
+    const deadline = Date.now() + 30_000;
+    while (!finished && Date.now() < deadline) {
+      const blocked = await client.query(
+        `select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid)) limit 1`,
+        [rows[0].pid],
+      );
+      if ((blocked.rowCount ?? 0) > 0) {
+        waited = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await holder.query('COMMIT');
+    return { waited, outcome: await settled };
+  } finally {
+    await holder.end();
+  }
+}
+
+// AUDIT 2026-10-17 ITEM 5. The plan reads without a lock. A writer that
+// replaces the template or withdraws a reference the issue adopts, between
+// that read and the write, is met by the transaction's own locked re-read:
+// the issue waits for it, sees what it committed, and refuses. Before, it
+// issued against a template or a reference that was no longer current.
+describe('currentness is asked again under lock inside the transaction', () => {
+  test('a template replaced while the issue is being planned is refused, and nothing is written', async () => {
+    const gym = await newGym('lock-template');
+    await insertReference(gym, 'ref-a', 'Lock Alpha');
+    await insertTemplate(gym, ['ref-a']);
+
+    const { waited, outcome } = await whileUncommitted(
+      `update pilot.workout_templates set superseded_at = now() where organization_id = $1 and template_id = $2`,
+      [gym.organizationId, TEMPLATE_ID],
+      () => issue(gym),
+    );
+
+    expect(outcome.status).toBe('rejected');
+    expect((outcome as PromiseRejectedResult).reason).toMatchObject({ status: 409, code: 'WORKOUT_TEMPLATE_NOT_CURRENT' });
+    expect(waited).toBe(true);
+    expect(await written(gym)).toEqual(NOTHING);
+  });
+
+  test('a reference withdrawn while the issue is being planned is refused, nothing is adopted, and the next attempt names it', async () => {
+    const gym = await newGym('lock-reference');
+    await insertReference(gym, 'ref-a', 'Lock Alpha');
+    await insertReference(gym, 'ref-b', 'Lock Bravo');
+    await insertTemplate(gym, ['ref-a', 'ref-b']);
+
+    const { waited, outcome } = await whileUncommitted(
+      `update pilot.drill_library set active = false where organization_id = $1 and drill_id = $2`,
+      [gym.organizationId, 'ref-b'],
+      () => issue(gym),
+    );
+
+    expect(outcome.status).toBe('rejected');
+    expect((outcome as PromiseRejectedResult).reason).toMatchObject({ status: 409, code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' });
+    expect(waited).toBe(true);
+    expect(await written(gym)).toEqual(NOTHING);
+
+    const retry = await issue(gym);
+    expect(retry).toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-b', steps: [2] }] });
+    expect(await written(gym)).toEqual(NOTHING);
+  });
+
+  // A positive control, not a proof of the new path: the key is found before
+  // the template is read, as on main. The retry that races the re-check is in
+  // workoutTemplateIssue.test.ts.
+  test('a legitimate retry of a workout already issued still returns that issue, after the template is replaced', async () => {
+    const gym = await newGym('lock-replay');
+    await insertReference(gym, 'ref-a', 'Lock Alpha');
+    await insertTemplate(gym, ['ref-a']);
+    const send = () => issueWorkoutTemplate({
+      organizationId: gym.organizationId,
+      templateId: TEMPLATE_ID,
+      athleteId: ATHLETE_ID,
+      actorAccountId: gym.coachId,
+      actorRole: 'coach',
+      requestKey: 'lock-replay-key',
+    });
+
+    const first = await send();
+    expect(first.outcome).toBe('issued');
+    await client.query(
+      `update pilot.workout_templates set superseded_at = now() where organization_id = $1 and template_id = $2`,
+      [gym.organizationId, TEMPLATE_ID],
+    );
+    const afterFirst = await written(gym);
+
+    const again = await send();
+
+    expect(again).toMatchObject({ outcome: 'already_issued', issue_id: (first as { issue_id: string }).issue_id });
+    expect(await written(gym)).toEqual(afterFirst);
+  });
+});

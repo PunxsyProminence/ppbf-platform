@@ -280,3 +280,31 @@ test('no register for the window reads as a dash, a verified zero reads as 0', a
   const texts = labels.map((l) => (l.parentElement as HTMLElement).textContent);
   expect([...texts].sort()).toEqual(['Training days0', 'Training days—']);
 });
+
+test('the 28-day attendance figures say their source, their denominator and their own dates; none reads as a dash', async () => {
+  global.fetch = mockFetch(() =>
+    okWith([
+      {
+        ...ITEM,
+        attendance_28d: {
+          athlete_id: 'ath-1', window_from: '2026-09-21', window_to: '2026-10-18', days_present: 3, days_absent: 1,
+          days_excused: 0, attendance_rate: 0.75, last_present_day: '2026-10-06', days_since_last_present: 12,
+        },
+      },
+      { ...ITEM, athlete_id: 'a-none', full_name: 'No Window', attendance_28d: null },
+    ]),
+  );
+  render(<PerformanceAnalyticsPage />);
+
+  await screen.findByText('No Window');
+  const attendance = screen.getAllByText('Attendance, last 28 days').map((l) => (l.parentElement as HTMLElement).textContent);
+  expect([...attendance].sort()).toEqual([
+    'Attendance, last 28 days75% (present 3 of 4 days marked on the class register)(9/21/2026 to 10/18/2026)',
+    'Attendance, last 28 days—',
+  ]);
+  const last = screen.getAllByText('Last marked present').map((l) => (l.parentElement as HTMLElement).textContent);
+  expect([...last].sort()).toEqual([
+    'Last marked presentLast marked present on the class register 12 days ago (10/6/2026)',
+    'Last marked present—',
+  ]);
+});

@@ -121,7 +121,7 @@ test('nothing is asked while the session is still being read', async () => {
 test('a gym admin still reads the photos and gets the desk', async () => {
   render(<CustomizePage />);
 
-  await screen.findByRole('heading', { name: /look and voice/i });
+  await screen.findByRole('heading', { name: /Customize the Gym/i });
   expect(gymPhotoCalls()).toHaveLength(1);
   expect(screen.queryByText(/ADMINS ONLY/)).toBeNull();
 });
@@ -132,7 +132,7 @@ test('a gym admin still reads the photos and gets the desk', async () => {
 // make. The gym TV reads 'everywhere' notices (wallDisplayDb.ts loadWallBoard).
 test('the boards say where a notice is shown and claim no audience the server does not enforce', async () => {
   render(<CustomizePage />);
-  await screen.findByRole('heading', { name: /look and voice/i });
+  await screen.findByRole('heading', { name: /Customize the Gym/i });
 
   expect(screen.getByText('Every board at once — athletes, coaches, parents, and the paired gym TV.')).toBeTruthy();
   expect(screen.getByText('Shown on the coaches’ workspace.')).toBeTruthy();
@@ -144,7 +144,7 @@ test('the boards say where a notice is shown and claim no audience the server do
 
 test('the photographs copy names where the frames really appear', async () => {
   render(<CustomizePage />);
-  await screen.findByRole('heading', { name: /look and voice/i });
+  await screen.findByRole('heading', { name: /Customize the Gym/i });
 
   // app/page.tsx renders entrance/floor/ring through PhotoSlot with no
   // uploadedSrc, so the front page shows drawings only.

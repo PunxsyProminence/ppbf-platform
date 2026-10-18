@@ -204,7 +204,7 @@ function PinManagementPageContent() {
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Credential Control</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Issue an Athlete Activation Code</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Reset Athlete Sign-In</h1>
           <p className="t-body mt-[var(--s3)]">
             Select an athlete and issue a one-time code. They redeem it and choose a PIN only they
             know -- no administrator sets or sees an athlete&apos;s PIN.
@@ -289,13 +289,18 @@ function PinManagementPageContent() {
                 <label htmlFor="create-account-id" className="t-label">
                   New Account ID
                 </label>
+                {/* F-102 (Jason: "B: Change the guidance (Recommended)"): the
+                    sign-in ID outlives the athlete's record. Wording PROPOSED. */}
+                <p className="t-muted mb-[var(--s2)]">
+                  What the athlete types to sign in. Use their ring name or a number, not their real name.
+                </p>
                 <input
                   id="create-account-id"
                   type="text"
                   value={createAccountId}
                   onChange={(event) => setCreateAccountId(event.target.value)}
                   className="input font-mono"
-                  placeholder="athlete-account-id"
+                  placeholder="southpaw12"
                 />
               </div>
 
