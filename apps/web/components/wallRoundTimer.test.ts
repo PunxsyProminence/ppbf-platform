@@ -175,3 +175,40 @@ describe('roundPanelText', () => {
     expect(roundPanelText(value, 180)).toEqual({ label, time });
   });
 });
+
+// +30 SEC and REPEAT on the TV (OD-2026-10-17-010). The server moves the clock back; the TV sees a
+// reading and decides what to ring. 180 s rounds, 60 s rest; the TV's freshness window is 7 s.
+describe('the TV after +30 SEC and REPEAT', () => {
+  const CONFIG = { round_seconds: 180, rest_seconds: 60 };
+  const FRESH = 7;
+  const read = (seconds_left: number, round = 2, phase: 'work' | 'rest' = 'work') =>
+    ({ state: 'running' as const, phase, round, rounds_total: 3, seconds_left });
+
+  test('+30 well into a round is the same set and rings nothing', () => {
+    const prev = read(100); // 80 s in
+    const next = read(130);
+    expect(isNewSet(prev, next, CONFIG, FRESH)).toBe(false);
+    expect(roundSounds('run#0', prev, next, CONFIG, FRESH)).toEqual([]);
+  });
+
+  test('REPEAT is a fresh start of the round: the start bell rings once', () => {
+    const prev = read(60); // 120 s into round 2
+    const next = read(178); // back at the start, read 2 s later
+    expect(isNewSet(prev, next, CONFIG, FRESH)).toBe(true);
+    expect(roundSounds('run#1', prev, next, CONFIG, FRESH)).toEqual([{ voice: 'bell', keys: ['run#1:2:start'] }]);
+  });
+
+  test('REPEAT from a rest goes back to the round just finished and rings its start', () => {
+    const prev = read(30, 2, 'rest');
+    const next = read(179, 2, 'work');
+    expect(isNewSet(prev, next, CONFIG, FRESH)).toBe(true);
+    expect(roundSounds('run#1', prev, next, CONFIG, FRESH)).toEqual([{ voice: 'bell', keys: ['run#1:2:start'] }]);
+  });
+
+  test('KNOWN LIMIT: +30 in the 30-37 s window lands within the fresh window of the start and rings like a restart', () => {
+    // The TV cannot tell this reading from a REPEAT; documented in roundTimers.ts and the PR.
+    const prev = read(147); // 33 s in
+    const next = read(177); // after +30: 3 s in
+    expect(isNewSet(prev, next, CONFIG, FRESH)).toBe(true);
+  });
+});

@@ -49,7 +49,7 @@ import {
   sendRunToGymTv,
   takeRunOffGymTv,
 } from './gymTvs';
-import { configureRoundTimer, moveRoundTimer, readOwnRoundTimer } from './roundTimers';
+import { adjustRoundTimer, configureRoundTimer, moveRoundTimer, readOwnRoundTimer, readRoundTimerRevision } from './roundTimers';
 import { hashToken } from './security';
 
 jest.setTimeout(180_000);
@@ -1201,5 +1201,63 @@ describe('a plain session on the TV', () => {
       blocks: [],
     });
     expect(session.elapsed_seconds).toBeGreaterThanOrEqual(5 * 60);
+  });
+});
+
+// +30 SEC and REPEAT against the real table (OD-2026-10-17-010; +30 timing "A: After 30 sec"): the
+// compare-and-set on the revision, the 30-second rule and the clock moving back, in real SQL.
+describe('round timer +30 SEC and REPEAT (adjustRoundTimer)', () => {
+  async function runningFor(runId: string, secondsAgo: number): Promise<string> {
+    await seedLiveRun(ORG_A, COACH_A, runId);
+    await configureRoundTimer(ORG_A, COACH_A, runId, { roundSeconds: 180, restSeconds: 60, roundsTotal: 3 });
+    await moveRoundTimer(ORG_A, COACH_A, runId, 'start');
+    await client.query(
+      `update pilot.round_timers set started_at = now() - make_interval(secs => $2) where run_id = $1`,
+      [runId, secondsAgo],
+    );
+    const revision = await readRoundTimerRevision(ORG_A, runId);
+    expect(revision).toMatch(/^\d+$/);
+    return revision as string;
+  }
+
+  it('+30 is refused in the first 30 seconds of a round, and nothing is written', async () => {
+    const revision = await runningFor('run-adj-early', 5);
+    await expect(adjustRoundTimer(ORG_A, COACH_A, 'run-adj-early', 'add_30', revision)).rejects.toMatchObject({
+      status: 409,
+      message: 'ROUND_TIMER_TOO_EARLY',
+    });
+    const row = await client.query(`select paused_seconds from pilot.round_timers where run_id = 'run-adj-early'`);
+    expect(row.rows).toEqual([{ paused_seconds: 0 }]);
+  });
+
+  it('+30 after 30 seconds gives the round thirty more, and the same revision cannot add it twice', async () => {
+    const revision = await runningFor('run-adj-add', 100);
+    const first = await adjustRoundTimer(ORG_A, COACH_A, 'run-adj-add', 'add_30', revision);
+    expect(first.timer).toMatchObject({ state: 'running', phase: 'work', round: 1 });
+    expect(first.timer.seconds_left).toBeGreaterThanOrEqual(109);
+    expect(first.timer.seconds_left).toBeLessThanOrEqual(111);
+    expect(first.revision).not.toBe(revision);
+    await expect(adjustRoundTimer(ORG_A, COACH_A, 'run-adj-add', 'add_30', revision)).rejects.toMatchObject({
+      status: 409,
+      message: 'ROUND_TIMER_STALE',
+    });
+    const row = await client.query(`select paused_seconds from pilot.round_timers where run_id = 'run-adj-add'`);
+    expect(row.rows).toEqual([{ paused_seconds: 30 }]);
+    expect(await readRoundTimerRevision(ORG_A, 'run-adj-add')).toBe(first.revision);
+  });
+
+  it('REPEAT takes the round back to its start; the coach screen reads the same', async () => {
+    const revision = await runningFor('run-adj-repeat', 100);
+    const repeated = await adjustRoundTimer(ORG_A, COACH_A, 'run-adj-repeat', 'repeat', revision);
+    expect(repeated.timer).toMatchObject({ state: 'running', phase: 'work', round: 1 });
+    expect(repeated.timer.seconds_left).toBeGreaterThanOrEqual(179);
+    expect(await readOwnRoundTimer(ORG_A, COACH_A, 'run-adj-repeat')).toMatchObject({ phase: 'work', round: 1 });
+  });
+
+  it("another coach's run is the same 404 as a missing one, and nothing is written", async () => {
+    const revision = await runningFor('run-adj-other', 100);
+    await expect(adjustRoundTimer(ORG_A, COACH_B, 'run-adj-other', 'repeat', revision)).rejects.toMatchObject({ status: 404 });
+    const row = await client.query(`select paused_seconds from pilot.round_timers where run_id = 'run-adj-other'`);
+    expect(row.rows).toEqual([{ paused_seconds: 0 }]);
   });
 });

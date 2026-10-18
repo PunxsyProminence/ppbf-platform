@@ -83,6 +83,13 @@ function epochMs(value: Date | string): number {
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
 }
 
+/** Whole seconds of rounds the room has run: paused time and every adjustment taken off. */
+function elapsedSeconds(row: RoundTimerRow): number {
+  if (!row.started_at) return 0;
+  const reference = row.paused_at ? epochMs(row.paused_at) : epochMs(row.server_time);
+  return Math.max(0, Math.floor((reference - epochMs(row.started_at)) / 1000) - row.paused_seconds);
+}
+
 /**
  * The room's reading at `server_time`. Pure: the same row and clock always give the same answer,
  * which is what lets two screens agree. Rounds run work, rest, work, rest ... work: there is no
@@ -103,8 +110,7 @@ export function deriveRoundTimer(row: RoundTimerRow): RoundTimerView {
     return { ...base, phase: 'ended', round: 0, seconds_left: 0 };
   }
 
-  const reference = row.paused_at ? epochMs(row.paused_at) : epochMs(row.server_time);
-  const elapsed = Math.max(0, Math.floor((reference - epochMs(row.started_at)) / 1000) - row.paused_seconds);
+  const elapsed = elapsedSeconds(row);
   const cycle = row.round_seconds + row.rest_seconds;
   const total = row.rounds_total * row.round_seconds + (row.rounds_total - 1) * row.rest_seconds;
   if (elapsed >= total) {
@@ -253,6 +259,84 @@ export async function moveRoundTimer(
       [organizationId, runId],
     );
     return deriveRoundTimer(written.rows[0]);
+  });
+}
+
+// +30 SEC AND REPEAT (OD-2026-10-17-010, "A": built after the restyle; +30 timing "A: After 30 sec").
+//
+// Both move the room's clock BACK by adding to paused_seconds, which every reader already takes off
+// the elapsed time, so no column is added and the TV needs no change: it derives the new reading
+// like any other.
+//   +30 SEC  gives the current work or rest period thirty more seconds. Pushing the clock back 30 s
+//            is exact only once the period is 30 s old -- earlier, it would rewind into the period
+//            before -- so it is refused until then (Jason's "After 30 sec").
+//   REPEAT   runs the round again: back to the start of this round while it is being worked, or of
+//            the round just finished during its rest or after the last one. The round number shows
+//            again and the TV rings its start bell again.
+// Neither is a TRANSITIONS row: the state does not change, and moveRoundTimer answers a same-state
+// move as a no-op. Each is a COMPARE-AND-SET on the revision the coach's screen last read, so a
+// retried tap, or the same tap from a second screen, cannot add twice: the second answers
+// ROUND_TIMER_STALE and that screen reads again.
+export type RoundTimerAdjustment = 'add_30' | 'repeat';
+export const ROUND_TIMER_ADD_SECONDS = 30;
+
+/** How far back an adjustment moves the clock, or the code it is refused with. Pure. */
+export function adjustmentShift(row: RoundTimerRow, adjustment: RoundTimerAdjustment): { shift: number } | { refused: string } {
+  const view = deriveRoundTimer(row);
+  if (view.state === 'ready' || view.state === 'ended') return { refused: `ROUND_TIMER_${view.state.toUpperCase()}` };
+  const cycle = row.round_seconds + row.rest_seconds;
+  if (view.phase === 'done') {
+    if (adjustment === 'add_30') return { refused: 'ROUND_TIMER_DONE' };
+    return { shift: elapsedSeconds(row) - (row.rounds_total - 1) * cycle };
+  }
+  const into = view.phase === 'work' ? row.round_seconds - view.seconds_left : row.rest_seconds - view.seconds_left;
+  if (adjustment === 'add_30') {
+    return into >= ROUND_TIMER_ADD_SECONDS ? { shift: ROUND_TIMER_ADD_SECONDS } : { refused: 'ROUND_TIMER_TOO_EARLY' };
+  }
+  return { shift: view.phase === 'work' ? into : into + row.round_seconds };
+}
+
+// The row's last write, to the microsecond, as text: the revision a screen read and sends back.
+const REVISION = `(extract(epoch from t.updated_at) * 1000000)::bigint::text`;
+
+/** The revision of a run's timer row, for the coach's screens; null when no timer is set. */
+export async function readRoundTimerRevision(organizationId: string, runId: string): Promise<string | null> {
+  const rows = await query<{ revision: string }>(
+    `select ${REVISION} as revision from pilot.round_timers t where t.organization_id = $1 and t.run_id = $2`,
+    [organizationId, runId],
+  );
+  return rows[0]?.revision ?? null;
+}
+
+export async function adjustRoundTimer(
+  organizationId: string,
+  accountId: string,
+  runId: string,
+  adjustment: RoundTimerAdjustment,
+  revision: string,
+): Promise<{ timer: RoundTimerView; revision: string }> {
+  return withTransaction(async (client) => {
+    await lockOwnLiveRun(client, organizationId, accountId, runId);
+    const existing = await client.query<RoundTimerRow & { revision: string }>(
+      `select ${TIMER_COLUMNS}, ${REVISION} as revision
+         from pilot.round_timers t
+        where t.organization_id = $1 and t.run_id = $2
+          for update`,
+      [organizationId, runId],
+    );
+    const row = existing.rows[0];
+    if (!row) throw new SessionScriptRunError('ROUND_TIMER_NOT_SET', 409);
+    if (row.revision !== revision) throw new SessionScriptRunError('ROUND_TIMER_STALE', 409);
+    const move = adjustmentShift(row, adjustment);
+    if ('refused' in move) throw new SessionScriptRunError(move.refused, 409);
+    const written = await client.query<RoundTimerRow & { revision: string }>(
+      `update pilot.round_timers as t
+          set paused_seconds = t.paused_seconds + $3, updated_at = now()
+        where t.organization_id = $1 and t.run_id = $2
+        returning ${TIMER_COLUMNS}, ${REVISION} as revision`,
+      [organizationId, runId, move.shift],
+    );
+    return { timer: deriveRoundTimer(written.rows[0]), revision: written.rows[0].revision };
   });
 }
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
-import { refusalWords } from '@/src/lib/serverRefusalWords';
+import { SESSION_REFUSAL_WORDS, refusalWords } from '@/src/lib/serverRefusalWords';
 
 // The coach's round timer controls for a live run (WO-N1-03). Every change is one named action on
 // /api/pilot/session-scripts/runs/[runId]/timer, and the timer the server answers with is what the
@@ -27,6 +27,17 @@ const PHASE_WORD: Record<RoundTimerView['phase'], string> = {
 };
 
 const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
+
+// +30 SEC and REPEAT (OD-2026-10-17-010). The server's ROUND_TIMER_ADD_SECONDS, restated here
+// because this screen runs in the browser and roundTimers.ts brings the database with it;
+// roundTimerControls.test.tsx holds the two equal. The words for their refusals follow.
+export const ROUND_TIMER_ADD_SECONDS = 30;
+const ADJUST_WORDS: Readonly<Record<string, string>> = {
+  ...SESSION_REFUSAL_WORDS,
+  ROUND_TIMER_TOO_EARLY: `+30 sec opens ${ROUND_TIMER_ADD_SECONDS} seconds into a round or rest.`,
+  ROUND_TIMER_DONE: 'All rounds are done. Repeat round runs the last one again.',
+  ROUND_TIMER_STALE: 'The timer changed on another screen. This is it now; press again if you still want it.',
+};
 
 type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; timer: RoundTimerView | null; stale: boolean };
 
@@ -58,6 +69,9 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
   // request already in flight (a poll that crossed a Start must not show "Ready" again).
   const sequence = useRef(0);
   const applied = useRef(0);
+  // The revision of the timer this screen shows, sent back with +30 SEC and REPEAT so a retried or
+  // doubled tap cannot apply twice (roundTimers.ts adjustRoundTimer).
+  const [revision, setRevision] = useState<string | null>(null);
   // Until the coach edits them, the three numbers show the server's saved settings -- the ones
   // Start will use -- so a reload or a second screen never shows defaults that are not the set.
   const edited = useRef(false);
@@ -70,7 +84,8 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
 
   const url = `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/timer`;
 
-  const show = useCallback((timer: RoundTimerView | null) => {
+  const show = useCallback((timer: RoundTimerView | null, nextRevision?: string) => {
+    setRevision(typeof nextRevision === 'string' ? nextRevision : null);
     setLoad({ state: 'ready', timer, stale: false });
     setSecondsLeft(timer?.seconds_left ?? 0);
     if (timer && !edited.current) {
@@ -89,7 +104,9 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
     const mine = ++sequence.current;
     try {
       const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
-      const payload = (await response.json().catch(() => null)) as { timer?: RoundTimerView | null; error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as
+        | { timer?: RoundTimerView | null; revision?: string; error?: string }
+        | null;
       if (mine <= applied.current) return;
       applied.current = mine;
       if (!response.ok && payload?.error && RUN_GONE.has(payload.error)) {
@@ -100,7 +117,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
         readFailed();
         return;
       }
-      show(payload.timer ?? null);
+      show(payload.timer ?? null, payload.revision);
     } catch {
       if (mine <= applied.current) return;
       applied.current = mine;
@@ -145,20 +162,20 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const payload = (await response.json().catch(() => ({}))) as { timer?: RoundTimerView; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as { timer?: RoundTimerView; revision?: string; error?: string };
       if (!response.ok || !payload.timer) {
         if (payload.error && RUN_GONE.has(payload.error)) {
           runGone.current?.();
           return;
         }
-        setError(refusalWords({ error: payload.error, status: response.status }));
+        setError(refusalWords({ error: payload.error, status: response.status }, ADJUST_WORDS));
         // Another screen may have moved the timer: show the server's state, not this one's guess.
         void read();
         return;
       }
       applied.current = sequence.current;
       if (body.action === 'configure') edited.current = false;
-      show(payload.timer);
+      show(payload.timer, payload.revision);
     } catch {
       setError('Network error -- this may not have reached the server.');
       void read();
@@ -180,6 +197,12 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
 
   const canConfigure = load.state === 'ready' && (!timer || timer.state === 'ready' || timer.state === 'ended');
   const done = timer?.phase === 'done';
+  // +30 SEC is open once the period is 30 s old (Jason, "A: After 30 sec"); REPEAT any time the
+  // rounds are under way, done included.
+  const underWay = timer?.state === 'running' || timer?.state === 'paused';
+  const inPeriod = underWay && (timer?.phase === 'work' || timer?.phase === 'rest');
+  const periodLength = timer?.phase === 'rest' ? (timer?.rest_seconds ?? 0) : (timer?.round_seconds ?? 0);
+  const addOpen = inPeriod && periodLength - secondsLeft >= ROUND_TIMER_ADD_SECONDS;
   const roundWords = timer && timer.round > 0 ? `Round ${timer.round} of ${timer.rounds_total}, ` : '';
 
   return (
@@ -244,12 +267,38 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
               Resume rounds
             </button>
           )}
+          {inPeriod && (
+            <button
+              type="button"
+              onClick={() => void send({ action: 'add_30', revision })}
+              disabled={busy || !addOpen || revision === null}
+              aria-describedby={addOpen ? undefined : `round-timer-add-${runId}`}
+              className="btn px-[var(--s5)] py-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              +30 sec
+            </button>
+          )}
+          {underWay && (inPeriod || done) && (
+            <button
+              type="button"
+              onClick={() => void send({ action: 'repeat', revision })}
+              disabled={busy || revision === null}
+              className="btn px-[var(--s5)] py-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Repeat round
+            </button>
+          )}
           {timer.state !== 'ended' && (
             <button type="button" onClick={() => void send({ action: 'end' })} disabled={busy} className="btn btn--ghost px-[var(--s5)] py-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60">
               End rounds
             </button>
           )}
         </div>
+      )}
+      {inPeriod && !addOpen && (
+        <p id={`round-timer-add-${runId}`} className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
+          {`+30 sec opens ${ROUND_TIMER_ADD_SECONDS} seconds into the ${timer?.phase === 'rest' ? 'rest' : 'round'}.`}
+        </p>
       )}
 
       {error && (
