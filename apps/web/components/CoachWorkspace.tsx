@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
@@ -3031,14 +3032,18 @@ export default function CoachWorkspace() {
                         Open. Acknowledge it from Needs You Now on the floor board above.
                       </p>
                     ) : escalation.status === 'open' ? (
-                      <button
-                        type="button"
-                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
-                        disabled={escalationAckBusyId !== null}
+                      // The armed second press, as on the board (#1678, F-129).
+                      <ArmedButton
                         className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                        armKey={escalation.escalation_id}
+                        disabled={escalationAckBusyId !== null && escalationAckBusyId !== escalation.escalation_id}
+                        busy={escalationAckBusyId === escalation.escalation_id}
+                        busyLabel="Acknowledging..."
+                        armedLabel={`Press again: acknowledge ${athleteName ?? `Athlete ID ${escalation.athlete_id}`}`}
+                        onConfirm={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
                       >
-                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
-                      </button>
+                        Acknowledge
+                      </ArmedButton>
                     ) : (
                       <p className="t-data text-[color:var(--bone-400)]">
                         Acknowledged. Closing it out is an admin decision and happens on the admin

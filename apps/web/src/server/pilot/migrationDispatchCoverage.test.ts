@@ -278,6 +278,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // two columns, and shadow-evidence is the migration that creates the table
     // and the library foreign keys it repoints.
     expect(at('platform-library-scope')).toBeGreaterThan(at('shadow-evidence'));
+    // research-archive-originals' source key references the unique index on
+    // shadow_library_sources (source_id, organization_id) that shadow-evidence creates.
+    expect(at('research-archive-originals')).toBeGreaterThan(at('shadow-evidence'));
     // session-run-plain (#1523) relaxes pilot.session_script_runs' script columns and redefines
     // the cursor check that session-run-state creates; run first, it would fail on run_state.
     expect(at('session-run-plain')).toBeGreaterThan(at('session-run-state'));
