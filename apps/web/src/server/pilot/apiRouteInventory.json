@@ -14706,5 +14706,61 @@
       "authorizationGates": [],
       "roleLiterals": []
     }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Reads pilot.organization_profiles and the legal name (read-only). Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/organization-profile/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/organization-profile",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin, admin])",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's stored profile for the organization admin's own gym (lane L31 P3): the session's organization only; platform_owner refused (gym work, OD-2026-10-10-004 ruling 3). Validates every field against the table's rules (400 naming the field), upserts the row and writes an audit row (entity organization_profile) in one transaction; the legal name is not written. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
+    }
   }
 ]
