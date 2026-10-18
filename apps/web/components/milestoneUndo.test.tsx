@@ -132,12 +132,21 @@ describe('the milestone Undo line', () => {
     expect(screen.queryByRole('button', UNDO_MILE)).toBeNull();
   });
 
+  test('the header says what stays, and tells only the athlete about their own Undo', async () => {
+    serve();
+    await renderPanel();
+    expect(screen.getByText('Earned milestones stay. If you marked one yourself by mistake, you can undo it for 10 minutes.')).toBeTruthy();
+    expect(screen.queryByText(/nothing here ever comes off/i)).toBeNull();
+  });
+
   test('the family surface is offered no Undo', async () => {
     serve([{ milestone_key: MILE, awarded_by_role: 'self', note: '', awarded_at: new Date().toISOString() }]);
     render(<AthleteAchievements athleteId="ath_1" audience="family" />);
     await screen.findByText('Ran a full mile without stopping to walk');
 
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+    expect(screen.getByText('Earned milestones stay.')).toBeTruthy();
+    expect(screen.queryByText(/undo it for 10 minutes/)).toBeNull();
   });
 
   test('when the server says the window has closed, the panel says so and the award stands', async () => {

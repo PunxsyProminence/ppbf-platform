@@ -390,7 +390,14 @@ export default function AthleteAchievements({
           </h3>
           <p className="tcard-sub">
             {athleteName ? `${athleteName} · ` : ''}
-            {earnedCount} {earnedCount === 1 ? 'thing' : 'things'} earned · nothing here ever comes off
+            {earnedCount} {earnedCount === 1 ? 'thing' : 'things'} earned
+          </p>
+          {/* "Nothing here ever comes off" stopped being true when the athlete's own
+              ten-minute Undo arrived (OD-2026-10-17-003). PROPOSED wording (Overwatch, L43). */}
+          <p className="tcard-sub">
+            {isFamily
+              ? 'Earned milestones stay.'
+              : 'Earned milestones stay. If you marked one yourself by mistake, you can undo it for 10 minutes.'}
           </p>
         </div>
       </header>
