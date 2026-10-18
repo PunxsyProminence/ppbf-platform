@@ -265,6 +265,8 @@ export async function upsertSession(
            -- writer that omits it (note publication, older client) keeps the
            -- stored minutes; only check-out sets or clears them.
            duration_minutes = case when $11::boolean then $12::integer else duration_minutes end,
+           -- $15 the same for session_type (self-report measures migration).
+           session_type = case when $15::boolean then $16::text else session_type end,
            -- The close record (session-close migration). Every column on the
            -- right of these CASEs is the row BEFORE this write, so
            -- "not completed_flag" is "was open". The one write that closes an
@@ -301,6 +303,8 @@ export async function upsertSession(
         payload.duration_minutes ?? null,
         guard.noteWriter,
         closeMethod,
+        payload.session_type !== undefined,
+        payload.session_type ?? null,
       ],
     );
     if (updated.length === 0) {
@@ -327,8 +331,8 @@ export async function upsertSession(
   // session ended, and its created_at is the caller's stamp too. NULL is the
   // honest value, exactly as for every pre-migration row.
   const inserted = await query<{ session_id: string }>(
-    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at, duration_minutes)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at, duration_minutes, session_type)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      on conflict (organization_id, session_id) do nothing
      returning session_id`,
     [
@@ -343,6 +347,7 @@ export async function upsertSession(
       payload.created_at,
       payload.updated_at,
       payload.duration_minutes ?? null,
+      payload.session_type ?? null,
     ],
   );
   if (inserted.length === 0) {

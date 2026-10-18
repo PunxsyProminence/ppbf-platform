@@ -16,9 +16,11 @@
  */
 
 import { deterministicKey } from '../formulas/identity';
+import { admitObservations } from './evidence';
 import type {
   BehaviourObservation,
   InterventionOutcomeReview,
+  LessonExclusion,
   PatternEpistemicState,
   PatternIntervention,
   PatternReasonCode,
@@ -109,6 +111,89 @@ export function assertAthleteLessonPolicy(policy: AthleteLessonPolicy): void {
   }
 }
 
+function observationExclusion(
+  entry: { readonly observationId: string; readonly reason: PatternReasonCode },
+): LessonExclusion {
+  return Object.freeze({ kind: 'observation' as const, id: entry.observationId, reason: entry.reason });
+}
+
+/**
+ * The intervention as it stood at asOf, or null.
+ *
+ * One that belongs to another organization, athlete or behaviour, or whose
+ * start nobody can place, is absent and reported. One that had not started
+ * by asOf is absent silently: it did not exist yet, so a later start cannot
+ * change an earlier lesson.
+ */
+function admitIntervention(
+  intervention: PatternIntervention | null,
+  scope: { readonly organizationId: string; readonly athleteId: string; readonly behaviourKey: string },
+  asOfMs: number,
+  excluded: LessonExclusion[],
+): PatternIntervention | null {
+  if (!intervention) return null;
+  const startedMs = Date.parse(intervention.startedAt);
+  // Checked first, as for observations: a record that did not exist yet is
+  // not reported, whatever else is wrong with it.
+  if (startedMs > asOfMs) return null;
+  let reason: PatternReasonCode | null = null;
+  if (intervention.organizationId !== scope.organizationId) reason = 'ORGANIZATION_SCOPE_MISMATCH';
+  else if (intervention.athleteId !== scope.athleteId) reason = 'ATHLETE_SCOPE_MISMATCH';
+  else if (intervention.behaviourKey !== scope.behaviourKey) reason = 'BEHAVIOUR_KEY_MISMATCH';
+  else if (!Number.isFinite(startedMs)) reason = 'INVALID_TIMESTAMP';
+  if (reason !== null) {
+    excluded.push(Object.freeze({ kind: 'intervention' as const, id: intervention.interventionId, reason }));
+    return null;
+  }
+  return intervention;
+}
+
+/**
+ * The outcome review as it stood at asOf, or null. Same rule as the
+ * intervention: not yet reviewed at asOf is absent silently; a review time
+ * nobody can place, or an outcome of some other intervention than the one
+ * being evaluated, is absent and reported. An outcome of the supplied
+ * intervention that had not started by asOf goes with it, silently. An
+ * outcome with no review time at all is kept -- it is an unreviewed outcome,
+ * and says so below.
+ */
+function admitOutcome(
+  outcome: InterventionOutcomeReview | null,
+  supplied: PatternIntervention | null,
+  intervention: PatternIntervention | null,
+  asOfMs: number,
+  excluded: LessonExclusion[],
+): InterventionOutcomeReview | null {
+  if (!outcome) return null;
+  // First, as for the intervention itself: an outcome of an intervention that
+  // had not started by asOf did not exist yet, so nothing else about it --
+  // not even an unreadable review time -- is reported.
+  if (
+    supplied
+    && Date.parse(supplied.startedAt) > asOfMs
+    && outcome.interventionId === supplied.interventionId
+  ) {
+    return null;
+  }
+  if (outcome.reviewedAt) {
+    const reviewedMs = Date.parse(outcome.reviewedAt);
+    if (!Number.isFinite(reviewedMs)) {
+      excluded.push(Object.freeze({ kind: 'outcome' as const, id: outcome.outcomeId, reason: 'INVALID_TIMESTAMP' as const }));
+      return null;
+    }
+    if (reviewedMs > asOfMs) return null;
+  }
+  if (!intervention || outcome.interventionId !== intervention.interventionId) {
+    excluded.push(Object.freeze({
+      kind: 'outcome' as const,
+      id: outcome.outcomeId,
+      reason: 'OUTCOME_INTERVENTION_MISMATCH' as const,
+    }));
+    return null;
+  }
+  return outcome;
+}
+
 function isImprovement(observation: BehaviourObservation): boolean {
   // Improvement is an actively-recorded counterexample: a coach noting the
   // athlete did the right thing where the pattern predicted they would not.
@@ -151,7 +236,7 @@ export function summarizeRetentionEvidence(
   const retained = postObservations.filter((observation) => {
     if (!isImprovement(observation)) return false;
     const observedMs = Date.parse(observation.observedAt);
-    return Number.isFinite(observedMs) && observedMs - startedMs >= windowMs;
+    return Number.isFinite(observedMs) && observedMs - startedMs >= windowMs && observedMs <= asOfMs;
   });
 
   const latestMs = retained
@@ -238,14 +323,28 @@ export function evaluateValidatedAthleteLesson(
     blockers.push('NO_OBSERVATIONS');
   }
 
-  const { intervention } = input;
+  // Same admission as the candidate ladder: another athlete's records, a
+  // dropped duplicate, a failed capture, or anything observed after asOf is
+  // not evidence about this athlete's lesson at asOf.
+  const scope = {
+    organizationId: input.organizationId,
+    athleteId: input.athleteId,
+    behaviourKey: input.behaviourKey,
+  };
+  const postAdmission = admitObservations(scope, input.postObservations, asOf);
+  const postObservations = postAdmission.admitted;
+  const excluded: LessonExclusion[] = postAdmission.excluded.map(observationExclusion);
+
+  const asOfMs = Date.parse(asOf);
+  const intervention = admitIntervention(input.intervention, scope, asOfMs, excluded);
+  const outcome = admitOutcome(input.outcome, input.intervention, intervention, asOfMs, excluded);
+
   if (!intervention) {
     blockers.push('NO_INTERVENTION');
   } else if (!intervention.decisionId) {
     blockers.push('INTERVENTION_NOT_HUMAN_AUTHORIZED');
   }
 
-  const { outcome } = input;
   if (!outcome) {
     blockers.push('OUTCOME_NOT_HUMAN_REVIEWED');
   } else {
@@ -265,10 +364,10 @@ export function evaluateValidatedAthleteLesson(
   }
 
   const transfer = intervention
-    ? summarizeTransferEvidence(intervention, input.postObservations)
+    ? summarizeTransferEvidence(intervention, postObservations)
     : emptyTransfer;
   const retention = intervention
-    ? summarizeRetentionEvidence(intervention, input.postObservations, policy, asOf)
+    ? summarizeRetentionEvidence(intervention, postObservations, policy, asOf)
     : emptyRetention;
 
   if (intervention) {
@@ -288,7 +387,7 @@ export function evaluateValidatedAthleteLesson(
 
     // The athlete still doing the thing, after the intervention, in the very
     // context it was trained in.
-    const regressed = input.postObservations.some(
+    const regressed = postObservations.some(
       (observation) => observation.polarity === 'occurrence'
         && observation.taskContextKey === intervention.trainedTaskContextKey
         && Date.parse(observation.observedAt) >= Date.parse(intervention.startedAt),
@@ -320,8 +419,10 @@ export function evaluateValidatedAthleteLesson(
         + 'A post-intervention series with no baseline is not a comparison.',
       );
     }
-    const baseline = buildSessionRateSeries(input.preObservations).map((point) => point.rate);
-    const treatment = buildSessionRateSeries(input.postObservations).map((point) => point.rate);
+    const preAdmission = admitObservations(scope, input.preObservations, asOf);
+    excluded.push(...preAdmission.excluded.map(observationExclusion));
+    const baseline = buildSessionRateSeries(preAdmission.admitted).map((point) => point.rate);
+    const treatment = buildSessionRateSeries(postObservations).map((point) => point.rate);
     singleCase = assessSingleCaseDesign(
       { baseline, treatment, direction: input.improvementDirection },
       input.singleCaseDesignPolicy,
@@ -341,6 +442,7 @@ export function evaluateValidatedAthleteLesson(
     eligible: blockers.length === 0,
     blockers: Object.freeze([...new Set(blockers)]),
     warnings: Object.freeze([...new Set(warnings)]),
+    excluded: Object.freeze(excluded),
 
     transfer,
     retention,

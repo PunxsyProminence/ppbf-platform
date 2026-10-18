@@ -110,8 +110,8 @@ describe('confidence level', () => {
   });
 
   test('medium and high name the level beside the status', () => {
-    expect(claimStatusLabel('supported', 'high')).toMatch(/high confidence/);
-    expect(claimStatusLabel('weak', 'medium')).toMatch(/medium confidence/);
+    expect(claimStatusLabel('supported', 'high')).toBe('Backed by approved Library evidence (close match)');
+    expect(claimStatusLabel('weak', 'medium')).toBe('Limited Library evidence — treat as a starting point (partial match)');
   });
 
   test('the level from the server is carried through', async () => {

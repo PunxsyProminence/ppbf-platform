@@ -229,6 +229,23 @@ describe('single-case design inside the lesson gate', () => {
     expect(withScd.eligible).toBe(false);
   });
 
+  test("another athlete's baseline rows and rows after asOf do not enter the comparison", () => {
+    // If admitted, these would fold an improving trend into the same session
+    // ids and turn a supported effect into an unstable baseline.
+    const foreign = improvingBaseline.map((item) => ({
+      ...item,
+      observationId: `foreign-${item.observationId}`,
+      athleteId: 'athlete-2',
+    }));
+    const late = observation('late-1', 'session-pre-5', '2026-07-10T10:00:00.000Z', 'counterexample');
+    const clean = evaluate(steadyBaseline);
+    const result = evaluate([...steadyBaseline, ...foreign, late]);
+
+    expect(result.excluded).toHaveLength(foreign.length);
+    expect(result.excluded.every((entry) => entry.reason === 'ATHLETE_SCOPE_MISMATCH')).toBe(true);
+    expect({ ...result, excluded: [] }).toEqual(clean);
+  });
+
   test('an SCD policy with no baseline is refused, not silently skipped', () => {
     expect(() => evaluateValidatedAthleteLesson({
       organizationId: ORG,
