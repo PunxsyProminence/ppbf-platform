@@ -18,7 +18,8 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt, each piece looked up ON
 // pilot.intervention_executions so a same-named object elsewhere does not pass:
-// the column as nullable text; the check, validated, compared IN FULL against
+// the column as nullable text with no default (a default would give every
+// start sent without a key the same key, and the second would be refused); the check, validated, compared IN FULL against
 // the text Postgres stores for this migration's own check; and the unique
 // index by name, compared by the tail of its stored definition so a same-named
 // index over other columns, not unique, or without the partial predicate is
@@ -33,7 +34,7 @@ const READINESS_QUERY = `
       select 1 from pg_attribute a
        where a.attrelid = to_regclass('pilot.intervention_executions')
          and a.attname = 'request_key' and not a.attisdropped
-         and a.atttypid = 'text'::regtype and not a.attnotnull
+         and a.atttypid = 'text'::regtype and not a.attnotnull and not a.atthasdef
     ) as column_ready,
     exists (
       select 1 from pg_constraint c
@@ -53,6 +54,11 @@ const READINESS_QUERY = `
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // The column and the check take a brief exclusive lock on the executions table, which the
+    // live session screen writes to. Rather than queue every log and read behind a long
+    // transaction already holding a lock there, give up and let the operator re-run in a quieter
+    // moment. Nothing is half-applied: it is one transaction.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY, [EXPECTED_CHECK, EXPECTED_INDEX_TAIL]);
     const row = readiness.rows[0];

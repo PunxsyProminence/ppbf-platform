@@ -350,6 +350,17 @@ describe('intervention execution request key migration (F-135)', () => {
     }
   });
 
+  test('the runner refuses a pre-existing request_key column with a default', async () => {
+    const client = await freshDatabase('ikey_column_default');
+    try {
+      await client.query('alter table pilot.intervention_executions drop column request_key');
+      await client.query(`alter table pilot.intervention_executions add column request_key text default 'k'`);
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('INTERVENTION_EXECUTION_REQUEST_KEY_NOT_READY: column_ready');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a result it did not produce', async () => {
     // An empty database: "applying" a statement that creates nothing must not commit.
     const client = await freshDatabase('ikey_not_ready', 'none');
