@@ -246,6 +246,62 @@ describe('validated athlete lesson evaluation', () => {
       .toThrow(/valid asOf timestamp/);
   });
 
+  test('observations recorded after asOf do not change the lesson at asOf', () => {
+    const atAsOf = [improvement(1, 'task-sparring', '2026-06-03T10:00:00.000Z')];
+    const later = [
+      // Transfer and retention that had not happened yet in July...
+      improvement(2, 'task-bag', '2026-08-01T10:00:00.000Z'),
+      improvement(3, 'task-sparring', '2026-08-02T10:00:00.000Z'),
+      // ...and a relapse in the trained drill that had not happened either.
+      improvement(4, 'task-mitts', '2026-08-03T10:00:00.000Z', { polarity: 'occurrence' }),
+    ];
+    expect(evaluate({ postObservations: [...atAsOf, ...later] }))
+      .toEqual(evaluate({ postObservations: atAsOf }));
+  });
+
+  test.each([
+    ['another organization', { organizationId: 'org-2' }, 'ORGANIZATION_SCOPE_MISMATCH'],
+    ['another athlete', { athleteId: 'athlete-2' }, 'ATHLETE_SCOPE_MISMATCH'],
+    ['another behaviour', { behaviourKey: 'other_behaviour' }, 'BEHAVIOUR_KEY_MISMATCH'],
+  ] as const)("improvement recorded for %s is not this athlete's lesson", (_label, overrides, reason) => {
+    const transfersAndRetains = [
+      improvement(1, 'task-sparring', '2026-06-18T10:00:00.000Z', overrides),
+      improvement(2, 'task-sparring', '2026-06-21T10:00:00.000Z', overrides),
+    ];
+    const result = evaluate({ postObservations: transfersAndRetains });
+    expect(result.eligible).toBe(false);
+    expect(result.transfer.count).toBe(0);
+    expect(result.blockers).toEqual(expect.arrayContaining(['NO_TRANSFER_EVIDENCE', 'NO_RETENTION_EVIDENCE']));
+    expect(result.excluded).toEqual([
+      { observationId: 'post-1', reason },
+      { observationId: 'post-2', reason },
+    ]);
+  });
+
+  test.each([
+    ['after asOf', '2026-07-15T00:00:00.000Z'],
+    ['at a time nobody can place', 'not-a-date'],
+  ])('an intervention that started %s did not exist at asOf', (_label, startedAt) => {
+    const postObservations = [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')];
+    const result = evaluate({ intervention: { ...intervention, startedAt }, postObservations });
+    expect(result.blockers).toContain('NO_INTERVENTION');
+    expect(result).toEqual(evaluate({ intervention: null, postObservations }));
+  });
+
+  test.each([
+    ['after asOf', '2026-07-15T00:00:00.000Z'],
+    ['at a time nobody can place', 'not-a-date'],
+  ])('an outcome reviewed %s had not been reviewed at asOf', (_label, reviewedAt) => {
+    const postObservations = [
+      improvement(1, 'task-sparring', '2026-06-18T10:00:00.000Z'),
+      improvement(2, 'task-sparring', '2026-06-21T10:00:00.000Z'),
+    ];
+    const result = evaluate({ outcome: { ...reviewedOutcome, reviewedAt }, postObservations });
+    expect(result.eligible).toBe(false);
+    expect(result.blockers).toContain('OUTCOME_NOT_HUMAN_REVIEWED');
+    expect(result).toEqual(evaluate({ outcome: null, postObservations }));
+  });
+
   test('absence of observations is not improvement', () => {
     // Nobody recorded anything after the intervention. That is silence, and
     // silence must not read as success.

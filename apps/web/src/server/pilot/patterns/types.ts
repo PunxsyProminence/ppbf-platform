@@ -154,6 +154,16 @@ export interface BehaviourObservation {
   readonly fatigueContext: FatigueContext;
   readonly observedAt: string;
 
+  /**
+   * The one attempt -- rep, round, exchange -- this reading is about, unique
+   * within its session and task. Two readings are of the same attempt only
+   * when they share session, task AND this key; without it, two coaches in
+   * the same drill may simply have scored different reps. Absent means "not
+   * identified", and an unidentified reading is never compared against
+   * another for disagreement or video contradiction.
+   */
+  readonly opportunityKey?: string | null;
+
   /** Reused verbatim from the formula engine. `computer_vision` is the video path. */
   readonly source: ObservationSource;
 
@@ -300,6 +310,7 @@ export interface PatternObservationProvenance {
   readonly taskConstraint: TaskConstraint;
   readonly fatigueContext: FatigueContext;
   readonly observedAt: string;
+  readonly opportunityKey: string | null;
   readonly sourceType: ObservationSource['type'];
   readonly sourceQuality: ObservationSource['quality'];
   readonly observerAccountId: string | null;
@@ -516,6 +527,13 @@ export interface ValidatedAthleteLessonEvaluation {
   readonly eligible: boolean;
   readonly blockers: readonly PatternReasonCode[];
   readonly warnings: readonly PatternReasonCode[];
+
+  /**
+   * Post- (and, with a single-case policy, pre-) intervention observations
+   * excluded before evaluation, with the code that excluded them. Same
+   * admission as the candidate ladder.
+   */
+  readonly excluded: readonly { readonly observationId: string; readonly reason: PatternReasonCode }[];
 
   readonly transfer: TransferEvidenceSummary;
   readonly retention: RetentionEvidenceSummary;

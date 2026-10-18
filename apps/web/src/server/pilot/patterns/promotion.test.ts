@@ -85,6 +85,13 @@ function strongEvidence(): BehaviourObservation[] {
   ];
 }
 
+/** Marks obs-1 as the reading of rep 1, so a second reading can be about the same attempt. */
+function withRepOnFirst(observations: BehaviourObservation[]): BehaviourObservation[] {
+  return observations.map((observation) => (
+    observation.observationId === 'obs-1' ? { ...observation, opportunityKey: 'rep-1' } : observation
+  ));
+}
+
 interface Case {
   readonly name: string;
   readonly observations: readonly BehaviourObservation[];
@@ -185,21 +192,22 @@ const cases: readonly Case[] = [
     expectedBlockers: ['ATTRIBUTION_NOT_ATHLETE', 'ATTRIBUTION_SPLIT'],
   },
   {
-    name: 'two coaches watching the same task disagree',
+    name: 'two coaches watching the same rep disagree',
     observations: [
-      ...strongEvidence(),
-      obs(5, { sessionId: 'session-1', taskContextKey: 'task-mitts', observerAccountId: 'coach-c', polarity: 'counterexample' }),
+      ...withRepOnFirst(strongEvidence()),
+      obs(5, { sessionId: 'session-1', taskContextKey: 'task-mitts', opportunityKey: 'rep-1', observerAccountId: 'coach-c', polarity: 'counterexample' }),
     ],
     expectedState: 'CONTESTED',
     expectedBlockers: ['OBSERVER_DISAGREEMENT'],
   },
   {
-    name: 'video disagrees with the coach interpretation',
+    name: 'video disagrees with the coach interpretation of the same rep',
     observations: [
-      ...strongEvidence(),
+      ...withRepOnFirst(strongEvidence()),
       obs(5, {
         sessionId: 'session-1',
         taskContextKey: 'task-mitts',
+        opportunityKey: 'rep-1',
         polarity: 'counterexample',
         observerAccountId: null,
         source: { type: 'computer_vision', quality: 'verified', referenceId: 'clip-1' },
@@ -365,6 +373,74 @@ describe('SHADOW pattern candidate evaluation', () => {
     expect(byId['obs-14']).toBe('SOURCE_QUALITY_FAIL');
     expect(byId['obs-1']).toBe('SUPERSEDED_OBSERVATION');
     expect(result.provenance.map((entry) => entry.observationId)).not.toContain('obs-1');
+  });
+
+  test("another athlete's record naming a valid observation as superseded changes nothing", () => {
+    const evaluate = (observations: readonly BehaviourObservation[]) => evaluatePatternCandidate({
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      behaviourKey: BEHAVIOUR,
+      observations,
+      policy,
+      asOf: AS_OF,
+    });
+    const base = evaluate(strongEvidence());
+    const withForeignRevision = evaluate([
+      ...strongEvidence(),
+      obs(20, { athleteId: 'athlete-2', supersedesObservationId: 'obs-1' }),
+    ]);
+
+    expect(withForeignRevision.state).toBe('ESTABLISHED_IN_CONTEXT');
+    expect(withForeignRevision.candidateKey).toBe(base.candidateKey);
+    expect(withForeignRevision.evidence).toEqual(base.evidence);
+    expect(withForeignRevision.excluded).toEqual([{ observationId: 'obs-20', reason: 'ATHLETE_SCOPE_MISMATCH' }]);
+  });
+
+  test('two coaches scoring different reps of one drill do not contest the pattern', () => {
+    const result = evaluatePatternCandidate({
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      behaviourKey: BEHAVIOUR,
+      observations: [
+        ...withRepOnFirst(strongEvidence()),
+        obs(5, { sessionId: 'session-1', taskContextKey: 'task-mitts', opportunityKey: 'rep-4', observerAccountId: 'coach-c', polarity: 'counterexample' }),
+      ],
+      policy,
+      asOf: AS_OF,
+    });
+    expect(result.blockers).not.toContain('OBSERVER_DISAGREEMENT');
+    expect(result.state).toBe('ESTABLISHED_IN_CONTEXT');
+    expect(result.provenance.find((entry) => entry.observationId === 'obs-5')?.opportunityKey).toBe('rep-4');
+  });
+
+  test('adding observations recorded after asOf does not change an earlier evaluation', () => {
+    const evaluate = (observations: readonly BehaviourObservation[], previouslyEstablished?: boolean) =>
+      evaluatePatternCandidate({
+        organizationId: ORG,
+        athleteId: ATHLETE,
+        behaviourKey: BEHAVIOUR,
+        observations,
+        policy,
+        asOf: AS_OF,
+        previouslyEstablished,
+      });
+    const later = [
+      // A fresh occurrence in a new drill, two counterexamples, and a revision
+      // of obs-1 -- all recorded after the instant being evaluated.
+      obs(21, { sessionId: 'session-21', taskContextKey: 'task-bag', observedAt: day(5, 8), observerAccountId: 'coach-c' }),
+      obs(22, { sessionId: 'session-22', polarity: 'counterexample', observedAt: day(6, 8) }),
+      obs(23, { sessionId: 'session-23', polarity: 'counterexample', observedAt: day(7, 8), observerAccountId: 'coach-b' }),
+      obs(24, { sessionId: 'session-1', supersedesObservationId: 'obs-1', polarity: 'counterexample', observedAt: day(8, 8) }),
+    ];
+
+    expect(evaluate([...strongEvidence(), ...later])).toEqual(evaluate(strongEvidence()));
+
+    // The retirement case: silence through asOf, then the behaviour shows up
+    // again in August. In July the pattern had retired.
+    const stale = strongEvidence().map((observation, index) => ({ ...observation, observedAt: day(index + 1, 1) }));
+    const retired = evaluate(stale, true);
+    expect(retired.state).toBe('RETIRED');
+    expect(evaluate([...stale, ...later], true)).toEqual(retired);
   });
 
   test('refuses to evaluate without a caller-supplied instant', () => {

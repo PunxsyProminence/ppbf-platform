@@ -16,6 +16,7 @@
  */
 
 import { deterministicKey } from '../formulas/identity';
+import { admitObservations } from './evidence';
 import type {
   BehaviourObservation,
   InterventionOutcomeReview,
@@ -107,6 +108,11 @@ export function assertAthleteLessonPolicy(policy: AthleteLessonPolicy): void {
   if (policy.acceptedMatchStates.includes('miss')) {
     throw new TypeError("acceptedMatchStates cannot include 'miss': a missed outcome validates nothing.");
   }
+}
+
+function occurredBy(timestamp: string, asOfMs: number): boolean {
+  const ms = Date.parse(timestamp);
+  return Number.isFinite(ms) && ms <= asOfMs;
 }
 
 function isImprovement(observation: BehaviourObservation): boolean {
@@ -238,14 +244,36 @@ export function evaluateValidatedAthleteLesson(
     blockers.push('NO_OBSERVATIONS');
   }
 
-  const { intervention } = input;
+  // Same admission as the candidate ladder: another athlete's records, a
+  // dropped duplicate, a failed capture, or anything observed after asOf is
+  // not evidence about this athlete's lesson at asOf.
+  const scope = {
+    organizationId: input.organizationId,
+    athleteId: input.athleteId,
+    behaviourKey: input.behaviourKey,
+  };
+  const postAdmission = admitObservations(scope, input.postObservations, asOf);
+  const postObservations = postAdmission.admitted;
+  const excluded = [...postAdmission.excluded];
+
+  // An intervention that had not started by asOf, or an outcome not yet
+  // reviewed by then, did not exist at asOf, so both are evaluated as absent:
+  // a later start or a later review cannot change an earlier lesson. A
+  // timestamp nobody can place is treated the same way.
+  const asOfMs = Date.parse(asOf);
+  const intervention = input.intervention && occurredBy(input.intervention.startedAt, asOfMs)
+    ? input.intervention
+    : null;
+  const outcome = input.outcome && (!input.outcome.reviewedAt || occurredBy(input.outcome.reviewedAt, asOfMs))
+    ? input.outcome
+    : null;
+
   if (!intervention) {
     blockers.push('NO_INTERVENTION');
   } else if (!intervention.decisionId) {
     blockers.push('INTERVENTION_NOT_HUMAN_AUTHORIZED');
   }
 
-  const { outcome } = input;
   if (!outcome) {
     blockers.push('OUTCOME_NOT_HUMAN_REVIEWED');
   } else {
@@ -265,10 +293,10 @@ export function evaluateValidatedAthleteLesson(
   }
 
   const transfer = intervention
-    ? summarizeTransferEvidence(intervention, input.postObservations)
+    ? summarizeTransferEvidence(intervention, postObservations)
     : emptyTransfer;
   const retention = intervention
-    ? summarizeRetentionEvidence(intervention, input.postObservations, policy, asOf)
+    ? summarizeRetentionEvidence(intervention, postObservations, policy, asOf)
     : emptyRetention;
 
   if (intervention) {
@@ -288,7 +316,7 @@ export function evaluateValidatedAthleteLesson(
 
     // The athlete still doing the thing, after the intervention, in the very
     // context it was trained in.
-    const regressed = input.postObservations.some(
+    const regressed = postObservations.some(
       (observation) => observation.polarity === 'occurrence'
         && observation.taskContextKey === intervention.trainedTaskContextKey
         && Date.parse(observation.observedAt) >= Date.parse(intervention.startedAt),
@@ -320,8 +348,10 @@ export function evaluateValidatedAthleteLesson(
         + 'A post-intervention series with no baseline is not a comparison.',
       );
     }
-    const baseline = buildSessionRateSeries(input.preObservations).map((point) => point.rate);
-    const treatment = buildSessionRateSeries(input.postObservations).map((point) => point.rate);
+    const preAdmission = admitObservations(scope, input.preObservations, asOf);
+    excluded.push(...preAdmission.excluded);
+    const baseline = buildSessionRateSeries(preAdmission.admitted).map((point) => point.rate);
+    const treatment = buildSessionRateSeries(postObservations).map((point) => point.rate);
     singleCase = assessSingleCaseDesign(
       { baseline, treatment, direction: input.improvementDirection },
       input.singleCaseDesignPolicy,
@@ -341,6 +371,7 @@ export function evaluateValidatedAthleteLesson(
     eligible: blockers.length === 0,
     blockers: Object.freeze([...new Set(blockers)]),
     warnings: Object.freeze([...new Set(warnings)]),
+    excluded: Object.freeze(excluded),
 
     transfer,
     retention,

@@ -65,6 +65,34 @@ function sortKey(observation: BehaviourObservation): string {
   return `${observation.observedAt}|${observation.observationId}`;
 }
 
+function scopeFailure(scope: ObservationScope, observation: BehaviourObservation): PatternReasonCode | null {
+  if (observation.organizationId !== scope.organizationId) return 'ORGANIZATION_SCOPE_MISMATCH';
+  if (observation.athleteId !== scope.athleteId) return 'ATHLETE_SCOPE_MISMATCH';
+  if (observation.behaviourKey !== scope.behaviourKey) return 'BEHAVIOUR_KEY_MISMATCH';
+  if (!Number.isFinite(Date.parse(observation.observedAt))) return 'INVALID_TIMESTAMP';
+  return null;
+}
+
+/**
+ * Groups readings by the attempt they are about: session, task and
+ * opportunity key. A reading with no opportunity key has no group -- nothing
+ * says which rep it scored, so it cannot be set against anyone else's.
+ */
+function groupByOpportunity(
+  observations: readonly BehaviourObservation[],
+): Map<string, BehaviourObservation[]> {
+  const groups = new Map<string, BehaviourObservation[]>();
+  for (const observation of observations) {
+    const { opportunityKey } = observation;
+    if (typeof opportunityKey !== 'string' || opportunityKey.length === 0) continue;
+    const key = JSON.stringify([observation.sessionId, observation.taskContextKey, opportunityKey]);
+    const group = groups.get(key);
+    if (group) group.push(observation);
+    else groups.set(key, [observation]);
+  }
+  return groups;
+}
+
 /**
  * Filters a candidate's observations down to those that may contribute
  * evidence, recording WHY each rejection happened.
@@ -76,44 +104,64 @@ function sortKey(observation: BehaviourObservation): string {
  *
  * A superseded observation is excluded from evidence but kept in the
  * exclusion list: a coach revising their own call after film is a real,
- * auditable act, and erasing the original would hide the revision.
+ * auditable act, and erasing the original would hide the revision. Only a
+ * record that is admissible in its own right can supersede: another
+ * athlete's revision, a mis-keyed import or a failed capture has no standing
+ * to remove evidence it was never part of.
+ *
+ * With `asOf`, records observed after that instant are left out entirely --
+ * not listed as exclusions -- because at `asOf` they had not been made yet.
+ * That is what keeps an evaluation reproducible: the same instant gives the
+ * same answer however much later data the caller happens to pass, and a
+ * revision recorded after `asOf` does not reach back to supersede at it.
  */
 export function admitObservations(
   scope: ObservationScope,
   observations: readonly BehaviourObservation[],
+  asOf?: string,
 ): ObservationAdmission {
   const admitted: BehaviourObservation[] = [];
   const excluded: { observationId: string; reason: PatternReasonCode }[] = [];
 
-  const supersededIds = new Set(
-    observations
-      .map((observation) => observation.supersedesObservationId)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0),
-  );
+  let asOfMs = Number.POSITIVE_INFINITY;
+  if (asOf !== undefined) {
+    asOfMs = Date.parse(asOf);
+    if (!Number.isFinite(asOfMs)) {
+      throw new TypeError('admitObservations requires asOf, when given, to be a valid timestamp.');
+    }
+  }
+
+  const ordered = observations
+    // An unreadable timestamp stays in so it is reported as INVALID_TIMESTAMP.
+    .filter((observation) => !(Date.parse(observation.observedAt) > asOfMs))
+    .sort((left, right) => sortKey(left).localeCompare(sortKey(right)));
+
+  // First pass: which records may supersede. The same checks as below, so a
+  // record the second pass rejects can never have suppressed anything.
+  const supersededIds = new Set<string>();
+  const standingIds = new Set<string>();
+  for (const observation of ordered) {
+    if (standingIds.has(observation.observationId)) continue;
+    standingIds.add(observation.observationId);
+    if (scopeFailure(scope, observation) !== null || observation.source.quality === 'failed') continue;
+    const target = observation.supersedesObservationId;
+    if (typeof target === 'string' && target.length > 0 && target !== observation.observationId) {
+      supersededIds.add(target);
+    }
+  }
 
   const seenIds = new Set<string>();
 
-  for (const observation of [...observations].sort((left, right) => sortKey(left).localeCompare(sortKey(right)))) {
+  for (const observation of ordered) {
     if (seenIds.has(observation.observationId)) {
       excluded.push({ observationId: observation.observationId, reason: 'DUPLICATE_OBSERVATION_ID' });
       continue;
     }
     seenIds.add(observation.observationId);
 
-    if (observation.organizationId !== scope.organizationId) {
-      excluded.push({ observationId: observation.observationId, reason: 'ORGANIZATION_SCOPE_MISMATCH' });
-      continue;
-    }
-    if (observation.athleteId !== scope.athleteId) {
-      excluded.push({ observationId: observation.observationId, reason: 'ATHLETE_SCOPE_MISMATCH' });
-      continue;
-    }
-    if (observation.behaviourKey !== scope.behaviourKey) {
-      excluded.push({ observationId: observation.observationId, reason: 'BEHAVIOUR_KEY_MISMATCH' });
-      continue;
-    }
-    if (!Number.isFinite(Date.parse(observation.observedAt))) {
-      excluded.push({ observationId: observation.observationId, reason: 'INVALID_TIMESTAMP' });
+    const failure = scopeFailure(scope, observation);
+    if (failure !== null) {
+      excluded.push({ observationId: observation.observationId, reason: failure });
       continue;
     }
     if (supersededIds.has(observation.observationId)) {
@@ -298,24 +346,18 @@ export function summarizeCounterEvidence(
 }
 
 /**
- * Two observers, same session, same task, opposite polarity.
+ * Two observers, same attempt, opposite polarity.
  *
- * This is the "two coaches disagree" signal. It is deliberately scoped to a
- * shared session AND task: the same behaviour occurring in one drill and not
- * in another is ordinary variation, not disagreement. Disagreement means two
- * people watched the same thing and reported different events.
+ * This is the "two coaches disagree" signal. It is deliberately scoped to one
+ * attempt -- shared session, task AND opportunity key: the same behaviour
+ * occurring in one drill and not in another is ordinary variation, and so is
+ * it occurring on rep 1 and not on rep 4. Disagreement means two people
+ * watched the same thing and reported different events.
  */
 export function detectObserverDisagreement(
   observations: readonly BehaviourObservation[],
 ): boolean {
-  const groups = new Map<string, BehaviourObservation[]>();
-  for (const observation of observations) {
-    if (!observation.observerAccountId) continue;
-    const key = `${observation.sessionId}|${observation.taskContextKey}`;
-    const group = groups.get(key);
-    if (group) group.push(observation);
-    else groups.set(key, [observation]);
-  }
+  const groups = groupByOpportunity(observations.filter((observation) => observation.observerAccountId));
 
   for (const group of groups.values()) {
     const occurrenceObservers = new Set(
@@ -334,7 +376,8 @@ export function detectObserverDisagreement(
 }
 
 /**
- * Video and a person disagree about the same session and task.
+ * Video and a person disagree about the same attempt (session, task and
+ * opportunity key, as for observer disagreement).
  *
  * Note what this does NOT do: it does not rule for the video. Film is a
  * better record of what physically happened and a worse record of what the
@@ -345,13 +388,7 @@ export function detectObserverDisagreement(
 export function detectVideoContradiction(
   observations: readonly BehaviourObservation[],
 ): boolean {
-  const groups = new Map<string, BehaviourObservation[]>();
-  for (const observation of observations) {
-    const key = `${observation.sessionId}|${observation.taskContextKey}`;
-    const group = groups.get(key);
-    if (group) group.push(observation);
-    else groups.set(key, [observation]);
-  }
+  const groups = groupByOpportunity(observations);
 
   for (const group of groups.values()) {
     const video = group.filter((item) => VIDEO_SOURCE_TYPES.has(item.source.type));
@@ -380,6 +417,7 @@ export function toProvenance(
       taskConstraint: observation.taskConstraint,
       fatigueContext: observation.fatigueContext,
       observedAt: observation.observedAt,
+      opportunityKey: observation.opportunityKey ?? null,
       sourceType: observation.source.type,
       sourceQuality: observation.source.quality,
       observerAccountId: observation.observerAccountId,
@@ -391,7 +429,10 @@ export function toProvenance(
   );
 }
 
-/** Occurrences newer than the policy's staleness horizon, relative to `asOf`. */
+/**
+ * Occurrences inside the policy's staleness horizon, relative to `asOf`:
+ * no older than the horizon and no later than `asOf` itself.
+ */
 export function recentOccurrenceCount(
   observations: readonly BehaviourObservation[],
   asOf: string,
@@ -402,6 +443,6 @@ export function recentOccurrenceCount(
   const horizonMs = asOfMs - (staleAfterDays * MILLISECONDS_PER_DAY);
   return occurrencesOf(observations).filter((observation) => {
     const observedMs = Date.parse(observation.observedAt);
-    return Number.isFinite(observedMs) && observedMs >= horizonMs;
+    return Number.isFinite(observedMs) && observedMs >= horizonMs && observedMs <= asOfMs;
   }).length;
 }

@@ -60,6 +60,69 @@ describe('observation admission', () => {
     expect(admission.admitted).toHaveLength(1);
     expect(admission.excluded).toEqual([{ observationId: 'obs-1', reason: 'DUPLICATE_OBSERVATION_ID' }]);
   });
+
+  test('an in-scope revision still supersedes the call it replaces', () => {
+    const admission = admitObservations(SCOPE, [obs(1), obs(2, { supersedesObservationId: 'obs-1' })]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-2']);
+    expect(admission.excluded).toEqual([{ observationId: 'obs-1', reason: 'SUPERSEDED_OBSERVATION' }]);
+  });
+
+  // A record that is itself thrown out cannot reach back and remove evidence
+  // it has no standing over: another athlete's revision, a mis-keyed import
+  // or a failed capture naming a valid id would otherwise erase it silently.
+  test.each([
+    ['another organization', { organizationId: 'org-2' }, 'ORGANIZATION_SCOPE_MISMATCH'],
+    ['another athlete', { athleteId: 'athlete-2' }, 'ATHLETE_SCOPE_MISMATCH'],
+    ['another behaviour', { behaviourKey: 'other_behaviour' }, 'BEHAVIOUR_KEY_MISMATCH'],
+    ['an unreadable timestamp', { observedAt: 'not-a-date' }, 'INVALID_TIMESTAMP'],
+    ['a failed capture', { source: { type: 'coach_tag', quality: 'failed', referenceId: 'ref-2' } }, 'SOURCE_QUALITY_FAIL'],
+  ] as const)('a replacement from %s cannot supersede a valid observation', (_label, overrides, reason) => {
+    const admission = admitObservations(SCOPE, [
+      obs(1),
+      obs(2, { ...overrides, supersedesObservationId: 'obs-1' } as Partial<BehaviourObservation>),
+    ]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1']);
+    expect(admission.excluded).toEqual([{ observationId: 'obs-2', reason }]);
+  });
+
+  test('a revision that is itself revised still removes the original', () => {
+    const admission = admitObservations(SCOPE, [
+      obs(1),
+      obs(2, { supersedesObservationId: 'obs-1' }),
+      obs(3, { supersedesObservationId: 'obs-2' }),
+    ]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-3']);
+    expect(admission.excluded.map((item) => item.reason))
+      .toEqual(['SUPERSEDED_OBSERVATION', 'SUPERSEDED_OBSERVATION']);
+  });
+
+  test('a record naming itself as superseded does not erase itself', () => {
+    const admission = admitObservations(SCOPE, [obs(1, { supersedesObservationId: 'obs-1' })]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1']);
+    expect(admission.excluded).toEqual([]);
+  });
+
+  test('with asOf, later records are left out and a later revision does not apply yet', () => {
+    const admission = admitObservations(SCOPE, [
+      obs(1),
+      obs(20, { supersedesObservationId: 'obs-1' }),
+      obs(13, { observedAt: 'not-a-date' }),
+    ], '2026-06-10T00:00:00.000Z');
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1']);
+    // Unreadable timestamps are still reported; they cannot be placed after asOf.
+    expect(admission.excluded).toEqual([{ observationId: 'obs-13', reason: 'INVALID_TIMESTAMP' }]);
+    expect(() => admitObservations(SCOPE, [obs(1)], 'whenever')).toThrow(/valid timestamp/);
+  });
+
+  test('a duplicate record cannot supersede through the copy that was dropped', () => {
+    const admission = admitObservations(SCOPE, [
+      obs(1),
+      obs(2),
+      obs(2, { observedAt: '2026-06-03T10:00:00.000Z', supersedesObservationId: 'obs-1' }),
+    ]);
+    expect(admission.admitted.map((item) => item.observationId)).toEqual(['obs-1', 'obs-2']);
+    expect(admission.excluded).toEqual([{ observationId: 'obs-2', reason: 'DUPLICATE_OBSERVATION_ID' }]);
+  });
 });
 
 describe('evidence summary', () => {
@@ -166,49 +229,70 @@ describe('counter-evidence summary', () => {
 });
 
 describe('disagreement detection', () => {
-  test('two observers, same session and task, opposite calls is disagreement', () => {
+  const SAME_REP = { sessionId: 'session-1', taskContextKey: 'task-a', opportunityKey: 'rep-1' } as const;
+  const CLIP = { type: 'computer_vision', quality: 'verified', referenceId: 'clip-1' } as const;
+
+  test('two observers, same attempt, opposite calls is disagreement', () => {
     expect(detectObserverDisagreement([
-      obs(1, { sessionId: 'session-1', taskContextKey: 'task-a', observerAccountId: 'coach-a' }),
-      obs(2, { sessionId: 'session-1', taskContextKey: 'task-a', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+      obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, observerAccountId: 'coach-b', polarity: 'counterexample' }),
     ])).toBe(true);
   });
 
   test('different drills is ordinary variation, not disagreement', () => {
     expect(detectObserverDisagreement([
-      obs(1, { sessionId: 'session-1', taskContextKey: 'task-a', observerAccountId: 'coach-a' }),
-      obs(2, { sessionId: 'session-1', taskContextKey: 'task-b', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+      obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, taskContextKey: 'task-b', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ])).toBe(false);
+  });
+
+  test('two coaches scoring different reps of the same drill are not disagreeing', () => {
+    // Same session, same task, opposite polarity -- but coach-a called rep 1
+    // and coach-b called rep 4.
+    expect(detectObserverDisagreement([
+      obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, opportunityKey: 'rep-4', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ])).toBe(false);
+  });
+
+  test.each([undefined, null, ''])('a reading with no attempt identified (%p) is never compared', (opportunityKey) => {
+    // Nothing says these two watched the same attempt, so neither can be
+    // set against the other -- for coaches or for film.
+    expect(detectObserverDisagreement([
+      obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, opportunityKey, observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ])).toBe(false);
+    expect(detectVideoContradiction([
+      obs(1, { ...SAME_REP, opportunityKey }),
+      obs(2, { ...SAME_REP, polarity: 'counterexample', observerAccountId: null, source: CLIP }),
     ])).toBe(false);
   });
 
   test('one observer revising their own call is not two people disagreeing', () => {
     expect(detectObserverDisagreement([
-      obs(1, { sessionId: 'session-1', taskContextKey: 'task-a', observerAccountId: 'coach-a' }),
-      obs(2, { sessionId: 'session-1', taskContextKey: 'task-a', observerAccountId: 'coach-a', polarity: 'counterexample' }),
+      obs(1, { ...SAME_REP, observerAccountId: 'coach-a' }),
+      obs(2, { ...SAME_REP, observerAccountId: 'coach-a', polarity: 'counterexample' }),
     ])).toBe(false);
   });
 
-  test('video contradicting a coach on the same task is flagged', () => {
+  test('video contradicting a coach on the same attempt is flagged', () => {
     expect(detectVideoContradiction([
-      obs(1, { sessionId: 'session-1', taskContextKey: 'task-a' }),
-      obs(2, {
-        sessionId: 'session-1',
-        taskContextKey: 'task-a',
-        polarity: 'counterexample',
-        observerAccountId: null,
-        source: { type: 'computer_vision', quality: 'verified', referenceId: 'clip-1' },
-      }),
+      obs(1, { ...SAME_REP }),
+      obs(2, { ...SAME_REP, polarity: 'counterexample', observerAccountId: null, source: CLIP }),
     ])).toBe(true);
+  });
+
+  test('video of a different rep does not contradict the coach', () => {
+    expect(detectVideoContradiction([
+      obs(1, { ...SAME_REP }),
+      obs(2, { ...SAME_REP, opportunityKey: 'rep-3', polarity: 'counterexample', observerAccountId: null, source: CLIP }),
+    ])).toBe(false);
   });
 
   test('video agreeing with a coach is not a contradiction', () => {
     expect(detectVideoContradiction([
-      obs(1, { sessionId: 'session-1', taskContextKey: 'task-a' }),
-      obs(2, {
-        sessionId: 'session-1',
-        taskContextKey: 'task-a',
-        observerAccountId: null,
-        source: { type: 'computer_vision', quality: 'verified', referenceId: 'clip-1' },
-      }),
+      obs(1, { ...SAME_REP }),
+      obs(2, { ...SAME_REP, observerAccountId: null, source: CLIP }),
     ])).toBe(false);
   });
 });
@@ -222,5 +306,10 @@ describe('recency', () => {
     ];
     expect(recentOccurrenceCount(observations, '2026-07-01T00:00:00.000Z', 90)).toBe(1);
     expect(recentOccurrenceCount(observations, '2026-07-01T00:00:00.000Z', 365)).toBe(2);
+  });
+
+  test('an occurrence recorded after asOf is not recent evidence at asOf', () => {
+    const observations = [obs(1, { observedAt: '2026-08-01T00:00:00.000Z' })];
+    expect(recentOccurrenceCount(observations, '2026-07-01T00:00:00.000Z', 90)).toBe(0);
   });
 });
