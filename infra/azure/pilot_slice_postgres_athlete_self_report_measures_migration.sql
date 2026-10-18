@@ -124,9 +124,9 @@ comment on table pilot.organization_symptom_flag_settings is
 -- "How I feel today"). An empty list is a real answer ("None of these").
 --
 -- A FLAG, NOT A SCORE. The list is stored as the athlete ticked it and is
--- never totalled: no count column, no severity, no derived field. A report
--- with anything ticked files a pilot.safety_escalations row whose source_id
--- is this report_id; that is how the two are joined, so there is no
+-- never totalled: no count column, no severity, no derived field. Each
+-- submission that adds ticks files a pilot.safety_escalations row whose
+-- source_id is this report_id; that is how the two are joined, so there is no
 -- escalation column here to fall out of step. (That table requires a
 -- severity; the filing code uses one fixed value, never one derived from
 -- what was ticked.)
@@ -187,7 +187,7 @@ create trigger trg_sparring_symptom_reports_guard
   for each row execute function pilot.sparring_symptom_reports_guard();
 
 comment on table pilot.sparring_symptom_reports is
-  'What an athlete ticked after sparring. A flag, never a score: no total, no severity. A report with anything ticked has one pilot.safety_escalations row with source_type sparring_symptom and source_id = report_id.';
+  'What an athlete ticked after sparring. A flag, never a score: no total, no severity. Each submission that adds ticks files one pilot.safety_escalations row with source_type sparring_symptom and source_id = report_id.';
 
 -- ---------------------------------------------------------------------------
 -- 5. 'sparring_symptom' ON THE ESCALATION LADDER. The same catalog-guarded
