@@ -322,16 +322,14 @@ describe('athlete self-report measures migration (L58)', () => {
     }
   });
 
-  test('symptom-flag settings default to the coach and no protocol text, and stay inside their vocabulary', async () => {
+  test('symptom-flag settings hold only the gym protocol text, blank by default; there is no recipient to change', async () => {
     const client = await freshDatabase('selfrep_settings');
     try {
       await client.query('insert into pilot.organization_symptom_flag_settings (organization_id) values ($1)', [ORG]);
-      const row = await client.query('select recipient_role, protocol_text from pilot.organization_symptom_flag_settings');
-      expect(row.rows).toEqual([{ recipient_role: 'coach', protocol_text: '' }]);
+      const row = await client.query('select * from pilot.organization_symptom_flag_settings');
+      expect(Object.keys(row.rows[0]).sort()).toEqual(['organization_id', 'protocol_text', 'updated_at']);
+      expect(row.rows[0].protocol_text).toBe('');
 
-      await expect(
-        client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, recipient_role) values ($1, 'parent')`, [OTHER_ORG]),
-      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_org_symptom_flag_settings_role_check' });
       await expect(
         client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, protocol_text) values ($1, $2)`, [OTHER_ORG, 'x'.repeat(1001)]),
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_org_symptom_flag_settings_protocol_check' });
@@ -339,7 +337,7 @@ describe('athlete self-report measures migration (L58)', () => {
         client.query(`insert into pilot.organization_symptom_flag_settings (organization_id) values ('nobody-here')`),
       ).rejects.toMatchObject({ code: '23503', constraint: 'pilot_org_symptom_flag_settings_org_fk' });
 
-      await client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, recipient_role) values ($1, 'organization_admin')`, [OTHER_ORG]);
+      await client.query(`insert into pilot.organization_symptom_flag_settings (organization_id, protocol_text) values ($1, 'Sit out, tell a coach.')`, [OTHER_ORG]);
       await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG]);
       expect(await count(client, 'pilot.organization_symptom_flag_settings')).toBe(1);
     } finally {
@@ -383,6 +381,30 @@ describe('athlete self-report measures migration (L58)', () => {
     }
   });
 
+  test("a tick is never taken back off a report, and a report keeps whose it is, its day and its context", async () => {
+    const client = await freshDatabase('selfrep_ticks_kept');
+    try {
+      await symptomReport(client, { symptoms: ['headache'] });
+      // A later submission the same day adds to it.
+      await client.query(`update pilot.sparring_symptom_reports set symptoms = array['headache', 'dizzy'] where report_id = 'rep-1'`);
+      await client.query(`update pilot.sparring_symptom_reports set symptoms = array['dizzy', 'headache'] where report_id = 'rep-1'`);
+
+      for (const [statement, constraint] of [
+        [`update pilot.sparring_symptom_reports set symptoms = '{}' where report_id = 'rep-1'`, 'pilot_sparring_symptom_reports_ticks_kept'],
+        [`update pilot.sparring_symptom_reports set symptoms = array['dizzy'] where report_id = 'rep-1'`, 'pilot_sparring_symptom_reports_ticks_kept'],
+        [`update pilot.sparring_symptom_reports set context = 'next_day' where report_id = 'rep-1'`, 'pilot_sparring_symptom_reports_identity_kept'],
+        [`update pilot.sparring_symptom_reports set reported_on = '2026-10-18' where report_id = 'rep-1'`, 'pilot_sparring_symptom_reports_identity_kept'],
+        [`update pilot.sparring_symptom_reports set athlete_id = '${OTHER_ATHLETE}' where report_id = 'rep-1'`, 'pilot_sparring_symptom_reports_identity_kept'],
+      ] as const) {
+        await expect(client.query(statement)).rejects.toMatchObject({ code: '23514', constraint });
+      }
+      const row = await client.query(`select symptoms, context, athlete_id from pilot.sparring_symptom_reports`);
+      expect(row.rows).toEqual([{ symptoms: ['dizzy', 'headache'], context: 'after_sparring', athlete_id: ATHLETE }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('one symptom report per athlete, per day, per context', async () => {
     const client = await freshDatabase('selfrep_symptom_day');
     try {
@@ -417,6 +439,11 @@ describe('athlete self-report measures migration (L58)', () => {
     const client = await freshDatabase('selfrep_escalation_widen');
     try {
       await narrowEscalationSourcesToPreL58(client);
+      // A second, differently named narrow check: every stale one has to go, not just the first.
+      await client.query(
+        `alter table pilot.safety_escalations add constraint safety_escalations_older_source_check
+           check (source_type in (${PRE_L58_SOURCE_TYPES.map((type) => `'${type}'`).join(', ')}))`,
+      );
       await expect(escalation(client, 'sparring_symptom')).rejects.toMatchObject({ code: '23514' });
 
       await applyRunner(client, migrationSql);
@@ -525,51 +552,89 @@ describe('athlete self-report measures migration (L58)', () => {
     }
   });
 
-  test('the file holds nothing destructive; its one drop is the guarded escalation-constraint widening', () => {
+  test('the file holds nothing destructive: its drops are the guarded constraint widening and the trigger re-create', () => {
     const sql = migrationSql.toLowerCase().replace(/--.*$/gm, '');
     expect(sql).not.toMatch(/\bdrop\s+(table|column|index|schema|function|view)\b/);
     expect(sql).not.toMatch(/\btruncate\b/);
     expect(sql).not.toMatch(/\bdelete\s+from\b/);
     expect(sql).not.toMatch(/\bupdate\s+pilot\./);
     expect(sql.match(/\bdrop\s+constraint\b/g)).toHaveLength(1);
-    expect(sql).toContain("execute format('alter table pilot.safety_escalations drop constraint %i', stale_constraint)");
+    expect(sql.match(/\bdrop\s+trigger\b/g)).toEqual(['drop trigger']);
+    expect(sql).toContain('drop trigger if exists trg_sparring_symptom_reports_guard on pilot.sparring_symptom_reports');
+    expect(sql).toContain("execute format('alter table pilot.safety_escalations drop constraint %i', stale.conname)");
   });
 
-  test('the runner refuses a symptom check of that name that admits a score', async () => {
-    const client = await freshDatabase('selfrep_wide_symptoms');
+  // Each readiness probe, broken on its own, is the ONE probe named in the refusal. The runner
+  // rolls back every failed attempt, so one database serves every case.
+  const BROKEN_OBJECTS: ReadonlyArray<readonly [probe: string, breakIt: string]> = [
+    ['mood_check_ready', `alter table pilot.athlete_check_ins drop constraint pilot_athlete_check_ins_mood_check;
+      alter table pilot.athlete_check_ins add constraint pilot_athlete_check_ins_mood_check check (mood is null or mood between 0 and 10)`],
+    ['session_type_check_ready', `alter table pilot.sessions drop constraint pilot_sessions_session_type_check;
+      alter table pilot.sessions add constraint pilot_sessions_session_type_check check (session_type is null or session_type <> '')`],
+    ['settings_org_fk_ready', `alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_org_fk;
+      alter table pilot.organization_symptom_flag_settings add constraint pilot_org_symptom_flag_settings_org_fk
+        foreign key (organization_id) references pilot.organizations (organization_id)`],
+    ['settings_not_platform_ready', 'alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_not_platform_check'],
+    ['settings_protocol_check_ready', `alter table pilot.organization_symptom_flag_settings drop constraint pilot_org_symptom_flag_settings_protocol_check;
+      alter table pilot.organization_symptom_flag_settings add constraint pilot_org_symptom_flag_settings_protocol_check check (char_length(protocol_text) <= 100000)`],
+    ['settings_no_recipient_column', `alter table pilot.organization_symptom_flag_settings add column recipient_role text not null default 'coach'`],
+    ['symptom_athlete_fk_ready', `alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_athlete_fk;
+      alter table pilot.sparring_symptom_reports add constraint pilot_sparring_symptom_reports_athlete_fk
+        foreign key (organization_id, athlete_id) references pilot.athletes (organization_id, athlete_id)`],
+    ['symptom_one_per_day_ready', 'alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_one_per_day'],
+    ['symptom_list_column_ready', 'alter table pilot.sparring_symptom_reports alter column symptoms drop not null'],
+    ['symptom_context_check_ready', `alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_context_check;
+      alter table pilot.sparring_symptom_reports add constraint pilot_sparring_symptom_reports_context_check check (context <> '')`],
+    ['symptom_list_check_ready', `alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_symptoms_check;
+      alter table pilot.sparring_symptom_reports add constraint pilot_sparring_symptom_reports_symptoms_check check (array_position(symptoms, null) is null)`],
+    ['symptom_ticks_kept_guard_ready', 'alter table pilot.sparring_symptom_reports disable trigger trg_sparring_symptom_reports_guard'],
+    ['escalation_source_ready', `alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check;
+      alter table pilot.safety_escalations add constraint safety_escalations_source_type_check check (source_type in ('sparring_symptom'))`],
+    ['escalation_no_narrower_source_check', `alter table pilot.safety_escalations add constraint safety_escalations_old_source_check
+      check (source_type in ('near_miss', 'pain_report'))`],
+    ['cycle_tracking_athlete_fk_ready', `alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_tracking_fk;
+      alter table pilot.athlete_cycle_tracking drop constraint pilot_athlete_cycle_tracking_athlete_fk;
+      alter table pilot.athlete_cycle_tracking add constraint pilot_athlete_cycle_tracking_athlete_fk
+        foreign key (organization_id, athlete_id) references pilot.athletes (organization_id, athlete_id);
+      alter table pilot.athlete_cycle_entries add constraint pilot_athlete_cycle_entries_tracking_fk
+        foreign key (organization_id, athlete_id) references pilot.athlete_cycle_tracking (organization_id, athlete_id) on delete cascade`],
+    ['cycle_entries_opt_in_fk_ready', `alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_tracking_fk;
+      alter table pilot.athlete_cycle_entries add constraint pilot_athlete_cycle_entries_tracking_fk
+        foreign key (organization_id, athlete_id) references pilot.athletes (organization_id, athlete_id) on delete cascade`],
+    ['cycle_entries_one_per_day_ready', 'alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_one_per_day'],
+    ['cycle_entries_day_column_ready', 'alter table pilot.athlete_cycle_entries alter column period_started_on drop not null'],
+  ];
+
+  test('each readiness probe refuses its own object when it alone is wrong', async () => {
+    const client = await freshDatabase('selfrep_probes');
     try {
-      await expect(applyRunner(client, `
-        alter table pilot.sparring_symptom_reports drop constraint pilot_sparring_symptom_reports_symptoms_check;
-        alter table pilot.sparring_symptom_reports add constraint pilot_sparring_symptom_reports_symptoms_check
-          check (array_position(symptoms, null) is null)`)).rejects.toThrow('ATHLETE_SELF_REPORT_MEASURES_NOT_READY: symptom_list_check_ready');
+      for (const [probe, breakIt] of BROKEN_OBJECTS) {
+        const refusal = await applyRunner(client, breakIt).then(() => null, (error: Error) => error.message);
+        expect({ probe, refusal }).toEqual({ probe, refusal: `ATHLETE_SELF_REPORT_MEASURES_NOT_READY: ${probe}` });
+      }
+      // And the database those attempts rolled back from is still ready.
+      await applyRunner(client, migrationSql);
     } finally {
       await client.end();
     }
   });
 
-  test('the runner refuses cycle entries that hang off the athlete instead of the opt-in', async () => {
-    const client = await freshDatabase('selfrep_cycle_fk');
-    try {
-      await expect(applyRunner(client, `
-        alter table pilot.athlete_cycle_entries drop constraint pilot_athlete_cycle_entries_tracking_fk;
-        alter table pilot.athlete_cycle_entries add constraint pilot_athlete_cycle_entries_tracking_fk
-          foreign key (organization_id, athlete_id) references pilot.athletes (organization_id, athlete_id) on delete cascade`))
-        .rejects.toThrow('ATHLETE_SELF_REPORT_MEASURES_NOT_READY: cycle_entries_opt_in_fk_ready');
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('the runner refuses a settings table whose default recipient is not the coach', async () => {
-    const client = await freshDatabase('selfrep_default_role');
-    try {
-      await expect(applyRunner(
-        client,
-        `alter table pilot.organization_symptom_flag_settings alter column recipient_role set default 'organization_admin'`,
-      )).rejects.toThrow('ATHLETE_SELF_REPORT_MEASURES_NOT_READY: settings_default_coach_ready');
-    } finally {
-      await client.end();
-    }
+  test('the pre-deploy schema check expects every object this file adds', async () => {
+    // pilot-verify-schema.mjs strips "--" to the end of a line without knowing about strings, so a
+    // double dash inside a comment literal used to hide the statement after it.
+    // Importing the verifier runs its main() unless this is set (pilot-verify-schema.mjs).
+    process.env.PPBF_SCHEMA_VERIFY_SKIP_MAIN = 'true';
+    const verifier = await nativeDynamicImport(pathToFileURL(path.resolve(__dirname, '../../../scripts/pilot-verify-schema.mjs')).href);
+    const expected = (verifier.expectedObjectsFrom as (files: string[]) => Record<string, Set<string>>)([
+      path.join(INFRA_DIR, MIGRATION_FILE),
+    ]);
+    expect([...expected.tables].sort()).toEqual([
+      'athlete_cycle_entries', 'athlete_cycle_tracking', 'organization_symptom_flag_settings', 'sparring_symptom_reports',
+    ]);
+    expect([...expected.columns].sort()).toEqual(['athlete_check_ins.mood', 'sessions.session_type']);
+    expect([...expected.constraints].sort()).toEqual([
+      'pilot_athlete_check_ins_mood_check', 'pilot_sessions_session_type_check', 'safety_escalations_source_type_check',
+    ]);
   });
 
   test('the runner refuses a result it did not produce', async () => {

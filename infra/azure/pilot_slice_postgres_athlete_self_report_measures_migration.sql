@@ -16,12 +16,13 @@
 -- WHAT THIS ADDS. Additive only: no drop of data, no altered value.
 --   1. pilot.athlete_check_ins.mood -- 1-5 self-report, higher is better.
 --   2. pilot.sessions.session_type -- the athlete's tag on their own session.
---   3. pilot.organization_symptom_flag_settings -- who a symptom flag goes to
---      and the gym's own protocol words. No row means the defaults Jason
---      chose: the athlete's coach, no protocol text.
+--   3. pilot.organization_symptom_flag_settings -- the gym's own protocol
+--      words shown under the fixed message. No row means none (Jason: "Not
+--      yet, leave blank"). Who receives a flag is not a setting: Jason ruled
+--      "Their coach", so the filing code sends it to the athlete's coach.
 --   4. pilot.sparring_symptom_reports -- what an athlete ticked after
 --      sparring. A FLAG, not a score: there is no total, no severity and no
---      column that could hold one.
+--      column that could hold one. A tick is never taken back off a report.
 --   5. 'sparring_symptom' as a pilot.safety_escalations source_type, so a
 --      ticked report reaches staff on the existing escalation ladder.
 --   6. pilot.athlete_cycle_tracking + pilot.athlete_cycle_entries -- opt-in,
@@ -59,7 +60,7 @@ end
 $$;
 
 comment on column pilot.athlete_check_ins.mood is
-  'Athlete self-report, 1-5, higher is better. Anchors in apps/web/src/shared/wellnessScales.ts. NULL means not reported -- never 0, never a default.';
+  'Athlete self-report, 1-5, higher is better. Anchors in apps/web/src/shared/wellnessScales.ts. NULL means not reported: never 0, never a default.';
 
 -- ---------------------------------------------------------------------------
 -- 2. SESSION TYPE. What kind of session the athlete says it was, picked at
@@ -89,16 +90,16 @@ comment on column pilot.sessions.session_type is
   'The athlete''s own tag for the session, set at check-out: technique, bag_pads, conditioning, sparring, mixed or other. NULL means not said.';
 
 -- ---------------------------------------------------------------------------
--- 3. SYMPTOM FLAG SETTINGS, one row per gym. Kept out of
+-- 3. SYMPTOM FLAG SETTINGS, one row per gym: the gym's own protocol words,
+-- shown to the athlete under the fixed message; '' means the gym has not
+-- written one (Jason: "Not yet, leave blank"). Kept out of
 -- pilot.organization_profiles on purpose: that table is the gym's public
--- identity, and this is safety routing. recipient_role uses the same targets
--- pilot.safety_escalations.escalated_to_role allows. protocol_text is the
--- gym's own words, shown to the athlete under the fixed message; '' means the
--- gym has not written one (Jason: "Not yet, leave blank").
+-- identity, and this is safety guidance. There is deliberately no recipient
+-- column: Jason ruled the flag goes to "Their coach", and a setting would let
+-- a gym route it away from the coach.
 
 create table if not exists pilot.organization_symptom_flag_settings (
   organization_id text not null,
-  recipient_role  text not null default 'coach',
   protocol_text   text not null default '',
   updated_at      timestamptz not null default now(),
   constraint pilot_org_symptom_flag_settings_pkey primary key (organization_id),
@@ -106,14 +107,12 @@ create table if not exists pilot.organization_symptom_flag_settings (
     references pilot.organizations (organization_id) on delete cascade,
   constraint pilot_org_symptom_flag_settings_not_platform_check
     check (organization_id <> '__platform__'),
-  constraint pilot_org_symptom_flag_settings_role_check
-    check (recipient_role in ('coach', 'organization_admin', 'admin')),
   constraint pilot_org_symptom_flag_settings_protocol_check
     check (char_length(protocol_text) <= 1000)
 );
 
 comment on table pilot.organization_symptom_flag_settings is
-  'Who a sparring symptom flag is escalated to, and the gym''s own protocol words. No row = defaults: the athlete''s coach, no protocol text.';
+  'The gym''s own protocol words for a sparring symptom flag, shown under the fixed message. No row or blank = none written.';
 
 -- ---------------------------------------------------------------------------
 -- 4. SPARRING SYMPTOM REPORTS. What an athlete ticked after sparring
@@ -122,12 +121,17 @@ comment on table pilot.organization_symptom_flag_settings is
 --
 -- A FLAG, NOT A SCORE. The list is stored as the athlete ticked it and is
 -- never totalled: no count column, no severity, no derived field. A report
--- with anything ticked files one pilot.safety_escalations row whose
--- source_id is this report_id; that is how the two are joined, so there is no
--- escalation column here to fall out of step.
+-- with anything ticked files a pilot.safety_escalations row whose source_id
+-- is this report_id; that is how the two are joined, so there is no
+-- escalation column here to fall out of step. (That table requires a
+-- severity; the filing code uses one fixed value, never one derived from
+-- what was ticked.)
 --
 -- One report per athlete, per gym day, per context: a second submission the
--- same day is the same report.
+-- same day adds to the same report. WHAT A CHILD TICKED IS KEPT: the guard
+-- below refuses any update that takes a tick back off, or that changes whose
+-- report it is, which day, or which context. Deletes are not guarded, so the
+-- report still goes with the athlete.
 
 create table if not exists pilot.sparring_symptom_reports (
   organization_id text not null,
@@ -151,6 +155,33 @@ create table if not exists pilot.sparring_symptom_reports (
     unique (organization_id, athlete_id, reported_on, context)
 );
 
+create or replace function pilot.sparring_symptom_reports_guard()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.organization_id is distinct from old.organization_id
+     or new.report_id is distinct from old.report_id
+     or new.athlete_id is distinct from old.athlete_id
+     or new.reported_on is distinct from old.reported_on
+     or new.context is distinct from old.context
+     or new.created_at is distinct from old.created_at then
+    raise exception 'A sparring symptom report keeps whose it is, its day and its context.'
+      using errcode = '23514', constraint = 'pilot_sparring_symptom_reports_identity_kept';
+  end if;
+  if not (new.symptoms @> old.symptoms) then
+    raise exception 'A ticked symptom is never taken back off a report.'
+      using errcode = '23514', constraint = 'pilot_sparring_symptom_reports_ticks_kept';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sparring_symptom_reports_guard on pilot.sparring_symptom_reports;
+create trigger trg_sparring_symptom_reports_guard
+  before update on pilot.sparring_symptom_reports
+  for each row execute function pilot.sparring_symptom_reports_guard();
+
 comment on table pilot.sparring_symptom_reports is
   'What an athlete ticked after sparring. A flag, never a score: no total, no severity. A report with anything ticked has one pilot.safety_escalations row with source_type sparring_symptom and source_id = report_id.';
 
@@ -161,20 +192,30 @@ comment on table pilot.sparring_symptom_reports is
 -- file and the base schema carry the same list, so re-running either keeps
 -- 'sparring_symptom' rather than narrowing it back.
 
+-- EVERY stale vocabulary check is replaced, not just the first one found: a
+-- second narrower check left in place would refuse every symptom escalation,
+-- and the filing code's failure would be the only trace.
 do $$
 declare
-  stale_constraint text;
+  stale record;
 begin
-  select conname into stale_constraint
-  from pg_constraint
-  where conrelid = 'pilot.safety_escalations'::regclass
-    and contype = 'c'
-    and pg_get_constraintdef(oid) like '%source_type%'
-    and pg_get_constraintdef(oid) like '%''near_miss''%'
-    and pg_get_constraintdef(oid) not like '%''sparring_symptom''%';
+  for stale in
+    select conname
+    from pg_constraint
+    where conrelid = to_regclass('pilot.safety_escalations')
+      and contype = 'c'
+      and pg_get_constraintdef(oid) like '%source_type%'
+      and pg_get_constraintdef(oid) like '%''near_miss''%'
+      and pg_get_constraintdef(oid) not like '%''sparring_symptom''%'
+  loop
+    execute format('alter table pilot.safety_escalations drop constraint %I', stale.conname);
+  end loop;
 
-  if stale_constraint is not null then
-    execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
+  if to_regclass('pilot.safety_escalations') is not null and not exists (
+    select 1 from pg_constraint
+    where conrelid = to_regclass('pilot.safety_escalations')
+      and conname = 'safety_escalations_source_type_check'
+  ) then
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
       check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident', 'video_scan', 'compliance_violation', 'shadow_disclosure', 'sparring_symptom'));
@@ -190,10 +231,12 @@ end $$;
 -- change training; never sent to SHADOW; deleted with the athlete. Any wider
 -- sharing needs a separate ruling from Jason.
 --
--- OPT-IN IS A DATABASE FACT. An entry's foreign key points at the athlete's
--- tracking row, not at the athlete, so no entry can exist without an opt-in,
--- and turning tracking off (deleting that row) deletes every entry with it.
--- The tracking row cascades with pilot.athletes, so the purge removes both.
+-- NO ENTRY WITHOUT AN OPT-IN ROW. An entry's foreign key points at the
+-- athlete's tracking row, not at the athlete, so no entry can exist without
+-- one, and turning tracking off (deleting that row) deletes every entry with
+-- it. That the athlete is the one who made the row is the application's job:
+-- only the athlete's own route writes either table. The tracking row cascades
+-- with pilot.athletes, so the purge removes both.
 --
 -- Nothing here is derived: no cycle length, no phase, no prediction column.
 
