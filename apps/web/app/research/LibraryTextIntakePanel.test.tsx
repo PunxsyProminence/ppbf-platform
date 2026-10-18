@@ -166,6 +166,12 @@ function installPdfFetch(readerAnswer: { status: number; json?: unknown }) {
   const calls: PdfCall[] = [];
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // Lane L57: the panel asks whether this shelf files PDFs in the Research
+    // Archive once a PDF is read. Here it does not; that flow has its own file
+    // (LibraryTextIntakePanel.archive.test.tsx), and the question is not a write.
+    if (url.includes('/library/archive-original') && (init?.method ?? 'GET') === 'GET') {
+      return { status: 200, ok: true, json: async () => ({ ok: true, archive: 'off' }) } as Response;
+    }
     const isForm = init?.body instanceof FormData;
     calls.push({ url, isForm, body: isForm ? null : JSON.parse(String(init?.body)) });
     if (url.endsWith('/library/pdf-text')) {
