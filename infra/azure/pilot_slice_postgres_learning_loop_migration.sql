@@ -57,8 +57,10 @@ create table if not exists pilot.behaviour_keys (
 -- status moves (retire it and add a new name rather than re-word or re-file
 -- one), its creator is set null when their account goes, and the purge may
 -- scrub a purged person's name out of its label (Jason 2026-10-07, "Scrub the
--- child's name, keep"; "Gym-wide"): the label gains a [name], nothing else
--- moves.
+-- child's name, keep"; "Gym-wide"). That scrub is checked EXACTLY: the purge
+-- sets its name pattern for the transaction (pilot.name_scrub_pattern) and the
+-- label must become precisely what that pattern makes of it, so the one
+-- admitted change can only turn names into [name].
 create or replace function pilot.behaviour_keys_guard()
 returns trigger
 language plpgsql
@@ -75,9 +77,9 @@ begin
     if to_jsonb(new) - 'status' = to_jsonb(old) - 'status' then
       return new;
     end if;
-    if new.label is distinct from old.label
-       and length(new.label) - length(replace(new.label, '[name]', ''))
-         > length(old.label) - length(replace(old.label, '[name]', ''))
+    if coalesce(current_setting('pilot.name_scrub_pattern', true), '') <> ''
+       and new.label is distinct from old.label
+       and new.label = left(regexp_replace(old.label, current_setting('pilot.name_scrub_pattern', true), '[name]', 'gi'), 120)
        and to_jsonb(new) - 'label' = to_jsonb(old) - 'label' then
       return new;
     end if;
@@ -206,24 +208,28 @@ begin
     -- (2) The purge's de-identification of a DELETED athlete's reports,
     -- before it deletes the athlete (scripts/pilot-cleanup-deleted-data.mjs,
     -- deidentifyBehaviourObservations): the athlete key becomes the purge's
-    -- token and the note is scrubbed of the child's names (or emptied when
-    -- none is on record); nothing else moves, and it happens once.
+    -- token and the note is emptied, or scrubbed of the child's names by
+    -- exactly the pattern the purge set for the transaction; nothing else
+    -- moves, and it happens once.
     if old.deidentified_at is null and new.deidentified_at is not null
        and new.athlete_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
        and not exists (
          select 1 from pilot.athletes a
           where a.organization_id = old.organization_id and a.athlete_id = old.athlete_id
             and a.deleted_at is null)
+       and (new.note = ''
+            or (coalesce(current_setting('pilot.name_scrub_pattern', true), '') <> ''
+                and new.note = left(regexp_replace(old.note, current_setting('pilot.name_scrub_pattern', true), '[name]', 'gi'), 2000)))
        and to_jsonb(new) - array['athlete_id', 'note', 'deidentified_at']
          = to_jsonb(old) - array['athlete_id', 'note', 'deidentified_at'] then
       return new;
     end if;
     -- (3) The purge's gym-wide name scrub (scrubGymNotes): another report's
-    -- note naming a purged person gains a [name] where the name was;
-    -- nothing else moves.
-    if new.note is distinct from old.note
-       and length(new.note) - length(replace(new.note, '[name]', ''))
-         > length(old.note) - length(replace(old.note, '[name]', ''))
+    -- note naming a purged person becomes exactly what the purge's pattern
+    -- makes of it; nothing else moves.
+    if coalesce(current_setting('pilot.name_scrub_pattern', true), '') <> ''
+       and new.note is distinct from old.note
+       and new.note = left(regexp_replace(old.note, current_setting('pilot.name_scrub_pattern', true), '[name]', 'gi'), 2000)
        and to_jsonb(new) - 'note' = to_jsonb(old) - 'note' then
       return new;
     end if;
@@ -319,11 +325,12 @@ create trigger pilot_behaviour_observations_follow_athlete
 -- active one. Three kinds (Jason 2026-10-18, approving the threshold research):
 -- when a behaviour is an emerging, a pattern or an established one; when a
 -- lesson improved, likely worked or worked, replicated; and when a coach
--- pair's reports are calibrated enough to count. Q3: a bar is backed by research, so a row without at least
--- one citation ({"source": "...", "note": "..."}) is refused. The parameters
--- are validated by the application (assertPatternFormationPolicy /
--- assertAthleteLessonPolicy) before insert; the database holds the record
--- of who signed which numbers, when, on what evidence.
+-- pair's reports are calibrated enough to count. Q3: a bar is backed by
+-- research, so a row without at least one citation ({"source": "...",
+-- "note": "..."}) is refused. The parameters are validated by the application
+-- (learningPolicies.ts barFor) before insert; the database holds the record of
+-- who signed which numbers, when, on what evidence. A new version is always
+-- the one in force: it is born active, and only supersedes the last.
 create table if not exists pilot.learning_policies (
   organization_id text not null references pilot.organizations(organization_id) on delete cascade,
   policy_id uuid not null default gen_random_uuid(),
@@ -379,6 +386,10 @@ begin
       using errcode = '23514', constraint = 'pilot_learning_policies_versioned';
   end if;
 
+  if new.status is distinct from 'active' then
+    raise exception 'LEARNING_POLICY_IS_BORN_ACTIVE'
+      using errcode = '23514', constraint = 'pilot_learning_policies_new_is_active';
+  end if;
   if jsonb_typeof(new.citations) = 'array' then
     for citation in select value from jsonb_array_elements(new.citations) loop
       -- coalesce: a missing key reads as null, and null must refuse, not

@@ -829,19 +829,19 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   if (tables.behaviourObservations) {
     // A coach's report on another child that names this person (a partner
     // in the drill, say). Capped at the column's 2000, as above.
-    counts.shadowGymBehaviourNotesScrubbed = (await client.query(
+    counts.shadowGymBehaviourNotesScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
       `update pilot.behaviour_observations set note = left(regexp_replace(note, $2, '[name]', 'gi'), 2000)
         where organization_id = $1 and note ~* $2`,
       [organizationId, pattern],
-    )).rowCount ?? 0;
+    ))).rowCount ?? 0;
     // A behaviour name a coach typed with a child's name in it ("Rosa drops
     // her hands"): the name goes, the behaviour stays. Capped at the
     // label's 120.
-    counts.shadowGymBehaviourLabelsScrubbed = (await client.query(
+    counts.shadowGymBehaviourLabelsScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
       `update pilot.behaviour_keys set label = left(regexp_replace(label, $2, '[name]', 'gi'), 120)
         where organization_id = $1 and label ~* $2`,
       [organizationId, pattern],
-    )).rowCount ?? 0;
+    ))).rowCount ?? 0;
   }
   if (tables.researchRequirements) {
     // The typed text a research row carries: the requirement (a filed
@@ -984,15 +984,32 @@ async function deidentifyShadowChatAudit(client, tables, people) {
    name it replaces. */
 async function deidentifyBehaviourObservations(client, tables, athlete, token, names) {
   if (!tables.behaviourObservations) return 0;
-  const result = await client.query(
+  const pattern = namePattern(names);
+  // The table's guard admits the scrubbed note only as exactly what this
+  // pattern makes of it, so the pattern is named to it for the statement.
+  const result = await withNameScrubPattern(client, pattern, () => client.query(
     `update pilot.behaviour_observations
         set athlete_id = $3,
             note = case when $4::text is null then '' else left(regexp_replace(note, $4, '[name]', 'gi'), 2000) end,
             deidentified_at = now()
       where organization_id = $1 and athlete_id = $2`,
-    [athlete.organization_id, athlete.athlete_id, token, namePattern(names)],
-  );
+    [athlete.organization_id, athlete.athlete_id, token, pattern],
+  ));
   return result.rowCount ?? 0;
+}
+
+/* The learning-loop tables admit a name scrub only as exactly what the purge's
+   pattern makes of the text (their guards read pilot.name_scrub_pattern), so
+   the pattern is set for the transaction around the scrub and cleared after:
+   nothing later in the purge can rewrite a note under it. On a failure there is
+   nothing to clear here -- the caller rolls back to its savepoint, which undoes
+   the setting with everything else -- and a query on the failed transaction
+   would only replace the error the purge reports. */
+async function withNameScrubPattern(client, pattern, run) {
+  await client.query(`select set_config('pilot.name_scrub_pattern', $1, true)`, [pattern ?? '']);
+  const result = await run();
+  await client.query(`select set_config('pilot.name_scrub_pattern', '', true)`);
+  return result;
 }
 
 /**
@@ -1179,7 +1196,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          read while the rows that hold them still exist: the delete below
          cascades the guardian links and, through the login, the profile. */
       const athleteLogins = linked.rows.filter((row) => row.role === 'athlete').map((row) => row.account_id);
-      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys
+      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name, false as guardian from pilot.athletes where organization_id = $1 and athlete_id = $2
            union all
@@ -1602,7 +1619,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
     try {
       // Read before the guardian record and its links go (SHADOW_OPERATIONAL_TABLES):
       // the guardian's names, and the children whose turns those names must leave.
-      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys
+      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name from pilot.parents where account_id = $1
            union all
