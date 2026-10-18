@@ -2776,6 +2776,60 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/media-consent/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/media-consent",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adult athlete's own photo/video consent (OD-2026-10-08-015): whether they are 18+ on the gym's day, their own latest consent row, and whether it counts for a new publication. Athlete only, self only via session athleteId; a minor's own rows are not read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/media-consent/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/media-consent",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adult athlete's own photo/video consent writes (OD-2026-10-08-015): grant (photo+video or photo only, public use yes/no) and withdraw. Athlete only, self only via session athleteId; the writer (athleteMediaConsent.ts) re-checks in its transaction that the account is the athlete's own live login and that they are 18+. Withdrawal and photo-only retract published video in the same transaction (recordMediaConsentAndSuppress). Audited as athlete_media_consent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/mental-skills/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/mental-skills",
