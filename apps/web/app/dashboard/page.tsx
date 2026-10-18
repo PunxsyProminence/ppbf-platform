@@ -77,7 +77,7 @@ export default function DashboardEntryPage() {
           <div className="frame-in mat-leather text-center" style={{ padding: 'var(--s6)' }}>
             <p className="t-eyebrow tracking-[0.35em]">Dashboard Entry</p>
             <h1 className="t-command mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
-              The Bell
+              Home
             </h1>
             <p className="t-body mx-auto mt-[var(--s4)] max-w-[52ch]">
               One moment — we are checking who you are and sending you to your own page.

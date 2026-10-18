@@ -286,7 +286,7 @@ describe('Start a session', () => {
     rerender(<CoachFloorFocus {...props({ sessionLive: true })} />);
     expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/session-scripts');
     rerender(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
-    expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href')).toBe('/coach/session-scripts');
+    expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
   });
 });
 
@@ -350,7 +350,7 @@ test('a live-run read that failed is never shown as "no session"', () => {
   expect(gauge('Session').textContent).toContain('?');
   expect(gauge('Session').textContent).not.toContain('None');
   expect(screen.queryByRole('link', { name: 'Start a session' })).toBeNull();
-  expect(screen.getByRole('link', { name: 'Open Session Scripts' }).getAttribute('href')).toBe('/coach/session-scripts');
+  expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
 });
 
 test('a roster that was not read leaves the athlete and readings gauges unknown', () => {

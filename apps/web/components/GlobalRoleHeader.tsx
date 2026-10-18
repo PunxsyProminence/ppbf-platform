@@ -292,7 +292,7 @@ export default function GlobalRoleHeader() {
               duplicate in RoleStandaloneView, not this one. This is the
               original; the copy one band down is what goes. */}
           <ChromeLink href="/dashboard" className={CONTROL_QUIET}>
-            Bell
+            Home
           </ChromeLink>
           <button type="button" onClick={signOut} className={CONTROL_EXIT}>
             Logout
