@@ -270,6 +270,10 @@ beforeEach(() => {
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
     }
+    // The sparring symptom check (L58 PR-3): nothing saved, not due, unless a test says otherwise.
+    if (url.includes('/api/pilot/athlete/sparring-symptoms')) {
+      return jsonResponse({ after_sparring: null, next_day: null, next_day_due: false, protocol_text: '', recipient_role: 'coach' });
+    }
     // "From your coach" on the Dashboard (#1542, FC-06): none unless a test gives some.
     if (url.includes('/api/pilot/athlete/coach-messages')) {
       return jsonResponse({ ok: true, items: storedCoachMessages });
@@ -4058,6 +4062,22 @@ describe("the session-type tag is the athlete's pick at check-out, or nothing", 
     expect(checkOutBodies()[0].session_type).toBe('sparring');
     // Said back on the confirmation, since no session read returns it to the athlete.
     expect(await screen.findByText(/Tagged: Sparring\./)).toBeTruthy();
+  });
+
+  test('checking out of a Sparring session opens the after-sparring symptom check; another tag does not', async () => {
+    const AFTER_Q = 'After sparring: do you have any of these right now?';
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Technique` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(screen.queryByText(AFTER_Q)).toBeNull();
+    cleanup();
+
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Sparring` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    expect(await screen.findByText(AFTER_Q)).toBeTruthy();
+    expect(screen.getByRole('button', { name: `${AFTER_Q} Headache` })).toBeTruthy();
   });
 
   test('a cleared pick is sent as null', async () => {

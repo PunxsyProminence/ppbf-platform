@@ -5,7 +5,7 @@ import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   getSparringSymptomToday,
-  getSymptomFlagProtocolText,
+  getSymptomFlagSettings,
   recordSparringSymptomReport,
 } from '@/src/server/pilot/sparringSymptoms';
 import {
@@ -38,15 +38,16 @@ export async function GET(request: NextRequest) {
     requireRole(principal, ['athlete']);
     const athleteId = await requireOwnAthleteId(principal);
 
-    const [today, protocolText] = await Promise.all([
+    const [today, settings] = await Promise.all([
       getSparringSymptomToday(principal.organizationId, athleteId),
-      getSymptomFlagProtocolText(principal.organizationId),
+      getSymptomFlagSettings(principal.organizationId),
     ]);
     return NextResponse.json({
       after_sparring: today.afterSparring,
       next_day: today.nextDay,
       next_day_due: today.nextDayDue,
-      protocol_text: protocolText,
+      protocol_text: settings.protocolText,
+      recipient_role: settings.recipientRole,
     });
   } catch (error) {
     return jsonError(error);
@@ -77,14 +78,13 @@ export async function POST(request: NextRequest) {
     });
     if (!result) return hiddenNotFound();
 
-    const protocolText = result.report.symptoms.length > 0
-      ? await getSymptomFlagProtocolText(principal.organizationId)
-      : '';
+    const settings = await getSymptomFlagSettings(principal.organizationId);
     return NextResponse.json({
       item: result.report,
       added_symptoms: result.addedSymptoms,
       flagged: result.flagged,
-      protocol_text: protocolText,
+      protocol_text: settings.protocolText,
+      recipient_role: settings.recipientRole,
     });
   } catch (error) {
     return jsonError(error);

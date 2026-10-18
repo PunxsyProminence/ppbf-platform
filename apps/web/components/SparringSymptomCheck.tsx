@@ -8,8 +8,8 @@ import {
   SPARRING_SYMPTOM_MESSAGE,
   SPARRING_SYMPTOM_NONE,
   SPARRING_SYMPTOM_QUESTION,
-  SPARRING_SYMPTOM_SENT,
   sparringSymptomLabel,
+  sparringSymptomSentLine,
   type SparringSymptom,
   type SparringSymptomContext,
 } from '@/src/shared/sparringSymptoms';
@@ -31,6 +31,7 @@ interface TodayView {
   next_day: ReportView | null;
   next_day_due: boolean;
   protocol_text: string;
+  recipient_role: string;
 }
 
 export default function SparringSymptomCheck({ context }: { context: SparringSymptomContext }) {
@@ -82,13 +83,13 @@ export default function SparringSymptomCheck({ context }: { context: SparringSym
         setError(failedMessage);
         return;
       }
-      const payload = (await response.json()) as { item: ReportView; protocol_text: string };
+      const payload = (await response.json()) as { item: ReportView; protocol_text: string; recipient_role: string };
       setToday((current) => {
         if (!current) return current;
-        const protocolText = payload.protocol_text || current.protocol_text;
+        const settings = { protocol_text: payload.protocol_text, recipient_role: payload.recipient_role };
         return context === 'after_sparring'
-          ? { ...current, protocol_text: protocolText, after_sparring: payload.item }
-          : { ...current, protocol_text: protocolText, next_day: payload.item };
+          ? { ...current, ...settings, after_sparring: payload.item }
+          : { ...current, ...settings, next_day: payload.item };
       });
       setPicked([]);
       setNone(false);
@@ -111,7 +112,7 @@ export default function SparringSymptomCheck({ context }: { context: SparringSym
           <p className="t-data">You said: {alreadyTicked.map(sparringSymptomLabel).join(', ')}.</p>
           <p className="t-data">{SPARRING_SYMPTOM_MESSAGE}</p>
           {today.protocol_text.trim() !== '' && <p className="t-data">{today.protocol_text}</p>}
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>{SPARRING_SYMPTOM_SENT}</p>
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>{sparringSymptomSentLine(today.recipient_role)}</p>
         </div>
       )}
       {saved && alreadyTicked.length === 0 && !adding && (

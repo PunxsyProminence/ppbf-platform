@@ -39,7 +39,10 @@ export const SPARRING_SYMPTOM_NONE = 'None of these';
 /** The fixed message (Jason: "tell their coach and follow the gym's rules").
  * Nothing is added to it but the gym's own protocol words, when it has some. */
 export const SPARRING_SYMPTOM_MESSAGE = "Tell your coach now, and follow the gym's rules for head knocks.";
-export const SPARRING_SYMPTOM_SENT = 'Your coach has been sent this.';
+/** Who the athlete is told was sent the flag, by the gym's recipient setting. */
+export function sparringSymptomSentLine(recipientRole: string): string {
+  return recipientRole === 'coach' ? 'Your coach has been sent this.' : 'Gym staff have been sent this.';
+}
 
 /** The one severity every symptom escalation carries. Fixed on purpose: a
  * severity derived from what or how much was ticked would be a score. */

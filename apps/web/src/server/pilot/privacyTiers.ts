@@ -376,7 +376,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'athlete_voice rows are stricter than the tier says: excluded from every coach-scoped read, '
       + 'because their existence alone says a child said something and the coach may be who it is about. '
       + 'shadow_disclosure rows reach the coach of record and covering coach by ruling (OD-2026-10-01-008 s3); '
-      + 'a SHADOW message naming gym staff is filed as athlete_voice instead.',
+      + 'a SHADOW message naming gym staff is filed as athlete_voice instead. '
+      + 'sparring_symptom rows (sparringSymptoms.ts) go to the gym recipient setting, by default the coach of '
+      + 'record and covering coach (OD-2026-10-17-029); their reason names the ticked items, never a score.',
   },
   'scheduler_attendance.checked_in_by_account_id': {
     tier: 'organization',

@@ -14,7 +14,7 @@ import { gymDayIso, type GymTimeInput } from '../../lib/gymTime';
 
 import { writePilotAuditEvent } from './audit';
 import { queryOne, withTransaction } from './db';
-import { fileEscalation } from './escalationLadder';
+import { fileEscalation, type SafetyEscalationTargetRole } from './escalationLadder';
 
 // The sparring symptom FLAG (Jason 2026-10-18): what an athlete ticked after
 // sparring or the next day, and the flag it sends their coach. Stored in
@@ -26,11 +26,14 @@ import { fileEscalation } from './escalationLadder';
 // severity (SPARRING_SYMPTOM_ESCALATION_SEVERITY), never one derived from the
 // ticks.
 //
-// WHO IS TOLD. Jason ruled the flag goes to "Their coach": the escalation is
-// filed to role 'coach', which the escalation list shows to the athlete's
+// WHO IS TOLD (OD-2026-10-17-029). By default "Their coach": the escalation
+// is filed to role 'coach', which the escalation list shows to the athlete's
 // coach of record and any covering coach (their roster scope), and which the
-// organization admin sees on the full list. Not parents, not the gym TV, not
-// SHADOW: no reader here or on those surfaces names the table.
+// organization admin sees on the full list. The card said each gym can change
+// that later, so the role is read from the gym's
+// pilot.organization_symptom_flag_settings row when it has one. Not parents,
+// not the gym TV, not SHADOW: no reader here or on those surfaces names the
+// table.
 //
 // ONE REPORT PER ATHLETE, PER GYM DAY, PER CONTEXT. A second submission the
 // same day ADDS its new ticks to the report (the table's guard refuses taking
@@ -126,6 +129,12 @@ export async function recordSparringSymptomReport(input: {
     const added = ticked.filter((symptom) => !existing.symptoms.includes(symptom));
     if (added.length === 0) return { report: existing, addedSymptoms: [], flagged: false };
 
+    const settings = await client.query<{ recipient_role: SafetyEscalationTargetRole }>(
+      `select recipient_role from pilot.organization_symptom_flag_settings where organization_id = $1`,
+      [input.organizationId],
+    );
+    const recipient: SafetyEscalationTargetRole = settings.rows[0]?.recipient_role ?? 'coach';
+
     const merged = canonicalSymptoms([...existing.symptoms, ...added]);
     const updated = await client.query<SparringSymptomReportRow>(
       `update pilot.sparring_symptom_reports set symptoms = $3::text[]
@@ -141,7 +150,7 @@ export async function recordSparringSymptomReport(input: {
       athleteId: input.athleteId,
       severity: SPARRING_SYMPTOM_ESCALATION_SEVERITY,
       reason: sparringSymptomEscalationReason(input.context, added),
-      escalatedToRole: 'coach',
+      escalatedToRole: recipient,
       triggeredBy: 'human',
       triggeredByAccountId: input.accountId,
       triggeredByRole: 'athlete',
@@ -208,11 +217,14 @@ export async function getSparringSymptomToday(
   };
 }
 
-/** The gym's own protocol words, '' when it has none (Jason: "Not yet, leave blank"). */
-export async function getSymptomFlagProtocolText(organizationId: string): Promise<string> {
-  const row = await queryOne<{ protocol_text: string }>(
-    `select protocol_text from pilot.organization_symptom_flag_settings where organization_id = $1`,
+/** The gym's setting, or the defaults when it has none (OD-2026-10-17-029):
+ * the athlete's coach, and no protocol words ("Not yet, leave blank"). */
+export async function getSymptomFlagSettings(
+  organizationId: string,
+): Promise<{ recipientRole: SafetyEscalationTargetRole; protocolText: string }> {
+  const row = await queryOne<{ recipient_role: SafetyEscalationTargetRole; protocol_text: string }>(
+    `select recipient_role, protocol_text from pilot.organization_symptom_flag_settings where organization_id = $1`,
     [organizationId],
   );
-  return row?.protocol_text ?? '';
+  return { recipientRole: row?.recipient_role ?? 'coach', protocolText: row?.protocol_text ?? '' };
 }
