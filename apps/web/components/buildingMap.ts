@@ -369,7 +369,7 @@ export const BUILDING: readonly Door[] = [
      of Names and serves initials and years to every signed-in role. There is
      no synchronizing anything here, and a catalog entry that describes a
      directory tool sends a coach looking for admin settings. */
-  { href: '/names', label: 'Wall of Names', room: 'floor', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
+  { href: '/names', label: 'The Wall of Names', room: 'floor', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
     keywords: 'names roll honour honor alumni initials years wall directory',
     hint: 'Everyone who has trained here — initials and years.' },
   { href: '/schedule', label: 'Schedule', room: 'floor',
@@ -564,18 +564,18 @@ export const BUILDING: readonly Door[] = [
   { href: '/board', label: 'Board Hub', room: 'board', roles: BOARD_GATE,
     keywords: 'governance seats directory board hub',
     hint: 'Seat directory and governance control surface.' },
-  { href: '/board/president', label: 'President', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/chair', label: 'Chair', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/vice-chair', label: 'Vice Chair', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/treasurer', label: 'Treasurer', room: 'board', roles: BOARD_GATE,
+  { href: '/board/president', label: 'President Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
+  { href: '/board/chair', label: 'Board Chair Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
+  { href: '/board/vice-chair', label: 'Vice Chair Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
+  { href: '/board/treasurer', label: 'Treasurer Workspace', room: 'board', roles: BOARD_GATE,
     keywords: 'seat officer finance budget funds' },
-  { href: '/board/secretary', label: 'Secretary', room: 'board', roles: BOARD_GATE,
+  { href: '/board/secretary', label: 'Secretary Workspace', room: 'board', roles: BOARD_GATE,
     keywords: 'seat officer minutes records' },
-  { href: '/board/safety-director', label: 'Safety Director', room: 'board', roles: BOARD_GATE,
+  { href: '/board/safety-director', label: 'Program & Safety Director Workspace', room: 'board', roles: BOARD_GATE,
     keywords: 'seat officer safety welfare' },
-  { href: '/board/community-director', label: 'Community Director', room: 'board', roles: BOARD_GATE,
+  { href: '/board/community-director', label: 'Community & Development Director Workspace', room: 'board', roles: BOARD_GATE,
     keywords: 'seat officer outreach community' },
-  { href: '/board/at-large', label: 'At Large', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
+  { href: '/board/at-large', label: 'Director-at-Large Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
   /* Board, not clinic. Both pages are BoardRoleGate-only, both are headed
      "Board Workspace", and both are counts with a minimum cohort size and no
      name, case or detail -- "aggregate only", which is the board room's whole

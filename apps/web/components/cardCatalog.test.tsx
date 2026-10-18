@@ -313,7 +313,7 @@ describe('Corridor', () => {
     pathname = '/board';
     render(<Corridor />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByRole('link', { name: 'Treasurer' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Treasurer Workspace' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Capabilities' })).toBeNull();
   });
 });
