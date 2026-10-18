@@ -205,6 +205,38 @@ beforeAll(async () => {
     [ORG, ATHLETE, COACH, TEAMMATE],
   );
 
+  // A run that delivered a script: block blk-bw-1 runs drill-bw-1. Another
+  // script's block, and a drill no block of that script runs, were not in it.
+  await db.query(
+    `insert into pilot.drill_library
+       (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+        standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level, skill_id, version, superseded_at)
+     values ($1, 'drill-bw-1-v2', 'lineage-bw-1', 'Jab return, other version', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01', 2, now()),
+            ($1, 'drill-bw-2', 'lineage-bw-2', 'Slip and counter', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01', 1, null)`,
+    [ORG],
+  );
+  for (const [scriptId, blockId, drillId] of [['scr-bw-1', 'blk-bw-1', 'drill-bw-1'], ['scr-bw-2', 'blk-bw-2', 'drill-bw-2']]) {
+    await db.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, total_minutes, created_by_account_id)
+       values ($1, $2, $2, 1, $2, 10, $3)`,
+      [ORG, scriptId, COACH],
+    );
+    await db.query(
+      `insert into pilot.session_script_blocks
+         (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label,
+          what_to_say, block_kind, drill_id)
+       values ($1, $2, $3, 1, 0, 10, 'Block', 'say', 'drill_round', $4)`,
+      [ORG, blockId, scriptId, drillId],
+    );
+  }
+  await db.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+        run_state, started_at, ended_at)
+     values ($1, 'run-bw-2', 'scr-bw-1', 1, $2, current_date, 'completed', now() - interval '1 hour', now())`,
+    [ORG, COACH],
+  );
+
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
   // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
@@ -355,5 +387,33 @@ describe('a behaviour report', () => {
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     expect(await writer.listBehaviourObservations(ORG, TEAMMATE)).toEqual([]);
     expect(await writer.listBehaviourObservations(OTHER_ORG, ATHLETE)).toEqual([]);
+  });
+});
+
+describe('a report filed under a session run names what that run delivered', () => {
+  const underRun = { ...base, session: { runId: 'run-bw-2' } };
+
+  test("a drill one of the run's blocks runs, by lineage, or one of its blocks, is accepted", async () => {
+    expect((await writer.recordBehaviourObservation({ ...underRun, context: { drillId: 'drill-bw-1' } })).task_context_key)
+      .toBe('drill:lineage-bw-1');
+    // Another version of the same drill (same lineage) is still the drill the block ran.
+    expect((await writer.recordBehaviourObservation({ ...underRun, context: { drillId: 'drill-bw-1-v2' } })).task_context_key)
+      .toBe('drill:lineage-bw-1');
+    expect((await writer.recordBehaviourObservation({ ...underRun, context: { blockId: 'blk-bw-1' } })).task_context_key)
+      .toBe('drill:lineage-bw-1');
+  });
+
+  test("a drill or block of this gym that the run did not deliver is refused", async () => {
+    await expect(writer.recordBehaviourObservation({ ...underRun, context: { drillId: 'drill-bw-2' } }))
+      .rejects.toThrow('That drill was not part of that session run.');
+    await expect(writer.recordBehaviourObservation({ ...underRun, context: { blockId: 'blk-bw-2' } }))
+      .rejects.toThrow('That session block was not part of that session run.');
+  });
+
+  test('a run with no script, and a day, have no plan on record: the gym check alone', async () => {
+    await expect(writer.recordBehaviourObservation({ ...base, context: { drillId: 'drill-bw-2' } })).resolves
+      .toEqual(expect.objectContaining({ session_key: 'run:run-bw-1' }));
+    await expect(writer.recordBehaviourObservation({ ...base, session: { date: '2026-10-18' }, context: { blockId: 'blk-bw-2' } }))
+      .resolves.toEqual(expect.objectContaining({ session_key: 'day:2026-10-18' }));
   });
 });

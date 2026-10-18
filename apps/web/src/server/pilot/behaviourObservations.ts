@@ -229,16 +229,25 @@ async function exists(client: PoolClient, sql: string, params: unknown[]): Promi
   return (await client.query(sql, params)).rows.length > 0;
 }
 
-async function sessionKeyFor(client: PoolClient, organizationId: string, session: SessionRef): Promise<string> {
+/**
+ * The session a report is filed under: its key, and for a run, the script the
+ * run delivered (null for a run with no script). A day has no record behind it
+ * -- no run, no plan, no attendance -- so a report against a day is checked
+ * for its shape only; the checks against what happened need a run.
+ */
+async function sessionFor(
+  client: PoolClient,
+  organizationId: string,
+  session: SessionRef,
+): Promise<{ sessionKey: string; run: { scriptId: string | null } | null }> {
   if ('runId' in session) {
     const runId = plainId(session.runId, 'session run');
-    const found = await exists(
-      client,
-      'select 1 from pilot.session_script_runs where organization_id = $1 and run_id = $2',
+    const run = await client.query<{ script_id: string | null }>(
+      'select script_id from pilot.session_script_runs where organization_id = $1 and run_id = $2',
       [organizationId, runId],
     );
-    if (!found) throw new ValidationError('That session run is not in this gym.');
-    return `run:${runId}`;
+    if (run.rows.length === 0) throw new ValidationError('That session run is not in this gym.');
+    return { sessionKey: `run:${runId}`, run: { scriptId: run.rows[0].script_id } };
   }
   // Round-tripped, so 2026-02-31 (which Date.parse rolls into March) is refused.
   const parsed = new Date(`${session.date}T00:00:00Z`);
@@ -246,10 +255,22 @@ async function sessionKeyFor(client: PoolClient, organizationId: string, session
       || parsed.toISOString().slice(0, 10) !== session.date) {
     throw new ValidationError('A session day is a date, YYYY-MM-DD.');
   }
-  return `day:${session.date}`;
+  return { sessionKey: `day:${session.date}`, run: null };
 }
 
-async function contextKeyFor(client: PoolClient, organizationId: string, context: ContextRef): Promise<string> {
+async function contextKeyFor(
+  client: PoolClient,
+  organizationId: string,
+  context: ContextRef,
+  run: { scriptId: string | null } | null,
+): Promise<string> {
+  // WHAT THE RUN DELIVERED. A report filed under a run that delivered a script
+  // names a block of that script, or a drill one of its blocks runs (by
+  // lineage, so a re-versioned drill still counts): a drill or block that was
+  // not in that session is not evidence of what the athlete did there. A run
+  // with no script has no plan on record to check against, and neither does a
+  // day, so there it is the gym check alone.
+  const scriptId = run?.scriptId ?? null;
   // A drill is keyed by its LINEAGE, not its version: a drill re-versioned, or
   // reached through a session block that runs it, is still one context, or
   // "seen in more than one drill" would count edits.
@@ -260,17 +281,29 @@ async function contextKeyFor(client: PoolClient, organizationId: string, context
       [organizationId, drillId],
     );
     if (drill.rows.length === 0) throw new ValidationError('That drill is not in this gym\'s library.');
+    if (scriptId !== null && !(await exists(
+      client,
+      `select 1 from pilot.session_script_blocks b
+         join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
+        where b.organization_id = $1 and b.script_id = $2 and d.lineage_id = $3`,
+      [organizationId, scriptId, drill.rows[0].lineage_id],
+    ))) {
+      throw new ValidationError('That drill was not part of that session run.');
+    }
     return `drill:${drill.rows[0].lineage_id}`;
   }
   if ('blockId' in context) {
     const blockId = plainId(context.blockId, 'session block');
-    const block = await client.query<{ lineage_id: string | null }>(
-      `select d.lineage_id from pilot.session_script_blocks b
+    const block = await client.query<{ lineage_id: string | null; script_id: string }>(
+      `select d.lineage_id, b.script_id from pilot.session_script_blocks b
          left join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
         where b.organization_id = $1 and b.block_id = $2`,
       [organizationId, blockId],
     );
     if (block.rows.length === 0) throw new ValidationError('That session block is not in this gym.');
+    if (scriptId !== null && block.rows[0].script_id !== scriptId) {
+      throw new ValidationError('That session block was not part of that session run.');
+    }
     return block.rows[0].lineage_id ? `drill:${block.rows[0].lineage_id}` : `block:${blockId}`;
   }
   return `context:${oneOf(context.attemptContext, ATTEMPT_CONTEXTS, 'context')}`;
@@ -352,8 +385,8 @@ export async function recordBehaviourObservation(
 
   try {
     return await withTransaction(async (client) => {
-      const sessionKey = await sessionKeyFor(client, input.organizationId, input.session);
-      const taskContextKey = await contextKeyFor(client, input.organizationId, input.context);
+      const { sessionKey, run } = await sessionFor(client, input.organizationId, input.session);
+      const taskContextKey = await contextKeyFor(client, input.organizationId, input.context, run);
       const { episodeId, momentAt } = await episodeFor(client, input);
       // A report of a moment already on record keeps that moment's time, so a
       // revision written later is not read as a later event; a time sent with
