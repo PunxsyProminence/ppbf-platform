@@ -37,6 +37,14 @@ import { SKILL_FAMILY_IDS, SKILL_FAMILY_NAMES, type SkillFamilyId } from './skil
 export const JUMP_PROTOCOL_IDS = ['ppbf-jump-cmj-height', 'ppbf-jump-broad-distance'] as const;
 export type JumpProtocolId = (typeof JUMP_PROTOCOL_IDS)[number];
 
+/** The quarterly test day's aerobic test (OD-2026-10-17-026, Jason: "A: 20-m shuttle (Rec.)").
+ *  Recorded as the level and shuttle the beep track shows, with no conversion to laps or a
+ *  predicted fitness number (Overwatch's GO to L60). Written only by the test-day form. */
+export const SHUTTLE_PROTOCOL_ID = 'ppbf-shuttle-20m';
+/** Typing-slip bounds on what a beep track shows, not norms. PROPOSED. */
+export const SHUTTLE_LEVEL_MAX = 21;
+export const SHUTTLE_NUMBER_MAX = 16;
+
 export const SKILL_RATING_SCALE = 'ppbf-skill-1-5-v1';
 
 /** Jason 2026-10-04, option A. Index 0 is level 1. */
@@ -89,6 +97,16 @@ export const PPBF_ASSESSMENT_PROTOCOLS: readonly ProtocolSeed[] = [
       'Toes behind a line, swing and jump forward as far as possible, landing on both feet. Three tries; record the best distance in centimetres from the line to the back of the nearest heel.',
     equipment_needed: 'Tape measure and a floor line',
     time_to_administer_min: 5,
+  },
+  {
+    protocol_id: SHUTTLE_PROTOCOL_ID,
+    name: '20-m shuttle run',
+    measure_kind: 'physical_test',
+    quality_measured: 'Aerobic fitness',
+    protocol_summary:
+      'Run between two lines 20 m apart in time with the beep track; the pace rises each level. Record the last level and shuttle the athlete completed, as the track shows it.',
+    equipment_needed: 'Cones or lines 20 m apart and the beep track',
+    time_to_administer_min: 15,
   },
   ...SKILL_FAMILY_IDS.map((familyId): ProtocolSeed => ({
     protocol_id: skillRubricProtocolId(familyId),
@@ -334,10 +352,12 @@ interface AssessmentHistoryRow {
 export interface AssessmentHistoryEntry {
   assessment_id: string;
   protocol_id: string;
-  kind: 'jump' | 'skill_rating';
+  kind: 'jump' | 'skill_rating' | 'shuttle';
   administered_on: string;
-  /** Jump: centimetres. Skill rating: level 1-5. */
+  /** Jump: centimetres. Skill rating: level 1-5. Shuttle: the level reached. */
   value: number;
+  /** Shuttle only: the shuttle within that level. */
+  shuttle: number | null;
   skill_family_id: SkillFamilyId | null;
   assessor_role: string | null;
   note: string;
@@ -346,16 +366,18 @@ export interface AssessmentHistoryEntry {
 
 function toEntry(row: AssessmentHistoryRow): AssessmentHistoryEntry {
   const isJump = (JUMP_PROTOCOL_IDS as readonly string[]).includes(row.protocol_id);
+  const isShuttle = row.protocol_id === SHUTTLE_PROTOCOL_ID;
   const result = row.result ?? {};
   const value = Number(isJump ? result.value : result.level);
   const family = typeof result.skill_family_id === 'string' ? (result.skill_family_id as SkillFamilyId) : null;
   return {
     assessment_id: row.assessment_id,
     protocol_id: row.protocol_id,
-    kind: isJump ? 'jump' : 'skill_rating',
+    kind: isJump ? 'jump' : isShuttle ? 'shuttle' : 'skill_rating',
     administered_on: row.administered_on,
     value,
-    skill_family_id: isJump ? null : family,
+    shuttle: isShuttle ? Number(result.shuttle) : null,
+    skill_family_id: isJump || isShuttle ? null : family,
     assessor_role: row.assessor_role,
     note: row.conditions_note ?? '',
     recorded_at: new Date(row.created_at).toISOString(),

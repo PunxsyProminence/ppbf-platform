@@ -6911,6 +6911,35 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/test-day/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/test-day",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + heightRoleInOrganization + heightAccessibleAthleteIds for every row in recordTestDay",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The quarterly test day (OD-2026-10-17-026): a group's standing height, CMJ/broad jump (OD-2026-10-04-020) and 20-m shuttle level/shuttle on one date, all cells in one transaction or none; a retry of the same request_key writes nothing new; one athlete the staff seat does not reach refuses the whole save. Also action accessible_athletes for the form's roster.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/transfer-check/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/transfer-check",
