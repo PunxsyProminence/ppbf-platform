@@ -588,7 +588,7 @@ export default function MembershipsPage() {
 
           {loading ? (
             <div className="flex justify-center py-[var(--s7)]">
-              <span className="working">Loading memberships...</span>
+              <span className="working">Loading memberships…</span>
             </div>
           ) : !listRead && items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
@@ -682,7 +682,7 @@ export default function MembershipsPage() {
           <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
             {programsLoad === 'loading' ? (
               <div className="flex justify-center py-[var(--s5)]">
-                <span className="working">Loading programs...</span>
+                <span className="working">Loading programs…</span>
               </div>
             ) : programsLoad === 'unavailable' ? (
               <div className="empty">

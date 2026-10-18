@@ -631,4 +631,16 @@ describe('truthful roster and save states', () => {
     });
     expect((screen.getByRole('button', { name: 'Save membership' }) as HTMLButtonElement).disabled).toBe(false);
   });
+
+  test('the loading lines end in an ellipsis, not three dots', async () => {
+    const { held, release } = holding(scriptedFetch({}), (url) => url.includes('/admin/memberships') || url.includes('/admin/programs'));
+    global.fetch = held;
+    await renderPage();
+
+    expect(screen.getByText('Loading memberships…')).toBeTruthy();
+    expect(screen.getByText('Loading programs…')).toBeTruthy();
+    await act(async () => {
+      release();
+    });
+  });
 });
