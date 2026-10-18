@@ -288,14 +288,35 @@ describe('intervention execution request key migration (F-135)', () => {
     }
   });
 
-  test('the file holds nothing destructive: its one drop is its own check, re-added', async () => {
+  test('the file holds nothing destructive and adds its check only when the table has none of that name', async () => {
     const sql = migrationSql.toLowerCase().replace(/--.*$/gm, '');
-    expect(sql).not.toMatch(/\bdrop\s+(table|column|index|schema|function|trigger)\b/);
+    expect(sql).not.toMatch(/\bdrop\b/);
     expect(sql).not.toMatch(/\btruncate\b/);
     expect(sql).not.toMatch(/\bdelete\s+from\b/);
     expect(sql).not.toMatch(/\bupdate\s+pilot\./);
-    expect(sql.match(/\bdrop\s+constraint\s+if\s+exists\s+(\w+)/g)).toEqual([`drop constraint if exists ${CHECK}`]);
-    expect(sql).toMatch(new RegExp(`add constraint ${CHECK}\\b`));
+    // A re-run (the `all` chain) must not re-validate the check under an exclusive lock.
+    expect(sql).toMatch(new RegExp(`if not exists \\(\\s*select 1 from pg_constraint\\s+where conname = '${CHECK}'`));
+  });
+
+  test('a re-run leaves the check as it is; the runner refuses a same-named check with a wider rule', async () => {
+    const client = await freshDatabase('ikey_check_wide');
+    try {
+      const checkOid = () => client.query(
+        `select oid from pg_constraint where conname = $1 and conrelid = to_regclass('pilot.intervention_executions')`,
+        [CHECK],
+      );
+      const before = await checkOid();
+      await applyRunner(client, migrationSql);
+      expect((await checkOid()).rows).toEqual(before.rows);
+
+      await client.query(`alter table pilot.intervention_executions drop constraint ${CHECK}`);
+      await client.query(
+        `alter table pilot.intervention_executions add constraint ${CHECK} check (request_key is null or length(request_key) <= 2000)`,
+      );
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow('INTERVENTION_EXECUTION_REQUEST_KEY_NOT_READY: check_ready');
+    } finally {
+      await client.end();
+    }
   });
 
   test('the runner refuses a same-named index that is not unique', async () => {
