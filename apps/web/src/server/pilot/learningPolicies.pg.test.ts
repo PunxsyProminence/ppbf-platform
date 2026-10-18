@@ -1,8 +1,8 @@
 // Real PostgreSQL proof of the bars writer (lane L49, learningPolicies.ts): a
 // gym admin's ratification is version 1, the next supersedes it, each kind has
 // its own chain and one bar in force, and another gym's admin cannot sign this
-// gym's bar. The fixture numbers satisfy the library's coherence rules and
-// recommend nothing (Q3: the real bar comes from research and Jason).
+// gym's bar. It ratifies the approved v1 bars (learningPolicyApprovedV1.ts),
+// the way a gym admin will.
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
@@ -18,6 +18,12 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import { closePool } from './db';
+import {
+  APPROVED_ATHLETE_LESSON_V1,
+  APPROVED_CITATIONS_V1,
+  APPROVED_OBSERVER_CALIBRATION_V1,
+  APPROVED_PATTERN_FORMATION_V1,
+} from './learningPolicyApprovedV1';
 
 jest.setTimeout(240_000);
 
@@ -64,18 +70,6 @@ async function freePort(): Promise<number> {
     });
   });
 }
-
-const PATTERN = {
-  minimumOccurrences: 3, minimumDistinctSessions: 2, minimumDistinctTaskContexts: 2, minimumDistinctObservers: 1,
-  requireHumanObservation: true, requireConstraintSpan: false, requireFatigueDiversity: false,
-  requireVideoCorroboration: false, counterEvidenceContestRatio: 0.5, minimumAthleteAttributionShare: 0.75,
-  evidenceStaleAfterDays: 42, minimumObservationSpanDays: 0,
-};
-const LESSON = {
-  minimumTransferContexts: 1, retentionWindowDays: 14, minimumRetentionObservations: 2,
-  requireHumanReviewedOutcome: true, acceptedMatchStates: ['match'],
-};
-const CITED = [{ source: 'Fixture source, not a recommendation' }];
 
 beforeAll(async () => {
   PG_PORT = await freePort();
@@ -163,21 +157,33 @@ afterAll(async () => {
 
 describe('ratifying a bar', () => {
   const ratify = (overrides: Partial<Parameters<typeof writer.ratifyLearningPolicy>[0]> = {}) => writer.ratifyLearningPolicy({
-    organizationId: ORG, kind: 'pattern_formation', parameters: PATTERN, citations: CITED,
+    organizationId: ORG, kind: 'pattern_formation', parameters: APPROVED_PATTERN_FORMATION_V1,
+    citations: APPROVED_CITATIONS_V1.pattern_formation,
     ratifiedByAccountId: OFFICE, ratifiedByRole: 'organization_admin', ...overrides,
   });
 
   test('the first is version 1; the next supersedes it; each kind keeps its own chain', async () => {
     const v1 = await ratify();
-    expect(v1).toEqual(expect.objectContaining({ version: 1, status: 'active', supersedes_policy_id: null, citations: CITED }));
-    const v2 = await ratify({ parameters: { ...PATTERN, minimumOccurrences: 4 } });
+    expect(v1).toEqual(expect.objectContaining({
+      version: 1, status: 'active', supersedes_policy_id: null,
+      parameters: APPROVED_PATTERN_FORMATION_V1, citations: APPROVED_CITATIONS_V1.pattern_formation,
+    }));
+    const v2 = await ratify({ parameters: { ...APPROVED_PATTERN_FORMATION_V1, currentWithinDays: 90 } });
     expect(v2).toEqual(expect.objectContaining({ version: 2, status: 'active', supersedes_policy_id: v1.policy_id }));
-    const lesson = await ratify({ kind: 'athlete_lesson', parameters: LESSON });
+    const lesson = await ratify({
+      kind: 'athlete_lesson', parameters: APPROVED_ATHLETE_LESSON_V1, citations: APPROVED_CITATIONS_V1.athlete_lesson,
+    });
     expect(lesson).toEqual(expect.objectContaining({ version: 1, supersedes_policy_id: null }));
+    const calibration = await ratify({
+      kind: 'observer_calibration', parameters: APPROVED_OBSERVER_CALIBRATION_V1,
+      citations: APPROVED_CITATIONS_V1.observer_calibration,
+    });
+    expect(calibration).toEqual(expect.objectContaining({ version: 1, supersedes_policy_id: null }));
 
     const all = await writer.listLearningPolicies(ORG);
     expect(all.map((row) => [row.policy_kind, row.version, row.status])).toEqual([
       ['athlete_lesson', 1, 'active'],
+      ['observer_calibration', 1, 'active'],
       ['pattern_formation', 2, 'active'],
       ['pattern_formation', 1, 'superseded'],
     ]);
@@ -190,9 +196,9 @@ describe('ratifying a bar', () => {
     expect(active.map((row) => row.version)).toEqual([2]);
   });
 
-  test('a bar with no source, or one the library calls incoherent, never reaches the table', async () => {
+  test('a bar with no source, or one out of shape, never reaches the table', async () => {
     await expect(ratify({ citations: [] })).rejects.toThrow('at least one cited source');
-    await expect(ratify({ parameters: { ...PATTERN, minimumDistinctSessions: 1 } })).rejects.toThrow();
-    expect((await writer.listLearningPolicies(ORG)).length).toBe(3);
+    await expect(ratify({ parameters: { currentWithinDays: 84 } })).rejects.toThrow('missing tiers');
+    expect((await writer.listLearningPolicies(ORG)).length).toBe(4);
   });
 });

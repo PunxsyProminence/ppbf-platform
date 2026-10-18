@@ -77,6 +77,17 @@ test('a ratification is signed by the caller, in their role and gym', async () =
   expect((await POST(postRequest({ parameters: {} }))).status).toBe(400);
 });
 
+test('a body that is not an object is refused as a 400, not a 500', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  for (const raw of ['null', '7', '[]']) {
+    const response = await POST(new NextRequest(URL_BASE, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: raw,
+    }));
+    expect(response.status).toBe(400);
+  }
+  expect(mockRatify).not.toHaveBeenCalled();
+});
+
 test("the module's reason reaches the admin as a 400", async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   mockRatify.mockRejectedValue(new ValidationError('A bar needs at least one cited source.'));

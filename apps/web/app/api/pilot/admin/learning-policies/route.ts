@@ -6,10 +6,13 @@ import { listLearningPolicies, ratifyLearningPolicy } from '@/src/server/pilot/l
 
 export const runtime = 'nodejs';
 
-// The learning loop's bars (lane L49): when a repeated behaviour may be called
-// a pattern, and when a reviewed intervention may be called a lesson. Jason
-// 2026-10-18 Q3, "Needs to be backed by research": a bar is saved only with its
-// cited sources, and none ships with the app. Staff read the bars in force so a
+// The learning loop's bars (lane L49): when a repeated behaviour is emerging, a
+// pattern or established; when a lesson improved, likely worked or worked; and
+// when a coach pair's reports are calibrated enough to count. Jason 2026-10-18,
+// Q3 "Needs to be backed by research", then his approval of the threshold
+// research: a bar is saved only with its cited sources, and only a gym admin's
+// ratification puts one in force (the approved v1 payloads wait in
+// learningPolicyApprovedV1.ts). Staff read the bars in force so a
 // coach can see what the app's words rest on; a gym admin ratifies a new
 // version (the working default, pending Overwatch's confirmation with Jason).
 // A bar names no athlete.
@@ -32,7 +35,9 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...RATIFY_ROLES]);
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body of null, a number or a list is not a request: read as empty, refused below.
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
     if (typeof body.kind !== 'string') {
       return NextResponse.json({ ok: false, error: 'kind, parameters and citations are required.' }, { status: 400 });
     }
