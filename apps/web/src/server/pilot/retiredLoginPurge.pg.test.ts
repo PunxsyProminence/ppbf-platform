@@ -148,15 +148,6 @@ interface Seeded {
   feedbackId: string;
 }
 
-/**
- * One person's SHADOW rows in one gym, as the app writes them: a conversation
- * with no athlete (shadowConversations.ts resolveConversation), their turn and
- * SHADOW's reply, the evidence cited in the reply, a thumbs-down still
- * awaiting review on that reply, the learning
- * event and effectiveness row hanging off it, a deletion request, and a second
- * conversation that a safeguarding review entry flagged, whose reply names
- * them and was rated. `words` marks every place their typed words can sit.
- */
 async function loginIdentity(accountId: string): Promise<Record<string, unknown>> {
   const result = await db.query(
     `select role, organization_id, athlete_id, active_flag, deleted_at is not null as deleted,
@@ -176,6 +167,15 @@ async function ringName(organizationId: string, accountId: string): Promise<stri
   return (result.rows[0]?.display_nickname as string | null | undefined) ?? null;
 }
 
+/**
+ * One person's SHADOW rows in one gym, as the app writes them: a conversation
+ * with no athlete (shadowConversations.ts resolveConversation), their turn and
+ * SHADOW's reply, the evidence cited in the reply, a thumbs-down still
+ * awaiting review on that reply, the learning
+ * event and effectiveness row hanging off it, a deletion request, and a second
+ * conversation that a safeguarding review entry flagged, whose reply names
+ * them and was rated. `words` marks every place their typed words can sit.
+ */
 async function seedPerson(
   organizationId: string, accountId: string, role: string, words: string, name: string,
 ): Promise<Seeded> {

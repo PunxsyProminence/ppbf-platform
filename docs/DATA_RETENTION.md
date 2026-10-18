@@ -476,12 +476,15 @@ feedback and learning rows', and the review, receipt and flagged-conversation ro
 built:** a flagged conversation someone ELSE had about the purged child (`athlete_id` set) is still
 deleted with the child by the athlete trigger, not de-identified; and `shadow_telemetry_events.actor_account_id`
 still names the purged athlete's login (F-106).
-**The retired athlete login (F-102).** The login is retired, not deleted, and keeps only what
-refusing its sign-in and the purged-child filters read: its id, role, gym and `deleted_at`. The
-purge clears its email, PIN, password and Microsoft binding, and its ring name in the purged gym
-(`account_profiles.display_nickname`); the scrub reads the ring name first (OD-2026-10-08-009 D15).
+**The retired athlete login (F-102).** The login is retired, not deleted: refusing its sign-in and
+the purged-child filters read its id, role, gym and `deleted_at`, and nothing else left on it names
+or signs in the child. The purge clears its email, PIN, password and Microsoft binding, and its
+ring name in the purged gym (`account_profiles.display_nickname`); the scrub reads the email and
+ring name first (OD-2026-10-08-009 D15). The same login's profile in another gym is that gym's,
+as its SHADOW rows and portrait there are.
 The id itself is the sign-in ID an admin typed and stays: replacing it is an owner question.
-Pinned by `retiredLoginPurge.pg.test.ts`.
+Pinned by `retiredLoginPurge.pg.test.ts`; `dataRetentionDeletion.pg.test.ts` pins that a coach on
+the child's old login keeps every way it signs in.
 **SHADOW's event log.** The person's rows in `pilot.shadow_events` (SHADOW's activity feed) are
 deleted, in the purged gym (a guardian's everywhere: their account goes): every row that names them
 as actor, as entity (their login, athlete id, `<athlete>:<key>`, `<org>:<login>` for a gym
