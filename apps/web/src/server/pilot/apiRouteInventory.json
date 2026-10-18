@@ -6171,6 +6171,93 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Every resource in any state with program name, state, published date and writer/editor display names (no account ids), plus the active programs a resource may name.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Adds one as a draft or published, written with the caller's own account and session role. Internal links must be a page parents can open (parentMayOpenPath), else 400; program must be this gym's active program, else 400; the DB seat refusal (pilot_parent_resources_writer_of_this_gym) is a 403.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/parent-resources/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/parent-resources",
+    "gate": "requirePrincipal + requireRole(RESOURCE_WRITER_ROLES); the database seat check (active membership with the session role on a live account) judges every write",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's resources for families (pilot.parent_resources; parentResourcesStaff.ts; PH-11b), whole gym, org from the session; not athlete data. Edits, publishes (again after archiving) or archives one, the editor named from the session; published_at is the database's and kept. Same link, program and seat checks as POST. No hard delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/intervention-protocols/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/intervention-protocols",
