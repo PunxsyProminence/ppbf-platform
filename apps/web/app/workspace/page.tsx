@@ -48,6 +48,18 @@ const WORKSPACE_SURFACES: WorkspaceSurface[] = [
     label: 'Research Intake',
     description: 'See open research requirements and log a knowledge gap when the Library has no answer.',
   },
+  // Lane U2 (audit UX-A A-16): both admit staff and volunteers
+  // (coach/credentials and coach/development allowedRoles); labels are their doors'.
+  {
+    href: '/coach/credentials',
+    label: 'My Credentials',
+    description: 'Your safeguarding and coaching credentials: what is on file, and uploading a new one.',
+  },
+  {
+    href: '/coach/development',
+    label: 'Your Development',
+    description: 'What you are working to get better at, in your own words.',
+  },
   {
     href: '/help',
     label: 'Help Center',

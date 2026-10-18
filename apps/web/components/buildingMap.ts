@@ -281,7 +281,7 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
-  { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
+  { href: '/admin/system', label: 'System', room: 'office', roles: ['admin', 'platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
     hint: 'The routes and jobs the platform is built from. Read-only; no row says a route or job is working.' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
@@ -655,12 +655,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/escalations', label: 'Escalations', room: 'clinic', roles: ['admin', 'coach'],
     keywords: 'safety red flag near miss pain report escalation queue safeguarding',
     hint: 'Safety, near-miss, and pain-report escalations — the only place they surface.' },
-  /* Same surface as the door above -- the page is a redirect() to it -- so it
-     stands in the same room. Two doors onto one queue, filed under two rooms,
-     is the catalog describing a building that does not exist. */
-  { href: '/admin/safety-escalations', label: 'Safety Escalations', room: 'clinic', roles: ['admin', 'coach'],
-    keywords: 'safety escalations admin queue legacy alias safeguarding',
-    hint: 'Alias for the escalations queue that preserves the safety-escalations route.' },
+  /* No door for /admin/safety-escalations: the page is a redirect() to the
+     queue above, and a second door listed one queue twice (lane U2, audit
+     UX-A A-13). The route stays for old bookmarks. */
   { href: '/admin/athlete-consent', label: 'Media Consent Audit', room: 'clinic', roles: ['admin', 'coach'],
     keywords: 'guardian photo video consent audit safeguarding record paper form',
     hint: 'Which athletes have full guardian consent for photo/video use, and where a signed paper form is recorded.' },
