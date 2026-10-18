@@ -11,7 +11,8 @@
 //     nothing written;
 //   * once: the same save again writes nothing and says so; the same key with other numbers is a
 //     conflict and changes nothing;
-//   * the one-at-a-time jump picker still offers only the jumps.
+//   * every saved height has its own audit row, and the save one row naming its cells, in the same
+//     transaction; a retry that leaves a cell off is told that cell stays saved.
 //
 // Disposable, local-only embedded Postgres. It NEVER connects to production or staging.
 
@@ -52,6 +53,7 @@ jest.mock('./db', () => ({
 import type { ActorIdentity } from './access';
 import { listAthleteAssessmentHistory } from './assessmentResults';
 import { readAthleteHeights } from './athleteHeights';
+import { withTransaction } from './db';
 import { ConflictError, ForbiddenError } from './errors';
 import { parseTestDay, recordTestDay } from './testDay';
 
@@ -74,6 +76,7 @@ const FOREIGN = 'ATH-TESTDAY-FOREIGN';
 
 const COACH: ActorIdentity = { accountId: 'acct-testday-coach', role: 'coach', organizationId: ORG, athleteId: null };
 const GUARDIAN: ActorIdentity = { accountId: 'acct-testday-guardian', role: 'parent', organizationId: ORG, athleteId: null };
+const ATHLETE_SELF: ActorIdentity = { accountId: 'acct-testday-athlete', role: 'athlete', organizationId: ORG, athleteId: A1 };
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -115,12 +118,14 @@ async function seed(c: Client): Promise<void> {
   }
   await c.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ('acct-testday-coach', 'coach', $1, 'microsoft'), ('acct-testday-guardian', 'parent', $1, 'microsoft')`,
+     values ('acct-testday-coach', 'coach', $1, 'microsoft'), ('acct-testday-guardian', 'parent', $1, 'microsoft'),
+            ('acct-testday-athlete', 'athlete', $1, 'microsoft')`,
     [ORG],
   );
   await c.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ('acct-testday-coach', $1, 'coach', true), ('acct-testday-guardian', $1, 'parent', true)`,
+     values ('acct-testday-coach', $1, 'coach', true), ('acct-testday-guardian', $1, 'parent', true),
+            ('acct-testday-athlete', $1, 'athlete', true)`,
     [ORG],
   );
   for (const [org, athlete] of [[ORG, A1], [ORG, A2], [OTHER_ORG, FOREIGN]] as const) {
@@ -131,6 +136,18 @@ async function seed(c: Client): Promise<void> {
       [org, athlete],
     );
   }
+  // The guardian is A1's own linked guardian; the athlete login is A1's own.
+  await c.query(`update pilot.accounts set athlete_id = $1 where account_id = 'acct-testday-athlete'`, [A1]);
+  await c.query(
+    `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+     values ($1, 'parent-testday-1', 'acct-testday-guardian', 'Linked Guardian')`,
+    [ORG],
+  );
+  await c.query(
+    `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+     values ($1, 'parent-testday-1', $2, 'parent')`,
+    [ORG, A1],
+  );
 }
 
 async function freshDatabase(name: string): Promise<Client> {
@@ -232,8 +249,13 @@ describe('test day', () => {
     const c = await freshDatabase('testday_lands');
     const result = await recordTestDay(COACH, parseTestDay(FORM, TODAY));
     // A1: height, CMJ, broad jump, shuttle; A2: broad jump, shuttle.
-    expect(result).toEqual({ written: 6, already_saved: 0 });
+    expect(result).toEqual({ written: 6, already_saved: 0, earlier_not_on_form: [] });
     expect(await counts(c)).toEqual({ heights: 1, assessments: 5 });
+    // One audit row for the height, one for the save: no measurement in either.
+    const audit = await c.query(`select entity_type, details from pilot.audit_events where entity_type in ('athlete_height', 'test_day') order by entity_type`);
+    expect(audit.rows.map((row) => row.entity_type)).toEqual(['athlete_height', 'test_day']);
+    expect(JSON.stringify(audit.rows)).not.toMatch(/151\.4|31\.5|172|160\.2/);
+    expect(audit.rows[1].details.cells).toHaveLength(6);
 
     const h1 = await readAthleteHeights(COACH, A1);
     expect(h1.latest).toMatchObject({ height_cm: 151.4, measured_on: '2026-10-16', recorded_by_role: 'coach' });
@@ -257,8 +279,10 @@ describe('test day', () => {
     const c = await freshDatabase('testday_once');
     await recordTestDay(COACH, parseTestDay(FORM, TODAY));
     const again = await recordTestDay(COACH, parseTestDay(FORM, TODAY));
-    expect(again).toEqual({ written: 0, already_saved: 6 });
+    expect(again).toEqual({ written: 0, already_saved: 6, earlier_not_on_form: [] });
     expect(await counts(c)).toEqual({ heights: 1, assessments: 5 });
+    const audit = await c.query(`select count(*)::int as n from pilot.audit_events where entity_type in ('athlete_height', 'test_day')`);
+    expect(audit.rows[0].n).toBe(2);
   });
 
   test('the same key with other numbers is a conflict and changes nothing', async () => {
@@ -283,20 +307,28 @@ describe('test day', () => {
     const first = { ...FORM, rows: [FORM.rows[0]] };
     await recordTestDay(COACH, parseTestDay(first, TODAY));
     const second = await recordTestDay(COACH, parseTestDay(FORM, TODAY));
-    expect(second).toEqual({ written: 2, already_saved: 4 });
+    expect(second).toEqual({ written: 2, already_saved: 4, earlier_not_on_form: [] });
     expect(await counts(c)).toEqual({ heights: 1, assessments: 5 });
   });
 
   test('one athlete the seat does not reach refuses the whole save before anything is written', async () => {
     const c = await freshDatabase('testday_foreign');
-    const form = { ...FORM, rows: [...FORM.rows, { athlete_id: FOREIGN, broad_cm: 150 }] };
-    await expect(recordTestDay(COACH, parseTestDay(form, TODAY))).rejects.toBeInstanceOf(ForbiddenError);
+    for (const foreignRow of [{ athlete_id: FOREIGN, broad_cm: 150 }, { athlete_id: FOREIGN, height_cm: 150 }]) {
+      (withTransaction as jest.Mock).mockClear();
+      const form = { ...FORM, rows: [...FORM.rows, foreignRow] };
+      await expect(recordTestDay(COACH, parseTestDay(form, TODAY))).rejects.toBeInstanceOf(ForbiddenError);
+      // Refused by the check before the transaction, not by an insert's filter inside it.
+      expect(withTransaction).not.toHaveBeenCalled();
+    }
     expect(await counts(c)).toEqual({ heights: 0, assessments: 0 });
   });
 
-  test('a guardian seat records nothing, for their own child or anyone', async () => {
+  test('a guardian records nothing, even for their own child; an athlete nothing, even for themself', async () => {
     const c = await freshDatabase('testday_guardian');
-    await expect(recordTestDay(GUARDIAN, parseTestDay(FORM, TODAY))).rejects.toBeInstanceOf(ForbiddenError);
+    const ownChild = { ...FORM, rows: [FORM.rows[0]] };
+    for (const who of [GUARDIAN, ATHLETE_SELF]) {
+      await expect(recordTestDay(who, parseTestDay(ownChild, TODAY))).rejects.toBeInstanceOf(ForbiddenError);
+    }
     expect(await counts(c)).toEqual({ heights: 0, assessments: 0 });
   });
 
@@ -313,8 +345,10 @@ describe('test day', () => {
       end $$`);
     await c.query(`create trigger end_seat_after_first after insert on pilot.assessments
       for each row when (new.athlete_id = '${A1}' and new.protocol_id = 'ppbf-shuttle-20m') execute function public.end_seat()`);
-    await expect(recordTestDay(COACH, parsed)).rejects.toMatchObject({ code: '23514' });
+    await expect(recordTestDay(COACH, parsed)).rejects.toMatchObject({ code: 'TEST_DAY_NOT_PERMITTED' });
     expect(await counts(c)).toEqual({ heights: 0, assessments: 0 });
+    const audit = await c.query(`select count(*)::int as n from pilot.audit_events where entity_type in ('athlete_height', 'test_day')`);
+    expect(audit.rows[0].n).toBe(0);
   });
 
   test('a soft-deleted athlete on the form refuses the save', async () => {
@@ -322,5 +356,40 @@ describe('test day', () => {
     await c.query('update pilot.athletes set deleted_at = now() where athlete_id = $1', [A2]);
     await expect(recordTestDay(COACH, parseTestDay(FORM, TODAY))).rejects.toBeInstanceOf(ForbiddenError);
     expect(await counts(c)).toEqual({ heights: 0, assessments: 0 });
+  });
+});
+
+describe('test day: retries that differ from the first attempt', () => {
+  test('a retry that leaves a cell off is told it stays saved', async () => {
+    const c = await freshDatabase('testday_dropped');
+    await recordTestDay(COACH, parseTestDay(FORM, TODAY));
+    const dropped = { ...FORM, rows: [{ ...FORM.rows[0], cmj_cm: '' }, FORM.rows[1]] };
+    const result = await recordTestDay(COACH, parseTestDay(dropped, TODAY));
+    expect(result).toEqual({
+      written: 0,
+      already_saved: 5,
+      earlier_not_on_form: [{ athlete_id: A1, measure: 'ppbf-jump-cmj-height' }],
+    });
+    expect(await counts(c)).toEqual({ heights: 1, assessments: 5 });
+  });
+
+  test('a changed date on a row with no height is a conflict too', async () => {
+    const c = await freshDatabase('testday_date_nohgt');
+    const onlyA2 = { ...FORM, rows: [FORM.rows[1]] };
+    await recordTestDay(COACH, parseTestDay(onlyA2, TODAY));
+    await expect(recordTestDay(COACH, parseTestDay({ ...onlyA2, administered_on: '2026-10-15' }, TODAY)))
+      .rejects.toBeInstanceOf(ConflictError);
+    expect(await counts(c)).toEqual({ heights: 0, assessments: 2 });
+  });
+
+  test('a blank shuttle beside filled cells is "not tested", and a long save key still fits', async () => {
+    const c = await freshDatabase('testday_blank_long');
+    const form = {
+      administered_on: '2026-10-16',
+      request_key: 'k'.repeat(200),
+      rows: [{ athlete_id: A1, height_cm: 151.4, cmj_cm: 31.5, broad_cm: '', shuttle_level: '', shuttle_number: '' }],
+    };
+    expect(await recordTestDay(COACH, parseTestDay(form, TODAY))).toMatchObject({ written: 2 });
+    expect(await counts(c)).toEqual({ heights: 1, assessments: 1 });
   });
 });

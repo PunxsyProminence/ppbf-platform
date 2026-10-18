@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { heightAccessibleAthleteIds } from '@/src/server/pilot/athleteHeights';
-import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { recordTestDay } from '@/src/server/pilot/testDay';
 
@@ -10,14 +9,13 @@ import { recordTestDay } from '@/src/server/pilot/testDay';
  * The route over testDay.ts. Who may record for whom, all-or-nothing and once are proven against
  * real rows in testDay.pg.test.ts; with the module mocked, this file asserts what only the route
  * and the parser decide: roles refused first, the session identity handed down, the body parsed
- * whole (one bad cell refuses the save), and no audit row for a retry that wrote nothing.
+ * whole (one bad cell refuses the save). The audit rows are the module's (testDay.pg.test.ts).
  */
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
 });
-jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn(async () => undefined) }));
 jest.mock('@/src/server/pilot/athleteHeights', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteHeights');
   return { ...actual, heightAccessibleAthleteIds: jest.fn() };
@@ -30,7 +28,6 @@ jest.mock('@/src/server/pilot/testDay', () => {
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockRecord = recordTestDay as jest.Mock;
 const mockAccessible = heightAccessibleAthleteIds as jest.Mock;
-const mockAudit = writePilotAuditEvent as jest.Mock;
 
 const COACH = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null, sessionToken: 't', authProvider: 'microsoft' };
 const ACTOR = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null };
@@ -52,7 +49,7 @@ function post(body: unknown) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrincipal.mockResolvedValue(COACH);
-  mockRecord.mockResolvedValue({ written: 3, already_saved: 0 });
+  mockRecord.mockResolvedValue({ written: 3, already_saved: 0, earlier_not_on_form: [] });
   mockAccessible.mockResolvedValue(new Set(['ath-1']));
 });
 
@@ -64,10 +61,10 @@ test.each(['athlete', 'parent', 'board', 'volunteer', 'platform_owner'])('a %s s
   expect(mockAccessible).not.toHaveBeenCalled();
 });
 
-test('the save hands the session identity and the parsed form down, and audits counts only', async () => {
+test('the save hands the session identity and the parsed form down', async () => {
   const response = await POST(post({ ...FORM, account_id: 'someone-else' }));
   expect(response.status).toBe(201);
-  expect(await response.json()).toEqual({ ok: true, written: 3, already_saved: 0, administered_on: '2026-10-16' });
+  expect(await response.json()).toEqual({ ok: true, written: 3, already_saved: 0, earlier_not_on_form: [] });
   expect(mockRecord).toHaveBeenCalledWith(ACTOR, {
     administeredOn: '2026-10-16',
     requestKey: 'save-1',
@@ -78,16 +75,17 @@ test('the save hands the session identity and the parsed form down, and audits c
       shuttle: { level: 7, shuttle: 4 },
     }],
   });
-  const event = mockAudit.mock.calls[0][0];
-  expect(event).toMatchObject({ entity_type: 'test_day', entity_id: 'save-1', shadow_mirror: false });
-  // No measurement reaches the audit row.
-  expect(JSON.stringify(event.details)).not.toMatch(/151\.4|31\.5|"level"|height_cm/);
 });
 
-test('a retry that wrote nothing writes no audit row', async () => {
-  mockRecord.mockResolvedValue({ written: 0, already_saved: 3 });
-  expect((await POST(post(FORM))).status).toBe(201);
-  expect(mockAudit).not.toHaveBeenCalled();
+test('a retry answers what the module found, including cells an earlier attempt saved', async () => {
+  mockRecord.mockResolvedValue({ written: 0, already_saved: 2, earlier_not_on_form: [{ athlete_id: 'ath-1', measure: 'ppbf-jump-cmj-height' }] });
+  const response = await POST(post(FORM));
+  expect(await response.json()).toMatchObject({ written: 0, already_saved: 2, earlier_not_on_form: [{ athlete_id: 'ath-1' }] });
+});
+
+test('an unknown action is refused, not saved', async () => {
+  expect((await POST(post({ ...FORM, action: 'delete_everything' }))).status).toBe(400);
+  expect(mockRecord).not.toHaveBeenCalled();
 });
 
 test.each([
