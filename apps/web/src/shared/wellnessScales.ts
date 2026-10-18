@@ -45,6 +45,7 @@ export type WellnessScaleKey =
   | 'soreness'
   | 'focus'
   | 'motivation'
+  | 'mood'
   | 'hydration'
   | 'mental_clarity'
   | 'stress'
@@ -76,6 +77,13 @@ export const WELLNESS_SCALES: readonly WellnessScale[] = [
     key: 'motivation',
     question: 'How much do you want to train today?',
     anchors: ["Really don't", 'Not much', 'Neutral', 'Want to', "Can't wait"],
+    direction: 'higher_is_better',
+  },
+  {
+    // Jason 2026-10-18, "Mood + stress (Rec.)". Copy PROPOSED.
+    key: 'mood',
+    question: 'How is your mood?',
+    anchors: ['Really down', 'Low', 'Okay', 'Good', 'Great'],
     direction: 'higher_is_better',
   },
   {
@@ -116,11 +124,14 @@ export const WELLNESS_SCALE_KEYS: readonly WellnessScaleKey[] = WELLNESS_SCALES.
  * measure between the short form and the long one is this line, and nothing
  * else.
  *
- * These three are the ones that answer "how am I today" on their own: what I
- * have in the tank, what my body is saying, and whether I want to be here.
- * Everything else is detail on top of that.
+ * The first three answer "how am I today" on their own: what I have in the
+ * tank, what my body is saying, and whether I want to be here. Mood and stress
+ * joined them on Jason's 2026-10-18 "Mood + stress (Rec.)": with sleep hours,
+ * energy and soreness they make the five-item set studied in junior athletes
+ * (research draft BASELINE-METRICS-2026-10-18, Lathlean 2019). Everything
+ * else is detail on top of that.
  */
-export const MINIMAL_CHECK_IN_KEYS: readonly WellnessScaleKey[] = ['energy', 'soreness', 'motivation'];
+export const MINIMAL_CHECK_IN_KEYS: readonly WellnessScaleKey[] = ['energy', 'soreness', 'motivation', 'mood', 'stress'];
 
 /** The anchor text for a stored value, or null when the value is absent or
  * out of range. Absent stays absent -- this never invents a middle. */

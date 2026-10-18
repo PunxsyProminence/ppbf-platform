@@ -99,6 +99,7 @@ const MEASURE_LABELS: Readonly<Record<WellnessScaleKey, string>> = {
   mental_clarity: 'Mental clarity',
   stress: 'Stress',
   nutrition_compliance: 'Nutrition compliance',
+  mood: 'Mood',
 };
 
 const JORDAN_NOTE = 'Left knee is "tight" after sparring.\nStill want to work pads.';
@@ -119,6 +120,7 @@ function checkInRow(athleteId: string, overrides: Record<string, unknown> = {}):
     mental_clarity: 2,
     stress: 5,
     nutrition_compliance: 4,
+    mood: 3,
     note: JORDAN_NOTE,
     created_at: '2026-09-22T21:05:00.000Z',
     ...overrides,
@@ -137,6 +139,7 @@ function bareRow(athleteId: string): Record<string, unknown> {
     mental_clarity: null,
     stress: null,
     nutrition_compliance: null,
+    mood: null,
     note: '',
   });
 }
@@ -418,6 +421,7 @@ describe('a check-in that exists is read back exactly as stored', () => {
     // is a visible diff here and not only a silent re-derivation.
     expect(measure('Stress')).toBe('5 — Very stressed');
     expect(measure('Soreness')).toBe('2 — A little stiff');
+    expect(measure('Mood')).toBe('3 — Okay');
 
     const noteLabel = within(panel()).getByText("Athlete's note");
     expect(noteLabel.nextElementSibling?.textContent).toBe(JORDAN_NOTE);

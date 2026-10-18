@@ -3785,10 +3785,12 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
 
     expect(Object.keys(body).sort()).toEqual([
       'athlete_id', 'completed_flag', 'created_at', 'date', 'duration_minutes', 'notes', 'rpe', 'rpe_method',
-      'session_id', 'updated_at',
+      'session_id', 'session_type', 'updated_at',
     ]);
     // Empty box is "not given" -- never a default, never the check-in-to-now gap.
     expect(body.duration_minutes).toBeNull();
+    // No tag picked is "not said", sent as null rather than a guessed type.
+    expect(body.session_type).toBeNull();
     expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
   });
 
@@ -3981,6 +3983,58 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
 
     openTab('Dashboard');
     expect((await screen.findByLabelText(MINUTES_Q) as HTMLInputElement).value).toBe('');
+  });
+});
+
+// The session-type tag (Jason 2026-10-18, "Session effort (Rec.)" with a
+// session-type tag), asked at check-out beside effort and minutes and stored as
+// pilot.sessions.session_type. Optional, nothing picked until the athlete
+// picks, and only check-out carries it.
+describe("the session-type tag is the athlete's pick at check-out, or nothing", () => {
+  const TYPE_Q = 'What kind of session was it?';
+
+  function checkOutBodies(): Array<Record<string, unknown>> {
+    return postedTo('/api/pilot/sessions/update')
+      .map((call) => call.body)
+      .filter((body) => body.completed_flag === true);
+  }
+
+  async function openSession() {
+    storedSessions = [openSessionRow({ rpe: null })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'End training' });
+  }
+
+  test('nothing is picked on an open session, and a pick is sent at check-out', async () => {
+    await openSession();
+    for (const label of ['Technique', 'Bag or pads', 'Conditioning', 'Sparring', 'Mixed', 'Other']) {
+      expect(screen.getByRole('button', { name: `${TYPE_Q} ${label}` }).getAttribute('aria-pressed')).toBe('false');
+    }
+    expect(screen.getByText('Not picked — you can skip this.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Sparring` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].session_type).toBe('sparring');
+  });
+
+  test('a cleared pick is sent as null', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Bag or pads` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear session type' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].session_type).toBeNull();
+  });
+
+  test('a note publication never carries the tag, even with one picked', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Technique` }));
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    expect('session_type' in postedTo('/api/pilot/sessions/update')[0].body).toBe(false);
   });
 });
 
