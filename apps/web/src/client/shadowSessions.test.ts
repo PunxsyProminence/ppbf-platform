@@ -425,6 +425,9 @@ describe('restored "Also cites" grades through the parser', () => {
     // Written before grades existed: no badge rather than a made-up one.
     const [ungraded] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceTier: null }));
     expect(mapStoredShadowMessage(ungraded).evidenceBadge).toBeUndefined();
+    // Withheld: graded by its state, not by evidence.
+    const [withheld] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ responseState: 'filtered', evidenceTier: 'RESEARCH_NEEDED' }));
+    expect(mapStoredShadowMessage(withheld).evidenceBadge).toBeUndefined();
   });
 
   test('keeps the grades the server sends', async () => {

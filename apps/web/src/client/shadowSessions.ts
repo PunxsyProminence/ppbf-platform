@@ -509,8 +509,9 @@ export function mapStoredShadowMessage(
     evidenceAlsoCites: message.role === 'assistant' && message.evidenceAlsoCites?.length
       ? message.evidenceAlsoCites
       : undefined,
-    // A row stored with no grade (written before grades existed) shows no badge.
-    evidenceBadge: message.role === 'assistant' && message.evidenceTier
+    // Only an answered row carries a badge: a withheld one, or one stored with
+    // no grade (written before grades existed), shows none.
+    evidenceBadge: message.role === 'assistant' && state === 'ok' && message.evidenceTier
       ? (message.evidenceSourceGraded ? 'source' : 'answer')
       : undefined,
     handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,

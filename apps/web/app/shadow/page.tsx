@@ -1244,9 +1244,10 @@ function ShadowChatPageContent() {
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
       evidenceAlsoCites: alsoCitedFrom(data.evidenceAlsoCites),
-      // No badge when the server did not grade the answer, or when the lookup
-      // failed: the outage notice below says so on its own.
-      evidenceBadge: data.evidenceTier && data.evidenceNotice !== 'EVIDENCE_RETRIEVAL_UNAVAILABLE'
+      // No badge unless the server graded a real answer: not a queued
+      // placeholder, not a withheld or degraded reply, and not when the lookup
+      // failed (the outage notice below says so on its own).
+      evidenceBadge: data.state === 'ok' && data.evidenceTier && data.evidenceNotice !== 'EVIDENCE_RETRIEVAL_UNAVAILABLE'
         ? (data.evidenceSourceGraded === true ? 'source' : 'answer')
         : undefined,
       evidenceNotice: data.evidenceNotice,
@@ -1295,7 +1296,7 @@ function ShadowChatPageContent() {
         }
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: 'SHADOW could not verify the queued result. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER }
+            ? { ...msg, text: 'SHADOW could not verify the queued result. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER, evidenceBadge: undefined }
             : msg
         )));
         return;
@@ -1368,7 +1369,7 @@ function ShadowChatPageContent() {
       if (status.status === 'failed' || status.status === 'cancelled') {
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: 'Heavy Bag Session failed. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER }
+            ? { ...msg, text: 'Heavy Bag Session failed. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER, evidenceBadge: undefined }
             : msg
         )));
         return;
@@ -1392,6 +1393,7 @@ function ShadowChatPageContent() {
             isAsync: false,
             state: 'queued',
             evidenceTier: NO_SERVER_EVIDENCE_TIER,
+            evidenceBadge: undefined,
           }
         : msg
     )));

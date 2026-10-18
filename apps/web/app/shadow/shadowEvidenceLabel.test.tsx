@@ -129,6 +129,13 @@ test('no badge when the evidence lookup failed; the outage notice stands alone',
   expect(screen.queryByText(/^(Strongest source|Evidence): /)).toBeNull();
 });
 
+test('no badge on a withheld reply', async () => {
+  mockServer({ state: 'filtered', evidenceTier: 'RESEARCH_NEEDED', citations: [] });
+  await ask();
+  expect((await screen.findAllByText(/Pivot off the lead foot/)).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/^(Strongest source|Evidence): /)).toBeNull();
+});
+
 test('no badge when the server never graded the answer', async () => {
   mockServer({ evidenceTier: undefined, citations: [] });
   await ask();
