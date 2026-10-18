@@ -617,7 +617,8 @@ describe('the popover is the same door in a smaller room', () => {
     const { container } = await renderPanel();
 
     expect(screen.queryByRole('button', { name: /close sign in/i })).toBeNull();
-    expect(container.querySelector('a[href="/public"]')).toBeTruthy();
+    // /public is a permanent redirect to / (lane U2, A-13): link the front page itself.
+    expect(container.querySelector('a[href="/"]')).toBeTruthy();
   });
 });
 
