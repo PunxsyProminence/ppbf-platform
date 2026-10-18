@@ -287,10 +287,12 @@ export default function SessionScriptLiveDelivery({
 
   // ONE TAP, ONE INTERVENTION (finding F-135). A read that finds nothing does not prove a write
   // still in flight will not commit after it, so a retry must not be a new log. Each tap of an
-  // athlete and protocol gets one random request key, sent again on every retry of that pair
-  // while its answer is unsettled; the server answers a repeated key with the execution the first
-  // send started (POST intervention-executions, request_key). The key is dropped once the answer
-  // is settled: logged (said by the server or found by the check) or refused. Null marks a pair
+  // athlete and protocol in this run gets one random request key, sent again on every retry of
+  // that pair while its answer is unsettled; the server answers a repeated key with the execution
+  // the first send started (POST intervention-executions, request_key). Only an answer about THIS
+  // tap ends it: logged (said by the server or found by the check), or its key refused as another
+  // intervention's. Any other refusal keeps the key -- a refused retry says nothing about an
+  // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
   // whose key could not be made (no randomUUID); then none is sent, as before.
   const logRequestKeys = useRef(new Map<string, string | null>());
 
@@ -335,7 +337,7 @@ export default function SessionScriptLiveDelivery({
     }
     setLogBusy(true);
     setLogError('');
-    const pair = JSON.stringify([logAthleteId, logProtocolId]);
+    const pair = JSON.stringify([run.run_id, logAthleteId, logProtocolId]);
     const keys = logRequestKeys.current;
     if (!keys.has(pair)) {
       keys.set(pair, typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : null);
@@ -345,13 +347,10 @@ export default function SessionScriptLiveDelivery({
     const protocolTitle = logProtocols.find((p) => p.protocol_id === logProtocolId)?.title ?? logProtocolId;
     const showLogged = (item: { execution_id: string; created_at: string }) => {
       keys.delete(pair);
-      // A replay answers with an execution this screen may already list; it is listed once.
-      setLoggedInterventions((items) => (items.some((logged) => logged.execution_id === item.execution_id)
-        ? items
-        : [
-          { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
-          ...items,
-        ]));
+      setLoggedInterventions((items) => [
+        { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
+        ...items,
+      ]);
       setLogProtocolId('');
     };
     try {
@@ -381,13 +380,14 @@ export default function SessionScriptLiveDelivery({
         const payload = (await response.json().catch(() => ({}))) as {
           item?: { execution_id: string; created_at: string };
           error?: string;
+          code?: string;
         };
         if (response.ok && payload.item) {
           showLogged(payload.item);
           return;
         }
         if (isRefusal(response.status)) {
-          keys.delete(pair);
+          if (payload.code === 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED') keys.delete(pair);
           setLogError(refusalWords({ error: payload.error, status: response.status }, {}, 'The intervention was not logged. Try again.'));
           return;
         }

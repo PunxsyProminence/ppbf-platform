@@ -1389,18 +1389,61 @@ describe('one tap, one intervention: a retry sends the same request key (F-135)'
     expect(server.rows.size).toBe(2);
   });
 
-  it('a refusal settles the tap: the next one is a new key', async () => {
+  it('a refused retry keeps the key: the send before it may still commit', async () => {
+    let posts = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        if (posts === 1) return dropped();
+        if (posts === 2) return jsonResponse({ error: 'Not found' }, false, 404);
+        return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-1');
+    expect(screen.getByRole('alert')).toHaveTextContent('Not found');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent).toHaveLength(3);
+    expect(sent[1].request_key).toBe(sent[0].request_key);
+    expect(sent[2].request_key).toBe(sent[0].request_key);
+  });
+
+  it('a server failure keeps the key', async () => {
+    let posts = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return jsonResponse({ error: 'Internal server error' }, false, 500);
+      },
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(posts).toBe(2);
+    expect(sent[1].request_key).toBe(sent[0].request_key);
+  });
+
+  it('a key refused as belonging to another intervention is dropped: the next tap is a new key', async () => {
     let refused = false;
     const { fetchMock } = await renderLive(liveRun(), {
       logPost: () => {
         if (refused) return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
         refused = true;
-        return jsonResponse({ error: 'Not found' }, false, 404);
+        return jsonResponse(
+          { error: 'This request was already used to log a different intervention.', code: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED' },
+          false,
+          409,
+        );
       },
     });
     await openLog();
     await logWith('proto-1');
-    expect(screen.getByRole('alert')).toHaveTextContent('Not found');
+    expect(screen.getByRole('alert')).toHaveTextContent('This request was already used to log a different intervention.');
     await logWith('proto-1');
     const sent = logPostCalls(fetchMock);
     expect(sent).toHaveLength(2);
