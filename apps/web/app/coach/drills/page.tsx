@@ -12,6 +12,7 @@ import { gymDayIso } from '@/src/lib/gymTime';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 import { requiresFloorValidation } from '@/src/lib/drillFloorValidation';
 import type { DrillFloorValidation } from '@/src/server/pilot/drillFloorValidations';
+import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import { equipmentLabel, humanizeContactLevel } from '@/src/lib/drillPresentation';
 import type {
   DrillLibraryRow,
@@ -574,10 +575,11 @@ function CoachDrillLibrary() {
         drill?: DrillWithDetail;
         lifecycle?: ReferenceLifecycle | null;
         floor_tested?: DrillFloorValidation | null;
+        grounding_evidence?: GroundingEvidence[];
       };
       if (!payload.drill) throw new Error('This reference drill could not be loaded.');
       if (openRequestRef.current !== request) return;
-      setOpenReference(fromCoachDrillDetail(payload.drill));
+      setOpenReference(fromCoachDrillDetail(payload.drill, payload.grounding_evidence ?? null));
       setOpenReferenceDetail(payload.drill);
       // The detail's own lifecycle is read with the drill, so it is fresher
       // than the list's; it replaces this drill's entry. Same for the mark.
@@ -677,9 +679,10 @@ function CoachDrillLibrary() {
         drill?: DrillWithDetail;
         lifecycle?: ReferenceLifecycle | null;
         floor_tested?: DrillFloorValidation | null;
+        grounding_evidence?: GroundingEvidence[];
       };
       if (!payload.drill || openRequestRef.current !== request) return;
-      setOpenReference(fromCoachDrillDetail(payload.drill));
+      setOpenReference(fromCoachDrillDetail(payload.drill, payload.grounding_evidence ?? null));
       setOpenReferenceDetail(payload.drill);
       const fresh = payload.lifecycle;
       if (fresh) {
