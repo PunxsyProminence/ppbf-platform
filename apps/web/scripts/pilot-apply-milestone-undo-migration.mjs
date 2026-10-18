@@ -17,8 +17,12 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt:
 //
-// `undone_at_ready` -- the column, as a nullable timestamptz. A NOT NULL column would make every
-// award an undone one; a text or date column would lose the instant the undo is ordered by.
+// `undone_at_ready` -- the column, as a nullable timestamptz with no default. A NOT NULL column,
+// or a default, would make every new award an undone one (hidden the moment it is made); a text or
+// date column would lose the instant the undo is ordered by.
+//
+// `awarded_by_role_not_null` -- the check below passes when its expression is NULL, so it only
+// keeps a coach's award from being undone while awarded_by_role can never be null.
 //
 // `undo_self_only_ready` -- the check by name ON this table, validated, and its whole predicate
 // exactly as PostgreSQL prints this migration's own check (runs of whitespace collapsed). Matching
@@ -36,7 +40,14 @@ const READINESS_QUERY = `
          and column_name = 'undone_at'
          and data_type = 'timestamp with time zone'
          and is_nullable = 'YES'
+         and column_default is null
     ) as undone_at_ready,
+    exists (
+      select 1 from information_schema.columns
+       where table_schema = 'pilot' and table_name = 'athlete_milestones'
+         and column_name = 'awarded_by_role'
+         and is_nullable = 'NO'
+    ) as awarded_by_role_not_null,
     exists (
       select 1 from pg_constraint c
        where c.conrelid = to_regclass('pilot.athlete_milestones')

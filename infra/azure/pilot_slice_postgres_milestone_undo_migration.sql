@@ -19,10 +19,13 @@
 -- NEVER A COACH'S MARK, AT THE DATABASE. The check below admits undone_at only
 -- on a row the athlete marked themselves (awarded_by_role = 'self'). The
 -- application's undo statement says the same thing; this is what still holds
--- if a later statement forgets to. A coach awarding the milestone writes
--- awarded_by_role = 'coach' and undone_at = null in the same statement, so it
--- satisfies the check. Every existing row has undone_at null, so the check
--- validates at once.
+-- if a later statement forgets to. A coach's award is stored as the coach's --
+-- including on a milestone the athlete had already marked themselves, which
+-- the application's award statement then makes the coach's (first date kept)
+-- -- so once a coach has marked it, no undo of it can be stored. A coach
+-- awarding an undone row writes awarded_by_role = 'coach' and undone_at = null
+-- in the same statement, which satisfies the check. Every existing row has
+-- undone_at null, so the check validates at once.
 --
 -- WHO MAY UNDO, AND FOR HOW LONG (the athlete, their own account's mark,
 -- ten minutes by the database's clock) is the application's statement to
@@ -53,4 +56,4 @@ end
 $$;
 
 comment on column pilot.athlete_milestones.undone_at is
-  'When the athlete took back their own "I did it" (OD-2026-10-17-003: ten minutes, their own mark only). Null = the award stands. Set only on a self-marked row (pilot_athlete_milestones_undo_self_only). The row is never deleted, and a later real mark brings it back.';
+  'When the athlete took back their own "I did it" (OD-2026-10-17-003: ten minutes, their own mark only). Null = the award stands. Set only on a self-marked row (pilot_athlete_milestones_undo_self_only). Undo never deletes the row, and a later real mark brings it back.';
