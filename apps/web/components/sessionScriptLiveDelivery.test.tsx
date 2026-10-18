@@ -95,6 +95,8 @@ interface Handlers {
   readinessBoard?: () => Response | Promise<Response>;
   /** GET /runs/[runId]/athletes: who is marked here, and the gym's athletes (F-067). */
   presence?: () => Response | Promise<Response>;
+  /** GET /api/pilot/drill-library?drill_id=: the drill a block links (audit 2026-10-17 item 1). */
+  drill?: (url: string) => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -140,6 +142,9 @@ function mockFetch(handlers: Handlers = {}) {
     if (url.includes('/api/pilot/session-scripts/runs')) {
       if (handlers.runsGet) return handlers.runsGet();
       throw new Error(`Unexpected runs GET: ${url}`);
+    }
+    if (url.includes('/api/pilot/drill-library')) {
+      return handlers.drill ? handlers.drill(url) : jsonResponse({ error: 'DRILL_NOT_FOUND' }, false, 404);
     }
     if (url.includes('script_id=')) {
       return handlers.detail ? handlers.detail() : jsonResponse({ script: scriptDetail() });
@@ -911,4 +916,136 @@ test('a plain session is not asked how many blocks it completed', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
   expect(screen.queryByLabelText('Blocks completed')).toBeNull();
   expect(screen.getByLabelText('Athletes present')).toBeTruthy();
+});
+
+// AUDIT 2026-10-17 ITEM 1. A plan made from a template carries a step's name,
+// minutes, scale and note, not the drill's instructions. The coach opens the
+// drill the current block links, from the drill library's own read, and comes
+// back to the block with the session still running.
+describe("the current block's drill instructions", () => {
+  const LINKED = scriptDetail({
+    blocks: [
+      block('blk-1', 1, 'Arrival and wraps'),
+      block('blk-2', 2, 'Jab drill', { drill_id: 'ref-jab-v1', scale_level: 'C' }),
+      block('blk-3', 3, 'Conditioning finish'),
+    ],
+  });
+
+  function referenceDrill() {
+    return {
+      drill_id: 'ref-jab-v1',
+      name: 'Jab drill',
+      discipline: 'boxing',
+      category: 'technical',
+      difficulty: 'beginner',
+      version: 1,
+      active: true,
+      superseded_at: null,
+      purpose: 'A straight jab from guard.',
+      standard_setup: 'Partners at jab distance, one with pads.',
+      execution: 'Step and jab on the call, then return to guard.',
+      what_good_looks_like: 'The hand comes straight back to the chin.',
+      what_bad_looks_like: '',
+      common_errors: '',
+      corrections: 'Elbow in before the next one.',
+      contact_level: 'none',
+      requires_coach_authorization: false,
+      cues: [{ cue_text: 'Snap it back', cue_family: 'guard' }],
+      scale_levels: [
+        { scale_level: 'A', is_starting_point: false, demand_description: 'Shadow only.' },
+        { scale_level: 'B', is_starting_point: true, demand_description: 'On pads at half speed.' },
+        { scale_level: 'C', is_starting_point: false, demand_description: 'On pads at full speed.' },
+      ],
+      stop_rules: [],
+      universal_stop_rules: [],
+      secondary_skills: [],
+      grounding_claim_ids: [],
+    };
+  }
+
+  it('opens the linked drill in place: setup, how it runs, cues, corrections and the scale the block chose, with nothing sent', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({ drill: referenceDrill() }),
+    });
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+
+    // The version the block links, by the drill library's own read.
+    expect(fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('drill-library')))
+      .toEqual(['/api/pilot/drill-library?drill_id=ref-jab-v1']);
+    const drill = await screen.findByRole('article', { name: 'Jab drill' });
+    expect(within(drill).getByText('Partners at jab distance, one with pads.')).toBeInTheDocument();
+    expect(within(drill).getByText('Step and jab on the call, then return to guard.')).toBeInTheDocument();
+    expect(within(drill).getByText('Snap it back')).toBeInTheDocument();
+    expect(within(drill).getByText('Elbow in before the next one.')).toBeInTheDocument();
+    // The block's scale is open and named; the drill's usual starting level is not opened instead.
+    const chosen = within(drill).getByText(/chosen for this block/).closest('details');
+    expect(chosen).toHaveAttribute('open');
+    expect(within(chosen as HTMLElement).getByText('On pads at full speed.')).toBeInTheDocument();
+    expect(within(drill).getByText(/where to start/).closest('details')).not.toHaveAttribute('open');
+    // Reading is not a write: the session is where it was.
+    expect(patchCalls(fetchMock)).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Hide instructions: Jab drill' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Next block' })).toBeInTheDocument();
+  });
+
+  it('closes back to the block, and the running session is untouched', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({ drill: referenceDrill() }),
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+    await screen.findByRole('article', { name: 'Jab drill' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide instructions: Jab drill' }));
+    });
+
+    expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View instructions: Jab drill' })).toHaveAttribute('aria-expanded', 'false');
+    expect(patchCalls(fetchMock)).toEqual([]);
+  });
+
+  it('a block with no linked drill offers no instructions', async () => {
+    await renderLive(liveRun({ current_block_id: 'blk-1' }), { detail: () => jsonResponse({ script: LINKED }) });
+
+    expect(await screen.findByText('Current block')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /View instructions/ })).not.toBeInTheDocument();
+  });
+
+  it('when the session moves on, the drill opened from the last block is no longer shown', async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({ drill: referenceDrill() }),
+      patch: () => jsonResponse({ run: liveRun({ current_block_id: 'blk-3' }) }),
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+    await screen.findByRole('article', { name: 'Jab drill' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
+    });
+
+    expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+  });
+
+  it('a drill the library cannot open says so, not that it is missing', async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({ error: 'boom' }, false, 500),
+    });
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
+    });
+
+    expect(await screen.findByText(/This is a failure to load, not a missing drill/)).toBeInTheDocument();
+  });
 });
