@@ -1788,7 +1788,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   backend. The buttons below take you to each surface exactly as it stands today.
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <Link href="/public" className="btn btn--ghost">
+                  <Link href="/" className="btn btn--ghost">
                     Edit Public Page Surface
                   </Link>
                   <Link href="/login" className="btn btn--ghost">

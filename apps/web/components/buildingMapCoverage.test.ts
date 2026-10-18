@@ -75,7 +75,6 @@ const PENDING_TRIAGE: Record<string, string> = {
   '/admin/gear': 'real admin feature ("Equipment and margin") -- wants a door, roles unconfirmed',
   '/admin/gear/vendors': 'real admin feature ("Suppliers and accounts") -- wants a door, roles unconfirmed',
   '/admin/athletes': 'renders a notice ("Athlete records are managed per gym") -- may be a signpost, not a surface',
-  '/admin/organizations/test': 'renders "Test Wizard Disabled" -- scaffolding, probably wants deleting not a door',
   '/admin/platform/overview': 'platform-owner gated ("Platform Owner Access Required") -- door depends on whether platform_owner gets a corridor at all',
 };
 
