@@ -649,6 +649,12 @@ const NOT_BUILT_REASONS: Record<string, string> = {
   aggressive_research_generation: 'Not built: nothing in the app sends the signals this widens (ignored advice, session ended).',
 };
 
+// What turning a feature on changes that its counter does not show
+// (Overwatch 2026-10-17, lane L46: Library proposals and the concern list).
+const FEATURE_BEHAVIOUR_NOTES: Record<string, string> = {
+  auto_library_updates: 'With proposals on, a pending promote can keep a topic off the concern list until a curator acts.',
+};
+
 function yesNo(value: boolean): string {
   return value ? 'yes' : 'no';
 }
@@ -943,6 +949,9 @@ function FeatureUnlockPanel() {
                 </p>
               ) : null}
               <p className="t-muted mt-[var(--s3)]">{row.description}</p>
+              {FEATURE_BEHAVIOUR_NOTES[row.featureKey] ? (
+                <p className="t-muted mt-[var(--s2)]">{FEATURE_BEHAVIOUR_NOTES[row.featureKey]}</p>
+              ) : null}
               {lockReason ? (
                 <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"><span aria-hidden>▲</span> {lockReason}</p>
               ) : null}

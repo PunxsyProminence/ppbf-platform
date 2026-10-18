@@ -712,3 +712,35 @@ describe('the feature unlock panel reports each fact on its own (L46 item 13)', 
     expect(pageText()).not.toContain('Counter has not reached the threshold.');
   });
 });
+
+describe('the feature unlock panel says what Library proposals do to the concern list', () => {
+  it('notes it on the auto_library_updates row', async () => {
+    renderConsoleWith({
+      '/shadow/unlocks': async () => jsonResponse({
+        ok: true,
+        thresholds: [{
+          featureKey: 'auto_library_updates',
+          metricKey: 'org_recommendation_outcomes',
+          minValue: 40,
+          activationMode: 'observation',
+          description: 'Enable automatic promote/demote updates.',
+        }],
+        state: {
+          features: {
+            auto_library_updates: {
+              unlocked: false,
+              activationMode: 'observation',
+              satisfied: false,
+              implemented: true,
+              measuredPerformance: null,
+              currentValue: 3,
+              thresholdValue: 40,
+            },
+          },
+        },
+      }),
+    });
+
+    expect(await screen.findByText('With proposals on, a pending promote can keep a topic off the concern list until a curator acts.')).toBeTruthy();
+  });
+});
