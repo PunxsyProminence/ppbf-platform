@@ -5833,6 +5833,10 @@
 .ge-scripts .ge-scripts-live.ge-frame .t-label {
   color: var(--bone-200);
 }
+/* ...except the lit row's "Current", which stays the metal voice it is everywhere else. */
+.ge-scripts .ge-scripts-live.ge-frame [aria-current="step"] .t-label {
+  color: var(--brass-200);
+}
 /* On a phone the band thins, so the frame does not take the content's width. */
 @media (max-width: 640px) {
   .ge-wallboard {
