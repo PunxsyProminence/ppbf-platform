@@ -55,7 +55,10 @@ create table if not exists pilot.behaviour_keys (
 
 -- A name keeps its meaning once coaches file reports under it: only its
 -- status moves (retire it and add a new name rather than re-word or re-file
--- one), and its creator is set null when their account goes.
+-- one), its creator is set null when their account goes, and the purge may
+-- scrub a purged person's name out of its label (Jason 2026-10-07, "Scrub the
+-- child's name, keep"; "Gym-wide"): the label gains a [name], nothing else
+-- moves.
 create or replace function pilot.behaviour_keys_guard()
 returns trigger
 language plpgsql
@@ -70,6 +73,12 @@ begin
   end if;
   if tg_op = 'UPDATE' then
     if to_jsonb(new) - 'status' = to_jsonb(old) - 'status' then
+      return new;
+    end if;
+    if new.label is distinct from old.label
+       and length(new.label) - length(replace(new.label, '[name]', ''))
+         > length(old.label) - length(replace(old.label, '[name]', ''))
+       and to_jsonb(new) - 'label' = to_jsonb(old) - 'label' then
       return new;
     end if;
     if pg_trigger_depth() > 1 and new.created_by_account_id is null
@@ -307,7 +316,10 @@ create trigger pilot_behaviour_observations_follow_athlete
   for each row execute function pilot.behaviour_observations_follow_athlete();
 
 -- THE BARS. One versioned row per ratified bar; the evaluators read the
--- active one. Q3: a bar is backed by research, so a row without at least
+-- active one. Three kinds (Jason 2026-10-18, approving the threshold research):
+-- when a behaviour is an emerging, a pattern or an established one; when a
+-- lesson improved, likely worked or worked, replicated; and when a coach
+-- pair's reports are calibrated enough to count. Q3: a bar is backed by research, so a row without at least
 -- one citation ({"source": "...", "note": "..."}) is refused. The parameters
 -- are validated by the application (assertPatternFormationPolicy /
 -- assertAthleteLessonPolicy) before insert; the database holds the record
@@ -328,7 +340,8 @@ create table if not exists pilot.learning_policies (
   constraint pilot_learning_policies_version_key unique (organization_id, policy_kind, version),
   constraint pilot_learning_policies_supersedes_fk foreign key (organization_id, supersedes_policy_id)
     references pilot.learning_policies(organization_id, policy_id),
-  constraint pilot_learning_policies_kind_check check (policy_kind in ('pattern_formation', 'athlete_lesson')),
+  constraint pilot_learning_policies_kind_check
+    check (policy_kind in ('pattern_formation', 'athlete_lesson', 'observer_calibration')),
   constraint pilot_learning_policies_version_check check (version >= 1),
   constraint pilot_learning_policies_parameters_check check (jsonb_typeof(parameters) = 'object'),
   constraint pilot_learning_policies_citations_check
