@@ -179,6 +179,7 @@ test('the status panel has no Current Track row, and still names the child', asy
   installFetch();
   await renderHub();
   expect(screen.queryByText('Current Track')).toBeNull();
+  expect(document.body.textContent).not.toMatch(/current track/i);
   expect(screen.getByText('Child Name')).toBeInTheDocument();
 });
 

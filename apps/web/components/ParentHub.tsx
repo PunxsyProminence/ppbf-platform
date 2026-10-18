@@ -1477,7 +1477,7 @@ export default function ParentHub() {
                 title="Child Overview"
                 description="Quick snapshot of your child's current training status, progress, and upcoming events."
                 usage={[
-                  'Review current track and skill level',
+                  'Review membership, scholarship and support status',
                   'Check attendance and progress summary',
                   'See upcoming events and important dates',
                   'Review coach messages'
