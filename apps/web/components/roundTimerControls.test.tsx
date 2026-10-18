@@ -448,7 +448,7 @@ describe('+30 sec and Repeat round', () => {
     fireEvent.click(screen.getByRole('button', { name: '+30 sec' }));
     await settle();
     expect(screen.getByRole('alert')).toHaveTextContent('The timer changed on another screen. This is it now; press again if you still want it.');
-    // It reads again, and the next tap carries what that read gave.
+    // It reads again (the revision that read gives is what the next tap sends: tested above).
     expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method !== 'POST').length).toBe(readsBefore + 1);
   });
 });
