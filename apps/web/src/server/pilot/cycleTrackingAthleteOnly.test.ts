@@ -45,6 +45,8 @@ const MAY_NAME_THE_TABLES = new Set([
   // The athlete-only module and its suite (lane L58 PR-4).
   'apps/web/src/server/pilot/athleteCycle.ts',
   'apps/web/src/server/pilot/athleteCycle.pg.test.ts',
+  // Pins the one ruled DELETE the deletion paths issue (Jason: "A: Delete at once").
+  'apps/web/src/server/pilot/dataDeletion.test.ts',
 ]);
 
 /** The athlete's own cycle route; nothing else may import the module (not even a sibling route)... */
