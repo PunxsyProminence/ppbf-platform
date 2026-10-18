@@ -164,6 +164,36 @@ and should not try to.
 
 ---
 
+## OD-2026-10-17-015 -- New athlete sign-in IDs are not the child's real name: "B: Change the guidance (Recommended)"
+
+**Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15425, 2026-10-18T00:22:46.582Z; answered at line 15435, 2026-10-18T00:23:41.567Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them, in the order it listed them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Question "Sign-in IDs".** Overwatch, as written: "OFFICIAL: When an athlete's login is retired, the app keeps the sign-in ID the office typed (the People form suggests IDs "like jsmith", which is often the child's initial + surname) as the record that blocks reuse. (A) keep as built; (B) change the People-form guidance so new athlete sign-in IDs are not the child's real name (e.g. use the ring name or a number); copy only, new logins; (C) rewrite retired IDs to random tokens (large database change). PLAIN: after a kid leaves, their old sign-in ID (often their name) stays in the system. B stops new IDs from being real names; C scrubs old ones but is a big job." Options as written: "B: Change the guidance (Recommended)": "New athlete IDs not real names; small copy change."; "A: Keep as built": "No change."; "C: Rewrite old IDs": "Scrub retired IDs; large migration." Jason: *"B: Change the guidance (Recommended)"*
+
+**Ruling:** the People form's guidance changes so that new athlete sign-in IDs are not the child's real name (for example the ring name or a number). It is a copy change for new logins only. Retired sign-in IDs already stored are not rewritten. Options A (keep as built) and C (rewrite old IDs) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L44 (line 15443) to add a PR D, a small copy change to the People form's athlete sign-in ID guidance for new logins only, "needed to close F-102". Not built at the time of writing.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-17-014 -- No age rule on staff roles; the gym decides who it makes a coach: "A: No age rule (Recommended)"
+
+**Provenance: PRIMARY.** The first question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 15425, 2026-10-18T00:22:46.582Z; answered at line 15435, 2026-10-18T00:23:41.567Z). Read by script (records pass, lane L45, 2026-10-17). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
+
+**Where it came from.** Lane L44's gap check of finding F-098 ("staff role on a minor") returned its part (b) as a ruling question: no rule in the code or the rulings refuses a staff role to a minor (line 15420, REPORTED by L44). Overwatch put it to Jason.
+
+**Question "Teen staff".** Overwatch, as written: "OFFICIAL: May a person under 18 hold a staff role in the app (coach, staff, volunteer, admin)? Today there is no age rule: an org admin can invite a teen's own email as a coach, and under your "Any coach all coaches coach all athletes" ruling that teen coach then sees every minor's released photo and ring name, like any coach. (A) no age rule, the gym decides who it invites (as built); (B) under-18s may be volunteer or staff, but not coach or admin (only coaches are in the photo circle); (C) staff roles are adults only. PLAIN: if a teenage helper is made a coach in the app, they see every kid's released photo, the same as an adult coach. Do you want an age limit on coach/admin accounts?" Options as written: "A: No age rule (Recommended)": "The gym decides who it makes a coach; as built."; "B: Under-18 not coach/admin": "Teens can be volunteer or staff, not coach or admin."; "C: Adults only for staff": "Any staff role needs 18+." Jason: *"A: No age rule (Recommended)"*
+
+**Ruling:** the app has no age rule on staff roles (coach, staff, volunteer, admin). The gym decides who it invites and who it makes a coach, as built. As the card states, a teen made a coach then sees every minor's released photo and ring name, like any coach, under OD-2026-10-12-016 (*"Any coach all coaches coach all athletes"*). Options B (under-18 not coach or admin) and C (adults only for staff) were not chosen.
+
+**Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L44 (line 15443) that F-098(b) is ruled A, "so the gym decides and nothing is added beyond your PR A integrity fix". L44's PR A, which includes its fix for F-098 part (a), was approved in Overwatch's GO to L44 (line 15423); it is Overwatch's call, not this ruling.
+
+**Status:** ruled; nothing to build for this ruling.
+
+---
+
 ## OD-2026-10-17-013 -- New chips to start: "Small fixes bundle", "Milestone Undo", "Privacy if-real checks", "Records pass", and his typed "A continual housekeeping l ing and clean up o chip"
 
 **Provenance: PRIMARY.** The second question on a two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 14927, 2026-10-18T00:03:06.862Z; answered at line 14928, 2026-10-18T00:04:07.432Z). Read by script (records pass, lane L45, 2026-10-17). His picks and his typed answer are quoted exactly, spelling and spacing kept; the question and options are quoted as overwatch wrote them. The id carries 2026-10-17 because this UTC time is the evening of 2026-10-17 Eastern. New; edits no earlier entry.
