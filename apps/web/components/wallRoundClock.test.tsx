@@ -330,4 +330,21 @@ describe('the round clock on a paired TV', () => {
     await seconds(60);
     expect(sessionReads() - start).toBeLessThanOrEqual(4);
   });
+  test("+30 SEC after the knock: the knock and the end bell ring again at the round's new end", async () => {
+    // 60 s rounds; 45 s in, so the knock (10 s left) comes 5 s after load.
+    serverTimer = { startedAt: T0 - 45_000, state: 'running', config: { round_seconds: 60 } };
+    render(<WallDisplay />);
+    await settle();
+    await seconds(7);
+    expect(played).toEqual(['knock']);
+    // The coach presses +30 SEC: the server's clock for the set moves back 30 s (OD-2026-10-17-010).
+    serverTimer = { startedAt: T0 - 45_000 + 30_000, state: 'running', config: { round_seconds: 60 } };
+    await seconds(6);
+    expect(played).toEqual(['knock']);
+    // Now 38 s left: the knock rings again at 10 s left, and the end bell at the new end.
+    await seconds(40);
+    expect(played.filter((voice) => voice === 'knock')).toHaveLength(2);
+    expect(played).toContain('bell');
+  });
 });
+

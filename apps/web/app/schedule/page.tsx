@@ -751,7 +751,7 @@ export default function SchedulerPage() {
           <header className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow">Schedule</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-              Class Registration and Attendance
+              Schedule
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-[80ch]">
               Members register for classes and ask for individual coaching; coaches schedule and cover classes and take the register; parents review.
