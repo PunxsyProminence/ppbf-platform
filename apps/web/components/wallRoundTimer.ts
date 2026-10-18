@@ -98,6 +98,45 @@ export function isNewSet(prev: WallRoundReading | null, next: WallRoundReading, 
   );
 }
 
+/**
+ * How far back a reading must move the count, in seconds, to be time the coach added (+30 SEC) or a
+ * TV that had counted on past an end it never reached, rather than a poll's correction. Corrections
+ * are a few seconds (latency, clock skew); +30 SEC is thirty.
+ */
+export const RELEASE_BACK_SECONDS = 10;
+
+/** Seconds into the set a reading stands at. */
+function setElapsed(reading: WallRoundReading, config: RoundConfig): number {
+  const cycle = config.round_seconds + config.rest_seconds;
+  const before = Math.max(0, reading.round - 1) * cycle;
+  if (reading.phase === 'work') return before + config.round_seconds - reading.seconds_left;
+  if (reading.phase === 'rest') return before + config.round_seconds + config.rest_seconds - reading.seconds_left;
+  if (reading.phase === 'done') return before + config.round_seconds + (reading.seconds_since_done ?? 0);
+  return 0;
+}
+
+/**
+ * The sound keys to give back when a reading moves the count BACKWARDS by real time within the same
+ * set: the coach pressed +30 SEC (or REPEAT while paused), or the TV had counted on past an end the
+ * server had not reached. This round's knock and end, and the next round's start, are still to come
+ * and must ring when they do. A poll's few-second correction gives nothing back (the bell it pulled
+ * back across stays rung), and a new set (isNewSet) has keys of its own.
+ */
+export function releasedKeys(
+  setKey: string,
+  prev: WallRoundReading | null,
+  next: WallRoundReading,
+  config: RoundConfig,
+  fresh: number,
+): string[] {
+  if (!prev || (next.phase !== 'work' && next.phase !== 'rest')) return [];
+  if (isNewSet(prev, next, config, fresh)) return [];
+  if (setElapsed(prev, config) - setElapsed(next, config) < RELEASE_BACK_SECONDS) return [];
+  const keys = [`${setKey}:${next.round + 1}:start`];
+  if (next.phase === 'work') keys.push(`${setKey}:${next.round}:knock`, `${setKey}:${next.round}:end`);
+  return keys;
+}
+
 const BEFORE_START: WallRoundReading = { state: 'ready', phase: 'ready', round: 0, rounds_total: 0, seconds_left: 0 };
 
 /**

@@ -273,6 +273,11 @@ export async function moveRoundTimer(
 //   REPEAT   runs the round again: back to the start of this round while it is being worked, or of
 //            the round just finished during its rest or after the last one. The round number shows
 //            again and the TV rings its start bell again.
+// ON THE TV (wallRoundTimer.ts): REPEAT reads as a fresh start of the round and rings its start bell;
+// +30 gives back the round's knock and end bell (releasedKeys) so they ring at the new end. One edge
+// is known: a +30 pressed 30-37 s into a period lands within the TV's freshness window of the start,
+// which the TV cannot tell from a restart, so it can ring the start bell once (pinned in
+// wallRoundTimer.test.ts). Opening +30 later would remove it; that is Jason's call, not ruled.
 // Neither is a TRANSITIONS row: the state does not change, and moveRoundTimer answers a same-state
 // move as a no-op. Each is a COMPARE-AND-SET on the revision the coach's screen last read, so a
 // retried tap, or the same tap from a second screen, cannot add twice: the second answers

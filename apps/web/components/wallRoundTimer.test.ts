@@ -3,7 +3,7 @@
 
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 
-import { advanceRoundTimer, isNewSet, KNOCK_SECONDS, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
+import { advanceRoundTimer, isNewSet, KNOCK_SECONDS, releasedKeys, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 
 function view(overrides: Partial<RoundTimerView> = {}): RoundTimerView {
   return {
@@ -210,5 +210,39 @@ describe('the TV after +30 SEC and REPEAT', () => {
     const prev = read(147); // 33 s in
     const next = read(177); // after +30: 3 s in
     expect(isNewSet(prev, next, CONFIG, FRESH)).toBe(true);
+  });
+});
+
+describe('releasedKeys: the bells still to come after +30 SEC', () => {
+  const CONFIG = { round_seconds: 180, rest_seconds: 60 };
+  const read = (seconds_left: number, round = 2, phase: 'work' | 'rest' = 'work', state: 'running' | 'paused' = 'running') =>
+    ({ state, phase, round, rounds_total: 3, seconds_left });
+
+  test('+30 in the last ten seconds gives back this round\'s knock and end, and the next start', () => {
+    expect(releasedKeys('run#0', read(5), read(35), CONFIG, 7).sort()).toEqual(['run#0:2:end', 'run#0:2:knock', 'run#0:3:start']);
+  });
+
+  test('a TV that counted on past an end the server had not reached gives that end back', () => {
+    // The TV rang round 2's end and went into rest locally; the server says round 2 has 25 s left.
+    expect(releasedKeys('run#0', read(55, 2, 'rest'), read(25), CONFIG, 7).sort()).toEqual(['run#0:2:end', 'run#0:2:knock', 'run#0:3:start']);
+  });
+
+  test('+30 during a rest gives back only the next start', () => {
+    expect(releasedKeys('run#0', read(5, 2, 'rest'), read(35, 2, 'rest'), CONFIG, 7)).toEqual(['run#0:3:start']);
+  });
+
+  test('a poll correction of a few seconds gives nothing back', () => {
+    expect(releasedKeys('run#0', read(1), read(4), CONFIG, 7)).toEqual([]);
+    expect(releasedKeys('run#0', read(58, 2, 'rest'), read(1), CONFIG, 7)).toEqual([]);
+  });
+
+  test('a new set gives nothing back: it has keys of its own', () => {
+    expect(releasedKeys('run#0', read(60), read(178), CONFIG, 7)).toEqual([]);
+  });
+
+  test('REPEAT while paused gives back the round\'s knock and end, so they ring once it resumes', () => {
+    expect(releasedKeys('run#0', read(60, 2, 'work', 'paused'), read(180, 2, 'work', 'paused'), CONFIG, 7).sort()).toEqual(
+      ['run#0:2:end', 'run#0:2:knock', 'run#0:3:start'],
+    );
   });
 });

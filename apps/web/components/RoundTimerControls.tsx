@@ -202,7 +202,9 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
   const underWay = timer?.state === 'running' || timer?.state === 'paused';
   const inPeriod = underWay && (timer?.phase === 'work' || timer?.phase === 'rest');
   const periodLength = timer?.phase === 'rest' ? (timer?.rest_seconds ?? 0) : (timer?.round_seconds ?? 0);
-  const addOpen = inPeriod && periodLength - secondsLeft >= ROUND_TIMER_ADD_SECONDS;
+  // A period of 30 s or less never reaches 30 s in, so it is not offered there at all.
+  const addOffered = inPeriod && periodLength > ROUND_TIMER_ADD_SECONDS;
+  const addOpen = addOffered && secondsLeft > 0 && periodLength - secondsLeft >= ROUND_TIMER_ADD_SECONDS;
   const roundWords = timer && timer.round > 0 ? `Round ${timer.round} of ${timer.rounds_total}, ` : '';
 
   return (
@@ -267,7 +269,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
               Resume rounds
             </button>
           )}
-          {inPeriod && (
+          {addOffered && (
             <button
               type="button"
               onClick={() => void send({ action: 'add_30', revision })}
@@ -295,7 +297,7 @@ export default function RoundTimerControls({ runId, onRunNotLive }: Props) {
           )}
         </div>
       )}
-      {inPeriod && !addOpen && (
+      {addOffered && !addOpen && (
         <p id={`round-timer-add-${runId}`} className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
           {`+30 sec opens ${ROUND_TIMER_ADD_SECONDS} seconds into the ${timer?.phase === 'rest' ? 'rest' : 'round'}.`}
         </p>

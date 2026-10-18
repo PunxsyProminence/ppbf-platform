@@ -1255,8 +1255,13 @@ describe('round timer +30 SEC and REPEAT (adjustRoundTimer)', () => {
   });
 
   it("another coach's run is the same 404 as a missing one, and nothing is written", async () => {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
     const revision = await runningFor('run-adj-other', 100);
-    await expect(adjustRoundTimer(ORG_A, COACH_B, 'run-adj-other', 'repeat', revision)).rejects.toMatchObject({ status: 404 });
+    await expect(adjustRoundTimer(ORG_A, 'acct-tv-coach-a2', 'run-adj-other', 'repeat', revision)).rejects.toMatchObject({ status: 404 });
     const row = await client.query(`select paused_seconds from pilot.round_timers where run_id = 'run-adj-other'`);
     expect(row.rows).toEqual([{ paused_seconds: 0 }]);
   });

@@ -8,8 +8,8 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import RoundTimerControls, { ROUND_TIMER_ADD_SECONDS as SCREEN_ADD_SECONDS } from './RoundTimerControls';
-import { ROUND_TIMER_ADD_SECONDS, type RoundTimerView } from '@/src/server/pilot/roundTimers';
+import RoundTimerControls from './RoundTimerControls';
+import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -362,10 +362,6 @@ describe('+30 sec and Repeat round', () => {
     });
   });
 
-  test('the screen and the server agree on the thirty seconds', () => {
-    expect(SCREEN_ADD_SECONDS).toBe(ROUND_TIMER_ADD_SECONDS);
-  });
-
   test('+30 sec is closed, with the reason, in the first 30 seconds of a round', async () => {
     held = running({ seconds_left: 160 });
     await renderControls();
@@ -416,18 +412,43 @@ describe('+30 sec and Repeat round', () => {
   });
 
   test('neither shows before the start or after an end', async () => {
-    held = timer();
+    for (const held_ of [timer(), timer({ state: 'ended', phase: 'ended' })]) {
+      held = held_;
+      const view = render(<RoundTimerControls runId="ssrun_1" />);
+      await settle();
+      expect(screen.queryByRole('button', { name: '+30 sec' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Repeat round' })).toBeNull();
+      view.unmount();
+    }
+  });
+
+  test('a rest or round of 30 seconds or less never offers +30 sec, so it never promises one', async () => {
+    held = running({ phase: 'rest', rest_seconds: 30, seconds_left: 2 });
     await renderControls();
     expect(screen.queryByRole('button', { name: '+30 sec' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Repeat round' })).toBeNull();
+    expect(screen.queryByText(/\+30 sec opens/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Repeat round' })).toBeEnabled();
+  });
+
+  test('both work on paused rounds', async () => {
+    held = running({ state: 'paused', is_paused: true, seconds_left: 100 });
+    answer = () => json({ timer: running({ state: 'paused', is_paused: true, seconds_left: 130 }), revision: '101' });
+    await renderControls();
+    expect(screen.getByRole('button', { name: 'Repeat round' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '+30 sec' }));
+    await settle();
+    expect(posts()).toEqual([{ action: 'add_30', revision: '100' }]);
   });
 
   test('a tap another screen beat says so in words and shows the timer as it is now', async () => {
     held = running({ seconds_left: 100 });
     answer = () => json({ error: 'ROUND_TIMER_STALE' }, 409);
     await renderControls();
+    const readsBefore = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method !== 'POST').length;
     fireEvent.click(screen.getByRole('button', { name: '+30 sec' }));
     await settle();
     expect(screen.getByRole('alert')).toHaveTextContent('The timer changed on another screen. This is it now; press again if you still want it.');
+    // It reads again, and the next tap carries what that read gave.
+    expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method !== 'POST').length).toBe(readsBefore + 1);
   });
 });

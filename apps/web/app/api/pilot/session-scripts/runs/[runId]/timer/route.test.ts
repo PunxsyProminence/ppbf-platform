@@ -246,7 +246,14 @@ describe('POST add_30 / repeat', () => {
   it('no timer, no revision', async () => {
     as('coach');
     mockRead.mockResolvedValue(null);
+    mockRevision.mockResolvedValue('1760724000000009');
     expect(await (await get()).json()).toEqual({ timer: null });
-    expect(mockRevision).not.toHaveBeenCalled();
+  });
+
+  it('GET reads the revision before the timer, so a write between them reads as stale, never as current', async () => {
+    as('coach');
+    mockRevision.mockResolvedValue('1');
+    await get();
+    expect(mockRevision.mock.invocationCallOrder[0]).toBeLessThan(mockRead.mock.invocationCallOrder[0]);
   });
 });

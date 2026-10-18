@@ -59,9 +59,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     requireRole(principal, [...ROLES]);
     const runId = await runIdOf(context);
     if (!runId) return badRequest('run_id');
+    // The revision is read FIRST: a write landing between the two reads then pairs an older
+    // revision with a newer timer, and a tap on it is refused as stale rather than let through.
+    const revision = await readRoundTimerRevision(principal.organizationId, runId);
     const timer = await readOwnRoundTimer(principal.organizationId, principal.accountId, runId);
-    const revision = timer ? await readRoundTimerRevision(principal.organizationId, runId) : undefined;
-    return NextResponse.json({ timer, revision: revision ?? undefined }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      { timer, revision: timer ? (revision ?? undefined) : undefined },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   } catch (error) {
     return failure(error);
   }

@@ -1,6 +1,8 @@
 // The room's reading of a round timer, derived on the server (WO-N1-03). Pure: no database here.
 
-import { ROUND_TIMER_FIELDS, adjustmentShift, deriveRoundTimer, type RoundTimerRow } from './roundTimers';
+import { ROUND_TIMER_ADD_SECONDS as SCREEN_ADD_SECONDS } from '../../../components/RoundTimerControls';
+
+import { ROUND_TIMER_ADD_SECONDS, ROUND_TIMER_FIELDS, adjustmentShift, deriveRoundTimer, type RoundTimerRow } from './roundTimers';
 
 const START = '2026-10-12T18:00:00.000Z';
 
@@ -88,6 +90,11 @@ describe('deriveRoundTimer', () => {
 // three rounds: round 1 work 0-179, rest 180-239, round 2 work 240-419, rest 420-479, round 3
 // 480-659, then done.
 describe('adjustmentShift: +30 SEC and REPEAT', () => {
+  test('the coach screen and the server agree on the thirty seconds', () => {
+    // The screen restates it because it runs in the browser and this module brings the database.
+    expect(SCREEN_ADD_SECONDS).toBe(ROUND_TIMER_ADD_SECONDS);
+  });
+
   function row(secondsAfterStart: number, over: Partial<RoundTimerRow> = {}): RoundTimerRow {
     return {
       round_seconds: 180,
