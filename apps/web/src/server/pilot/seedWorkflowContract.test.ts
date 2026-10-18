@@ -78,7 +78,7 @@ function committedDatasets(): DatasetName[] {
 describe('seed-reference-data workflow contract', () => {
   const workflow = WORKFLOW_SOURCE;
   const choices = datasetChoices(workflow);
-  const validateJob = jobBlock(workflow, 'validate');
+  const validateJob = jobBlock(workflow, 'seed-validate');
   const seedJob = jobBlock(workflow, 'seed');
 
   it('reads the workflow, its two jobs and its choices, so nothing below passes vacuously', () => {
@@ -122,7 +122,7 @@ describe('seed-reference-data workflow contract', () => {
     for (const forbidden of ['environment:', 'secrets.', 'id-token', 'azure/login', 'az containerapp', 'AZURE_POSTGRES_CONNECTION_STRING', 'content:apply']) {
       expect({ forbidden, found: validateCode.includes(forbidden) }).toEqual({ forbidden, found: false });
     }
-    expect(seedJob).toMatch(/\n {4}needs: validate\n/);
+    expect(seedJob).toMatch(/\n {4}needs: seed-validate\n/);
     expect(at('- name: Validate Package')).toBeLessThan(at('azure/login'));
     expect(at('- name: Validate Package')).toBeLessThan(at('- name: Resolve Declared Database Target'));
     expect(at('- name: Validate Package')).toBeLessThan(at('- name: Load Reference Data'));
