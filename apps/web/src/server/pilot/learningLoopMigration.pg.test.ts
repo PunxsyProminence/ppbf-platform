@@ -466,6 +466,9 @@ describe('the learning-loop migration', () => {
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_citation_source' });
     expect(await refusal(() => policy({ by: COACH, role: 'coach' })))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_role_check' });
+    // Gym admin only (Jason 2026-10-18): the legacy admin role does not ratify.
+    expect(await refusal(() => policy({ role: 'admin' })))
+      .toEqual({ code: '23514', constraint: 'pilot_learning_policies_role_check' });
     expect(await refusal(() => policy({ by: COACH, role: 'organization_admin' })))
       .toEqual({ code: '23514', constraint: 'pilot_learning_policies_ratifier_of_this_gym' });
 
