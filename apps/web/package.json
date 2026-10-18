@@ -250,6 +250,7 @@
     "test:migrations:research-archive-originals": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchArchiveOriginals.pg.test.ts --testTimeout=180000",
     "test:migrations:research-archive-filing": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchArchiveFiling.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-self-report-measures": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteSelfReportMeasures.pg.test.ts --testTimeout=180000",
+    "test:migrations:athlete-cycle": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCycle.pg.test.ts --testTimeout=180000",
     "test:migrations:milestone-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/milestoneUndoMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-metrics": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMetricsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:learning-loop": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/learningLoopMigration.pg.test.ts --testTimeout=180000",

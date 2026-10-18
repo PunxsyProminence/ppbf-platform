@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 
 import { formatGymDate } from '../../lib/gymTime';
 
+import { deleteCycleTrackingForDeletedAthletes } from './athleteCycle';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { ConflictError } from './errors';
@@ -305,6 +306,10 @@ export async function deleteGuardianAccount(
       withdrawnChildAccountIds,
       deletionTime,
     );
+    // A withdrawn child's cycle dates go now (OD: "A: Delete at once (Rec.)"),
+    // the same as for an athlete deleted directly below. Not counted: a count
+    // in the audit would say a child tracked their cycle.
+    await deleteCycleTrackingForDeletedAthletes(client, actor.organizationId, withdrawnAthleteIds);
 
     // Log to audit trail
     const auditResult = await client.query<{ audit_id: number }>(
@@ -452,6 +457,10 @@ export async function deleteAthleteRecord(
       deactivatedAccount.rows.map((row) => row.account_id),
       deletionTime,
     );
+    // The athlete's cycle dates are deleted now, not at the purge (Jason:
+    // "A: Delete at once (Rec.)"); restoring the athlete does not bring them
+    // back. Not counted, for the reason above.
+    await deleteCycleTrackingForDeletedAthletes(client, actor.organizationId, [athleteId]);
 
     // Log to audit trail
     const auditResult = await client.query<{ audit_id: number }>(
