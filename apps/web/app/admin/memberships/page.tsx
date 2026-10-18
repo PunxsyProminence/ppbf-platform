@@ -296,7 +296,6 @@ export default function MembershipsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setAthletesLoad('loading');
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
@@ -654,7 +653,10 @@ export default function MembershipsPage() {
             </section>
           )}
 
-          <SupportSection athletes={supportAthletes} athletesLoad={athletesLoad} onRetryAthletes={() => setAthletesNonce((n) => n + 1)}
+          <SupportSection athletes={supportAthletes} athletesLoad={athletesLoad} onRetryAthletes={() => {
+              setAthletesLoad('loading');
+              setAthletesNonce((n) => n + 1);
+            }}
             athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
           {/* The catalog itself: every persistent group this gym runs, with
