@@ -37,10 +37,21 @@ describe('evidence tier meanings', () => {
     }
   });
 
-  test('RESEARCH_NEEDED says plainly that the guidance is unverified', () => {
+  test('RESEARCH_NEEDED says plainly that no approved evidence was found', () => {
     // The least-evidenced tier is the one a reader most needs to understand.
-    expect(EVIDENCE_TIER_MEANINGS.RESEARCH_NEEDED).toMatch(/unverified/i);
-    expect(EVIDENCE_TIER_MEANINGS.RESEARCH_NEEDED).toMatch(/no verified evidence/i);
+    // Wording accepted with audit item 11 (Jason's ruling A).
+    expect(EVIDENCE_TIER_MEANINGS.RESEARCH_NEEDED).toMatch(/no approved evidence/i);
+  });
+
+  test('each meaning says what the grade measures, and none calls served evidence unverified', () => {
+    // Every passage SHADOW serves is approved and verified; EMERGING used to
+    // say it was "not yet fully verified".
+    for (const tier of ['PROVEN', 'EMERGING'] as const) {
+      expect(EVIDENCE_TIER_MEANINGS[tier]).toMatch(/^The strongest source cited is /);
+    }
+    for (const tier of EVIDENCE_TIER_ORDER) {
+      expect(EVIDENCE_TIER_MEANINGS[tier]).not.toMatch(/not yet fully verified/i);
+    }
   });
 });
 

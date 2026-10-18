@@ -139,7 +139,7 @@ export default function SafetyFlagsBoardPage() {
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
               style={{ fontSize: 'var(--t-2xl)' }}
             >
-              Open Safety Flags
+              Safety Flags
             </h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Every open flag you can see, worst first. Resolving one requires a note —

@@ -231,7 +231,7 @@ function VideoReviewConsoleContent() {
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Admin Safeguarding Control</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-            Quarantined Video Review Escalation
+            Video Scan Review
           </h1>
           <p className="t-body mt-[var(--s3)]">
             Review quarantined video uploads. Inspect the footage using a secure temporary link and record an explicit human attestation to approve or block the video.

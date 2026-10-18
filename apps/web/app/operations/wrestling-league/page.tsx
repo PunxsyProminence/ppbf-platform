@@ -353,7 +353,7 @@ export default function WrestlingLeagueManagementPage() {
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
             <p className="t-eyebrow tracking-[0.18em]">Operations Workspace</p>
-            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Wrestling League Management</h1>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Wrestling League</h1>
             <p className="t-body max-w-[80ch]">
               Minimal skeleton by owner decision: season, event, and roster records only.
               Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real

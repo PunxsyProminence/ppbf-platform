@@ -56,7 +56,7 @@ function ChalkboardDesk() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Gym Communications</p>
           <h1 className="mt-[var(--s3)] font-display text-[length:var(--t-xl)] text-[color:var(--bone-100)]">
-            The boards
+            Chalkboard
           </h1>
           <p className="mt-[var(--s4)] max-w-[62ch] text-[length:var(--t-sm)] leading-7 text-[color:var(--bone-300)]">
             One line each, in your own words, changed whenever you feel like it. Writing on a board rubs out

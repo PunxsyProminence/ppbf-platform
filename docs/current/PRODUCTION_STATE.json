@@ -2,15 +2,15 @@
   "_readme": "Audit snapshot, not a controller and not bot-owned. Live Azure state and current GitHub workflow evidence outrank this file (docs/AI_DELIVERY_PIPELINE.md, Production-state records). Any authorized release verifier may propose an update only after directly observing the relevant environment -- workflow-run logs and live HTTPS probes count as observation of what they actually show, and nothing more. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
   "environments": {
     "staging": {
-      "deployed_sha": "ffa68d138177e65d1cb73fa2fe35d36092256b30",
-      "deployed_image_digest": "sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0",
-      "deployment_timestamp": "2026-10-18T00:10:54Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39081404756",
+      "deployed_sha": "fe3c6bee29ab75167212d1fd45e5c24916df012b",
+      "deployed_image_digest": "sha256:8aa1b896534fcaf8d9c7176e17a4d1e0b008e32d6d7e8e5de6494a53d1ddf1e3",
+      "deployment_timestamp": "2026-10-18T15:34:47Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39140424325",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000281",
-      "last_verified_by": "housekeeping lane HK (Claude Code), 2026-10-18, docs only. It did not dispatch, approve or run any deploy. Instruments: gh run list / gh run view (job-step listings and job logs) and the staging-image-digest artifact of deploy-staging run 39081404756, read-only. No live HTTPS probe and no Azure read.",
-      "last_verified_at": "2026-10-18T01:55:11Z",
-      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 29): deploy-staging run 39081404756, head ffa68d138177e65d1cb73fa2fe35d36092256b30, job 117538906403 conclusion success, 34 steps: 25 success and 9 skipped (Resolve Staging Database Connection For Gate, Resolve Staging Default Organization For Gate, Mint Ephemeral Gate Athlete PIN, Provision Gate Fixture Accounts, Run SHADOW E2E Gate, Guardian Contact Runtime Probe, Runtime Verification Ledger, Deactivate Gate Athlete Fixture, Report Gate Athlete Fixture Still Live), the SHADOW gate being off for this run. Inputs from the log: EXPECTED_SHA ffa68d138177e65d1cb73fa2fe35d36092256b30, SCHEMA_MIGRATIONS_COMPLETE CONFIRMED. The 'release digest' line reads sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0, the same as the staging-image-digest artifact. 'Waiting on revision app-ppbf-staging--0000281'; poll 4 read 'Running 100' at 2026-10-18T00:10:54Z. No later deploy-staging run existed at last_verified_at. NOT re-observed: known_staging_gaps (carried as history).",
+      "revision": "app-ppbf-staging--0000283",
+      "last_verified_by": "housekeeping lane HK (Claude Code), 2026-10-18, docs only. It did not dispatch, approve or run any deploy. Instruments: gh run list / gh run view (job-step listings and job logs) and the staging-image-digest artifacts of deploy-staging runs 39140424325 and 39097020732, read-only. No live HTTPS probe and no Azure read.",
+      "last_verified_at": "2026-10-18T16:32:00Z",
+      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 30): deploy-staging run 39140424325, head fe3c6bee29ab75167212d1fd45e5c24916df012b, job 117713554896 conclusion success, 34 steps: 25 success and 9 skipped (Resolve Staging Database Connection For Gate, Resolve Staging Default Organization For Gate, Mint Ephemeral Gate Athlete PIN, Provision Gate Fixture Accounts, Run SHADOW E2E Gate, Guardian Contact Runtime Probe, Runtime Verification Ledger, Deactivate Gate Athlete Fixture, Report Gate Athlete Fixture Still Live), the SHADOW gate being off for this run. Inputs from the log: EXPECTED_SHA fe3c6bee29ab75167212d1fd45e5c24916df012b, SCHEMA_MIGRATIONS_COMPLETE CONFIRMED. The 'release digest' line reads sha256:8aa1b896534fcaf8d9c7176e17a4d1e0b008e32d6d7e8e5de6494a53d1ddf1e3, the same as the staging-image-digest artifact. 'Waiting on revision app-ppbf-staging--0000283'; poll 4 read 'Running 100' at 2026-10-18T15:34:47Z. No later deploy-staging run existed at last_verified_at. NOT re-observed: known_staging_gaps (carried as history).",
       "known_staging_gaps": [
         "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again.",
         "SHADOW gate Quick Round (athlete tier) flakiness history, preserved from the 57bc8a5 deploy record: gate step 12 filtered once and passed on retry during run 31513782551 (2026-08-11) -- the third sighting on that tier (2026-08-01, twice 2026-08-11). Under the gate's two-consecutive threshold, so no run failed. The 2026-08-15 gate run (31854517806) passed; its per-step retry behaviour was not re-inspected, so this history is carried, not extended.",
@@ -83,20 +83,36 @@
         "deployment_timestamp": "2026-10-16T21:25:25Z",
         "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/38968691071",
         "revision": "app-ppbf-staging--0000280"
+      },
+      "superseded_record_2026-10-18_release29": {
+        "note": "Carried, not deleted. Release 29 staging; correct from 2026-10-18T00:10:54Z until the 04:31:28Z deploy below.",
+        "deployed_sha": "ffa68d138177e65d1cb73fa2fe35d36092256b30",
+        "deployed_image_digest": "sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0",
+        "deployment_timestamp": "2026-10-18T00:10:54Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39081404756",
+        "revision": "app-ppbf-staging--0000281"
+      },
+      "superseded_record_2026-10-18_ab0224e2": {
+        "note": "Carried, not deleted. A Release 30 candidate staged and never shipped: Jason chose \"A: Unfreeze, ship tomorrow (Rec.)\" (OD-2026-10-18-002). Correct from 2026-10-18T04:31:28Z until the 15:34:47Z deploy above. Digest from that run's staging-image-digest artifact; revision and traffic from its log ('Waiting on revision app-ppbf-staging--0000282'; poll 5 'Running 100').",
+        "deployed_sha": "ab0224e2b4ebb038a89b06e6f1422c829d8e6ae9",
+        "deployed_image_digest": "sha256:99b4e48cb791a223cbeb34ce880ccd4a4f521638d69393755a5049c41982f582",
+        "deployment_timestamp": "2026-10-18T04:31:28Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39097020732",
+        "revision": "app-ppbf-staging--0000282"
       }
     },
     "production": {
-      "deployed_sha": "ffa68d138177e65d1cb73fa2fe35d36092256b30",
-      "deployed_image_digest": "sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0",
-      "deployment_timestamp": "2026-10-18T00:17:20Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39081929784",
+      "deployed_sha": "fe3c6bee29ab75167212d1fd45e5c24916df012b",
+      "deployed_image_digest": "sha256:8aa1b896534fcaf8d9c7176e17a4d1e0b008e32d6d7e8e5de6494a53d1ddf1e3",
+      "deployment_timestamp": "2026-10-18T16:27:02Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39144853964",
       "container_app": "app-ppbf-production",
       "resource_group": "rg-ppbf-enterprise-staging",
-      "revision": "app-ppbf-production--0000187",
+      "revision": "app-ppbf-production--0000188",
       "app_origin": "https://www.punxsyprominence.org",
-      "last_verified_by": "housekeeping lane HK (Claude Code), 2026-10-18, docs only. It did not dispatch, approve or run any deploy. Instruments: gh run list / gh run view (job-step listings and job logs) and the staging-image-digest artifact of deploy-staging run 39081404756, read-only. No live HTTPS probe and no Azure read.",
-      "last_verified_at": "2026-10-18T01:55:11Z",
-      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 29): deploy-production run 39081929784, head ffa68d138177e65d1cb73fa2fe35d36092256b30, guard job 117540485709 (6 of 6 steps success) and build-and-deploy job 117540501351 (19 of 19 steps success, 00:15:50Z to 00:17:24Z). Inputs read from the guard log: CONFIRM_SHA ffa68d138177e65d1cb73fa2fe35d36092256b30, RELEASE_DIGEST sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0, MIGRATIONS_COMPLETE CONFIRMED; ALLOW_ROLLBACK NO in the build-and-deploy env. The digest equals the staging-image-digest artifact of deploy-staging run 39081404756. Provenance line: 'Digest sha256:897eb149... carries tag ffa68d138177e65d1cb73fa2fe35d36092256b30 -- built from this commit.' Revision and digest from the line 'Latest revision app-ppbf-production--0000187 runs image <acr>/ppbf-frontend@sha256:897eb149...'; traffic poll 5 read 'Running 100' at 2026-10-18T00:17:20Z. Release 28's values are carried as the last row of release_history_2026-10-14_to_2026-10-16. NOT re-observed by this update: resource_group, app_origin, and every known_production_gaps entry; they are carried from the earlier records.",
+      "last_verified_by": "housekeeping lane HK (Claude Code), 2026-10-18, docs only. It did not dispatch, approve or run any deploy. Instruments: gh run list / gh run view (job-step listings and job logs) and the staging-image-digest artifacts of deploy-staging runs 39140424325 and 39097020732, read-only. No live HTTPS probe and no Azure read.",
+      "last_verified_at": "2026-10-18T16:32:00Z",
+      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 30): deploy-production run 39144853964, head fe3c6bee29ab75167212d1fd45e5c24916df012b, guard job 117726514687 (6 of 6 steps success) and build-and-deploy job 117726534101 (19 of 19 steps success, 16:25:00Z to 16:27:05Z). Inputs read from the guard log: CONFIRM_SHA fe3c6bee29ab75167212d1fd45e5c24916df012b, RELEASE_DIGEST sha256:8aa1b896534fcaf8d9c7176e17a4d1e0b008e32d6d7e8e5de6494a53d1ddf1e3, MIGRATIONS_COMPLETE CONFIRMED; ALLOW_ROLLBACK NO in the build-and-deploy env. The digest equals the staging-image-digest artifact of deploy-staging run 39140424325. Provenance line: 'Digest sha256:8aa1b896... carries tag fe3c6bee29ab75167212d1fd45e5c24916df012b -- built from this commit.' The log has event schema.verify.ok and 'Production smoke checks passed.' Revision and digest from the line 'Latest revision app-ppbf-production--0000188 runs image <acr>/ppbf-frontend@sha256:8aa1b896...'; traffic poll 5 read 'Running 100' at 2026-10-18T16:27:02Z. Production migrations for this release: apply-migrations runs 39095426701 (success 2026-10-18T04:07:07Z) and 39140422123 (success 2026-10-18T15:47:40Z). Release 29 is carried as superseded_record_2026-10-18_release29. NOT re-observed by this update: resource_group, app_origin, and every known_production_gaps entry; they are carried from the earlier records.",
       "known_production_gaps": [
         "Production reference data is NOT seeded -- re-observed directly 2026-08-15: pilot.drill_library and pilot.disciplines both count 0 rows. The schema is present and the code is deployed, but seed-reference-data has never been run against production, so /coach/cohorts and /coach/disciplines render empty lists -- missing data, not a broken page. Still blocked on seed_account_id: drill-library (and therefore dataset 'all') requires it, production's active platform owner is Admin@punxsyprominence.org with a CAPITAL A, the lowercase row is retired, and no read-only workflow exposes the id -- it has to come from a human who can read it out of the database. Production also has ZERO session scripts (the seed for those is separately blocked on pilot_ssb_content, see the staging entry), so the newly deployed /coach/session-scripts browse renders an honest empty state until either seed is fixed or scripts are authored.",
         "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
@@ -261,6 +277,14 @@
           }
         ],
         "release_22": "deploy-production run 38445860846 on 65dffdf27c33258c3ff44851ebb861ac6b248d10 concluded failure (2026-10-13T19:49:35Z). Per the Overwatch handover (REPORTED) it stopped at the production schema check, so nothing was deployed. Release 23 replaced it."
+      },
+      "superseded_record_2026-10-18_release29": {
+        "note": "Carried, not deleted. Release 29 production; correct from 2026-10-18T00:17:20Z until the 16:27:02Z deploy above. deploy-production run 39081929784 was the only success between them (gh run list, 2026-10-18).",
+        "deployed_sha": "ffa68d138177e65d1cb73fa2fe35d36092256b30",
+        "deployed_image_digest": "sha256:897eb149e6d39e65e1eb20a6ad1b96f3a7545309561dc038a39982d67423f6f0",
+        "deployment_timestamp": "2026-10-18T00:17:20Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39081929784",
+        "revision": "app-ppbf-production--0000187"
       }
     }
   },
@@ -310,8 +334,8 @@
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
   "docs_only_verification_2026-08-19": "SUPERSEDED 2026-08-23. Both environments now run 2238ea17; see the environment entries above.\n\nSUPERSEDED 2026-08-22 -- kept because a note that was believed and then found wrong is worth more in place than deleted. This note said, correctly at the time and directly from the Actions API, that the most recent successful runs of both workflows sat on 1da832e9 (PR #391) and that ~122 commits from roughly PR #412 onward were undeployed. Both halves are now false: production advanced three times (latest run 32418590207 on a11ea7c1, 2026-08-20) and staging advanced several more (latest run 32526743194 on 247bf977, 2026-08-21). The undeployed batch is 22 commits and 2 migrations from a11ea7c1, not ~122 commits. The failure mode is worth naming: the note carried its own date but the deployed_sha fields it agreed with did not read as dated, so a later audit sized the pending release at 25 migrations and 62 commits from the stale value and was wrong by an order of magnitude in the direction that makes a release look scarier than it is.",
-  "last_updated_by": "housekeeping lane HK (Claude Code), 2026-10-18: both environment entries moved to Release 29 from GitHub Actions run evidence only (see each entry's last_verification_method); Release 28 staging carried as superseded_record_2026-10-18, Release 28 production already carried in the release history.",
-  "last_updated_at": "2026-10-18T01:55:11Z",
+  "last_updated_by": "housekeeping lane HK (Claude Code), 2026-10-18: both environment entries moved to Release 30 from GitHub Actions run evidence only (see each entry's last_verification_method); Release 29 carried in each environment as superseded_record_2026-10-18_release29, and the unshipped ab0224e2 staging deploy as superseded_record_2026-10-18_ab0224e2.",
+  "last_updated_at": "2026-10-18T16:32:00Z",
   "production_seed_identity_2026-08-24": "check-database run 32770083477 (check=seed-identity, target=production, read-only) resolved production privileged accounts: 8 organizations, 34 privileged accounts, 6 active. The active privileged seeder is \"Admin@punxsyprominence.org\" (CAPITAL A), platform_owner, org ppbf-default-org. The lowercase \"admin@punxsyprominence.org\" exists and is active=NO. The check emits an explicit CASE-DIFFERING DUPLICATES warning; copy the exact string including capitals. Staging uses a DIFFERENT account and its value must never be reused here.",
   "production_reference_data_2026-08-24": "SEEDED. seed-reference-data run 32788628209 (target=production, dataset=all, mode=apply, seed_account_id=Admin@punxsyprominence.org, organization_id left blank so it resolved from the app-ppbf-production default org secret) completed success 2026-08-24T23:25:48Z against ppbf-pg-195892. All four loaders PASS. Inserted, matching the dry-run (run 32787708007) exactly: drill_library 119, drill_scale_levels 357, drill_stop_rules 674, drill_cues 258 rows processed, disciplines 5, competence_levels 6, cohort_definitions 6, session_scripts 3, session_script_blocks 65, session_script_renderings 4 -- every one reporting \"0 already present\", i.e. a genuine first fill of an empty production catalog set, not a re-run. The dry-run had proved the same numbers with nothing written (\"Rolled back. Nothing was written.\"), which is why the apply was safe to make. Run summary: \"Written. The loaders are idempotent -- re-running adds no duplicates.\" NOT OBSERVED: no authenticated end-user read of these catalogs through the deployed app; the evidence is the loader output, not a browser."
 }

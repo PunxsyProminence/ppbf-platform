@@ -166,7 +166,7 @@ export const guideSections: GuideSection[] = [
     whatThisAreaIsFor: 'Athlete workspace for readiness, goals, tasks, and visible progress.',
     whoShouldUseIt: 'Athletes and coaches guiding athlete workflow.',
     activeNow: 'Athlete dashboard and training support surfaces.',
-    placeholderOrPlanned: 'Progression and My Video read real records; automatic video analysis is planned.',
+    placeholderOrPlanned: 'Progression and My Film read real records; automatic video analysis is planned.',
     doNotTestYet: 'No AI scoring, no automated recommendations, no production video inference.',
     usefulFeedback: 'Report readability, missing fields, and timeline clarity needs.',
     whereToGoNext: 'Coach workspace for review flow, or Parent guide for family visibility.',

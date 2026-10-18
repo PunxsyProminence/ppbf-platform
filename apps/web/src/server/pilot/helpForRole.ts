@@ -69,10 +69,10 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner'>, PlainHelp> = {
     topics: [
       // app/athlete/dashboard/page.tsx mounts AthleteWorkspace: check-ins, session notes, goals.
       { title: 'Your workspace', text: 'Your dashboard is your athlete workspace: check-ins, session notes and goals.' },
-      // app/athlete/video-analysis/page.tsx: h1 "Your Film", streams video with coach notes.
-      { title: 'Your Film', text: 'Your Film is where you watch film and read the notes your coach left on it.' },
-      // app/athlete/progression-intelligence/page.tsx: h1 "Your Progression", lists assigned gaps and a log.
-      { title: 'Your Progression', text: 'Your Progression shows the progression work assigned to you, and you log it there.' },
+      // app/athlete/video-analysis/page.tsx: h1 "My Film", streams video with coach notes.
+      { title: 'My Film', text: 'My Film is where you watch film and read the notes your coach left on it.' },
+      // app/athlete/progression-intelligence/page.tsx: h1 "My Progression", lists assigned gaps and a log.
+      { title: 'My Progression', text: 'My Progression shows the progression work assigned to you, and you log it there.' },
       // app/api/pilot/shadow/chat/route.ts:563 admits the athlete role.
       { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },
     ],
@@ -100,7 +100,7 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner'>, PlainHelp> = {
     anchor: 'coach-guide',
     topics: [
       // Directories under app/coach: drills, workout-templates, behavior-standards,
-      // decision-loop, video-analysis (h1 "Coach Video Console").
+      // decision-loop, video-analysis (h1 "Video Analysis").
       { title: 'Coach workspace', text: 'The coach workspace opens your drills, workout templates, behavior standards, the Decision Loop and the video console.' },
       // app/api/pilot/shadow/chat/route.ts:563 admits the coach role.
       { title: 'SHADOW', text: 'SHADOW is a chat helper you can ask questions in.' },

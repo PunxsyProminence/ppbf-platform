@@ -191,8 +191,8 @@ export default function PrintRoom() {
           accident if that ever changes. */}
       <div className="print-room-bar screen-only">
         <div>
-          <p className="t-eyebrow">Print</p>
-          <h1 className="print-room-title">Something to take home</h1>
+          <p className="t-eyebrow">Something to take home</p>
+          <h1 className="print-room-title">Print</h1>
           <p className="t-body">
             Two sheets: the member card, and a certificate for one thing they did. Letter paper. Print it, or save
             it as a PDF from the same dialog.

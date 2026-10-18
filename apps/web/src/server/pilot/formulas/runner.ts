@@ -106,15 +106,23 @@ export interface FormulaInputRequirement {
  * entry here back through `calculateStoredFormula` so the two cannot drift
  * apart without a test going red.
  *
- * SCOPE: MVP-03 and MVP-04 only, and that is a fact about producers rather
- * than a preference. Six of the other ten consume observation kinds no code in
- * this application emits (`session_rpe`, `duration`, `punch_count`,
- * `round_count`, `active_time`, `round_output`); autoCalculation.test.ts
- * measures that from the source tree rather than asserting it. Of the
- * remainder, MVP-06/MVP-09/MVP-10/MVP-12 are policy formulas whose parameters
- * no caller can supply without an owner decision, and MVP-11's attainment
- * window is undefined in code with no policy slot to hold it. See
- * autoCalculation.ts.
+ * SCOPE: MVP-03 and MVP-04, and the others are absent for stated reasons
+ * (traced by lane L50, 2026-10-17):
+ *   - MVP-01 and MVP-12 are already calculated where they are read, not
+ *     stored here: session load as rpe x duration_minutes over pilot.sessions
+ *     (performanceAnalytics.ts, weeklySessionLoad.ts; the load migration
+ *     keeps derived load unstored on purpose), and the seven-day weight change
+ *     under Jason's 2026-10-04 policy in athleteBodyMass.ts#summarizeBodyMass.
+ *     Running them here too would be a second copy of each.
+ *   - MVP-02/05/07/08 consume kinds nothing in this application emits
+ *     (`punch_count`, `active_time`, `round_output`); autoCalculation.test.ts
+ *     measures that from the source tree rather than asserting it.
+ *   - MVP-06 is not run: contact stays counts-only (Jason, 2026-10-17, "A:
+ *     Counts only").
+ *   - MVP-09/MVP-10 wait on a named metric and named cut-offs.
+ *   - MVP-11 spans contexts, so it is not an entry here: it runs over the
+ *     athlete's last 28 days of sessions (Jason, 2026-10-17), selected by
+ *     autoCalculation.ts#focusAttainmentWindow.
  */
 export const FORMULA_INPUT_REQUIREMENTS: readonly FormulaInputRequirement[] = Object.freeze([
   Object.freeze({

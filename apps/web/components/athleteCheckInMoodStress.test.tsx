@@ -58,6 +58,26 @@ test('mood and stress are on the short form, before "+ Add more detail"', async 
   expect(screen.queryByText('How focused do you feel?')).toBeNull();
 });
 
+test('motivation is behind "+ Add more detail": the short form is sleep, energy, soreness, mood, stress', async () => {
+  await renderPanel();
+  const shortForm = screen.getAllByRole('group').map((group) => group.querySelector('legend')?.textContent);
+  expect(shortForm).toEqual(['How much energy do you have?', 'How sore are you?', MOOD_Q, STRESS_Q]);
+  expect(screen.getByLabelText('How many hours did you sleep?')).toBeInTheDocument();
+  expect(screen.queryByText('How much do you want to train today?')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '+ Add more detail' }));
+  expect(screen.getByText('How much do you want to train today?')).toBeInTheDocument();
+});
+
+test('a motivation answer given in the detail is still sent under its own name', async () => {
+  const fetchMock = installFetch();
+  await renderPanel();
+  fireEvent.click(screen.getByRole('button', { name: '+ Add more detail' }));
+  fireEvent.click(screen.getByRole('button', { name: 'How much do you want to train today? 4: Want to' }));
+  await submit();
+  expect(sentBody(fetchMock)).toEqual({ motivation: 4 });
+});
+
 test('picked answers are sent under their own names; skipped ones are not sent at all', async () => {
   const fetchMock = installFetch();
   await renderPanel();

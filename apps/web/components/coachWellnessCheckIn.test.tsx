@@ -226,6 +226,16 @@ function installFetch(
     // Map items 20 and 10: the selected athlete's sleep trend and bout history.
     if (url.includes('/api/pilot/coach/athlete-sleep-trend')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/coach/athlete-competition-history')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/coach/athlete-attendance')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return jsonResponse({
+        ok: true,
+        attendance: {
+          athlete_id: athleteId, window_from: '2026-09-21', window_to: '2026-10-18', days_present: 3, days_absent: 1,
+          days_excused: 0, attendance_rate: 0.75, last_present_day: '2026-10-06', days_since_last_present: 12,
+        },
+      });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -395,6 +405,17 @@ describe('the read starts from a deliberate pick', () => {
     expect(requests[0]).toContain('athlete_id=ath_2');
     expect(requests[0]).not.toContain('athlete_id=ath_1');
     expect(within(panel()).getByText(/Today's report for Sam R\./)).not.toBeNull();
+  });
+});
+
+describe('the attendance lines (OD-2026-10-17-026 (c)) sit in the picked athlete\'s wellness view', () => {
+  it('asks the attendance route for the picked athlete and shows the register\'s numbers', async () => {
+    const fetchMock = await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }));
+    await pickAthlete('Sam R.');
+    const calls = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/coach/athlete-attendance'));
+    expect(calls).toEqual([expect.stringContaining('athlete_id=ath_2')]);
+    const lines = await within(panel()).findByTestId('coach-athlete-attendance');
+    expect(within(lines).getByText(/75% \(present 3 of 4 days marked on the class register\)/)).not.toBeNull();
   });
 });
 

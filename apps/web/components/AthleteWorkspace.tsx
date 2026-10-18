@@ -4338,17 +4338,17 @@ export default function AthleteWorkspace() {
           <summary className="t-label cursor-pointer">More in your workspace</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Film</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
               <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Your Film
+                Open My Film
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Your Progression</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
               <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
               <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Your Progression
+                Open My Progression
               </Link>
             </article>
             {/* /athlete/dashboard/sparring existed with a real, tested,

@@ -38,7 +38,7 @@ export default async function GymSetupPage() {
       <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow">Gym Setup</p>
-          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Before The First Class</h1>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Setup</h1>
           <p className="t-body mt-[var(--s3)] max-w-3xl">
             {left === 0
               ? 'Every step below is done, optional, or done outside the app.'

@@ -2217,8 +2217,8 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Nothing behind them works yet/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Your Film' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open Your Progression' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open My Film' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open My Progression' })).toBeTruthy();
   });
 
   test('the sparring log is reachable from the workspace, not only by typing the URL', async () => {
