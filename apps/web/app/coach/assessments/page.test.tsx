@@ -9,7 +9,7 @@
  * says so when a save fails instead of pretending it worked.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import CoachAssessmentsPage from './page';
@@ -40,6 +40,8 @@ const PAYLOAD = {
     { assessment_id: 'h1', protocol_id: 'ppbf-jump-cmj-height', kind: 'jump', administered_on: '2026-10-01', value: 41.5, skill_family_id: null, note: '' },
     { assessment_id: 'h2', protocol_id: 'ppbf-skill-rating-skill-01', kind: 'skill_rating', administered_on: '2026-10-02', value: 3, skill_family_id: 'SKILL-01', note: '' },
     { assessment_id: 'h3', protocol_id: 'ppbf-skill-rating-skill-02', kind: 'skill_rating', administered_on: '2026-10-02', value: 4, skill_family_id: 'SKILL-02', note: '' },
+    // From the test day (OD-2026-10-17-026): level and shuttle as the beep track showed them.
+    { assessment_id: 'h4', protocol_id: 'ppbf-shuttle-20m', kind: 'shuttle', administered_on: '2026-10-03', value: 6, shuttle: 3, skill_family_id: null, note: '' },
   ],
 };
 
@@ -113,6 +115,10 @@ test('shows the one athlete\'s dated history with no total, average or rank', as
   expect(text).toContain('41.5 cm');
   expect(text).toContain('3 Solid');
   expect(text).toContain('4 Applies');
+  // The shuttle under its own heading, never as a skill rating or a jump.
+  expect(within(history).getByRole('heading', { name: '20-m shuttle run' })).toBeTruthy();
+  expect(text).toContain('Level 6, shuttle 3');
+  expect(text).not.toMatch(/6 cm|6 Solid|6 Applies/);
   expect(text).not.toMatch(/total|average|rank|score|percentile/i);
   // 3 + 4 would be 7; it must not appear as a combined figure.
   expect(text).not.toMatch(/\b7\b/);

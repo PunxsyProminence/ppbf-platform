@@ -123,6 +123,7 @@ const FLOOR_ROUTES = [
   'coach/sparring-exposure',
   'coach/attempt-log',
   'coach/assessments',
+  'coach/test-day',
   'coach/injuries',
   'shadow',
   'parent/safety',
