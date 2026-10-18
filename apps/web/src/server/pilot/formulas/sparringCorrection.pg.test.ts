@@ -536,3 +536,58 @@ describe('personal baseline from the daily check-in (MVP-09; OD-2026-10-17-020)'
     }
   });
 });
+
+describe('data completeness (MVP-10) over the whole-session boxes (Jason 2026-10-17: 80% / 50%)', () => {
+  test('a blank box is a counted gap; filling it re-scores completeness and runs what the box unlocks', async () => {
+    const contextId = 'sparring_1000';
+    const observedAt = '2026-10-17T15:00:00.000Z';
+    const box = async (kind: ObservationKind, value: number | null, unit: 'count' | 'minutes', fieldKey: string) => repository.saveFormulaObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId,
+      kind,
+      value,
+      unit,
+      dimensions: { ...SESSION_TOTAL_DIMENSIONS, fieldKey },
+      observedAt,
+      source: { type: 'manual', quality: 'moderate', referenceId: `ref-${fieldKey}` },
+      idempotencyKey: `${contextId}-${fieldKey}`,
+      createdByAccountId: ACCOUNT_ID,
+    });
+    await box('punch_count', 90, 'count', 'all_thrown');
+    const blankLanded = await box('punch_landed', null, 'count', 'all_landed');
+    await box('active_time', 12, 'minutes', 'minutes_worked');
+    await repository.saveFormulaObservation({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, contextId, kind: 'round_count', value: 6, unit: 'count',
+      dimensions: { ...SESSION_TOTAL_DIMENSIONS }, observedAt,
+      source: { type: 'manual', quality: 'moderate', referenceId: 'ref-rounds' },
+      idempotencyKey: `${contextId}-round_count`, createdByAccountId: ACCOUNT_ID,
+    });
+    await logEntry(contextId, observedAt, { thrown: 40, landed: 18, taken: 3 });
+
+    let latest = await latestValues();
+    expect(latest['MVP-10:value']).toBeCloseTo(2 / 3, 5);
+    expect(latest['MVP-02:punches_per_round']).toBe(15);
+    // All punches landed was left blank: no MVP-04, no MVP-05.
+    expect(latest['MVP-04:value']).toBeUndefined();
+    expect(latest['MVP-05:value']).toBeUndefined();
+    const completeness = (await repository.listLatestFormulaResultsPerOutput({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-10',
+    }))[0];
+    expect(completeness.quality.confidence).toBe('MODERATE');
+
+    // Filling the blank through a fix: what the observations route now does --
+    // re-run what the blank fed, then detect what the context now satisfies.
+    await correct({ ...blankLanded, kind: 'punch_landed' }, 30);
+    await autoCalculation.autoCalculateForObservationContext({ organizationId: ORG_ID, athleteId: ATHLETE_ID, contextId });
+
+    latest = await latestValues();
+    expect(latest['MVP-10:value']).toBe(1);
+    expect(latest['MVP-04:value']).toBe(27);
+    expect(latest['MVP-05:value']).toBe(2.5);
+    const filled = (await repository.listLatestFormulaResultsPerOutput({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-10',
+    }))[0];
+    expect(filled.quality.confidence).toBe('HIGH');
+  });
+});
