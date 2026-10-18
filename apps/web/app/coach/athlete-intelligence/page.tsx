@@ -107,12 +107,15 @@ function FormulaOutputCard({ entry }: { entry: FormulaOutputEntry }) {
   const display = validationDisplay(result.validation.state);
   const computed = formatGymStamp(result.computedAt);
   const metricKey = typeof result.parameters.metricKey === 'string' ? result.parameters.metricKey : null;
-  const baselineItem = result.formulaId === 'MVP-09' && metricKey
+  // The check-in baseline is the day-window policy; the older 8-12 entry one
+  // has its own thresholds, so the check-in wording is not put on it.
+  const checkInBaseline = result.formulaId === 'MVP-09' && 'windowDays' in result.parameters;
+  const baselineItem = checkInBaseline && metricKey
     ? BASELINE_ITEM_LABELS[metricKey] ?? metricKey
     : null;
   // 7-13 entries: the engine's SHORT_BASELINE warning (Jason: "provisional"
   // until about 14). Under 7 the result carries no value and says why below.
-  const provisional = result.formulaId === 'MVP-09' && result.validation.warnings.includes('SHORT_BASELINE');
+  const provisional = checkInBaseline && result.validation.warnings.includes('SHORT_BASELINE');
 
   return (
     <li className="mat-leather rounded-[var(--r-md)] p-[var(--s3)]">

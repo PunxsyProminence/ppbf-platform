@@ -178,6 +178,12 @@ describe('role gates in source', () => {
         + "'the gate admits exactly the roles the limits and caps modules admit'",
     },
     {
+      // The office records family support (PH-12b): Q-E A, "Support: org admin, admin".
+      file: 'src/server/pilot/familySupportRecords.ts',
+      expression: 'SUPPORT_ROLES',
+      reason: "list names both 'organization_admin' and 'admin'",
+    },
+    {
       file: 'src/server/pilot/credentialPolicy.ts',
       expression: 'PASSWORD_ROLES',
       reason: 'credential choice, not a role gate: parent only',

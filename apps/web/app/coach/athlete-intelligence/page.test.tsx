@@ -419,3 +419,22 @@ describe('personal baseline cards', () => {
     expect(screen.getByTestId('no-value').textContent).toContain('Needs 7 check-ins in the last 28 days');
   });
 });
+
+describe('the older 8-12 entry baseline is not given check-in wording', () => {
+  it('shows neither the item label nor the provisional mark', async () => {
+    await renderAndPick(model({
+      formulaOutputs: {
+        availability: 'available',
+        items: [entry({}, {
+          formulaId: 'MVP-09',
+          outputKey: 'raw_change',
+          parameters: { metricKey: 'jab_count', windowSize: 8, minimumHistory: 4, adequateHistory: 8 },
+          validation: { state: 'warning', hardBlocks: [], warnings: ['SHORT_BASELINE'] },
+        })],
+      },
+    }));
+
+    expect(screen.getByText(/MVP-09 · raw_change/)).toBeTruthy();
+    expect(screen.queryByTestId('baseline-provisional')).toBeNull();
+  });
+});

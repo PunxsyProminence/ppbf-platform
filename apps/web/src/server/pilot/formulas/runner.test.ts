@@ -265,4 +265,41 @@ describe('stored MVP formula runner', () => {
       (result) => result.inputObservationIds.includes('punches-new'),
     )).toBe(true);
   });
+
+  // Lane L50: a check-in item's baseline is the check-in's own. A hand-picked
+  // numeric observation run through POST /results must not become the coach's
+  // "latest" sleep baseline.
+  describe('check-in baselines are built from check-in answers only', () => {
+    const dayWindow = { metricKey: 'sleep_hours', windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 };
+    const sleep = (id: string, contextId: string) => observation({
+      id, kind: 'numeric', unit: 'hours', value: 8, contextId, dimensions: { metricKey: 'sleep_hours' },
+    });
+
+    test('an input from outside a check-in is refused', async () => {
+      mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1'), sleep('b', 'manual-1')]);
+      await expect(runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09',
+        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'p',
+      })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
+      expect(mockSaveResults).not.toHaveBeenCalled();
+    });
+
+    test('the older 8-12 entry policy cannot be used for a check-in item', async () => {
+      mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1')]);
+      await expect(runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09', observationIds: ['a'],
+        parameters: { metricKey: 'sleep_hours', windowSize: 8, minimumHistory: 4, adequateHistory: 8 },
+        policyVersion: 'p',
+      })).rejects.toMatchObject({ code: 'INVALID_INPUT_SET' });
+    });
+
+    test('check-in answers under the day-window policy run', async () => {
+      mockGetObservations.mockResolvedValue([sleep('a', 'check-in:1'), sleep('b', 'check-in:2')]);
+      const output = await runStoredMvpFormula({
+        organizationId: 'org-1', athleteId: 'athlete-1', formulaId: 'MVP-09',
+        observationIds: ['a', 'b'], parameters: dayWindow, policyVersion: 'p',
+      });
+      expect(output.results.length).toBeGreaterThan(0);
+    });
+  });
 });

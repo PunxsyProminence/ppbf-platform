@@ -27,17 +27,15 @@ import {
   saveFormulaObservation,
 } from './repository';
 import { runStoredMvpFormula } from './runner';
-import type { FormulaResult, FormulaUnit } from './types';
+import {
+  CHECK_IN_CONTEXT_PREFIX,
+  type FormulaResult,
+  type FormulaUnit,
+} from './types';
 
 export const CHECK_IN_BASELINE_POLICY_VERSION = 'check-in-baseline-2026-10-17';
 
-/**
- * The context every check-in observation is filed under (`check-in:<id>`, also
- * used by athleteBodyMass.ts). A baseline value counts only from here: the
- * generic observations route refuses `numeric` writes into these contexts, so
- * nothing but the check-in itself can put a number into an athlete's baseline.
- */
-export const CHECK_IN_CONTEXT_PREFIX = 'check-in:';
+export { CHECK_IN_CONTEXT_PREFIX } from './types';
 export const CHECK_IN_BASELINE_WINDOW_DAYS = 28;
 export const CHECK_IN_BASELINE_MINIMUM_HISTORY = 7;
 export const CHECK_IN_BASELINE_ADEQUATE_HISTORY = 14;
@@ -66,66 +64,74 @@ export async function recordCheckInBaselines(input: {
   values: Readonly<Partial<Record<CheckInBaselineMetricKey, number | null>>>;
 }): Promise<readonly FormulaResult[]> {
   const results: FormulaResult[] = [];
+  let firstFailure: unknown = null;
   for (const metric of CHECK_IN_BASELINE_METRICS) {
     const raw = input.values[metric.metricKey];
     const value = raw == null ? null : Number(raw);
     if (value == null || !Number.isFinite(value)) continue;
+    // One item failing must not cost the athlete the other two; the first
+    // failure is rethrown after all three have been tried.
+    try {
 
-    const idempotencyKey = `check-in:${input.checkInId}:${metric.metricKey}`;
-    const current = await saveFormulaObservation({
-      organizationId: input.organizationId,
-      athleteId: input.athleteId,
-      contextId: `${CHECK_IN_CONTEXT_PREFIX}${input.checkInId}`,
-      kind: 'numeric',
-      value,
-      unit: metric.unit,
-      dimensions: { metricKey: metric.metricKey },
-      observedAt: input.observedAt,
-      source: {
-        type: 'manual',
-        quality: 'moderate',
-        referenceId: deterministicKey('check-in-baseline', {
-          organizationId: input.organizationId,
-          accountId: input.accountId,
-          idempotencyKey,
-        }),
-        qualityNotes: 'Athlete self-reported at check-in.',
-      },
-      idempotencyKey,
-      createdByAccountId: input.accountId,
-    });
+      const idempotencyKey = `check-in:${input.checkInId}:${metric.metricKey}`;
+      const current = await saveFormulaObservation({
+        organizationId: input.organizationId,
+        athleteId: input.athleteId,
+        contextId: `${CHECK_IN_CONTEXT_PREFIX}${input.checkInId}`,
+        kind: 'numeric',
+        value,
+        unit: metric.unit,
+        dimensions: { metricKey: metric.metricKey },
+        observedAt: input.observedAt,
+        source: {
+          type: 'manual',
+          quality: 'moderate',
+          referenceId: deterministicKey('check-in-baseline', {
+            organizationId: input.organizationId,
+            accountId: input.accountId,
+            idempotencyKey,
+          }),
+          qualityNotes: 'Athlete self-reported at check-in.',
+        },
+        idempotencyKey,
+        createdByAccountId: input.accountId,
+      });
 
-    const currentMs = Date.parse(current.observedAt);
-    const window = await getActiveObservationsOfKindInWindow({
-      organizationId: input.organizationId,
-      athleteId: input.athleteId,
-      kind: 'numeric',
-      observedAfter: new Date(currentMs - CHECK_IN_BASELINE_WINDOW_DAYS * DAY_MS).toISOString(),
-      observedAtOrBefore: current.observedAt,
-    });
-    const history = window.filter((observation) => (
-      observation.observationId !== current.observationId
-      && observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX)
-      && observation.dimensions?.metricKey === metric.metricKey
-      && observation.unit === metric.unit
-      && Date.parse(observation.observedAt) < currentMs
-    ));
+      const currentMs = Date.parse(current.observedAt);
+      const window = await getActiveObservationsOfKindInWindow({
+        organizationId: input.organizationId,
+        athleteId: input.athleteId,
+        kind: 'numeric',
+        observedAfter: new Date(currentMs - CHECK_IN_BASELINE_WINDOW_DAYS * DAY_MS).toISOString(),
+        observedAtOrBefore: current.observedAt,
+      });
+      const history = window.filter((observation) => (
+        observation.observationId !== current.observationId
+        && observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX)
+        && observation.dimensions?.metricKey === metric.metricKey
+        && observation.unit === metric.unit
+        && Date.parse(observation.observedAt) < currentMs
+      ));
 
-    const output = await runStoredMvpFormula({
-      organizationId: input.organizationId,
-      athleteId: input.athleteId,
-      formulaId: 'MVP-09',
-      observationIds: [...history.map((observation) => observation.observationId), current.observationId],
-      parameters: {
-        metricKey: metric.metricKey,
-        windowDays: CHECK_IN_BASELINE_WINDOW_DAYS,
-        minimumHistory: CHECK_IN_BASELINE_MINIMUM_HISTORY,
-        adequateHistory: CHECK_IN_BASELINE_ADEQUATE_HISTORY,
-        sdFloor: metric.sdFloor,
-      },
-      policyVersion: CHECK_IN_BASELINE_POLICY_VERSION,
-    });
-    results.push(...output.results);
+      const output = await runStoredMvpFormula({
+        organizationId: input.organizationId,
+        athleteId: input.athleteId,
+        formulaId: 'MVP-09',
+        observationIds: [...history.map((observation) => observation.observationId), current.observationId],
+        parameters: {
+          metricKey: metric.metricKey,
+          windowDays: CHECK_IN_BASELINE_WINDOW_DAYS,
+          minimumHistory: CHECK_IN_BASELINE_MINIMUM_HISTORY,
+          adequateHistory: CHECK_IN_BASELINE_ADEQUATE_HISTORY,
+          sdFloor: metric.sdFloor,
+        },
+        policyVersion: CHECK_IN_BASELINE_POLICY_VERSION,
+      });
+      results.push(...output.results);
+    } catch (error) {
+      firstFailure ??= error;
+    }
   }
+  if (firstFailure) throw firstFailure;
   return Object.freeze(results);
 }

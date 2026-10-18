@@ -1,3 +1,4 @@
+import { buildPersonalBaselineSnapshot } from './baseline';
 import { calculatePersonalBaselineComparison, type DayWindowBaselinePolicy } from './engine';
 import type { NumericObservation } from './types';
 
@@ -97,5 +98,27 @@ describe('personal baseline, day window', () => {
   ])('refuses %s as INVALID_POLICY', (_label, policy) => {
     expect(run(history(7, () => 3), 4, policy as DayWindowBaselinePolicy).raw_change.validation.hardBlocks)
       .toContain('INVALID_POLICY');
+  });
+});
+
+describe('day-window snapshots', () => {
+  // An item's first check-in, and the first after 28+ days away, both select
+  // no entries. Without the check-in anchor in the key they collided and the
+  // save refused the second as a conflict (lane L50 review).
+  test('two empty windows at different check-ins get different keys', () => {
+    const snapshot = (effectiveAt: string) => buildPersonalBaselineSnapshot({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      unit: 'hours',
+      history: [],
+      policy: { ...POLICY, metricKey: 'sleep_hours', policyVersion: 'check-in-baseline-2026-10-17' },
+      effectiveAt,
+    });
+    const first = snapshot('2026-09-01T12:00:00.000Z');
+    const later = snapshot('2026-10-11T12:00:00.000Z');
+    expect(first.observationIds).toEqual([]);
+    expect(later.observationIds).toEqual([]);
+    expect(first.calculationKey).not.toBe(later.calculationKey);
+    expect(first.windowSize).toBe(28);
   });
 });

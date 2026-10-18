@@ -10,7 +10,6 @@ import {
 import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
-import { CHECK_IN_CONTEXT_PREFIX } from '@/src/server/pilot/formulas/checkInBaseline';
 import {
   alertCoachToPainReport,
 } from '@/src/server/pilot/formulas/painReportAlert';
@@ -23,6 +22,7 @@ import {
   recalculateForSupersededObservation,
 } from '@/src/server/pilot/formulas/runner';
 import {
+  CHECK_IN_CONTEXT_PREFIX,
   FORMULA_UNITS,
   OBSERVATION_KINDS,
   type FormulaUnit,

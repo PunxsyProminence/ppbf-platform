@@ -163,6 +163,11 @@ export function buildPersonalBaselineSnapshot(input: {
     policyVersion: policy.policyVersion,
     parameters,
     observationIds,
+    // A day window is anchored at the check-in it was computed for. Two empty
+    // windows (an item's first check-in, and the first after 28+ days away)
+    // select the same ids -- none -- and without the anchor would share a key
+    // whose stored effectiveAt differs, which the save refuses as a conflict.
+    ...(isDayWindowBaselinePolicy(policy) ? { effectiveAt: new Date(input.effectiveAt!).toISOString() } : {}),
   });
   const effectiveAt = input.effectiveAt
     ?? selected[selected.length - 1]?.observedAt
