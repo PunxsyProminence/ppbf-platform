@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { explainLine } from '@/src/lib/sessionScriptWords';
+import CoachLiveTiles from '@/components/CoachLiveTiles';
 import RoundTimerControls from '@/components/RoundTimerControls';
+import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
@@ -593,7 +595,9 @@ export default function SessionScriptLiveDelivery({
   }
 
   return (
-    <section aria-label="Live session delivery" className="ge-scripts-live mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+    // Look B (OD-2026-10-17-011, carried to the coach's screen by lane L39 PR 3): the console is a
+    // board in the wall-board kit's frame, its top row the coach's tiles, its controls brass plates.
+    <section aria-label="Live session delivery" className="ge-scripts-live ge-wallboard ge-frame coach-live rounded-[var(--r-lg)] p-[var(--s5)]">
       <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
         <div>
           <p className="t-eyebrow">Delivering now</p>
@@ -623,8 +627,11 @@ export default function SessionScriptLiveDelivery({
         </div>
       </div>
 
+      {/* The top row: attendance, need attention and the SHADOW queue, counts only. */}
+      <CoachLiveTiles />
+
       {/* The floor controls: big, few, and above the fold. */}
-      <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+      <div className="coach-live-controls mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
         <button
           type="button"
           onClick={() => void mutateRun({ action: run.is_paused ? 'resume' : 'pause' }, 'pause-resume')}
@@ -682,7 +689,9 @@ export default function SessionScriptLiveDelivery({
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
           reads as a refused session action. */}
-      <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
+      <div className="coach-live-timer">
+        <RoundTimerControls runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />
+      </div>
 
       {actionError && (
         <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
@@ -757,6 +766,14 @@ export default function SessionScriptLiveDelivery({
                 >
                   <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                     <span className="plaque">{block.start_offset_min}-{block.end_offset_min} min</span>
+                    {blockKindWord(block.block_kind) && (
+                      <span className="coach-live-kind">
+                        <span className="ge-pictogram">
+                          <BlockKindIcon kind={block.block_kind} />
+                        </span>
+                        <span className="t-label">{blockKindWord(block.block_kind)}</span>
+                      </span>
+                    )}
                     <span className="t-body text-[color:var(--bone-200)]">{block.block_label}</span>
                     {isCurrent && <span className="t-label text-[color:var(--brass-300)]">Current</span>}
                     {!isCurrent && currentIndex >= 0 && (
