@@ -74,6 +74,23 @@ describe("an adult's own consent governs their playback (OD-2026-10-08-015)", ()
     await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_WITHDRAWN');
   });
 
+  test("their own video consent plays over a purged former guardian's retained no", async () => {
+    mockCheck.mockResolvedValue({
+      ...guardians(null, null),
+      guardianIds: [],
+      perGuardian: [],
+      retained: [{ parentId: 'former-1', status: 'withdrawn', coversVideo: false, publicUseAllowed: false, signedAt: null }],
+    });
+    mockAdultOwn.mockResolvedValue(own());
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('plays');
+  });
+
+  test("a photo-only row their own login did not record still refuses: it can refuse, never authorise", async () => {
+    mockCheck.mockResolvedValue(guardians('signed', true));
+    mockAdultOwn.mockResolvedValue(own({ coversVideo: false, recordedByOwnLogin: false }));
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+  });
+
   test('the adult read runs after the guardian read (which takes the lock), on the same client', async () => {
     const client = { query: jest.fn() };
     const order: string[] = [];
