@@ -112,6 +112,17 @@ function dimensionString(observation: NumericObservation, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+/** Whether an observation carries every dimension value the requirement
+ *  names for its kind -- the switch's own string reading, trimmed. */
+function isCandidate(
+  observation: NumericObservation,
+  requirement: FormulaInputRequirement,
+): boolean {
+  const wanted = requirement.dimensionValues[observation.kind];
+  if (!wanted) return true;
+  return Object.entries(wanted).every(([key, value]) => dimensionString(observation, key) === value);
+}
+
 function groupKeyFor(
   observation: NumericObservation,
   requirement: FormulaInputRequirement,
@@ -166,7 +177,7 @@ export function detectSatisfiedFormulaInputs(
     const kinds = new Set(Object.keys(requirement.kinds) as ObservationKind[]);
     const groups = new Map<string, NumericObservation[]>();
     for (const observation of observations) {
-      if (!kinds.has(observation.kind)) continue;
+      if (!kinds.has(observation.kind) || !isCandidate(observation, requirement)) continue;
       const key = groupKeyFor(observation, requirement);
       const members = groups.get(key) ?? [];
       members.push(observation);
