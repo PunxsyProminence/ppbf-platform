@@ -312,15 +312,15 @@ describe('the privacy leftovers check', () => {
   test('F-098: an athlete login holding a staff role or membership is counted, live ones apart, and fails the check alone', async () => {
     // What the old assign-admin left: Y's login made the gym's admin with its
     // athlete record kept. And an athlete login with no record behind it that
-    // holds a coach membership, switched off.
+    // holds a coach membership, the login itself switched off.
     await db.query(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider)
-       values ($1, 'organization_admin', $3, $4, 'ppbf_local'), ($2, 'athlete', $3, null, 'ppbf_local')`,
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag)
+       values ($1, 'organization_admin', $3, $4, 'ppbf_local', true), ($2, 'athlete', $3, null, 'ppbf_local', false)`,
       [PROMOTED, ATHLETE_ONLY, ORG, ATHLETE_Y],
     );
     await db.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $3, 'organization_admin', true), ($2, $3, 'coach', false)`,
+       values ($1, $3, 'organization_admin', true), ($2, $3, 'coach', true)`,
       [PROMOTED, ATHLETE_ONLY, ORG],
     );
 
