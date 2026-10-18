@@ -26,7 +26,7 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
-import type { ObservationKind } from './formulas/types';
+import { SESSION_TOTAL_DIMENSIONS, type FormulaResult, type ObservationKind } from './formulas/types';
 
 jest.setTimeout(180_000);
 
@@ -50,6 +50,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let repository: typeof import('./formulas/repository');
 let runner: typeof import('./formulas/runner');
 let autoCalculation: typeof import('./formulas/autoCalculation');
+let checkInBaseline: typeof import('./formulas/checkInBaseline');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -111,7 +112,9 @@ async function truncateAll(): Promise<void> {
   const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await client.connect();
   try {
-    await client.query('truncate pilot.shadow_formula_results, pilot.shadow_formula_observations');
+    await client.query(
+      'truncate pilot.shadow_formula_baseline_snapshots, pilot.shadow_formula_results, pilot.shadow_formula_observations',
+    );
   } finally {
     await client.end();
   }
@@ -123,7 +126,7 @@ async function observe(input: {
   kind: ObservationKind;
   value: number;
   observedAt: string;
-  unit?: 'count' | 'boolean_0_1';
+  unit?: 'count' | 'boolean_0_1' | 'minutes';
   dimensions?: Record<string, string>;
   organizationId?: string;
   athleteId?: string;
@@ -149,11 +152,12 @@ async function observe(input: {
 }
 
 /** What the observations route does after storing a correction. */
-async function correct(original: { observationId: string; kind: ObservationKind; contextId: string; observedAt: string; dimensions?: unknown }, value: number) {
+async function correct(original: { observationId: string; kind: ObservationKind; contextId: string; observedAt: string; dimensions?: unknown; unit?: string }, value: number) {
   const replacement = await observe({
     contextId: original.contextId,
     kind: original.kind,
     value,
+    unit: original.unit as 'count' | 'boolean_0_1' | 'minutes' | undefined,
     observedAt: original.observedAt,
     dimensions: (original.dimensions ?? {}) as Record<string, string>,
     supersedes: original.observationId,
@@ -166,12 +170,32 @@ async function correct(original: { observationId: string; kind: ObservationKind;
   });
 }
 
-async function logEntry(contextId: string, observedAt: string, numbers: { thrown: number; landed: number; taken: number }) {
+async function logEntry(
+  contextId: string,
+  observedAt: string,
+  numbers: { thrown: number; landed: number; taken: number; allLanded?: number },
+) {
   const thrown = await observe({ contextId, kind: 'punch_attempted', value: numbers.thrown, observedAt, dimensions: { punchType: 'Jab' } });
   const landed = await observe({ contextId, kind: 'punch_landed', value: numbers.landed, observedAt, dimensions: { punchType: 'Jab' } });
   const taken = await observe({ contextId, kind: 'punch_absorbed', value: numbers.taken, observedAt, dimensions: { opponentStance: 'Orthodox' } });
+  // The "All punches landed" box, which MVP-04 reads (and only when filled in).
+  const allLanded = numbers.allLanded === undefined
+    ? null
+    : await repository.saveFormulaObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId,
+      kind: 'punch_landed',
+      value: numbers.allLanded,
+      unit: 'count',
+      dimensions: { ...SESSION_TOTAL_DIMENSIONS },
+      observedAt,
+      source: { type: 'manual', quality: 'moderate', referenceId: `ref-${contextId}-all-landed` },
+      idempotencyKey: `${contextId}-punch_landed-session_total`,
+      createdByAccountId: ACCOUNT_ID,
+    });
   await autoCalculation.autoCalculateForObservationContext({ organizationId: ORG_ID, athleteId: ATHLETE_ID, contextId });
-  return { thrown, landed, taken };
+  return { thrown, landed, taken, allLanded };
 }
 
 async function latestValues(): Promise<Record<string, number | null>> {
@@ -226,6 +250,7 @@ beforeAll(async () => {
   repository = await import('./formulas/repository');
   runner = await import('./formulas/runner');
   autoCalculation = await import('./formulas/autoCalculation');
+  checkInBaseline = await import('./formulas/checkInBaseline');
 });
 
 afterAll(async () => {
@@ -251,27 +276,32 @@ beforeEach(truncateAll);
 
 describe('fixing two numbers of one sparring entry', () => {
   test('logging an entry calculates accuracy and connect differential with no ids chosen by anyone', async () => {
-    await logEntry('sparring_1000', '2026-10-17T15:00:00.000Z', { thrown: 10, landed: 5, taken: 3 });
+    await logEntry('sparring_1000', '2026-10-17T15:00:00.000Z', { thrown: 10, landed: 5, taken: 3, allLanded: 12 });
     expect(await latestValues()).toEqual({
       'MVP-03:accuracy_jab': 50,
-      'MVP-04:value': 2,
+      // All punches landed minus punches taken, never the jab count minus them.
+      'MVP-04:value': 9,
     });
   });
 
   test('the second fix re-runs only current results and the reader shows both corrections', async () => {
-    const entry = await logEntry('sparring_1000', '2026-10-17T15:00:00.000Z', { thrown: 10, landed: 5, taken: 3 });
+    const entry = await logEntry('sparring_1000', '2026-10-17T15:00:00.000Z', { thrown: 10, landed: 5, taken: 3, allLanded: 12 });
 
     const afterLanded = await correct(entry.landed, 4);
-    expect(afterLanded.map((result) => result.formulaId).sort()).toEqual(['MVP-03', 'MVP-04']);
+    expect(afterLanded.map((result) => result.formulaId)).toEqual(['MVP-03']);
 
     // On main this throws OBSERVATION_NOT_FOUND: the ORIGINAL MVP-03 result
     // still lists the landed observation the first fix replaced.
     const afterThrown = await correct(entry.thrown, 8);
     expect(afterThrown.map((result) => result.formulaId)).toEqual(['MVP-03']);
 
+    // A third fix, on the number MVP-04 reads.
+    const afterTaken = await correct(entry.taken, 2);
+    expect(afterTaken.map((result) => result.formulaId)).toEqual(['MVP-04']);
+
     expect(await latestValues()).toEqual({
       'MVP-03:accuracy_jab': 50,
-      'MVP-04:value': 1,
+      'MVP-04:value': 10,
     });
     const accuracy = (await repository.listLatestFormulaResultsPerOutput({
       organizationId: ORG_ID,
@@ -386,5 +416,123 @@ describe('focus attainment (MVP-11) over the last 28 days', () => {
 
     expect(first.map((result) => result.quality.completeness)).toEqual([0.66667]);
     expect(second.map((result) => result.resultId)).toEqual(first.map((result) => result.resultId));
+  });
+});
+
+describe('the whole-session boxes (Jason 2026-10-17, "B: Longer sparring form")', () => {
+  test('all thrown, all landed and minutes worked run MVP-02, MVP-04 and MVP-05; a fix re-runs them', async () => {
+    const contextId = 'sparring_1000';
+    const observedAt = '2026-10-17T15:00:00.000Z';
+    const total = async (kind: ObservationKind, value: number, unit: 'count' | 'minutes', key = kind) => repository.saveFormulaObservation({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      contextId,
+      kind,
+      value,
+      unit,
+      dimensions: { ...SESSION_TOTAL_DIMENSIONS },
+      observedAt,
+      source: { type: 'manual', quality: 'moderate', referenceId: `ref-${contextId}-${key}` },
+      idempotencyKey: `${contextId}-${key}`,
+      createdByAccountId: ACCOUNT_ID,
+    });
+    await total('punch_count', 90, 'count');
+    await total('round_count', 6, 'count');
+    const minutes = await total('active_time', 12, 'minutes');
+    await logEntry(contextId, observedAt, { thrown: 40, landed: 18, taken: 3, allLanded: 30 });
+
+    expect(await latestValues()).toEqual({
+      'MVP-02:punches_per_round': 15,
+      'MVP-02:punches_per_active_minute': 7.5,
+      'MVP-03:accuracy_jab': 45,
+      'MVP-04:value': 27,
+      'MVP-05:value': 2.5,
+    });
+
+    await correct(minutes, 10);
+    const after = await latestValues();
+    expect(after['MVP-02:punches_per_active_minute']).toBe(9);
+    expect(after['MVP-05:value']).toBe(3);
+  });
+});
+
+describe('personal baseline from the daily check-in (MVP-09; OD-2026-10-17-020)', () => {
+  const checkInOn = (day: number, values: { sleep_hours?: number; energy?: number; soreness?: number }) => (
+    checkInBaseline.recordCheckInBaselines({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      checkInId: `ci-${day}`,
+      observedAt: new Date(Date.parse('2026-10-01T12:00:00.000Z') + day * 24 * 60 * 60 * 1_000).toISOString(),
+      accountId: ACCOUNT_ID,
+      values,
+    })
+  );
+
+  test('from the eighth daily check-in each item has a provisional value, kept apart on the coach read', async () => {
+    for (let day = 0; day < 7; day += 1) {
+      await checkInOn(day, { sleep_hours: 8, energy: day % 2 === 0 ? 3 : 4, soreness: 2 });
+    }
+    // The seventh check-in had six before it: no value yet.
+    const seventh = await repository.listLatestFormulaResultsPerOutput({ organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-09' });
+    expect(seventh.every((result) => result.value === null)).toBe(true);
+
+    const eighth = await checkInOn(7, { sleep_hours: 6, energy: 2, soreness: 4 });
+    const raw: Record<string, FormulaResult> = Object.fromEntries(eighth
+      .filter((result) => result.outputKey === 'raw_change')
+      .map((result) => [String(result.parameters.metricKey), result]));
+    expect(raw.sleep_hours.value).toBe(-2);
+    // Always 8 hours before: the 0.5 h floor, not a divide-by-zero.
+    const sleepStandardized = eighth.find((result) => result.outputKey === 'standardized_change' && result.parameters.metricKey === 'sleep_hours');
+    expect(sleepStandardized?.value).toBe(-4);
+    for (const result of Object.values(raw)) {
+      expect(result.validation.warnings).toContain('SHORT_BASELINE');
+      expect(result.inputObservationIds).toHaveLength(8);
+    }
+
+    const latest = await repository.listLatestFormulaResultsPerOutput({ organizationId: ORG_ID, athleteId: ATHLETE_ID, formulaId: 'MVP-09' });
+    expect(latest
+      .filter((result) => result.outputKey === 'raw_change')
+      .map((result) => [result.parameters.metricKey, result.value])
+      .sort()).toEqual([['energy', expect.any(Number)], ['sleep_hours', -2], ['soreness', 2]]);
+
+    // A parent's read (results route) excludes MVP-09 in SQL.
+    const forParent = await repository.listActiveFormulaResults({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, excludeFormulaIds: ['MVP-09'],
+    });
+    expect(forParent.some((result) => result.formulaId === 'MVP-09')).toBe(false);
+
+    // The snapshot is stored with the day window (window_size 28, building).
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      const snapshots = await client.query(
+        `select metric_key, window_size, history_status from pilot.shadow_formula_baseline_snapshots
+         where organization_id = $1 and athlete_id = $2 and history_status = 'building' order by metric_key`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(snapshots.rows).toEqual([
+        { metric_key: 'energy', window_size: 28, history_status: 'building' },
+        { metric_key: 'sleep_hours', window_size: 28, history_status: 'building' },
+        { metric_key: 'soreness', window_size: 28, history_status: 'building' },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a repeated check-in writes nothing new', async () => {
+    await checkInOn(0, { energy: 3 });
+    await checkInOn(0, { energy: 3 });
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      const count = await client.query(
+        `select count(*)::int as n from pilot.shadow_formula_observations where organization_id = $1 and observation_kind = 'numeric'`,
+        [ORG_ID],
+      );
+      expect(count.rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
   });
 });

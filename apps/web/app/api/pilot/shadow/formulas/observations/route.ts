@@ -22,6 +22,7 @@ import {
   recalculateForSupersededObservation,
 } from '@/src/server/pilot/formulas/runner';
 import {
+  CHECK_IN_CONTEXT_PREFIX,
   FORMULA_UNITS,
   OBSERVATION_KINDS,
   type FormulaUnit,
@@ -95,7 +96,8 @@ function invalidObservation(message: string) {
  * without anybody assembling observation ids by hand.
  *
  * Same two gates as POST, in the same order. The answer is an ENUMERATED
- * projection of the punch numbers only (listRecentSparringEntries): no body
+ * projection of the punch counts and working minutes only
+ * (listRecentSparringEntries): no body
  * weight, no notes, no source reference.
  */
 export async function GET(request: NextRequest) {
@@ -173,11 +175,21 @@ export async function POST(request: NextRequest) {
     // A weight is corrected only through correctBodyMass (athlete or their
     // coach, a 7-day window, audited; Jason 2026-10-04). Superseding one here
     // -- or superseding something with a weight -- would skip all of that.
+    // A check-in answer (personal baseline, MVP-09) is written by the check-in
+    // only, and check-ins are never edited: a number posted or corrected here
+    // would let the baseline drift from what the athlete answered (lane L50).
+    const checkInAnswerRefused = () => NextResponse.json(
+      { ok: false, error: 'Check-in answers are recorded by the check-in itself.' },
+      { status: 409 },
+    );
+    if (body.kind === 'numeric' && body.contextId.trim().startsWith(CHECK_IN_CONTEXT_PREFIX)) {
+      return checkInAnswerRefused();
+    }
     if (body.supersedesObservationId != null) {
       const replaced = body.kind === 'body_weight'
-        ? { observation_kind: 'body_weight' }
-        : await queryOne<{ observation_kind: string }>(
-          `select observation_kind from pilot.shadow_formula_observations
+        ? { observation_kind: 'body_weight', context_id: '' }
+        : await queryOne<{ observation_kind: string; context_id: string }>(
+          `select observation_kind, context_id from pilot.shadow_formula_observations
            where organization_id = $1 and observation_id = $2`,
           [principal.organizationId, body.supersedesObservationId.trim()],
         );
@@ -186,6 +198,12 @@ export async function POST(request: NextRequest) {
           { ok: false, error: 'Body mass is corrected from the check-in or the coach\'s body mass panel.' },
           { status: 409 },
         );
+      }
+      if (
+        replaced?.observation_kind === 'numeric'
+        && replaced.context_id.startsWith(CHECK_IN_CONTEXT_PREFIX)
+      ) {
+        return checkInAnswerRefused();
       }
     }
     await assertShadowRuntimeReadiness({
@@ -301,8 +319,8 @@ export async function POST(request: NextRequest) {
     // path to another boxer's record.
     // A CORRECTION THAT COMPLETES A SET STILL HAS TO CALCULATE. Recalculation
     // above only finds formulas the REPLACED observation was already used in.
-    // When a correction is what makes the context satisfy MVP-03 or MVP-04 in
-    // the first place -- replacing a wrong-unit punch_absorbed, say -- there is
+    // When a correction is what makes the context satisfy a formula's input
+    // set in the first place -- replacing a wrong-unit punch_absorbed, say -- there is
     // no prior result to re-run, `recalculated` comes back empty, and treating
     // "this superseded something" as a blanket skip meant the newly valid set
     // was never calculated at all. So detection is skipped only when

@@ -412,6 +412,28 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'through /api/pilot/coach/injuries; the athlete and their guardians read their own injuries through the '
       + 'family projection, which never selects this column (owner decision 2026-10-04).',
   },
+  'shadow_formula_observations.check_in_answers': {
+    tier: 'athlete_record',
+    enforcedBy: [
+      'access.ts#assertActorCanAccessAthlete',
+      '../../../app/api/pilot/shadow/formulas/results/route.ts#excludeFormulaIds',
+      '../../../app/api/pilot/shadow/formulas/observations/route.ts#checkInAnswerRefused',
+      'formulas/runner.ts#CHECK_IN_BASELINE_POLICY',
+    ],
+    note:
+      'A child\'s daily check-in answers (sleep_hours, energy, soreness, stress, mood), copied by the check-in into numeric '
+      + 'observations, and the personal baseline (MVP-09) results and snapshots built from them (Jason '
+      + '2026-10-17, OD-2026-10-17-020; lane L50). Same readers as the check-in answers themselves: the athlete '
+      + '(their own), and coach / organization admin / admin through assertActorCanAccessAthlete '
+      + '(/coach/athlete-intelligence). PARENTS READ NONE OF IT (Overwatch QD2, 2026-10-17): check-in answers '
+      + 'have no parent surface, so a number derived from them must not open one -- GET '
+      + '/api/pilot/shadow/formulas/results passes excludeFormulaIds [MVP-09] for a parent, and a parent view '
+      + 'needs its own ruling from Jason. Only the check-in writes these values: the observations route refuses '
+      + 'numeric writes into check-in contexts and superseding a check-in answer, and the runner refuses an '
+      + 'MVP-09 for these items built from anything else. Deleted with the athlete row (ON DELETE CASCADE), as '
+      + 'the check-ins are. Any new reader of pilot.shadow_formula_results that a parent can reach must apply '
+      + 'the same exclusion.',
+  },
   'shadow_formula_observations.body_weight': {
     tier: 'athlete_record',
     enforcedBy: [

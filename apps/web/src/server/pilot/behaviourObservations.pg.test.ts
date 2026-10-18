@@ -295,7 +295,7 @@ describe('a behaviour report', () => {
     // Even when a time is sent with it.
     const sentLate = await writer.recordBehaviourObservation({
       ...base, session: { date: '2026-10-18' }, context: { attemptContext: 'open_floor' },
-      observerAccountId: SECOND_COACH, sameMomentAs: first.observation_id, observedAt: '2030-01-01T00:00:00Z',
+      observerAccountId: SECOND_COACH, sameMomentAs: first.observation_id, observedAt: '2026-01-01T00:00:00Z',
     });
     expect(sentLate.observed_at).toEqual(first.observed_at);
     // A third call by the same coach revises the revision, never the original twice.

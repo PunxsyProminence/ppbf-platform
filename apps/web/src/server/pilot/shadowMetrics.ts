@@ -30,9 +30,17 @@ export interface GrowthMetrics {
   reviewedOutcomes: number;
   researchRequirementsCreated: number;
   researchRequirementsClosed: number;
-  newLibraryPatterns: number;
+  // Renamed from newLibraryPatterns: the count is rows added to
+  // shadow_library_sources -- new sources on the Library shelf -- and was
+  // rendered as "New Patterns", which nothing here detects.
+  newLibrarySources: number;
   filterRate: number | null;
-  positiveOutcomeRate: number | null;
+  // Renamed from positiveOutcomeRate: the numerator is human-reviewed rows
+  // whose outcome is 'improved', and 'improved' is what a reviewed thumbs-up
+  // is stored as (shadowLearningLoop.ts outcomeToCategory; followed_advice
+  // maps there too, but nothing sends it). It is the share of reviewed
+  // answers people rated helpful, not a measured improvement in anyone.
+  reviewedHelpfulRate: number | null;
   unavailableReasons: Record<string, string>;
 }
 
@@ -117,11 +125,11 @@ export async function getGrowthMetrics(
     filtered_interactions: string;
     avg_satisfaction: string | null;
     avg_effectiveness: string | null;
-    positive_outcomes: string;
+    reviewed_helpful: string;
     reviewed_outcomes: string;
     research_created: string;
     research_closed: string;
-    new_patterns: string;
+    new_library_sources: string;
   }>(
     `SELECT
        COUNT(*) AS total_interactions,
@@ -143,7 +151,7 @@ export async function getGrowthMetrics(
         WHERE organization_id = $1
           AND verification_state = 'human_reviewed'
           AND outcome = 'improved'
-          AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS positive_outcomes,
+          AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS reviewed_helpful,
        (SELECT COUNT(*)
         FROM pilot.shadow_recommendation_effectiveness
         WHERE organization_id = $1
@@ -161,7 +169,7 @@ export async function getGrowthMetrics(
        (SELECT COUNT(*)
         FROM pilot.shadow_library_sources
         WHERE organization_id = $1
-          AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS new_patterns
+          AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS new_library_sources
      FROM pilot.shadow_chat_audit
      WHERE organization_id = $1
        AND created_at > NOW() - ($2 * INTERVAL '1 day')`,
@@ -171,7 +179,7 @@ export async function getGrowthMetrics(
   const totalInteractions = Number.parseInt(row?.total_interactions ?? '0', 10);
   const filteredInteractions = Number.parseInt(row?.filtered_interactions ?? '0', 10);
   const reviewedOutcomes = Number.parseInt(row?.reviewed_outcomes ?? '0', 10);
-  const positiveOutcomes = Number.parseInt(row?.positive_outcomes ?? '0', 10);
+  const reviewedHelpful = Number.parseInt(row?.reviewed_helpful ?? '0', 10);
   const avgEffectiveness =
     row?.avg_effectiveness != null ? Number.parseFloat(row.avg_effectiveness) : null;
   const unavailableReasons: Record<string, string> = {};
@@ -182,7 +190,7 @@ export async function getGrowthMetrics(
     unavailableReasons.avgEffectiveness = 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD';
   }
   if (reviewedOutcomes === 0) {
-    unavailableReasons.positiveOutcomeRate = 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD';
+    unavailableReasons.reviewedHelpfulRate = 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD';
   }
   // avg_satisfaction is AVG(rating), and no shipped client sends a rating --
   // the feedback UI is thumbs only. Without this reason code the tile
@@ -201,8 +209,8 @@ export async function getGrowthMetrics(
     reviewedOutcomes,
     researchRequirementsCreated: Number.parseInt(row?.research_created ?? '0', 10),
     researchRequirementsClosed: Number.parseInt(row?.research_closed ?? '0', 10),
-    newLibraryPatterns: Number.parseInt(row?.new_patterns ?? '0', 10),
-    positiveOutcomeRate: reviewedOutcomes > 0 ? positiveOutcomes / reviewedOutcomes : null,
+    newLibrarySources: Number.parseInt(row?.new_library_sources ?? '0', 10),
+    reviewedHelpfulRate: reviewedOutcomes > 0 ? reviewedHelpful / reviewedOutcomes : null,
     unavailableReasons,
   };
 }

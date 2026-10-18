@@ -52,6 +52,55 @@ export type FormulaId = (typeof FORMULA_IDS)[number];
 
 export type FormulaSupport = 'implemented' | 'primitive_only' | 'unsupported' | 'experimental_unsupported';
 
+/**
+ * The context every check-in observation is filed under (`check-in:<id>`, also
+ * used by athleteBodyMass.ts), and the check-in items that have a personal
+ * baseline (MVP-09; metricKey = the check-in column). A check-in baseline is
+ * computed from check-in answers only: the observations route refuses numeric
+ * writes into these contexts, and the runner refuses an MVP-09 for one of these
+ * items built from anything else (lane L50).
+ */
+export const CHECK_IN_CONTEXT_PREFIX = 'check-in:';
+
+/**
+ * The one policy a check-in baseline runs under (Jason 2026-10-17,
+ * OD-2026-10-17-020: the athlete's own last 28 days, from 7 check-ins,
+ * "provisional" until 14). The runner refuses any other for a check-in item.
+ */
+export const CHECK_IN_BASELINE_POLICY = Object.freeze({
+  windowDays: 28,
+  minimumHistory: 7,
+  adequateHistory: 14,
+  policyVersion: 'check-in-baseline-2026-10-17',
+});
+
+/**
+ * The check-in items with a personal baseline, by check-in column. SD floors
+ * relayed by Overwatch (QD1): 0.5 point for the 1-5 ratings, 0.5 h for sleep.
+ * Stress and mood added on Jason's "Mood + stress (Rec.)" (relayed by
+ * Overwatch 2026-10-18); mood's check-in column came with lane L58 (#1750).
+ */
+export const CHECK_IN_BASELINE_METRICS = Object.freeze([
+  Object.freeze({ metricKey: 'sleep_hours', unit: 'hours', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'energy', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'soreness', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'stress', unit: 'rating_1_5', sdFloor: 0.5 }),
+  Object.freeze({ metricKey: 'mood', unit: 'rating_1_5', sdFloor: 0.5 }),
+] as const);
+
+export const CHECK_IN_BASELINE_METRIC_KEYS: readonly string[] = Object.freeze(
+  CHECK_IN_BASELINE_METRICS.map((metric) => metric.metricKey),
+);
+
+/**
+ * The tag on the sparring page's whole-session counts ("Whole session" boxes).
+ * Shared by the page that writes it and the detector that reads it
+ * (runner.ts FORMULA_INPUT_REQUIREMENTS), so the two cannot spell it apart.
+ */
+export const SESSION_TOTAL_DIMENSIONS: Readonly<Record<string, string>> = Object.freeze({
+  scope: 'session_total',
+});
+
 export const OBSERVATION_KINDS = [
   'session_rpe',
   'duration',
@@ -99,6 +148,10 @@ export const FORMULA_UNITS = [
   // computable.
   'text_present_0_1',
   'unitless',
+  // Check-in self-reports read by the personal baseline (MVP-09): sleep is a
+  // quantity in hours, energy and soreness a 1-5 rating (wellnessScales.ts).
+  'hours',
+  'rating_1_5',
 ] as const;
 
 export type FormulaUnit = (typeof FORMULA_UNITS)[number];

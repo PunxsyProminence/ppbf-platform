@@ -7,7 +7,12 @@ import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 import { calculateProfileCompleteness, classifyProfileTier } from '@/src/server/pilot/shadowProfiling';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import type { ShadowUserProfileRow } from '@/src/server/pilot/shadowUserProfile';
-import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
+import {
+  evaluateShadowUnlockState,
+  SHADOW_FEATURE_IMPLEMENTED,
+  type ShadowFeatureKey,
+  type ShadowUnlockState,
+} from '@/src/server/pilot/shadowUnlocks';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +45,7 @@ export interface OrgMetrics {
     profileCompletionRate: number | null;
     tierAdvancementCount: number | null;
     totalInteractions: number;
-    positiveOutcomeRate: number | null;
+    reviewedHelpfulRate: number | null;
     // Rendered by the admin console's SHADOW Intelligence panel. These lived
     // in getGrowthMetrics all along, but the OrgMetrics restructure stopped
     // exposing them and the panel silently blanked (audit AS-1) -- the panel
@@ -51,7 +56,7 @@ export interface OrgMetrics {
     reviewedOutcomes: number;
     researchRequirementsCreated: number;
     researchRequirementsClosed: number;
-    newLibraryPatterns: number;
+    newLibrarySources: number;
   };
   // Named viewerUnlocks because the counters behind unlock state are
   // PER-USER (user_high_quality_interactions), evaluated for the requesting
@@ -59,11 +64,21 @@ export interface OrgMetrics {
   // different values. The old name "unlocks" presented the viewer's own
   // progress as an organization fact.
   viewerUnlocks: {
-    strongPersonalization: boolean;
-    autoLibraryUpdates: boolean;
-    aggressiveResearchGeneration: boolean;
-    fineTuningPipelineReady: boolean;
+    strongPersonalization: CapabilityFacts;
+    autoLibraryUpdates: CapabilityFacts;
+    aggressiveResearchGeneration: CapabilityFacts;
+    fineTuningPipeline: CapabilityFacts;
   };
+}
+
+// One boolean per feature used to carry four claims at once; the last one,
+// fineTuningPipelineReady, derived "ready" from a counter while the app holds
+// no fine-tuning code. Each fact is now reported on its own.
+export interface CapabilityFacts extends Availability {
+  dataSufficient: boolean;
+  implemented: boolean;
+  activated: boolean;
+  measuredPerformance: number | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -189,13 +204,13 @@ async function getOrgMetrics(
       profileCompletionRate: operational.avgProfileCompleteness,
       tierAdvancementCount: null,
       totalInteractions: growthMetrics.totalInteractions,
-      positiveOutcomeRate: growthMetrics.positiveOutcomeRate,
+      reviewedHelpfulRate: growthMetrics.reviewedHelpfulRate,
       filterRate: growthMetrics.filterRate,
       avgSatisfaction: growthMetrics.avgSatisfaction,
       reviewedOutcomes: growthMetrics.reviewedOutcomes,
       researchRequirementsCreated: growthMetrics.researchRequirementsCreated,
       researchRequirementsClosed: growthMetrics.researchRequirementsClosed,
-      newLibraryPatterns: growthMetrics.newLibraryPatterns,
+      newLibrarySources: growthMetrics.newLibrarySources,
       unavailableReasons: {
         avgComplexityProgression: 'COMPLEXITY_HISTORY_NOT_STORED',
         tierAdvancementCount: 'TIER_TRANSITION_HISTORY_NOT_STORED',
@@ -206,14 +221,28 @@ async function getOrgMetrics(
       },
     },
     viewerUnlocks: {
-      strongPersonalization:
-        unlockState?.features.strong_personalization?.unlocked ?? false,
-      autoLibraryUpdates:
-        unlockState?.features.auto_library_updates?.unlocked ?? false,
-      aggressiveResearchGeneration:
-        unlockState?.features.aggressive_research_generation?.unlocked ?? false,
-      fineTuningPipelineReady:
-        unlockState?.features.fine_tuning_pipeline?.unlocked ?? false,
+      strongPersonalization: capabilityFacts(unlockState, 'strong_personalization'),
+      autoLibraryUpdates: capabilityFacts(unlockState, 'auto_library_updates'),
+      aggressiveResearchGeneration: capabilityFacts(unlockState, 'aggressive_research_generation'),
+      fineTuningPipeline: capabilityFacts(unlockState, 'fine_tuning_pipeline'),
+    },
+  };
+}
+
+function capabilityFacts(
+  unlockState: ShadowUnlockState | null,
+  featureKey: ShadowFeatureKey,
+): CapabilityFacts {
+  const status = unlockState?.features[featureKey];
+  const implemented = SHADOW_FEATURE_IMPLEMENTED[featureKey];
+  return {
+    dataSufficient: status?.satisfied ?? false,
+    implemented,
+    activated: implemented && (status?.unlocked ?? false),
+    measuredPerformance: status?.measuredPerformance ?? null,
+    unavailableReasons: {
+      ...(status ? {} : { dataSufficient: 'UNLOCK_STATE_UNAVAILABLE', activated: 'UNLOCK_STATE_UNAVAILABLE' }),
+      ...(status?.measuredPerformance == null ? { measuredPerformance: 'NOT_MEASURED' } : {}),
     },
   };
 }
