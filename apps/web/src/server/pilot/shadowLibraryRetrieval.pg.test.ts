@@ -53,7 +53,7 @@ jest.mock('./shadowEmbeddings', () => ({
 
 import { hasRetrievableLibraryEvidence } from './shadowEvidence';
 import { embedText } from './shadowEmbeddings';
-import { searchShadowLibrary, type ShadowLibrarySearchDetail } from './shadowLibrary';
+import { createShadowLibraryClaim, searchShadowLibrary, type ShadowLibrarySearchDetail } from './shadowLibrary';
 
 jest.setTimeout(180_000);
 
@@ -585,5 +585,105 @@ describe("a chunk under another athlete's document stays with that athlete (F-08
     );
 
     await expect(hasRetrievableLibraryEvidence({ organizationId: ORG_ID })).resolves.toBe(false);
+  });
+});
+
+// Item 3 of the 2026-10-17 non-video ML audit. Once any passage was embedded on
+// the current deployment, search answered from those alone: a passage whose
+// embedding failed after it was stored, or that a retired deployment embedded,
+// was findable by nothing.
+describe('a passage the semantic index does not hold is still found (audit item 3)', () => {
+  async function textChunk(client: Client, input: {
+    chunkId: string;
+    documentId: string;
+    sourceId: string;
+    ordinal: number;
+    text: string;
+    embedding?: number[];
+    embeddingModel?: string;
+  }): Promise<void> {
+    await client.query(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content, embedding, embedding_model)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+      [
+        input.chunkId, input.documentId, input.sourceId, ORG_ID, input.ordinal, input.text,
+        input.embedding ? JSON.stringify(input.embedding) : null, input.embeddingModel ?? null,
+      ],
+    );
+  }
+
+  async function searchWithNearest() {
+    const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+    const relevant = await searchShadowLibrary(searchInput, detail);
+    return { relevant, nearest: detail.nearest, mode: detail.mode };
+  }
+
+  it('finds the only relevant passages, one never embedded and one from a retired deployment', async () => {
+    activeClient = await freshDatabase('semantic_unindexed');
+    const doc = await servableSource(activeClient, 'source-mixed', 2);
+    // Unrelated passages on the current deployment: the semantic path runs and matches none.
+    await embeddedChunks(activeClient, {
+      sourceId: 'source-mixed', documentId: doc, prefix: 'unrelated-',
+      count: 5, axisIndex: 7, createdAt: '2026-01-01T00:00:00Z',
+    });
+    await textChunk(activeClient, {
+      chunkId: 'never-embedded', documentId: doc, sourceId: 'source-mixed', ordinal: 100,
+      text: 'Southpaw footwork: pivot on the lead foot to take the outside angle.',
+    });
+    // Its vector points straight at the question, but a retired deployment made
+    // it: it must be found by its words, never scored as a vector.
+    await textChunk(activeClient, {
+      chunkId: 'retired-model', documentId: doc, sourceId: 'source-mixed', ordinal: 101,
+      text: 'A southpaw pivot is footwork first: the rear foot swings, the lead foot stays.',
+      embedding: axis(0), embeddingModel: 'retired-embedding',
+    });
+
+    const { relevant, mode } = await searchWithNearest();
+
+    expect(relevant.map((row) => row.chunk_id).sort()).toEqual(['never-embedded', 'retired-model']);
+    expect(relevant.every((row) => row.match_mode === 'keyword' && row.score === 1)).toBe(true);
+    expect(mode).toBe('semantic');
+  });
+
+  it('adds no indexed passage on word overlap, and no unindexed one below the keyword bar', async () => {
+    activeClient = await freshDatabase('semantic_unindexed_bar');
+    const doc = await servableSource(activeClient, 'source-bar', 2);
+    // Every word of the question, but its current-deployment vector says it is unrelated.
+    await textChunk(activeClient, {
+      chunkId: 'indexed-wordy', documentId: doc, sourceId: 'source-bar', ordinal: 0,
+      text: 'Southpaw footwork pivot.', embedding: axis(9), embeddingModel: 'test-embedding',
+    });
+    // Not embedded, and one word of three: under the keyword bar.
+    await textChunk(activeClient, {
+      chunkId: 'unindexed-one-word', documentId: doc, sourceId: 'source-bar', ordinal: 1,
+      text: 'Southpaw stance basics.',
+    });
+
+    const { relevant, nearest, mode } = await searchWithNearest();
+
+    expect(mode).toBe('semantic');
+    expect(relevant).toEqual([]);
+    expect(nearest).toEqual([]);
+  });
+});
+
+describe('a claim reports its research requirement id as a number (F-128)', () => {
+  it('is a number when the requirement is opened, and the same number when it is matched', async () => {
+    activeClient = await freshDatabase('claim_requirement_id');
+    const claim = () => createShadowLibraryClaim({
+      organizationId: ORG_ID,
+      actorAccountId: ADMIN_ID,
+      actorRole: 'organization_admin',
+      question: 'southpaw footwork pivot',
+    });
+
+    const opened = await claim();
+    expect(opened.status).toBe('unsupported');
+    expect(typeof opened.researchRequirementId).toBe('number');
+
+    const matched = await claim();
+    expect(typeof matched.researchRequirementId).toBe('number');
+    expect(matched.researchRequirementId).toBe(opened.researchRequirementId);
   });
 });
