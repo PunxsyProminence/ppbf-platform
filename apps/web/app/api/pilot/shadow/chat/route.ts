@@ -720,8 +720,10 @@ async function handleShadowChat(
     //
     // An athlete's disclosure (F-076) is marked high-risk here when the
     // validator did not mark it: the admin review row becomes owed and the
-    // words stay out of the research feed. The answer is unchanged -- see
-    // shadowDisclosure.ts.
+    // words stay out of the research feed. A disclosure is answered: one the
+    // validator withheld for a non-emergency medical reason is answered on the
+    // same path (F-093), and only the emergency return stays ahead of it --
+    // see markShadowDisclosure in shadowDisclosure.ts.
     const shadowDisclosure = detectShadowDisclosure(message, userRole);
     const baseRequestValidation = validateShadowRequest(message, userRole, organizationId);
     const requestValidation = markShadowDisclosure(baseRequestValidation, shadowDisclosure);
@@ -1116,6 +1118,20 @@ async function handleShadowChat(
     }
 
     if (boardSummaryRequested && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
+      // F-093: POST files nothing on a 403, but this refusal is about the
+      // session type, not the person: the request is authenticated and
+      // authorized, so a disclosure's escalation is already owed. It is filed
+      // here, before the refusal every athlete gets, and swallowed as at the
+      // exit so the reply is the same with or without a disclosure.
+      const fileDisclosure = atExit.fileDisclosureEscalation;
+      atExit.fileDisclosureEscalation = null;
+      if (fileDisclosure) {
+        try {
+          await fileDisclosure();
+        } catch {
+          console.error('SHADOW disclosure escalation write failed');
+        }
+      }
       return NextResponse.json(
         {
           success: false,
