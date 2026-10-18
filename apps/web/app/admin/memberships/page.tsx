@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import { NOT_SURE, refusalWords } from '@/src/lib/serverRefusalWords';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
 import BackHome from '@/components/BackHome';
 
 // Program memberships and scholarships (radar rows "Membership Tracking" and
@@ -64,6 +64,17 @@ const PROGRAM_BADGE: Record<string, { className: string; glyph: string }> = {
 
 type EnrollForm = { athlete_id: string; program_name: string; started_on: string; scholarship_percent: number };
 const EMPTY_FORM: EnrollForm = { athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 };
+const sameForm = (a: EnrollForm, b: EnrollForm) => a.athlete_id === b.athlete_id && a.program_name === b.program_name
+  && a.started_on === b.started_on && a.scholarship_percent === b.scholarship_percent;
+
+/** One act per PATCH (route.ts): a status move or a scholarship change. */
+type RowChange = { status: string } | { scholarship_percent: number };
+const showsChange = (row: Partial<MembershipRow> | undefined, change: RowChange) =>
+  !!row && ('status' in change ? row.status === change.status : row.scholarship_percent === change.scholarship_percent);
+
+/** What a write is known to have done. `recheck`: Check again re-reads the
+ *  list ('list'), or re-reads it to settle a write whose answer was lost. */
+type Notice = { tone: 'critical' | 'warning' | 'success'; text: string; recheck: 'list' | 'settle' | null };
 
 // The enrollment route's own refusals, in words an office admin can act on
 // (route.ts POST). The duplicate-active sentence is already words and passes
@@ -86,16 +97,50 @@ function isSavedRow(item: unknown, sent: EnrollForm): item is MembershipRow {
   return typeof row.membership_id === 'string' && row.membership_id !== ''
     && row.athlete_id === sent.athlete_id
     && row.program_name === sent.program_name.trim()
+    && row.started_on === sent.started_on
+    && row.scholarship_percent === sent.scholarship_percent
     && row.status === 'active';
 }
 
-/** Words for a write the server answered with an error: a 4xx changed nothing; anything else may have. */
-async function writeFailureWords(response: Response, known: Readonly<Record<string, string>>): Promise<string> {
+/** Words for a write the server refused (a 4xx): nothing was changed. */
+async function refusedWords(response: Response, known: Readonly<Record<string, string>>): Promise<string> {
   const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
-  if (response.status >= 400 && response.status < 500) {
-    return `Not saved. ${refusalWords({ error: payload.error, status: response.status }, known, 'Try again.')}`;
+  return `Not saved. ${refusalWords({ error: payload.error, status: response.status }, known, 'Try again.')}`;
+}
+
+/** POSTs or PATCHes; null when no answer came back at all. */
+async function sendWrite(method: 'POST' | 'PATCH', body: unknown): Promise<Response | null> {
+  try {
+    return await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return null;
   }
-  return NOT_SURE;
+}
+
+/** A 4xx: the server refused before writing. */
+const isRefusal = (status: number) => status >= 400 && status < 500;
+
+function OutcomeNotice({ notice, checking, onCheckAgain }: { notice: Notice; checking: boolean; onCheckAgain: () => void }) {
+  return (
+    <div className={`alert alert--${notice.tone} mb-[var(--s4)]`} role={notice.tone === 'critical' ? 'alert' : 'status'}>
+      <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : notice.tone === 'warning' ? '▲' : '✕'}</span>
+      <div className="alert-body">
+        <p className="alert-msg">{notice.text}</p>
+        {notice.recheck && (
+          <div className="alert-action">
+            <button type="button" className="btn btn--ghost" disabled={checking} onClick={onCheckAgain}>
+              {checking ? 'Checking…' : 'Check again'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // The athlete list feeds every athlete picker on this page. A failed read is
@@ -130,12 +175,18 @@ export default function MembershipsPage() {
   const [form, setForm] = useState<EnrollForm>(EMPTY_FORM);
   const [roster, setRoster] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [rosterAttempt, setRosterAttempt] = useState(0);
-  // What a write is known to have done when that is not plain failure: saved
-  // but the list did not refresh, or not known yet. `recheck` is what Check
-  // again does: re-read the list, or re-read it to settle an unconfirmed save.
-  const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; text: string; recheck: 'list' | 'save' | null } | null>(null);
+  // One outcome slot for the enroll form and one for the rows, so a row
+  // action never wipes what an unsettled enrollment still needs to say.
+  const [enrollNotice, setEnrollNotice] = useState<Notice | null>(null);
+  const [rowNotice, setRowNotice] = useState<Notice | null>(null);
   const [pendingSave, setPendingSave] = useState<EnrollForm | null>(null);
+  const [pendingRow, setPendingRow] = useState<{ membershipId: string; athleteName: string; change: RowChange } | null>(null);
   const [checking, setChecking] = useState(false);
+  // The form as typed now, for a reply that lands after the admin kept typing.
+  const formRef = useRef(form);
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [programsLoad, setProgramsLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [showNewProgram, setShowNewProgram] = useState(false);
@@ -150,8 +201,10 @@ export default function MembershipsPage() {
         signal,
       });
       if (!response.ok) throw new Error('Unable to load memberships.');
-      const payload = (await response.json()) as { items?: MembershipRow[] };
-      const rows = payload.items ?? [];
+      const payload = (await response.json()) as { items?: unknown };
+      // A reply without a list is not a list of none.
+      if (!Array.isArray(payload.items)) throw new Error('Unable to load memberships.');
+      const rows = payload.items as MembershipRow[];
       setItems(rows);
       setListRead(true);
       return rows;
@@ -187,9 +240,10 @@ export default function MembershipsPage() {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('Unable to load athletes.');
-        const payload = (await response.json()) as { items?: AthleteOption[] };
+        const payload = (await response.json()) as { items?: unknown };
+        if (!Array.isArray(payload.items)) throw new Error('Unable to load athletes.');
         if (controller.signal.aborted) return;
-        setAthletes(payload.items ?? []);
+        setAthletes(payload.items as AthleteOption[]);
         setRoster('loaded');
       } catch {
         if (controller.signal.aborted) return;
@@ -310,44 +364,59 @@ export default function MembershipsPage() {
   const recheckList = async (): Promise<boolean> => {
     try {
       await reload();
-      setNotice((current) => (current?.recheck === 'list' ? null : current));
+      const clearStale = (current: Notice | null) => (current?.recheck === 'list' ? null : current);
+      setEnrollNotice(clearStale);
+      setRowNotice(clearStale);
       return true;
     } catch {
       return false;
     }
   };
 
-  const patch = async (membershipId: string, body: Record<string, unknown>) => {
-    setBusyId(membershipId);
-    setErrorMessage(null);
-    setNotice(null);
+  /** Settles a row change whose answer was lost by saying what the list now shows. PROPOSED copy. */
+  const settleRow = async (pending: { membershipId: string; athleteName: string; change: RowChange }) => {
+    let rows: MembershipRow[];
     try {
-      let response: Response | null = null;
-      try {
-        response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-          method: 'PATCH',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ membership_id: membershipId, ...body }),
-        });
-      } catch {
-        // No answer: the change may or may not have landed.
-      }
-      if (response && response.status >= 400 && response.status < 500) {
-        setErrorMessage(await writeFailureWords(response, ROW_REFUSAL_WORDS));
+      rows = await reload();
+    } catch {
+      setPendingRow(pending);
+      setRowNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before trying again.', recheck: 'settle' });
+      return;
+    }
+    setPendingRow(null);
+    setRowNotice(showsChange(rows.find((row) => row.membership_id === pending.membershipId), pending.change)
+      ? { tone: 'success', text: `Saved: the list now shows the change for ${pending.athleteName}.`, recheck: null }
+      : { tone: 'critical', text: `Not saved: the list does not show the change for ${pending.athleteName}. Try again when ready.`, recheck: null });
+  };
+
+  const patch = async (row: MembershipRow, change: RowChange) => {
+    setBusyId(row.membership_id);
+    setRowNotice(null);
+    setPendingRow(null);
+    try {
+      const response = await sendWrite('PATCH', { membership_id: row.membership_id, ...change });
+      if (response && isRefusal(response.status)) {
+        setRowNotice({ tone: 'critical', text: await refusedWords(response, ROW_REFUSAL_WORDS), recheck: null });
         return;
       }
-      if (response?.ok) {
+      const payload = response?.ok ? ((await response.json().catch(() => null)) as { item?: Partial<MembershipRow> } | null) : null;
+      if (payload?.item?.membership_id === row.membership_id && showsChange(payload.item, change)) {
         // The change is saved; a failed refresh is only a stale list.
-        if (!(await recheckList())) setNotice({ tone: 'warning', text: "Saved. The list didn't refresh.", recheck: 'list' });
+        if (!(await recheckList())) setRowNotice({ tone: 'warning', text: "Saved. The list didn't refresh.", recheck: 'list' });
         return;
       }
-      // A 5xx or no answer: re-read so the rows on screen are what the server holds.
-      setErrorMessage(NOT_SURE);
-      if (!(await recheckList())) setNotice({ tone: 'warning', text: "The list didn't refresh.", recheck: 'list' });
+      // A 5xx, no answer, or a reply that does not show the change: not known yet.
+      await settleRow({ membershipId: row.membership_id, athleteName: row.athlete_name, change });
     } finally {
       setBusyId(null);
     }
+  };
+
+  /** Closes and clears the form only if it still holds what was sent. */
+  const clearFormIfSent = (sent: EnrollForm) => {
+    if (!sameForm(formRef.current, sent)) return;
+    setShowForm(false);
+    setForm(EMPTY_FORM);
   };
 
   /** Settles a save whose answer was lost by saying what the list now shows. */
@@ -360,45 +429,29 @@ export default function MembershipsPage() {
     } catch {
       // The form keeps what was typed until the list can be read.
       setPendingSave(sent);
-      setNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before saving again.', recheck: 'save' });
+      setEnrollNotice({ tone: 'warning', text: 'Not sure it was saved, and the list could not be read. Check before saving again.', recheck: 'settle' });
       return;
     }
     setPendingSave(null);
     const shown = rows.find((row) => row.athlete_id === sent.athlete_id && row.program_name === program && row.status === 'active');
     if (!shown) {
-      setNotice(null);
-      setErrorMessage(`Not saved: the list does not show ${pickedName} active in ${program}. Save again when ready.`);
+      setEnrollNotice({ tone: 'critical', text: `Not saved: the list does not show ${pickedName} active in ${program}. Save again when ready.`, recheck: null });
       return;
     }
-    setErrorMessage(null);
-    setNotice({ tone: 'success', text: `The list now shows ${shown.athlete_name} active in ${shown.program_name}. No need to save again.`, recheck: null });
-    // A form retyped for another enrollment while this one was unsettled stays.
-    if (JSON.stringify(form) !== JSON.stringify(sent)) return;
-    setShowForm(false);
-    setForm(EMPTY_FORM);
+    setEnrollNotice({ tone: 'success', text: `The list now shows ${shown.athlete_name} active in ${shown.program_name}. No need to save again.`, recheck: null });
+    clearFormIfSent(sent);
   };
 
   const handleCreate = async () => {
     const sent = form;
     setBusyId('new');
-    setErrorMessage(null);
-    setNotice(null);
+    setEnrollNotice(null);
     setPendingSave(null);
     try {
-      let response: Response | null = null;
-      try {
-        response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sent),
-        });
-      } catch {
-        // No answer at all: settled below by reading the list.
-      }
-      if (response && response.status >= 400 && response.status < 500) {
+      const response = await sendWrite('POST', sent);
+      if (response && isRefusal(response.status)) {
         // Refused before writing: nothing saved, and the form keeps what was typed.
-        setErrorMessage(await writeFailureWords(response, ENROLL_REFUSAL_WORDS));
+        setEnrollNotice({ tone: 'critical', text: await refusedWords(response, ENROLL_REFUSAL_WORDS), recheck: null });
         return;
       }
       const payload = response?.ok ? ((await response.json().catch(() => null)) as { item?: unknown } | null) : null;
@@ -408,10 +461,9 @@ export default function MembershipsPage() {
         // until a refresh lands.
         const saved = payload.item;
         setItems((current) => [...current.filter((row) => row.membership_id !== saved.membership_id), saved]);
-        setShowForm(false);
-        setForm(EMPTY_FORM);
+        clearFormIfSent(sent);
         if (!(await recheckList())) {
-          setNotice({ tone: 'warning', text: `Saved: ${saved.athlete_name} in ${saved.program_name}. The list didn't refresh.`, recheck: 'list' });
+          setEnrollNotice({ tone: 'warning', text: `Saved: ${saved.athlete_name} in ${saved.program_name}. The list didn't refresh.`, recheck: 'list' });
         }
         return;
       }
@@ -422,15 +474,16 @@ export default function MembershipsPage() {
     }
   };
 
-  const checkAgain = async () => {
+  const runCheck = async (check: () => Promise<unknown>) => {
     setChecking(true);
     try {
-      if (notice?.recheck === 'save' && pendingSave) await settleSave(pendingSave);
-      else await recheckList();
+      await check();
     } finally {
       setChecking(false);
     }
   };
+  const checkEnrollAgain = () => runCheck(() => (enrollNotice?.recheck === 'settle' && pendingSave ? settleSave(pendingSave) : recheckList()));
+  const checkRowAgain = () => runCheck(() => (rowNotice?.recheck === 'settle' && pendingRow ? settleRow(pendingRow) : recheckList()));
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
@@ -456,27 +509,13 @@ export default function MembershipsPage() {
             </div>
           )}
 
-          {notice && (
-            <div className={`alert alert--${notice.tone}`} role="status">
-              <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : '▲'}</span>
-              <div className="alert-body">
-                <p className="alert-msg">{notice.text}</p>
-                {notice.recheck && (
-                  <div className="alert-action">
-                    <button type="button" className="btn btn--ghost" disabled={checking} onClick={() => void checkAgain()}>
-                      Check again
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           <div className="mb-[var(--s4)]">
             <button type="button" className="btn" onClick={() => setShowForm((current) => !current)}>
               {showForm ? 'Close form' : 'Enroll athlete'}
             </button>
           </div>
+
+          {enrollNotice && <OutcomeNotice notice={enrollNotice} checking={checking} onCheckAgain={() => void checkEnrollAgain()} />}
 
           {showForm && (
             /* "Paper forms" is this room's Feel line and mat-paper appeared on
@@ -538,12 +577,14 @@ export default function MembershipsPage() {
                 </div>
               </div>
               <div className="mt-[var(--s4)]">
-                <button type="button" className="btn" disabled={busyId === 'new'} onClick={() => void handleCreate()}>
+                <button type="button" className="btn" disabled={busyId === 'new' || checking} onClick={() => void handleCreate()}>
                   {busyId === 'new' ? 'Saving…' : 'Save membership'}
                 </button>
               </div>
             </section>
           )}
+
+          {rowNotice && <OutcomeNotice notice={rowNotice} checking={checking} onCheckAgain={() => void checkRowAgain()} />}
 
           {loading ? (
             <div className="flex justify-center py-[var(--s7)]">
@@ -553,8 +594,8 @@ export default function MembershipsPage() {
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">Couldn&apos;t load memberships.</div>
-                <button type="button" className="btn btn--ghost mt-[var(--s3)]" disabled={checking} onClick={() => void checkAgain()}>
-                  Check again
+                <button type="button" className="btn btn--ghost mt-[var(--s3)]" disabled={checking} onClick={() => void runCheck(recheckList)}>
+                  {checking ? 'Checking…' : 'Check again'}
                 </button>
               </div>
             </div>
@@ -608,7 +649,7 @@ export default function MembershipsPage() {
                             {(NEXT_ACTIONS[row.status] ?? []).map((action) => (
                               <button key={action.status} type="button" className="btn--lever"
                                 disabled={busyId === row.membership_id}
-                                onClick={() => void patch(row.membership_id, { status: action.status })}>
+                                onClick={() => void patch(row, { status: action.status })}>
                                 {action.label}
                               </button>
                             ))}
@@ -617,7 +658,7 @@ export default function MembershipsPage() {
                                 Scholarship
                                 <select id={`scholarship-${row.membership_id}`} className="select" value={row.scholarship_percent}
                                   disabled={busyId === row.membership_id}
-                                  onChange={(e) => void patch(row.membership_id, { scholarship_percent: Number(e.target.value) })}>
+                                  onChange={(e) => void patch(row, { scholarship_percent: Number(e.target.value) })}>
                                   {SCHOLARSHIP_LEVELS.map((level) => (
                                     <option key={level} value={level}>{level === 0 ? 'None' : `${level}%`}</option>
                                   ))}
