@@ -263,3 +263,43 @@ describe('the platform shelf on POST /api/pilot/shadow/library/documents', () =>
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
+
+// L54 (audit 2026-10-17 item 3): a retried entry names its request, and the
+// server answers with the document that request already made.
+describe('a retried document request on POST /api/pilot/shadow/library/documents', () => {
+  test('passes the request id through and answers 201 for a new document', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, request_id: 'req-1234-abcd' }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1234-abcd', organizationId: 'org-real' }));
+  });
+
+  test('answers 200 recovered when the request already made its document', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ document_id: 'doc_first', recovered: true } as never);
+
+    const response = await POST(postRequest({ ...validBody, request_id: 'req-1234-abcd' }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, recovered: true, document: { document_id: 'doc_first' } });
+  });
+
+  test('no request id is sent as null, as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    await POST(postRequest(validBody));
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ requestId: null }));
+  });
+
+  test.each([['short'], [42], ['has spaces in it'], ['x'.repeat(101)]])('refuses request_id %p', async (requestId) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, request_id: requestId }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});

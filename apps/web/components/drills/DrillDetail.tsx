@@ -10,6 +10,8 @@ import {
   setupAndEquipment,
 } from '@/src/lib/drillPresentation';
 
+import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
+
 import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 
 // LEVEL 2 of OD-2026-09-19-001: the complete, organized drill. LEVEL 1 is the
@@ -45,14 +47,23 @@ export interface DrillDetailProps {
    * keyboard and screen-reader users are left on <body>.
    */
   focusOnMount?: boolean;
+  /**
+   * The scale level a plan chose for this drill (a session plan block's
+   * scale_level). That level opens and says so; without one, the starting
+   * level opens as before.
+   */
+  chosenScale?: string | null;
 }
 
-export default function DrillDetail({ view, audience, actions, focusOnMount = false }: DrillDetailProps) {
+export default function DrillDetail({ view, audience, actions, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
   const headingId = `drill-detail-${view.id}`;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
     if (focusOnMount) headingRef.current?.focus();
   }, [focusOnMount, view.id]);
+
+  // A chosen level the drill has no row for opens nothing of its own: the starting level opens as usual.
+  const openLevel = chosenScale !== null && view.scaleLevels.some((level) => level.level === chosenScale) ? chosenScale : null;
 
   const steps = executionSteps(view.execution);
   // Three groups, because they are three different instructions. A readiness
@@ -214,10 +225,16 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           <div className="space-y-[var(--s2)]">
             {view.scaleLevels.map((level) => (
               // LEVEL 3: each level expands. The starting level opens by default,
-              // so the ordinary way to run the drill is visible without a click.
-              <details key={`${view.id}-scale-${level.level}`} className={EXPANDER} open={level.isStartingPoint}>
+              // so the ordinary way to run the drill is visible without a click;
+              // a level the plan chose opens instead.
+              <details
+                key={`${view.id}-scale-${level.level}`}
+                className={EXPANDER}
+                open={openLevel ? level.level === openLevel : level.isStartingPoint}
+              >
                 <summary className={EXPANDER_SUMMARY}>
                   {scaleLevelName(level.level)}
+                  {level.level === openLevel ? ' · chosen for this block' : ''}
                   {level.isStartingPoint ? ' · where to start' : ''}
                   {level.contactLevel && level.contactLevel !== view.contactLevel
                     ? ` · ${humanizeContactLevel(level.contactLevel)}`
@@ -330,14 +347,135 @@ function CoachContext({ view }: { view: DrillDetailView }) {
             {coach.skillId || 'Not recorded'}
             {coach.secondarySkills.length > 0 ? ` (also ${coach.secondarySkills.join(', ')})` : ''}
           </dd>
-          {coach.groundingClaimIds.length > 0 && (
-            <>
-              <dt className="font-semibold text-[color:var(--bone-200)]">Grounding claims</dt>
-              <dd>{coach.groundingClaimIds.join(', ')}</dd>
-            </>
-          )}
         </dl>
       </details>
+
+      {coach.groundingClaimIds.length > 0 && (
+        <CitedEvidence claimIds={coach.groundingClaimIds} evidence={coach.groundingEvidence} />
+      )}
     </div>
+  );
+}
+
+/**
+ * Each grounding claim id, opened (audit 2026-10-17 item 11). A found claim
+ * opens to what it says, who was studied, its limitations and its source; an
+ * id the Library cannot serve says so in words. An id is never shown bare, and
+ * never as if citing it verified the drill.
+ *
+ * Population and limitations are always shown with the claim, so evidence from
+ * adults does not read as established for children.
+ */
+function CitedEvidence({ claimIds, evidence }: { claimIds: string[]; evidence: GroundingEvidence[] | null | undefined }) {
+  const byId = new Map((evidence ?? []).map((entry) => [entry.claimId, entry]));
+  return (
+    <details className={EXPANDER}>
+      <summary className={EXPANDER_SUMMARY}>Cited evidence ({claimIds.length})</summary>
+      <div className={`${SECTION} mt-[var(--s2)]`}>
+        <p className={BODY}>
+          This drill cites these research claims as a whole. The Library does not record which step each one supports.
+        </p>
+        {evidence === undefined ? (
+          <p className={BODY}>
+            Open this drill in the Drill Library to read the {claimIds.length === 1 ? 'research claim' : `${claimIds.length} research claims`} it cites.
+          </p>
+        ) : (
+          <ul className="space-y-[var(--s2)]">
+            {claimIds.map((claimId) => (
+              <li key={claimId}>
+                <CitedClaim claimId={claimId} entry={byId.get(claimId)} loaded={evidence !== null} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: GroundingEvidence | undefined; loaded: boolean }) {
+  if (!loaded) {
+    return <p className={BODY}>{claimId}: the evidence for this reference could not be loaded.</p>;
+  }
+  if (!entry || entry.status === 'not_found') {
+    return <p className={BODY}>{claimId}: reference not found in the Library.</p>;
+  }
+  if (entry.status === 'not_cleared') {
+    return (
+      <p className={BODY}>
+        {claimId}: in the Library but not cleared for use (for example awaiting review or withdrawn), so it is not shown.
+      </p>
+    );
+  }
+  const r = entry.record;
+  const studied = [r.population ?? 'Population not recorded', r.competitiveLevel, r.sex, r.ageRange ? `age ${r.ageRange}` : 'age not recorded']
+    .filter(Boolean)
+    .join(' · ');
+  const design = [r.studyDesign, r.sampleSize ? `n ${r.sampleSize}` : null].filter(Boolean).join(' · ');
+  const strength = [r.evidenceClass, r.evidenceTier, r.confidence ? `${r.confidence} confidence` : null].filter(Boolean).join(' · ');
+  const source = [r.sourceTitle, r.sourcePublisher, r.publicationDate?.slice(0, 4)].filter(Boolean).join(' · ');
+  return (
+    <details className={EXPANDER}>
+      <summary className={EXPANDER_SUMMARY}>
+        {claimId}: {r.sourceTitle ?? 'research claim'}
+      </summary>
+      <dl className={`${BODY} mt-[var(--s2)] grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[var(--s3)] gap-y-[var(--s1)] [overflow-wrap:anywhere]`}>
+        <dt className="font-semibold text-[color:var(--bone-200)]">Claim</dt>
+        <dd>{r.claim}</dd>
+        {r.ppbfImplication && (
+          <>
+            <dt className="font-semibold text-[color:var(--bone-200)]">PPBF implication</dt>
+            <dd>{r.ppbfImplication}</dd>
+          </>
+        )}
+        <dt className="font-semibold text-[color:var(--bone-200)]">Who was studied</dt>
+        <dd>{studied}</dd>
+        {design && (
+          <>
+            <dt className="font-semibold text-[color:var(--bone-200)]">Design</dt>
+            <dd>{design}</dd>
+          </>
+        )}
+        {r.effect && (
+          <>
+            <dt className="font-semibold text-[color:var(--bone-200)]">Effect</dt>
+            <dd>{r.effect}</dd>
+          </>
+        )}
+        <dt className="font-semibold text-[color:var(--bone-200)]">Limitations</dt>
+        <dd>{r.limitations ?? 'Not recorded'}</dd>
+        {(r.transferStatus || r.boxingSpecificity) && (
+          <>
+            <dt className="font-semibold text-[color:var(--bone-200)]">Applies to boxing</dt>
+            <dd>{[r.boxingSpecificity, r.transferStatus].filter(Boolean).join(' · ')}</dd>
+          </>
+        )}
+        {strength && (
+          <>
+            <dt className="font-semibold text-[color:var(--bone-200)]">Research program class</dt>
+            <dd>{strength}</dd>
+          </>
+        )}
+        <dt className="font-semibold text-[color:var(--bone-200)]">Source</dt>
+        <dd>
+          {source || 'Not recorded'}
+          {r.doiOrPmid ? ` (${r.doiOrPmid})` : ''}
+          {r.sourceUrl && (
+            <>
+              {' '}
+              <a
+                href={r.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open the source for ${claimId}`}
+                className="underline"
+              >
+                Open the source
+              </a>
+            </>
+          )}
+        </dd>
+      </dl>
+    </details>
   );
 }

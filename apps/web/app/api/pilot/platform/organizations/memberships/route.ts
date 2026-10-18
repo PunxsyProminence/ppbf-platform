@@ -4,7 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { upsertOrganizationMembership } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotRole } from '@/src/server/pilot/contracts';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -20,7 +20,7 @@ function isManageableRole(role: string): role is Exclude<PilotRole, 'platform_ow
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, ['platform_owner']);
 
     const body = (await request.json()) as {

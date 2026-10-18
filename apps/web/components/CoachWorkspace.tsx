@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
@@ -63,6 +64,7 @@ import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
+import AthleteAttendancePanel from './AthleteAttendancePanel';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import { BUILDING } from './buildingMap';
 
@@ -3031,14 +3033,18 @@ export default function CoachWorkspace() {
                         Open. Acknowledge it from Needs You Now on the floor board above.
                       </p>
                     ) : escalation.status === 'open' ? (
-                      <button
-                        type="button"
-                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
-                        disabled={escalationAckBusyId !== null}
+                      // The armed second press, as on the board (#1678, F-129).
+                      <ArmedButton
                         className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                        armKey={escalation.escalation_id}
+                        disabled={escalationAckBusyId !== null && escalationAckBusyId !== escalation.escalation_id}
+                        busy={escalationAckBusyId === escalation.escalation_id}
+                        busyLabel="Acknowledging..."
+                        armedLabel={`Press again: acknowledge ${athleteName ?? `Athlete ID ${escalation.athlete_id}`}`}
+                        onConfirm={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
                       >
-                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
-                      </button>
+                        Acknowledge
+                      </ArmedButton>
                     ) : (
                       <p className="t-data text-[color:var(--bone-400)]">
                         Acknowledged. Closing it out is an admin decision and happens on the admin
@@ -3929,6 +3935,13 @@ export default function CoachWorkspace() {
                         Whether this athlete is under a training hold is UNKNOWN. Do not read this as &quot;no hold&quot;.
                       </p>
                     </div>
+                  )}
+
+                  {/* Last 28 days from the class register and days since the
+                      last session, coaches only (OD-2026-10-17-026 (c)). It
+                      reads its own route; keyed by athlete. */}
+                  {wellnessShown?.status === 'loaded' && (
+                    <AthleteAttendancePanel key={wellnessShown.athleteId} athleteId={wellnessShown.athleteId} />
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today === null && (

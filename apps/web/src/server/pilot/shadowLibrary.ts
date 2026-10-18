@@ -7,6 +7,7 @@ import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError, PilotError, ValidationError } from './errors';
+import { LIBRARY_REQUEST_ID_PATTERN } from './libraryIntakeRecovery';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
@@ -198,6 +199,10 @@ export interface ShadowLibrarySearchResult {
   // as a passing grade.
   evidence_class: string | null;
   boxing_specificity: string | null;
+  // Which path found the passage, which decides how its score maps to a
+  // confidence level: a semantic search also returns keyword matches from
+  // passages the semantic index does not hold.
+  match_mode?: 'semantic' | 'keyword';
 }
 
 export interface ShadowApprovedEvidenceExportRow {
@@ -414,7 +419,7 @@ const QUERY_STOPWORDS = new Set([
   'way', 'ways', 'does', 'much', 'many', 'more', 'most', 'other', 'such', 'only', 'same', 'while',
 ]);
 
-function tokenizeQuery(queryText: string): string[] {
+export function tokenizeQuery(queryText: string): string[] {
   const terms = queryText
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -481,7 +486,8 @@ async function ensureClaimResearchRequirement(input: {
   );
 
   if (duplicate) {
-    return { id: duplicate.research_requirement_id, researchRequirement, knowledgeGap };
+    // bigserial: node-postgres hands int8 back as a string (F-128).
+    return { id: Number(duplicate.research_requirement_id), researchRequirement, knowledgeGap };
   }
 
   const id = await createShadowResearchRequirement({
@@ -585,6 +591,29 @@ function assertNoReservedProvenance(metadata: Record<string, unknown> | undefine
   if (key) throw new ValidationError(reservedProvenanceMessage(key));
 }
 
+// A retried registration names the request it repeats (L54, audit 2026-10-17
+// item 3). The id is the client's, made once per registration and sent again
+// on every retry; it is kept in the source's metadata under this key.
+export const SOURCE_REGISTRATION_REQUEST_KEY = 'registration_request_id';
+
+// The request keys are written only from the request id, never taken from a
+// caller's metadata: a key slipped in there would let a later request with
+// that id "recover" a row it did not make.
+function assertNoRequestKey(metadata: Record<string, unknown> | undefined, key: string): void {
+  if (metadata && Object.hasOwn(metadata, key)) {
+    throw new ValidationError(`metadata.${key} is set only from request_id.`);
+  }
+}
+
+// One transaction-scoped advisory lock per (organization, request): a retry
+// that arrives while the first request is still inside its transaction waits
+// for it, then finds what it wrote instead of writing a second row.
+async function lockLibraryRequest(client: PoolClient, kind: string, organizationId: string, requestId: string): Promise<void> {
+  await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+    `shadow_library_${kind}_request:${organizationId}:${requestId}`,
+  ]);
+}
+
 export async function createShadowLibrarySource(input: {
   organizationId: string;
   actorAccountId: string;
@@ -598,68 +627,97 @@ export async function createShadowLibrarySource(input: {
   status?: ShadowLibrarySourceStatus;
   rightsStatus?: ShadowLibraryRightsStatus;
   metadata?: Record<string, unknown>;
-}): Promise<ShadowLibrarySourceRow> {
+  /** The client's id for this registration; a retry with the same id gets the source it already made. */
+  requestId?: string | null;
+}): Promise<ShadowLibrarySourceRow & { recovered?: true }> {
   // Marking a source as PPBF-owned or open-licence decides what the Library may
   // hold of it, so it is the reviewer tier's call, as on the rights PATCH.
   if (input.rightsStatus && input.rightsStatus !== 'unknown') requireEvidenceReviewer(input.actorRole as PilotRole);
   assertNoReservedProvenance(input.metadata);
-  const sourceId = `source_${randomUUID()}`;
-
-  const row = await queryOne<ShadowLibrarySourceRow>(
-    `insert into pilot.shadow_library_sources
-      (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role, rights_status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12,$13)
-     returning *`,
-    [
-      sourceId,
-      input.organizationId,
-      input.title.trim(),
-      input.publisher?.trim() || null,
-      input.sourceType,
-      clampAuthorityTier(input.authorityTier ?? 3),
-      input.url?.trim() || null,
-      input.publicationDate?.trim() || null,
-      input.status ?? 'active',
-      JSON.stringify(input.metadata ?? {}),
-      input.actorAccountId,
-      input.actorRole,
-      input.rightsStatus ?? 'unknown',
-    ],
-  );
-
-  if (!row) {
-    throw new Error('Unable to create SHADOW Library source.');
+  assertNoRequestKey(input.metadata, SOURCE_REGISTRATION_REQUEST_KEY);
+  const requestId = input.requestId?.trim() || null;
+  if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
   }
+  const sourceId = `source_${randomUUID()}`;
+  const metadata = requestId === null
+    ? input.metadata ?? {}
+    : { ...input.metadata, [SOURCE_REGISTRATION_REQUEST_KEY]: requestId };
 
-  await emitShadowEvent({
-    organizationId: input.organizationId,
-    eventName: 'SHADOW_LIBRARY_SOURCE_CREATED',
-    entityType: 'shadow_library_source',
-    entityId: row.source_id,
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    payload: {
-      source_type: row.source_type,
-      authority_tier: row.authority_tier,
-      status: row.status,
-      rights_status: row.rights_status,
-      title: row.title,
-    },
+  // The source, its SHADOW event and its telemetry are written in ONE
+  // transaction. They used to be three statements, and an event or telemetry
+  // failure answered 500 with the source already saved: the curator's retry
+  // then met "already registered" (with a URL) or filed a second source
+  // (without one).
+  return withTransaction(async (client) => {
+    if (requestId !== null) {
+      await lockLibraryRequest(client, 'source', input.organizationId, requestId);
+      const existing = await client.query<ShadowLibrarySourceRow>(
+        `select * from pilot.shadow_library_sources
+          where organization_id = $1 and created_by_account_id = $2 and metadata->>'${SOURCE_REGISTRATION_REQUEST_KEY}' = $3
+          order by created_at
+          limit 1`,
+        [input.organizationId, input.actorAccountId, requestId],
+      );
+      if (existing.rows[0]) return { ...existing.rows[0], recovered: true as const };
+    }
+
+    const inserted = await client.query<ShadowLibrarySourceRow>(
+      `insert into pilot.shadow_library_sources
+        (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role, rights_status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12,$13)
+       returning *`,
+      [
+        sourceId,
+        input.organizationId,
+        input.title.trim(),
+        input.publisher?.trim() || null,
+        input.sourceType,
+        clampAuthorityTier(input.authorityTier ?? 3),
+        input.url?.trim() || null,
+        input.publicationDate?.trim() || null,
+        input.status ?? 'active',
+        JSON.stringify(metadata),
+        input.actorAccountId,
+        input.actorRole,
+        input.rightsStatus ?? 'unknown',
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) {
+      throw new Error('Unable to create SHADOW Library source.');
+    }
+
+    await emitShadowEvent({
+      organizationId: input.organizationId,
+      eventName: 'SHADOW_LIBRARY_SOURCE_CREATED',
+      entityType: 'shadow_library_source',
+      entityId: row.source_id,
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      payload: {
+        source_type: row.source_type,
+        authority_tier: row.authority_tier,
+        status: row.status,
+        rights_status: row.rights_status,
+        title: row.title,
+      },
+    }, client);
+
+    await writeShadowTelemetryEvent({
+      organizationId: input.organizationId,
+      metricName: 'shadow.library.source.create',
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      dimensions: {
+        source_type: row.source_type,
+        authority_tier: row.authority_tier,
+        status: row.status,
+      },
+    }, client);
+
+    return row;
   });
-
-  await writeShadowTelemetryEvent({
-    organizationId: input.organizationId,
-    metricName: 'shadow.library.source.create',
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    dimensions: {
-      source_type: row.source_type,
-      authority_tier: row.authority_tier,
-      status: row.status,
-    },
-  });
-
-  return row;
 }
 
 /**
@@ -989,6 +1047,10 @@ export async function reviewShadowLibrarySource(input: {
   return row;
 }
 
+// A retried intake names the entry it repeats, the same way a retried source
+// registration does (L54). Kept in the document's metadata under this key.
+export const DOCUMENT_INTAKE_REQUEST_KEY = 'intake_request_id';
+
 export async function createShadowLibraryDocument(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1000,70 +1062,111 @@ export async function createShadowLibraryDocument(input: {
   contentSha256?: string | null;
   ingestState?: ShadowLibraryIngestState;
   metadata?: Record<string, unknown>;
-}): Promise<ShadowLibraryDocumentRow> {
+  /** The client's id for this entry; a retry with the same id gets the document it already made. */
+  requestId?: string | null;
+}): Promise<ShadowLibraryDocumentRow & { recovered?: true }> {
   assertNoReservedProvenance(input.metadata);
-  const source = await queryOne<{ source_id: string }>(
-    `select source_id
-     from pilot.shadow_library_sources
-     where source_id = $1 and organization_id = $2`,
-    [input.sourceId, input.organizationId],
-  );
-
-  if (!source) {
-    throw new Error('Source does not exist in this organization.');
+  assertNoRequestKey(input.metadata, DOCUMENT_INTAKE_REQUEST_KEY);
+  const requestId = input.requestId?.trim() || null;
+  if (requestId !== null && !LIBRARY_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new ValidationError('request_id must be 8 to 100 letters, digits or hyphens.');
   }
+  const metadata = requestId === null
+    ? input.metadata ?? {}
+    : { ...input.metadata, [DOCUMENT_INTAKE_REQUEST_KEY]: requestId };
 
-  const documentId = `doc_${randomUUID()}`;
-  const row = await queryOne<ShadowLibraryDocumentRow>(
-    `insert into pilot.shadow_library_documents
-      (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
-     returning *`,
-    [
-      documentId,
-      input.sourceId,
-      input.organizationId,
-      input.subjectId?.trim() || null,
-      input.documentName.trim(),
-      input.blobPath?.trim() || null,
-      input.contentSha256?.trim() || null,
-      input.ingestState ?? 'pending',
-      JSON.stringify(input.metadata ?? {}),
-      input.actorAccountId,
-      input.actorRole,
-    ],
-  );
+  // The document, its SHADOW event and its telemetry are written in ONE
+  // transaction, as the source's are: an event failure no longer answers 500
+  // over a document that was kept, which the curator could only find in
+  // Evidence Review and had to enter again.
+  return withTransaction(async (client) => {
+    if (requestId !== null) {
+      await lockLibraryRequest(client, 'document', input.organizationId, requestId);
+      const existing = await client.query<ShadowLibraryDocumentRow>(
+        `select * from pilot.shadow_library_documents
+          where organization_id = $1 and created_by_account_id = $2 and metadata->>'${DOCUMENT_INTAKE_REQUEST_KEY}' = $3
+            -- A document the retention purge held takes no new chunk (F-086).
+            and not (metadata ? 'subject_purged_at')
+          order by created_at
+          limit 1`,
+        [input.organizationId, input.actorAccountId, requestId],
+      );
+      const found = existing.rows[0];
+      if (found) {
+        // An unfinished excerpt stays with the source it was started under.
+        if (found.source_id !== input.sourceId) {
+          throw new ConflictError(
+            'This entry was already started under a different source. Finish it there, or reject it in Evidence Review.',
+            'SHADOW_LIBRARY_INTAKE_SOURCE_MISMATCH',
+          );
+        }
+        return { ...found, recovered: true as const };
+      }
+    }
 
-  if (!row) {
-    throw new Error('Unable to create SHADOW Library document.');
-  }
+    const source = await client.query<{ source_id: string }>(
+      `select source_id
+       from pilot.shadow_library_sources
+       where source_id = $1 and organization_id = $2`,
+      [input.sourceId, input.organizationId],
+    );
 
-  await emitShadowEvent({
-    organizationId: input.organizationId,
-    eventName: 'SHADOW_LIBRARY_DOCUMENT_REGISTERED',
-    entityType: 'shadow_library_document',
-    entityId: row.document_id,
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    payload: {
-      source_id: row.source_id,
-      ingest_state: row.ingest_state,
-      subject_id: row.subject_id,
-    },
+    if (!source.rows[0]) {
+      throw new Error('Source does not exist in this organization.');
+    }
+
+    const documentId = `doc_${randomUUID()}`;
+    const inserted = await client.query<ShadowLibraryDocumentRow>(
+      `insert into pilot.shadow_library_documents
+        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+       returning *`,
+      [
+        documentId,
+        input.sourceId,
+        input.organizationId,
+        input.subjectId?.trim() || null,
+        input.documentName.trim(),
+        input.blobPath?.trim() || null,
+        input.contentSha256?.trim() || null,
+        input.ingestState ?? 'pending',
+        JSON.stringify(metadata),
+        input.actorAccountId,
+        input.actorRole,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) {
+      throw new Error('Unable to create SHADOW Library document.');
+    }
+
+    await emitShadowEvent({
+      organizationId: input.organizationId,
+      eventName: 'SHADOW_LIBRARY_DOCUMENT_REGISTERED',
+      entityType: 'shadow_library_document',
+      entityId: row.document_id,
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      payload: {
+        source_id: row.source_id,
+        ingest_state: row.ingest_state,
+        subject_id: row.subject_id,
+      },
+    }, client);
+
+    await writeShadowTelemetryEvent({
+      organizationId: input.organizationId,
+      metricName: 'shadow.library.document.register',
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      dimensions: {
+        ingest_state: row.ingest_state,
+        subject_scoped: Boolean(row.subject_id),
+      },
+    }, client);
+
+    return row;
   });
-
-  await writeShadowTelemetryEvent({
-    organizationId: input.organizationId,
-    metricName: 'shadow.library.document.register',
-    actorAccountId: input.actorAccountId,
-    actorRole: input.actorRole,
-    dimensions: {
-      ingest_state: row.ingest_state,
-      subject_scoped: Boolean(row.subject_id),
-    },
-  });
-
-  return row;
 }
 
 // EXCERPT BUDGET (CL-C2; OD-2026-10-02-013 answer 4A: "only excerpts a curator
@@ -1469,6 +1572,27 @@ export function confidenceLevelForScore(mode: 'semantic' | 'keyword', score: num
   return 'low';
 }
 
+const CONFIDENCE_RANK: Record<ShadowLibraryConfidenceLevel, number> = { high: 3, medium: 2, low: 1, none: 0 };
+
+function passageConfidence(item: ShadowLibrarySearchResult, fallbackMode: 'semantic' | 'keyword'): ShadowLibraryConfidenceLevel {
+  return confidenceLevelForScore(item.match_mode ?? fallbackMode, item.score);
+}
+
+// A cosine similarity and a share of the question's words are different
+// scales, so the two paths' scores are never compared: each passage is placed
+// by its own path's confidence level, semantic first within a level, and each
+// path keeps its own order (the sort is stable).
+function mergeRankedPaths(
+  semanticRows: ShadowLibrarySearchResult[],
+  keywordRows: ShadowLibrarySearchResult[],
+  limit: number,
+): ShadowLibrarySearchResult[] {
+  const rank = (item: ShadowLibrarySearchResult) => CONFIDENCE_RANK[passageConfidence(item, 'semantic')];
+  return [...semanticRows, ...keywordRows]
+    .sort((a, b) => rank(b) - rank(a))
+    .slice(0, limit);
+}
+
 // Returns evidence only: passages at or above the relevance bar. The search
 // keeps one body (and so one retrieval-organization predicate) on purpose:
 // platformLibraryWriteScope.convention.test.ts reads this function to prove it
@@ -1517,6 +1641,14 @@ export async function searchShadowLibrary(
   // below remains byte-for-byte the shipped behavior whenever semantics is
   // disabled, errors, or finds nothing relevant -- an embedding outage
   // degrades search, never breaks it.
+  //
+  // Set when the semantic path answered. The keyword query below then runs
+  // only over the passages the semantic index does not hold (see there).
+  let semantic: {
+    relevant: ShadowLibrarySearchResult[];
+    nearest: ShadowLibrarySearchResult[];
+    embeddingModel: string;
+  } | null = null;
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
     if (queryEmbedding) {
@@ -1590,6 +1722,7 @@ export async function searchShadowLibrary(
             // and drops below the floor: one bad row never fails search, and
             // a string "1" is not read as the number 1.
             score: isNumericVector(embedding) ? cosineSimilarity(queryEmbedding, embedding) : 0,
+            match_mode: 'semantic' as const,
           }))
           // Below the floor, "closest" is noise, not relevance. It is dropped,
           // and it does NOT fall back to loose keywords: that fallback is how a
@@ -1604,30 +1737,16 @@ export async function searchShadowLibrary(
         afterChunkId = batch[batch.length - 1].chunk_id;
       }
 
-      // Candidates exist (embedded chunks are in the library), so this answer
-      // is final even when empty. Only "no embedded chunks yet" or an embedding
-      // outage degrades to the keyword path below.
+      // Candidates exist (embedded chunks are in the library), so the ranking
+      // of the indexed passages is final even when empty. Only "no embedded
+      // chunks yet" or an embedding outage sends the WHOLE library to the
+      // keyword path below.
       if (candidateCount > 0) {
-        const relevant = ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR);
-        const nearest = ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR);
-        await writeShadowTelemetryEvent({
-          organizationId: input.organizationId,
-          metricName: 'shadow.library.search',
-          actorAccountId: input.actorAccountId,
-          actorRole: input.actorRole,
-          dimensions: {
-            scope: normalized.scope,
-            result_count: relevant.length,
-            nearest_count: nearest.length,
-            term_count: terms.length,
-            search_mode: 'semantic',
-          },
-        });
-        if (detail) {
-          detail.nearest = nearest;
-          detail.mode = 'semantic';
-        }
-        return relevant;
+        semantic = {
+          relevant: ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR),
+          nearest: ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR),
+          embeddingModel: currentEmbeddingModel,
+        };
       }
     }
   }
@@ -1636,6 +1755,16 @@ export async function searchShadowLibrary(
   // words already dropped, and the score is the share of the question's words
   // found -- the authority tier is a tie-break, never a score. No meaningful
   // word left means there is nothing to match on.
+  //
+  // After a semantic answer it runs over the passages the semantic index does
+  // not hold, and only those: a chunk never embedded (the embedding is
+  // best-effort and can fail while the chunk stays stored) or embedded by
+  // another deployment. Returning from the semantic path left them findable by
+  // nothing. An indexed passage was already judged by meaning and is never
+  // re-admitted here on word overlap.
+  const unindexedOnlySql = semantic
+    ? 'and (c.embedding is null or c.embedding_model is distinct from $6::text)'
+    : '';
   const rows = terms.length === 0 ? [] : await query<ShadowLibrarySearchResult>(
     `select * from (
        select
@@ -1683,6 +1812,7 @@ export async function searchShadowLibrary(
          -- Held by the retention purge (F-086), as in the semantic path.
          and not (d.metadata ? 'subject_purged_at')
          and not (c.metadata ? 'subject_purged_at')
+         ${unindexedOnlySql}
      ) ranked
      where score > 0
      order by score desc, authority_tier asc, ordinal asc, chunk_id asc
@@ -1693,11 +1823,41 @@ export async function searchShadowLibrary(
       normalized.effectiveSubjectId,
       terms,
       limit,
+      // Without a semantic answer the statement is the shipped keyword search, unchanged.
+      ...(semantic ? [semantic.embeddingModel] : []),
     ],
   );
+  const keywordRows = rows.map((row) => ({ ...row, match_mode: 'keyword' as const }));
 
-  const relevant = rows.filter((row) => row.score >= KEYWORD_RELEVANCE_BAR);
-  const nearest = rows.filter((row) => row.score < KEYWORD_RELEVANCE_BAR);
+  if (semantic) {
+    // Unindexed passages join at the keyword relevance bar and not below it:
+    // no below-bar keyword row is added, as evidence or as nearest, so a
+    // question the index found nothing for still gets nothing loose.
+    const supplement = keywordRows.filter((row) => row.score >= KEYWORD_RELEVANCE_BAR);
+    const relevant = mergeRankedPaths(semantic.relevant, supplement, limit);
+    await writeShadowTelemetryEvent({
+      organizationId: input.organizationId,
+      metricName: 'shadow.library.search',
+      actorAccountId: input.actorAccountId,
+      actorRole: input.actorRole,
+      dimensions: {
+        scope: normalized.scope,
+        result_count: relevant.length,
+        nearest_count: semantic.nearest.length,
+        unindexed_count: relevant.filter((item) => item.match_mode === 'keyword').length,
+        term_count: terms.length,
+        search_mode: 'semantic',
+      },
+    });
+    if (detail) {
+      detail.nearest = semantic.nearest;
+      detail.mode = 'semantic';
+    }
+    return relevant;
+  }
+
+  const relevant = keywordRows.filter((row) => row.score >= KEYWORD_RELEVANCE_BAR);
+  const nearest = keywordRows.filter((row) => row.score < KEYWORD_RELEVANCE_BAR);
 
   await writeShadowTelemetryEvent({
     organizationId: input.organizationId,
@@ -1764,8 +1924,11 @@ export async function createShadowLibraryClaim(input: {
   // The canonical-doctrine shortcut that used to sit here required scope
   // 'master', which no caller could produce, so it never fired. It was removed
   // with that scope; dropping it is behavior-preserving.
-  const bestScore = counted.reduce((max, item) => Math.max(max, item.score), 0);
-  const bestLevel = confidenceLevelForScore(ranked.mode, bestScore);
+  // Each passage on its own path's cutoffs: one answer can hold both.
+  const bestLevel = counted.reduce<ShadowLibraryConfidenceLevel>((best, item) => {
+    const level = passageConfidence(item, ranked.mode);
+    return CONFIDENCE_RANK[level] > CONFIDENCE_RANK[best] ? level : best;
+  }, 'low');
   if (distinctSourceCount >= 2 && counted.length >= 2) {
     status = 'supported';
     confidence = 0.78;
@@ -1849,7 +2012,12 @@ export async function createShadowLibraryClaim(input: {
     confidenceLevel,
     evidenceCount: counted.length,
     distinctSourceCount,
-    evidence,
+    // The response shape as before: which path found a passage stays internal.
+    evidence: evidence.map((item) => {
+      const row = { ...item };
+      delete row.match_mode;
+      return row;
+    }),
     researchRequirementId: claimResearchRequirement?.id ?? null,
   };
 }
