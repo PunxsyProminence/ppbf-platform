@@ -650,6 +650,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_cycle',
   // What a child ticked after sparring (head symptoms): a safety record.
   'pilot.sparring_symptom_reports',
+  // A coach's report of what a child did in a drill, and why (lane L49). Staff only.
+  'pilot.behaviour_observations',
 ];
 
 /**
