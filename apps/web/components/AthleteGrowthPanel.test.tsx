@@ -13,6 +13,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
+import { gymDayIso } from '@/src/lib/gymTime';
+
 import AthleteGrowthPanel, { growthSentence, parseHeightPayload } from './AthleteGrowthPanel';
 
 const OLD = {
@@ -173,7 +175,7 @@ test('a correction names the reading it replaces and keeps the original on scree
   expect(screen.getByRole('status').textContent).toBe('Correction saved: 152.4 cm. The old reading stays on record.');
   expect(screen.getByText('(corrected)')).toBeTruthy();
   // The form is back to a new reading for today, not the corrected reading's date.
-  expect((screen.getByLabelText('Measured on') as HTMLInputElement).value).not.toBe('2026-10-01');
+  expect((screen.getByLabelText('Measured on') as HTMLInputElement).value).toBe(gymDayIso());
   // A corrected reading offers no second correction.
   expect(screen.queryByRole('button', { name: 'Correct the 151.4 cm reading of 10/1/2026' })).toBeNull();
 });
@@ -240,6 +242,9 @@ test('"already corrected" leaves correcting mode and re-reads the readings', asy
   });
   expect(screen.getByRole('alert').textContent).toMatch(/already corrected/);
   expect(screen.getByRole('button', { name: 'Save height' })).toBeTruthy();
+  // Nothing of the refused correction is left to be saved as a new reading.
+  expect((screen.getByLabelText('Height in centimetres') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Measured on') as HTMLInputElement).value).toBe(gymDayIso());
   expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'GET')).toHaveLength(2);
 });
 
@@ -253,7 +258,7 @@ test('cancelling a correction puts the date back to today', async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel correction' }));
   });
-  expect((screen.getByLabelText('Measured on') as HTMLInputElement).value).not.toBe('2026-07-01');
+  expect((screen.getByLabelText('Measured on') as HTMLInputElement).value).toBe(gymDayIso());
   expect((screen.getByLabelText('Height in centimetres') as HTMLInputElement).value).toBe('');
 });
 
@@ -284,6 +289,28 @@ test('a failed read offers Try again, which reads again', async () => {
   await renderPanel();
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  });
+  expect(screen.getByText(/Height: 151\.4 cm/)).toBeTruthy();
+});
+
+test('a re-read started by a lost reply never replaces the list a later save confirmed', async () => {
+  let releaseReread: (response: Response) => void = () => {};
+  fetchMock
+    .mockResolvedValueOnce(jsonResponse(payload([])))
+    .mockRejectedValueOnce(new Error('network'))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { releaseReread = resolve; }))
+    .mockResolvedValueOnce(jsonResponse(payload([LATEST]), 201));
+  await renderPanel();
+  fireEvent.change(screen.getByLabelText('Height in centimetres'), { target: { value: '151.4' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save height' }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save height' }));
+  });
+  expect(screen.getByText(/Height: 151\.4 cm/)).toBeTruthy();
+  await act(async () => {
+    releaseReread(jsonResponse(payload([])));
   });
   expect(screen.getByText(/Height: 151\.4 cm/)).toBeTruthy();
 });

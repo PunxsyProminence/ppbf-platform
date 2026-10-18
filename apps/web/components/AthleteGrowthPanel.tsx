@@ -183,11 +183,16 @@ export default function AthleteGrowthPanel({ athleteId }: { athleteId: string })
             refused ? 'The height was not saved. Try again.' : undefined,
           ),
         });
-        if (response.status === 409) setCorrecting(null);
+        // "Already corrected" (or a reused key): start over with an empty form
+        // for today, so a second press cannot record the typed value as a
+        // new reading on the old reading's date.
+        if (response.status === 409) resetForm();
         if (!refused || response.status === 409) void load();
         return;
       }
       pending.current = null;
+      // A re-read still in flight is older than this answer; it must not land.
+      latestRead.current += 1;
       setReading({ state: 'loaded', ...parsed });
       setMessage({
         kind: 'saved',
