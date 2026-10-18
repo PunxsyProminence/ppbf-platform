@@ -1,3 +1,5 @@
+import type { SessionType } from '@/src/shared/sessionTypes';
+
 export type PilotRole =
   | 'platform_owner'
   | 'organization_admin'
@@ -84,6 +86,10 @@ export interface PilotSession {
   // Session load (rpe x duration_minutes) is never stored -- see
   // pilot_slice_postgres_session_duration_migration.sql.
   duration_minutes?: number | null;
+  // The athlete's own tag for the session, set at check-out (src/shared/
+  // sessionTypes.ts). Optional on a write like duration_minutes: an absent key
+  // leaves the stored tag unchanged; null is "not said".
+  session_type?: SessionType | null;
   notes: string;
   completed_flag: boolean;
   created_at: string;
@@ -228,10 +234,11 @@ export const SESSION_FIELDS = [
 ] as const;
 
 // Accepted on a session write but not demanded: every writer older than the
-// session-duration migration omits it, and an absent key leaves the stored
-// value alone (see upsertSession).
+// session-duration (and self-report measures) migrations omits them, and an
+// absent key leaves the stored value alone (see upsertSession).
 export const SESSION_OPTIONAL_FIELDS = [
   'duration_minutes',
+  'session_type',
 ] as const;
 
 export const COACH_REVIEW_FIELDS = [

@@ -780,9 +780,54 @@ describe('whole session review fixes', () => {
     expect(posts).toEqual([]);
 
     fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '12' } });
+    fireEvent.change(within(section).getByLabelText('Rounds you finished'), { target: { value: '13' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+    await within(section).findByText(/Rounds you finished has to be between 1 and 12/);
+    expect(posts).toEqual([]);
+
     fireEvent.change(within(section).getByLabelText('Rounds you finished'), { target: { value: '5' } });
     fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
     await within(section).findByText(/Fixed\./);
     expect(posts).toEqual([expect.objectContaining({ kind: 'round_count', value: 5, supersedesObservationId: 'obs-rounds' })]);
+  });
+});
+
+describe('fix a number, clearing a whole-session box (Codex review on #1729)', () => {
+  test('a cleared whole-session box is replaced by null; a cleared per-type box changes nothing', async () => {
+    const entry = {
+      contextId: 'sparring_1000',
+      observedAt: '2026-10-17T15:00:00.000Z',
+      observations: [
+        { observationId: 'obs-thrown', kind: 'punch_attempted', value: 10, unit: 'count', dimensions: { punchType: 'Jab' }, observedAt: '2026-10-17T15:00:00.000Z' },
+        { observationId: 'obs-all-landed', kind: 'punch_landed', value: 12, unit: 'count', dimensions: { scope: 'session_total' }, observedAt: '2026-10-17T15:00:00.000Z' },
+      ],
+    };
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'athlete', athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (init?.method === 'GET') return { ok: true, json: async () => ({ ok: true, entries: [entry] }) } as Response;
+      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    const show = () => screen.getByRole('button', { name: 'Show recent entries' }) as HTMLButtonElement;
+    await waitFor(() => expect(show().disabled).toBe(false));
+    fireEvent.click(show());
+    const section = screen.getByRole('region', { name: 'Fix a number' });
+    fireEvent.click(await within(section).findByRole('button', { name: 'Fix' }));
+
+    fireEvent.change(within(section).getByLabelText('Thrown'), { target: { value: '' } });
+    fireEvent.change(within(section).getByLabelText('All punches landed'), { target: { value: '' } });
+    fireEvent.click(within(section).getByRole('button', { name: 'Save fix' }));
+
+    await within(section).findByText(/Fixed\./);
+    expect(posts).toEqual([expect.objectContaining({
+      kind: 'punch_landed',
+      value: null,
+      dimensions: { scope: 'session_total' },
+      supersedesObservationId: 'obs-all-landed',
+    })]);
   });
 });

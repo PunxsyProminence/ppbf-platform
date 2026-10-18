@@ -101,6 +101,7 @@ const BASELINE_ITEM_LABELS: Record<string, string> = {
   energy: 'Energy (1-5)',
   soreness: 'Soreness (1-5)',
   stress: 'Stress (1-5)',
+  mood: 'Mood (1-5)',
 };
 
 function FormulaOutputCard({ entry }: { entry: FormulaOutputEntry }) {

@@ -412,7 +412,7 @@ export default function CoachCardsPage() {
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Coach Cards</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Issue Work. Watch It Land.</h1>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Coach Cards</h1>
           <ClusterNav cluster="planning" />
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             A card goes to one athlete or to a whole program. The athlete sees it on their progression page,

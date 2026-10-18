@@ -105,3 +105,24 @@ test('one item failing does not cost the other items; the failure is still repor
 test('the items written here are exactly the items the runner protects', () => {
   expect(CHECK_IN_BASELINE_METRICS.map((metric) => metric.metricKey)).toEqual([...CHECK_IN_BASELINE_METRIC_KEYS]);
 });
+
+test('stress and mood are baseline items on the 1-5 scale with a 0.5 floor ("Mood + stress (Rec.)")', async () => {
+  mockWindow.mockResolvedValue([]);
+  await recordCheckInBaselines({
+    organizationId: 'org-1',
+    athleteId: 'athlete-1',
+    checkInId: 'ci-1',
+    observedAt: AT,
+    accountId: 'acct-1',
+    values: { stress: 2, mood: 4 },
+  });
+
+  expect(mockSave.mock.calls.map(([input]) => [input.value, input.unit, input.dimensions, input.idempotencyKey])).toEqual([
+    [2, 'rating_1_5', { metricKey: 'stress' }, 'check-in:ci-1:stress'],
+    [4, 'rating_1_5', { metricKey: 'mood' }, 'check-in:ci-1:mood'],
+  ]);
+  expect(mockRun.mock.calls.map(([input]) => input.parameters)).toEqual([
+    { metricKey: 'stress', windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 },
+    { metricKey: 'mood', windowDays: 28, minimumHistory: 7, adequateHistory: 14, sdFloor: 0.5 },
+  ]);
+});

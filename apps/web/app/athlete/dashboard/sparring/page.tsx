@@ -273,22 +273,32 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
 
   async function saveFix(entry: SparringEntry) {
     if (!athleteId) return;
-    const changes = CORRECTABLE_FIELDS.flatMap(({ field }) => {
+    const changes = CORRECTABLE_FIELDS.flatMap(({ field, sessionTotal }) => {
       const observation = entryObservation(entry, field);
       const raw = draft[field];
-      if (!observation || raw === undefined || raw.trim() === '') return [];
-      const value = Number(raw);
+      if (!observation || raw === undefined) return [];
+      // A cleared whole-session box means "not counted" -- the same as leaving
+      // it blank on the log -- so the stored number is replaced by null rather
+      // than kept. The per-type numbers always carry a count; a blank there
+      // changes nothing.
+      if (raw.trim() === '') {
+        return sessionTotal && observation.value != null
+          ? [{ field, observation, value: null as number | null }]
+          : [];
+      }
+      const value: number | null = Number(raw);
       return value === observation.value ? [] : [{ field, observation, value }];
     });
-    if (changes.some(({ field, value }) => field !== 'minutesWorked' && (!Number.isInteger(value) || value < 0))) {
+    if (changes.some(({ field, value }) => value != null && field !== 'minutesWorked' && (!Number.isInteger(value) || value < 0))) {
       setMessage('Counts are whole numbers, 0 or more.');
       return;
     }
-    if (changes.some(({ field, value }) => field === 'rounds' && value < 1)) {
-      setMessage('Rounds you finished has to be at least 1.');
+    // The log's own rounds box takes 1-12 (min/max on the input).
+    if (changes.some(({ field, value }) => field === 'rounds' && value != null && (value < 1 || value > 12))) {
+      setMessage('Rounds you finished has to be between 1 and 12.');
       return;
     }
-    if (changes.some(({ field, value }) => field === 'minutesWorked' && (!Number.isFinite(value) || value < 1 || value > MINUTES_WORKED_MAX))) {
+    if (changes.some(({ field, value }) => field === 'minutesWorked' && value != null && (!Number.isFinite(value) || value < 1 || value > MINUTES_WORKED_MAX))) {
       setMessage(`Minutes of actual work has to be between 1 and ${MINUTES_WORKED_MAX}.`);
       return;
     }

@@ -7,7 +7,7 @@
 // done / still-to-do state. A failed read says so, never "nothing posted".
 
 import '@testing-library/jest-dom';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 
 import FamilyNotesPosted, { type FamilyNoteRow } from './FamilyNotesPosted';
 
@@ -48,9 +48,12 @@ function byUrl(
   notes: () => Response,
   replies: () => Response = () => jsonResponse({ items: [] }),
   opened: () => Response = () => jsonResponse({ items: [] }),
+  // This staff member's own seen replies (FC-09b); POSTs answer ok.
+  seen: () => Response = () => jsonResponse({ items: [] }),
 ): jest.Mock {
-  return jest.fn(async (input: RequestInfo | URL) => {
+  return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.includes('/family-reply-reads')) return init?.method === 'POST' ? jsonResponse({ ok: true }) : seen();
     if (url.includes('/family-message-replies')) return replies();
     // Whether the family opened each note (FC-05).
     if (url.includes('/family-message-reads')) return opened();
@@ -336,6 +339,383 @@ describe('opened by the family (FC-05)', () => {
   });
 });
 
+/*
+ * NEW TO ME (FC-09b): a reply this staff member had not seen when the panel
+ * loaded carries "New" for the visit; a reply is recorded as seen when at
+ * least half of it is on screen, never on load; a failed seen read draws no
+ * New and says, in one muted line, that it could not be loaded.
+ */
+describe('new replies for this staff member (FC-09b)', () => {
+  const REPLY_A = { reply_id: 'r1', note_id: 'n1', reply_text: 'Will do, thanks.', created_at: '2026-10-12T23:30:00.000Z', author_name: 'Alex Parent' };
+  const REPLY_B = { reply_id: 'r2', note_id: 'n1', reply_text: 'Gloves are packed.', created_at: '2026-10-13T00:15:00.000Z', author_name: 'Jordan Parent' };
+
+  /* A stand-in for the browser's IntersectionObserver: the test says which
+     reply is on screen, and how much of it. */
+  class FakeObserver {
+    static instances: FakeObserver[] = [];
+    observed = new Set<Element>();
+    disconnects = 0;
+    constructor(private readonly callback: IntersectionObserverCallback) {
+      FakeObserver.instances.push(this);
+    }
+    observeCalls: Element[] = [];
+    // As the browser does: observing a target already watched registers nothing new.
+    observe(element: Element) {
+      if (this.observed.has(element)) return;
+      this.observed.add(element);
+      this.observeCalls.push(element);
+    }
+    unobserve(element: Element) { this.observed.delete(element); }
+    disconnect() { this.disconnects += 1; this.observed.clear(); }
+    show(replyId: string, ratio: number, visibleHeight: number, screenHeight: number, times = 1) {
+      const target = [...this.observed].find((element) => (element as HTMLElement).dataset.readReply === replyId);
+      if (!target) return;
+      const entry = {
+        target,
+        isIntersecting: ratio > 0,
+        intersectionRatio: ratio,
+        intersectionRect: { height: visibleHeight },
+        rootBounds: { height: screenHeight },
+      } as unknown as IntersectionObserverEntry;
+      this.callback(Array.from({ length: times }, () => entry), this as unknown as IntersectionObserver);
+    }
+  }
+
+  function showReply(replyId: string, ratio = 1, visibleHeight = 0, screenHeight = 800) {
+    for (const observer of FakeObserver.instances) observer.show(replyId, ratio, visibleHeight, screenHeight);
+  }
+
+  function readPosts(fetchMock: jest.Mock): string[] {
+    return fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/family-reply-reads') && (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => (JSON.parse(String((call[1] as RequestInit).body)) as { reply_id: string }).reply_id);
+  }
+
+  function replyItem(text: string): HTMLElement {
+    return screen.getByText(text).closest('li') as HTMLElement;
+  }
+
+  beforeEach(() => {
+    FakeObserver.instances = [];
+    (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = FakeObserver;
+  });
+
+  afterEach(() => {
+    delete (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+  });
+
+  test('a reply not seen before shows New; one already seen does not', async () => {
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [REPLY_A, REPLY_B] }),
+      undefined,
+      () => jsonResponse({ items: [{ reply_id: 'r1' }] }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(within(replyItem('Gloves are packed.')).getByText('New')).toBeInTheDocument();
+    expect(within(replyItem('Will do, thanks.')).queryByText('New')).toBeNull();
+    // A seen read that answered says nothing about failing.
+    expect(screen.queryByText(/Which replies are new to you could not be loaded/)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/pilot/coach/family-reply-reads?athlete_id=ath-1'),
+      expect.anything(),
+    );
+  });
+
+  test('the New badge carries its glyph, hidden from screen readers', async () => {
+    global.fetch = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_B] })) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    const badge = within(replyItem('Gloves are packed.')).getByText('New').closest('.badge') as HTMLElement;
+    const glyph = badge.querySelector('[aria-hidden="true"]');
+    expect(glyph?.textContent).toBe('◉');
+  });
+
+  test('a failed seen read draws no New and says once that it could not be loaded', async () => {
+    global.fetch = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [REPLY_A, REPLY_B] }),
+      undefined,
+      () => jsonResponse({ error: 'boom' }, false),
+    ) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+
+    expect(screen.getByText('Gloves are packed.')).toBeInTheDocument();
+    expect(screen.queryByText('New')).toBeNull();
+    expect(screen.getAllByText(
+      'Which replies are new to you could not be loaded. This is not a statement that there are none.',
+    )).toHaveLength(1);
+  });
+
+  test('a failed seen read still records a reply seen on screen', async () => {
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [REPLY_A] }),
+      undefined,
+      () => jsonResponse({ error: 'boom' }, false),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+  });
+
+  test('leaving the panel stops watching: nothing is recorded after unmount', async () => {
+    const fetchMock = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    let view: ReturnType<typeof render> | null = null;
+    await act(async () => {
+      view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(FakeObserver.instances.length).toBeGreaterThan(0);
+    view!.unmount();
+
+    expect(FakeObserver.instances.every((observer) => observer.disconnects > 0)).toBe(true);
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual([]);
+  });
+
+  test('loading the panel records nothing; half of a reply on screen records it once', async () => {
+    const fetchMock = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A, REPLY_B] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(readPosts(fetchMock)).toEqual([]);
+
+    await act(async () => { showReply('r2', 0.49); });
+    expect(readPosts(fetchMock)).toEqual([]);
+
+    await act(async () => { showReply('r2', 0.5); });
+    await act(async () => { showReply('r2', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r2']);
+    // New stays for the visit.
+    expect(within(replyItem('Gloves are packed.')).getByText('New')).toBeInTheDocument();
+  });
+
+  test('a reply recorded on this visit is not sent again when the panel redraws', async () => {
+    let finishOpened: ((value: Response) => void) | null = null;
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      (String(input).includes('/family-message-reads')
+        ? new Promise<Response>((resolve) => { finishOpened = resolve; })
+        : base(input, init)));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => { showReply('r1', 1); });
+    // The opened read answering late redraws the panel and watches it afresh.
+    await act(async () => {
+      finishOpened?.(jsonResponse({ items: [] }));
+    });
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+  });
+
+  test('a reply taller than the screen counts once it fills half the screen', async () => {
+    const fetchMock = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    await act(async () => { showReply('r1', 0.2, 399, 800); });
+    expect(readPosts(fetchMock)).toEqual([]);
+    await act(async () => { showReply('r1', 0.25, 400, 800); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+  });
+
+  test('a reply already seen is not sent again', async () => {
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [REPLY_A] }),
+      undefined,
+      () => jsonResponse({ items: [{ reply_id: 'r1' }] }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual([]);
+  });
+
+  test('a failed write is not shown, and is sent again when the panel reloads', async () => {
+    let posts = 0;
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/family-reply-reads') && init?.method === 'POST') {
+        posts += 1;
+        return jsonResponse({ error: 'boom' }, posts > 1);
+      }
+      return base(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+    expect(screen.queryByRole('alert')).toBeNull();
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
+    });
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1', 'r1']);
+  });
+
+  test('a read that fails after a reload saw its reply is watched afresh, so a reply still on screen is sent again', async () => {
+    let failFirst: (() => void) | null = null;
+    let posts = 0;
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/family-reply-reads') && init?.method === 'POST') {
+        posts += 1;
+        if (posts === 1) {
+          await new Promise<void>((resolve) => { failFirst = resolve; });
+          return jsonResponse({ error: 'boom' }, false);
+        }
+        return jsonResponse({ ok: true });
+      }
+      return base(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+
+    // A post reloads the panel while that read is still on its way; the new
+    // watch sees the reply at once, and the read in flight is not sent twice.
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
+    });
+    const watching = FakeObserver.instances[FakeObserver.instances.length - 1];
+    await act(async () => { watching.show('r1', 1, 0, 800); });
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+    const observedBefore = watching.observeCalls.length;
+
+    await act(async () => { failFirst?.(); });
+
+    // The reply has not moved, so no new crossing comes: the watch takes it up again.
+    const reply = document.querySelector('[data-read-reply="r1"]');
+    expect(watching.observeCalls.slice(observedBefore)).toEqual([reply]);
+    await act(async () => { watching.show('r1', 1, 0, 800); });
+    expect(readPosts(fetchMock)).toEqual(['r1', 'r1']);
+  });
+
+  test('one batch naming a reply twice sends it once, and a failed send is not taken up again until a reload', async () => {
+    const base = byUrl(() => jsonResponse({ items: [OPEN] }), () => jsonResponse({ items: [REPLY_A] }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/family-reply-reads') && init?.method === 'POST'
+        ? jsonResponse({ error: 'boom' }, false)
+        : base(input, init));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    const watching = FakeObserver.instances[FakeObserver.instances.length - 1];
+    const observedBefore = watching.observeCalls.length;
+    await act(async () => { watching.show('r1', 1, 0, 800, 2); });
+
+    expect(readPosts(fetchMock)).toEqual(['r1']);
+    expect(watching.observeCalls.length).toBe(observedBefore);
+  });
+
+  test('a reload after a post keeps New on a reply seen on this visit', async () => {
+    let seenReads = 0;
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [REPLY_A] }),
+      undefined,
+      // The second read already holds the read written on this visit.
+      () => jsonResponse({ items: (seenReads += 1) === 1 ? [] : [{ reply_id: 'r1' }] }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    await act(async () => { showReply('r1', 1); });
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-1" refreshKey={1} />);
+    });
+
+    expect(seenReads).toBe(2);
+    expect(within(replyItem('Will do, thanks.')).getByText('New')).toBeInTheDocument();
+  });
+
+  test('an athlete switch starts over, and a late seen answer for the last athlete is ignored', async () => {
+    let finishFirstSeen: ((value: Response) => void) | null = null;
+    let secondSeenReads = 0;
+    const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/family-reply-reads') && init?.method === 'POST') return Promise.resolve(jsonResponse({ ok: true }));
+      if (url.includes('/family-reply-reads') && url.includes('athlete_id=ath-1')) {
+        return new Promise<Response>((resolve) => { finishFirstSeen = resolve; });
+      }
+      // ath-2: nothing seen at first; the reload after a post holds the read written on this visit.
+      if (url.includes('/family-reply-reads')) {
+        return Promise.resolve(jsonResponse({ items: (secondSeenReads += 1) === 1 ? [] : [{ reply_id: 'r2' }] }));
+      }
+      if (url.includes('/family-message-replies')) {
+        return Promise.resolve(jsonResponse({ items: url.includes('ath-1') ? [REPLY_A] : [REPLY_B] }));
+      }
+      if (url.includes('/family-message-reads')) return Promise.resolve(jsonResponse({ items: [] }));
+      return Promise.resolve(jsonResponse({ items: [OPEN] }));
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const view = render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    await act(async () => {});
+    // Not watched until this staff member's earlier reads have answered.
+    await act(async () => { showReply('r1', 1); });
+    expect(readPosts(fetchMock)).toEqual([]);
+    expect(screen.queryByText('New')).toBeNull();
+
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={0} />);
+    });
+    await act(async () => {
+      finishFirstSeen?.(jsonResponse({ items: [{ reply_id: 'r2' }] }));
+    });
+
+    // ath-2's own read (nothing seen) decides, not ath-1's late answer.
+    expect(within(replyItem('Gloves are packed.')).getByText('New')).toBeInTheDocument();
+    await act(async () => { showReply('r2', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r2']);
+
+    // A reload after a post on ath-2: the visit is still ath-2's, so New stays
+    // on the reply seen this visit and nothing is sent again. ath-1's late
+    // answer must not have taken over the visit.
+    await act(async () => {
+      view.rerender(<FamilyNotesPosted athleteId="ath-2" refreshKey={1} />);
+    });
+    expect(secondSeenReads).toBe(2);
+    expect(within(replyItem('Gloves are packed.')).getByText('New')).toBeInTheDocument();
+    await act(async () => { showReply('r2', 1); });
+    expect(readPosts(fetchMock)).toEqual(['r2']);
+  });
+});
+
 /* UXB-05: EACH FAILED READ HAS CHECK AGAIN, AND THE PAGE NEVER SAYS RELOAD. A
    reload would throw away every unsent draft on the Decision Loop. */
 describe('Check again, never Reload (UXB-05)', () => {
@@ -410,5 +790,32 @@ describe('Check again, never Reload (UXB-05)', () => {
     expect(calls(fetchMock, '/family-notes?')).toBe(notesReads);
     expect(screen.getByText(/Opened by the family/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('failed seen read (FC-09b): Check again re-runs the reads and draws New', async () => {
+    let fail = true;
+    const reply = { reply_id: 'r1', note_id: 'n1', reply_text: 'Will do.', created_at: '2026-10-12T22:00:00.000Z', author_name: 'Alex Parent' };
+    const fetchMock = byUrl(
+      () => jsonResponse({ items: [OPEN] }),
+      () => jsonResponse({ items: [reply] }),
+      undefined,
+      () => (fail ? jsonResponse({ error: 'down' }, false) : jsonResponse({ items: [] })),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<FamilyNotesPosted athleteId="ath-1" refreshKey={0} />);
+    });
+    expect(screen.getByText(/Which replies are new to you could not be loaded/)).toBeInTheDocument();
+    expect(screen.queryByText('New')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/reload/i);
+
+    fail = false;
+    await act(async () => {
+      screen.getByRole('button', { name: 'Check again' }).click();
+    });
+    expect(calls(fetchMock, '/family-reply-reads?')).toBe(2);
+    expect(screen.queryByText(/Which replies are new to you could not be loaded/)).toBeNull();
+    expect(screen.getByText('New')).toBeInTheDocument();
   });
 });
