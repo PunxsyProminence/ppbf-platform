@@ -11,9 +11,9 @@ import {
   calculateSessionLoad,
   calculateSevenDayWeightChange,
   calculateWorkRateConsistency,
+  dayWindowBaselinePolicyIsValid,
   type CompletenessPolicy,
   type ContactExposurePolicy,
-  type PersonalBaselinePolicy,
   type WeightChangePolicy,
 } from './engine';
 import {
@@ -28,7 +28,12 @@ import {
   getActiveFormulaObservationsByIds,
   saveFormulaResultsWithClient,
 } from './repository';
-import { SESSION_TOTAL_DIMENSIONS } from './types';
+import {
+  CHECK_IN_BASELINE_METRICS,
+  CHECK_IN_BASELINE_POLICY,
+  CHECK_IN_CONTEXT_PREFIX,
+  SESSION_TOTAL_DIMENSIONS,
+} from './types';
 import type {
   FormulaBaselineSnapshot,
   FormulaResult,
@@ -327,10 +332,35 @@ function parseContactPolicy(input: RunStoredMvpFormulaInput): {
 }
 
 function parseBaselinePolicy(input: RunStoredMvpFormulaInput): {
-  policy: PersonalBaselinePolicy & BaselinePolicy;
+  policy: BaselinePolicy;
   policyVersion: string;
 } {
   const parameters = parameterObject(input);
+  if ('windowDays' in parameters) {
+    assertExactParameterKeys(parameters, [
+      'metricKey',
+      'windowDays',
+      'minimumHistory',
+      'adequateHistory',
+      'sdFloor',
+    ]);
+    const candidate = {
+      metricKey: typeof parameters.metricKey === 'string' ? parameters.metricKey.trim() : '',
+      windowDays: parameters.windowDays as number,
+      minimumHistory: parameters.minimumHistory as number,
+      adequateHistory: parameters.adequateHistory as number,
+      sdFloor: parameters.sdFloor as number,
+    };
+    if (
+      typeof parameters.metricKey !== 'string'
+      || parameters.metricKey.length > 120
+      || !dayWindowBaselinePolicyIsValid(candidate)
+    ) {
+      executionError('Personal-baseline parameters are invalid.', 'INVALID_PARAMETERS');
+    }
+    const policyVersion = requirePolicyVersion(input);
+    return { policy: { ...candidate, policyVersion }, policyVersion };
+  }
   assertExactParameterKeys(parameters, [
     'metricKey',
     'windowSize',
@@ -588,6 +618,30 @@ function calculateStoredFormula(
         executionError('Personal baseline accepts only numeric observations.');
       }
       const { policy, policyVersion } = parseBaselinePolicy(input);
+      // A check-in item's baseline is the check-in's own (Jason 2026-10-17,
+      // OD-2026-10-17-020): only its day-window policy, only over check-in
+      // answers. Without this a hand-picked numeric observation run through
+      // POST /results would become the coach's "latest" sleep baseline.
+      // Pinned to the ruled policy too, so a run with its own window, floor or
+      // version cannot stand as the newest "Sleep" on the coach page.
+      const checkInMetric = CHECK_IN_BASELINE_METRICS.find((metric) => metric.metricKey === policy.metricKey);
+      if (
+        checkInMetric
+        && (
+          !('windowDays' in policy)
+          || policy.windowDays !== CHECK_IN_BASELINE_POLICY.windowDays
+          || policy.minimumHistory !== CHECK_IN_BASELINE_POLICY.minimumHistory
+          || policy.adequateHistory !== CHECK_IN_BASELINE_POLICY.adequateHistory
+          || policy.sdFloor !== checkInMetric.sdFloor
+          || policyVersion !== CHECK_IN_BASELINE_POLICY.policyVersion
+          || observations.some((observation) => (
+            !observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX)
+            || observation.unit !== checkInMetric.unit
+          ))
+        )
+      ) {
+        executionError('A check-in baseline is calculated from check-in answers only.');
+      }
       const ordered = sortChronologically(observationsOfKind(observations, 'numeric'));
       if (ordered.length === 0) {
         executionError('Personal baseline requires a current numeric observation.');
