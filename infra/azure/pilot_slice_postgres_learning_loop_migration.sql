@@ -371,7 +371,8 @@ create table if not exists pilot.learning_policies (
   constraint pilot_learning_policies_parameters_check check (jsonb_typeof(parameters) = 'object'),
   constraint pilot_learning_policies_citations_check
     check (jsonb_typeof(citations) = 'array' and jsonb_array_length(citations) >= 1),
-  constraint pilot_learning_policies_role_check check (ratified_by_role in ('organization_admin', 'admin')),
+  -- Jason 2026-10-18: "A: Gym admin only (Rec.)" -- the organization admin, not the legacy admin role.
+  constraint pilot_learning_policies_role_check check (ratified_by_role = 'organization_admin'),
   constraint pilot_learning_policies_status_check check (status in ('active', 'superseded'))
 );
 
@@ -420,7 +421,7 @@ begin
       end if;
     end loop;
   end if;
-  if new.ratified_by_role not in ('organization_admin', 'admin') then
+  if new.ratified_by_role is distinct from 'organization_admin' then
     return new;
   end if;
   if not exists (
