@@ -110,6 +110,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/researchClassification.ts',
   'apps/web/src/shared/researchQuestionKey.ts',
   'apps/web/src/shared/sessionNoteSemantics.ts',
+  'apps/web/src/shared/sessionTypes.ts',
   'apps/web/src/shared/shadowChatLimits.ts',
   'apps/web/src/shared/wellnessScales.ts',
   'apps/web/src/testing/captureFixture.ts',
