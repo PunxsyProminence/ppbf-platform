@@ -5,6 +5,7 @@ import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
+  getCoachDraftOrigins,
   listCoachDraftChoices,
   previewCoachDraft,
   saveCoachDraft,
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
     if (!principal) return hiddenNotFound();
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_formula_results', 'shadow_formula_observations'] });
     const choices = await listCoachDraftChoices(principal.organizationId, athleteId);
-    return NextResponse.json({ ok: true, choices });
+    const origins = await getCoachDraftOrigins(principal.organizationId, athleteId);
+    return NextResponse.json({ ok: true, choices, origins });
   } catch (error) {
     return jsonError(error);
   }
