@@ -457,7 +457,7 @@ describe('reading blocks back', () => {
     await renderPage({ blocks: [] });
     await pickAthlete('ath-1');
 
-    expect(screen.getByText(/No development block has been written/i)).toBeTruthy();
+    expect(screen.getByText(/No development plan has been written/i)).toBeTruthy();
   });
 
   test('a failed block read never reads as "no plan"', async () => {
@@ -467,7 +467,7 @@ describe('reading blocks back', () => {
     await pickAthlete('ath-1');
 
     expect(screen.getByText(/could not be read/i)).toBeTruthy();
-    expect(screen.queryByText(/No development block has been written/i)).toBeNull();
+    expect(screen.queryByText(/No development plan has been written/i)).toBeNull();
   });
 
   test('the creator is shown, and the page offers no way to change it', async () => {
@@ -496,7 +496,7 @@ describe('writing a block', () => {
     fireEvent.change(screen.getByLabelText('Ends on'), { target: { value: '2026-10-13' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
 
     expect(writes).toHaveLength(1);
@@ -517,7 +517,7 @@ describe('writing a block', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'T' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
 
     expect(Object.keys(writes[0].body)).not.toContain('organization_id');
@@ -534,7 +534,7 @@ describe('writing a block', () => {
     await pickAthlete('ath-1');
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'T' } });
 
-    const save = screen.getByRole('button', { name: 'Save block' });
+    const save = screen.getByRole('button', { name: 'Save plan' });
     fireEvent.click(save);
     fireEvent.click(save);
     fireEvent.click(screen.getByRole('button', { name: /Saving/i }));
@@ -547,7 +547,7 @@ describe('writing a block', () => {
     // The guard releases once the request settles, so a genuine second block
     // is still possible.
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
     expect(writes.filter((write) => write.method === 'POST')).toHaveLength(2);
   });
@@ -562,7 +562,7 @@ describe('writing a block', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'T' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
 
     expect(screen.getByText('A development block cannot end before it begins.')).toBeTruthy();
@@ -575,7 +575,7 @@ describe('writing a block', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'T' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
 
     expect(screen.queryByText('Block saved.')).toBeNull();
@@ -1013,7 +1013,7 @@ describe('a block list never lands under the wrong athlete', () => {
 
     // B's read has not answered yet, and A's plan is already gone.
     expect(screen.queryByText('Plan for ath-1')).toBeNull();
-    expect(screen.getByText('Loading blocks...')).toBeTruthy();
+    expect(screen.getByText('Loading plans...')).toBeTruthy();
 
     await act(async () => { release['ath-2']?.(); });
     expect(screen.getByText('Plan for ath-2')).toBeTruthy();
@@ -2047,7 +2047,7 @@ describe('starting a block from a template (owner decision 2026-10-04)', () => {
     fireEvent.change(screen.getByLabelText('Ends on'), { target: { value: '2026-10-13' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
     });
 
     expect(writes[0].body).toEqual({

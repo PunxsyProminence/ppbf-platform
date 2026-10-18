@@ -1,12 +1,14 @@
 import { getOrganizationViolations, type ComplianceViolation } from './compliance';
 import { query } from './db';
 import { listEscalations, type SafetyEscalationRow } from './escalationLadder';
+import { listOpenSafetyFlags, type SafetyFlagRow } from './safetyFlags';
 import type { SafetyGateOutcome } from './safetyGateMatrix';
 import type { SafetyGateCategory } from './safetyGateSeeds';
 import { listTrainingHolds, type TrainingHoldRow } from './trainingHolds';
 
 /**
- * Capability #75: THE ROLLED-UP SAFETY REVIEW.
+ * Capability #75: THE ROLLED-UP SAFETY REVIEW (five feeds since lane U2; see
+ * "A FIFTH FEED" below).
  *
  * Four real safety subsystems already exist -- training holds (#82), safety
  * gates (#3/#43), the escalation ladder (#194), and compliance violations
@@ -28,6 +30,13 @@ import { listTrainingHolds, type TrainingHoldRow } from './trainingHolds';
  * Each item is enriched with athlete_name (none of the four source tables
  * carry it) via one extra roster read, not by widening any of the four
  * underlying functions' own return shapes.
+ *
+ * A FIFTH FEED, OPEN SAFETY FLAGS (lane U2, audit UX-A A-2, 2026-10-17).
+ * pilot.safety_flags is its own queue (safetyFlags.ts), separate from the
+ * escalation ladder, and this rollup did not read it, so an open flag never
+ * appeared here. It is read whole (listOpenSafetyFlags has no cap), the same
+ * org-wide read an organization admin already gets from /api/pilot/safety-flags,
+ * which leaves admins unscoped. No new reader, no new disclosure.
  */
 
 export interface SafetyReviewHoldItem extends TrainingHoldRow {
@@ -49,6 +58,17 @@ export interface SafetyReviewEscalationItem extends SafetyEscalationRow {
 }
 
 export interface SafetyReviewViolationItem extends ComplianceViolation {
+  athlete_name: string | null;
+}
+
+/**
+ * Only what the rollup shows: who, which flag, how serious, when. The flag's
+ * free text (trigger_detail, evidence_basis, coach_note...) can name a child
+ * and a medical condition, and stays on /admin/safety-flags, which acts on it.
+ */
+export interface SafetyReviewFlagItem
+  extends Pick<SafetyFlagRow, 'flag_id' | 'athlete_id' | 'flag_code' | 'flag_class' | 'severity' | 'created_at'> {
+  /** Null for a flag about an account rather than an athlete row. */
   athlete_name: string | null;
 }
 
@@ -75,6 +95,8 @@ export interface OrganizationSafetyReview {
   failingGates: SafetyReviewGateFailureItem[];
   openEscalations: SafetyReviewEscalationItem[];
   openViolations: SafetyReviewViolationItem[];
+  /** Open safety flags, worst first (listOpenSafetyFlags' own order). Uncapped. */
+  openFlags: SafetyReviewFlagItem[];
   /** The cap applied to the compliance-violations feed before status filtering. */
   violationsReadLimit: number;
   /** True when the gym holds more violations than the rollup read. */
@@ -138,7 +160,7 @@ async function getOrganizationFailingGateEvaluations(organizationId: string): Pr
 const OPEN_VIOLATION_STATUSES = new Set<ComplianceViolation['status']>(['new', 'acknowledged', 'escalated']);
 
 export async function getOrganizationSafetyReview(organizationId: string): Promise<OrganizationSafetyReview> {
-  const [holds, gateFailures, escalations, violations, athleteNames] = await Promise.all([
+  const [holds, gateFailures, escalations, violations, athleteNames, flags] = await Promise.all([
     listTrainingHolds(organizationId, { status: 'active' }),
     getOrganizationFailingGateEvaluations(organizationId),
     listEscalations(organizationId, {}),
@@ -150,6 +172,7 @@ export async function getOrganizationSafetyReview(organizationId: string): Promi
       `select athlete_id, full_name from pilot.athletes where organization_id = $1`,
       [organizationId],
     ),
+    listOpenSafetyFlags(organizationId),
   ]);
 
   const nameByAthlete = new Map(athleteNames.map((row) => [row.athlete_id, row.full_name]));
@@ -176,6 +199,15 @@ export async function getOrganizationSafetyReview(organizationId: string): Promi
     openViolations: violationsInWindow
       .filter((violation) => OPEN_VIOLATION_STATUSES.has(violation.status))
       .map((violation) => ({ ...violation, athlete_name: nameFor(violation.athlete_id) })),
+    openFlags: flags.map((flag) => ({
+      flag_id: flag.flag_id,
+      athlete_id: flag.athlete_id,
+      flag_code: flag.flag_code,
+      flag_class: flag.flag_class,
+      severity: flag.severity,
+      created_at: flag.created_at,
+      athlete_name: flag.athlete_id ? nameFor(flag.athlete_id) : null,
+    })),
     violationsReadLimit: VIOLATION_ROLLUP_READ_LIMIT,
     violationsTruncated,
   };
