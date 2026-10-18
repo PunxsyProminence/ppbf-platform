@@ -110,9 +110,68 @@ test('the choices start at the answer on file, so saving untouched sends the sam
   expect(posted(fetchMock)).toEqual([{ decision: 'grant', covers_video: false, public_use_allowed: true }]);
 });
 
+test.each([
+  ['no answer on file', NONE],
+  ['a no on file', WITHDRAWN],
+])('with %s nothing is chosen and Save waits for a choice, so one tap cannot send a yes', async (_label, view) => {
+  const fetchMock = installFetch(view, () => respond({ ...VIDEO_GYM, ok: true }));
+  await renderPanel();
+  expect(screen.getByRole('radio', { name: 'Photos and video' })).not.toBeChecked();
+  expect(screen.getByRole('radio', { name: 'Photos only' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /Also outside the gym/ })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Save my answer' })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save my answer' })); });
+  expect(posted(fetchMock)).toEqual([]);
+});
+
+test('after saying no, the earlier yes is not left selected', async () => {
+  installFetch(PHOTO_PUBLIC, () => respond({ ...WITHDRAWN, ok: true }));
+  await renderPanel();
+  expect(screen.getByRole('radio', { name: 'Photos only' })).toBeChecked();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Say no to all photos and video' })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Say no and take them down' })); });
+  expect(screen.getByRole('radio', { name: 'Photos only' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /Also outside the gym/ })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Save my answer' })).toBeDisabled();
+});
+
+test('each choice is a full gym-floor tap target', async () => {
+  installFetch(NONE, () => respond(NONE));
+  await renderPanel();
+  for (const name of ['Photos and video', 'Photos only', /Also outside the gym/]) {
+    const control = screen.getByRole(name === 'Photos and video' || name === 'Photos only' ? 'radio' : 'checkbox', { name });
+    expect(control.closest('label')).toHaveClass('min-h-[var(--tap)]');
+  }
+});
+
+test('a failed read after a failed save takes the old answer off the screen', async () => {
+  let reads = 0;
+  global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return respond({ ok: false }, 500);
+    reads += 1;
+    return reads === 1 ? respond(VIDEO_GYM) : respond({}, 500);
+  }) as unknown as typeof fetch;
+  await renderPanel();
+  expect(screen.getByTestId('media-consent-current')).toHaveTextContent(/photos and video/);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save my answer' })); });
+  expect(screen.queryByTestId('media-consent-current')).toBeNull();
+  expect(screen.getByText("That didn't load.")).toBeInTheDocument();
+  expect(screen.getByText(/We couldn't confirm that was saved/)).toBeInTheDocument();
+});
+
+test('a reply that lands after the panel was closed is not kept or shown', async () => {
+  let release!: (r: Response) => void;
+  global.fetch = jest.fn(() => new Promise<Response>((resolve) => { release = resolve; })) as unknown as typeof fetch;
+  await renderPanel();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: TOGGLE })); });
+  await act(async () => { release(respond(VIDEO_GYM)); });
+  expect(screen.queryByText(/You said yes/)).toBeNull();
+});
+
 test('saying yes to photos and video sends that, and says it saved', async () => {
   const fetchMock = installFetch(NONE, () => respond({ ...VIDEO_GYM, ok: true }));
   await renderPanel();
+  await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'Photos and video' })); });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save my answer' })); });
   expect(posted(fetchMock)).toEqual([{ decision: 'grant', covers_video: true, public_use_allowed: false }]);
   expect(screen.getByRole('status')).toHaveTextContent('Saved.');

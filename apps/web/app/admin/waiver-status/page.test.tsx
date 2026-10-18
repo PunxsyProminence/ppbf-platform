@@ -351,13 +351,14 @@ test.each([
 });
 
 test.each([
-  ['video', 'Photo and media consent: the athlete is 18 or over and has consented to photos and video themselves.'],
-  ['photo_only', 'Photo and media consent: the athlete is 18 or over and has consented to photos only themselves, so no new video of them is published.'],
-  ['withdrawn', 'Photo and media consent: the athlete is 18 or over and has withdrawn their own consent, so no new photo or video of them is published.'],
-  ['none', "Photo and media consent: the athlete is 18 or over and has not recorded their own consent yet, so no new video of them is published (a guardian's consent no longer counts)."],
-  ['unavailable', 'Photo and media consent: the athlete is 18 or over; their own consent could not be read just now.'],
-])('an adult athlete whose own consent reads %s: the media line says it is their own, never a guardian status', async (own, line) => {
-  const row = await renderRow({ tonight: tonight({ media_consent: { basis: 'adult_own_consent', own } }) });
+  ['video', true, 'Photo and media consent: the athlete is 18 or over and has consented to photos and video themselves (outside the gym too).'],
+  ['video', false, 'Photo and media consent: the athlete is 18 or over and has consented to photos and video themselves (inside the gym only).'],
+  ['photo_only', false, 'Photo and media consent: the athlete is 18 or over and has consented to photos only themselves, so no new video of them is published (inside the gym only).'],
+  ['withdrawn', false, 'Photo and media consent: the athlete is 18 or over and has withdrawn their own consent, so no new video of them is published.'],
+  ['none', false, "Photo and media consent: the athlete is 18 or over and has no consent of their own that counts, so no new video of them is published (a guardian's consent no longer counts)."],
+  ['unavailable', false, 'Photo and media consent: the athlete is 18 or over; their own consent could not be read just now.'],
+])('an adult athlete whose own consent reads %s (outside the gym: %p): the media line says it is their own, never a guardian status', async (own, outside, line) => {
+  const row = await renderRow({ tonight: tonight({ media_consent: { basis: 'adult_own_consent', own, outside_gym: outside } }) });
 
   const media = linesUnder(row, 'Also on file').find((entry) => (entry ?? '').startsWith('Photo and media consent:'));
   expect(media).toBe(line);

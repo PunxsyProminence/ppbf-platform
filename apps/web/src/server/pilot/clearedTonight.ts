@@ -117,7 +117,7 @@ export type AdultOwnMediaConsentWord = 'video' | 'photo_only' | 'withdrawn' | 'n
 
 export type ClearedTonightMediaConsent =
   | { basis: 'guardian'; status: WaiverStatus }
-  | { basis: 'adult_own_consent'; own: AdultOwnMediaConsentWord };
+  | { basis: 'adult_own_consent'; own: AdultOwnMediaConsentWord; outside_gym: boolean };
 
 /** Already in the shape the route sends: the route copies it, nothing more. */
 export interface ClearedTonight {
@@ -277,17 +277,22 @@ async function readMedical(organizationId: string, athleteId: string, now: Date)
   }
 }
 
-async function readAdultOwnWord(organizationId: string, athleteId: string): Promise<AdultOwnMediaConsentWord> {
+/** outside_gym: their yes covers use outside the gym (recorded; staff honour it, nothing enforces it yet). */
+async function readAdultOwn(
+  organizationId: string,
+  athleteId: string,
+): Promise<{ own: AdultOwnMediaConsentWord; outside_gym: boolean }> {
   try {
     const own = await readOwnMediaConsent(organizationId, athleteId);
-    if (ownConsentCoversNewPublication(own)) return 'video';
+    const outside = own?.publicUseAllowed === true;
+    if (ownConsentCoversNewPublication(own)) return { own: 'video', outside_gym: outside };
     const status = normalizeWaiverStatusText(own?.status);
-    if (status === 'withdrawn') return 'withdrawn';
-    if (status === 'signed' && own?.recordedByOwnLogin && own.coversVideo === false) return 'photo_only';
-    return 'none';
+    if (status === 'withdrawn') return { own: 'withdrawn', outside_gym: false };
+    if (status === 'signed' && own?.recordedByOwnLogin && own.coversVideo === false) return { own: 'photo_only', outside_gym: outside };
+    return { own: 'none', outside_gym: false };
   } catch (error) {
     logUnreadable('adult_own_media_consent', error);
-    return 'unavailable';
+    return { own: 'unavailable', outside_gym: false };
   }
 }
 
@@ -336,7 +341,7 @@ export async function getOrganizationClearedTonight(
             recorded_on: entry.recordedOn[type] ?? null,
           })),
           media_consent: adult
-            ? { basis: 'adult_own_consent', own: await readAdultOwnWord(organizationId, entry.athleteId) }
+            ? { basis: 'adult_own_consent', ...(await readAdultOwn(organizationId, entry.athleteId)) }
             : { basis: 'guardian', status: entry.waivers[MEDIA_CONSENT_TRACKED_TYPE] },
           open_violations: openViolations === 'unavailable' ? 'unavailable' : openViolations.get(entry.athleteId) ?? 0,
         },

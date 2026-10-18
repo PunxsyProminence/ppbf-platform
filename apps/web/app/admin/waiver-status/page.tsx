@@ -39,7 +39,7 @@ interface Tonight {
   waivers: Array<{ type: TrackedWaiverType; status: WaiverStatus; recorded_on: string | null }>;
   media_consent:
     | { basis: 'guardian'; status: WaiverStatus }
-    | { basis: 'adult_own_consent'; own: 'video' | 'photo_only' | 'withdrawn' | 'none' | 'unavailable' };
+    | { basis: 'adult_own_consent'; own: 'video' | 'photo_only' | 'withdrawn' | 'none' | 'unavailable'; outside_gym: boolean };
   open_violations: number | 'unavailable';
 }
 
@@ -105,12 +105,18 @@ const PAPER_WORDS: Record<WaiverStatus, string> = {
 // be false when one of two guardians signed, so each word says whose it is.
 /** An adult's own decision (OD-2026-10-08-015); a guardian's no longer counts for a new publication. */
 const ADULT_OWN_MEDIA_WORDS = {
-  video: "the athlete is 18 or over and has consented to photos and video themselves",
+  video: 'the athlete is 18 or over and has consented to photos and video themselves',
   photo_only: 'the athlete is 18 or over and has consented to photos only themselves, so no new video of them is published',
-  withdrawn: 'the athlete is 18 or over and has withdrawn their own consent, so no new photo or video of them is published',
-  none: "the athlete is 18 or over and has not recorded their own consent yet, so no new video of them is published (a guardian's consent no longer counts)",
-  unavailable: "the athlete is 18 or over; their own consent could not be read just now",
+  withdrawn: 'the athlete is 18 or over and has withdrawn their own consent, so no new video of them is published',
+  none: "the athlete is 18 or over and has no consent of their own that counts, so no new video of them is published (a guardian's consent no longer counts)",
+  unavailable: 'the athlete is 18 or over; their own consent could not be read just now',
 } as const;
+
+function adultOwnMediaLine(consent: { own: keyof typeof ADULT_OWN_MEDIA_WORDS; outside_gym: boolean }): string {
+  const words = ADULT_OWN_MEDIA_WORDS[consent.own];
+  if (consent.own !== 'video' && consent.own !== 'photo_only') return words;
+  return `${words} (${consent.outside_gym ? 'outside the gym too' : 'inside the gym only'})`;
+}
 
 const MEDIA_WORDS: Record<WaiverStatus, string> = {
   signed: 'signed by every guardian',
@@ -177,7 +183,7 @@ function tonightReasons(tonight: Tonight): { why: string[]; alsoOnFile: string[]
   alsoOnFile.push(
     tonight.media_consent.basis === 'guardian'
       ? `${PAPER_NAMES.photo_media}: ${MEDIA_WORDS[tonight.media_consent.status]}.`
-      : `${PAPER_NAMES.photo_media}: ${ADULT_OWN_MEDIA_WORDS[tonight.media_consent.own]}.`,
+      : `${PAPER_NAMES.photo_media}: ${adultOwnMediaLine(tonight.media_consent)}.`,
   );
 
   alsoOnFile.push(

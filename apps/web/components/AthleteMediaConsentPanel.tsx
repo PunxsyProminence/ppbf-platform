@@ -29,14 +29,14 @@ export function currentWords(view: ConsentView): string {
     return "You haven't decided yet. Until you do, no new video of you is published. Anything already published stays as it is.";
   }
   const status = consent.status.trim().toLowerCase();
-  if (status === 'withdrawn') return 'You said no. Nothing new of you is published.';
+  if (status === 'withdrawn') return 'You said no. No new video of you is published.';
   if (status === 'signed' && !consent.covers_video) return 'You said yes to photos only. No new video of you is published.';
   if (view.counts_for_new_publication) {
     return consent.public_use_allowed
       ? 'You said yes to photos and video, including use outside the gym (website, social media, print).'
       : 'You said yes to photos and video, for use inside the gym only.';
   }
-  return 'Your answer on file could not be read. Choose again below.';
+  return "Your answer on file doesn't count. Choose again below.";
 }
 
 /** A refusal from the server, said plainly; anything unknown is "not saved". */
@@ -49,10 +49,13 @@ function refusalWords(payload: { code?: unknown } | null): string {
 export default function AthleteMediaConsentPanel() {
   const headingId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const openRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ConsentView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [coversVideo, setCoversVideo] = useState(true);
+  // null: nothing chosen. A "no" or no answer on file starts with nothing
+  // chosen, so Save cannot quietly send a yes the athlete never picked.
+  const [coversVideo, setCoversVideo] = useState<boolean | null>(null);
   const [publicUse, setPublicUse] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,22 +68,31 @@ export default function AthleteMediaConsentPanel() {
     if (next.consent && next.consent.status.trim().toLowerCase() === 'signed') {
       setCoversVideo(next.consent.covers_video);
       setPublicUse(next.consent.public_use_allowed);
+    } else {
+      setCoversVideo(null);
+      setPublicUse(false);
     }
   };
 
   const load = async () => {
     setLoadFailed(false);
+    // Closed means closed: a read finishing after that is not shown or kept.
+    if (!openRef.current) return;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/athlete/media-consent`, { credentials: 'include' });
       if (!response.ok) throw new Error('read failed');
-      showAnswer((await response.json()) as ConsentView);
+      const next = (await response.json()) as ConsentView;
+      if (openRef.current) showAnswer(next);
     } catch {
+      // What was on screen may no longer be what is on file: never leave it up as current.
+      setView(null);
       setLoadFailed(true);
     }
   };
 
   const toggle = () => {
     if (open) {
+      openRef.current = false;
       setOpen(false);
       setView(null);
       setConfirmWithdraw(false);
@@ -88,6 +100,7 @@ export default function AthleteMediaConsentPanel() {
       setSaved('');
       return;
     }
+    openRef.current = true;
     setOpen(true);
     void load();
   };
@@ -166,19 +179,19 @@ export default function AthleteMediaConsentPanel() {
 
               <fieldset className="space-y-[var(--s2)]">
                 <legend className="t-label">What may the gym use?</legend>
-                <label className="flex items-center gap-[var(--s2)]">
-                  <input type="radio" name="media-scope" checked={coversVideo} onChange={() => setCoversVideo(true)} />
+                <label className="flex items-center gap-[var(--s2)] min-h-[var(--tap)]">
+                  <input type="radio" name="media-scope" checked={coversVideo === true} onChange={() => setCoversVideo(true)} />
                   <span className="t-data">Photos and video</span>
                 </label>
-                <label className="flex items-center gap-[var(--s2)]">
-                  <input type="radio" name="media-scope" checked={!coversVideo} onChange={() => setCoversVideo(false)} />
+                <label className="flex items-center gap-[var(--s2)] min-h-[var(--tap)]">
+                  <input type="radio" name="media-scope" checked={coversVideo === false} onChange={() => setCoversVideo(false)} />
                   <span className="t-data">Photos only</span>
                 </label>
-                <label className="flex items-center gap-[var(--s2)]">
+                <label className="flex items-center gap-[var(--s2)] min-h-[var(--tap)]">
                   <input type="checkbox" checked={publicUse} onChange={(event) => setPublicUse(event.target.checked)} />
                   <span className="t-data">Also outside the gym (website, social media, print)</span>
                 </label>
-                {!coversVideo && (
+                {coversVideo === false && (
                   <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-300)' }}>
                     Photos only takes down any video of you that is already published.
                   </p>
@@ -187,7 +200,7 @@ export default function AthleteMediaConsentPanel() {
               <button
                 type="button"
                 className="btn btn--kiosk"
-                disabled={busy}
+                disabled={busy || coversVideo === null}
                 onClick={() => void send({ decision: 'grant', covers_video: coversVideo, public_use_allowed: publicUse })}
               >
                 Save my answer

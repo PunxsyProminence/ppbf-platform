@@ -370,7 +370,7 @@ describe('getOrganizationClearedTonight', () => {
 
     const [row] = await getOrganizationClearedTonight('org-1', NOW);
 
-    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'none' });
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'none', outside_gym: false });
     expect(mockOwn).toHaveBeenCalledWith('org-1', 'ath-1');
     // The worklist column is untouched by this lane.
     expect(row.waivers.photo_media).toBe('signed');
@@ -384,24 +384,25 @@ describe('getOrganizationClearedTonight', () => {
   });
 
   test.each([
-    ['their own video consent', ownRow(), 'video'],
-    ['an untidy signature', ownRow({ status: ' Signed ' }), 'video'],
-    ['photo only', ownRow({ coversVideo: false }), 'photo_only'],
-    ['a withdrawal', ownRow({ status: 'withdrawn', coversVideo: false }), 'withdrawn'],
-    ['a signed row their own login did not record', ownRow({ recordedByOwnLogin: false }), 'none'],
-    ['a status nobody can read', ownRow({ status: 'declined' }), 'none'],
-  ])('an adult with %s reads %s, as the publication gate would', async (_label, own, word) => {
+    ['their own video consent', ownRow(), 'video', false],
+    ['their own video consent for outside the gym too', ownRow({ publicUseAllowed: true }), 'video', true],
+    ['an untidy signature', ownRow({ status: ' Signed ' }), 'video', false],
+    ['photo only', ownRow({ coversVideo: false }), 'photo_only', false],
+    ['a withdrawal', ownRow({ status: 'withdrawn', coversVideo: false }), 'withdrawn', false],
+    ['a signed row their own login did not record', ownRow({ recordedByOwnLogin: false, publicUseAllowed: true }), 'none', false],
+    ['a status nobody can read', ownRow({ status: 'declined' }), 'none', false],
+  ])('an adult with %s reads %s, as the publication gate would', async (_label, own, word, outside) => {
     mockRoster.mockResolvedValue([rosterEntry({ dob: '2000-01-01' })]);
     mockOwn.mockResolvedValue(own);
     const [row] = await getOrganizationClearedTonight('org-1', NOW);
-    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: word });
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: word, outside_gym: outside });
   });
 
   test("an adult's own consent that cannot be read is unavailable, not none, and the rest of the row still answers", async () => {
     mockRoster.mockResolvedValue([rosterEntry({ dob: '2000-01-01' })]);
     mockOwn.mockRejectedValue(new Error('connection reset'));
     const [row] = await getOrganizationClearedTonight('org-1', NOW);
-    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'unavailable' });
+    expect(row.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'unavailable', outside_gym: false });
     expect(row.tonight.answer).toBe('cleared');
   });
 
