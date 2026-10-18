@@ -7,6 +7,7 @@
 
 import { apiBase } from '@/lib/apiBase';
 import type { AssignmentDrillInstruction, AthleteInstructionAccess } from '@/src/server/pilot/assignmentDrillInstruction';
+import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { OperationalDrillLifecycle } from '@/src/server/pilot/drillVersioning';
 import { fromAthleteDrillDetail, fromCoachDrillDetail, type DrillDetailView } from './drillDetailView';
@@ -88,9 +89,17 @@ export async function readReferenceInstruction(referenceDrillId: string, signal:
   if (!response.ok) {
     throw new InstructionReadError(`drill-library read answered ${response.status}`);
   }
-  const payload = (await response.json()) as { drill?: DrillWithDetail };
+  const payload = (await response.json()) as { drill?: DrillWithDetail; grounding_evidence?: GroundingEvidence[] | null };
   if (!payload.drill) {
     throw new InstructionReadError('drill-library read carried no drill');
   }
-  return { state: 'available', view: fromCoachDrillDetail(payload.drill), assignedBy: null, operationalLifecycle: null, athleteAccess: null };
+  // The same author read /coach/drills makes, so it carries what the drill's
+  // grounding claim ids point at (audit 2026-10-17 item 11).
+  return {
+    state: 'available',
+    view: fromCoachDrillDetail(payload.drill, payload.grounding_evidence ?? null),
+    assignedBy: null,
+    operationalLifecycle: null,
+    athleteAccess: null,
+  };
 }

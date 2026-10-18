@@ -237,8 +237,8 @@ export default function KnowledgeGraphPage() {
 
         {!errorMessage && !projectionLoading && nodes.length > 0 ? (
           <p className="t-muted">
-            These four streams are projected from the {PROJECTION_READ_LIMIT} most recent SHADOW events, so an older
-            history may sit behind them.
+            Observations are projected from the {PROJECTION_READ_LIMIT} most recent SHADOW events, so an older
+            history may sit behind them. Patterns, findings and validated lessons are not read from events.
           </p>
         ) : null}
       </div>

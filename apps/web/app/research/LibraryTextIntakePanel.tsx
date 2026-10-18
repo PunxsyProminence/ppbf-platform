@@ -61,12 +61,14 @@ export interface LibraryTextIntakeSource {
 }
 
 // A-Q12 (OD-2026-10-08-005, "Keep, show real limit"): the screen states the
-// excerpt limit a non-owned source is actually held to.
+// excerpt limit a non-owned source is actually held to. The advice never
+// points at another source: an excerpt is filed under the source its words
+// came from (L54; audit 2026-10-17 item 10).
 export const EXCERPT_LIMIT_WORDS = {
   limit: (maxPassages: string, maxCharacters: string, heldPassages: string, heldCharacters: string) =>
     `This source may hold ${maxPassages} passages and ${maxCharacters} characters in all. Saved so far: ${heldPassages} passages, ${heldCharacters} characters.`,
   over: (passages: string, characters: string, maxPassages: string, maxCharacters: string) =>
-    `This text would bring the source to ${passages} passages and ${characters} characters, over its limit of ${maxPassages} passages and ${maxCharacters} characters. Nothing was sent. Shorten the text, or save it to another source.`,
+    `This text would bring the source to ${passages} passages and ${characters} characters, over its limit of ${maxPassages} passages and ${maxCharacters} characters. Nothing was sent. Save a shorter passage; these words stay filed under the source they came from.`,
 };
 
 /** Characters as the server counts them: code points of each trimmed part. */
@@ -472,10 +474,14 @@ export default function LibraryTextIntakePanel({
             {resume && !busy ? (
               <button type="button" className="btn btn--ghost"
                 onClick={() => {
+                  // Without a document id the entry may never have been saved (L54).
+                  const confirmed = resume.documentId !== null;
                   setResume(null);
                   setOutcome({
                     kind: 'refused',
-                    message: 'Left incomplete. The partial entry is still listed in Evidence Review. It cannot be indexed or approved there; reject it, then enter the text again.',
+                    message: confirmed
+                      ? 'Left incomplete. The partial entry is still listed in Evidence Review. It cannot be indexed or approved there; reject it, then enter the text again.'
+                      : 'Left unconfirmed. If the entry was saved, it is listed in Evidence Review, where it cannot be indexed or approved; reject it there, then enter the text again.',
                   });
                 }}>
                 Leave it incomplete

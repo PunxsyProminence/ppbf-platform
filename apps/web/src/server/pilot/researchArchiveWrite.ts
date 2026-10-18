@@ -326,7 +326,7 @@ export async function archiveResearchOriginal(input: {
   config: ResearchArchiveConfig;
   /** A subject code, R01-R19. */
   archiveDomainCode: string;
-  /** Must be a bare PDF filename: no separators, no dot segments. See archiveFilenameFor. */
+  /** A bare PDF filename ending in "--<sha12 of these bytes>.pdf": build it with archiveFilenameFor. */
   archiveFilename: string;
   fileBuffer: Buffer;
 }): Promise<ResearchArchiveIdentity> {
@@ -339,13 +339,22 @@ export async function archiveResearchOriginal(input: {
   // Computed here, never accepted from the caller: see the module contract.
   const contentSha256 = createHash('sha256').update(input.fileBuffer).digest('hex');
 
+  // The filed name must carry THESE bytes' hash (archiveFilenameFor). A name
+  // whose suffix came from other bytes would hide this copy from the
+  // same-bytes scan below on every later retry, which would then file a second.
+  const sameBytes = `--${contentSha256.slice(0, 12)}.pdf`;
+  if (!input.archiveFilename.toLowerCase().endsWith(sameBytes)) {
+    throw new Error(
+      `Refusing research archive write: filename ${JSON.stringify(input.archiveFilename)} does not end in the hash of these bytes ("${sameBytes}"). Build it with archiveFilenameFor.`,
+    );
+  }
+
   const token = await config.getAccessToken();
   const folder = await resolveArchiveDomainFolder(config, token, input.archiveDomainCode);
   const itemPath = `${driveBase(config)}/items/${folder.id}:/${encodeURIComponent(input.archiveFilename)}`;
 
   // SharePoint names are case-insensitive.
   const sameName = input.archiveFilename.toLowerCase();
-  const sameBytes = `--${contentSha256.slice(0, 12)}.pdf`;
   const existing = (await listChildren(config, token, folder.id, 'subject folder', MAX_SUBJECT_LISTING_PAGES)).find(
     (item) =>
       typeof item.name === 'string'

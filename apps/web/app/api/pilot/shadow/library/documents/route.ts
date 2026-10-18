@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { readLibraryRequestId } from '@/src/server/pilot/libraryIntakeRecovery';
 import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibraryDocument,
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       ingest_state?: unknown;
       metadata?: unknown;
       shelf?: unknown;
+      request_id?: unknown;
       archived_original_id?: unknown;
     };
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
@@ -147,7 +149,15 @@ export async function POST(request: NextRequest) {
       await assertActorCanAccessAthlete(principal, subjectId);
     }
 
-    const document = await createShadowLibraryDocument({
+    // The client's id for this entry (L54). A retry that sends it again gets
+    // the document the first request saved (200, recovered: true), so a lost
+    // answer is finished rather than entered twice.
+    const requestId = readLibraryRequestId(body.request_id);
+    if (requestId === undefined) {
+      return NextResponse.json({ ok: false, error: 'request_id must be 8 to 100 letters, digits or hyphens' }, { status: 400 });
+    }
+
+    const { recovered, ...document } = await createShadowLibraryDocument({
       organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
@@ -158,9 +168,11 @@ export async function POST(request: NextRequest) {
       contentSha256: (body.content_sha256 as string | null | undefined) ?? null,
       ingestState: body.ingest_state as ShadowLibraryIngestState | undefined,
       metadata: body.metadata as Record<string, unknown> | undefined,
+      requestId,
       archivedOriginalId,
     });
 
+    if (recovered) return NextResponse.json({ ok: true, document, recovered: true }, { status: 200 });
     return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
