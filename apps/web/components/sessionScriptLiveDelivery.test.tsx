@@ -251,6 +251,27 @@ describe('live surface renders the real script and run', () => {
   });
 });
 
+// Look B on the coach's console (lane L39 PR 3): the tiles are mounted as its top row, and the
+// console sits INSIDE the wall-board kit's scope -- the kit's rules are `.ge-wallboard .ge-frame`,
+// so a scope on the board itself would draw no frame at all (the review that caught it).
+describe("the coach's console in look B", () => {
+  it('mounts the top row of tiles, and a tile read this test does not serve says so in words', async () => {
+    await renderLive(liveRun());
+    expect(screen.getByRole('region', { name: 'Attendance today' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Need attention · your athletes' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'SHADOW queue' })).toBeInTheDocument();
+    expect(await screen.findAllByText('Could not read')).toHaveLength(3);
+  });
+
+  it('sits in the frame with the kit scope on an ancestor, where the kit rules reach it', async () => {
+    await renderLive(liveRun());
+    const console_ = screen.getByRole('region', { name: 'Live session delivery' });
+    expect(console_).toHaveClass('ge-frame');
+    expect(console_).not.toHaveClass('ge-wallboard');
+    expect(console_.parentElement?.closest('.ge-wallboard')).not.toBeNull();
+  });
+});
+
 describe('the server owns the clock', () => {
   it('ticks the display forward between responses without ever writing time back', async () => {
     jest.useFakeTimers();

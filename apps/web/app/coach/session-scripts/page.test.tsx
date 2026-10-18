@@ -344,8 +344,12 @@ describe('coach session plans page', () => {
     expect(screen.getByText(/already in progress was restored/)).toBeInTheDocument();
     // The browse-and-start flow is out of the way while a session is live.
     expect(screen.queryByRole('button', { name: /open plan/i })).not.toBeInTheDocument();
-    // Restoration is a read. Reloading must never create a second run.
-    const posts = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST');
+    // Restoration is a read. Reloading must never create a second run. The one POST the console
+    // makes on load is the SHADOW queue's count (CoachLiveTiles), a read that route takes as POST.
+    const posts = fetchMock.mock.calls.filter(
+      (call) =>
+        (call[1] as RequestInit | undefined)?.method === 'POST' && String(call[0]) !== '/api/pilot/shadow/review-projection',
+    );
     expect(posts).toHaveLength(0);
   });
 
