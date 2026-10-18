@@ -430,9 +430,9 @@ describe('restored "Also cites" grades through the parser', () => {
     expect(mapStoredShadowMessage(empty).evidenceAlsoCites).toBeUndefined();
   });
 
-  test('anything but a list of grades is malformed, not rendered', async () => {
-    await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['VERY_GOOD'] })))
-      .rejects.toMatchObject({ status: 502 });
+  test('a grade this client does not know is left out; a value that is not a list is malformed', async () => {
+    const [message] = await loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: ['VERY_GOOD', 'EMERGING'] }));
+    expect(message.evidenceAlsoCites).toEqual(['EMERGING']);
     await expect(loadOwnedShadowSessionMessages('', 'c-1', undefined, storedWith({ evidenceAlsoCites: 'EMERGING' })))
       .rejects.toMatchObject({ status: 502 });
   });

@@ -6,7 +6,14 @@ import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { PASSAGE_DISPLAY_RIGHTS, replayCitedPassage } from './shadowEvidence';
-import { alsoCitedTiers, gradeableEvidence, type ShadowEvidenceTier } from './shadowEvidenceTier';
+import {
+  alsoCitedTiers,
+  gradeableEvidence,
+  gradeCitedEvidence,
+  higherTier,
+  selectStrongestEvidence,
+  type ShadowEvidenceTier,
+} from './shadowEvidenceTier';
 
 // This query's `s` is the chat session, so the source predicate is written
 // against `ls`, the cited source, here.
@@ -656,9 +663,7 @@ export async function loadConversationMessages(input: {
   );
   return rows.reverse().map((row) => {
     const cited = Array.isArray(row.citations) ? row.citations : [];
-    // The headline is the stored grade, what the answer was shown with. The
-    // line under it is not stored, so it is graded again from the cited rows
-    // and keeps only grades below the stored headline.
+    // "Also cites" is not stored, so the cited rows are graded again here.
     const gradeable = gradeableEvidence(cited
       .filter((citation) => typeof citation.authorityTier === 'number')
       .map((citation) => ({
@@ -666,13 +671,23 @@ export async function loadConversationMessages(input: {
         boxingSpecificity: citation.boxingSpecificity ?? null,
         authorityTier: citation.authorityTier as number,
       })));
+    // The badge reads "Strongest source", so a reopened answer shows the higher
+    // of its stored grade and the best grade its cited rows earn now, never
+    // lower than stored (Overwatch 2026-10-17, "A", under Jason's ruling on
+    // audit item 11). A grade stored before the best-grade pick could name a
+    // weaker source than one it cited. Answered ('ok') rows only: a withheld
+    // answer keeps its stored grade, whatever it cites.
+    const strongest = selectStrongestEvidence(gradeable);
+    const headline = row.role === 'assistant' && row.response_state === 'ok' && row.evidence_tier && strongest
+      ? higherTier(row.evidence_tier, gradeCitedEvidence(strongest))
+      : row.evidence_tier;
     return {
       messageId: row.message_id,
       role: row.role,
       content: row.content,
       responseState: row.response_state,
-      evidenceTier: row.evidence_tier,
-      evidenceAlsoCites: row.role === 'assistant' && row.evidence_tier ? alsoCitedTiers(row.evidence_tier, gradeable) : [],
+      evidenceTier: headline,
+      evidenceAlsoCites: row.role === 'assistant' && headline ? alsoCitedTiers(headline, gradeable) : [],
       handoff: row.handoff,
       createdAt: row.created_at.toISOString(),
       // Named fields only: the passage source, its hash and the grading

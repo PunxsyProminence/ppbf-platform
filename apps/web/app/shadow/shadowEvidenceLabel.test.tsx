@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ShadowChatPage from './page';
-import { listOwnedShadowSessions } from '@/client/shadowSessions';
+import { listOwnedShadowSessions, loadOwnedShadowSessionMessages } from '@/client/shadowSessions';
 
 const router = { replace: jest.fn(), push: jest.fn() };
 const searchParams = { get: () => null };
@@ -41,6 +41,7 @@ jest.mock('@/client/shadowSessions', () => {
 });
 
 const mockListSessions = listOwnedShadowSessions as jest.MockedFunction<typeof listOwnedShadowSessions>;
+const mockLoadMessages = loadOwnedShadowSessionMessages as jest.MockedFunction<typeof loadOwnedShadowSessionMessages>;
 const originalFetch = global.fetch;
 
 function mockServer(answer: Record<string, unknown>) {
@@ -115,4 +116,36 @@ test('the legend says what each grade measures', async () => {
 
   expect(screen.getByText(/The strongest source cited is verified, boxing-specific evidence from a top-tier source\./)).toBeTruthy();
   expect(screen.queryByText(/not yet fully verified/)).toBeNull();
+});
+
+test('a reopened conversation shows the same badge and "Also cites" line', async () => {
+  mockServer({});
+  mockListSessions.mockResolvedValue([{
+    conversationId: 'conv-1',
+    title: 'Southpaw pivots',
+    athleteId: null,
+    sessionType: 'quick_round',
+    createdAt: '2026-10-12T10:00:00.000Z',
+    updatedAt: '2026-10-12T10:00:00.000Z',
+  }] as never);
+  mockLoadMessages.mockResolvedValue([{
+    messageId: 'msg-stored',
+    role: 'assistant',
+    content: 'Pivot off the lead foot.',
+    responseState: 'ok',
+    evidenceTier: 'EMERGING',
+    evidenceAlsoCites: ['EXPERIMENTAL'],
+    handoff: null,
+    createdAt: '2026-10-12T10:00:01.000Z',
+    citations: [],
+  }] as never);
+  await act(async () => {
+    render(<ShadowChatPage />);
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /Southpaw pivots/ }));
+  });
+
+  expect(await screen.findByText('Strongest source: Emerging')).toBeTruthy();
+  expect(screen.getByText('Also cites: Experimental')).toBeTruthy();
 });

@@ -169,6 +169,11 @@ export function selectStrongestEvidence(
   return strongest;
 }
 
+/** The higher of two grades. */
+export function higherTier(a: ShadowEvidenceTier, b: ShadowEvidenceTier): ShadowEvidenceTier {
+  return TIER_STRENGTH[b] > TIER_STRENGTH[a] ? b : a;
+}
+
 /**
  * The grades the answer's other cited sources earn, below the headline,
  * strongest first: the "Also cites" line. Empty when every cited source grades
@@ -180,15 +185,26 @@ export function alsoCitedTiers(headline: ShadowEvidenceTier, cited: ShadowEviden
   return [...below].sort((a, b) => TIER_STRENGTH[b] - TIER_STRENGTH[a]);
 }
 
+const KNOWN_EVIDENCE_CLASSES: ReadonlySet<string> = new Set(Object.keys(EVIDENCE_CLASS_RANK));
+const KNOWN_BOXING_SPECIFICITY: ReadonlySet<string> = new Set<ShadowBoxingSpecificity>([
+  'boxing_specific', 'partly_boxing_specific', 'ppbf_specific', 'transferred',
+]);
+
 /**
  * The cited rows the tier can grade: those whose chunk metadata carries both
- * fields. A row without them is not gradeable, never a passing grade.
+ * fields with values the rule knows. A row without them is not gradeable,
+ * never a passing grade: deriveEvidenceTier reads anything that is not one of
+ * the named weaker classes as VERIFIED EVIDENCE, so an unknown class string
+ * would otherwise reach PROVEN -- and, picked by best grade, win from any
+ * position.
  */
 export function gradeableEvidence(
   rows: Array<{ evidenceClass: string | null; boxingSpecificity: string | null; authorityTier: number }>,
 ): ShadowEvidenceQuality[] {
   return rows
-    .filter((row) => row.evidenceClass !== null && row.boxingSpecificity !== null)
+    .filter((row) => row.evidenceClass !== null && KNOWN_EVIDENCE_CLASSES.has(row.evidenceClass)
+      && row.boxingSpecificity !== null && KNOWN_BOXING_SPECIFICITY.has(row.boxingSpecificity)
+      && Number.isFinite(row.authorityTier))
     .map((row) => ({
       evidenceClass: row.evidenceClass as ShadowEvidenceClass,
       authorityTier: row.authorityTier,

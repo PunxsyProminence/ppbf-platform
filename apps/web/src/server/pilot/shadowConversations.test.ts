@@ -213,8 +213,9 @@ describe('SHADOW durable conversation isolation', () => {
   });
 
   // Audit item 11, Jason's ruling A: "Also cites" is not stored, so a reopened
-  // answer grades its cited rows again, under the stored headline.
-  it('grades the cited rows again for "Also cites", under the stored headline, and never sends the grading fields', async () => {
+  // answer grades its cited rows again. Its headline is the higher of the
+  // stored grade and their best (Overwatch 2026-10-17, "A").
+  it('raises a reopened headline stored by the old pick, lists the other grades, and never sends the grading fields', async () => {
     const citation = (id: string, grading: Record<string, unknown>) => ({
       evidenceId: id,
       token: `[E:${id}]`,
@@ -229,8 +230,7 @@ describe('SHADOW durable conversation isolation', () => {
         role: 'assistant',
         content: 'Mixed evidence.',
         response_state: 'ok',
-        // Stored when the answer was given. A source regraded since then to
-        // above it is not listed under it.
+        // Stored by the old pick, which could name a weaker citation.
         evidence_tier: 'EMERGING',
         created_at: new Date('2026-07-24T12:00:00.000Z'),
         citations: [
@@ -245,11 +245,39 @@ describe('SHADOW durable conversation isolation', () => {
     const [message] = await loadConversationMessages({ actor, conversationId: 'conversation-a' });
 
     expect(String(mockedQuery.mock.calls[1][0])).toContain("'evidenceClass', c.metadata->>'evidence_class'");
-    expect(message.evidenceTier).toBe('EMERGING');
-    expect(message.evidenceAlsoCites).toEqual(['EXPERIMENTAL']);
+    expect(message.evidenceTier).toBe('PROVEN');
+    expect(message.evidenceAlsoCites).toEqual(['EMERGING', 'EXPERIMENTAL']);
     for (const sent of message.citations ?? []) {
       expect(Object.keys(sent).sort()).toEqual(['documentName', 'evidenceId', 'sourceTitle', 'token']);
     }
+  });
+
+  it('never shows a reopened headline lower than stored, and leaves a withheld answer at its stored grade', async () => {
+    const grading = { evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'boxing_specific', authorityTier: 3 };
+    const message = (id: string, responseState: 'ok' | 'filtered', evidenceTier: string) => ({
+      message_id: id,
+      role: 'assistant',
+      content: 'An answer.',
+      response_state: responseState,
+      evidence_tier: evidenceTier,
+      created_at: new Date('2026-07-24T12:00:00.000Z'),
+      citations: [{ evidenceId: `${id}-e`, token: `[E:${id}-e]`, sourceTitle: 'Source', documentName: 'Document', ...grading }],
+    });
+    mockedQuery
+      .mockResolvedValueOnce([{ conversation_id: 'conversation-a', athlete_id: null, session_type: 'quick_round' }] as never)
+      // Newest first, as the query orders them.
+      .mockResolvedValueOnce([
+        // Its source has since been re-tiered down to Emerging.
+        message('00000000-0000-4000-8000-000000000021', 'ok', 'PROVEN'),
+        message('00000000-0000-4000-8000-000000000022', 'filtered', 'RESEARCH_NEEDED'),
+      ] as never);
+
+    const [withheld, retiered] = await loadConversationMessages({ actor, conversationId: 'conversation-a' });
+
+    expect(retiered.evidenceTier).toBe('PROVEN');
+    expect(retiered.evidenceAlsoCites).toEqual(['EMERGING']);
+    expect(withheld.evidenceTier).toBe('RESEARCH_NEEDED');
+    expect(withheld.evidenceAlsoCites).toEqual([]);
   });
 
   it('reuses a pending deletion request instead of creating duplicates', async () => {

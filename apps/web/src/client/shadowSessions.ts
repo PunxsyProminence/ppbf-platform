@@ -188,14 +188,15 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
   };
 }
 
-// Absent (a server older than this client) is no line; anything but a list of
-// grades is malformed.
+// Absent (a server older than this client) is no line, and a grade this client
+// does not know is left out rather than refusing the whole conversation; a
+// value that is not a list is malformed.
 function parseAlsoCites(value: unknown): StoredShadowEvidenceTier[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || !value.every(isStoredEvidenceTier)) {
+  if (!Array.isArray(value)) {
     throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
   }
-  return value;
+  return value.filter(isStoredEvidenceTier);
 }
 
 // An absent field is not malformed -- rows written before citations were

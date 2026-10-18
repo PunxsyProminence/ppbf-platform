@@ -245,10 +245,13 @@ describe('alsoCitedTiers (the "Also cites" line)', () => {
     expect(alsoCitedTiers('RESEARCH_NEEDED', [proven, emerging])).toEqual([]);
   });
 
-  test('grades only rows whose metadata carries both fields', () => {
+  test('grades only rows whose metadata carries both fields, with values the rule knows', () => {
     expect(gradeableEvidence([
       { evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: null, authorityTier: 1 },
       { evidenceClass: null, boxingSpecificity: 'boxing_specific', authorityTier: 1 },
+      // Unknown values would fall into the VERIFIED branch and grade PROVEN.
+      { evidenceClass: 'verified evidence', boxingSpecificity: 'boxing_specific', authorityTier: 1 },
+      { evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'boxing', authorityTier: 1 },
       { evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'boxing_specific', authorityTier: 2 },
     ])).toEqual([{ evidenceClass: 'VERIFIED EVIDENCE', boxingSpecificity: 'boxing_specific', authorityTier: 2 }]);
   });
