@@ -36,6 +36,56 @@ describe('SHADOW feature unlock governance', () => {
     expect(state.features.fine_tuning_pipeline.unlocked).toBe(false);
   });
 
+  it('does not report a fine-tuning pipeline as on when an admin enables it and the counter is met, because none is built', async () => {
+    // The admin panel can set any feature to 'enabled'. Before this, 600
+    // reviewed events against a threshold of 500 made fine_tuning_pipeline
+    // "unlocked" -- and metrics/route.ts reported fineTuningPipelineReady --
+    // while no fine-tuning code exists anywhere in the app.
+    mockedQuery.mockImplementation(async (sql) => {
+      if (!String(sql).includes('SELECT organization_id, feature_key')) return [] as never;
+      return [
+        {
+          organization_id: 'org-a',
+          feature_key: 'fine_tuning_pipeline',
+          metric_key: 'org_labeled_training_examples',
+          min_value: 500,
+          activation_mode: 'enabled',
+          description: 'enabled by an admin',
+        },
+        {
+          organization_id: 'org-a',
+          feature_key: 'strong_personalization',
+          metric_key: 'user_high_quality_interactions',
+          min_value: 20,
+          activation_mode: 'enabled',
+          description: 'enabled',
+        },
+      ] as never;
+    });
+
+    const state = await evaluateShadowUnlockState({
+      organizationId: 'org-a',
+      accountId: 'account-a',
+    });
+
+    expect(state.features.fine_tuning_pipeline).toEqual(expect.objectContaining({
+      activationMode: 'enabled',
+      satisfied: true,
+      implemented: false,
+      unlocked: false,
+      measuredPerformance: null,
+    }));
+    expect(state.features.aggressive_research_generation.implemented).toBe(false);
+    expect(state.features.auto_library_updates.implemented).toBe(true);
+    // A built feature in the same position does turn on.
+    expect(state.features.strong_personalization).toEqual(expect.objectContaining({
+      satisfied: true,
+      implemented: true,
+      unlocked: true,
+      measuredPerformance: null,
+    }));
+  });
+
   it('counts only human-reviewed learning events and performs no runtime DDL', async () => {
     await evaluateShadowUnlockState({
       organizationId: 'org-a',
@@ -64,6 +114,8 @@ describe('buildShadowUnlockHints', () => {
       unlocked: false,
       activationMode: 'observation' as const,
       satisfied: false,
+      implemented: true,
+      measuredPerformance: null,
       currentValue: 0,
       thresholdValue: 10,
       metricKey: 'user_high_quality_interactions' as const,
@@ -124,6 +176,28 @@ describe('buildShadowUnlockHints', () => {
 
     const hints = buildShadowUnlockHints(state);
     expect(hints?.[0].progress).toBe(1);
+    expect(hints?.[0].closeToUnlocking).toBe(false);
+  });
+
+  it('never promises unlocking for a feature with no code behind it', () => {
+    const state: ShadowUnlockState = {
+      organizationId: 'org-a',
+      accountId: 'account-a',
+      evaluatedAt: new Date().toISOString(),
+      features: {
+        fine_tuning_pipeline: featureStatus({
+          featureKey: 'fine_tuning_pipeline',
+          metricKey: 'org_labeled_training_examples',
+          activationMode: 'enabled',
+          implemented: false,
+          currentValue: 450,
+          thresholdValue: 500,
+        }),
+      } as unknown as ShadowUnlockState['features'],
+    };
+
+    const hints = buildShadowUnlockHints(state);
+    expect(hints?.[0].progress).toBe(0.9);
     expect(hints?.[0].closeToUnlocking).toBe(false);
   });
 
