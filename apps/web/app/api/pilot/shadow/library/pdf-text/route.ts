@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
@@ -90,10 +92,14 @@ export async function POST(request: NextRequest) {
       return refuse(413, 'PDFs up to 10 MB.');
     }
 
-    const { pages, emptyPageCount } = await extractLibraryPdfPages(new Uint8Array(await uploaded.arrayBuffer()));
+    const bytes = new Uint8Array(await uploaded.arrayBuffer());
+    const { pages, emptyPageCount } = await extractLibraryPdfPages(bytes);
+    // The hash of the bytes read, so the panel can link an excerpt to the Research Archive
+    // original only when it is the same file (archive-original/route.ts returns the same).
+    const contentSha256 = createHash('sha256').update(bytes).digest('hex');
 
     return NextResponse.json(
-      { ok: true, page_count: pages.length, empty_page_count: emptyPageCount, pages },
+      { ok: true, page_count: pages.length, empty_page_count: emptyPageCount, content_sha256: contentSha256, pages },
       { status: 200, headers: NO_STORE },
     );
   } catch (error) {

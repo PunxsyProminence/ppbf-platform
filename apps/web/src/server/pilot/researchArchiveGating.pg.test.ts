@@ -39,12 +39,13 @@
 //      into 500s -- or, worse, a dropped unique index that let the second row
 //      land -- would not have been caught.
 //
-// SCOPE LIMIT, STATED PLAINLY. This proves the DATABASE half. It does not and
-// cannot prove that a SharePoint write failed, because NO SHADOW
-// RESEARCH-REGISTRATION PATH CURRENTLY PERFORMS A GOVERNED RESEARCH ARCHIVE
-// WRITE. Nothing on the registration path performs an archive write whose
-// failure could be observed, so the archive-side assertion ("no second
-// original") is out of reach from here; see the accompanying report.
+// SCOPE LIMIT, STATED PLAINLY. This proves the DATABASE half of registration.
+// Filing an original in the archive is a separate step (lane L57:
+// app/api/pilot/shadow/library/archive-original -> researchArchiveFiling.ts),
+// and researchArchiveFiling.pg.test.ts drives it against a real database with
+// Graph mocked: a repeat files nothing, a failed or partial filing records no
+// archive identity, and filing changes no review state. The registration
+// routes exercised here still perform no archive write of their own.
 //
 // Corrected 2026-08-24. This paragraph used to say
 // "src/server/document-intake/sharepoint.ts has no caller", which was simply
