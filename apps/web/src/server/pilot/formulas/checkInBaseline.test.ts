@@ -13,12 +13,12 @@ const mockSave = jest.mocked(saveFormulaObservation);
 const mockWindow = jest.mocked(getActiveObservationsOfKindInWindow);
 const mockRun = jest.mocked(runStoredMvpFormula);
 
-function stored(id: string, metricKey: string, unit: string, observedAt: string): NumericObservation {
+function stored(id: string, metricKey: string, unit: string, observedAt: string, contextId = 'check-in:x'): NumericObservation {
   return {
     observationId: id,
     organizationId: 'org-1',
     athleteId: 'athlete-1',
-    contextId: 'check-in:x',
+    contextId,
     kind: 'numeric',
     value: 1,
     unit: unit as NumericObservation['unit'],
@@ -57,6 +57,8 @@ test('MVP-09 runs per item over the same item\'s earlier values in the window, c
   mockWindow.mockResolvedValue([
     stored('old-sleep', 'sleep_hours', 'hours', '2026-10-10T12:00:00.000Z'),
     stored('old-energy', 'energy', 'rating_1_5', '2026-10-11T12:00:00.000Z'),
+    // Same metric, but not from a check-in: never part of the baseline.
+    stored('posted-sleep', 'sleep_hours', 'hours', '2026-10-12T12:00:00.000Z', 'sparring_1'),
     stored('new-sleep_hours', 'sleep_hours', 'hours', AT),
   ]);
   await recordCheckInBaselines({

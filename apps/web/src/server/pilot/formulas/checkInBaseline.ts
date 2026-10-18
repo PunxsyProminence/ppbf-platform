@@ -30,6 +30,14 @@ import { runStoredMvpFormula } from './runner';
 import type { FormulaResult, FormulaUnit } from './types';
 
 export const CHECK_IN_BASELINE_POLICY_VERSION = 'check-in-baseline-2026-10-17';
+
+/**
+ * The context every check-in observation is filed under (`check-in:<id>`, also
+ * used by athleteBodyMass.ts). A baseline value counts only from here: the
+ * generic observations route refuses `numeric` writes into these contexts, so
+ * nothing but the check-in itself can put a number into an athlete's baseline.
+ */
+export const CHECK_IN_CONTEXT_PREFIX = 'check-in:';
 export const CHECK_IN_BASELINE_WINDOW_DAYS = 28;
 export const CHECK_IN_BASELINE_MINIMUM_HISTORY = 7;
 export const CHECK_IN_BASELINE_ADEQUATE_HISTORY = 14;
@@ -67,7 +75,7 @@ export async function recordCheckInBaselines(input: {
     const current = await saveFormulaObservation({
       organizationId: input.organizationId,
       athleteId: input.athleteId,
-      contextId: `check-in:${input.checkInId}`,
+      contextId: `${CHECK_IN_CONTEXT_PREFIX}${input.checkInId}`,
       kind: 'numeric',
       value,
       unit: metric.unit,
@@ -97,6 +105,7 @@ export async function recordCheckInBaselines(input: {
     });
     const history = window.filter((observation) => (
       observation.observationId !== current.observationId
+      && observation.contextId.startsWith(CHECK_IN_CONTEXT_PREFIX)
       && observation.dimensions?.metricKey === metric.metricKey
       && observation.unit === metric.unit
       && Date.parse(observation.observedAt) < currentMs
