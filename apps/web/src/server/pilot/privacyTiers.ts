@@ -489,6 +489,16 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'membership role; athletes, guardians, board and platform_owner are refused. Whether the athlete or family '
       + 'should see these notes is not decided, so nothing shows them one.',
   },
+  'athlete_heights.height_cm': {
+    tier: 'organization',
+    enforcedBy: ['athleteHeights.ts#assertHeightAccess', '../../../app/api/pilot/coach/athlete-height/route.ts#HEIGHT_ROLES'],
+    note:
+      "A child's standing height, entered by a coach, used only for a growth rate in cm per year "
+      + '(OD-2026-10-17-026 (b); no maturity labels). Coach-only: an active coach or admin membership here AND '
+      + 'assertActorCanAccessAthlete for that athlete, run with the membership role; athletes, guardians, board '
+      + 'and platform_owner are refused, and the database guard requires the recorder to hold a staff seat in '
+      + 'the gym. No athlete or family screen reads it.',
+  },
   'athlete_minor_limits.value_number': {
     tier: 'organization',
     enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
@@ -667,6 +677,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_contact_caps',
   // A coach's heat, weight-cut and supervision limits for one child.
   'pilot.athlete_minor_limits',
+  // A child's standing height, coach-entered, coach-only (OD-2026-10-17-026 (b)).
+  'pilot.athlete_heights',
   // A coach's own note on a child's session, in the coach's name.
   'pilot.session_staff_notes',
   // Which children a coach marked present in one session run (F-067). Staff only.
