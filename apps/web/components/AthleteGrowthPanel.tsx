@@ -46,7 +46,12 @@ interface Loaded {
   cmMax: number;
 }
 
-type Reading = { state: 'loading' } | { state: 'unavailable' } | ({ state: 'loaded' } & Loaded);
+// Each answer carries the athlete it is for; one for another athlete reads as
+// still loading (derived, so the effect sets no state before its fetch).
+type Reading =
+  | { state: 'loading' }
+  | { state: 'unavailable'; athleteId: string }
+  | ({ state: 'loaded'; athleteId: string } & Loaded);
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -99,7 +104,8 @@ function newKey(): string {
 }
 
 export default function AthleteGrowthPanel({ athleteId }: { athleteId: string }) {
-  const [reading, setReading] = useState<Reading>({ state: 'loading' });
+  const [answer, setAnswer] = useState<Reading>({ state: 'loading' });
+  const reading: Reading = answer.state !== 'loading' && answer.athleteId === athleteId ? answer : { state: 'loading' };
   const [cm, setCm] = useState('');
   const [measuredOn, setMeasuredOn] = useState(() => gymDayIso() ?? '');
   const [correcting, setCorrecting] = useState<HeightReadingView | null>(null);
@@ -114,32 +120,42 @@ export default function AthleteGrowthPanel({ athleteId }: { athleteId: string })
   // earlier athlete (or an earlier read) never draws under the current one.
   const latestRead = useRef(0);
 
-  const load = useCallback(async () => {
-    const ticket = latestRead.current + 1;
-    latestRead.current = ticket;
-    const landed = () => live.current && latestRead.current === ticket;
+  // One read: the answer for this athlete, or 'unavailable'. No state is set
+  // here; the caller sets it once the answer has landed.
+  const read = useCallback(async (): Promise<Reading> => {
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/coach/athlete-height?athlete_id=${encodeURIComponent(athleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
       const parsed = response.ok ? parseHeightPayload(await response.json().catch(() => null)) : null;
-      if (!landed()) return;
       // Unknown is never shown as "no height recorded".
-      setReading(parsed ? { state: 'loaded', ...parsed } : { state: 'unavailable' });
+      return parsed ? { state: 'loaded', athleteId, ...parsed } : { state: 'unavailable', athleteId };
     } catch {
-      if (landed()) setReading({ state: 'unavailable' });
+      return { state: 'unavailable', athleteId };
     }
   }, [athleteId]);
 
+  /** A re-read (Try again, after an unknown outcome): only the newest lands. */
+  const load = useCallback(async () => {
+    const ticket = latestRead.current + 1;
+    latestRead.current = ticket;
+    const next = await read();
+    if (live.current && latestRead.current === ticket) setAnswer(next);
+  }, [read]);
+
   useEffect(() => {
     live.current = true;
-    setReading({ state: 'loading' });
-    void load();
+    const ticket = latestRead.current + 1;
+    latestRead.current = ticket;
+    void (async () => {
+      const next = await read();
+      if (live.current && latestRead.current === ticket) setAnswer(next);
+    })();
     return () => {
       live.current = false;
     };
-  }, [load]);
+  }, [read]);
 
   const resetForm = () => {
     setCm('');
@@ -193,7 +209,7 @@ export default function AthleteGrowthPanel({ athleteId }: { athleteId: string })
       pending.current = null;
       // A re-read still in flight is older than this answer; it must not land.
       latestRead.current += 1;
-      setReading({ state: 'loaded', ...parsed });
+      setAnswer({ state: 'loaded', athleteId, ...parsed });
       setMessage({
         kind: 'saved',
         text: correcting
