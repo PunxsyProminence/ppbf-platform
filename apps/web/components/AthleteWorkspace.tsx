@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import AthleteCyclePanel from './AthleteCyclePanel';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
@@ -3861,6 +3862,13 @@ export default function AthleteWorkspace() {
             />
           )}
           {activeTab === 'bio-checkin' && <MyInjuries />}
+          {/* The athlete's private cycle card (OD-2026-10-17-023 item 4): only
+              the athlete's own route feeds it, and nothing else shows it. */}
+          {activeTab === 'bio-checkin' && (
+            <div className={PANEL}>
+              <AthleteCyclePanel />
+            </div>
+          )}
 
 
           {/* DRILL LIBRARY */}
