@@ -209,6 +209,10 @@ substring-matching audit **event names** (`includes('PATTERN')`,
 check, no attribution, no transfer or retention is consulted. This is the exact
 surface the new module exists to give a real basis, and the highest-value place
 to wire it in next.
+*Status 2026-10-18 (lane L49): the labels are gone, half CLOSED. Every
+projected event is now an Observation (the 'Validated Lesson' label had already
+gone); the Pattern and Finding streams stay empty until the evaluator feeds
+them (N1's other half, not built).*
 
 **D2 — Profile facts never decay and never supersede.** `upsertRememberedFact`
 writes a confidence and an `updatedAt` and nothing ever revisits either.
