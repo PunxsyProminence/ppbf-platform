@@ -207,6 +207,17 @@ async function storedText(documentId: string): Promise<{ ordinals: number[]; tex
   };
 }
 
+// Holds the first transaction open inside its event write, after its insert
+// and before its commit, so requests sent with it must overlap it: without the
+// advisory lock they cannot see its uncommitted row and insert their own.
+function holdFirstTransactionOpen(): void {
+  const actualEmit = jest.requireActual('./shadowEvents').emitShadowEvent as typeof emitShadowEvent;
+  mockEmit.mockImplementationOnce(async (...args: Parameters<typeof emitShadowEvent>) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return actualEmit(...args);
+  });
+}
+
 async function eventCount(entityId: string): Promise<number> {
   const [row] = await rawQuery<{ count: string }>(
     'select count(*)::text as count from pilot.shadow_events where organization_id = $1 and entity_id = $2',
@@ -370,6 +381,7 @@ describe('a source registration whose answer is lost (real database)', () => {
   test('two requests with one id at the same moment make one source', async () => {
     const title = 'Two requests at once';
     const body = { title, source_type: 'peer_reviewed', request_id: 'req-source-concurrent-0001' };
+    holdFirstTransactionOpen();
 
     const answers = await Promise.all([post(SOURCES, body), post(SOURCES, body), post(SOURCES, body)]);
 
@@ -512,6 +524,7 @@ describe('an excerpt whose answers are lost part-way (real database)', () => {
       metadata: { intake_method: 'manual_text', locator: 'p. 1', chunk_count: 1 },
       request_id: 'req-document-concurrent-0001',
     };
+    holdFirstTransactionOpen();
 
     const answers = await Promise.all([post(DOCUMENTS, body), post(DOCUMENTS, body), post(DOCUMENTS, body)]);
 
