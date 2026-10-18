@@ -122,7 +122,17 @@ const ACQUIRED_AT_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const ISO_DATE_OR_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 // Text that cannot be stored or would display misleadingly: Postgres text holds
 // no NUL, and no C0/C1 control or bidirectional override belongs in a name.
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
+function hasControlCharacter(value: string): boolean {
+  // Code points, not a regex: the lint rules refuse control characters in a
+  // pattern, and these bidi overrides are invisible in source.
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * An ISO date or timestamp, and only one that means what it says. `new Date`
@@ -149,12 +159,12 @@ function validate(input: FileResearchOriginalInput, now: Date) {
   if (!sourceId) throw new ValidationError('Choose the Library source this PDF belongs to.', 'ARCHIVE_SOURCE_REQUIRED');
 
   const originalFilename = input.originalFilename.trim();
-  if (originalFilename.length < 1 || originalFilename.length > 255 || CONTROL_CHARACTER.test(originalFilename)) {
+  if (originalFilename.length < 1 || originalFilename.length > 255 || hasControlCharacter(originalFilename)) {
     throw new ValidationError('The PDF needs a plain file name of 1 to 255 characters.', 'ARCHIVE_FILENAME_INVALID');
   }
 
   const acquisitionProvider = input.acquisitionProvider.trim();
-  if (acquisitionProvider.length < 1 || acquisitionProvider.length > 200 || CONTROL_CHARACTER.test(acquisitionProvider)) {
+  if (acquisitionProvider.length < 1 || acquisitionProvider.length > 200 || hasControlCharacter(acquisitionProvider)) {
     throw new ValidationError('Say where the PDF came from (1 to 200 characters).', 'ARCHIVE_PROVIDER_INVALID');
   }
   if (!isOneOf(ARCHIVE_ACQUISITION_CHANNELS, input.acquisitionChannel)) {
