@@ -122,7 +122,7 @@ export const PPBF_ASSESSMENT_PROTOCOLS: readonly ProtocolSeed[] = [
 const PPBF_PROTOCOL_IDS: readonly string[] = PPBF_ASSESSMENT_PROTOCOLS.map((p) => p.protocol_id);
 
 /**
- * Creates the gym's jump and skill-rating protocol rows if they are missing.
+ * Creates the gym's jump, 20-m shuttle and skill-rating protocol rows if they are missing.
  * Never updates an existing row: a coach-edited or retired protocol is left
  * as it is. Throws if, afterwards, any of the rows is still absent (for
  * example an unrelated active protocol already holds the same name), because
@@ -387,7 +387,7 @@ function toEntry(row: AssessmentHistoryRow): AssessmentHistoryEntry {
 export const HISTORY_LIMIT = 500;
 
 /**
- * ONE athlete's own jump and skill-rating history, newest first, at most
+ * ONE athlete's own jump, shuttle and skill-rating history, newest first, at most
  * HISTORY_LIMIT entries; `truncated` says older entries exist, so a screen
  * never presents a cut list as the whole record. Only the
  * PPBF protocols above; nothing aggregated. Returns [] for a deleted or
