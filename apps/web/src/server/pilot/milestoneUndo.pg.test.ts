@@ -258,6 +258,9 @@ describe('undoSelfMilestone (OD-2026-10-17-003, F-133)', () => {
     await withDatabase(async (client) => {
       await coachMark();
       expect(await undo()).toBeNull();
+      // Not even keyed on the coach's own account (the route never lets a coach in; the statement
+      // still refuses, without leaning on the database check).
+      expect(await undo({ actor: COACH })).toBeNull();
       expect((await rowOf(client)).undone_at).toBeNull();
       expect((await listMilestoneAwards(ORG, ATHLETE)).map((a) => a.milestone_key)).toEqual([MILE]);
     });
