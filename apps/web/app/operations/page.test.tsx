@@ -339,7 +339,7 @@ test('Publication Workflow Automation reads as parked with its backlog id', asyn
 test('the radar lists the shipped coach-floor capabilities as existing', async () => {
   await renderPage();
 
-  expect(await screen.findByText('Session Script Delivery')).toBeTruthy();
+  expect(await screen.findByText('Session Plan Delivery')).toBeTruthy();
   expect(screen.getByText('Safety Compliance Center')).toBeTruthy();
   expect(screen.getByText('Coach Coverage')).toBeTruthy();
   expect(screen.getByText('Drill Library')).toBeTruthy();
@@ -349,7 +349,7 @@ test('the radar lists the shipped coach-floor capabilities as existing', async (
 test('the removed override token is not advertised anywhere on the hub', async () => {
   await renderPage();
 
-  await screen.findByText('Session Script Delivery');
+  await screen.findByText('Session Plan Delivery');
   expect(screen.queryByText(/BREAK MY 40% RULE/)).toBeNull();
   expect(screen.queryByText(/GRIND STATE ENGAGED/)).toBeNull();
 });
