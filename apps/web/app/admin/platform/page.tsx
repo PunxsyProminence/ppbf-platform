@@ -780,11 +780,13 @@ export default function PlatformConsole() {
           <div className="mt-[var(--s4)] space-y-[var(--s4)]">
             <label className="field">
               <span className="t-label">Account ID (how they&apos;ll sign in)</span>
+              {/* F-102 (Jason: "B: Change the guidance (Recommended)"). Wording PROPOSED. */}
+              <span className="t-muted block mb-[var(--s2)]">Their ring name or a number, not their real name.</span>
               <input
                 type="text"
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value)}
-                placeholder="Account ID (how they'll sign in)"
+                placeholder="southpaw12"
                 className="input"
               />
             </label>
