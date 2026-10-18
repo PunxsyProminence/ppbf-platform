@@ -34,16 +34,16 @@ import { apiBase } from '@/lib/apiBase';
 const REFUSAL_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 422];
 
 const NOT_MADE_BY_STATUS: Readonly<Record<number, string>> = {
-  401: 'You are signed out, so no session script was made. Sign in and try again.',
-  403: 'Your account may not make session scripts, so none was made.',
+  401: 'You are signed out, so no session plan was made. Sign in and try again.',
+  403: 'Your account may not make session plans, so none was made.',
 };
 
 const NOT_MADE: Readonly<Record<string, string>> = {
-  WORKOUT_TEMPLATE_NOT_FOUND: 'This template could not be found, so no session script was made.',
-  WORKOUT_TEMPLATE_NOT_CURRENT: 'This template is no longer in use, so no session script was made.',
-  WORKOUT_TEMPLATE_EMPTY: 'This template has no steps, so no session script was made.',
-  WORKOUT_TEMPLATE_TOO_LONG: 'This template runs longer than a session script can hold, so no session script was made.',
-  SESSION_SCRIPT_NAME_INVALID: 'The template name cannot be used as a plan name, so no session script was made.',
+  WORKOUT_TEMPLATE_NOT_FOUND: 'This template could not be found, so no session plan was made.',
+  WORKOUT_TEMPLATE_NOT_CURRENT: 'This template is no longer in use, so no session plan was made.',
+  WORKOUT_TEMPLATE_EMPTY: 'This template has no steps, so no session plan was made.',
+  WORKOUT_TEMPLATE_TOO_LONG: 'This template runs longer than a session plan can hold, so no session plan was made.',
+  SESSION_SCRIPT_NAME_INVALID: 'The template name cannot be used as a plan name, so no session plan was made.',
 };
 
 type Outcome =
@@ -103,7 +103,7 @@ export default function MakeSessionScript({
         const code = typeof payload?.error === 'string' ? payload.error : '';
         setOutcome({
           kind: 'not_made',
-          message: NOT_MADE[code] ?? NOT_MADE_BY_STATUS[response.status] ?? 'The server refused, so no session script was made.',
+          message: NOT_MADE[code] ?? NOT_MADE_BY_STATUS[response.status] ?? 'The server refused, so no session plan was made.',
         });
         return;
       }
@@ -116,11 +116,11 @@ export default function MakeSessionScript({
   };
 
   return (
-    <section data-surface="kiosk" aria-label="Make a session script" className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s5)]">
-      <h3 className="t-command text-[length:var(--t-md)]">Make a session script</h3>
+    <section data-surface="kiosk" aria-label="Make a session plan" className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s5)]">
+      <h3 className="t-command text-[length:var(--t-md)]">Make a session plan</h3>
       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
         Turns these blocks, in this order, into a timed plan you can run live. A block with no minutes
-        is given 5. You set the minutes and block titles afterwards under Session Scripts.
+        is given 5. You set the minutes and block titles afterwards under Session Plans.
       </p>
 
       {outcome?.kind !== 'made' && (
@@ -130,7 +130,7 @@ export default function MakeSessionScript({
           disabled={busy}
           className="btn mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {busy ? 'Making...' : 'Make a session script'}
+          {busy ? 'Making...' : 'Make a session plan'}
         </button>
       )}
 
@@ -138,8 +138,8 @@ export default function MakeSessionScript({
         <div role="status" className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
           <p className="t-body text-[color:var(--brass-300)]">
             {outcome.name === null
-              ? 'A session script was made, but its details could not be read here. It is under Session Scripts.'
-              : `Made the session script ${outcome.name}${outcome.blocks === null ? '' : `: ${outcome.blocks} ${outcome.blocks === 1 ? 'block' : 'blocks'}`}.`}
+              ? 'A session plan was made, but its details could not be read here. It is under Session Plans.'
+              : `Made the session plan ${outcome.name}${outcome.blocks === null ? '' : `: ${outcome.blocks} ${outcome.blocks === 1 ? 'block' : 'blocks'}`}.`}
           </p>
           <Link
             href={outcome.scriptId === null
@@ -147,7 +147,7 @@ export default function MakeSessionScript({
               : `/coach/session-scripts?script=${encodeURIComponent(outcome.scriptId)}`}
             className="btn mt-[var(--s3)]"
           >
-            Open it in Session Scripts
+            Open it in Session Plans
           </Link>
         </div>
       )}
@@ -159,11 +159,11 @@ export default function MakeSessionScript({
       {outcome?.kind === 'unknown' && (
         <div role="alert" className={`mt-[var(--s3)] ${ALERT}`}>
           <p>
-            The answer did not arrive, so it is not known whether the session script was made. Look
-            under Session Scripts before pressing again.
+            The answer did not arrive, so it is not known whether the session plan was made. Look
+            under Session Plans before pressing again.
           </p>
           <Link href="/coach/session-scripts" className="btn btn--ghost mt-[var(--s3)]">
-            Session Scripts
+            Session Plans
           </Link>
         </div>
       )}

@@ -57,7 +57,7 @@ const WORKSPACE_SURFACES: WorkspaceSurface[] = [
   },
   {
     href: '/coach/development',
-    label: 'Your Development',
+    label: 'Your Coaching Growth',
     description: 'What you are working to get better at, in your own words.',
   },
   {
