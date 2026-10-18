@@ -501,6 +501,18 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
       + 'attendance view or report (CT-13). A mark taken back keeps its row.',
   },
+  'behaviour_keys.label': {
+    tier: 'organization',
+    enforcedBy: [
+      '../../../app/api/pilot/coach/behaviour-keys/route.ts#GET',
+      'behaviourObservations.ts#listBehaviourKeys',
+    ],
+    note:
+      'A behaviour name on the gym\'s shared list (lane L49; Jason 2026-10-18 Q1, "A: Shared growing list"), '
+      + 'typed by a coach. It names a behaviour, but a coach could type a child\'s name into it, so it is staff '
+      + 'only like the reports it labels, and the purge scrubs a purged person\'s name out of it gym-wide '
+      + '(Jason 2026-10-07, "Scrub the child\'s name, keep").',
+  },
   'behaviour_observations.note': {
     tier: 'organization',
     enforcedBy: [

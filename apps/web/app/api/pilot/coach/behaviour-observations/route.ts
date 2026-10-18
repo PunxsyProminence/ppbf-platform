@@ -70,7 +70,9 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...OBSERVATION_ROLES]);
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body of null, a number or a list is not a request: read as empty, refused below.
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
     const athleteId = text(body.athleteId);
     const behaviourKey = text(body.behaviourKey);
     const session = sessionFrom(body);

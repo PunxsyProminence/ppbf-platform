@@ -18,9 +18,10 @@ import type {
 // here evaluates anything -- the pattern and lesson evaluators read these rows
 // later -- and nothing here decides what a report means.
 //
-// ONE EPISODE PER ATTEMPT. A report about a logged training attempt belongs to
-// that attempt's episode; a report "of the same moment" as another joins its
-// episode; anything else starts a new one. A coach's own second report of an
+// ONE EPISODE PER ATTEMPT AND BEHAVIOUR. A report about a logged training
+// attempt belongs to that attempt's episode for that behaviour (one attempt can
+// show two behaviours); a report "of the same moment" as another joins its
+// episode, at that moment's time; anything else starts a new one. A coach's own second report of an
 // episode is a revision of their first, so one person's changed call never
 // counts twice. The database holds every rule this writer relies on
 // (infra/azure/pilot_slice_postgres_learning_loop_migration.sql); the checks
@@ -107,7 +108,9 @@ export async function createBehaviourKey(input: {
     throw new ValidationError('A behaviour key is 3-80 lower-case letters, digits or underscores, starting with a letter.');
   }
   const label = input.label.trim();
-  if (label.length < 3 || label.length > 120) {
+  // Characters, as the table's length() counts them -- not UTF-16 units.
+  const labelLength = Array.from(label).length;
+  if (labelLength < 3 || labelLength > 120 || !/\S/.test(label)) {
     throw new ValidationError('A behaviour name is 3-120 characters.');
   }
   if (!SKILL_CODE_PATTERN.test(input.skillId)) {
@@ -204,65 +207,85 @@ async function sessionKeyFor(client: PoolClient, organizationId: string, session
     if (!found) throw new ValidationError('That session run is not in this gym.');
     return `run:${runId}`;
   }
-  if (!DATE_PATTERN.test(session.date) || Number.isNaN(Date.parse(`${session.date}T00:00:00Z`))) {
+  // Round-tripped, so 2026-02-31 (which Date.parse rolls into March) is refused.
+  const parsed = new Date(`${session.date}T00:00:00Z`);
+  if (!DATE_PATTERN.test(session.date) || Number.isNaN(parsed.getTime())
+      || parsed.toISOString().slice(0, 10) !== session.date) {
     throw new ValidationError('A session day is a date, YYYY-MM-DD.');
   }
   return `day:${session.date}`;
 }
 
 async function contextKeyFor(client: PoolClient, organizationId: string, context: ContextRef): Promise<string> {
+  // A drill is keyed by its LINEAGE, not its version: a drill re-versioned, or
+  // reached through a session block that runs it, is still one context, or
+  // "seen in more than one drill" would count edits.
   if ('drillId' in context) {
     const drillId = plainId(context.drillId, 'drill');
-    const found = await exists(
-      client,
-      'select 1 from pilot.drill_library where organization_id = $1 and drill_id = $2',
+    const drill = await client.query<{ lineage_id: string }>(
+      'select lineage_id from pilot.drill_library where organization_id = $1 and drill_id = $2',
       [organizationId, drillId],
     );
-    if (!found) throw new ValidationError('That drill is not in this gym\'s library.');
-    return `drill:${drillId}`;
+    if (drill.rows.length === 0) throw new ValidationError('That drill is not in this gym\'s library.');
+    return `drill:${drill.rows[0].lineage_id}`;
   }
   if ('blockId' in context) {
     const blockId = plainId(context.blockId, 'session block');
-    const found = await exists(
-      client,
-      'select 1 from pilot.session_script_blocks where organization_id = $1 and block_id = $2',
+    const block = await client.query<{ lineage_id: string | null }>(
+      `select d.lineage_id from pilot.session_script_blocks b
+         left join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
+        where b.organization_id = $1 and b.block_id = $2`,
       [organizationId, blockId],
     );
-    if (!found) throw new ValidationError('That session block is not in this gym.');
-    return `block:${blockId}`;
+    if (block.rows.length === 0) throw new ValidationError('That session block is not in this gym.');
+    return block.rows[0].lineage_id ? `drill:${block.rows[0].lineage_id}` : `block:${blockId}`;
   }
   return `context:${oneOf(context.attemptContext, ATTEMPT_CONTEXTS, 'context')}`;
 }
 
+/** The episode, and the time its moment happened when that is already on record. */
 async function episodeFor(
   client: PoolClient,
   input: RecordBehaviourObservationInput,
-): Promise<string> {
+): Promise<{ episodeId: string; momentAt: string | null }> {
   if (input.trainingAttemptId && input.sameMomentAs) {
     throw new ValidationError('Name the training attempt or the report of the same moment, not both.');
   }
   if (input.trainingAttemptId) {
     const attemptId = plainId(input.trainingAttemptId, 'training attempt');
     // The attempt must be THIS athlete's: an episode names one athlete.
-    const found = await exists(
-      client,
-      `select 1 from pilot.training_attempts
+    const attempt = await client.query<{ attempted_at: string }>(
+      `select attempted_at from pilot.training_attempts
         where organization_id = $1 and attempt_id = $2 and athlete_id = $3`,
       [input.organizationId, attemptId, input.athleteId],
     );
-    if (!found) throw new ValidationError('That training attempt is not this athlete\'s.');
-    return `attempt:${attemptId}`;
+    if (attempt.rows.length === 0) throw new ValidationError('That training attempt is not this athlete\'s.');
+    return {
+      episodeId: `attempt:${attemptId}:${input.behaviourKey}`,
+      momentAt: new Date(attempt.rows[0].attempted_at).toISOString(),
+    };
   }
   if (input.sameMomentAs) {
-    const earlier = await client.query<{ episode_id: string }>(
-      `select episode_id from pilot.behaviour_observations
+    const earlier = await client.query<{ episode_id: string; observed_at: string }>(
+      `select episode_id, observed_at from pilot.behaviour_observations
         where organization_id = $1 and observation_id::text = $2 and athlete_id = $3`,
       [input.organizationId, plainId(input.sameMomentAs, 'report'), input.athleteId],
     );
     if (earlier.rows.length === 0) throw new ValidationError('That report is not this athlete\'s.');
-    return earlier.rows[0].episode_id;
+    return {
+      episodeId: earlier.rows[0].episode_id,
+      momentAt: new Date(earlier.rows[0].observed_at).toISOString(),
+    };
   }
-  return `ep:${randomUUID()}`;
+  return { episodeId: `ep:${randomUUID()}`, momentAt: null };
+}
+
+/** An ISO 8601 time, normalised; refused with the reason otherwise. */
+function isoTime(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new ValidationError('observedAt is an ISO 8601 time, such as 2026-10-18T17:30:00Z.');
+  }
+  return new Date(value).toISOString();
 }
 
 export async function recordBehaviourObservation(
@@ -278,14 +301,23 @@ export async function recordBehaviourObservation(
     : VIEW_QUALITY[oneOf(input.viewQuality, Object.keys(VIEW_QUALITY) as ViewQuality[], 'viewQuality')];
   const note = (input.note ?? '').trim();
   if (note.length > MAX_NOTE_LENGTH) throw new ValidationError(`A note is at most ${MAX_NOTE_LENGTH} characters.`);
-  const observedAt = input.observedAt ?? new Date().toISOString();
-  if (Number.isNaN(Date.parse(observedAt))) throw new ValidationError('observedAt is not a time.');
+  const givenAt = input.observedAt === undefined ? null : isoTime(input.observedAt);
 
   try {
     return await withTransaction(async (client) => {
       const sessionKey = await sessionKeyFor(client, input.organizationId, input.session);
       const taskContextKey = await contextKeyFor(client, input.organizationId, input.context);
-      const episodeId = await episodeFor(client, input);
+      const { episodeId, momentAt } = await episodeFor(client, input);
+      // A report of a moment already on record keeps that moment's time, so a
+      // revision written later is not read as a later event.
+      const observedAt = givenAt ?? momentAt ?? new Date().toISOString();
+      // The episode's own lock (the table's guard takes the same one), before
+      // looking for this observer's earlier report: a double-tap cannot find
+      // "none" twice and count one coach's call twice.
+      await client.query(
+        `select pg_advisory_xact_lock(hashtextextended('pilot.behaviour_observations|' || $1 || '|' || $2, 0))`,
+        [input.organizationId, episodeId],
+      );
       // This observer's own latest report of the episode, if any: the new
       // report revises it rather than counting a second time.
       const own = await client.query<{ observation_id: string }>(
