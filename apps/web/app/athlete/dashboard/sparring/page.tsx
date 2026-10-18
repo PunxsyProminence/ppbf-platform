@@ -6,7 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
-import { SESSION_TOTAL_DIMENSIONS } from '@/src/server/pilot/formulas/types';
+import { SESSION_TOTAL_DIMENSIONS, SPARRING_LOG_FIELD_KEYS } from '@/src/server/pilot/formulas/types';
 import ClusterNav from '@/components/ClusterNav';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
@@ -71,7 +71,7 @@ async function submitDeepTrackObservations(input: {
 
   const observations: Array<{
     kind: string;
-    value: number;
+    value: number | null;
     unit: string;
     dimensions?: Record<string, string | number | boolean>;
     /* Keeps a whole-session count's idempotency key apart from the per-type
@@ -99,25 +99,23 @@ async function submitDeepTrackObservations(input: {
     { kind: 'focus_achieved', value: input.focusAchieved ? 1 : 0, unit: 'boolean_0_1' },
   ];
 
-  // WHOLE SESSION (Jason 2026-10-17, "B: Longer sparring form"). Each box is
-  // optional and sends nothing when blank. Rounds go with "All punches thrown"
-  // because punches per round is the only formula that reads them here.
-  // Tagged SESSION_TOTAL_DIMENSIONS so the detector can tell the whole-session
-  // landed count from the per-type one above (runner.ts, MVP-04/MVP-05).
-  const sessionTotal = { ...SESSION_TOTAL_DIMENSIONS };
-  if (input.allThrown != null) {
-    observations.push({ kind: 'punch_count', value: input.allThrown, unit: 'count', dimensions: sessionTotal });
-    // A cleared rounds box reads as 0; that is not a count of rounds, so it
-    // is not sent (punches per round then simply does not run).
-    if (input.totalRoundsCompleted >= 1) {
-      observations.push({ kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: sessionTotal });
-    }
-  }
-  if (input.allLanded != null) {
-    observations.push({ kind: 'punch_landed', value: input.allLanded, unit: 'count', dimensions: sessionTotal, keySuffix: 'session_total' });
-  }
-  if (input.minutesWorked != null) {
-    observations.push({ kind: 'active_time', value: input.minutesWorked, unit: 'minutes', dimensions: sessionTotal });
+  // WHOLE SESSION (Jason 2026-10-17, "B: Longer sparring form"). The three
+  // boxes are always sent, a blank one as null: data completeness (MVP-10)
+  // counts a blank as a gap (Overwatch QD3), and a null is never a value for
+  // MVP-02/04/05, which run only when the box was filled in. Tagged
+  // SESSION_TOTAL_DIMENSIONS so the detector can tell the whole-session landed
+  // count from the per-type one above, and with the box's fieldKey.
+  const box = (fieldKey: string) => ({ ...SESSION_TOTAL_DIMENSIONS, fieldKey });
+  observations.push(
+    { kind: 'punch_count', value: input.allThrown, unit: 'count', dimensions: box(SPARRING_LOG_FIELD_KEYS.allThrown) },
+    { kind: 'punch_landed', value: input.allLanded, unit: 'count', dimensions: box(SPARRING_LOG_FIELD_KEYS.allLanded), keySuffix: 'session_total' },
+    { kind: 'active_time', value: input.minutesWorked, unit: 'minutes', dimensions: box(SPARRING_LOG_FIELD_KEYS.minutesWorked) },
+  );
+  // Rounds are sent whenever answered, so filling "All punches thrown" later
+  // (Fix a number) can still give punches per round. A cleared rounds box
+  // reads as 0, which is not a count of rounds, so it is not sent.
+  if (input.totalRoundsCompleted >= 1) {
+    observations.push({ kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: { ...SESSION_TOTAL_DIMENSIONS } });
   }
 
   if (input.bodyWeightKg != null) {
