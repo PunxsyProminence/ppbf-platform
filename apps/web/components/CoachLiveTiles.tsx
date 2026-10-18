@@ -169,7 +169,6 @@ export default function CoachLiveTiles() {
 
   useEffect(() => {
     // No state is set before load's first await (the convention SessionScriptLiveDelivery follows).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     const id = setInterval(() => void load(), COACH_TILES_REFRESH_MS);
     return () => clearInterval(id);
