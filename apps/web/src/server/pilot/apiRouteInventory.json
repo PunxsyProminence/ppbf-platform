@@ -5574,6 +5574,95 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-goals/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-goals/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Adds a staff goal written with the session's account and role (the database checks the active seat); read-only to the family.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-goals/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/family-goals",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the goal's athlete (in familyGoals.ts)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Family goals for one athlete, for staff (pilot.family_goals; familyGoals.ts; PH-06b). Every live goal of the child, both guardians' and staff's, with target date and Done (completed_at) or in progress; a guardian's goal is named only \"A guardian\", a staff goal by display name; no account ids or emails (OD-2026-10-06-025). Staff change only staff-written goals (PH-06 Q-2 A). Scoped by organization in the query and by assertActorCanAccessAthlete (whole gym, OD-2026-10-11-007). Edit, tick done, untick or retire a staff-written goal, written with the session's account and role (the database checks the active seat); a guardian's goal is the same 404 as a forged id; never a delete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/family-message-replies/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-message-replies",
