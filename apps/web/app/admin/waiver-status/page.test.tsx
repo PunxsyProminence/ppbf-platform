@@ -221,7 +221,7 @@ test('Why lists only what the answer rests on; papers, consent and violations si
   });
 
   expect(linesUnder(row, 'Why')).toEqual([
-    'Training hold: all training paused. Rest this week. What earns the lift: A note from your doctor.',
+    'Training hold: all training. Rest this week. What earns the lift: A note from your doctor.',
     'Medical clearance: cleared.',
   ]);
   expect(linesUnder(row, 'Also on file')).toEqual([
