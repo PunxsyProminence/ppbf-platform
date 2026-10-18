@@ -2169,8 +2169,12 @@ function PeopleConsoleContent() {
               <label htmlFor="athlete-account-id" className="t-label">
                 Sign-in ID
               </label>
+              {/* F-102 (Jason: "B: Change the guidance (Recommended)"): the
+                  sign-in ID outlives the athlete's record, so it should not
+                  be the child's real name. Wording PROPOSED. */}
               <p className="t-muted mb-[var(--s2)]">
-                What the athlete types to sign in. Keep it simple and unique, like <code>jsmith</code>.
+                What the athlete types to sign in. Use their ring name or a number, not their real name.
+                Example: <code>southpaw12</code>. Keep it simple and unique.
               </p>
               <input
                 id="athlete-account-id"
@@ -2178,7 +2182,7 @@ function PeopleConsoleContent() {
                 required
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value.trim())}
-                placeholder="jsmith"
+                placeholder="southpaw12"
                 className="input font-mono"
               />
             </div>

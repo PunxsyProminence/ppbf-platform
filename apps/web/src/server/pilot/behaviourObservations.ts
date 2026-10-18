@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
+import { skillCodesFromSkillFamilies } from './contentImport/referenceSets';
 import { query, withTransaction } from './db';
 import { ValidationError } from './errors';
 import type {
@@ -56,6 +57,8 @@ export const SKILL_CODE_PATTERN = /^SK-[A-Z]+-\d{2}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ID_PATTERN = /^[^\s]{1,200}$/;
 export const MAX_NOTE_LENGTH = 2000;
+/** How far ahead of the server's clock a report's time may be (device clock skew). */
+export const MAX_FUTURE_SKEW_MS = 10 * 60 * 1000;
 
 export interface BehaviourKeyRow {
   behaviour_key: string;
@@ -119,17 +122,40 @@ export async function createBehaviourKey(input: {
   if (labelLength < 3 || labelLength > 120 || !/\S/.test(label)) {
     throw new ValidationError('A behaviour name is 3-120 characters.');
   }
-  if (!SKILL_CODE_PATTERN.test(input.skillId)) {
-    throw new ValidationError('A behaviour name sits under one skill code, such as SK-JAB-01.');
+  // A code of the right shape is not enough: it must be a skill in the graph
+  // (Q1, "each name sits under one skill in the 67-skill graph").
+  if (!SKILL_CODE_PATTERN.test(input.skillId) || !skillCodesFromSkillFamilies().has(input.skillId)) {
+    throw new ValidationError('A behaviour name sits under one skill code from the skill graph, such as SK-JAB-01.');
   }
   try {
-    const rows = await query<BehaviourKeyRow>(
-      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
-       values ($1, $2, $3, $4, $5)
-       returning behaviour_key, label, skill_id, status, created_at`,
-      [input.organizationId, mintBehaviourKey(), label, input.skillId, input.createdByAccountId],
-    );
-    return rows[0];
+    // ONE NAME, ONE KEY. The list is shared (Q1): a second coach typing the
+    // same name under the same skill -- or a retried save -- gets the name
+    // already there, so their reports meet on one key instead of splitting
+    // into two patterns. Same name = same skill and the same words, ignoring
+    // case and outer spaces. Serialised per name, so two saves at once cannot
+    // both miss the other. (No unique index: the purge's name scrub could
+    // make two different labels identical, and must never fail on that.)
+    return await withTransaction(async (client) => {
+      await client.query(
+        `select pg_advisory_xact_lock(hashtextextended('pilot.behaviour_keys|' || $1 || '|' || $2 || '|' || lower($3), 0))`,
+        [input.organizationId, input.skillId, label],
+      );
+      const existing = await client.query<BehaviourKeyRow>(
+        `select behaviour_key, label, skill_id, status, created_at from pilot.behaviour_keys
+          where organization_id = $1 and skill_id = $2 and status = 'active' and lower(btrim(label)) = lower($3)
+          order by created_at
+          limit 1`,
+        [input.organizationId, input.skillId, label],
+      );
+      if (existing.rows[0]) return existing.rows[0];
+      const rows = await client.query<BehaviourKeyRow>(
+        `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+         values ($1, $2, $3, $4, $5)
+         returning behaviour_key, label, skill_id, status, created_at`,
+        [input.organizationId, mintBehaviourKey(), label, input.skillId, input.createdByAccountId],
+      );
+      return rows.rows[0];
+    });
   } catch (error) {
     // 64 random bits: a collision is not a coach's mistake, so it is not dressed as one.
     if ((error as { code?: string }).code === '23505') {
@@ -301,6 +327,11 @@ function isoTime(value: string): string {
   if (!shape || Number.isNaN(parsed.getTime()) || !sameDay) {
     throw new ValidationError('observedAt is an ISO 8601 time with its offset, such as 2026-10-18T17:30:00Z.');
   }
+  // A mistyped future year would stretch the evidence's span and keep it
+  // "recent" for as long as the typo lasts.
+  if (parsed.getTime() > Date.now() + MAX_FUTURE_SKEW_MS) {
+    throw new ValidationError('observedAt is in the future.');
+  }
   return parsed.toISOString();
 }
 
@@ -343,7 +374,7 @@ export async function recordBehaviourObservation(
             and not exists (
               select 1 from pilot.behaviour_observations s
                where s.organization_id = o.organization_id and s.supersedes_observation_id = o.observation_id)
-          order by o.created_at desc
+          order by o.created_at desc, o.observation_id desc
           limit 1`,
         [input.organizationId, episodeId, input.observerAccountId],
       );

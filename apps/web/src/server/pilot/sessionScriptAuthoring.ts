@@ -5,7 +5,7 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
-import { FROM_TEMPLATE, templateSectionWords } from '@/src/lib/sessionScriptWords';
+import { BLOCK_RENDERED_FORMATS, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
@@ -41,6 +41,16 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 // SESSION_SCRIPT_CHANGED and nothing is written, so one coach's save never
 // silently replaces another's. When the first save made a new version instead,
 // the second gets SESSION_SCRIPT_SUPERSEDED for the same reason.
+//
+// RENDERINGS FOLLOW THE BLOCKS ONLY WHERE THEY WERE MADE FROM THEM (audit
+// 2026-10-17 item 8; Overwatch Q8 "A", 2026-10-18). A rendering flagged
+// generated_from_blocks in a COACH format is re-rendered from the edited blocks
+// (renderingFromBlocks), in place and in a new version alike. Every other
+// rendering is copied as it is: one written by hand is the author's text and an
+// edit to the blocks does not change it; a family format made from the blocks
+// is not re-rendered either, because a block's title is the coach's free text
+// and is withheld from families (Jason, 2026-10-12: "strip them";
+// sessionScriptProjection.ts).
 //
 // AUTHORIZATION IS THE ROUTE'S (SESSION_SCRIPT_AUTHOR_ROLES in
 // app/api/pilot/session-scripts/route.ts). Like issueWorkoutTemplate, this
@@ -94,7 +104,7 @@ function statedLength(stated: number | null, lastEnd: number): number | null {
 
 type TemplateStep = Pick<
   WorkoutTemplateItemWithDrillHead,
-  | 'block' | 'drill_id' | 'free_text_drill' | 'head_drill_name' | 'scale_level' | 'duration_minutes'
+  | 'block' | 'drill_id' | 'free_text_drill' | 'drill_name' | 'scale_level' | 'duration_minutes'
   | 'rep_count' | 'contact_level' | 'coach_note'
 >;
 
@@ -137,7 +147,11 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
     // In words, and said to be the template's (F-078): "From the template: Warm-up, 3 reps".
     const facts = [step.block.trim() === '' ? '' : templateSectionWords(step.block), step.rep_count === null ? '' : `${step.rep_count} reps`]
       .filter((part) => part !== '');
-    const label = (step.head_drill_name ?? step.free_text_drill ?? '').trim() || `Step ${index + 1}`;
+    // The name of the version the block links (drill_id), not the lineage head's: a drill renamed
+    // in a newer version would otherwise title a block that opens the older one (audit 2026-10-17
+    // item 4). A template keeps the version it was written against (the content-import default,
+    // OD-2026-10-08-008 ruling 5), and so does the plan made from it.
+    const label = (step.drill_name ?? step.free_text_drill ?? '').trim() || `Step ${index + 1}`;
     return {
       block_order: index + 1,
       start_offset_min: start,
@@ -151,6 +165,51 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
       contact_level: step.contact_level,
     };
   });
+}
+
+type RenderedBlock = Pick<
+  SessionScriptBlockRow,
+  'start_offset_min' | 'end_offset_min' | 'block_label' | 'what_to_say' | 'what_to_explain' | 'what_to_watch' | 'what_to_fix'
+>;
+
+/**
+ * A plan as plain text, from its blocks in the order given: the plan's name,
+ * then each block's minutes and title and the coaching lines its author
+ * filled, under the labels the plan page and the live screen use. Pure.
+ */
+export function renderingFromBlocks(name: string, blocks: readonly RenderedBlock[]): string {
+  const lines = [name];
+  for (const block of blocks) {
+    lines.push('', `${block.start_offset_min}-${block.end_offset_min} min  ${block.block_label}`);
+    const explain = explainLine(block.what_to_explain ?? '');
+    for (const [label, value] of [
+      ['Say', block.what_to_say ?? ''],
+      [explain.label, explain.value],
+      ['Watch', block.what_to_watch ?? ''],
+      ['Fix', block.what_to_fix ?? ''],
+    ]) {
+      if (value.trim() !== '') lines.push(`  ${label}: ${value.trim()}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** Re-renders a script's coach-format renderings made from its blocks. Returns how many. */
+async function rerenderFromBlocks(
+  client: PoolClient,
+  organizationId: string,
+  scriptId: string,
+  name: string,
+  blocks: readonly RenderedBlock[],
+): Promise<number> {
+  const result = await client.query(
+    `update pilot.session_script_renderings
+        set body = $3
+      where organization_id = $1 and script_id = $2
+        and generated_from_blocks and format = any($4::text[])`,
+    [organizationId, scriptId, renderingFromBlocks(name, blocks), [...BLOCK_RENDERED_FORMATS]],
+  );
+  return result.rowCount ?? 0;
 }
 
 export interface CreatedSessionScript {
@@ -188,6 +247,18 @@ export async function createSessionScriptFromTemplate(
   const scriptId = mintId('scr');
 
   return withTransaction(async (client) => {
+    // Asked again under lock: the read above takes none, so a template replaced
+    // or withdrawn since would otherwise still become a plan. FOR SHARE waits
+    // for a writer updating the row and then reads what it committed.
+    const held = await client.query<{ active: boolean; superseded_at: string | null }>(
+      `select active, superseded_at from pilot.workout_templates
+        where organization_id = $1 and template_id = $2
+          for share`,
+      [params.organizationId, template.template_id],
+    );
+    if (!held.rows[0]?.active || held.rows[0].superseded_at !== null) {
+      throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_NOT_CURRENT', 409);
+    }
     // discipline is left to the column default: a template names none.
     // theme is left empty: it is sent to families and a template's intent is not.
     await client.query(
@@ -333,7 +404,8 @@ async function lockCurrentScript(
 /**
  * Change a script's name and its blocks' titles and minutes. A block the edit
  * does not name keeps what it has; blocks are never added, removed or
- * reordered here.
+ * reordered here. A coach-format rendering made from the blocks is re-rendered
+ * from the edited ones; every other rendering stays as written.
  */
 export async function editSessionScript(
   params: Actor & {
@@ -395,6 +467,7 @@ export async function editSessionScript(
     const hasRun = (run.rowCount ?? 0) > 0;
 
     let result: EditedSessionScript;
+    let rerendered: number;
     if (!hasRun) {
       await client.query(
         `update pilot.session_scripts
@@ -418,6 +491,7 @@ export async function editSessionScript(
           ],
         );
       }
+      rerendered = await rerenderFromBlocks(client, params.organizationId, script.script_id, name, blocks);
       result = { outcome: 'updated', script_id: script.script_id, version: script.version };
     } else {
       const newScriptId = mintId('scr');
@@ -467,6 +541,7 @@ export async function editSessionScript(
           where organization_id = $1 and script_id = $2`,
         [params.organizationId, script.script_id, newScriptId],
       );
+      rerendered = await rerenderFromBlocks(client, params.organizationId, newScriptId, name, blocks);
       result = { outcome: 'new_version', script_id: newScriptId, version };
     }
 
@@ -484,6 +559,7 @@ export async function editSessionScript(
           outcome: result.outcome,
           edited_script_id: script.script_id,
           blocks_changed: changed.length,
+          renderings_rerendered: rerendered,
         },
       },
       client,

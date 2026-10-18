@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 31;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 33;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -142,6 +142,12 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 31;
 // chat route reads the profile. The text is unchanged for PPBF. What goes into
 // authorizedContext is unchanged; bumped because a listed file moved. A v30
 // job still queued at deploy is refused as STALE.
+// 32: SHADOW retrieval (lane L47, #1717): a semantic answer also returns
+// passages the semantic index does not hold, at the keyword bar
+// (shadowLibrary.ts), and each passage's excerpt is the window that answers
+// the question (shadowEvidence.ts). The evidence bundle changes; what goes
+// into authorizedContext is unchanged. A v31 job still queued at deploy is
+// refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -228,6 +234,8 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 29, sha256: 'b218a8f0960b9cfcda1bf881269551da92586c48367f6db323162f27da9e8b21' },
   { version: 30, sha256: '315bd11132f2ab54c0224e366ba026729199155f5ad978d6a770c27e332684a8' },
   { version: 31, sha256: 'e76ca30493733bef52a1264b1a0041b7af56da145ff478a63325861f92434800' },
+  { version: 32, sha256: '052152692c2d09011ed34bd3a7ae242b4c92afd4f1f159728014b7edca1b5992' },
+  { version: 33, sha256: '1e053971a819027525a896d4129034dbd9b6d1b112df7ad90229c273689c2ae3' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

@@ -90,13 +90,15 @@ begin
     raise exception 'BEHAVIOUR_KEY_MEANING_IS_FIXED'
       using errcode = '23514', constraint = 'pilot_behaviour_keys_meaning_fixed';
   end if;
-  if new.created_by_account_id is not null and new.organization_id is not null and not exists (
+  -- A new name is always someone's: the creator is nullable only so their
+  -- account can go later (on delete set null), never on the way in.
+  if new.organization_id is not null and (new.created_by_account_id is null or not exists (
     select 1 from pilot.organization_memberships om
       join pilot.accounts acc on acc.account_id = om.account_id
      where om.account_id = new.created_by_account_id and om.organization_id = new.organization_id
        and om.active_flag and om.role in ('coach', 'organization_admin', 'admin')
        and acc.active_flag and acc.deleted_at is null
-  ) then
+  )) then
     raise exception 'BEHAVIOUR_KEY_CREATOR_OF_THIS_GYM'
       using errcode = '23514', constraint = 'pilot_behaviour_keys_creator_of_this_gym';
   end if;
@@ -187,6 +189,7 @@ language plpgsql
 as $behaviour_observations_guard$
 declare
   prior pilot.behaviour_observations%rowtype;
+  leaf_id uuid;
 begin
   if tg_op = 'DELETE' then
     -- Only as a consequence: the athlete follow trigger or a gym cascade.
@@ -295,6 +298,21 @@ begin
       raise exception 'BEHAVIOUR_OBSERVATION_REVISION_IS_OWN'
         using errcode = '23514', constraint = 'pilot_behaviour_observations_own_revision';
     end if;
+  end if;
+  -- One person's call on a moment counts once: once they have reported it,
+  -- their next report of it must revise their latest one (under the episode
+  -- lock above, so a retried submit cannot slip in a second root report).
+  select o.observation_id into leaf_id from pilot.behaviour_observations o
+   where o.organization_id = new.organization_id and o.episode_id = new.episode_id
+     and o.observer_account_id = new.observer_account_id
+     and not exists (
+       select 1 from pilot.behaviour_observations s
+        where s.organization_id = o.organization_id and s.supersedes_observation_id = o.observation_id)
+   order by o.created_at desc, o.observation_id desc
+   limit 1;
+  if leaf_id is not null and new.supersedes_observation_id is distinct from leaf_id then
+    raise exception 'BEHAVIOUR_OBSERVATION_REVISION_IS_OWN'
+      using errcode = '23514', constraint = 'pilot_behaviour_observations_own_revision';
   end if;
   return new;
 end;

@@ -240,10 +240,23 @@ describe('the behaviour-name list', () => {
       organizationId: ORG, label: 'No skill', skillId: 'jab', createdByAccountId: COACH,
     })).rejects.toThrow('skill code');
     await expect(writer.createBehaviourKey({
+      organizationId: ORG, label: 'Made-up skill', skillId: 'SK-FAKE-99', createdByAccountId: COACH,
+    })).rejects.toThrow('skill graph');
+    // One name, one key: the same words under the same skill, from another
+    // coach or a retried save, return the name already on the list.
+    const again = await writer.createBehaviourKey({
+      organizationId: ORG, label: 'keeps a LOW guard', skillId: 'SK-GUARD-01', createdByAccountId: SECOND_COACH,
+    });
+    expect(again.behaviour_key).toBe(key.behaviour_key);
+    const otherSkill = await writer.createBehaviourKey({
+      organizationId: ORG, label: 'Keeps a low guard', skillId: 'SK-GUARD-02', createdByAccountId: COACH,
+    });
+    expect(otherSkill.behaviour_key).not.toBe(key.behaviour_key);
+    await expect(writer.createBehaviourKey({
       organizationId: ORG, label: 'From elsewhere', skillId: 'SK-JAB-01', createdByAccountId: OTHER_GYM_COACH,
     })).rejects.toThrow('Only staff of this gym');
     expect((await writer.listBehaviourKeys(ORG)).map((row) => row.behaviour_key).sort())
-      .toEqual([KEY, key.behaviour_key].sort());
+      .toEqual([KEY, key.behaviour_key, otherSkill.behaviour_key].sort());
   });
 });
 
@@ -325,6 +338,7 @@ describe('a behaviour report', () => {
     await expect(writer.recordBehaviourObservation({ ...base, observedAt: 'March 7' })).rejects.toThrow('ISO 8601');
     await expect(writer.recordBehaviourObservation({ ...base, observedAt: '2026-10-18T17:30:00' })).rejects.toThrow('with its offset');
     await expect(writer.recordBehaviourObservation({ ...base, observedAt: '2026-02-31T10:00:00Z' })).rejects.toThrow('ISO 8601');
+    await expect(writer.recordBehaviourObservation({ ...base, observedAt: '2096-10-18T17:30:00Z' })).rejects.toThrow('in the future');
     // Another gym's real records read exactly as missing ones.
     await expect(writer.recordBehaviourObservation({ ...base, session: { runId: 'run-bw-x' } })).rejects.toThrow('session run is not in this gym');
     await expect(writer.recordBehaviourObservation({ ...base, context: { drillId: 'drill-bw-x' } })).rejects.toThrow('not in this gym');
