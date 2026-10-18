@@ -3,13 +3,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { promoteAccountToOrganizationAdmin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, ['platform_owner']);
 
     const body = (await request.json()) as {

@@ -9544,7 +9544,7 @@
     "id": "app/api/pilot/platform/organizations/assign-admin/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/assign-admin",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9557,7 +9557,7 @@
     "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
@@ -9571,7 +9571,7 @@
     "id": "app/api/pilot/platform/organizations/memberships/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/platform/organizations/memberships",
-    "gate": "requirePrincipal + requireRole(platform_owner)",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(platform_owner)",
     "rolesAdmitted": [
       "platform_owner"
     ],
@@ -9584,7 +9584,7 @@
     "notes": "Upserts an organization membership with a role from MANAGEABLE_ROLES (excludes athlete and platform_owner); gate memberships/route.ts:22-23.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requireMicrosoftAuthenticatedPrincipal"
       ],
       "authorizationGates": [
         "requireRole"
