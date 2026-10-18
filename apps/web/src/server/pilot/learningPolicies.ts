@@ -1,5 +1,5 @@
 import { query, withTransaction } from './db';
-import { ValidationError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 
 // The bars the learning loop's evaluators read (lane L49). Jason 2026-10-18,
 // Q3 "Needs to be backed by research", then his approval of the threshold
@@ -36,12 +36,17 @@ export interface PatternTierBar {
   minimumContexts: number;
   /** First-to-last day span of the evidence (P4). */
   minimumSpanDays: number;
-  /** Who must have seen it (P5): coaches, or a double-coded share in their place, or sessions per coach. */
+  /**
+   * Who must have seen it (P5). Coaches, each with a number of sessions and
+   * whether the coaches must agree; or, in their place, a share of the
+   * pattern's sessions double-coded -- and agreeing, by that route's own
+   * definition. Null where a tier has no such route or minimum.
+   */
   observers: {
     minimumCoaches: number;
-    orDoubleCodedShare: number | null;
     minimumSessionsPerCoach: number | null;
-    agreementRequired: boolean;
+    coachesMustAgree: boolean;
+    orDoubleCodedShare: number | null;
   };
   /** The pattern lapses when this many latest coded chances in a row all missed (P6). */
   lapseAfterMisses: number;
@@ -63,14 +68,18 @@ export interface AthleteLessonBar {
   baselineTrendScreenMaxNap: number;
   /** The lesson was delivered as planned before anything is credited to it (W6). */
   requireDeliveryRecorded: boolean;
+  /** The same observers, timing and measure in every phase (W6). */
+  requireSameObserversAndTiming: boolean;
   /** The first delayed probe: at least this long after, within this many days (C1). */
   delayedProbe: { minimumHours: number; withinDays: number };
   /** Demonstrations each label needs, and whether staggered starts and the probe are required (W3). */
   labels: Record<LessonLabel, { demonstrations: number; staggered: boolean; delayedProbe: boolean }>;
   /** Follow-up re-checks after a lesson, in weeks (C2); passing them all counts it stuck (C5). */
   followUpWeeks: number[];
-  /** Regression: this many coded chances in a row back inside the baseline range (C3). */
+  /** Regression: this many coded chances in a row back inside the baseline range (C3)... */
   regressionAfterConsecutive: number;
+  /** ...or the effect rule no longer holding on the latest points (C3). */
+  regressionWhenEffectRuleFails: boolean;
   /** A re-check is due after this many days away (C4). */
   recheckAfterAbsenceDays: number;
 }
@@ -81,8 +90,9 @@ export interface ObserverCalibrationBar {
   minimumKappa: number;
   /** Paired judgments before the figure is trusted (R2). */
   minimumPairedJudgments: number;
-  /** Ongoing double-coded share of sessions (R3). */
+  /** Ongoing double-coded share of sessions (R3), in every phase or pooled. */
   ongoingDoubleCodedShare: number;
+  ongoingDoubleCodedScope: 'every_phase' | 'overall';
   /** A pair below the bar (R4) and a pair never calibrated (Jason 2026-10-18, 3A): visible, building nothing. */
   belowBar: 'stop_counting';
   uncalibrated: 'unverified';
@@ -151,6 +161,13 @@ const shareOrNull: Check = (value, at) => {
 const wholeOrNull: Check = (value, at) => {
   if (value !== null) wholeAtLeast(1)(value, at);
 };
+/** Strictly between the two bounds. */
+const between = (low: number, high: number): Check => (value, at) => {
+  if (typeof value !== 'number' || !(value > low && value < high)) fail(at, `a number above ${low} and below ${high}`);
+};
+const oneOf = (...allowed: string[]): Check => (value, at) => {
+  if (typeof value !== 'string' || !allowed.includes(value)) fail(at, `one of ${allowed.map((v) => `'${v}'`).join(', ')}`);
+};
 const flag: Check = (value, at) => {
   if (typeof value !== 'boolean') fail(at, 'true or false');
 };
@@ -189,9 +206,9 @@ const TIER: Check = object({
   minimumSpanDays: wholeAtLeast(0),
   observers: object({
     minimumCoaches: wholeAtLeast(1),
-    orDoubleCodedShare: shareOrNull,
     minimumSessionsPerCoach: wholeOrNull,
-    agreementRequired: flag,
+    coachesMustAgree: flag,
+    orDoubleCodedShare: shareOrNull,
   }),
   lapseAfterMisses: wholeAtLeast(1),
 });
@@ -207,24 +224,29 @@ const SHAPES: Record<PolicyKind, Check> = {
     effectRule: object({
       method: literal('conservative_dual_criterion'),
       shiftSd: positive,
-      alpha: share,
+      // A one-tailed test against a coin flip: at or above 0.5 it would pass anything.
+      alpha: between(0, 0.5),
       immediacyFirstPoints: wholeAtLeast(1),
     }),
     baselineTrendScreenMaxNap: share,
     requireDeliveryRecorded: flag,
+    requireSameObserversAndTiming: flag,
     delayedProbe: object({ minimumHours: wholeAtLeast(1), withinDays: wholeAtLeast(1) }),
     labels: object(Object.fromEntries(LESSON_LABELS.map((label) => [
       label, object({ demonstrations: wholeAtLeast(1), staggered: flag, delayedProbe: flag }),
     ]))),
     followUpWeeks: ascendingWeeks,
     regressionAfterConsecutive: wholeAtLeast(1),
+    regressionWhenEffectRuleFails: flag,
     recheckAfterAbsenceDays: wholeAtLeast(1),
   }),
   observer_calibration: object({
     minimumAgreement: share,
-    minimumKappa: share,
+    // Below 1, as the reliability library requires (patterns/inference/reliability.ts).
+    minimumKappa: between(0, 1),
     minimumPairedJudgments: wholeAtLeast(2),
     ongoingDoubleCodedShare: share,
+    ongoingDoubleCodedScope: oneOf('every_phase', 'overall'),
     belowBar: literal('stop_counting'),
     uncalibrated: literal('unverified'),
   }),
@@ -246,15 +268,45 @@ function assertTiersRise(bar: PatternFormationBar): void {
     if (higher.lapseAfterMisses > lower.lapseAfterMisses) {
       fail(`tiers.${PATTERN_TIERS[index]}.lapseAfterMisses`, `at most the ${PATTERN_TIERS[index - 1]} tier's`);
     }
+    // Who must have seen it asks no less either: no fewer coaches, no fewer
+    // sessions each, no agreement dropped, and a double-coded route no looser
+    // where both tiers have one.
+    const at = `tiers.${PATTERN_TIERS[index]}.observers`;
+    const below = `the ${PATTERN_TIERS[index - 1]} tier's`;
+    if (higher.observers.minimumCoaches < lower.observers.minimumCoaches) fail(`${at}.minimumCoaches`, `at least ${below}`);
+    if ((higher.observers.minimumSessionsPerCoach ?? 0) < (lower.observers.minimumSessionsPerCoach ?? 0)) {
+      fail(`${at}.minimumSessionsPerCoach`, `at least ${below}`);
+    }
+    if (lower.observers.coachesMustAgree && !higher.observers.coachesMustAgree) fail(`${at}.coachesMustAgree`, `true, as ${below} is`);
+    if (higher.observers.orDoubleCodedShare !== null && lower.observers.orDoubleCodedShare !== null
+        && higher.observers.orDoubleCodedShare < lower.observers.orDoubleCodedShare) {
+      fail(`${at}.orDoubleCodedShare`, `at least ${below}`);
+    }
   }
+  // Evidence must be able to stay current for the longest span a tier asks for,
+  // or that tier could never be reached.
+  const longest = Math.max(...PATTERN_TIERS.map((tier) => bar.tiers[tier].minimumSpanDays));
+  if (bar.currentWithinDays < longest) fail('currentWithinDays', `at least the longest tier span (${longest} days)`);
 }
 
-/** Each stronger label needs more demonstrations than the one below it. */
-function assertLabelsRise(bar: AthleteLessonBar): void {
+/**
+ * Each stronger label needs more demonstrations than the one below it and
+ * keeps its conditions; and every rule can be met at all.
+ */
+function assertLessonBarCoherent(bar: AthleteLessonBar): void {
   for (let index = 1; index < LESSON_LABELS.length; index += 1) {
-    if (bar.labels[LESSON_LABELS[index]].demonstrations <= bar.labels[LESSON_LABELS[index - 1]].demonstrations) {
-      fail(`labels.${LESSON_LABELS[index]}.demonstrations`, `more than ${LESSON_LABELS[index - 1]}'s`);
-    }
+    const lower = bar.labels[LESSON_LABELS[index - 1]];
+    const higher = bar.labels[LESSON_LABELS[index]];
+    const at = `labels.${LESSON_LABELS[index]}`;
+    if (higher.demonstrations <= lower.demonstrations) fail(`${at}.demonstrations`, `more than ${LESSON_LABELS[index - 1]}'s`);
+    if (lower.staggered && !higher.staggered) fail(`${at}.staggered`, `true, as ${LESSON_LABELS[index - 1]}'s is`);
+    if (lower.delayedProbe && !higher.delayedProbe) fail(`${at}.delayedProbe`, `true, as ${LESSON_LABELS[index - 1]}'s is`);
+  }
+  if (bar.effectRule.immediacyFirstPoints > bar.afterPoints) {
+    fail('effectRule.immediacyFirstPoints', `at most afterPoints (${bar.afterPoints})`);
+  }
+  if (bar.delayedProbe.minimumHours >= bar.delayedProbe.withinDays * 24) {
+    fail('delayedProbe.minimumHours', `less than withinDays in hours (${bar.delayedProbe.withinDays * 24})`);
   }
 }
 
@@ -262,7 +314,7 @@ function assertLabelsRise(bar: AthleteLessonBar): void {
 export function barFor(kind: PolicyKind, raw: unknown): LearningBar {
   SHAPES[kind](raw, 'parameters');
   if (kind === 'pattern_formation') assertTiersRise(raw as PatternFormationBar);
-  if (kind === 'athlete_lesson') assertLabelsRise(raw as AthleteLessonBar);
+  if (kind === 'athlete_lesson') assertLessonBarCoherent(raw as AthleteLessonBar);
   return raw as LearningBar;
 }
 
@@ -327,8 +379,10 @@ export async function ratifyLearningPolicy(input: {
     });
   } catch (error) {
     const pgError = error as { code?: string; constraint?: string };
-    if (pgError.code === '23505') {
-      throw new ValidationError('The bar was just changed by someone else. Reload and try again.');
+    // Two admins at once, or a version chain someone else moved: a conflict, not a bad request.
+    if (pgError.code === '23505'
+        || (pgError.code === '23514' && pgError.constraint === 'pilot_learning_policies_version_chain')) {
+      throw new ConflictError('The bar was just changed by someone else. Reload and try again.');
     }
     if (pgError.code === '23514' && pgError.constraint === 'pilot_learning_policies_ratifier_of_this_gym') {
       throw new ValidationError('Only an admin of this gym can ratify a bar.');

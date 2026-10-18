@@ -18,23 +18,57 @@ describe('the approved v1 bars (Jason 2026-10-18)', () => {
     }
   });
 
-  // Pinned against the report's section 1 table as Jason approved it, so a
-  // changed number is a deliberate, reviewed edit rather than drift.
-  test('the numbers are the report\'s minimum / default / strict columns', () => {
-    const { tiers } = APPROVED_PATTERN_FORMATION_V1;
-    expect([tiers.emerging, tiers.pattern, tiers.established].map((tier) => [
-      tier.minimumSessions, tier.minimumCodedChances, tier.minimumShare, tier.minimumContexts,
-      tier.minimumSpanDays, tier.lapseAfterMisses,
-    ])).toEqual([[3, 5, 0.8, 1, 7, 5], [5, 8, 0.8, 2, 14, 3], [7, 12, 0.9, 3, 28, 2]]);
-    expect(tiers.pattern.observers).toEqual({
-      minimumCoaches: 2, orDoubleCodedShare: 0.2, minimumSessionsPerCoach: null, agreementRequired: true,
+  // Pinned whole against the report's section 1 table as Jason approved it
+  // (row ids in learningPolicyApprovedV1.ts), so any changed number or flag is a
+  // deliberate, reviewed edit rather than drift.
+  test('the numbers are the report\'s minimum / default / strict columns, every one', () => {
+    expect(APPROVED_PATTERN_FORMATION_V1).toEqual({
+      currentWithinDays: 84,
+      tiers: {
+        emerging: {
+          minimumSessions: 3, minimumCodedChances: 5, minimumShare: 0.8, minimumContexts: 1, minimumSpanDays: 7,
+          observers: { minimumCoaches: 1, minimumSessionsPerCoach: null, coachesMustAgree: false, orDoubleCodedShare: null },
+          lapseAfterMisses: 5,
+        },
+        pattern: {
+          minimumSessions: 5, minimumCodedChances: 8, minimumShare: 0.8, minimumContexts: 2, minimumSpanDays: 14,
+          observers: { minimumCoaches: 2, minimumSessionsPerCoach: null, coachesMustAgree: false, orDoubleCodedShare: 0.2 },
+          lapseAfterMisses: 3,
+        },
+        established: {
+          minimumSessions: 7, minimumCodedChances: 12, minimumShare: 0.9, minimumContexts: 3, minimumSpanDays: 28,
+          observers: { minimumCoaches: 2, minimumSessionsPerCoach: 3, coachesMustAgree: true, orDoubleCodedShare: null },
+          lapseAfterMisses: 2,
+        },
+      },
     });
-    expect(APPROVED_PATTERN_FORMATION_V1.currentWithinDays).toBe(84);
-    expect(Object.values(APPROVED_ATHLETE_LESSON_V1.labels).map((label) => label.demonstrations)).toEqual([1, 2, 3]);
-    expect(APPROVED_ATHLETE_LESSON_V1.labels.likely_worked).toEqual({ demonstrations: 2, staggered: true, delayedProbe: true });
-    expect([APPROVED_OBSERVER_CALIBRATION_V1.minimumAgreement, APPROVED_OBSERVER_CALIBRATION_V1.minimumKappa,
-      APPROVED_OBSERVER_CALIBRATION_V1.minimumPairedJudgments]).toEqual([0.8, 0.6, 30]);
-    expect(APPROVED_OBSERVER_CALIBRATION_V1.uncalibrated).toBe('unverified');
+    expect(APPROVED_ATHLETE_LESSON_V1).toEqual({
+      baselinePoints: 5,
+      afterPoints: 5,
+      effectRule: { method: 'conservative_dual_criterion', shiftSd: 0.25, alpha: 0.05, immediacyFirstPoints: 3 },
+      baselineTrendScreenMaxNap: 0.85,
+      requireDeliveryRecorded: true,
+      requireSameObserversAndTiming: true,
+      delayedProbe: { minimumHours: 24, withinDays: 7 },
+      labels: {
+        improved_after: { demonstrations: 1, staggered: false, delayedProbe: false },
+        likely_worked: { demonstrations: 2, staggered: true, delayedProbe: true },
+        worked_replicated: { demonstrations: 3, staggered: true, delayedProbe: true },
+      },
+      followUpWeeks: [1, 4, 12],
+      regressionAfterConsecutive: 3,
+      regressionWhenEffectRuleFails: true,
+      recheckAfterAbsenceDays: 14,
+    });
+    expect(APPROVED_OBSERVER_CALIBRATION_V1).toEqual({
+      minimumAgreement: 0.8,
+      minimumKappa: 0.6,
+      minimumPairedJudgments: 30,
+      ongoingDoubleCodedShare: 0.2,
+      ongoingDoubleCodedScope: 'every_phase',
+      belowBar: 'stop_counting',
+      uncalibrated: 'unverified',
+    });
   });
 });
 
@@ -87,6 +121,44 @@ describe('a bar is exactly its kind\'s shape', () => {
     const labels = clone(APPROVED_ATHLETE_LESSON_V1);
     labels.labels.worked_replicated.demonstrations = 2;
     expect(() => barFor('athlete_lesson', labels)).toThrow('labels.worked_replicated.demonstrations');
+  });
+
+  test('a harder tier never asks less of who saw it, and a stronger label never drops a condition', () => {
+    const coaches = clone(APPROVED_PATTERN_FORMATION_V1);
+    coaches.tiers.established.observers.minimumCoaches = 1;
+    expect(() => barFor('pattern_formation', coaches)).toThrow('tiers.established.observers.minimumCoaches');
+    const agree = clone(APPROVED_PATTERN_FORMATION_V1);
+    agree.tiers.pattern.observers.coachesMustAgree = true;
+    expect(() => barFor('pattern_formation', agree)).not.toThrow();
+    agree.tiers.established.observers.coachesMustAgree = false;
+    expect(() => barFor('pattern_formation', agree)).toThrow('tiers.established.observers.coachesMustAgree');
+    const each = clone(APPROVED_PATTERN_FORMATION_V1);
+    each.tiers.pattern.observers.minimumSessionsPerCoach = 4;
+    expect(() => barFor('pattern_formation', each)).toThrow('tiers.established.observers.minimumSessionsPerCoach');
+    const probe = clone(APPROVED_ATHLETE_LESSON_V1);
+    probe.labels.worked_replicated.delayedProbe = false;
+    expect(() => barFor('athlete_lesson', probe)).toThrow('labels.worked_replicated.delayedProbe');
+    const staggered = clone(APPROVED_ATHLETE_LESSON_V1);
+    staggered.labels.worked_replicated.staggered = false;
+    expect(() => barFor('athlete_lesson', staggered)).toThrow('labels.worked_replicated.staggered');
+  });
+
+  test('every rule can be met: no window too short, no test that passes anything', () => {
+    const currency = clone(APPROVED_PATTERN_FORMATION_V1);
+    currency.currentWithinDays = 7;
+    expect(() => barFor('pattern_formation', currency)).toThrow('currentWithinDays');
+    const alpha = clone(APPROVED_ATHLETE_LESSON_V1);
+    alpha.effectRule.alpha = 1;
+    expect(() => barFor('athlete_lesson', alpha)).toThrow('effectRule.alpha');
+    const window = clone(APPROVED_ATHLETE_LESSON_V1);
+    window.delayedProbe.minimumHours = 200;
+    expect(() => barFor('athlete_lesson', window)).toThrow('delayedProbe.minimumHours');
+    const immediacy = clone(APPROVED_ATHLETE_LESSON_V1);
+    immediacy.effectRule.immediacyFirstPoints = 9;
+    expect(() => barFor('athlete_lesson', immediacy)).toThrow('effectRule.immediacyFirstPoints');
+    const kappa = clone(APPROVED_OBSERVER_CALIBRATION_V1);
+    kappa.minimumKappa = 1;
+    expect(() => barFor('observer_calibration', kappa)).toThrow('minimumKappa');
   });
 
   test('a refusal is a 400 reason', () => {

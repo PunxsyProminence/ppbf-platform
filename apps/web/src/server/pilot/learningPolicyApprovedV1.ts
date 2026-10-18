@@ -19,7 +19,11 @@ import type {
 // /api/pilot/admin/learning-policies; until then the evaluators read no bar and
 // abstain. The report is a RESEARCH DRAFT: the citations below name what each
 // number leans on, and no study figure may be quoted in app copy without
-// re-opening the source (report section 9).
+// re-opening the source (report section 9). W5 (smallest detectable change on a
+// scored measure) is not here: behaviour reports are present/absent only
+// (pilot.behaviour_observations.polarity); it belongs with the first scored
+// measure. W7 (across athletes) is not here either: a lesson about one athlete
+// never generalizes by itself (patterns/lessons.ts assertLessonIsNotMethodology).
 
 export const APPROVED_PATTERN_FORMATION_V1: PatternFormationBar = {
   currentWithinDays: 84, // P4: evidence older than 12 weeks drops out of "current"
@@ -30,7 +34,7 @@ export const APPROVED_PATTERN_FORMATION_V1: PatternFormationBar = {
       minimumShare: 0.8,
       minimumContexts: 1, // P3 minimum: shown as context-specific
       minimumSpanDays: 7, // P4 minimum
-      observers: { minimumCoaches: 1, orDoubleCodedShare: null, minimumSessionsPerCoach: null, agreementRequired: false }, // P5 minimum: flagged "single observer"
+      observers: { minimumCoaches: 1, minimumSessionsPerCoach: null, coachesMustAgree: false, orDoubleCodedShare: null }, // P5 minimum: flagged "single observer"
       lapseAfterMisses: 5, // P6 minimum
     },
     pattern: {
@@ -39,7 +43,8 @@ export const APPROVED_PATTERN_FORMATION_V1: PatternFormationBar = {
       minimumShare: 0.8,
       minimumContexts: 2, // P3 default
       minimumSpanDays: 14, // P4 default
-      observers: { minimumCoaches: 2, orDoubleCodedShare: 0.2, minimumSessionsPerCoach: null, agreementRequired: true }, // P5 default
+      // P5 default: >= 2 coaches, OR >= 20% of the sessions double-coded and agreeing.
+      observers: { minimumCoaches: 2, minimumSessionsPerCoach: null, coachesMustAgree: false, orDoubleCodedShare: 0.2 },
       lapseAfterMisses: 3, // P6 default
     },
     established: {
@@ -48,7 +53,8 @@ export const APPROVED_PATTERN_FORMATION_V1: PatternFormationBar = {
       minimumShare: 0.9,
       minimumContexts: 3, // P3 strict
       minimumSpanDays: 28, // P4 strict
-      observers: { minimumCoaches: 2, orDoubleCodedShare: null, minimumSessionsPerCoach: 3, agreementRequired: true }, // P5 strict
+      // P5 strict: >= 2 coaches, each >= 3 sessions, agreement met.
+      observers: { minimumCoaches: 2, minimumSessionsPerCoach: 3, coachesMustAgree: true, orDoubleCodedShare: null },
       lapseAfterMisses: 2, // P6 strict
     },
   },
@@ -60,6 +66,7 @@ export const APPROVED_ATHLETE_LESSON_V1: AthleteLessonBar = {
   effectRule: { method: 'conservative_dual_criterion', shiftSd: 0.25, alpha: 0.05, immediacyFirstPoints: 3 }, // W4 default
   baselineTrendScreenMaxNap: 0.85, // W6 default
   requireDeliveryRecorded: true, // W6 default: delivery tick-box
+  requireSameObserversAndTiming: true, // W6 default
   delayedProbe: { minimumHours: 24, withinDays: 7 }, // C1 default
   labels: {
     improved_after: { demonstrations: 1, staggered: false, delayedProbe: false }, // W3 minimum, decision 2
@@ -69,7 +76,8 @@ export const APPROVED_ATHLETE_LESSON_V1: AthleteLessonBar = {
     worked_replicated: { demonstrations: 3, staggered: true, delayedProbe: true },
   },
   followUpWeeks: [1, 4, 12], // C2 default; passing all three = stuck (C5 default)
-  regressionAfterConsecutive: 3, // C3 default
+  regressionAfterConsecutive: 3, // C3 default...
+  regressionWhenEffectRuleFails: true, // ...or the default W4 rule fails
   recheckAfterAbsenceDays: 14, // C4 default (injury return, new weight class, new coach are events, not numbers)
 };
 
@@ -77,7 +85,8 @@ export const APPROVED_OBSERVER_CALIBRATION_V1: ObserverCalibrationBar = {
   minimumAgreement: 0.8, // R1 default, with kappa
   minimumKappa: 0.6,
   minimumPairedJudgments: 30, // R2 default
-  ongoingDoubleCodedShare: 0.2, // R3 default
+  ongoingDoubleCodedShare: 0.2, // R3 default: in every phase
+  ongoingDoubleCodedScope: 'every_phase',
   belowBar: 'stop_counting', // R4 default
   uncalibrated: 'unverified', // decision 3
 };
