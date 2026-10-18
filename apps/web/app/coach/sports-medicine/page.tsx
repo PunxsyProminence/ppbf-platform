@@ -730,7 +730,7 @@ export default function SportsMedicinePage() {
               shows as having none; nothing is held back from them because of it.
             </p>
             <p className="mt-[var(--s3)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-              You can pause or narrow training here for any athlete in your gym. Placing a hold notifies
+              You can place a Training Hold here for any athlete in your gym. Placing a hold notifies
               an organization admin in the same breath, and the sentence you write is the one that athlete and
               their guardian read.
             </p>

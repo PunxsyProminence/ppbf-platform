@@ -68,7 +68,7 @@ const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label:
 };
 
 const HOLD_SCOPE_WORDS: Record<string, string> = {
-  all_training: 'all training paused',
+  all_training: 'all training',
   contact_only: 'no contact',
   conditioning_only: 'conditioning only, recorded; the app does not act on this scope',
 };
