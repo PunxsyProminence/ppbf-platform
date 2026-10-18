@@ -135,6 +135,9 @@ export default function AthleteAchievements({
   const undoingRef = useRef<Set<string>>(new Set());
   const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
   const [undoFailed, setUndoFailed] = useState<Readonly<Record<string, string>>>({});
+  // Marks the server has answered 409 for. A device clock behind the server's
+  // would otherwise keep offering an Undo the server will only refuse again.
+  const [closedMarks, setClosedMarks] = useState<ReadonlySet<string>>(new Set());
 
   const isFamily = audience === 'family';
 
@@ -274,6 +277,8 @@ export default function AthleteAchievements({
       if (response.ok) {
         await load();
         setMilestoneSave((now) => withoutKey(now, key));
+        // A fresh mark starts with no leftover line from an earlier Undo.
+        setUndoFailed((now) => withoutKey(now, key));
       } else {
         setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
       }
@@ -295,6 +300,7 @@ export default function AthleteAchievements({
     if (!athleteId || isFamily) return;
     const key = `${athleteId}:${milestone.key}`;
     if (undoingRef.current.has(key)) return;
+    const markedAt = awards.find((item) => item.milestone_key === milestone.key)?.awarded_at ?? '';
     undoingRef.current.add(key);
     setUndoing(new Set(undoingRef.current));
     setUndoFailed((now) => withoutKey(now, key));
@@ -316,7 +322,10 @@ export default function AthleteAchievements({
           ...now,
           [key]: response.status === 409 ? 'That can no longer be undone.' : 'That did not undo. Try again.',
         }));
-        if (response.status === 409) await load();
+        if (response.status === 409) {
+          setClosedMarks((now) => new Set(now).add(`${key}@${markedAt}`));
+          await load();
+        }
       }
     } catch {
       setUndoFailed((now) => ({ ...now, [key]: 'That did not undo. Try again.' }));
@@ -324,15 +333,18 @@ export default function AthleteAchievements({
       undoingRef.current.delete(key);
       setUndoing(new Set(undoingRef.current));
     }
-  }, [athleteId, isFamily, load]);
+  }, [athleteId, isFamily, load, awards]);
 
   // Only the athlete's own mark, and only while it is new. A coach's award, a
-  // count-earned seal and anything on the family surface never offer it.
+  // count-earned seal (the count would earn it straight back) and anything on
+  // the family surface never offer it.
   const undoOf = (milestoneKey: string): MilestoneUndoState => {
     const award = awards.find((item) => item.milestone_key === milestoneKey);
     const key = `${athleteId}:${milestoneKey}`;
     const offered = !isFamily
       && award?.awarded_by_role === 'self'
+      && milestoneByKey(milestoneKey)?.evidence !== 'session_count'
+      && !closedMarks.has(`${key}@${award.awarded_at}`)
       && clockMs - Date.parse(award.awarded_at) < UNDO_WINDOW_MS;
     return { offered, undoing: undoing.has(key), failed: undoFailed[key] };
   };
@@ -482,7 +494,8 @@ export default function AthleteAchievements({
       {pressedMilestone && !isFamily && (
         <p className="tcard-earned mt-[var(--s5)]" role="status">
           <b>{pressedMilestone.label}</b>
-          <span>Earned. It never comes off.</span>
+          {/* Not "never comes off" while the athlete can still take back their own slip. PROPOSED. */}
+          <span>{undoOf(pressedMilestone.key).offered ? 'Earned.' : 'Earned. It never comes off.'}</span>
         </p>
       )}
 

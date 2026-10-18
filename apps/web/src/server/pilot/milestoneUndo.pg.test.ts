@@ -282,6 +282,16 @@ describe('undoSelfMilestone (OD-2026-10-17-003, F-133)', () => {
     });
   });
 
+  test("a coach marking the athlete's own award from before the window leaves it the athlete's", async () => {
+    await withDatabase(async (client) => {
+      await selfMark();
+      await markMadeAgo(client, 11);
+      const before = await rowOf(client);
+      await coachMark();
+      expect(await rowOf(client)).toEqual(before);
+    });
+  });
+
   test("the athlete marking a coach's standing award changes nothing", async () => {
     await withDatabase(async (client) => {
       await coachMark();

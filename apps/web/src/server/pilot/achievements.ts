@@ -505,13 +505,16 @@ function isAwarderRole(value: unknown): value is AwarderRole {
  * the real reach, or a coach's award -- brings that same row back with this
  * mark's role, account, note and date.
  *
- * A COACH'S MARK ON THE ATHLETE'S OWN AWARD MAKES IT THE COACH'S. A coach whose
- * screen was read before the athlete tapped "I did it" can mark the same
+ * A COACH'S MARK ON THE ATHLETE'S FRESH AWARD MAKES IT THE COACH'S. A coach
+ * whose screen was read before the athlete tapped "I did it" can mark the same
  * milestone a minute later. Left as the athlete's, the athlete's Undo would
  * then take away a milestone the coach marked (OD-2026-10-17-003: "never
- * touches a coach's mark"). So it becomes the coach's award -- the FIRST date
- * kept, the coach's note only if one was given -- and the database refuses any
- * undo of it (pilot_athlete_milestones_undo_self_only).
+ * touches a coach's mark"). So, while the athlete could still undo it (the
+ * same ten minutes), it becomes the coach's award -- the FIRST date kept, the
+ * coach's note only if one was given -- and the database refuses any undo of
+ * it (pilot_athlete_milestones_undo_self_only). An older self award is past
+ * any undo, so it stays the athlete's: a certificate does not say a coach
+ * watched a day the coach did not see.
  *
  * Nothing else is rewritten: the `where` on the conflict leaves every other
  * standing award, and its first date, alone. An athlete marking a coach's
@@ -546,7 +549,8 @@ export async function awardMilestone(params: {
                              else pilot.athlete_milestones.awarded_at end,
            undone_at = null
        where pilot.athlete_milestones.undone_at is not null
-          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self')`,
+          or (pilot.athlete_milestones.awarded_by_role = 'self' and excluded.awarded_by_role <> 'self'
+              and pilot.athlete_milestones.awarded_at >= now() - $7 * interval '1 minute')`,
     [
       params.organizationId,
       params.athleteId,
@@ -554,6 +558,7 @@ export async function awardMilestone(params: {
       params.awardedByRole,
       params.awardedByAccountId ?? null,
       (params.note ?? '').trim().slice(0, RECOGNITION_NOTE_MAX),
+      MILESTONE_UNDO_WINDOW_MINUTES,
     ],
   );
 

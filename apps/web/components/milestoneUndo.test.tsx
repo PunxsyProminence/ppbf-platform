@@ -12,7 +12,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import AthleteAchievements from './AthleteAchievements';
 import PersonalGoalBoard from './PersonalGoalBoard';
-import { resetAchievementCeremonyMemory } from './achievementCeremony';
+import { achievementCeremonyKey, readCelebrated, resetAchievementCeremonyMemory } from './achievementCeremony';
 
 const mockPlay = jest.fn(() => false);
 jest.mock('./useGymSound', () => ({
@@ -31,7 +31,7 @@ function json(body: unknown, ok = true, status = ok ? 200 : 500): Response {
 type Award = { milestone_key: string; awarded_by_role: string; note: string; awarded_at: string };
 
 /** A server holding one athlete's awards: a mark stores 'self' at the current clock, an undo takes it off. */
-function serve(initial: Award[] = [], undoAnswer: 'ok' | 409 | 'pending' = 'ok') {
+function serve(initial: Award[] = [], undoAnswer: 'ok' | 409 | 'pending' = 'ok', completedSessions = 0) {
   let awards = [...initial];
   const posts: Array<Record<string, unknown>> = [];
   let release: () => void = () => {};
@@ -53,7 +53,7 @@ function serve(initial: Award[] = [], undoAnswer: 'ok' | 409 | 'pending' = 'ok')
       return json({ ok: true }, true, 201);
     }
     if (url.includes('/achievements/milestones')) {
-      return json({ ok: true, program: 'fitness', completed_sessions: 0, items: awards });
+      return json({ ok: true, program: 'fitness', completed_sessions: completedSessions, items: awards });
     }
     if (url.includes('/achievements/recognition') || url.includes('/achievements/mentorships')) {
       return json({ ok: true, items: [] });
@@ -150,6 +150,27 @@ describe('the milestone Undo line', () => {
 
     await waitFor(() => expect(within(card(MILE_LABEL)).getByRole('status')).toHaveTextContent('That can no longer be undone.'));
     expect(within(card(MILE_LABEL)).getByText(/— earned/)).toBeTruthy();
+    // Refused once, never offered again for that mark, whatever this device's clock says.
+    expect(screen.queryByRole('button', UNDO_MILE)).toBeNull();
+  });
+
+  test('a seal the session count earns offers no Undo, even with a self row behind it', async () => {
+    serve([{ milestone_key: 'consistency.first_session', awarded_by_role: 'self', note: '', awarded_at: new Date().toISOString() }], 'ok', 1);
+    await renderPanel();
+
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  test('while the slip can still be taken back, the ceremony does not say it never comes off', async () => {
+    serve();
+    await renderPanel();
+
+    await act(async () => {
+      fireEvent.click(within(card(MILE_LABEL)).getByRole('button', { name: 'I did it' }));
+    });
+    await screen.findByRole('button', UNDO_MILE);
+    expect(screen.getByText('Earned.')).toBeTruthy();
+    expect(screen.queryByText('Earned. It never comes off.')).toBeNull();
   });
 
   test('two Undo presses before the first is answered send one', async () => {
@@ -211,6 +232,8 @@ describe('F-134: taken back, then really reached, rings again', () => {
     });
     await waitFor(() => expect(within(card(MILE_LABEL)).getByRole('status')).toHaveTextContent('That can no longer be undone.'));
     expect(mockPlay).toHaveBeenCalledTimes(1);
+    // Nothing was forgotten: the key is still on this athlete's record.
+    expect(readCelebrated(achievementCeremonyKey('ath_1'))).toContain(MILE);
   });
 
   test('an own-words goal: the slip rings, Undo, the real reach rings a second time', async () => {
