@@ -64,6 +64,7 @@ import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
+import AthleteGrowthPanel from './AthleteGrowthPanel';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import { BUILDING } from './buildingMap';
 
@@ -3977,6 +3978,13 @@ export default function CoachWorkspace() {
                         }}
                       />
                     </div>
+                  )}
+
+                  {/* Standing height and growth rate, coach-only, beside body
+                      mass (OD-2026-10-17-026 (b)). It reads its own route;
+                      keyed by athlete so a new athlete starts a fresh panel. */}
+                  {wellnessShown?.status === 'loaded' && (
+                    <AthleteGrowthPanel key={wellnessShown.athleteId} athleteId={wellnessShown.athleteId} />
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (
