@@ -42,6 +42,7 @@ import {
   type SchedulerStore,
   upsertFamilySchedulerAttendance,
   upsertSchedulerAttendance,
+  withdrawSchedulerCoachingRequest,
 } from '@/src/server/pilot/schedulerDb';
 import {
   CANCEL_REFUSAL_MESSAGES,
@@ -65,6 +66,7 @@ type SchedulerAction =
   | 'parent_review_registration'
   | 'request_coaching'
   | 'review_coaching_request'
+  | 'withdraw_coaching_request'
   | 'attendance_checkin'
   | 'bulk_attendance_checkin';
 
@@ -143,6 +145,24 @@ function normalizeRole(role: SchedulerActorRole): SchedulerRole {
   if (role === 'organization_admin') return 'organization_admin';
   if (role === 'athlete' || role === 'coach' || role === 'parent') return role;
   throw new Error('Forbidden: role not allowed for scheduler');
+}
+
+/* WHO MAY WITHDRAW A COACHING REQUEST (Jason 2026-10-19, Q4 "A: Family can
+   withdraw (Rec.)"; Overwatch: "guardian for their child; athlete for their
+   own request; pending only; audited"). A guardian of the athlete, for any
+   pending request for that child; an athlete, only for one they made
+   themselves -- a request a guardian made for them is the guardian's to
+   close. Staff answer a request (review_coaching_request), they do not
+   withdraw it. Reach to the athlete is checked separately
+   (assertCanActOnAthlete); this is the rule on top of it. */
+function canWithdrawCoachingRequest(
+  actor: SchedulerActor,
+  row: Pick<SchedulerCoachingRequest, 'status' | 'requested_by_account_id'>,
+): boolean {
+  if (row.status !== 'pending') return false;
+  if (actor.role === 'parent') return true;
+  if (actor.role === 'athlete') return row.requested_by_account_id === actor.accountId;
+  return false;
 }
 
 function canManageAll(actor: SchedulerActor): boolean {
@@ -476,10 +496,14 @@ function familyRegistration(row: SchedulerRegistration): FamilyRegistration {
 type FamilyCoachingRequest = Omit<
   SchedulerCoachingRequest,
   'requested_by_account_id' | 'assigned_coach_account_id'
->;
+> & {
+  /** Whether withdraw_coaching_request would accept it from this reader. */
+  can_withdraw: boolean;
+};
 
-function familyCoachingRequest(row: SchedulerCoachingRequest): FamilyCoachingRequest {
+function familyCoachingRequest(row: SchedulerCoachingRequest, actor: SchedulerActor): FamilyCoachingRequest {
   return {
+    can_withdraw: canWithdrawCoachingRequest(actor, row),
     request_id: row.request_id,
     athlete_id: row.athlete_id,
     requested_by_role: row.requested_by_role,
@@ -643,7 +667,7 @@ export async function GET(request: NextRequest) {
       classes: family ? classes.map(familyClass) : classes.map((item) => ({ ...item, can_cancel: cancellable.has(item.class_id) })),
       registrations: family ? filtered.registrations.map(familyRegistration) : filtered.registrations,
       coaching_requests: family
-        ? filtered.coaching_requests.map(familyCoachingRequest)
+        ? filtered.coaching_requests.map((row) => familyCoachingRequest(row, actor))
         : filtered.coaching_requests,
       attendance: family ? filtered.attendance.map(familyAttendance) : filtered.attendance,
     });
@@ -1136,6 +1160,66 @@ export async function POST(request: NextRequest) {
         status: decision === 'approve' ? 'approved' : 'declined',
         ...(assignedCoachAccountId ? { assigned_coach_account_id: assignedCoachAccountId } : {}),
       });
+    }
+
+    if (action === 'withdraw_coaching_request') {
+      if (actor.role !== 'parent' && actor.role !== 'athlete') {
+        throw new Error('Forbidden: only the family can withdraw a coaching request; staff answer it');
+      }
+      const requestId = typeof body.request_id === 'string' ? body.request_id.trim() : '';
+      if (!requestId) {
+        throw new Error('Missing request_id');
+      }
+      const coachingRequest = await getSchedulerCoachingRequestById(actor.organizationId, requestId);
+      if (!coachingRequest) {
+        throw new Error('Missing coaching request record');
+      }
+      // Reach first, and a reader who cannot see the athlete is told the same
+      // as for an id that does not exist: a refusal here must not confirm
+      // that another family's request id is real (C2 review). Only a refusal
+      // is translated: a failed lookup underneath stays a 500 and is logged
+      // as one (Codex review of #1790).
+      try {
+        await assertCanActOnAthlete(actor, coachingRequest.athlete_id);
+      } catch (error) {
+        const refused = error instanceof ForbiddenError
+          || (error instanceof Error && error.message.startsWith('Forbidden'));
+        if (refused) throw new Error('Missing coaching request record');
+        throw error;
+      }
+      if (actor.role === 'athlete' && coachingRequest.requested_by_account_id !== actor.accountId) {
+        throw new Error('Forbidden: an athlete can withdraw only a request they made');
+      }
+      if (coachingRequest.status !== 'pending') {
+        throw new Error('Unsupported: coaching request was already resolved');
+      }
+
+      const applied = await withdrawSchedulerCoachingRequest({
+        organizationId: actor.organizationId,
+        requestId,
+        withdrawnAt: new Date().toISOString(),
+      });
+      // Same CAS as the admin's resolution: lost to an approval or decline
+      // committed in between, it says so instead of overwriting it.
+      if (!applied) {
+        throw new Error('Unsupported: coaching request was already resolved');
+      }
+
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_coaching_request',
+        entity_id: requestId,
+        details: {
+          action: 'coaching_request_withdrawn',
+          athlete_id: coachingRequest.athlete_id,
+        },
+        shadow_mirror: false,
+      });
+
+      return NextResponse.json({ ok: true, request_id: requestId, status: 'withdrawn' });
     }
 
     if (action === 'attendance_checkin') {
