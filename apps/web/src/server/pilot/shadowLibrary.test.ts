@@ -30,6 +30,7 @@ import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne, withTransaction } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
+import { writeShadowTelemetryEvent } from './shadowTelemetry';
 import {
   createShadowResearchRequirement,
   listShadowResearchRequirements,
@@ -569,6 +570,100 @@ describe('SHADOW library semantic search', () => {
     // The shipped keyword statement: no embedding column, no sixth parameter.
     expect(String(mockQuery.mock.calls[0][0])).not.toContain('c.embedding');
     expect(mockQuery.mock.calls[0][1]).toHaveLength(5);
+  });
+
+  // Score-gap telemetry (step 1 of 3, observe only): the gap is the top-1
+  // cosine minus the mean of the top-10 cosines over EVERY eligible candidate,
+  // below-floor ones included, recorded on the existing search event. What
+  // search returns does not change.
+  describe('score-gap telemetry', () => {
+    const mockTelemetry = jest.mocked(writeShadowTelemetryEvent);
+    const unit = (cosine: number) => [cosine, Math.sqrt(1 - cosine * cosine)];
+    const searchDimensions = () => {
+      const searchCalls = mockTelemetry.mock.calls.filter(([event]) => event.metricName === 'shadow.library.search');
+      expect(searchCalls).toHaveLength(1);
+      return searchCalls[0][0].dimensions as Record<string, unknown>;
+    };
+
+    it('records the gap over the raw top-10 cosines without changing the results', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const cosines = [0.9, 0.5, 0.4, 0.3, 0.2, 0.1, 0.1, 0.05, 0.05, 0, -0.1, -0.2];
+      mockQuery.mockResolvedValueOnce(cosines.map((cosine, index) => candidate(`chunk_${index}`, unit(cosine))) as never);
+
+      const results = await searchShadowLibrary(searchInput);
+
+      expect(results.map((r) => r.chunk_id)).toEqual(['chunk_0', 'chunk_1']);
+      expect(results[0].score).toBeCloseTo(0.9, 10);
+      expect(results[1].score).toBeCloseTo(0.5, 10);
+      const dimensions = searchDimensions();
+      // No query text and no athlete identifier: the dimension keys are exactly these.
+      expect(Object.keys(dimensions).sort()).toEqual([
+        'bar_delivered', 'gap_candidate_count', 'nearest_count', 'result_count', 'scope',
+        'score_gap', 'search_mode', 'term_count', 'top1_score', 'unindexed_count',
+      ]);
+      // top-10 mean = 2.6 / 10 = 0.26; gap = 0.9 - 0.26.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.64, 10);
+      expect(dimensions.top1_score as number).toBeCloseTo(0.9, 10);
+      expect(dimensions.gap_candidate_count).toBe(12);
+      expect(dimensions.bar_delivered).toBe(true);
+      expect(JSON.stringify(dimensions)).not.toContain('jab');
+    });
+
+    it('records bar_delivered false when no candidate clears the semantic bar', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      mockQuery.mockResolvedValueOnce([candidate('chunk_a', unit(0.25)), candidate('chunk_b', unit(0.05))] as never);
+
+      const results = await searchShadowLibrary(searchInput);
+
+      expect(results).toEqual([]);
+      const dimensions = searchDimensions();
+      // Fewer than ten candidates: the mean is over the candidates there are.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.25 - 0.15, 10);
+      expect(dimensions.top1_score as number).toBeCloseTo(0.25, 10);
+      expect(dimensions.gap_candidate_count).toBe(2);
+      expect(dimensions.bar_delivered).toBe(false);
+    });
+
+    it('takes the top ten across keyset batches', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const firstBatch = Array.from({ length: SEMANTIC_CANDIDATE_BATCH_SIZE }, (_, index) =>
+        candidate(`chunk_a${String(index).padStart(4, '0')}`, unit(0.1)));
+      mockQuery
+        .mockResolvedValueOnce(firstBatch as never)
+        .mockResolvedValueOnce([candidate('chunk_b_best', unit(0.8))] as never);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      // top-10 = 0.8 and nine 0.1s: mean 0.17, gap 0.63.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.63, 10);
+      expect(dimensions.gap_candidate_count).toBe(SEMANTIC_CANDIDATE_BATCH_SIZE + 1);
+    });
+
+    it('counts a non-finite cosine as 0 so the gap stays a number', async () => {
+      // The dot product and the candidate's norm both overflow to Infinity,
+      // so its cosine is Infinity / Infinity = NaN.
+      mockEmbedText.mockResolvedValue([1e10, 0]);
+      mockQuery.mockResolvedValueOnce([candidate('chunk_overflow', [1e300, 0]), candidate('chunk_ok', [1, 0])] as never);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      expect(dimensions.top1_score).toBe(1);
+      expect(dimensions.score_gap as number).toBeCloseTo(0.5, 10);
+    });
+
+    it('adds no gap fields on the keyword path', async () => {
+      mockIsSemanticEnabled.mockReturnValue(false);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      expect(dimensions).not.toHaveProperty('score_gap');
+      expect(dimensions).not.toHaveProperty('top1_score');
+      expect(dimensions).not.toHaveProperty('gap_candidate_count');
+      expect(dimensions).not.toHaveProperty('bar_delivered');
+    });
   });
 });
 
