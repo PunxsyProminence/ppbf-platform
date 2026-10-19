@@ -719,7 +719,7 @@ describe('logging an intervention against this run', () => {
     });
 
     expect(logPostCalls(fetchMock)).toEqual([
-      { athlete_id: 'ath-1', protocol_id: 'proto-1', session_run_id: 'ssrun_1' },
+      { athlete_id: 'ath-1', protocol_id: 'proto-1', session_run_id: 'ssrun_1', request_key: expect.any(String) },
     ]);
     expect(screen.getByText('Round-3 endurance block')).toBeInTheDocument();
     expect(screen.getByText('logged')).toBeInTheDocument();
@@ -1096,7 +1096,7 @@ describe('a write whose answer proves nothing is checked against the server (aud
       await renderLive(liveRun(), { logPost: dropped, logGet: () => jsonResponse({ items: [] }) });
       await pickAndLog();
       expect(await screen.findByRole('alert')).toHaveTextContent(
-        'No clear answer came back, and the server shows the intervention was not logged. Try again.',
+        'No clear answer came back, and the server does not show the intervention yet. Try again -- it will not be logged twice.',
       );
       expect(screen.queryByText('logged')).toBeNull();
     });
@@ -1122,7 +1122,7 @@ describe('a write whose answer proves nothing is checked against the server (aud
       // exec-old was logged before a reload, so this screen's own list does not hold it.
       await renderLive(liveRun(), { logPost: dropped, logGet: () => jsonResponse({ items: [execution('exec-old')] }) });
       await pickAndLog();
-      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was not logged. Try again.');
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server does not show the intervention yet. Try again -- it will not be logged twice.');
       expect(screen.queryByText('logged')).toBeNull();
     });
 
@@ -1251,7 +1251,7 @@ describe('the check after a lost answer keeps the once-only locks and covers eve
     await act(async () => {
       release?.(jsonResponse({ items: [] }));
     });
-    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was not logged. Try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server does not show the intervention yet. Try again -- it will not be logged twice.');
     expect(logPostCalls(fetchMock)).toHaveLength(1);
   });
 
@@ -1300,6 +1300,196 @@ describe('the check after a lost answer keeps the once-only locks and covers eve
       'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.',
     );
     expect(onSettled).not.toHaveBeenCalled();
+  });
+});
+
+// F-135 (lane L55). A check that finds nothing does not prove a write still in flight will not
+// commit after it, so the retry the screen invites must not log the intervention a second time.
+// Each tap of an athlete and protocol has one request key, sent again on its retry; the server
+// answers a repeated key with the execution the first send started. The server here keeps
+// executions by key the way the real one does (interventionExecutionReplay.pg.test.ts proves the
+// real one).
+describe('one tap, one intervention: a retry sends the same request key (F-135)', () => {
+  const dropped = () => Promise.reject(new TypeError('Failed to fetch'));
+  const NOT_YET = 'No clear answer came back, and the server does not show the intervention yet. Try again -- it will not be logged twice.';
+  const PROTOCOLS = [
+    ...DEFAULT_LOG_PROTOCOLS,
+    { protocol_id: 'proto-2', title: 'Jab under fatigue', version: 1, athlete_id: null, status: 'active' },
+  ];
+
+  /** Executions kept by request key: a repeated key is answered with the execution it started. */
+  function keyedServer() {
+    const rows = new Map<string, { execution_id: string; created_at: string; session_run_id: string; protocol_id: string; athlete_id: string }>();
+    const write = (body: Record<string, unknown>) => {
+      const key = String(body.request_key);
+      const existing = rows.get(key);
+      if (existing) return jsonResponse({ item: existing, replayed: true });
+      const row = {
+        execution_id: `exec-${rows.size + 1}`,
+        created_at: '2026-08-17T00:00:00.000Z',
+        session_run_id: String(body.session_run_id),
+        protocol_id: String(body.protocol_id),
+        athlete_id: String(body.athlete_id),
+      };
+      rows.set(key, row);
+      return jsonResponse({ item: row });
+    };
+    return { rows, write };
+  }
+
+  async function openLog() {
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+  }
+
+  async function logWith(protocolId: string) {
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: protocolId } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+    });
+  }
+
+  it('a write that commits after the check, then the retry: same key, shown as logged, one record', async () => {
+    const server = keyedServer();
+    let lost: Record<string, unknown> | null = null;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: (body) => {
+        if (!lost) {
+          // The first send's answer is lost, and its write has not committed yet.
+          lost = body;
+          return dropped();
+        }
+        return server.write(body);
+      },
+      logGet: () => jsonResponse({ items: [...server.rows.values()] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_YET);
+    expect(screen.queryByText('logged')).toBeNull();
+
+    // The first write commits now, after the check found nothing.
+    if (lost) server.write(lost);
+
+    await logWith('proto-1');
+    expect(await screen.findAllByText('logged')).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    const sent = logPostCalls(fetchMock);
+    expect(sent).toHaveLength(2);
+    expect(typeof sent[0].request_key).toBe('string');
+    expect(sent[1].request_key).toBe(sent[0].request_key);
+    expect(server.rows.size).toBe(1);
+  });
+
+  it('once a tap is logged, the next tap of the same pair is a new intervention with a new key', async () => {
+    const server = keyedServer();
+    const { fetchMock } = await renderLive(liveRun(), { logPost: (body) => server.write(body) });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent).toHaveLength(2);
+    expect(sent[1].request_key).not.toBe(sent[0].request_key);
+    expect(server.rows.size).toBe(2);
+    expect(screen.getAllByText('logged')).toHaveLength(2);
+  });
+
+  it('once the check finds the tap logged, the next tap is a new key', async () => {
+    const server = keyedServer();
+    let first = true;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: (body) => {
+        const answer = server.write(body);
+        if (!first) return answer;
+        first = false;
+        return dropped();
+      },
+      logGet: () => jsonResponse({ items: [...server.rows.values()] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was logged.');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent[1].request_key).not.toBe(sent[0].request_key);
+    expect(server.rows.size).toBe(2);
+  });
+
+  it('a refused retry keeps the key: the send before it may still commit', async () => {
+    let posts = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        if (posts === 1) return dropped();
+        if (posts === 2) return jsonResponse({ error: 'Not found' }, false, 404);
+        return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-1');
+    expect(screen.getByRole('alert')).toHaveTextContent('Not found');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent).toHaveLength(3);
+    expect(sent[1].request_key).toBe(sent[0].request_key);
+    expect(sent[2].request_key).toBe(sent[0].request_key);
+  });
+
+  it('a server failure keeps the key', async () => {
+    let posts = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return jsonResponse({ error: 'Internal server error' }, false, 500);
+      },
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(posts).toBe(2);
+    expect(sent[1].request_key).toBe(sent[0].request_key);
+  });
+
+  it('a key refused as belonging to another intervention is dropped: the next tap is a new key', async () => {
+    let refused = false;
+    const { fetchMock } = await renderLive(liveRun(), {
+      logPost: () => {
+        if (refused) return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+        refused = true;
+        return jsonResponse(
+          { error: 'This request was already used to log a different intervention.', code: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED' },
+          false,
+          409,
+        );
+      },
+    });
+    await openLog();
+    await logWith('proto-1');
+    expect(screen.getByRole('alert')).toHaveTextContent('This request was already used to log a different intervention.');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent).toHaveLength(2);
+    expect(sent[1].request_key).not.toBe(sent[0].request_key);
+  });
+
+  it('another protocol is another tap with its own key; coming back to the unsettled one reuses its key', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      protocols: () => jsonResponse({ items: PROTOCOLS }),
+      logPost: dropped,
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    await openLog();
+    await logWith('proto-1');
+    await logWith('proto-2');
+    await logWith('proto-1');
+    const sent = logPostCalls(fetchMock);
+    expect(sent.map((body) => body.protocol_id)).toEqual(['proto-1', 'proto-2', 'proto-1']);
+    expect(sent[1].request_key).not.toBe(sent[0].request_key);
+    expect(sent[2].request_key).toBe(sent[0].request_key);
   });
 });
 

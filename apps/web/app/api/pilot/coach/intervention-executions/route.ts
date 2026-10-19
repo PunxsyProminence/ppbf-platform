@@ -39,6 +39,27 @@ const EXECUTION_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
+// A REQUEST KEY (optional; finding F-135). The live session screen makes one
+// random id for a tap of Log intervention and sends the same one again when
+// that tap got no clear answer. A key that already names an execution of this
+// athlete and protocol in this session is a repeat: nothing is written, no
+// second audit event is recorded, and the first execution is answered with
+// replayed: true. The limits are the column's own check (not blank, at most
+// 200 characters), so nothing accepted here is refused by the database; a
+// NUL, which PostgreSQL cannot store in text, is refused here too. The key is
+// used as sent, never trimmed. A request that sends no key starts an
+// execution exactly as before.
+const REQUEST_KEY_MAX = 200;
+const NUL = String.fromCharCode(0);
+
+function readRequestKey(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string' || raw.trim() === '' || raw.length > REQUEST_KEY_MAX || raw.includes(NUL)) {
+    throw new ValidationError(`request_key must be text of 1 to ${REQUEST_KEY_MAX} characters`);
+  }
+  return raw;
+}
+
 function parseFacts(body: Record<string, unknown>): ExecutionFactsInput {
   const exposure = body.actual_exposure as Record<string, number> | undefined;
   const exposureError = exposureShapeError(exposure);
@@ -95,8 +116,9 @@ export async function POST(request: NextRequest) {
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
     await assertActorCanAccessAthlete(principal, athleteId);
     if (!protocolId) throw new ValidationError('Missing protocol_id.');
+    const requestKey = readRequestKey(body.request_key);
 
-    const item = await startExecution({
+    const started = await startExecution({
       organizationId: principal.organizationId,
       athleteId,
       protocolId,
@@ -105,9 +127,12 @@ export async function POST(request: NextRequest) {
       plannedStart: optionalString(body.planned_start) || null,
       actualStart: optionalString(body.actual_start) || null,
       recordedByAccountId: principal.accountId,
+      requestKey,
     });
 
-    if (!item) return hiddenNotFound();
+    if (!started) return hiddenNotFound();
+    const { replayed, ...item } = started;
+    if (replayed) return NextResponse.json({ item, replayed: true });
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: principal.accountId,
