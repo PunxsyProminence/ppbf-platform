@@ -1176,11 +1176,16 @@ export async function POST(request: NextRequest) {
       }
       // Reach first, and a reader who cannot see the athlete is told the same
       // as for an id that does not exist: a refusal here must not confirm
-      // that another family's request id is real (C2 review).
+      // that another family's request id is real (C2 review). Only a refusal
+      // is translated: a failed lookup underneath stays a 500 and is logged
+      // as one (Codex review of #1790).
       try {
         await assertCanActOnAthlete(actor, coachingRequest.athlete_id);
-      } catch {
-        throw new Error('Missing coaching request record');
+      } catch (error) {
+        const refused = error instanceof ForbiddenError
+          || (error instanceof Error && error.message.startsWith('Forbidden'));
+        if (refused) throw new Error('Missing coaching request record');
+        throw error;
       }
       if (actor.role === 'athlete' && coachingRequest.requested_by_account_id !== actor.accountId) {
         throw new Error('Forbidden: an athlete can withdraw only a request they made');

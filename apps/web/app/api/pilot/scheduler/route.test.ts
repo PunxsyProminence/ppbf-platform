@@ -2624,6 +2624,17 @@ describe('withdraw_coaching_request', () => {
     expect(mockAuditEvent).not.toHaveBeenCalled();
   });
 
+  test('a failed lookup behind the reach check is a 500, not a hidden "missing"', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockAssertCanAct.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.not.toEqual({ error: 'Missing coaching request record' });
+    expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+
   test('an athlete withdraws a request they made themselves', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
     mockGetCoachingRequest.mockResolvedValueOnce({ ...pending, requested_by_role: 'athlete', requested_by_account_id: 'acct-1' });
