@@ -102,6 +102,12 @@ const LEGACY_READERS = new Set<string>([
   // with another attendance source; attendance_reconciled has no
   // per-activity row to answer it.
   'src/server/pilot/sparringExposure.ts',
+  // The same left join as sparringExposure.ts, to the ONE activity a sparring
+  // segment is linked to, for its occurred_on when the segment has no
+  // session_date. Used only to find the last day this athlete sparred (max
+  // of a day, for the next-day symptom check); nothing is counted, no rate is
+  // derived, and it is never crossed with another attendance source.
+  'src/server/pilot/sparringSymptoms.ts',
 ]);
 
 const SCANNED_DIRECTORIES = ['app', 'components', 'src'];

@@ -198,6 +198,7 @@ const ESCALATION_SOURCES = [
   'video_scan',
   'compliance_violation',
   'shadow_disclosure',
+  'sparring_symptom',
 ] as const;
 const ESCALATION_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as const;
 const ESCALATION_STATUSES = ['open', 'open', 'acknowledged', 'open', 'resolved', 'acknowledged', 'open', 'resolved'] as const;
@@ -566,12 +567,17 @@ export const ADMIN_NARROW_PAGES: ReadonlyArray<AdminNarrowPage> = [
       ...HEADER_ROUTES,
       // The page (and the header badge) ask for ?status=open on mount. This
       // overrides HEADER_ROUTES and answers every status at once, so all three
-      // action states and all nine source labels render in one view.
+      // action states and every source label render in one view.
       '/api/pilot/escalations': { ok: true, escalations: escalationRows() },
       // The Athlete column names the athlete (UXB-12): the long names are
       // what this width check is for.
       '/api/pilot/athletes/list': {
-        items: ESCALATION_SOURCES.map((_, i) => ({ athlete_id: athleteId(i), full_name: NAMES[i % NAMES.length] })),
+        // One more source than NAMES: the extra row gets its own name, so NAMES[0]
+        // (the expectText) still appears exactly once.
+        items: ESCALATION_SOURCES.map((_, i) => ({
+          athlete_id: athleteId(i),
+          full_name: i < NAMES.length ? NAMES[i] : 'Evangelina Soledad Marchetti-Oyelaran Featherstone',
+        })),
       },
     },
     expectText: NAMES[0],

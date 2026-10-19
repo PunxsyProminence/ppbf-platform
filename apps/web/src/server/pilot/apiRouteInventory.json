@@ -2636,6 +2636,60 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/sparring-symptoms/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/sparring-symptoms",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own sparring symptom reports for the gym's today, whether the next-day check is due (own session tagged sparring or a sparring log row on the previous gym day), and the gym's flag settings. Self only via session athleteId (requireOwnAthleteId in sparring-symptoms/route.ts). Coach not admitted; staff see flags through the escalation list.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/sparring-symptoms/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/sparring-symptoms",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own sparring symptom report (a flag only, never a score). Adds new ticks to the day's report and files one safety escalation (source sparring_symptom, fixed severity high) to the gym's recipient role, default coach (OD-2026-10-17-029), plus an audit row not mirrored to SHADOW. Self only via session athleteId (requireOwnAthleteId). Coach not admitted.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/cycle/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/cycle",

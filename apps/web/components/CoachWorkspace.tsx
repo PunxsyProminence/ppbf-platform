@@ -508,6 +508,8 @@ const ESCALATION_SOURCE_LABEL: Record<string, string> = {
   repeated_pattern: 'Repeated pattern',
   training_hold: 'Training hold',
   incident: 'Incident',
+  // The athlete's sparring symptom flag (OD-2026-10-17-029: to their coach).
+  sparring_symptom: 'Sparring symptoms',
 };
 
 /**

@@ -48,6 +48,9 @@ export const SAFETY_ESCALATION_SOURCE_TYPES = [
   'video_scan',
   'compliance_violation',
   'shadow_disclosure',
+  // The athlete's sparring symptom flag (sparringSymptoms.ts): filed to the
+  // athlete's coach, source_id = the pilot.sparring_symptom_reports row.
+  'sparring_symptom',
 ] as const;
 export type SafetyEscalationSourceType = typeof SAFETY_ESCALATION_SOURCE_TYPES[number];
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
