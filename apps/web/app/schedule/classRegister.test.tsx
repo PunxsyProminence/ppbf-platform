@@ -154,7 +154,7 @@ describe('the class register on /schedule', () => {
     });
     await renderPage();
 
-    expect(await screen.findByText('PRESENT via walk-in')).toBeInTheDocument();
+    expect(await screen.findByText('Present, via walk-in')).toBeInTheDocument();
     expect(screen.queryByText(/walk_in/)).toBeNull();
   });
 

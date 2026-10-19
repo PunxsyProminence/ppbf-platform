@@ -127,6 +127,25 @@ function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
 }
 
+/* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
+   due" badge (Rec.)"): still open, and its due date is a calendar day before
+   the gym's today (America/New_York, gymDayIso). Due today is not late. No
+   clock reading yet (0) judges nothing late rather than guessing. */
+function isPastDue(message: ParentMessage, nowMs: number): boolean {
+  if (!isOpenTask(message) || nowMs <= 0) return false;
+  const due = message.task?.due_date;
+  const today = gymDayIso(nowMs);
+  return isCalendarDay(due) && Boolean(today) && due < (today as string);
+}
+
+/* Needs attention, not a safety state: the restricted rung with its glyph
+   (Law 3; docs/visual-inventory/03-glyphs-and-photos.md, "needs attention"). */
+function PastDueBadge() {
+  return (
+    <span className="badge badge--restricted"><i aria-hidden="true">▲</i><span>Past due</span></span>
+  );
+}
+
 /* THE GYM'S WEEK, Monday to Sunday on the gym's calendar (America/New_York,
    gymDayIso), as the two bare dates that bound it. A due date is a bare
    calendar date too ('2026-10-20'), so membership is a string comparison
@@ -1158,8 +1177,9 @@ export default function ParentHub() {
     return (
       <li key={message.note_id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
         <p className="t-body" id={`floor-task-${message.note_id}`}>{message.note_text}</p>
-        <p className="t-muted mt-[var(--s2)]">
-          {`From ${senderLabel(message)} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}
+        <p className="t-muted mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]">
+          <span>{`From ${senderLabel(message)} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}</span>
+          {isPastDue(message, floorClockMs) && <PastDueBadge />}
         </p>
         <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
           <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
@@ -1861,6 +1881,7 @@ export default function ParentHub() {
                           <span className="t-body font-semibold">
                             {message.task.due_date ? `Due ${formatDueDate(message.task.due_date)}` : 'To do'}
                           </span>
+                          {isPastDue(message, floorClockMs) && <PastDueBadge />}
                           <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
                             <input
                               type="checkbox"
