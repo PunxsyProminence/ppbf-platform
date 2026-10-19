@@ -11,6 +11,7 @@ import { NextRequest } from 'next/server';
 
 import { GET as getPersonal, POST as postPersonal, PATCH as patchPersonal } from './personal/route';
 import { GET as getList } from './list/route';
+import { POST as getOne } from './get/route';
 import { POST as postGoal } from './route';
 import { POST as postUpdate } from './update/route';
 import { createPersonalGoal, listPersonalGoals, markPersonalGoalReached } from '@/src/server/pilot/achievements';
@@ -171,6 +172,21 @@ describe('GET /api/pilot/goals/personal: the "why it matters" line is the coach\
   });
 });
 
+describe('GET /api/pilot/goals/personal: the gym admin is not sent the reason line (F-100)', () => {
+  for (const role of ['organization_admin', 'admin']) {
+    test(`${role} reads the own-words goal and "I did it", with no reason line`, async () => {
+      mockPrincipal.mockResolvedValue(as(role));
+      const response = await getPersonal(get('/api/pilot/goals/personal?athlete_id=ath-a'));
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(JSON.parse(text).items).toEqual([expect.objectContaining({ goal_id: 'g-own-1', reached_at: '2026-10-10T15:00:00.000Z' })]);
+      expect(text).not.toContain('why_it_matters');
+      expect(text).not.toContain(WHY);
+      expect(text).not.toContain('set_by_role');
+    });
+  }
+});
+
 describe('GET /api/pilot/goals/list: a guardian gets SMART goals and reported progress, from named fields', () => {
   test('a guardian reads their child\'s SMART goal with its reported progress; the own-words row and its columns do not ride along', async () => {
     mockPrincipal.mockResolvedValue(guardianOfA);
@@ -208,18 +224,88 @@ describe('GET /api/pilot/goals/list: a guardian gets SMART goals and reported pr
     expect(mockGoalsByAthlete).toHaveBeenCalledWith('org-1', 'ath-a', { limit: 200 });
   });
 
-  test('an organization admin reads the full rows, as staff', async () => {
-    mockPrincipal.mockResolvedValue(as('organization_admin'));
-    const response = await getList(get('/api/pilot/goals/list?athlete_id=ath-a'));
-    expect(response.status).toBe(200);
-    expect((await response.json()).items[1].why_it_matters).toBe(WHY);
-  });
+  // F-100: the ruling gives the reason line to the coach only, so the gym
+  // admin (either name for the role) is sent what a guardian is sent.
+  for (const role of ['organization_admin', 'admin']) {
+    test(`${role} reads SMART goals and progress from named fields, with no reason line`, async () => {
+      mockPrincipal.mockResolvedValue(as(role));
+      const response = await getList(get('/api/pilot/goals/list?athlete_id=ath-a'));
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(JSON.parse(text).items).toEqual([expect.objectContaining({ goal_id: 'g-smart-1', progress_percent: 40 })]);
+      expect(text).not.toContain('why_it_matters');
+      expect(text).not.toContain(WHY);
+      expect(text).not.toContain('own_words');
+      expect(text).not.toContain('set_by_role');
+      expect(mockGoalsByAthlete).toHaveBeenCalledWith('org-1', 'ath-a', { limit: 200, smartOnly: true });
+    });
+  }
 
   test('another family\'s guardian is refused and nothing is read', async () => {
     mockPrincipal.mockResolvedValue(guardianOfB);
     const response = await getList(get('/api/pilot/goals/list?athlete_id=ath-a'));
     expect(response.status).toBe(403);
     expect(mockGoalsByAthlete).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/pilot/goals/get: one goal by id, the reason line to the coach only (F-100)', () => {
+  const ownWordsReadById = { ...ownWordsRowFromSelectStar, reached_at: '2026-10-10T15:00:00.000Z' };
+
+  for (const role of ['organization_admin', 'admin']) {
+    test(`${role} reads an own-words goal by id, with no reason line and no own_words column`, async () => {
+      mockPrincipal.mockResolvedValue(as(role));
+      (getGoalById as jest.Mock).mockResolvedValue({ ...ownWordsReadById });
+      const response = await getOne(send('/api/pilot/goals/get', 'POST', { goal_id: 'g-own-1' }));
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({
+        found: true,
+        goal: {
+          goal_id: 'g-own-1',
+          title: OWN_WORDS,
+          target_date: '2026-11-01',
+          reached_at: '2026-10-10T15:00:00.000Z',
+          created_at: '2026-10-02T15:00:00.000Z',
+        },
+      });
+      expect(text).not.toContain('why_it_matters');
+      expect(text).not.toContain(WHY);
+      expect(text).not.toContain('own_words');
+      expect(text).not.toContain('set_by_role');
+    });
+
+    test(`${role} reads a SMART goal by id from named fields`, async () => {
+      mockPrincipal.mockResolvedValue(as(role));
+      (getGoalById as jest.Mock).mockResolvedValue({ ...smartRow });
+      const response = await getOne(send('/api/pilot/goals/get', 'POST', { goal_id: 'g-smart-1' }));
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({
+        found: true,
+        goal: {
+          goal_id: 'g-smart-1',
+          title: 'Jump rope 3 rounds',
+          category: 'conditioning',
+          target_date: '2026-11-01',
+          metric: 'rounds',
+          progress_percent: 40,
+          status: 'active',
+          created_at: '2026-10-02T15:00:00.000Z',
+        },
+      });
+      expect(text).not.toContain('why_it_matters');
+      expect(text).not.toContain('own_words');
+      expect(text).not.toContain('set_by_role');
+    });
+  }
+
+  test('CONTROL: the coach reads the same goal by id WITH the reason line', async () => {
+    mockPrincipal.mockResolvedValue(as('coach'));
+    (getGoalById as jest.Mock).mockResolvedValue({ ...ownWordsReadById });
+    const response = await getOne(send('/api/pilot/goals/get', 'POST', { goal_id: 'g-own-1' }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).goal.why_it_matters).toBe(WHY);
   });
 });
 
@@ -284,12 +370,10 @@ describe('nobody but the athlete writes a goal', () => {
 });
 
 describe('who is sent the whole row is a named list', () => {
-  test('athlete and staff read full rows; a guardian, and any role not named, gets the family projection', () => {
+  test('the athlete and the coach read full rows; the gym admin, a guardian, and any role not named, get the family projection', () => {
     expect(readsFullGoals('athlete')).toBe(true);
     expect(readsFullGoals('coach')).toBe(true);
-    expect(readsFullGoals('organization_admin')).toBe(true);
-    expect(readsFullGoals('admin')).toBe(true);
-    for (const role of ['parent', 'guardian', 'volunteer', 'board', 'platform_owner', '']) {
+    for (const role of ['organization_admin', 'admin', 'parent', 'guardian', 'volunteer', 'board', 'platform_owner', '']) {
       expect(readsFullGoals(role)).toBe(false);
     }
   });

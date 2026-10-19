@@ -8117,7 +8117,7 @@
     "missingGate": false,
     "looksWrong": "The goal is fetched before the access check, so found:false vs 403 reveals whether a goal_id exists to an unauthorized in-gym caller (minor).",
     "confidence": "high",
-    "notes": "Reads one goal by id (POST used as read; no write). goals/get/route.ts:11-12 role gate, :23 assertActorCanAccessAthlete on goal.athlete_id. Parent not admitted.",
+    "notes": "Reads one goal by id (POST used as read; no write). goals/get/route.ts:12-13 role gate, :26 assertActorCanAccessAthlete on goal.athlete_id. Parent not admitted. Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilyGoal: named fields, no own_words, why_it_matters or set_by_role.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8149,7 +8149,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
+    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8181,7 +8181,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
+    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
