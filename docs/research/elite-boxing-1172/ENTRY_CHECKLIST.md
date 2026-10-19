@@ -48,16 +48,16 @@ If the form says "This URL is already registered as …", stop on that row and n
 is already on the shelf. The form checks only the exact URL, not the DOI. Section 1 is the DOI/PMID
 duplicate check.
 
-| # | Title | Source type | Classification domain | URL | DOI / PMID | Intended rights |
-|---|---|---|---|---|---|---|
-| 4 | Physiological profile of senior and junior England international amateur boxers | peer reviewed | Boxing and athlete development | https://www.jssm.org/jssm-05-CSSI1-74.xml-Fulltext | *(blank: no DOI)* | licensed_excerpt_only |
-| 5 | A new approach to monitoring exercise training | peer reviewed | Measurement and assessment instruments | https://doi.org/10.1519/00124278-200102000-00019 | 10.1519/00124278-200102000-00019 | licensed_excerpt_only |
-| 13 | Strength and power qualities are highly associated with punching impact in elite amateur boxers | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1519/JSC.0000000000001075 | 10.1519/JSC.0000000000001075 | licensed_excerpt_only |
-| 14 | Compatibility of concurrent aerobic and strength training for skeletal muscle size and function: an updated systematic review and meta-analysis | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1007/s40279-021-01587-7 | 10.1007/s40279-021-01587-7 | **open_licence** |
-| 17 | Participant development in sport: an academic review | governing body | Boxing and athlete development | https://research.birmingham.ac.uk/en/publications/participant-development-in-sport-an-academic-review | *(blank: no DOI)* | licensed_excerpt_only |
-| 27 | Sleep interventions designed to improve athletic performance and recovery: a systematic review of current approaches | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1007/s40279-017-0832-x | 10.1007/s40279-017-0832-x | licensed_excerpt_only |
-| 28 | Sleep hygiene for optimizing recovery in athletes: review and recommendations | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1055/a-0905-3103 | 10.1055/a-0905-3103 | licensed_excerpt_only |
-| 32 | *(optional)* The efficacy of psychological skills training for enhancing performance in sport: a review of reviews | peer reviewed | Learning science and skill acquisition | https://doi.org/10.1080/1612197X.2023.2168725 | 10.1080/1612197X.2023.2168725 | licensed_excerpt_only |
+| # | Title | Source type | Classification domain | URL | DOI / PMID | Intended rights | Intended tier |
+|---|---|---|---|---|---|---|---|
+| 4 | Physiological profile of senior and junior England international amateur boxers | peer reviewed | Boxing and athlete development | https://www.jssm.org/jssm-05-CSSI1-74.xml-Fulltext | *(blank: no DOI)* | licensed_excerpt_only | 3 |
+| 5 | A new approach to monitoring exercise training | peer reviewed | Measurement and assessment instruments | https://doi.org/10.1519/00124278-200102000-00019 | 10.1519/00124278-200102000-00019 | licensed_excerpt_only | 3 |
+| 13 | Strength and power qualities are highly associated with punching impact in elite amateur boxers | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1519/JSC.0000000000001075 | 10.1519/JSC.0000000000001075 | licensed_excerpt_only | 3 |
+| 14 | Compatibility of concurrent aerobic and strength training for skeletal muscle size and function: an updated systematic review and meta-analysis | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1007/s40279-021-01587-7 | 10.1007/s40279-021-01587-7 | **open_licence** | **2** |
+| 17 | Participant development in sport: an academic review | governing body | Boxing and athlete development | https://research.birmingham.ac.uk/en/publications/participant-development-in-sport-an-academic-review | *(blank: no DOI)* | licensed_excerpt_only | **4** |
+| 27 | Sleep interventions designed to improve athletic performance and recovery: a systematic review of current approaches | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1007/s40279-017-0832-x | 10.1007/s40279-017-0832-x | licensed_excerpt_only | **2** |
+| 28 | Sleep hygiene for optimizing recovery in athletes: review and recommendations | peer reviewed | Strength, conditioning, nutrition, recovery | https://doi.org/10.1055/a-0905-3103 | 10.1055/a-0905-3103 | licensed_excerpt_only | **4** |
+| 32 | *(optional)* The efficacy of psychological skills training for enhancing performance in sport: a review of reviews | peer reviewed | Learning science and skill acquisition | https://doi.org/10.1080/1612197X.2023.2168725 | 10.1080/1612197X.2023.2168725 | licensed_excerpt_only | **2** |
 
 Row 32's title is from Crossref; the publisher's page returned 403. It is optional: skip it if you like.
 
@@ -65,6 +65,20 @@ Row notes:
 - **4**: the paper includes junior-squad data. Use adult excerpts only.
 - **17**: a Sports Coach UK commissioned report, so it goes in as *governing body*. It shares row 16's
   youth caveat: use it only for adult-pathway reasoning.
+
+### Authority tier
+
+The form sends no authority tier, so every source registers at the default **tier 3**
+(`createShadowLibrarySource`, `apps/web/src/server/pilot/shadowLibrary.ts`). No screen or PATCH
+changes a tier afterwards. The "Intended tier" column follows the scale in
+`apps/web/seed-data/shadow-research/2026-08-07/EVIDENCE_TIER_SPEC.md` section 3:
+- 2 for systematic reviews and meta-analyses (14, 27, 32);
+- 3 for primary studies (4, 5, 13);
+- 4 for narrative reviews and reports (28, 17).
+
+Five rows (in bold) differ from the default. This matters only once excerpts exist, because the tier
+feeds retrieval ordering and evidence grading. Fix the tiers before excerpts are loaded. Overwatch has
+the missing control logged with the rights control.
 
 ### Rights
 
