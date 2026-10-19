@@ -65,8 +65,11 @@ type SchedulerCoachingRequest = {
   athlete_id: string;
   preferred_at: string;
   goals: string;
-  status: 'pending' | 'approved' | 'declined';
+  status: 'pending' | 'approved' | 'declined' | 'withdrawn';
   assigned_coach_account_id?: string | null;
+  // Family readers only: whether the server would accept a withdraw from
+  // this reader (Jason 2026-10-19, Q4 "A: Family can withdraw (Rec.)").
+  can_withdraw?: boolean;
   created_at: string;
 };
 
@@ -87,6 +90,7 @@ const COACHING_REQUEST_STATUS_WORDS: Readonly<Record<SchedulerCoachingRequest['s
   pending: 'Waiting for an answer',
   approved: 'Approved',
   declined: 'Declined',
+  withdrawn: 'Withdrawn',
 };
 
 const ATTENDANCE_STATUS_WORDS: Readonly<Record<SchedulerAttendance['status'], string>> = {
@@ -327,6 +331,8 @@ export default function SchedulerPage() {
   const [coachesState, setCoachesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   // A class whose Cancel Class was pressed once: the second press cancels it.
   const [confirmCancelClassId, setConfirmCancelClassId] = useState('');
+  // A request whose Withdraw was pressed once: the second press withdraws it.
+  const [confirmWithdrawRequestId, setConfirmWithdrawRequestId] = useState('');
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
   const [attendanceNote, setAttendanceNote] = useState('');
   // The moment the page opened: what "today" and "has this class ended" are
@@ -487,6 +493,7 @@ export default function SchedulerPage() {
     setActionInFlight(true);
     // A half-pressed Cancel Class does not survive another action (#1536 review).
     setConfirmCancelClassId('');
+    setConfirmWithdrawRequestId('');
     setActionMessage('');
     setCheckInHold(null);
     showError('');
@@ -1272,6 +1279,28 @@ export default function SchedulerPage() {
                           : ''}
                       </p>
                       <p className="text-[color:var(--bone-400)]">Goals: <span>{item.goals}</span></p>
+                      {/* The family closes its own request (parent walk 2026-10-19
+                          item 9); the server says which rows it may close. */}
+                      {item.can_withdraw && item.status === 'pending' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirmWithdrawRequestId !== item.request_id) {
+                              setConfirmWithdrawRequestId(item.request_id);
+                              return;
+                            }
+                            setConfirmWithdrawRequestId('');
+                            void runAction(
+                              { action: 'withdraw_coaching_request', request_id: item.request_id },
+                              'Coaching request withdrawn.',
+                            );
+                          }}
+                          disabled={actionInFlight}
+                          className="btn btn--ghost mt-2 disabled:opacity-60"
+                        >
+                          {confirmWithdrawRequestId === item.request_id ? 'Press again to withdraw' : 'Withdraw request'}
+                        </button>
+                      ) : null}
                       {roleCanResolveCoachingRequests(role) && item.status === 'pending' ? (
                         <div className="mt-2 space-y-1">
                           <label htmlFor={`assign-coach-${item.request_id}`} className="t-label">

@@ -30,6 +30,7 @@ import {
   setSchedulerClassCover,
   upsertSchedulerAttendance,
   upsertFamilySchedulerAttendance,
+  withdrawSchedulerCoachingRequest,
 } from '@/src/server/pilot/schedulerDb';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -94,6 +95,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   listLatestClassCoverAudits: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
   listSchedulerStore: jest.fn(),
+  withdrawSchedulerCoachingRequest: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -2559,5 +2561,170 @@ describe('create_class names the coach who runs it', () => {
     const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-2' }));
     expect(response.status).toBe(403);
     expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+});
+
+/* Parent walk 2026-10-19 item 9: an unanswered request had no way to close.
+   Jason 2026-10-19, Q4 "A: Family can withdraw (Rec.)"; Overwatch: "guardian
+   for their child; athlete for their own request; pending only; audited". */
+describe('withdraw_coaching_request', () => {
+  const mockGetCoachingRequest = getSchedulerCoachingRequestById as jest.Mock;
+  const mockWithdraw = withdrawSchedulerCoachingRequest as jest.Mock;
+  const mockAuditEvent = writePilotAuditEvent as jest.Mock;
+  const mockAthleteInOrg = assertAthleteBelongsToOrganization as jest.Mock;
+
+  const pending = {
+    request_id: 'req-1',
+    athlete_id: 'ath-1',
+    requested_by_role: 'parent',
+    requested_by_account_id: 'acct-caller',
+    preferred_at: '2026-08-12T17:00:00.000Z',
+    goals: 'Footwork',
+    status: 'pending',
+    assigned_coach_account_id: null,
+    created_at: 'now',
+    updated_at: 'now',
+  };
+  const withdraw = () => jsonRequest({ action: 'withdraw_coaching_request', request_id: 'req-1' });
+
+  beforeEach(() => {
+    mockGetCoachingRequest.mockResolvedValue(pending);
+    mockWithdraw.mockResolvedValue(true);
+    mockAthleteInOrg.mockResolvedValue(undefined);
+  });
+
+  test('a guardian of the child withdraws a pending request, and it is audited', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGetCoachingRequest.mockResolvedValueOnce({ ...pending, requested_by_account_id: 'acct-co-guardian' });
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, request_id: 'req-1', status: 'withdrawn' });
+    expect(mockAssertCanAct).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ath-1');
+    expect(mockWithdraw).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1', requestId: 'req-1' }));
+    const event = mockAuditEvent.mock.calls[0][0];
+    expect(event).toMatchObject({
+      entity_type: 'scheduler_coaching_request',
+      entity_id: 'req-1',
+      actor_role: 'parent',
+      details: { action: 'coaching_request_withdrawn', athlete_id: 'ath-1' },
+    });
+  });
+
+  test('a guardian who does not reach the child is refused before anything changes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockAssertCanAct.mockRejectedValueOnce(new Error('Forbidden: not your athlete'));
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(403);
+    expect(mockWithdraw).not.toHaveBeenCalled();
+    expect(mockAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('an athlete withdraws a request they made themselves', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockGetCoachingRequest.mockResolvedValueOnce({ ...pending, requested_by_role: 'athlete', requested_by_account_id: 'acct-1' });
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(200);
+    expect(mockWithdraw).toHaveBeenCalled();
+  });
+
+  test('an athlete cannot withdraw a request a guardian made for them', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockGetCoachingRequest.mockResolvedValueOnce({ ...pending, requested_by_account_id: 'acct-parent' });
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(403);
+    expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'])('%s cannot withdraw; staff answer a request instead', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(403);
+    expect(mockGetCoachingRequest).not.toHaveBeenCalled();
+    expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+
+  test.each(['approved', 'declined', 'withdrawn'])('a request already %s is not withdrawn', async (status) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGetCoachingRequest.mockResolvedValueOnce({ ...pending, status });
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Unsupported: coaching request was already resolved' });
+    expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+
+  test('losing the race to an approval says so instead of overwriting it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockWithdraw.mockResolvedValueOnce(false);
+
+    const response = await POST(withdraw());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Unsupported: coaching request was already resolved' });
+    expect(mockAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('a missing request id or record is refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    const noId = await POST(jsonRequest({ action: 'withdraw_coaching_request' }));
+    expect(noId.status).toBe(400);
+    await expect(noId.json()).resolves.toEqual({ error: 'Missing request_id' });
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGetCoachingRequest.mockResolvedValueOnce(null);
+    const response = await POST(withdraw());
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Missing coaching request record' });
+    expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET tells a family reader which requests it may withdraw', () => {
+  const row = (id: string, status: string, requester: string) => ({
+    request_id: id,
+    athlete_id: 'ath-1',
+    requested_by_role: 'parent',
+    requested_by_account_id: requester,
+    preferred_at: 'now',
+    goals: 'g',
+    status,
+    assigned_coach_account_id: null,
+    created_at: 'now',
+    updated_at: 'now',
+  });
+
+  async function read(who: PilotPrincipal) {
+    mockRequirePrincipal.mockResolvedValueOnce(who);
+    (listSchedulerStore as jest.Mock).mockResolvedValueOnce({
+      classes: [],
+      registrations: [],
+      coaching_requests: [row('mine', 'pending', 'acct-1'), row('theirs', 'pending', 'acct-parent'), row('done', 'declined', 'acct-1')],
+      attendance: [],
+    });
+    (guardianAthleteIds as jest.Mock).mockResolvedValue(['ath-1']);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/scheduler'));
+    const body = await response.json();
+    return Object.fromEntries(
+      body.coaching_requests.map((r: { request_id: string; can_withdraw: boolean }) => [r.request_id, r.can_withdraw]),
+    );
+  }
+
+  test('a guardian may withdraw every pending request for their child', async () => {
+    expect(await read(principal('parent', { accountId: 'acct-1' }))).toEqual({ mine: true, theirs: true, done: false });
+  });
+
+  test('an athlete may withdraw only the pending request they made', async () => {
+    expect(await read(athletePrincipal())).toEqual({ mine: true, theirs: false, done: false });
   });
 });
