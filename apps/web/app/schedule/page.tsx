@@ -89,6 +89,12 @@ const COACHING_REQUEST_STATUS_WORDS: Readonly<Record<SchedulerCoachingRequest['s
   declined: 'Declined',
 };
 
+const ATTENDANCE_STATUS_WORDS: Readonly<Record<SchedulerAttendance['status'], string>> = {
+  present: 'Present',
+  absent: 'Absent',
+  excused: 'Excused',
+};
+
 function registrationLine(athlete: string, classTitle: string, status: SchedulerRegistration['status']): string {
   if (status === 'waitlisted') return `${athlete} is on the waitlist for ${classTitle}`;
   if (status === 'cancelled') return `Registration cancelled: ${athlete}, ${classTitle}`;
@@ -1242,7 +1248,7 @@ export default function SchedulerPage() {
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
                           {`${athleteMap.get(item.athlete_id) || item.athlete_id} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}

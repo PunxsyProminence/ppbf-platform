@@ -124,6 +124,8 @@ test('an attendance record names the class without an arrow', async () => {
 
   const text = recordsText();
   expect(text).toContain('Jordan Price at Tuesday Youth Boxing');
+  expect(text).toContain('Present, via coach');
+  expect(text).not.toContain('PRESENT');
   expect(text).not.toContain('->');
 });
 

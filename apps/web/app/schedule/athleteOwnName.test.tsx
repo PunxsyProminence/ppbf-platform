@@ -119,8 +119,8 @@ test("an athlete's own rows read their name, not their roster code", async () =>
   const registrations = textOf(/ is registered for /);
   expect(registrations).toContain('Jordan Price is registered for');
   expect(registrations).not.toContain(`${OWN_ID} is registered for`);
-  expect(textOf(/ at /)).toContain('Jordan Price at ');
-  expect(textOf(/ at /)).not.toContain(OWN_ID);
+  expect(textOf(/ at Youth Boxing$/)).toContain('Jordan Price at ');
+  expect(textOf(/ at Youth Boxing$/)).not.toContain(OWN_ID);
 
   const requestRow = screen.getByText('Yes').closest('.input');
   expect(requestRow?.textContent).toContain('Jordan Price');
