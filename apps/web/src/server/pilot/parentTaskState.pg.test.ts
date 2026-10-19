@@ -655,7 +655,9 @@ describe('listFamilyNotesForStaff (#1542)', () => {
 
     const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
 
-    expect(notes[0]!.posted_by_name).toBe('Admin Ppbf');
+    // ppbf@ is the gym's shared login, not a name (parent walk 2026-10-19
+    // item 6): the admin reads by role.
+    expect(notes[0]!.posted_by_name).toBe('An administrator');
   });
 
   test('the role is the one the note was written under, not the account role today', async () => {

@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
 import FightCard from './FightCard';
 import type { FightCardPayload } from './profileClient';
@@ -75,5 +75,20 @@ describe('FightCard coach portrait', () => {
   test('no released coach portrait means the plate and no request at all', () => {
     const { container } = render(<FightCard card={card({ coachPhotoAvailable: false })} />);
     expect(imageSources(container)).toEqual([]);
+  });
+});
+
+/* Parent walk 2026-10-19 item 8: Jason 2026-10-19, Q3 "A: Hide until chosen
+   (Rec.)". The words carry a chosen corner (Law 3); no choice, no line. */
+describe('the corner line', () => {
+  it('is absent until a corner is chosen', () => {
+    const { container } = render(<FightCard card={card({ corner: 'none', cornerLabel: 'No corner chosen' })} />);
+    expect(screen.queryByText('No corner chosen')).toBeNull();
+    expect(container.querySelector('.fightcard-corner')).toBeNull();
+  });
+
+  it('names a chosen corner in words', () => {
+    render(<FightCard card={card({ corner: 'red', cornerLabel: 'Red corner' })} />);
+    expect(screen.getByText('Red corner')).toBeTruthy();
   });
 });

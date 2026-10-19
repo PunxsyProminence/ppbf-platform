@@ -75,11 +75,15 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
 
           {/* Law 3 -- the dye is never the only channel. The words are here
               whether or not the colour survives the screen, the printer, or the
-              reader's eyes. */}
-          <p className="fightcard-corner">
-            <i aria-hidden="true" />
-            {card.cornerLabel}
-          </p>
+              reader's eyes. No corner chosen, no line: "No corner chosen"
+              told a parent nothing (Jason 2026-10-19, Q3 "A: Hide until
+              chosen (Rec.)"). */}
+          {card.corner !== 'none' && (
+            <p className="fightcard-corner">
+              <i aria-hidden="true" />
+              {card.cornerLabel}
+            </p>
+          )}
 
           <dl className="fightcard-facts pt-[var(--s3)]">
             <dt className={FACT_LABEL}>In your corner</dt>

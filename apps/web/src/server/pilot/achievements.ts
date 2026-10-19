@@ -9,7 +9,7 @@ import {
   type Program,
   type RecognitionKind,
 } from '@/src/shared/achievementPaths';
-import { deriveCoachDisplayName, deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
+import { deriveCoachDisplayName, deriveStaffDisplayName, readStoredCoachSignature } from '@/src/shared/coachDisplayName';
 
 import { query, queryOne } from './db';
 import type { PoolClient } from 'pg';
@@ -461,7 +461,7 @@ export async function listRecognitionsForAthlete(
   limit = 50,
 ): Promise<Recognition[]> {
   const bounded = Math.min(Math.max(Math.trunc(limit) || 0, 1), RECOGNITION_PAGE_MAX);
-  return query<Recognition>(
+  const rows = await query<Recognition>(
     `select ${RECOGNITION_FIELDS}
      from pilot.recognitions
      where organization_id = $1 and athlete_id = $2
@@ -469,6 +469,9 @@ export async function listRecognitionsForAthlete(
      limit $3`,
     [organizationId, athleteId, bounded],
   );
+  // A signature stored before the role-word rule reads as the rule writes it
+  // now (readStoredCoachSignature); the stored text is left as it is.
+  return rows.map((row) => ({ ...row, coach_display_name: readStoredCoachSignature(row.coach_display_name) }));
 }
 
 /* ------------------------------------------------------------------------- */
