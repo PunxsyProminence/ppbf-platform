@@ -97,6 +97,7 @@ describe('recognition', () => {
   });
 
   it('reads one athlete at a time, with a bounded page', async () => {
+    mockQuery.mockResolvedValue([]);
     await listRecognitionsForAthlete('org-1', 'ath-1', 5000);
     const params = mockQuery.mock.calls[0][1] as unknown[];
 
@@ -108,6 +109,21 @@ describe('recognition', () => {
 
     await listRecognitionsForAthlete('org-1', 'ath-1', -3);
     expect((mockQuery.mock.calls[1][1] as unknown[])[2]).toBe(1);
+  });
+
+  /* A recognition stores its signature as text. Ones a coach@ login sent
+     before the role-word rule read "Coach Coach" for ever (Codex review of
+     #1786); the rule is applied when the stored text is read, and nothing
+     stored is rewritten. Parent walk 2026-10-19 item 6. */
+  it('reads a stored role-word signature the way a new one is written', async () => {
+    const stored = ['Coach Coach', 'Coach Coach Dave', 'Coach Ppbf', 'Coach Jason', 'Your coach', 'Coach Mary Ellen Walsh'];
+    mockQuery.mockResolvedValueOnce(stored.map((name, i) => ({ recognition_id: `r${i}`, coach_display_name: name })));
+
+    const rows = await listRecognitionsForAthlete('org-1', 'ath-1');
+
+    expect(rows.map((row) => row.coach_display_name)).toEqual([
+      'Your coach', 'Coach Dave', 'Your coach', 'Coach Jason', 'Your coach', 'Coach Mary Ellen Walsh',
+    ]);
   });
 });
 

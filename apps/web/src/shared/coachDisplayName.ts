@@ -23,6 +23,20 @@ export function deriveCoachDisplayName(loginEmail: string | null | undefined): s
 }
 
 /**
+ * A signature stored as text before the role-word rule, read as the rule
+ * would write it today: "Coach Coach" and "Coach Ppbf" read "Your coach",
+ * "Coach Coach Dave" reads "Coach Dave" (Codex review of #1786; parent walk
+ * 2026-10-19 item 6). Anything that is not a "Coach ..." signature, such as
+ * the floor itself, is returned as stored. Nothing stored is rewritten.
+ */
+export function readStoredCoachSignature(stored: string): string {
+  if (!/^Coach\s/.test(stored)) return stored;
+  const rest = stored.replace(/^(Coach\s+)+/, '').trim();
+  if (rest.split(/\s+/).every((part) => ROLE_WORDS.has(part.toLowerCase()))) return 'Your coach';
+  return `Coach ${rest}`;
+}
+
+/**
  * Words a shared or role login is made of, which are not anybody's name.
  * coach@ read "Coach Coach" and ppbf@ read "From Ppbf" on family screens
  * (parent walk 2026-10-19 item 6). A stem made only of these names nobody,
