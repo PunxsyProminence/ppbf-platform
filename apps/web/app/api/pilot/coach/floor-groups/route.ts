@@ -114,7 +114,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // A plan tied to a class names a class of this gym (#1550 follow-up):
+      // an unknown id, or another gym's, answers the same hidden 404 as an
+      // unknown plan, and nothing is written. Any coach of the gym may plan
+      // for any of its classes (OD-2026-10-11-007, "coaches to whole gym"),
+      // so whether the caller runs the class is not asked here; the register
+      // widening at placement asks it (assertCanPlaceOnPlan).
       const classId = text(body.class_id)?.trim() || null;
+      if (classId && !(await getSchedulerClassById(principal.organizationId, classId))) return hiddenNotFound();
       await refuseCancelledClass(principal.organizationId, classId);
 
       const item = await createPlan({
