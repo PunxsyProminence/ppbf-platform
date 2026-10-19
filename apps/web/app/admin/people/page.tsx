@@ -17,6 +17,11 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import BackHome from '@/components/BackHome';
+import {
+  STAFF_DISPLAY_NAME_MAX,
+  canCarryStaffDisplayName,
+  normalizeStaffDisplayName,
+} from '@/src/shared/staffDisplayName';
 import GymOfficeSafetyStrip from '@/components/GymOfficeSafetyStrip';
 
 interface Member {
@@ -28,6 +33,8 @@ interface Member {
   active_flag: boolean;
   has_pin: boolean;
   membership_active: boolean;
+  /** The name the gym typed (Q1 part B), or null. Absent from an older server. */
+  staff_display_name?: string | null;
 }
 
 /** A row of pilot.athletes, with the login account joined on if it has one. */
@@ -277,6 +284,13 @@ function PeopleConsoleContent() {
      beside the armed Sign Out and Deactivate, so it is armed per row the same
      way and names what it does before it does it. */
   const [codeArmedId, setCodeArmedId] = useState<string | null>(null);
+  /* THE NAME THE GYM TYPES for a coach or staff member (parent-portal Q1
+     part B; the screens that name coaches read it from the next pull request
+     on, so this page claims nothing about what families see). One row edits at a time;
+     the draft is what the admin is typing, checked by the same rule the server
+     applies before it is sent. */
+  const [nameEditId, setNameEditId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
   /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
      said nothing when the address already belonged to someone in the gym: a
      coach re-invited as a guardian silently became a guardian. Now a role
@@ -1035,6 +1049,45 @@ function PeopleConsoleContent() {
   }
 
   /**
+   * Set or clear the name the gym types for a coach or staff member. Blank
+   * clears it. The roster is re-read, so the row shows what the server holds.
+   */
+  async function handleSaveDisplayName(accountId: string, raw: string) {
+    const checked = normalizeStaffDisplayName(raw);
+    if (!checked.ok) {
+      setError(checked.error);
+      return;
+    }
+    setBusy(true);
+    setNotice('');
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ account_id: accountId, display_name: checked.name ?? '' }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not save that name');
+      }
+      setNameEditId(null);
+      setNameDraft('');
+      setNotice(
+        checked.name
+          ? `Saved the name "${checked.name}" for ${personLabel(accountId)}.`
+          : `Cleared the name for ${personLabel(accountId)}.`,
+      );
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save that name');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
    * Revoke the old credential and sessions, then issue a fresh one-time code.
    */
   async function handleResetToStartingPin(accountId: string) {
@@ -1309,7 +1362,70 @@ function PeopleConsoleContent() {
 
                     return (
                       <tr key={member.account_id}>
-                        <td className="font-bold">{personLabel(member.account_id)}</td>
+                        <td>
+                          <span className="font-bold">{personLabel(member.account_id)}</span>
+                          {canCarryStaffDisplayName(member.role) && (
+                            <div className="mt-[var(--s1)] text-[length:var(--t-xs)]">
+                              {nameEditId === member.account_id ? (
+                                <div className="flex flex-wrap items-end gap-[var(--s2)]">
+                                  <label className="flex flex-col">
+                                    <span>Their name</span>
+                                    <input
+                                      type="text"
+                                      value={nameDraft}
+                                      maxLength={STAFF_DISPLAY_NAME_MAX * 2}
+                                      onChange={(event) => setNameDraft(event.target.value)}
+                                      className="input"
+                                    />
+                                    <span>
+                                      The name only, for example Mike Neale, without &ldquo;Coach&rdquo;.
+                                      Leave it empty to clear it.
+                                    </span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleSaveDisplayName(member.account_id, nameDraft)}
+                                    className="btn px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
+                                  >
+                                    Save Name
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => { setNameEditId(null); setNameDraft(''); }}
+                                    className="btn--lever disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-[var(--s2)]">
+                                  <span>
+                                    {member.staff_display_name ? (
+                                      <>
+                                        Name: <span className="font-bold">{member.staff_display_name}</span>
+                                      </>
+                                    ) : (
+                                      'No name typed yet.'
+                                    )}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setNameEditId(member.account_id);
+                                      setNameDraft(member.staff_display_name ?? '');
+                                    }}
+                                    className="btn--lever disabled:opacity-50"
+                                  >
+                                    {member.staff_display_name ? 'Edit Name' : 'Set Name'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
                         <td>{roleLabel(member.role)}</td>
                         <td>
                           <span

@@ -360,6 +360,14 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'step that strands a family.',
   ],
   [
+    'app/api/pilot/admin/staff/route.ts#PATCH',
+    'INLINE. Same isOrganizationAdminRole refusal on a Microsoft session. The '
+      + 'organization is taken from the session; setStaffDisplayName writes the '
+      + 'name only when the target holds a membership in that organization in a '
+      + 'staff role and is not deleted, in the same statement, so an athlete, a '
+      + 'guardian or someone in another gym answers 404 with nothing written.',
+  ],
+  [
     'app/api/pilot/announcements/post/route.ts#POST',
     'INLINE, through a mapper rather than a comparison. The same-file '
       + 'resolveAuthorRole maps the principal\'s role to an author capacity and '
