@@ -129,11 +129,11 @@ export async function writeUnderFilmStudyConsent<T>(
 /*
  * THE JOB FAILURE CODE FOR A CONSENT REFUSAL, or null for anything else.
  * Withdrawn and photo-only get their own codes so the coach's page can say
- * which it was, and an adult's own decision gets its own pair so the page does
- * not call it a guardian's; missing, unreadable (a guardian's) and a tag naming
- * a deleted athlete share the general one, and an adult's unreadable row has
- * its own. Each is a guardian's decision or a record to fix, never a
- * blip, so the worker retries none of them.
+ * which it was; missing, unreadable and a tag naming a deleted athlete share
+ * the general one. An adult's own refusal (withdrawn, photo-only, unreadable)
+ * gets its own three so the page does not call it a guardian's. Each is a
+ * guardian's or an adult's own decision, or a record to fix, never a blip, so
+ * the worker retries none of them.
  */
 export const FILM_STUDY_CONSENT_FAILURE_CODES = [
   'SHADOW_FILM_CONSENT_WITHDRAWN',

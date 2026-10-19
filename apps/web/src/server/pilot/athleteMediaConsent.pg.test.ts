@@ -495,6 +495,30 @@ describe("Film Study and the scan's content screen follow the adult's own decisi
     expect(await filmStudyOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
     expect(await scanOutcome()).toBe('guardian_consent_withdrawn');
   });
+
+  test("a minor holding a signed self-marked row from their own login is still refused on their guardian's withdrawal", async () => {
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother') on conflict do nothing`,
+      [ORG_ID, GUARDIAN_ID, MINOR_ID],
+    );
+    await client.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+          signed_by_role, signed_at, consent_version, status, covers_video, recorded_by_account_id, created_at)
+       values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Era Guardian', 'parent', now(), 'v1', 'withdrawn', false, null, clock_timestamp()),
+              ($1, gen_random_uuid(), $2, null, 'photo_media', 'Minor Athlete', 'athlete_self', now(), 'v1', 'signed', true, $4, clock_timestamp())`,
+      [ORG_ID, MINOR_ID, GUARDIAN_ID, MINOR_LOGIN],
+    );
+    let outcome = '';
+    try {
+      // No video row: the minor is the only athlete asked.
+      outcome = await outcomeOf(filmConsent.assertFilmStudyConsent(ORG_ID, 'vs-none', MINOR_ID));
+    } finally {
+      await client.query('delete from pilot.guardian_links where athlete_id = $1', [MINOR_ID]);
+    }
+    expect(outcome).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+  });
 });
 
 describe("the adult's withdrawal takes published video down, and is never outrun by a publish", () => {
