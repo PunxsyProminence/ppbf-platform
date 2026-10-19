@@ -51,6 +51,8 @@ let publication: typeof import('./publication');
 let consent: typeof import('./guardianConsent');
 let own: typeof import('./athleteMediaConsent');
 let playback: typeof import('./videoPlaybackConsent');
+let filmConsent: typeof import('./filmStudyConsent');
+let scanSweep: typeof import('./videoScanSweep');
 let closePool: () => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -232,6 +234,8 @@ beforeAll(async () => {
   consent = await import('./guardianConsent');
   own = await import('./athleteMediaConsent');
   playback = await import('./videoPlaybackConsent');
+  filmConsent = await import('./filmStudyConsent');
+  scanSweep = await import('./videoScanSweep');
   ({ closePool } = await import('./db'));
 });
 
@@ -396,7 +400,7 @@ describe("playback follows the adult's own decision once they make one (PR C)", 
   test('their own withdrawal refuses playback, though the guardian-era row grants video', async () => {
     await guardianEraGrantsVideo();
     await own.withdrawOwnMediaConsent(adult);
-    expect(await playbackOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    expect(await playbackOutcome()).toBe('ADULT_OWN_CONSENT_WITHDRAWN');
   });
 
   test("a signed self-marked row that a coach recorded does not play over the guardian-era withdrawal (real own-login check)", async () => {
@@ -436,7 +440,60 @@ describe("playback follows the adult's own decision once they make one (PR C)", 
   test('their own photo-only consent refuses playback, though the guardian-era row grants video', async () => {
     await guardianEraGrantsVideo();
     await own.grantOwnMediaConsent({ ...adult, coversVideo: false, publicUseAllowed: false });
-    expect(await playbackOutcome()).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    expect(await playbackOutcome()).toBe('ADULT_OWN_CONSENT_EXCLUDES_VIDEO');
+  });
+});
+
+describe("Film Study and the scan's content screen follow the adult's own decision", () => {
+  const filmStudyOutcome = () => outcomeOf(filmConsent.assertFilmStudyConsent(ORG_ID, VIDEO_SESSION_ID, ADULT_ID));
+  const filmStudyWriteOutcome = () => outcomeOf(
+    filmConsent.writeUnderFilmStudyConsent(ORG_ID, VIDEO_SESSION_ID, ADULT_ID, async () => 'written'),
+  );
+  // The scan's re-check, through its real transaction and locks: 'sent' when
+  // the frames would go to the vision screen, else the recorded skip reason.
+  async function scanOutcome(): Promise<string> {
+    let skipped = '';
+    const result = await scanSweep.recheckBeforeVision(ORG_ID, VIDEO_SESSION_ID, ADULT_ID, (reason) => {
+      skipped = reason;
+    })(async () => 'sent');
+    return result ?? skipped;
+  }
+
+  test('CONTROL: with no decision of their own, the guardian-era withdrawal still refuses both', async () => {
+    expect(await filmStudyOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    expect(await scanOutcome()).toBe('guardian_consent_withdrawn');
+  });
+
+  test('their own video consent is analysed and screened, though the guardian-era row is withdrawn', async () => {
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: true, publicUseAllowed: false });
+    expect(await filmStudyOutcome()).toBe('ok');
+    expect(await filmStudyWriteOutcome()).toBe('ok');
+    expect(await scanOutcome()).toBe('sent');
+  });
+
+  test('their own withdrawal refuses both with their own code', async () => {
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: true, publicUseAllowed: false });
+    await own.withdrawOwnMediaConsent(adult);
+    expect(await filmStudyOutcome()).toBe('ADULT_OWN_CONSENT_WITHDRAWN');
+    expect(await scanOutcome()).toBe('adult_consent_withdrawn');
+  });
+
+  test('their own photo-only consent refuses both with their own code', async () => {
+    await own.grantOwnMediaConsent({ ...adult, coversVideo: false, publicUseAllowed: false });
+    expect(await filmStudyOutcome()).toBe('ADULT_OWN_CONSENT_EXCLUDES_VIDEO');
+    expect(await scanOutcome()).toBe('adult_consent_excludes_video');
+  });
+
+  test('a signed self-marked row a coach recorded does not override the guardian-era withdrawal', async () => {
+    await client.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+          signed_by_role, signed_at, consent_version, status, covers_video, recorded_by_account_id, created_at)
+       values ($1, gen_random_uuid(), $2, null, 'photo_media', 'Adult Athlete', 'athlete_self', now(), 'v1', 'signed', true, $3, clock_timestamp())`,
+      [ORG_ID, ADULT_ID, COACH_ID],
+    );
+    expect(await filmStudyOutcome()).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    expect(await scanOutcome()).toBe('guardian_consent_withdrawn');
   });
 });
 

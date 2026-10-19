@@ -1,5 +1,6 @@
 import { checkGuardianMediaConsent, readAdultOwnMediaConsent, type ConsentCheckResult, type OwnMediaConsent } from './guardianConsent';
-import { assertConsentCoversVideo } from './videoPlaybackConsent';
+import { assertConsentCoversVideo, coverageRefusalKind } from './videoPlaybackConsent';
+import { ConflictError } from './errors';
 
 jest.mock('./guardianConsent', () => ({
   ...jest.requireActual('./guardianConsent'),
@@ -47,19 +48,19 @@ describe("an adult's own consent governs their playback (OD-2026-10-08-015)", ()
   test('their own withdrawal refuses, though the guardian-era row consents to video', async () => {
     mockCheck.mockResolvedValue(guardians('signed', true));
     mockAdultOwn.mockResolvedValue(own({ status: 'withdrawn', coversVideo: false }));
-    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('ADULT_OWN_CONSENT_WITHDRAWN');
   });
 
   test('their own photo-only consent refuses', async () => {
     mockCheck.mockResolvedValue(guardians('signed', true));
     mockAdultOwn.mockResolvedValue(own({ coversVideo: false }));
-    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('ADULT_OWN_CONSENT_EXCLUDES_VIDEO');
   });
 
   test('an own status this gate cannot read refuses', async () => {
     mockCheck.mockResolvedValue(guardians('signed', true));
     mockAdultOwn.mockResolvedValue(own({ status: 'declined' }));
-    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_UNREADABLE');
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('ADULT_OWN_CONSENT_UNREADABLE');
   });
 
   test('a signature recorded untidily still counts', async () => {
@@ -88,7 +89,7 @@ describe("an adult's own consent governs their playback (OD-2026-10-08-015)", ()
   test("a photo-only row their own login did not record still refuses: it can refuse, never authorise", async () => {
     mockCheck.mockResolvedValue(guardians('signed', true));
     mockAdultOwn.mockResolvedValue(own({ coversVideo: false, recordedByOwnLogin: false }));
-    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe('ADULT_OWN_CONSENT_EXCLUDES_VIDEO');
   });
 
   test('the adult read runs after the guardian read (which takes the lock), on the same client', async () => {
@@ -114,5 +115,24 @@ describe('a minor, an unknown date of birth, or an adult with no own row: unchan
     mockCheck.mockResolvedValue(consent);
     mockAdultOwn.mockResolvedValue(null);
     await expect(code(assertConsentCoversVideo('org-a', 'ath-1'))).resolves.toBe(expected);
+  });
+});
+
+describe("coverageRefusalKind reads a guardian's refusal and an adult's own as the same three kinds", () => {
+  test.each([
+    ['GUARDIAN_CONSENT_WITHDRAWN', 'withdrawn'],
+    ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', 'excludes_video'],
+    ['GUARDIAN_CONSENT_UNREADABLE', 'unreadable'],
+    ['ADULT_OWN_CONSENT_WITHDRAWN', 'withdrawn'],
+    ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', 'excludes_video'],
+    ['ADULT_OWN_CONSENT_UNREADABLE', 'unreadable'],
+    ['GUARDIAN_CONSENT_MISSING', null],
+  ])('%s', (errorCode, kind) => {
+    expect(coverageRefusalKind(new ConflictError('Blocked.', errorCode))).toBe(kind);
+  });
+
+  test('anything that is not a ConflictError is not a refusal', () => {
+    const fault = Object.assign(new Error('boom'), { code: 'ADULT_OWN_CONSENT_WITHDRAWN' });
+    expect(coverageRefusalKind(fault)).toBeNull();
   });
 });

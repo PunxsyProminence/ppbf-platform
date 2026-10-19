@@ -42,6 +42,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
 // it against fake consent rows. Here consent is the mocked helpers above.
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+  coverageRefusalKind: jest.requireActual('@/src/server/pilot/videoPlaybackConsent').coverageRefusalKind,
 }));
 
 jest.mock('@/src/server/pilot/videoSessions', () => ({

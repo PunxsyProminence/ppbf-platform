@@ -170,6 +170,15 @@ const FILM_STUDY_CONSENT_PHOTO_ONLY =
   'Film Study refused: guardian consent for an athlete in this video covers photos only, not video.';
 const FILM_STUDY_CONSENT_OTHER =
   'Film Study refused: guardian media consent for an athlete in this video is missing or could not be read.';
+// An athlete 18 or older decides for themselves (OD-2026-10-08-015), so their
+// own refusal is not called a guardian's. Same pattern as the lines above,
+// athlete not named (Overwatch, applying the 2026-10-05 approved pattern).
+const FILM_STUDY_CONSENT_ADULT_WITHDRAWN =
+  'Film Study refused: an athlete in this video, who is 18 or older, has withdrawn their own media consent.';
+const FILM_STUDY_CONSENT_ADULT_PHOTO_ONLY =
+  'Film Study refused: an athlete in this video, who is 18 or older, consented to photos only, not video.';
+const FILM_STUDY_CONSENT_ADULT_UNREADABLE =
+  'Film Study refused: the media consent of an athlete in this video could not be read.';
 const FILM_STUDY_CONSENT_MESSAGES: Record<string, string> = {
   GUARDIAN_CONSENT_WITHDRAWN: FILM_STUDY_CONSENT_WITHDRAWN,
   SHADOW_FILM_CONSENT_WITHDRAWN: FILM_STUDY_CONSENT_WITHDRAWN,
@@ -178,6 +187,12 @@ const FILM_STUDY_CONSENT_MESSAGES: Record<string, string> = {
   GUARDIAN_CONSENT_UNREADABLE: FILM_STUDY_CONSENT_OTHER,
   GUARDIAN_CONSENT_MISSING: FILM_STUDY_CONSENT_OTHER,
   SHADOW_FILM_CONSENT_BLOCKED: FILM_STUDY_CONSENT_OTHER,
+  ADULT_OWN_CONSENT_WITHDRAWN: FILM_STUDY_CONSENT_ADULT_WITHDRAWN,
+  SHADOW_FILM_CONSENT_ADULT_WITHDRAWN: FILM_STUDY_CONSENT_ADULT_WITHDRAWN,
+  ADULT_OWN_CONSENT_EXCLUDES_VIDEO: FILM_STUDY_CONSENT_ADULT_PHOTO_ONLY,
+  SHADOW_FILM_CONSENT_ADULT_EXCLUDES_VIDEO: FILM_STUDY_CONSENT_ADULT_PHOTO_ONLY,
+  ADULT_OWN_CONSENT_UNREADABLE: FILM_STUDY_CONSENT_ADULT_UNREADABLE,
+  SHADOW_FILM_CONSENT_ADULT_UNREADABLE: FILM_STUDY_CONSENT_ADULT_UNREADABLE,
 };
 // Shown exactly as approved, without the "Film Study:" label the other
 // status lines carry -- each already begins with it.

@@ -17,7 +17,7 @@ import {
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
-import { assertConsentCoversVideo, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertConsentCoversVideo, coverageRefusalKind, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
@@ -65,13 +65,16 @@ async function mintQueuePlayback(
     const streamUrl = await mintUnderPlaybackConsent(organizationId, [athleteId], () => getPilotVideoSasUrl(blobPath, 60));
     return { stream_url: streamUrl, playback_blocked: null };
   } catch (error) {
-    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_WITHDRAWN') {
+    // A guardian's refusal or an adult's own (OD-2026-10-08-015): the same
+    // three states either way.
+    const kind = coverageRefusalKind(error);
+    if (kind === 'withdrawn') {
       return { stream_url: null, playback_blocked: 'consent_withdrawn' };
     }
-    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_EXCLUDES_VIDEO') {
+    if (kind === 'excludes_video') {
       return { stream_url: null, playback_blocked: 'photo_only' };
     }
-    if (!(error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')) {
+    if (kind !== 'unreadable') {
       // A fault in the consent read or in signing the link itself; this
       // cannot tell them apart, so the event names neither. The SQLSTATE
       // only: a driver message can carry host and query detail.
@@ -83,12 +86,6 @@ async function mintQueuePlayback(
   }
 }
 
-// The playback gate's coverage refusals, which approve now also runs.
-const COVERAGE_REFUSAL_CODES = new Set([
-  'GUARDIAN_CONSENT_WITHDRAWN',
-  'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
-  'GUARDIAN_CONSENT_UNREADABLE',
-]);
 
 /**
  * T-006: THE ADMIN CONSOLE FOR AN ALREADY-BUILT COMPLIANCE WORKFLOW.
@@ -370,7 +367,7 @@ export async function POST(request: NextRequest) {
             },
             shadow_mirror: false,
           });
-        } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+        } else if (error instanceof ConflictError && coverageRefusalKind(error) !== null) {
           await auditComplianceEvent({
             event_type: 'update',
             actor_account_id: principal.accountId,
@@ -525,7 +522,7 @@ export async function POST(request: NextRequest) {
           },
           shadow_mirror: false,
         });
-      } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+      } else if (error instanceof ConflictError && coverageRefusalKind(error) !== null) {
         await auditComplianceEvent({
           event_type: 'update',
           actor_account_id: principal.accountId,

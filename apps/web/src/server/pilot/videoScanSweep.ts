@@ -20,6 +20,8 @@ import {
   assertGuardianMediaConsent,
   GuardianConsentMissingError,
   lockGuardianLinksForAthletes,
+  ownConsentCoversNewPublication,
+  readAdultOwnMediaConsent,
   type QueryExecutor,
 } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
@@ -57,6 +59,10 @@ const COVERAGE_SKIP_REASONS: Record<string, string> = {
   GUARDIAN_CONSENT_WITHDRAWN: 'guardian_consent_withdrawn',
   GUARDIAN_CONSENT_EXCLUDES_VIDEO: 'guardian_consent_excludes_video',
   GUARDIAN_CONSENT_UNREADABLE: 'guardian_consent_unreadable',
+  // An adult's own decision (OD-2026-10-08-015), recorded as theirs.
+  ADULT_OWN_CONSENT_WITHDRAWN: 'adult_consent_withdrawn',
+  ADULT_OWN_CONSENT_EXCLUDES_VIDEO: 'adult_consent_excludes_video',
+  ADULT_OWN_CONSENT_UNREADABLE: 'adult_consent_unreadable',
 };
 
 /*
@@ -65,6 +71,15 @@ const COVERAGE_SKIP_REASONS: Record<string, string> = {
  * refusal, when there is one, is the reason recorded. With a client, every
  * read holds that athlete's guardian links FOR SHARE until the transaction
  * ends (guardianConsent.ts).
+ *
+ * An adult whose own current consent is signed, covers video and was recorded
+ * by their own login is not put through the guardian check: at 18 guardian-era
+ * consent stops counting (OD-2026-10-08-015), and the coverage check already
+ * reads the adult's own decision. So the coverage check runs first for each
+ * athlete -- with a client it takes the consent-set lock, which orders the
+ * adult's own writer -- and the recorded reason is unchanged: a coverage
+ * refusal wins over missing, as before. A minor, an unknown date of birth
+ * and an adult who has not decided keep both checks.
  */
 async function consentSkipReason(
   organizationId: string,
@@ -76,17 +91,18 @@ async function consentSkipReason(
   for (const athleteId of athleteIds) {
     if (reason) break;
     try {
-      await assertGuardianMediaConsent(organizationId, athleteId, ...inTx);
-    } catch (error) {
-      if (!(error instanceof GuardianConsentMissingError)) throw error;
-      reason = 'guardian_consent_missing';
-    }
-    try {
       await assertConsentCoversVideo(organizationId, athleteId, ...inTx);
     } catch (error) {
       const coverage = error instanceof PilotError && error.code ? COVERAGE_SKIP_REASONS[error.code] : undefined;
       if (!coverage) throw error;
       reason = coverage;
+    }
+    if (ownConsentCoversNewPublication(await readAdultOwnMediaConsent(organizationId, athleteId, client))) continue;
+    try {
+      await assertGuardianMediaConsent(organizationId, athleteId, ...inTx);
+    } catch (error) {
+      if (!(error instanceof GuardianConsentMissingError)) throw error;
+      reason ??= 'guardian_consent_missing';
     }
   }
   return reason;

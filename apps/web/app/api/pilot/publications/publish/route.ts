@@ -14,17 +14,10 @@ import {
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertConsentCoversVideo, coverageRefusalKind } from '@/src/server/pilot/videoPlaybackConsent';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
-
-// assertConsentCoversVideo's refusals: withdrawn, photo-only, unreadable.
-const COVERAGE_REFUSAL_CODES = new Set([
-  'GUARDIAN_CONSENT_WITHDRAWN',
-  'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
-  'GUARDIAN_CONSENT_UNREADABLE',
-]);
 
 // The publish claim's own read of the video row, on the claim's client. Same
 // predicate the executor and the playback gate hold: only a 'ready' Film
@@ -214,7 +207,7 @@ export async function POST(request: NextRequest) {
           },
           shadow_mirror: false,
         });
-      } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+      } else if (error instanceof ConflictError && coverageRefusalKind(error) !== null) {
         await auditPublishEvent({
           event_type: 'update',
           actor_account_id: principal.accountId,

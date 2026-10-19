@@ -168,6 +168,27 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
  */
 const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
 
+export type CoverageRefusalKind = 'withdrawn' | 'excludes_video' | 'unreadable';
+
+const COVERAGE_REFUSAL_KINDS: Record<string, CoverageRefusalKind> = {
+  GUARDIAN_CONSENT_WITHDRAWN: 'withdrawn',
+  GUARDIAN_CONSENT_EXCLUDES_VIDEO: 'excludes_video',
+  GUARDIAN_CONSENT_UNREADABLE: 'unreadable',
+  ADULT_OWN_CONSENT_WITHDRAWN: 'withdrawn',
+  ADULT_OWN_CONSENT_EXCLUDES_VIDEO: 'excludes_video',
+  ADULT_OWN_CONSENT_UNREADABLE: 'unreadable',
+};
+
+/**
+ * Which of assertConsentCoversVideo's refusals this is, a guardian's or an
+ * adult's own, or null for anything else (a fault, not a refusal). For the
+ * callers that act on the kind and not on whose decision it was.
+ */
+export function coverageRefusalKind(error: unknown): CoverageRefusalKind | null {
+  if (!(error instanceof ConflictError) || !error.code) return null;
+  return COVERAGE_REFUSAL_KINDS[error.code] ?? null;
+}
+
 /*
  * THE ADULT'S OWN CONSENT GOVERNS THEIR PLAYBACK (OD-2026-10-08-015). At 18
  * guardian-era consent stops counting for anything new, and the adult
@@ -185,6 +206,11 @@ const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
  * made are untouched until the adult decides.
  *
  * Returns 'plays', the refusal to throw, or null for "not decided here".
+ *
+ * The refusals carry ADULT_OWN_CONSENT_* codes, not the guardian ones: the
+ * decision is the adult's, and a caller that says "a guardian has withdrawn"
+ * for it tells a coach something false. coverageRefusalKind above reads both
+ * families for the callers that only need to know which kind of refusal.
  */
 async function adultOwnDecision(
   organizationId: string,
@@ -199,21 +225,21 @@ async function adultOwnDecision(
     return new ConflictError(
       'Blocked: this athlete, who is 18 or older, has withdrawn their own media consent. Video of them cannot be '
       + 'played back while that withdrawal stands; only their own new consent restores playback.',
-      'GUARDIAN_CONSENT_WITHDRAWN',
+      'ADULT_OWN_CONSENT_WITHDRAWN',
     );
   }
   if (status === 'signed' && !own.coversVideo) {
     return new ConflictError(
       'Blocked: this athlete, who is 18 or older, consented to photos only. Video of them cannot be played back '
       + 'until they consent to video themselves.',
-      'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+      'ADULT_OWN_CONSENT_EXCLUDES_VIDEO',
     );
   }
   if (status === 'signed') return own.recordedByOwnLogin ? 'plays' : null;
   return new ConflictError(
     "Blocked: this athlete's own media consent is recorded with a status this platform cannot read. Video of them "
     + 'cannot be played back until that record is corrected.',
-    'GUARDIAN_CONSENT_UNREADABLE',
+    'ADULT_OWN_CONSENT_UNREADABLE',
   );
 }
 
