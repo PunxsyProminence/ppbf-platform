@@ -1174,9 +1174,14 @@ export async function POST(request: NextRequest) {
       if (!coachingRequest) {
         throw new Error('Missing coaching request record');
       }
-      // Reach first: a reader who cannot see the athlete learns nothing more
-      // about the request than review_coaching_request tells a non-admin.
-      await assertCanActOnAthlete(actor, coachingRequest.athlete_id);
+      // Reach first, and a reader who cannot see the athlete is told the same
+      // as for an id that does not exist: a refusal here must not confirm
+      // that another family's request id is real (C2 review).
+      try {
+        await assertCanActOnAthlete(actor, coachingRequest.athlete_id);
+      } catch {
+        throw new Error('Missing coaching request record');
+      }
       if (actor.role === 'athlete' && coachingRequest.requested_by_account_id !== actor.accountId) {
         throw new Error('Forbidden: an athlete can withdraw only a request they made');
       }

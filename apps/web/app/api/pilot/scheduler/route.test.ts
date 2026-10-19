@@ -2612,13 +2612,14 @@ describe('withdraw_coaching_request', () => {
     });
   });
 
-  test('a guardian who does not reach the child is refused before anything changes', async () => {
+  test('a guardian who does not reach the child is told the same as for an unknown id, and nothing changes', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockAssertCanAct.mockRejectedValueOnce(new Error('Forbidden: not your athlete'));
 
     const response = await POST(withdraw());
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Missing coaching request record' });
     expect(mockWithdraw).not.toHaveBeenCalled();
     expect(mockAuditEvent).not.toHaveBeenCalled();
   });
