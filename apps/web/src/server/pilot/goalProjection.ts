@@ -64,17 +64,36 @@ export function readsFullGoals(role: string): boolean {
   return FULL_GOAL_READERS.has(role);
 }
 
+function toFamilySmartGoal(goal: PilotGoal): FamilySmartGoal {
+  return {
+    goal_id: goal.goal_id,
+    title: goal.title,
+    category: goal.category ?? null,
+    target_date: goal.target_date,
+    metric: goal.metric,
+    progress_percent: goal.progress_percent ?? null,
+    status: goal.status,
+    created_at: goal.created_at,
+  };
+}
+
 export function toFamilySmartGoals(goals: PilotGoal[]): FamilySmartGoal[] {
-  return goals
-    .filter((goal) => !isOwnWordsRow(goal))
-    .map((goal) => ({
+  return goals.filter((goal) => !isOwnWordsRow(goal)).map(toFamilySmartGoal);
+}
+
+/** One goal read by id (goals/get), which may be either kind: an own-words
+ *  row gets the same named fields /goals/personal sends a family, a SMART row
+ *  the same fields /goals/list sends. reached_at is on the select * row
+ *  though PilotGoal does not declare it. */
+export function toFamilyGoal(goal: PilotGoal & { reached_at?: string | null }): FamilySmartGoal | FamilyPersonalGoal {
+  if (isOwnWordsRow(goal)) {
+    return {
       goal_id: goal.goal_id,
       title: goal.title,
-      category: goal.category ?? null,
-      target_date: goal.target_date,
-      metric: goal.metric,
-      progress_percent: goal.progress_percent ?? null,
-      status: goal.status,
+      target_date: goal.target_date ?? null,
+      reached_at: goal.reached_at ?? null,
       created_at: goal.created_at,
-    }));
+    };
+  }
+  return toFamilySmartGoal(goal);
 }
