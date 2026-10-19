@@ -236,7 +236,8 @@ export async function addLeagueRosterEntry(input: {
   // RE-ADDING an inactive member puts them back on the roster, as a withdrawn
   // competition entry is re-entered (addCompetitionEntry). The unique key holds
   // one row per athlete per season, so the re-add flips that row back to
-  // 'active' rather than adding a second; its entry id and history stay. It
+  // 'active' rather than adding a second; its entry id, its first adder and
+  // its created_at stay, so the row still says who first rostered them. It
   // reaches here only through the same POST as a first add, so every safety
   // gate has just run again under the per-athlete lock. A member still active
   // matches nothing in the update and stays a duplicate.
@@ -246,7 +247,7 @@ export async function addLeagueRosterEntry(input: {
        (organization_id, entry_id, season_id, athlete_id, created_by_account_id)
      values ($1, $2, $3, $4, $5)
      on conflict (organization_id, season_id, athlete_id) do update
-       set status = 'active', created_by_account_id = excluded.created_by_account_id, updated_at = now()
+       set status = 'active', updated_at = now()
        where pilot.wrestling_league_roster_entries.status = 'inactive'
      returning entry_id`,
     [input.organizationId, randomUUID(), input.seasonId, input.athleteId, input.createdByAccountId],

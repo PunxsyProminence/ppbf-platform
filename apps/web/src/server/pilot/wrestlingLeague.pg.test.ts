@@ -334,11 +334,19 @@ describe('re-adding an inactive roster member (real database)', () => {
       );
       expect(added).toMatchObject({ athlete_id: ATHLETE_ID, status: 'active' });
 
+      const rowOf = async () => (await client.query(
+        `select entry_id, status, created_by_account_id, created_at, updated_at
+         from pilot.wrestling_league_roster_entries where organization_id = $1 and season_id = 'season-1'`,
+        [ORG_ID],
+      )).rows;
+      const first = await rowOf();
+
       // Still active: a second add is a duplicate, and nothing is written.
       await expect(addLeagueRosterEntry(
         { organizationId: ORG_ID, seasonId: 'season-1', athleteId: ATHLETE_ID, createdByAccountId: COACH_ID },
         tx,
       )).rejects.toThrow('LEAGUE_ROSTER_DUPLICATE_ENTRY');
+      expect(await rowOf()).toEqual(first);
 
       await client.query(
         `update pilot.wrestling_league_roster_entries set status = 'inactive'
@@ -358,8 +366,12 @@ describe('re-adding an inactive roster member (real database)', () => {
       );
       expect(rows.rows).toEqual([
         { organization_id: OTHER_ORG_ID, entry_id: 'entry-elsewhere', status: 'inactive', created_by_account_id: ADMIN_ID },
-        { organization_id: ORG_ID, entry_id: added!.entry_id, status: 'active', created_by_account_id: COACH_ID },
+        // The first adder stays on the row: a re-add changes its status, not its history.
+        { organization_id: ORG_ID, entry_id: added!.entry_id, status: 'active', created_by_account_id: ADMIN_ID },
       ]);
+      const [after] = await rowOf();
+      expect(after.created_at).toEqual(first[0].created_at);
+      expect(after.updated_at.getTime()).toBeGreaterThanOrEqual(first[0].updated_at.getTime());
       expect(await listLeagueRoster(ORG_ID, 'season-1', tx)).toHaveLength(1);
     } finally {
       await client.end();
