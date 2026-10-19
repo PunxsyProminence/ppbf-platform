@@ -54,9 +54,11 @@ export function isOwnWordsRow(goal: PilotGoal): boolean {
 
 /* WHO IS SENT THE WHOLE ROW. Named, so a role added to a route's gate later
    gets the family projection until somebody decides otherwise -- the reason
-   line does not go to a role by default. The athlete wrote it; staff (coach,
-   organization admin) read it under the owner ruling. */
-const FULL_GOAL_READERS = new Set(['athlete', 'coach', 'organization_admin', 'admin']);
+   line does not go to a role by default. The athlete wrote it; the coach reads
+   it under the owner ruling ("The "why it matters" line shows to the coach
+   only", OD-2026-10-12-011). The gym admin (organization_admin, or its legacy
+   name admin) is not the coach, so it is sent the family projection (F-100). */
+const FULL_GOAL_READERS = new Set(['athlete', 'coach']);
 
 export function readsFullGoals(role: string): boolean {
   return FULL_GOAL_READERS.has(role);

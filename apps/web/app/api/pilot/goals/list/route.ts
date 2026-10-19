@@ -29,9 +29,9 @@ export async function GET(request: NextRequest) {
 
     await assertActorCanAccessAthlete(principal, athleteId);
     // select * carries own_words and why_it_matters. Anyone not named as a
-    // full reader (a guardian today) is sent the family projection instead:
-    // SMART goals only (filtered in SQL, so the limit counts them), from named
-    // fields.
+    // full reader (a guardian or the gym admin today) is sent the family
+    // projection instead: SMART goals only (filtered in SQL, so the limit
+    // counts them), from named fields.
     if (!readsFullGoals(principal.role)) {
       const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit, smartOnly: true });
       return NextResponse.json({ items: toFamilySmartGoals(goals) });
