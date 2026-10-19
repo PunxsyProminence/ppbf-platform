@@ -588,12 +588,20 @@ describe('requesting Film Study analysis', () => {
   const WITHDRAWN = 'Film Study refused: a guardian has withdrawn media consent for an athlete in this video.';
   const PHOTO_ONLY = 'Film Study refused: guardian consent for an athlete in this video covers photos only, not video.';
   const OTHER = 'Film Study refused: guardian media consent for an athlete in this video is missing or could not be read.';
+  // An athlete 18 or older decides for themselves (OD-2026-10-08-015); same
+  // pattern, athlete not named (Overwatch, applying the 2026-10-05 approved pattern).
+  const ADULT_WITHDRAWN = 'Film Study refused: an athlete in this video, who is 18 or older, has withdrawn their own media consent.';
+  const ADULT_PHOTO_ONLY = 'Film Study refused: an athlete in this video, who is 18 or older, consented to photos only, not video.';
+  const ADULT_UNREADABLE = 'Film Study refused: the media consent of an athlete in this video could not be read.';
 
   test.each([
     ['GUARDIAN_CONSENT_WITHDRAWN', WITHDRAWN],
     ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', PHOTO_ONLY],
     ['GUARDIAN_CONSENT_UNREADABLE', OTHER],
     ['GUARDIAN_CONSENT_MISSING', OTHER],
+    ['ADULT_OWN_CONSENT_WITHDRAWN', ADULT_WITHDRAWN],
+    ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', ADULT_PHOTO_ONLY],
+    ['ADULT_OWN_CONSENT_UNREADABLE', ADULT_UNREADABLE],
   ])('a request refused with %s says why, in the approved words', async (code, sentence) => {
     global.fetch = mockFetch({
       videos: () => [video({ status: 'ready' })],
@@ -617,6 +625,9 @@ describe('requesting Film Study analysis', () => {
     ['SHADOW_FILM_CONSENT_WITHDRAWN', WITHDRAWN],
     ['SHADOW_FILM_CONSENT_EXCLUDES_VIDEO', PHOTO_ONLY],
     ['SHADOW_FILM_CONSENT_BLOCKED', OTHER],
+    ['SHADOW_FILM_CONSENT_ADULT_WITHDRAWN', ADULT_WITHDRAWN],
+    ['SHADOW_FILM_CONSENT_ADULT_EXCLUDES_VIDEO', ADULT_PHOTO_ONLY],
+    ['SHADOW_FILM_CONSENT_ADULT_UNREADABLE', ADULT_UNREADABLE],
   ])('a queued job that failed with %s says why, in the approved words', async (reason, sentence) => {
     jest.useFakeTimers();
     global.fetch = mockFetch({

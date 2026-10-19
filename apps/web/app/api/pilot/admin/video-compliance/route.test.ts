@@ -68,6 +68,7 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   mintUnderPlaybackConsent: jest.fn(async (_org: string, _ids: string[], mint: () => unknown) => mint()),
   assertConsentCoversVideo: jest.fn(async () => undefined),
+  coverageRefusalKind: jest.requireActual('@/src/server/pilot/videoPlaybackConsent').coverageRefusalKind,
 }));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionById: jest.fn(),
@@ -373,6 +374,25 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 
       expect(item).toMatchObject({ stream_url: null, playback_blocked: 'photo_only' });
       expect(mockSasUrl).not.toHaveBeenCalled();
+    });
+
+    // OD-2026-10-08-015: an adult's own refusal carries its own code and lands
+    // in the same three states, without being logged as a fault.
+    test.each([
+      ['ADULT_OWN_CONSENT_WITHDRAWN', 'consent_withdrawn'],
+      ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', 'photo_only'],
+      ['ADULT_OWN_CONSENT_UNREADABLE', 'consent_unverified'],
+    ])("an adult's own refusal %s mints no link and says %s", async (code, blocked) => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(new ConflictError('Blocked: 18 or older', code));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: blocked });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'video-compliance-playback-mint-failed' }));
+      consoleErrorSpy.mockRestore();
     });
 
     test('an unreadable consent record fails closed: no link, and the queue still loads', async () => {
@@ -1005,6 +1025,9 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       ['GUARDIAN_CONSENT_WITHDRAWN', 'Blocked: withdrawn'],
       ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', 'Blocked: photo-only'],
       ['GUARDIAN_CONSENT_UNREADABLE', 'Blocked: unreadable'],
+      ['ADULT_OWN_CONSENT_WITHDRAWN', 'Blocked: 18 or older, withdrawn'],
+      ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', 'Blocked: 18 or older, photo-only'],
+      ['ADULT_OWN_CONSENT_UNREADABLE', 'Blocked: 18 or older, unreadable'],
     ])('reopen is refused with 409 under %s, audited, and the row is never touched', async (code, message) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));

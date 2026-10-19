@@ -4,6 +4,8 @@ import {
   assertGuardianMediaConsent,
   GuardianConsentMissingError,
   lockGuardianLinksForAthletes,
+  ownConsentCoversNewPublication,
+  readAdultOwnMediaConsent,
   type QueryExecutor,
 } from './guardianConsent';
 import { listLiveTagSubjects } from './videoClipTags';
@@ -36,6 +38,16 @@ import { assertConsentCoversVideo } from './videoPlaybackConsent';
  * Asked only for the named athlete, the child the clip is filed under was
  * never asked (review finding on the coach-reported consent change). An
  * unattributed clip has no row athlete and adds nobody.
+ *
+ * AN ADULT'S OWN CONSENT (OD-2026-10-08-015). At 18 guardian-era consent
+ * stops counting for anything new and the adult consents for themselves.
+ * assertConsentCoversVideo already lets an adult's own decision govern; step
+ * 2 is skipped for an adult whose own current consent is signed, covers video
+ * and was recorded by their own login, so a guardian-era withdrawal frozen at
+ * 18 no longer refuses footage the adult has said yes to. A minor, an unknown
+ * date of birth and an adult who has not decided keep both steps as before.
+ * The adult read comes after step 1, which with a client has taken the
+ * consent-set lock, so the adult's own writer (EXCLUSIVE) is ordered too.
  *
  * The worker calls this AGAIN at run time because consent can be withdrawn
  * between the request and the job, and a queued job carries no consent of
@@ -74,6 +86,7 @@ export async function assertFilmStudyConsent(
   if (client) await lockGuardianLinksForAthletes(client, organizationId, athleteIds, 'share');
   for (const id of athleteIds) {
     await assertConsentCoversVideo(organizationId, id, ...inTx);
+    if (ownConsentCoversNewPublication(await readAdultOwnMediaConsent(organizationId, id, client))) continue;
     await assertGuardianMediaConsent(organizationId, id, ...inTx);
   }
 }
@@ -117,18 +130,32 @@ export async function writeUnderFilmStudyConsent<T>(
  * THE JOB FAILURE CODE FOR A CONSENT REFUSAL, or null for anything else.
  * Withdrawn and photo-only get their own codes so the coach's page can say
  * which it was; missing, unreadable and a tag naming a deleted athlete share
- * the general one. Each is a guardian's decision or a record to fix, never a
- * blip, so the worker retries none of them.
+ * the general one. An adult's own refusal (withdrawn, photo-only, unreadable)
+ * gets its own three so the page does not call it a guardian's. Each is a
+ * guardian's or an adult's own decision, or a record to fix, never a blip, so
+ * the worker retries none of them.
  */
 export const FILM_STUDY_CONSENT_FAILURE_CODES = [
   'SHADOW_FILM_CONSENT_WITHDRAWN',
   'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO',
   'SHADOW_FILM_CONSENT_BLOCKED',
+  'SHADOW_FILM_CONSENT_ADULT_WITHDRAWN',
+  'SHADOW_FILM_CONSENT_ADULT_EXCLUDES_VIDEO',
+  'SHADOW_FILM_CONSENT_ADULT_UNREADABLE',
 ] as const;
 
 export function filmStudyConsentFailureCode(
   error: unknown,
 ): (typeof FILM_STUDY_CONSENT_FAILURE_CODES)[number] | null {
+  if (error instanceof PilotError && error.code === 'ADULT_OWN_CONSENT_WITHDRAWN') {
+    return 'SHADOW_FILM_CONSENT_ADULT_WITHDRAWN';
+  }
+  if (error instanceof PilotError && error.code === 'ADULT_OWN_CONSENT_EXCLUDES_VIDEO') {
+    return 'SHADOW_FILM_CONSENT_ADULT_EXCLUDES_VIDEO';
+  }
+  if (error instanceof PilotError && error.code === 'ADULT_OWN_CONSENT_UNREADABLE') {
+    return 'SHADOW_FILM_CONSENT_ADULT_UNREADABLE';
+  }
   if (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_WITHDRAWN') {
     return 'SHADOW_FILM_CONSENT_WITHDRAWN';
   }

@@ -14,7 +14,9 @@ import {
   assertGuardianMediaConsent,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
+  readAdultOwnMediaConsent,
   type ConsentCheckResult,
+  type OwnMediaConsent,
 } from './guardianConsent';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
@@ -98,6 +100,7 @@ const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
 const mockedCheckConsent = checkGuardianMediaConsent as jest.MockedFunction<typeof checkGuardianMediaConsent>;
+const mockedAdultOwn = readAdultOwnMediaConsent as jest.MockedFunction<typeof readAdultOwnMediaConsent>;
 const mockedResolveSubject = resolveScanSubject as jest.MockedFunction<typeof resolveScanSubject>;
 const mockedTagSubjects = listLiveTagSubjects as jest.MockedFunction<typeof listLiveTagSubjects>;
 const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
@@ -161,6 +164,8 @@ beforeEach(() => {
   mockedAssertConsent.mockResolvedValue(undefined);
   mockedCheckConsent.mockReset();
   mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: true }));
+  mockedAdultOwn.mockReset();
+  mockedAdultOwn.mockResolvedValue(null);
   mockedTagSubjects.mockReset();
   mockedTagSubjects.mockResolvedValue([]);
   // Reset so a queued destination can never leak into the next test.
@@ -657,6 +662,88 @@ describe('sweepQuarantinedVideos', () => {
 
       expect(mockedCheckConsent).not.toHaveBeenCalled();
       expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
+    });
+  });
+
+  /*
+   * OD-2026-10-08-015: at 18 guardian-era consent stops counting for anything
+   * new and the adult decides for themselves. Drives the real
+   * assertConsentCoversVideo, which reads the adult's own row (doubled here).
+   */
+  describe("an adult's own consent governs the content screen", () => {
+    const own = (overrides: Partial<OwnMediaConsent> = {}): OwnMediaConsent => ({
+      status: 'signed',
+      coversVideo: true,
+      publicUseAllowed: false,
+      signedAt: '2026-10-18T00:00:00.000Z',
+      recordedByOwnLogin: true,
+      ...overrides,
+    });
+    const guardianEraWithdrawn = () => {
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'withdrawn', coversVideo: false }));
+      mockedAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+    };
+
+    test("their own video consent is screened, though the guardian-era row is withdrawn", async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      guardianEraWithdrawn();
+      mockedAdultOwn.mockResolvedValue(own());
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
+      expect(mockedAssertConsent).not.toHaveBeenCalled();
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail).not.toHaveProperty('content_skipped_reason');
+    });
+
+    test.each([
+      ['withdrawn', own({ status: 'withdrawn', coversVideo: false }), 'adult_consent_withdrawn'],
+      ['photo only', own({ coversVideo: false }), 'adult_consent_excludes_video'],
+      ['a status this platform cannot read', own({ status: 'declined' }), 'adult_consent_unreadable'],
+    ])("their own %s skips the screen and is recorded as theirs, not a guardian's", async (_label, row, reason) => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedAdultOwn.mockResolvedValue(row);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe(reason);
+    });
+
+    test.each([
+      ['no row of their own (or a minor, or unknown date of birth)', null],
+      ['a signed row their own login did not record', own({ recordedByOwnLogin: false })],
+    ])('CONTROL: %s keeps the guardian-era reading', async (_label, row) => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      guardianEraWithdrawn();
+      mockedAdultOwn.mockResolvedValue(row);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_withdrawn');
+    });
+
+    test("an adult with their own consent, tagged with a child whose guardian has not signed, still skips", async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedTagSubjects.mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+      mockedAdultOwn.mockImplementation(async (_org, id) => (id === 'ath-1' ? own() : null));
+      mockedAssertConsent.mockImplementation(async (_org, id) => {
+        if (id === 'ath-2') throw new GuardianConsentMissingError('ath-2', ['parent-9']);
+      });
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_missing');
     });
   });
 
