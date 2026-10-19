@@ -53,9 +53,9 @@ export async function GET(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, athleteId);
 
     const items = await listPersonalGoals(principal.organizationId, athleteId);
-    // The "why it matters" line is the coach's to read, never the family's:
-    // anyone not named as a full reader (a guardian today) is sent the family
-    // projection, built from named fields.
+    // The "why it matters" line is the coach's to read, never the family's
+    // or the gym admin's: anyone not named as a full reader (a guardian or the
+    // gym admin today) is sent the family projection, built from named fields.
     if (!readsFullGoals(principal.role)) {
       return NextResponse.json({ ok: true, items: items.map(toFamilyPersonalGoal) });
     }

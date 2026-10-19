@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { getGoalById } from '@/src/server/pilot/entities';
+import { readsFullGoals, toFamilyGoal } from '@/src/server/pilot/goalProjection';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -23,6 +24,11 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, goal.athlete_id);
+    // select * carries own_words and why_it_matters, which the owner ruling
+    // gives to the coach only: the gym admin is sent named fields (F-100).
+    if (!readsFullGoals(principal.role)) {
+      return NextResponse.json({ found: true, goal: toFamilyGoal(goal) });
+    }
     return NextResponse.json({ found: true, goal });
   } catch (error) {
     return jsonError(error);
