@@ -21,6 +21,15 @@ export function deriveCoachDisplayName(loginEmail: string | null | undefined): s
 }
 
 /**
+ * Words a shared or role login is made of, which are not anybody's name.
+ * coach@ read "Coach Coach" and ppbf@ read "From Ppbf" on family screens
+ * (parent walk 2026-10-19 item 6). Dropped from the stem; a stem with nothing
+ * else left names nobody, and the caller's floor stands. Jason 2026-10-19, Q1
+ * "C: A now, B later (Rec.)": a real display-name field comes later.
+ */
+const ROLE_WORDS: ReadonlySet<string> = new Set(['coach', 'admin', 'staff', 'office', 'info', 'ppbf']);
+
+/**
  * The same name without the title, for a list of staff who are not all
  * coaches (#1558 item three: staff-credentials). Digits are dropped, as above:
  * a login like "mike1987" is most of an account id. Null when the address
@@ -34,6 +43,7 @@ export function deriveStaffDisplayName(loginEmail: string | null | undefined): s
     .trim()
     .split(/\s+/)
     .filter(Boolean)
+    .filter((part) => !ROLE_WORDS.has(part.toLowerCase()))
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
   return spoken || null;

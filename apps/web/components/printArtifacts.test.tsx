@@ -149,6 +149,14 @@ describe('the printed card', () => {
     expect(screen.getByText('Blue corner')).toBeTruthy();
   });
 
+  /* Parent walk 2026-10-19 item 8: "NO CORNER CHOSEN" meant nothing to a
+     parent. Jason 2026-10-19, Q3 "A: Hide until chosen (Rec.)". */
+  it('prints no corner line until a corner is chosen', () => {
+    const { container } = render(<PrintableFightCard card={card({ corner: 'none', cornerLabel: 'No corner chosen' })} />);
+    expect(screen.queryByText('No corner chosen')).toBeNull();
+    expect(container.querySelector('.print-card-corner')).toBeNull();
+  });
+
   it('prints the brass plate rather than a photograph, even when one is released', () => {
     const { container } = render(<PrintableFightCard card={card({ photoAvailable: true })} />);
 

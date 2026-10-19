@@ -115,7 +115,20 @@ describe('the signature on a recognition', () => {
   it('is derived from the sender\'s own login, never supplied', () => {
     expect(deriveCoachDisplayName('jason@punxsyprominence.org')).toBe('Coach Jason');
     expect(deriveCoachDisplayName('mary.ellen.walsh@example.org')).toBe('Coach Mary Ellen Walsh');
-    expect(deriveCoachDisplayName('coach_dave2@example.org')).toBe('Coach Coach Dave');
+    expect(deriveCoachDisplayName('coach_dave2@example.org')).toBe('Coach Dave');
+  });
+
+  /* Parent walk 2026-10-19 item 6: a coach signed in as coach@ read "Coach
+     Coach" on every family screen. A role word in the login is not a name
+     (Jason 2026-10-19, Q1 "C: A now, B later (Rec.)"). */
+  it('never signs with a role word as if it were a name', () => {
+    expect(deriveCoachDisplayName('coach@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('Coach@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('coach.mike@example.org')).toBe('Coach Mike');
+    expect(deriveCoachDisplayName('ppbf@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('admin@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('info.office@example.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('staff1@example.org')).toBe('Your coach');
   });
 
   it('falls back to something true rather than to an empty signature', () => {
@@ -336,6 +349,10 @@ describe('deriveStaffDisplayName', () => {
     ['4411-77@example.test', null],
     ['mike1987@example.test', 'Mike'],
     ['jane.okafor@example.test', 'Jane Okafor'],
+    ['ppbf@punxsyprominence.org', null],
+    ['Admin@punxsyprominence.org', null],
+    ['admin.jane@example.test', 'Jane'],
+    ['coach@example.test', null],
   ])('%s gives %s', (email, expected) => {
     expect(deriveStaffDisplayName(email)).toBe(expected);
     expect(deriveCoachDisplayName(email)).toBe(expected ? `Coach ${expected}` : 'Your coach');

@@ -47,8 +47,9 @@ export default function PrintableFightCard({ card, now = new Date() }: Printable
           {card.ringName ? <p className="print-card-ring">&ldquo;{card.ringName}&rdquo;</p> : null}
           <p className="print-card-programme">{card.programLabel}</p>
           {/* Law 3 -- the words carry it. A photocopier throws the tint away
-              and the corner still reads. */}
-          <p className="print-card-corner">{card.cornerLabel}</p>
+              and the corner still reads. Absent until a corner is chosen
+              (Jason 2026-10-19, Q3 "A: Hide until chosen (Rec.)"). */}
+          {card.corner !== 'none' ? <p className="print-card-corner">{card.cornerLabel}</p> : null}
         </div>
       </div>
 
