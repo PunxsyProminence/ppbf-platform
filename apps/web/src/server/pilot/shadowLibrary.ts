@@ -1612,6 +1612,25 @@ function mergeRankedPaths(
 // keeps one body (and so one retrieval-organization predicate) on purpose:
 // platformLibraryWriteScope.convention.test.ts reads this function to prove it
 // still admits the platform baseline.
+// Score gap (research GPU-RETRIEVAL-BENCHMARK-2026-10-18, SEPARATOR-RESULT):
+// the top-1 cosine minus the mean of the top-10 cosines. A real answer tends
+// to stand out from the rest; on a question the Library cannot answer the top
+// ten look equally weak. Logged only, to calibrate a later gate; with fewer
+// than ten candidates the mean is over those there are, and the candidate
+// count is logged so a re-fit can tell them apart.
+const SCORE_GAP_TOP_K = 10;
+
+interface ShadowLibraryScoreGap {
+  gap: number;
+  top1: number;
+  candidateCount: number;
+}
+
+function scoreGapOf(topScores: number[], candidateCount: number): ShadowLibraryScoreGap {
+  const mean = topScores.reduce((sum, score) => sum + score, 0) / topScores.length;
+  return { gap: topScores[0] - mean, top1: topScores[0], candidateCount };
+}
+
 export async function searchShadowLibrary(
   input: ShadowLibrarySearchInput,
   detail?: ShadowLibrarySearchDetail,
@@ -1663,6 +1682,7 @@ export async function searchShadowLibrary(
     relevant: ShadowLibrarySearchResult[];
     nearest: ShadowLibrarySearchResult[];
     embeddingModel: string;
+    scoreGap: ShadowLibraryScoreGap;
   } | null = null;
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
@@ -1679,6 +1699,9 @@ export async function searchShadowLibrary(
       let candidateCount = 0;
       let afterChunkId = '';
       let ranked: ShadowLibrarySearchResult[] = [];
+      // The raw top cosines of every candidate, below the floor too, for the
+      // score-gap telemetry only. Nothing here changes what is returned.
+      let gapScores: number[] = [];
       for (;;) {
         const batch = await query<ShadowLibrarySearchResult & { embedding: unknown }>(
           `select
@@ -1730,7 +1753,7 @@ export async function searchShadowLibrary(
           ],
         );
         candidateCount += batch.length;
-        const scored = batch
+        const allScored = batch
           .map(({ embedding, ...candidate }) => ({
             ...candidate,
             // An embedding that is not an array of finite numbers scores 0
@@ -1738,11 +1761,16 @@ export async function searchShadowLibrary(
             // a string "1" is not read as the number 1.
             score: isNumericVector(embedding) ? cosineSimilarity(queryEmbedding, embedding) : 0,
             match_mode: 'semantic' as const,
-          }))
-          // Below the floor, "closest" is noise, not relevance. It is dropped,
-          // and it does NOT fall back to loose keywords: that fallback is how a
-          // nonsense question used to get an unrelated passage.
-          .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
+          }));
+        // A non-finite cosine (overflowing components) counts as 0, as a bad
+        // vector does, so one row cannot turn the logged gap into NaN.
+        gapScores = [...gapScores, ...allScored.map((candidate) => (Number.isFinite(candidate.score) ? candidate.score : 0))]
+          .sort((a, b) => b - a)
+          .slice(0, SCORE_GAP_TOP_K);
+        // Below the floor, "closest" is noise, not relevance. It is dropped,
+        // and it does NOT fall back to loose keywords: that fallback is how a
+        // nonsense question used to get an unrelated passage.
+        const scored = allScored.filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
         ranked = [...ranked, ...scored]
           // chunk_id last, so the order does not depend on which batch a tie arrived in.
           .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal
@@ -1761,6 +1789,7 @@ export async function searchShadowLibrary(
           relevant: ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR),
           nearest: ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR),
           embeddingModel: currentEmbeddingModel,
+          scoreGap: scoreGapOf(gapScores, candidateCount),
         };
       }
     }
@@ -1862,6 +1891,11 @@ export async function searchShadowLibrary(
         unindexed_count: relevant.filter((item) => item.match_mode === 'keyword').length,
         term_count: terms.length,
         search_mode: 'semantic',
+        score_gap: semantic.scoreGap.gap,
+        top1_score: semantic.scoreGap.top1,
+        gap_candidate_count: semantic.scoreGap.candidateCount,
+        // Whether the current cosine bar alone delivered evidence.
+        bar_delivered: semantic.relevant.length > 0,
       },
     });
     if (detail) {
