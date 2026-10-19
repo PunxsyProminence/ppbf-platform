@@ -2,7 +2,9 @@
 // Connects recommendation outcomes → Growth Metrics → SHADOW Library → Scout Reports.
 // This is how SHADOW improves over time: each interaction informs future advice.
 
-import { query, queryOne, sanitizedSqlState } from './db';
+import type { PoolClient } from 'pg';
+
+import { query, queryOne, sanitizedSqlState, withTransaction } from './db';
 import type { PilotRole } from './contracts';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { upsertRememberedFact } from './shadowUserProfile';
@@ -42,6 +44,13 @@ export interface LearningLoopResult {
   factsExtracted: number;
   humanReviewRequired: boolean;
   actions: string[];
+  // Every effect that applied to this signal is done, on this attempt or an
+  // earlier one. False is retryable: the effects that must not happen twice
+  // (fact counts, the topic's flag count) are marked on the feedback row in
+  // the same transaction as the write, so a retry skips them, and the rest
+  // are safe to repeat (upserts keyed by the feedback or its message, or a
+  // style update that only fills an unset value).
+  complete: boolean;
 }
 
 // ─── Main Learning Loop ───────────────────────────────────────────────────────
@@ -71,47 +80,192 @@ export async function processLearningSignal(
       factsExtracted: 0,
       humanReviewRequired: true,
       actions,
+      complete: false,
     };
+  }
+
+  if (signal.verificationState !== 'human_reviewed') {
+    return projectClientSignal(signal, actions);
   }
 
   const effectivenessScore = outcomeToScore(signal.outcome);
   const outcome = outcomeToCategory(signal.outcome);
   const metricsRecorded = await recordMetrics(signal, outcome, effectivenessScore, actions);
 
-  if (signal.verificationState !== 'human_reviewed') {
-    const libraryFlagged = await queueClientSignalForReview(signal, actions);
-    await safeLogLearningEvent(signal, effectivenessScore, actions);
-    return {
-      profileUpdated: false,
-      metricsRecorded,
-      libraryFlagged,
-      factsExtracted: 0,
-      humanReviewRequired: true,
-      actions,
-    };
-  }
-
   const unlockState = await loadUnlockState(signal, actions);
   const positiveResult = await handlePositiveOutcome(signal, actions, unlockState);
-  const libraryFlagged = await handleNegativeOutcome(signal, actions, unlockState);
-  await queueLibraryChangeForReview(
+  const negativeResult = await handleNegativeOutcome(signal, actions, unlockState);
+  const proposalOk = await queueLibraryChangeForReview(
     metricsRecorded,
     signal,
     effectivenessScore,
     actions,
     unlockState,
   );
-  await maybeUpdateCommunicationStyle(signal, actions);
-  await safeLogLearningEvent(signal, effectivenessScore, actions);
+  const styleOk = await maybeUpdateCommunicationStyle(signal, actions);
+  const logged = await safeLogLearningEvent(signal, effectivenessScore, actions);
+
+  // Which effects apply depends on the unlock state, so an unreadable one is
+  // a failure to retry, not a reason to skip them.
+  const everyEffectDone = metricsRecorded
+    && unlockState !== null
+    && positiveResult.ok
+    && negativeResult.ok
+    && proposalOk
+    && styleOk
+    && logged;
+  const complete = everyEffectDone && await markLearningComplete(signal);
 
   return {
     profileUpdated: positiveResult.profileUpdated,
     metricsRecorded,
-    libraryFlagged,
+    libraryFlagged: negativeResult.flagged,
     factsExtracted: positiveResult.factsExtracted,
     humanReviewRequired: true,
     actions,
+    complete,
   };
+}
+
+/**
+ * A durable client signal -- also the path a pending EDIT takes (editable
+ * until reviewed, owner decision 2026-07-31). Its effectiveness row, its
+ * topic's flag and its learning log follow the feedback row's CURRENT value,
+ * read under the row's lock and written in that one transaction: two quick
+ * submissions each carry the value their own upsert returned, so the later
+ * projection could follow the earlier tap. Every write is keyed by the
+ * feedback id, so an edit corrects the projections rather than adding a
+ * second observation, and a failure leaves none of them half-written.
+ */
+async function projectClientSignal(signal: LearningSignal, actions: string[]): Promise<LearningLoopResult> {
+  let projected = false;
+  let flagged = false;
+  try {
+    await withTransaction(async (client) => {
+      const feedback = await lockFeedback(client, signal);
+      if (!feedback.pendingReview) {
+        // Reviewed feedback is frozen; the approval path owns its projections.
+        actions.push('Feedback already reviewed; nothing re-projected');
+        return;
+      }
+      const current: LearningSignal = { ...signal, outcome: feedback.outcome, userNote: feedback.comment ?? undefined };
+      const score = outcomeToScore(current.outcome);
+      const category = outcomeToCategory(current.outcome);
+      await recordRecommendationEffectiveness(effectivenessFor(current, category, score), client);
+      actions.push(`Effectiveness recorded: ${category} (${score})`);
+      flagged = await projectClientFlag(client, current, feedback, actions);
+      await logLearningEvent(current, score, actions, client);
+      projected = true;
+    });
+  } catch (error) {
+    console.error('SHADOW client feedback projection failed', {
+      organizationId: signal.organizationId,
+      feedbackId: signal.feedbackId,
+      errorClass: error instanceof Error ? error.constructor?.name : typeof error,
+    });
+    actions.push('Client feedback projection failed; resubmitting the rating retries it');
+    return {
+      profileUpdated: false,
+      metricsRecorded: false,
+      libraryFlagged: false,
+      factsExtracted: 0,
+      humanReviewRequired: true,
+      actions,
+      complete: false,
+    };
+  }
+  return {
+    profileUpdated: false,
+    metricsRecorded: projected,
+    libraryFlagged: flagged,
+    factsExtracted: 0,
+    humanReviewRequired: true,
+    actions,
+    complete: true,
+  };
+}
+
+// ─── Once-only effects ──────────────────────────────────────────────────────
+//
+// pilot.shadow_feedback.learning_effects_done records the effects of one
+// feedback event that must not happen twice (lane L46; the
+// shadow-learning-effects migration). Each is written in the SAME transaction
+// as the effect it records, under a lock on the feedback row, so a retry, a
+// pending edit or the approval path finds the mark and does not repeat it.
+
+type LearningEffect = 'library_flag' | 'facts' | 'complete';
+
+interface LockedFeedback {
+  done: LearningEffect[];
+  // The row's CURRENT judgment, read under the lock. Two quick submissions
+  // each carry the value their own upsert returned, so the later projection
+  // could follow the earlier tap; this is what the row says now.
+  outcome: OutcomeSignal;
+  comment: string | null;
+  pendingReview: boolean;
+}
+
+async function lockFeedback(client: PoolClient, signal: LearningSignal): Promise<LockedFeedback> {
+  const { rows } = await client.query<{
+    learning_effects_done: LearningEffect[];
+    outcome_signal: OutcomeSignal;
+    comment: string | null;
+    human_review_required: boolean;
+  }>(
+    `SELECT learning_effects_done, outcome_signal, comment, human_review_required
+     FROM pilot.shadow_feedback
+     WHERE feedback_id = $1 AND organization_id = $2
+     FOR UPDATE`,
+    [signal.feedbackId, signal.organizationId],
+  );
+  if (!rows[0]) {
+    throw new Error('SHADOW_FEEDBACK_NOT_FOUND');
+  }
+  return {
+    done: rows[0].learning_effects_done ?? [],
+    outcome: rows[0].outcome_signal,
+    comment: rows[0].comment,
+    pendingReview: rows[0].human_review_required,
+  };
+}
+
+async function setFeedbackEffect(
+  client: PoolClient,
+  signal: LearningSignal,
+  effect: LearningEffect,
+  done: boolean,
+): Promise<void> {
+  await client.query(
+    done
+      ? `UPDATE pilot.shadow_feedback
+         SET learning_effects_done = array_append(learning_effects_done, $3::text)
+         WHERE feedback_id = $1 AND organization_id = $2
+           AND NOT ($3::text = ANY (learning_effects_done))`
+      : `UPDATE pilot.shadow_feedback
+         SET learning_effects_done = array_remove(learning_effects_done, $3::text)
+         WHERE feedback_id = $1 AND organization_id = $2`,
+    [signal.feedbackId, signal.organizationId, effect],
+  );
+}
+
+async function markLearningComplete(signal: LearningSignal): Promise<boolean> {
+  try {
+    await query(
+      `UPDATE pilot.shadow_feedback
+       SET learning_effects_done = array_append(learning_effects_done, 'complete')
+       WHERE feedback_id = $1 AND organization_id = $2
+         AND NOT ('complete' = ANY (learning_effects_done))`,
+      [signal.feedbackId, signal.organizationId],
+    );
+    return true;
+  } catch (error) {
+    console.error('SHADOW learning completion not recorded', {
+      organizationId: signal.organizationId,
+      feedbackId: signal.feedbackId,
+      errorClass: error instanceof Error ? error.constructor?.name : typeof error,
+    });
+    return false;
+  }
 }
 
 async function loadUnlockState(signal: LearningSignal, actions: string[]): Promise<ShadowUnlockState | null> {
@@ -130,9 +284,10 @@ async function safeLogLearningEvent(
   signal: LearningSignal,
   effectivenessScore: number | null,
   actions: string[],
-): Promise<void> {
+): Promise<boolean> {
   try {
     await logLearningEvent(signal, effectivenessScore, actions);
+    return true;
   } catch (error) {
     // Non-critical -- don't fail the whole loop. But this INSERT is the
     // ONLY durable record that the loop ran, what it decided, and why: a
@@ -148,6 +303,7 @@ async function safeLogLearningEvent(
       errorClass: error instanceof Error ? error.constructor?.name : typeof error,
       ...(code ? { code } : {}),
     });
+    return false;
   }
 }
 
@@ -158,17 +314,7 @@ async function recordMetrics(
   actions: string[],
 ): Promise<boolean> {
   try {
-    await recordRecommendationEffectiveness({
-      recommendationType: signal.sessionType,
-      organizationId: signal.organizationId,
-      userId: signal.userId,
-      feedbackId: signal.feedbackId,
-      recommendationId: signal.messageId,
-      outcome,
-      effectivenessScore,
-      verificationState: signal.verificationState,
-      humanReviewRequired: signal.verificationState !== 'human_reviewed',
-    });
+    await recordRecommendationEffectiveness(effectivenessFor(signal, outcome, effectivenessScore));
     actions.push(`Effectiveness recorded: ${outcome} (${effectivenessScore})`);
     return true;
   } catch {
@@ -177,30 +323,54 @@ async function recordMetrics(
   }
 }
 
+function effectivenessFor(
+  signal: LearningSignal,
+  outcome: 'improved' | 'neutral' | 'degraded' | 'unknown',
+  effectivenessScore: number,
+): Parameters<typeof recordRecommendationEffectiveness>[0] {
+  return {
+    recommendationType: signal.sessionType,
+    organizationId: signal.organizationId,
+    userId: signal.userId,
+    feedbackId: signal.feedbackId,
+    recommendationId: signal.messageId,
+    outcome,
+    effectivenessScore,
+    verificationState: signal.verificationState,
+    humanReviewRequired: signal.verificationState !== 'human_reviewed',
+  };
+}
+
 async function handlePositiveOutcome(
   signal: LearningSignal,
   actions: string[],
   unlockState: ShadowUnlockState | null,
-): Promise<{ profileUpdated: boolean; factsExtracted: number }> {
+): Promise<{ ok: boolean; profileUpdated: boolean; factsExtracted: number }> {
   if (!['thumbs_up', 'followed_advice', 'asked_followup'].includes(signal.outcome)) {
-    return { profileUpdated: false, factsExtracted: 0 };
+    return { ok: true, profileUpdated: false, factsExtracted: 0 };
   }
 
   if (!unlockState || !isFeatureEnabled(unlockState, 'strong_personalization')) {
     actions.push('Strong personalization remains locked (observation mode)');
-    return { profileUpdated: false, factsExtracted: 0 };
+    return { ok: true, profileUpdated: false, factsExtracted: 0 };
+  }
+
+  const facts = factsFromSignal(signal);
+  if (facts.length === 0) {
+    return { ok: true, profileUpdated: false, factsExtracted: 0 };
   }
 
   try {
-    const factsExtracted = await extractAndStoreFacts(signal);
-    if (factsExtracted > 0) {
-      actions.push(`Extracted ${factsExtracted} fact(s) from positive signal`);
-      return { profileUpdated: true, factsExtracted };
+    const stored = await storeFactsOnce(signal, facts);
+    if (!stored) {
+      actions.push('Facts from this feedback were already counted');
+      return { ok: true, profileUpdated: false, factsExtracted: 0 };
     }
-    return { profileUpdated: false, factsExtracted: 0 };
+    actions.push(`Extracted ${facts.length} fact(s) from positive signal`);
+    return { ok: true, profileUpdated: true, factsExtracted: facts.length };
   } catch {
     actions.push('Fact extraction failed');
-    return { profileUpdated: false, factsExtracted: 0 };
+    return { ok: false, profileUpdated: false, factsExtracted: 0 };
   }
 }
 
@@ -208,14 +378,17 @@ async function handleNegativeOutcome(
   signal: LearningSignal,
   actions: string[],
   unlockState: ShadowUnlockState | null,
-): Promise<boolean> {
+): Promise<{ ok: boolean; flagged: boolean }> {
   const baseNegative = ['thumbs_down', 'escalated_to_human'];
   const aggressiveNegative = ['ignored_advice', 'session_ended'];
   const shouldUseAggressiveMode = unlockState && isFeatureEnabled(unlockState, 'aggressive_research_generation');
   const negativeOutcomes = shouldUseAggressiveMode ? [...baseNegative, ...aggressiveNegative] : baseNegative;
 
   if (!negativeOutcomes.includes(signal.outcome)) {
-    return false;
+    // The approved judgment is not negative, so a pending flag this feedback
+    // still holds from an earlier thumbs-down must go before the topic is
+    // listed as a concern on its account.
+    return { ok: await withdrawLibraryFlag(signal, actions), flagged: false };
   }
 
   // Two separate failure domains, attributed separately: a single catch here
@@ -224,12 +397,15 @@ async function handleNegativeOutcome(
   // audit. The flag can succeed while the requirement fails, and the audit
   // trail must say which one actually broke.
   let flagged = false;
+  let ok = true;
   try {
-    await flagLibraryEntryForReview(signal);
-    actions.push(`Library entry flagged for review (topic: ${signal.topic})`);
+    actions.push(await flagLibraryEntryForReview(signal)
+      ? `Library entry flagged for review (topic: ${signal.topic})`
+      : `Library flag already counted for this feedback (topic: ${signal.topic})`);
     flagged = true;
   } catch {
     actions.push('Library review flag failed');
+    ok = false;
   }
 
   try {
@@ -237,9 +413,10 @@ async function handleNegativeOutcome(
     actions.push(`Research requirement created (#${researchRequirementId})`);
   } catch {
     actions.push('Research requirement creation failed');
+    ok = false;
   }
 
-  return flagged;
+  return { ok, flagged };
 }
 
 async function queueLibraryChangeForReview(
@@ -248,14 +425,16 @@ async function queueLibraryChangeForReview(
   effectivenessScore: number,
   actions: string[],
   unlockState: ShadowUnlockState | null,
-): Promise<void> {
+): Promise<boolean> {
   if (!metricsRecorded) {
-    return;
+    // Not attempted: the loop is already incomplete on metrics, and the retry
+    // that records them runs this.
+    return true;
   }
 
   if (!unlockState || !isFeatureEnabled(unlockState, 'auto_library_updates')) {
     actions.push('Library changes remain in observation mode');
-    return;
+    return true;
   }
 
   try {
@@ -263,8 +442,10 @@ async function queueLibraryChangeForReview(
     if (action) {
       actions.push(action);
     }
+    return true;
   } catch {
     actions.push('Library review queue update skipped');
+    return false;
   }
 }
 
@@ -288,61 +469,193 @@ const CLIENT_SIGNAL_FLAG_OUTCOMES: ReadonlySet<OutcomeSignal> = new Set<OutcomeS
   'escalated_to_human',
 ]);
 
-async function queueClientSignalForReview(
+async function projectClientFlag(
+  client: PoolClient,
   signal: LearningSignal,
+  feedback: LockedFeedback,
   actions: string[],
 ): Promise<boolean> {
   if (!CLIENT_SIGNAL_FLAG_OUTCOMES.has(signal.outcome)) {
     actions.push(`Client feedback recorded in metrics; no Library flag for ${signal.outcome}`);
+    // A pending thumbs-down edited to anything else no longer supports the
+    // flag it raised; left in place, the topic stayed a concern on the
+    // strength of a judgment its author had taken back.
+    if (await withdrawFlagLocked(client, signal, feedback)) {
+      actions.push(`Library flag withdrawn (topic: ${signal.topic}); this feedback is no longer negative`);
+    }
     return false;
   }
+  const added = await addFlagLocked(client, signal, feedback, () => client.query(
+    `INSERT INTO pilot.shadow_library_review_flags (
+       organization_id, account_id, feedback_id, topic, session_type,
+       outcome_signal, user_note, review_state, flagged_at, last_flagged_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
+     ON CONFLICT (organization_id, topic)
+     DO UPDATE SET
+       flag_count = pilot.shadow_library_review_flags.flag_count + 1,
+       account_id = EXCLUDED.account_id,
+       feedback_id = EXCLUDED.feedback_id,
+       session_type = EXCLUDED.session_type,
+       outcome_signal = EXCLUDED.outcome_signal,
+       user_note = EXCLUDED.user_note,
+       last_flagged_at = NOW(),
+       latest_outcome_signal = EXCLUDED.outcome_signal,
+       -- A fresh negative signal supersedes a pending praise proposal on
+       -- the topic: left in place, a 'promote' here would hide this flag
+       -- from the metrics route's concerned topics.
+       proposed_action = NULL,
+       review_state = 'pending'`,
+    [
+      signal.organizationId,
+      signal.userId,
+      signal.feedbackId,
+      signal.topic,
+      signal.sessionType,
+      signal.outcome,
+      signal.userNote ?? null,
+    ],
+  ), refreshNegativeFlag(client, signal, signal.outcome, signal.userNote ?? null));
+  actions.push(added
+    ? 'Client feedback queued for human review; no learning was promoted'
+    : 'Client feedback already counted on its topic flag; no learning was promoted');
+  return true;
+}
+
+/**
+ * Write the topic's flag row, adding this feedback to its flag_count at most
+ * once across every path (client flag, approval flag, Library proposal),
+ * retries and edits included. The count used to skip +1 only when the topic
+ * row's LATEST feedback was this one, so this feedback re-processed after
+ * another flag landed counted twice.
+ *
+ * Once counted, a repeat must not be a new observation: `write` is not run
+ * again, because it reopens the flag, replaces a pending proposal and moves
+ * last_flagged_at -- which put a flag a curator had resolved back on the
+ * concern list when its author resubmitted the same rating. `refresh` may
+ * correct what this feedback itself shows on a pending row (its note).
+ */
+async function addFlagLocked(
+  client: PoolClient,
+  signal: LearningSignal,
+  feedback: LockedFeedback,
+  write: () => Promise<unknown>,
+  refresh?: () => Promise<unknown>,
+): Promise<boolean> {
+  if (feedback.done.includes('library_flag')) {
+    await refresh?.();
+    return false;
+  }
+  await write();
+  await setFeedbackEffect(client, signal, 'library_flag', true);
+  return true;
+}
+
+async function addLibraryFlagOnce(
+  signal: LearningSignal,
+  write: (client: PoolClient) => Promise<unknown>,
+  refresh?: (client: PoolClient) => Promise<unknown>,
+): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const feedback = await lockFeedback(client, signal);
+    return addFlagLocked(client, signal, feedback, () => write(client), refresh && (() => refresh(client)));
+  });
+}
+
+/** This feedback's own note and outcome on a pending flag row that names it. */
+function refreshNegativeFlag(
+  client: PoolClient,
+  signal: LearningSignal,
+  outcome: OutcomeSignal,
+  note: string | null,
+): () => Promise<unknown> {
+  return () => client.query(
+    `UPDATE pilot.shadow_library_review_flags
+     SET user_note = $4, outcome_signal = $5, latest_outcome_signal = $5
+     WHERE organization_id = $1 AND topic = $2 AND feedback_id = $3
+       AND review_state = 'pending' AND proposed_action IS NULL`,
+    [signal.organizationId, signal.topic, signal.feedbackId, note, outcome],
+  );
+}
+
+/**
+ * Take this feedback's contribution back out of its topic's PENDING flag
+ * once the feedback is no longer negative. The count drops by one and, if the
+ * row names this feedback, its account and note go with it; a negative flag
+ * whose count was this feedback alone goes. A flag a reviewer has already
+ * resolved is left as judged, and a pending proposal whose count is one is a
+ * judgment of its own: in both, this feedback stays counted, so nothing that
+ * runs later can count it a second time.
+ */
+async function withdrawLibraryFlag(signal: LearningSignal, actions: string[]): Promise<boolean> {
   try {
-    await query(
-      `INSERT INTO pilot.shadow_library_review_flags (
-         organization_id, account_id, feedback_id, topic, session_type,
-         outcome_signal, user_note, review_state, flagged_at, last_flagged_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
-       ON CONFLICT (organization_id, topic)
-       DO UPDATE SET
-         flag_count = pilot.shadow_library_review_flags.flag_count
-           + CASE
-               WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
-               THEN 1
-               ELSE 0
-             END,
-         account_id = EXCLUDED.account_id,
-         feedback_id = EXCLUDED.feedback_id,
-         session_type = EXCLUDED.session_type,
-         outcome_signal = EXCLUDED.outcome_signal,
-         user_note = EXCLUDED.user_note,
-         last_flagged_at = NOW(),
-         latest_outcome_signal = EXCLUDED.outcome_signal,
-         -- A fresh negative signal supersedes a pending praise proposal on
-         -- the topic: left in place, a 'promote' here would hide this flag
-         -- from the metrics route's concerned topics.
-         proposed_action = NULL,
-         review_state = 'pending'`,
-      [
-        signal.organizationId,
-        signal.userId,
-        signal.feedbackId,
-        signal.topic,
-        signal.sessionType,
-        signal.outcome,
-        signal.userNote ?? null,
-      ],
-    );
-    actions.push('Client feedback queued for human review; no learning was promoted');
+    const withdrawn = await withTransaction(async (client) => (
+      withdrawFlagLocked(client, signal, await lockFeedback(client, signal))
+    ));
+    if (withdrawn) {
+      actions.push(`Library flag withdrawn (topic: ${signal.topic}); this feedback is no longer negative`);
+    }
     return true;
   } catch {
-    actions.push('Client feedback review queue unavailable');
+    actions.push('Library flag withdrawal failed');
     return false;
   }
 }
 
-async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: string[]): Promise<void> {
+async function withdrawFlagLocked(
+  client: PoolClient,
+  signal: LearningSignal,
+  feedback: LockedFeedback,
+): Promise<boolean> {
+  if (!feedback.done.includes('library_flag')) {
+    return false;
+  }
+  const { rows } = await client.query<{
+    flag_count: number;
+    feedback_id: string | number | null;
+    review_state: string;
+    proposed_action: string | null;
+  }>(
+    `SELECT flag_count, feedback_id, review_state, proposed_action
+     FROM pilot.shadow_library_review_flags
+     WHERE organization_id = $1 AND topic = $2
+     FOR UPDATE`,
+    [signal.organizationId, signal.topic],
+  );
+  const flag = rows[0];
+  if (flag && flag.review_state !== 'pending') {
+    return false;
+  }
+  if (flag) {
+    if (flag.flag_count <= 1 && flag.proposed_action !== null) {
+      return false;
+    }
+    if (flag.flag_count <= 1) {
+      // Every contribution is counted once and this one is in the count,
+      // so a count of one is this feedback's alone, whoever the row names.
+      await client.query(
+        `DELETE FROM pilot.shadow_library_review_flags
+         WHERE organization_id = $1 AND topic = $2`,
+        [signal.organizationId, signal.topic],
+      );
+    } else {
+      await client.query(
+        `UPDATE pilot.shadow_library_review_flags
+         SET flag_count = flag_count - 1,
+             account_id = CASE WHEN feedback_id = $3 THEN NULL ELSE account_id END,
+             user_note = CASE WHEN feedback_id = $3 THEN NULL ELSE user_note END,
+             feedback_id = CASE WHEN feedback_id = $3 THEN NULL ELSE feedback_id END
+         WHERE organization_id = $1 AND topic = $2`,
+        [signal.organizationId, signal.topic, signal.feedbackId],
+      );
+    }
+  }
+  await setFeedbackEffect(client, signal, 'library_flag', false);
+  return true;
+}
+
+async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: string[]): Promise<boolean> {
   if (signal.outcome !== 'thumbs_up') {
-    return;
+    return true;
   }
 
   try {
@@ -354,12 +667,14 @@ async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: st
     // anything a client chose to send.
     const responseText = signal.responseText ?? await loadDurableResponseText(signal);
     if (!responseText) {
-      return;
+      return true;
     }
     await inferCommunicationPreference({ ...signal, responseText });
     actions.push('Communication preference updated');
+    return true;
   } catch {
     actions.push('Style update skipped');
+    return false;
   }
 }
 
@@ -393,8 +708,10 @@ async function loadDurableResponseText(signal: LearningSignal): Promise<string |
  * observation rather than as an established preference, and only repetition
  * moves it. Nothing here writes a permanent statement about a person.
  */
-async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
-  const factsToStore: Array<{ key: string; value: string; confidence: number }> = [];
+type SignalFact = { key: string; value: string; confidence: number };
+
+function factsFromSignal(signal: LearningSignal): SignalFact[] {
+  const factsToStore: SignalFact[] = [];
 
   // Topic preference: user engaged positively with this topic
   if (signal.topic && signal.topic !== 'general') {
@@ -425,12 +742,27 @@ async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
     });
   }
 
-  // Store all extracted facts
-  for (const fact of factsToStore) {
-    await upsertRememberedFact(signal.userId, signal.organizationId, fact);
-  }
+  return factsToStore;
+}
 
-  return factsToStore.length;
+/**
+ * Count this feedback's observations once: all of them and the 'facts' mark
+ * commit together, so a failure part-way leaves none counted and a retry
+ * after a later failure finds the mark. Returns false when they were already
+ * counted.
+ */
+async function storeFactsOnce(signal: LearningSignal, facts: SignalFact[]): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const { done } = await lockFeedback(client, signal);
+    if (done.includes('facts')) {
+      return false;
+    }
+    for (const fact of facts) {
+      await upsertRememberedFact(signal.userId, signal.organizationId, fact, client);
+    }
+    await setFeedbackEffect(client, signal, 'facts', true);
+    return true;
+  });
 }
 
 // ─── Human-reviewed library change proposals ────────────────────────────────
@@ -444,7 +776,7 @@ async function queueLibraryEntryChangeForHumanReview(
       : effectivenessScore < 0.4
         ? 'demote'
         : 'retain';
-  await query(
+  const added = await addLibraryFlagOnce(signal, (client) => client.query(
     `INSERT INTO pilot.shadow_library_review_flags (
        organization_id, account_id, feedback_id, topic, session_type,
        outcome_signal, flag_count, review_state, proposed_action,
@@ -452,12 +784,7 @@ async function queueLibraryEntryChangeForHumanReview(
      ) VALUES ($1, $2, $3, $4, $5, $6, 1, 'pending', $7, NOW(), NOW())
      ON CONFLICT (organization_id, topic)
      DO UPDATE SET
-       flag_count = pilot.shadow_library_review_flags.flag_count
-         + CASE
-             WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
-             THEN 1
-             ELSE 0
-           END,
+       flag_count = pilot.shadow_library_review_flags.flag_count + 1,
        account_id = EXCLUDED.account_id,
        feedback_id = EXCLUDED.feedback_id,
        session_type = EXCLUDED.session_type,
@@ -480,14 +807,23 @@ async function queueLibraryEntryChangeForHumanReview(
       signal.outcome,
       proposedAction,
     ],
-  );
-  return `Library '${proposedAction}' proposal queued for human review`;
+  ), (client) => client.query(
+    // Already counted: the action this feedback's own pending row proposes
+    // follows the review, with nothing reopened or re-counted.
+    `UPDATE pilot.shadow_library_review_flags
+     SET proposed_action = $4
+     WHERE organization_id = $1 AND topic = $2 AND feedback_id = $3 AND review_state = 'pending'`,
+    [signal.organizationId, signal.topic, signal.feedbackId, proposedAction],
+  ));
+  return added
+    ? `Library '${proposedAction}' proposal queued for human review`
+    : `Library proposal already counted for this feedback (topic: ${signal.topic})`;
 }
 
 // ─── Library Flag ─────────────────────────────────────────────────────────────
 
-async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> {
-  await query(
+async function flagLibraryEntryForReview(signal: LearningSignal): Promise<boolean> {
+  return addLibraryFlagOnce(signal, (client) => client.query(
     `INSERT INTO pilot.shadow_library_review_flags (
        organization_id, account_id, topic, session_type,
        feedback_id, outcome_signal, user_note, review_state,
@@ -495,12 +831,7 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
      ON CONFLICT (organization_id, topic)
      DO UPDATE SET
-       flag_count = pilot.shadow_library_review_flags.flag_count
-         + CASE
-             WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
-             THEN 1
-             ELSE 0
-           END,
+       flag_count = pilot.shadow_library_review_flags.flag_count + 1,
        account_id = EXCLUDED.account_id,
        feedback_id = EXCLUDED.feedback_id,
        session_type = EXCLUDED.session_type,
@@ -519,7 +850,7 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
       signal.outcome,
       signal.userNote ?? null,
     ],
-  );
+  ), (client) => refreshNegativeFlag(client, signal, signal.outcome, signal.userNote ?? null)());
 }
 
 async function createResearchRequirementFromNegativeSignal(signal: LearningSignal): Promise<number> {
@@ -588,8 +919,10 @@ async function logLearningEvent(
   signal: LearningSignal,
   score: number | null,
   actions: string[],
+  transaction?: PoolClient,
 ): Promise<void> {
-  await query(
+  const write = (text: string, params: unknown[]) => (transaction ? transaction.query(text, params) : query(text, params));
+  await write(
     `INSERT INTO pilot.shadow_learning_events (
        organization_id, account_id, role, feedback_id, shadow_event_id, message_id,
        topic, session_type, outcome_signal, effectiveness_score,

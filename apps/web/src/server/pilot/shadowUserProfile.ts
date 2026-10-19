@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, queryOne, withTransaction } from './db';
 import type { PilotRole } from './contracts';
 
@@ -113,6 +115,11 @@ export async function upsertRememberedFact(
   accountId: string,
   organizationId: string,
   fact: Omit<RememberedFact, 'updatedAt' | 'observationCount' | 'firstObservedAt'>,
+  // A transaction the caller already holds. The learning loop passes one so a
+  // feedback event's observations commit together with the mark that says they
+  // were counted (shadow_feedback.learning_effects_done 'facts'); a retry then
+  // finds the mark and does not count them again.
+  transaction?: PoolClient,
 ): Promise<void> {
   // LOCKED READ. The whole array is written back below, so a plain read let a
   // memory correction (submitMemoryCorrection) that committed between this
@@ -120,7 +127,7 @@ export async function upsertRememberedFact(
   // learning-loop signal for ANY key, while the correction row said 'applied'
   // (reviewer finding, 2026-10-06, proven in shadowMemoryCorrection.pg.test.ts).
   // FOR UPDATE makes this wait for the correction and read what it left.
-  await withTransaction(async (client) => {
+  const upsert = async (client: PoolClient) => {
     const { rows } = await client.query<{ remembered_facts: RememberedFact[] }>(
       `SELECT remembered_facts FROM pilot.shadow_user_profiles
        WHERE account_id = $1 AND organization_id = $2
@@ -183,7 +190,8 @@ export async function upsertRememberedFact(
        WHERE account_id = $1 AND organization_id = $2`,
       [accountId, organizationId, JSON.stringify(pruned)],
     );
-  });
+  };
+  await (transaction ? upsert(transaction) : withTransaction(upsert));
 }
 
 /**

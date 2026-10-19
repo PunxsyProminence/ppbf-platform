@@ -11,7 +11,7 @@ import {
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   getShadowFeedbackSummary,
-  hasDurableHumanReviewedLearningEvent,
+  hasCompletedLearning,
   listShadowFeedback,
   normalizeShadowFeedbackId,
   recordShadowFeedback,
@@ -170,18 +170,19 @@ export async function POST(request: NextRequest) {
 
     let learningAccepted = false;
     let learningReason = correlation.reason;
-    if (!recordedFeedback.created) {
-      // A pending rating now absorbs the user's corrected values (owner
-      // decision 2026-07-31), so the pending case reports an update rather
-      // than pretending the resubmission was ignored. The review-flag queue
-      // reads the row at approval time, so the correction flows through
-      // without re-signaling learning here.
-      learningReason = recordedFeedback.humanReviewRequired
-        ? 'FEEDBACK_UPDATED_PENDING_REVIEW'
-        : 'FEEDBACK_ALREADY_RESOLVED';
+    // A pending rating absorbs the user's corrected values (owner decision
+    // 2026-07-31, editable until reviewed). Its projections -- the topic's
+    // review flag the concern list reads, the client effectiveness row and the
+    // learning log -- used to keep the first value, because this path skipped
+    // learning whenever the row existed. They are now re-projected from the
+    // row's CURRENT values, keyed by the feedback id, so an edit corrects them
+    // without counting as a second observation.
+    const pendingEdit = !recordedFeedback.created && recordedFeedback.humanReviewRequired;
+    if (!recordedFeedback.created && !recordedFeedback.humanReviewRequired) {
+      learningReason = 'FEEDBACK_ALREADY_RESOLVED';
     } else if (correlation.learningEligible && correlation.correlationId) {
       try {
-        await processLearningSignal({
+        const projected = await processLearningSignal({
           feedbackId,
           shadowEventId: correlation.shadowEventId,
           messageId: correlation.messageId ?? correlation.correlationId,
@@ -194,8 +195,14 @@ export async function POST(request: NextRequest) {
           userNote: recordedFeedback.comment ?? undefined,
           verificationState: 'durable_client',
         });
-        learningAccepted = true;
-        learningReason = 'HUMAN_REVIEW_REQUIRED';
+        // The rating itself is saved either way; an incomplete projection
+        // says so, and resubmitting the same rating repairs it.
+        learningAccepted = projected.complete;
+        learningReason = !projected.complete
+          ? 'LEARNING_RECORD_FAILED'
+          : pendingEdit
+            ? 'FEEDBACK_UPDATED_PENDING_REVIEW'
+            : 'HUMAN_REVIEW_REQUIRED';
       } catch (error) {
         // processLearningSignal already wraps every one of its own DB
         // writes in a local try/catch that swallows and records into
@@ -213,6 +220,8 @@ export async function POST(request: NextRequest) {
         });
         learningReason = 'LEARNING_RECORD_FAILED';
       }
+    } else if (pendingEdit) {
+      learningReason = 'FEEDBACK_UPDATED_PENDING_REVIEW';
     }
 
     const summary = await getShadowFeedbackSummary(principal.organizationId);
@@ -309,11 +318,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (reviewed.alreadyResolved) {
-      const alreadyDurable = await hasDurableHumanReviewedLearningEvent({
+      const alreadyComplete = await hasCompletedLearning({
         organizationId: reviewed.organizationId,
         feedbackId: reviewed.feedbackId,
       });
-      if (alreadyDurable) {
+      if (alreadyComplete) {
         return NextResponse.json({
           ok: true,
           decision: 'approve',
@@ -323,8 +332,9 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // A prior partial failure can be repaired safely because every downstream
-    // side effect is keyed by this durable feedback id.
+    // A prior partial failure is repaired safely: the effects that must not
+    // happen twice are marked on the feedback row with their write, and the
+    // rest are keyed by this durable feedback id.
     const learningResult = await processLearningSignal({
       feedbackId: reviewed.feedbackId,
       messageId: reviewed.messageId,
@@ -337,11 +347,10 @@ export async function PATCH(request: NextRequest) {
       userNote: reviewed.userNote ?? undefined,
       verificationState: 'human_reviewed',
     });
-    const durableLearning = await hasDurableHumanReviewedLearningEvent({
-      organizationId: reviewed.organizationId,
-      feedbackId: reviewed.feedbackId,
-    });
-    if (!durableLearning || !learningResult.metricsRecorded) {
+    // Complete means every effect that applied succeeded, the learning log
+    // included; the log alone used to pass while a fact, flag or research
+    // write beside it had failed.
+    if (!learningResult.complete) {
       return NextResponse.json({
         ok: false,
         decision: 'approve',
