@@ -262,6 +262,40 @@ describe('a plan tied to a class the coach runs', () => {
    "the floor-groups route may join your allowlist for the status check
    only"). No plan is made for one; a plan tied to one takes no groups and no
    placements. */
+describe('a plan tied to a class names a class of this gym (#1550 follow-up)', () => {
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCreatePlan.mockResolvedValue({ plan_id: 'p-new', plan_on: '2026-08-16' });
+  });
+
+  test('an unknown class id, or another gym\'s, is a hidden 404 and no plan is written', async () => {
+    mockGetClass.mockResolvedValue(null);
+
+    const response = await POST(postRequest({ action: 'create_plan', plan_on: '2026-08-16', class_id: 'cls-elsewhere' }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
+    expect(mockGetClass).toHaveBeenCalledWith('org-1', 'cls-elsewhere');
+    expect(mockCreatePlan).not.toHaveBeenCalled();
+  });
+
+  test('a class of this gym that another coach runs can be planned for (OD-2026-10-11-007)', async () => {
+    mockGetClass.mockResolvedValue({
+      class_id: 'cls-theirs', coach_account_id: 'acct-other', scheduled_by_account_id: 'acct-other', covering_coach_account_id: null, status: 'open',
+    });
+
+    const response = await POST(postRequest({ action: 'create_plan', plan_on: '2026-08-16', class_id: 'cls-theirs' }));
+
+    expect(response.status).toBe(200);
+    expect(mockCreatePlan).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1', classId: 'cls-theirs' }));
+  });
+
+  test('a plan with no class reads no class', async () => {
+    expect((await POST(postRequest({ action: 'create_plan', plan_on: '2026-08-16' }))).status).toBe(200);
+    expect(mockGetClass).not.toHaveBeenCalled();
+  });
+});
+
 describe('a cancelled class', () => {
   const cancelledPlan = { plan_id: 'p-gone', plan_on: '2026-08-16', class_id: 'cls-gone' };
   const cancelledClass = { class_id: 'cls-gone', coach_account_id: 'acct-1', scheduled_by_account_id: 'acct-1', covering_coach_account_id: null, status: 'cancelled' };
