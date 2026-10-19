@@ -72,7 +72,6 @@ interface AssignmentCompletion {
   completion_id: string;
   assignment_id: string;
   reps_completed?: number | null;
-  notes: string;
   verification_status: string;
   completed_at: string;
   verified_at?: string | null;
