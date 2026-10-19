@@ -50,6 +50,27 @@ export const KEYWORD_HIGH_CONFIDENCE = 0.8;
 // (CL-C13), so memory holds one batch of vectors at a time, not the Library.
 export const SEMANTIC_CANDIDATE_BATCH_SIZE = 500;
 
+// Semantic results keep at most this many passages from any one source
+// (F-159). One long source used to fill the list: for "what to do right away
+// if I think a boxer has a concussion" a single source held 5 of the top 6 and
+// the CISG 2022 removal-from-play passage ranked 13th, outside the 8 delivered.
+// 1, not 2, from the cached benchmark (GPU-RETRIEVAL-BENCHMARK-2026-10-18,
+// AI-JUDGED key): top-1 and hit@5 tie at 1, 2 and 3, but only 1 brings CISG
+// into the 8 (rank 7; at 2 it is 10th). Best passage first within a source, so
+// the top result never changes.
+export const SEMANTIC_MAX_CHUNKS_PER_SOURCE = 1;
+
+// Keeps the first `cap` passages of each source in an already-sorted list.
+function capPerSource(sorted: ShadowLibrarySearchResult[], cap: number): ShadowLibrarySearchResult[] {
+  const kept = new Map<string, number>();
+  return sorted.filter((item) => {
+    const count = kept.get(item.source_id) ?? 0;
+    if (count >= cap) return false;
+    kept.set(item.source_id, count + 1);
+    return true;
+  });
+}
+
 function isNumericVector(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((element) => typeof element === 'number' && Number.isFinite(element));
 }
@@ -1771,10 +1792,15 @@ export async function searchShadowLibrary(
         // and it does NOT fall back to loose keywords: that fallback is how a
         // nonsense question used to get an unrelated passage.
         const scored = allScored.filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
-        ranked = [...ranked, ...scored]
+        // Capped per source before the limit, so a source's extra passages give
+        // way to other sources instead of filling the list. Only rows already
+        // here are dropped: it never brings in a row the query or the floor
+        // did not admit. Exact across batches, since a passage dropped by the
+        // cap or the limit cannot climb back.
+        ranked = capPerSource([...ranked, ...scored]
           // chunk_id last, so the order does not depend on which batch a tie arrived in.
           .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal
-            || (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0))
+            || (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0)), SEMANTIC_MAX_CHUNKS_PER_SOURCE)
           .slice(0, limit);
         if (batch.length < SEMANTIC_CANDIDATE_BATCH_SIZE) break;
         afterChunkId = batch[batch.length - 1].chunk_id;
