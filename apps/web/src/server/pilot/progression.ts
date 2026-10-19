@@ -173,6 +173,34 @@ export interface AssignmentCompletion {
   verified_at: string | null;
 }
 
+/* A LOGGED ENTRY AS A GUARDIAN RECEIVES IT. `notes` is free text written by
+   whoever logged the entry -- the athlete, or a coach recording and verifying
+   it -- and nothing on a family screen draws it. The owner's rule for families
+   is display facts only, never staff notes, so a guardian is sent the entry
+   without it, from named fields (never a spread, like toFamilyAssignments): a
+   column added to the row later reaches a family only when someone decides it
+   should. */
+export type FamilyAssignmentCompletion = Omit<AssignmentCompletion, 'notes'>;
+
+/* WHO IS SENT THE WHOLE ENTRY. Named, like the assignments route's isStaff:
+   the athlete (their own log) and staff. Any other role a gate admits -- a
+   linked guardian today, any role added later -- gets toFamilyCompletion, so
+   a widened gate fails toward the projection. */
+export function readsFullCompletions(role: string): boolean {
+  return role === 'athlete' || role === 'coach' || role === 'admin' || role === 'organization_admin';
+}
+
+export function toFamilyCompletion(row: AssignmentCompletion): FamilyAssignmentCompletion {
+  return {
+    completion_id: row.completion_id,
+    assignment_id: row.assignment_id,
+    completed_at: row.completed_at,
+    reps_completed: row.reps_completed,
+    verification_status: row.verification_status,
+    verified_at: row.verified_at,
+  };
+}
+
 export async function createProgressionGap(params: {
   organizationId: string;
   athleteId: string;

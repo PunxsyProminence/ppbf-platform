@@ -294,6 +294,28 @@ export default function WrestlingLeagueManagementPage() {
     }
   };
 
+  // Re-adding an inactive member is the same POST as adding them: the server
+  // turns their row back to 'active' and reruns every check a first add runs.
+  // A refusal re-reads the season, so a member another screen already put back
+  // leaves the Inactive list instead of offering a press that cannot succeed.
+  const handleRosterReadd = async (entry: RosterRow) => {
+    if (!selectedSeasonId) return;
+    const seasonId = selectedSeasonId;
+    setBusy(true);
+    try {
+      await postJson('/api/pilot/operations/wrestling-league/roster', {
+        season_id: seasonId,
+        athlete_id: entry.athlete_id,
+      });
+      await reloadAfterWrite(seasonId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to re-add the athlete.');
+      await reloadDetail(seasonId).catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Withdrawal shares the roster PATCH ({ entry_id, status: 'inactive' }). The
   // entry stays on the roster, marked inactive, rather than being deleted.
   const handleRosterInactive = async (entry: RosterRow) => {
@@ -334,8 +356,9 @@ export default function WrestlingLeagueManagementPage() {
   const detailKnown = detail.seasonId === selectedSeasonId && !detail.failed;
   const activeRoster = detail.roster.filter((entry) => entry.status === 'active');
   const inactiveRoster = detail.roster.filter((entry) => entry.status !== 'active');
-  // The picker leaves out anyone already on this season's roster, active or inactive: the server
-  // refuses both today (a roster entry is unique per season), so offering them would only fail.
+  // The picker leaves out anyone already on this season's roster, active or inactive: a roster
+  // entry is unique per season, so an active member cannot be added twice, and an inactive one is
+  // put back with Re-add on their own row.
   const rostered = new Set(detailKnown ? detail.roster.map((entry) => entry.athlete_id) : []);
   const pickableAthletes = athletes.filter((athlete) => !rostered.has(athlete.athlete_id));
   // A choice made under another season is dropped once it is no longer offered here, so the button
@@ -521,7 +544,14 @@ export default function WrestlingLeagueManagementPage() {
                                 <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-labelledby="roster-inactive-heading">
                                   {inactiveRoster.map((entry) => (
                                     <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                                      {entry.athlete_name} · inactive
+                                      <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
+                                        {entry.athlete_name} · inactive
+                                        <button type="button" className="btn btn--ghost" disabled={busy}
+                                          aria-label={`Re-add ${entry.athlete_name}`}
+                                          onClick={() => void handleRosterReadd(entry)}>
+                                          Re-add
+                                        </button>
+                                      </span>
                                     </li>
                                   ))}
                                 </ul>

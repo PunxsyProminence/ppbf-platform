@@ -10738,7 +10738,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists completions for assignment_id (route.ts:19-41); reach check on the assignment own athlete at route.ts:34, refusal returns 404.",
+    "notes": "Lists completions for assignment_id; reach check on the assignment's own athlete, refusal returns 404. Roles outside readsFullCompletions (athlete and staff; progression.ts) -- a linked parent today -- are sent toFamilyCompletion: named fields, no free-text notes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
