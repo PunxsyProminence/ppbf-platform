@@ -197,11 +197,56 @@ describe('markShadowDisclosure leaves the answer alone', () => {
     expect(marked).toEqual({ valid: true, highRisk: true, topic: 'none', classification: SHADOW_DISCLOSURE_CLASSIFICATION });
   });
 
-  test('an already high-risk or withheld result is returned unchanged', () => {
-    const message = 'My dad hits me and now I have a headache';
+  // The emergency line is main's emergency handling, kept for a disclosure
+  // too (OD-2026-10-10-006; Overwatch, F-093 Q1). The escalation still files.
+  test.each([
+    'My dad hits me and now I have a headache',
+    'my dad hits me and now I cant breathe',
+  ])('"%s" keeps the emergency return unchanged', (message) => {
     const base = validateShadowRequest(message, 'athlete', 'org');
-    expect(base.highRisk).toBe(true);
+    expect(base.classification).toBe('urgent_personal_symptom');
     expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'athlete'))).toBe(base);
+  });
+
+  test('an allowed high-risk result is returned unchanged', () => {
+    const base = { valid: true, highRisk: true, topic: 'concussion', classification: 'concussion' } as const;
+    const message = 'My dad hits me and it hurts';
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'athlete'))).toBe(base);
+  });
+});
+
+// F-093: a disclosure that also trips the pain or medical request filter was
+// withheld as a medical question. SHADOW still answers a disclosure
+// (OD-2026-10-10-007); only the emergency return stays ahead of it.
+describe('a disclosure wins over the non-emergency medical withhold', () => {
+  test.each([
+    'my coach hits me and it hurts',
+    'My dad hits me and it hurts',
+    'Coach hit me on purpose and my arm is sore',
+    'my stepdad hits me and my ribs are bruised',
+    'my coach touched me and it hurt',
+    'my coach punches me after practice, do I have a fracture?',
+    'my coach hits me, should I take medicine for the pain',
+  ])('"%s" is answered on the disclosure path', (message) => {
+    const base = validateShadowRequest(message, 'athlete', 'org');
+    expect(base.valid).toBe(false);
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    const marked = markShadowDisclosure(base, disclosure);
+    expect(marked).toEqual({ valid: true, highRisk: true, topic: base.topic, classification: SHADOW_DISCLOSURE_CLASSIFICATION });
+  });
+
+  test('a pain report that is no disclosure is still withheld as main had it', () => {
+    const message = 'My legs are sore after roadwork';
+    const base = validateShadowRequest(message, 'athlete', 'org');
+    expect(base.classification).toBe('personal_health_concern');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'athlete'))).toBe(base);
+  });
+
+  test('a parent or coach sending the same words is unchanged (athletes only, as F-076)', () => {
+    const message = 'my coach hits me and it hurts';
+    const base = validateShadowRequest(message, 'parent', 'org');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'))).toBe(base);
   });
 
   test('no disclosure, no change', () => {

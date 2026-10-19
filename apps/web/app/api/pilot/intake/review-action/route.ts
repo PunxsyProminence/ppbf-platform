@@ -5,6 +5,7 @@ import { createOrUpdateAthleteAccountWithClient } from '@/src/server/pilot/auth'
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { isCompetitionGatedWaiverType, lockCompetitionSafety } from '@/src/server/pilot/competitionSafetyLock';
 import { withTransaction } from '@/src/server/pilot/db';
+import { MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertShadowAuthority,
@@ -432,6 +433,17 @@ export async function POST(request: NextRequest) { // NOSONAR
     const validatedWaiverStatus = promotion.waiver
       ? requireWaiverStatus(promotion.waiver.status, 'promotion.waiver.status')
       : undefined;
+    // OD-2026-10-07-009 ("Remove it, send to consent screen"): photo and
+    // media consent is recorded guardian by guardian, or by an adult athlete
+    // for themselves (OD-2026-10-08-015), never as a promoted register row.
+    // domain-upsert refuses it; this is the second register writer. A row
+    // filed here had no guardian, and with signed_by_role 'athlete_self' it
+    // would read as the adult's own latest decision.
+    if (promotion.waiver && String(promotion.waiver.waiver_type ?? '').trim().toLowerCase() === MEDIA_CONSENT_WAIVER_TYPE) {
+      throw new Error(
+        'Unsupported promotion.waiver.waiver_type: photo and media consent is recorded guardian by guardian on the Guardian Media Consent desk (/admin/athlete-consent), or by an adult athlete for themselves, not by intake promotion',
+      );
+    }
 
     // Same reasoning for every other refusal this promotion can raise: each is
     // checked here, before upsertAthlete, so a refused promotion writes no

@@ -31,6 +31,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
     checkGuardianMediaConsent: jest.fn(),
+    readAdultOwnMediaConsent: jest.fn(async () => null),
   };
 });
 jest.mock('@/src/server/pilot/videoDestination', () => ({

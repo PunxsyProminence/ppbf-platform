@@ -7,7 +7,7 @@ import { ConflictError } from '@/src/server/pilot/errors';
 import {
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
-  assertNotAdultForNewPublication,
+  assertNewPublicationConsentPath,
   GuardianConsentMissingError,
   type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
@@ -157,10 +157,13 @@ export async function POST(request: NextRequest) {
       // paperwork; assertGuardianMediaConsent still refuses absence.
       // An adult's footage is not published on a guardian's consent
       // (OD-2026-10-08-015). Checked first: no guardian paperwork can cure
-      // it, so it is the reason to give. Again inside the claim below.
-      await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
-      await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
-      await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+      // it, so it is the reason to give. Again inside the claim below. An
+      // adult's own current video consent is the whole of it: no guardian
+      // check runs for them (assertNewPublicationConsentPath).
+      if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id) === 'guardian_consent') {
+        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+      }
 
       libraryId = await publishToResearchLibrary({
         organizationId: principal.organizationId,
@@ -176,9 +179,12 @@ export async function POST(request: NextRequest) {
           // is then read by the check that refuses photo-only and withdrawn,
           // rather than only by the signed-or-not check that cannot tell
           // photo-only from video (review finding on this change).
-          await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
-          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
-          await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
+          // The age gate first (it takes the consent-set lock shared, the
+          // first lock the guardian reads take too), then a minor's checks.
+          if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id, client) === 'guardian_consent') {
+            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+          }
           // Inside the claim: a clip tag added after the draft was made still
           // stops the publish (tagged clips are staff only, owner 2026-10-03).
           await assertVideoHasNoLiveClipTags(principal.organizationId, publication.video_session_id, client);
