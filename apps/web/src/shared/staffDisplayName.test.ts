@@ -45,6 +45,16 @@ describe('normalizeStaffDisplayName', () => {
     });
   });
 
+  test('refuses invisible formatting and lone surrogates, keeps joiners', () => {
+    for (const raw of ['Mike\u202eNeale', 'Mike\u200bNeale', 'Mike\ud800']) {
+      expect(normalizeStaffDisplayName(raw)).toEqual({
+        ok: false,
+        error: 'A display name cannot contain invisible formatting characters.',
+      });
+    }
+    expect(normalizeStaffDisplayName('\u0915\u094d\u200d\u0937').ok).toBe(true);
+  });
+
   test('refuses anything that is not text', () => {
     expect(normalizeStaffDisplayName(42)).toEqual({ ok: false, error: 'A display name must be text.' });
     expect(normalizeStaffDisplayName({ name: 'Mike' })).toEqual({ ok: false, error: 'A display name must be text.' });

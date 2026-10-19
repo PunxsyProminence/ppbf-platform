@@ -37,6 +37,12 @@ export function normalizeStaffDisplayName(raw: unknown): StaffDisplayNameInput {
   const name = raw.normalize('NFC').replace(/\s+/gu, ' ').trim();
   if (!name) return { ok: true, name: null };
   if (/\p{Cc}/u.test(name)) return { ok: false, error: 'A display name cannot contain control characters.' };
+  // Invisible formatting (a right-to-left override, a zero-width space) would
+  // let a name read differently from what is stored; a lone surrogate is not
+  // text at all. Joiners stay: some scripts need them inside a word.
+  if (/[\p{Cf}\p{Cs}]/u.test(name.replace(/[\u200c\u200d]/gu, ''))) {
+    return { ok: false, error: 'A display name cannot contain invisible formatting characters.' };
+  }
   if ([...name].length > STAFF_DISPLAY_NAME_MAX) {
     return { ok: false, error: `A display name is at most ${STAFF_DISPLAY_NAME_MAX} characters.` };
   }

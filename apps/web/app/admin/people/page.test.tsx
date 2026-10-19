@@ -18,8 +18,14 @@ jest.mock('@/components/RoleSessionGate', () => ({
   default: ({ children }: { readonly children: ReactNode }) => children,
 }));
 
+// A Microsoft session unless a test says otherwise: name edits are Microsoft-only.
+let mockSessionAuthProvider: 'microsoft' | 'ppbf_local' = 'microsoft';
+function mockSession() {
+  return { loading: false, role: 'organization_admin', accountId: 'admin-1', authProvider: mockSessionAuthProvider };
+}
+
 jest.mock('@/components/usePilotSession', () => ({
-  usePilotSession: () => ({ loading: false, role: 'organization_admin', accountId: 'admin-1' }),
+  usePilotSession: () => mockSession(),
   isOrganizationAdminSessionRole: () => true,
 }));
 
@@ -147,6 +153,7 @@ const ROSTER = [
 
 afterEach(() => {
   global.fetch = originalFetch;
+  mockSessionAuthProvider = 'microsoft';
 });
 
 describe("the console's header names the gym, never its id (F-008)", () => {
@@ -1155,17 +1162,17 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
 
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Set Name' }));
-    fireEvent.change(screen.getByLabelText(/Their name/), { target: { value: '  Mike   Neale ' } });
+    fireEvent.change(screen.getByLabelText(/Name for coach@example.com/), { target: { value: '  Jordan   Smith ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Name' }));
 
-    await waitFor(() => expect(patched).toEqual([{ account_id: 'coach@example.com', display_name: 'Mike Neale' }]));
-    expect(await screen.findByText(/Saved the name "Mike Neale"/)).toBeTruthy();
+    await waitFor(() => expect(patched).toEqual([{ account_id: 'coach@example.com', display_name: 'Jordan Smith' }]));
+    expect(await screen.findByText(/Saved the name "Jordan Smith"/)).toBeTruthy();
   });
 
   test('a stored name is shown, Edit Name starts from it, and an emptied box clears it', async () => {
     const patched: Record<string, unknown>[] = [];
     global.fetch = fetchMock({
-      members: [coachMember({ staff_display_name: 'Mike Neale' })],
+      members: [coachMember({ staff_display_name: 'Jordan Smith' })],
       roster: ROSTER,
       onPatch: (body) => {
         patched.push(body);
@@ -1174,10 +1181,10 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
     }) as never;
 
     render(<PeopleConsolePage />);
-    expect(await screen.findByText('Mike Neale')).toBeTruthy();
+    expect(await screen.findByText('Jordan Smith')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Name' }));
-    const input = screen.getByLabelText(/Their name/) as HTMLInputElement;
-    expect(input.value).toBe('Mike Neale');
+    const input = screen.getByLabelText(/Name for coach@example.com/) as HTMLInputElement;
+    expect(input.value).toBe('Jordan Smith');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Name' }));
 
@@ -1198,11 +1205,24 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
 
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Set Name' }));
-    fireEvent.change(screen.getByLabelText(/Their name/), { target: { value: 'm'.repeat(61) } });
+    fireEvent.change(screen.getByLabelText(/Name for coach@example.com/), { target: { value: 'm'.repeat(61) } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Name' }));
 
-    expect(await screen.findByText('A display name is at most 60 characters.')).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('A display name is at most 60 characters.');
+    expect(screen.getByLabelText(/Name for coach@example.com/).getAttribute('aria-describedby')).toContain(alert.id);
     expect(patched).toHaveLength(0);
+  });
+
+  test('a local PIN session sees the name but is told to sign in with Microsoft to set one', async () => {
+    mockSessionAuthProvider = 'ppbf_local';
+    global.fetch = fetchMock({ members: [coachMember({ staff_display_name: 'Jordan Smith' })], roster: ROSTER }) as never;
+
+    render(<PeopleConsolePage />);
+
+    expect(await screen.findByText('Jordan Smith')).toBeTruthy();
+    expect(screen.getByText('Sign in with Microsoft to set a name.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Edit Name|Set Name/ })).toBeNull();
   });
 
   test('shows the server refusal and keeps the box open', async () => {
@@ -1214,7 +1234,7 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
 
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Set Name' }));
-    fireEvent.change(screen.getByLabelText(/Their name/), { target: { value: 'Mike' } });
+    fireEvent.change(screen.getByLabelText(/Name for coach@example.com/), { target: { value: 'Mike' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Name' }));
 
     expect(await screen.findByText(/no coach or staff member with that account in this gym/)).toBeTruthy();

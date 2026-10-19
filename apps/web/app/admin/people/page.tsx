@@ -223,7 +223,7 @@ function WrongRoleNotice() {
   );
 }
 
-function PeopleConsoleContent() {
+function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession: boolean }) {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
   // False until the staff read answers: an unread list is not an empty gym.
@@ -291,6 +291,8 @@ function PeopleConsoleContent() {
      applies before it is sent. */
   const [nameEditId, setNameEditId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
+  // Said next to the box, not in the banner at the top of a long list.
+  const [nameError, setNameError] = useState('');
   /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
      said nothing when the address already belonged to someone in the gym: a
      coach re-invited as a guardian silently became a guardian. Now a role
@@ -1055,12 +1057,13 @@ function PeopleConsoleContent() {
   async function handleSaveDisplayName(accountId: string, raw: string) {
     const checked = normalizeStaffDisplayName(raw);
     if (!checked.ok) {
-      setError(checked.error);
+      setNameError(checked.error);
       return;
     }
     setBusy(true);
     setNotice('');
     setError('');
+    setNameError('');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
         method: 'PATCH',
@@ -1081,7 +1084,7 @@ function PeopleConsoleContent() {
       );
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save that name');
+      setNameError(saveError instanceof Error ? saveError.message : 'Could not save that name');
     } finally {
       setBusy(false);
     }
@@ -1368,20 +1371,30 @@ function PeopleConsoleContent() {
                             <div className="mt-[var(--s1)] text-[length:var(--t-xs)]">
                               {nameEditId === member.account_id ? (
                                 <div className="flex flex-wrap items-end gap-[var(--s2)]">
-                                  <label className="flex flex-col">
-                                    <span>Their name</span>
+                                  <div className="flex flex-col">
+                                    <label htmlFor={`staff-name-${member.account_id}`}>
+                                      Name for {personLabel(member.account_id)}
+                                    </label>
                                     <input
+                                      id={`staff-name-${member.account_id}`}
                                       type="text"
                                       value={nameDraft}
                                       maxLength={STAFF_DISPLAY_NAME_MAX * 2}
-                                      onChange={(event) => setNameDraft(event.target.value)}
+                                      aria-describedby={`staff-name-help-${member.account_id}${nameError ? ` staff-name-error-${member.account_id}` : ''}`}
+                                      aria-invalid={nameError ? true : undefined}
+                                      onChange={(event) => { setNameDraft(event.target.value); setNameError(''); }}
                                       className="input"
                                     />
-                                    <span>
-                                      The name only, for example Mike Neale, without &ldquo;Coach&rdquo;.
+                                    <span id={`staff-name-help-${member.account_id}`}>
+                                      The name only, for example Jordan Smith, without &ldquo;Coach&rdquo;.
                                       Leave it empty to clear it.
                                     </span>
-                                  </label>
+                                    {nameError && (
+                                      <span id={`staff-name-error-${member.account_id}`} role="alert" className="font-bold">
+                                        {nameError}
+                                      </span>
+                                    )}
+                                  </div>
                                   <button
                                     type="button"
                                     disabled={busy}
@@ -1393,7 +1406,7 @@ function PeopleConsoleContent() {
                                   <button
                                     type="button"
                                     disabled={busy}
-                                    onClick={() => { setNameEditId(null); setNameDraft(''); }}
+                                    onClick={() => { setNameEditId(null); setNameDraft(''); setNameError(''); }}
                                     className="btn--lever disabled:opacity-50"
                                   >
                                     Cancel
@@ -1410,17 +1423,22 @@ function PeopleConsoleContent() {
                                       'No name typed yet.'
                                     )}
                                   </span>
-                                  <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => {
-                                      setNameEditId(member.account_id);
-                                      setNameDraft(member.staff_display_name ?? '');
-                                    }}
-                                    className="btn--lever disabled:opacity-50"
-                                  >
-                                    {member.staff_display_name ? 'Edit Name' : 'Set Name'}
-                                  </button>
+                                  {microsoftSession ? (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setNameEditId(member.account_id);
+                                        setNameDraft(member.staff_display_name ?? '');
+                                        setNameError('');
+                                      }}
+                                      className="btn--lever disabled:opacity-50"
+                                    >
+                                      {member.staff_display_name ? 'Edit Name' : 'Set Name'}
+                                    </button>
+                                  ) : (
+                                    <span>Sign in with Microsoft to set a name.</span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2353,7 +2371,9 @@ function PeopleConsoleRoleSwitch() {
     return <WrongRoleNotice />;
   }
 
-  return <PeopleConsoleContent />;
+  // Name edits go through a Microsoft-only write (PATCH /api/pilot/admin/staff);
+  // a local PIN session can read this list but not save a name.
+  return <PeopleConsoleContent microsoftSession={session.authProvider === 'microsoft'} />;
 }
 
 export default function PeopleConsolePage() {
