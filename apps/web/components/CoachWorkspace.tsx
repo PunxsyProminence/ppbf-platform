@@ -179,15 +179,11 @@ interface Athlete {
   ringName?: string | null;
   photoAvailable?: boolean;
   /* Whether this coach is the coach OF RECORD for this athlete, straight from
-     the roster route's `is_mine`. Not a display field: it is the one bit that
-     separates the two ways a coach can be looking at a child. A covering coach
-     under an active pilot.coach_coverage grant reaches the athlete -- rosters,
-     sessions, reviews -- but resolveRelationship still answers
-     'organization_staff' for them, and the ring-name takedown admits only
-     'coach_of_subject'. Without this the takedown control would be offered to
-     a covering coach on an adult athlete (a minor's ring name is already
-     withheld from anyone outside MINOR_CIRCLE) and could only ever produce a
-     404. */
+     the roster route's `is_mine`. It does NOT gate the ring-name takedown:
+     resolveRelationship answers 'coach_of_subject' for every coach of the
+     athlete's gym (issue #1480 C2; OD-2026-10-11-007, OD-2026-10-12-016 "Any
+     coach all coaches coach all athletes"), and that is the standing the clear
+     route admits. "My athlete" is a different question from "may I act". */
   isMine?: boolean;
 }
 
@@ -3765,18 +3761,21 @@ export default function CoachWorkspace() {
                           a selection nobody made is not a deliberate act.
 
                           Not offered at all where there is nothing to remove
-                          (`ringName`), nothing to address it to (`accountId`),
-                          or no standing to remove it (`isMine`). The first two
-                          travel together -- the roster route only produces a
-                          ring name from a profile it found by account id --
-                          but the control asserts both rather than inferring
-                          one from the other. The third is the one that is NOT
-                          implied: a covering coach sees an adult athlete's
-                          ring name and is still 'organization_staff' to
-                          resolveRelationship, so offering them this button
-                          would offer a 404. */}
+                          (`ringName`) or nothing to address it to
+                          (`accountId`). The two travel together -- the roster
+                          route only produces a ring name from a profile it
+                          found by account id -- but the control asserts both
+                          rather than inferring one from the other.
+
+                          Standing is NOT `isMine`. This screen is coach-only
+                          (allowedRoles ['coach']) and the clear route admits
+                          any coach of the athlete's gym as coach_of_subject
+                          (resolveRelationship, issue #1480 C2), so every
+                          roster row is one this coach may take down. Gating on
+                          the coach of record shut the door for every other
+                          coach in the gym. */}
                       {athleteChosenByCoach && selectedAthleteId === athlete.id
-                        && athlete.ringName && athlete.accountId && athlete.isMine && (
+                        && athlete.ringName && athlete.accountId && (
                         <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           {nicknameClearArmedId === athlete.id ? (
                             <>
