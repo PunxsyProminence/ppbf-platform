@@ -919,9 +919,13 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
       and s.organization_id = c.organization_id
      -- The source whose document the text was cut from. A chunk may cite a
      -- different source; the text's rights are its document's, which is what
-     -- the database's own full-text guard reads too.
+     -- the database's own full-text guard reads too (by source_id alone).
+     -- Matched on the document's gym as well: documents.source_id has only a
+     -- global foreign key, and another gym's source must never decide this
+     -- gym's export (F-095).
      join pilot.shadow_library_sources ds
        on ds.source_id = d.source_id
+      and ds.organization_id = d.organization_id
      where c.organization_id = $1
        and c.subject_id is null
        and d.subject_id is null

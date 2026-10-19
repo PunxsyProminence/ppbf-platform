@@ -1,5 +1,6 @@
 import { countOpenViolationsByAthlete } from './compliance';
 import { guardianLinkEnded } from './guardianAccess';
+import { ownConsentCoversNewPublication, readOwnMediaConsent } from './guardianConsent';
 import {
   effectiveMedicalStatus,
   EXPIRED_CLEARANCE_STATUS,
@@ -10,6 +11,7 @@ import {
 import { listTrainingHolds, type TrainingHoldRow, type TrainingHoldScope } from './trainingHolds';
 import {
   MEDIA_CONSENT_TRACKED_TYPE,
+  normalizeWaiverStatusText,
   readOrganizationWaiverRoster,
   TRACKED_WAIVER_TYPES,
   type AthleteWaiverStatus,
@@ -106,12 +108,16 @@ export type ClearedTonightMedicalRead = ClearedTonightMedical | 'unavailable';
 /**
  * Photo and media consent, by who can give it. A minor's is the guardians'
  * (the existing check, as the worklist words it). At 18 a guardian's consent
- * stops counting for a new publication and the athlete's own cannot be
- * recorded yet (OD-2026-10-08-015), so there is no status to report.
+ * stops counting for a new publication and the athlete records their own
+ * (OD-2026-10-08-015): `own` is that decision as the publication gate reads
+ * it -- 'video' only when it would let a new publication through
+ * (ownConsentCoversNewPublication), 'none' when nothing of theirs counts.
  */
+export type AdultOwnMediaConsentWord = 'video' | 'photo_only' | 'withdrawn' | 'none' | 'unavailable';
+
 export type ClearedTonightMediaConsent =
   | { basis: 'guardian'; status: WaiverStatus }
-  | { basis: 'adult_own_consent' };
+  | { basis: 'adult_own_consent'; own: AdultOwnMediaConsentWord; outside_gym: boolean };
 
 /** Already in the shape the route sends: the route copies it, nothing more. */
 export interface ClearedTonight {
@@ -271,6 +277,25 @@ async function readMedical(organizationId: string, athleteId: string, now: Date)
   }
 }
 
+/** outside_gym: their yes covers use outside the gym (recorded; staff honour it, nothing enforces it yet). */
+async function readAdultOwn(
+  organizationId: string,
+  athleteId: string,
+): Promise<{ own: AdultOwnMediaConsentWord; outside_gym: boolean }> {
+  try {
+    const own = await readOwnMediaConsent(organizationId, athleteId);
+    const outside = own?.publicUseAllowed === true;
+    if (ownConsentCoversNewPublication(own)) return { own: 'video', outside_gym: outside };
+    const status = normalizeWaiverStatusText(own?.status);
+    if (status === 'withdrawn') return { own: 'withdrawn', outside_gym: false };
+    if (status === 'signed' && own?.recordedByOwnLogin && own.coversVideo === false) return { own: 'photo_only', outside_gym: outside };
+    return { own: 'none', outside_gym: false };
+  } catch (error) {
+    logUnreadable('adult_own_media_consent', error);
+    return { own: 'unavailable', outside_gym: false };
+  }
+}
+
 const PAPER_WAIVER_TYPES = TRACKED_WAIVER_TYPES.filter((type) => type !== MEDIA_CONSENT_TRACKED_TYPE);
 
 /**
@@ -300,6 +325,7 @@ export async function getOrganizationClearedTonight(
     roster.map(async (entry): Promise<AthleteClearedTonight> => {
       const hold: ClearedTonightHoldRead = holds === 'unavailable' ? 'unavailable' : holds.get(entry.athleteId) ?? null;
       const medical = await readMedical(organizationId, entry.athleteId, now);
+      const adult = guardianLinkEnded(entry.dob, now);
       return {
         athleteId: entry.athleteId,
         athleteName: entry.athleteName,
@@ -314,8 +340,8 @@ export async function getOrganizationClearedTonight(
             status: entry.waivers[type],
             recorded_on: entry.recordedOn[type] ?? null,
           })),
-          media_consent: guardianLinkEnded(entry.dob, now)
-            ? { basis: 'adult_own_consent' }
+          media_consent: adult
+            ? { basis: 'adult_own_consent', ...(await readAdultOwn(organizationId, entry.athleteId)) }
             : { basis: 'guardian', status: entry.waivers[MEDIA_CONSENT_TRACKED_TYPE] },
           open_violations: openViolations === 'unavailable' ? 'unavailable' : openViolations.get(entry.athleteId) ?? 0,
         },

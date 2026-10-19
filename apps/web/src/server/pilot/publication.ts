@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { lockConsentSet } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { lockGuardianLinksForAthlete, type QueryExecutor } from './guardianConsent';
@@ -394,8 +395,16 @@ export async function recordMediaConsentAndSuppress(params: {
   suppressedByAccountId: string;
   reason: string;
   write: (transaction: QueryExecutor) => Promise<string>;
+  /* The adult's own consent writer (athleteMediaConsent.ts) holds the
+     consent-set lock EXCLUSIVE, and it must be taken here, first: taking it
+     after the link lock below (which holds it shared) would be an upgrade
+     that can deadlock against a reader holding it shared. */
+  exclusiveConsentSet?: boolean;
 }): Promise<{ waiverId: string; publicationIds: string[] }> {
   return withTransaction(async (client) => {
+    if (params.exclusiveConsentSet) {
+      await lockConsentSet(client, params.organizationId, params.athleteId, 'exclusive');
+    }
     await lockGuardianLinksForAthlete(client, params.organizationId, params.athleteId, 'update');
     const waiverId = await params.write(client);
     const publicationIds = await suppressUnderHeldLock(client, params);

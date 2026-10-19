@@ -1350,6 +1350,43 @@ describe('listApprovedGlobalEvidenceForResearchBridge against real rows', () => 
       await client.end();
     }
   });
+
+  // F-095 (hardening, not a reproduced leak): documents.source_id has only a
+  // global foreign key, so the database alone does not stop a gym's document
+  // from naming another gym's source -- the app refuses it
+  // (createShadowLibraryDocument), raw SQL or a shelf tool need not. The
+  // export reads that document source's rights to decide whether the gym's
+  // text may leave; it must read the gym's own row, never another gym's.
+  test("another gym's source never decides whether this gym's text is exported (F-095 hardening)", async () => {
+    const client = await freshDatabase('bridge_document_source_other_gym');
+    activeClient = client;
+    try {
+      const OTHER_ORG_ID = 'org-coverage-other-gym';
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active')`,
+        [OTHER_ORG_ID],
+      );
+      // The other gym's source is PPBF-owned: if the export read its rights,
+      // the text would pass the gate.
+      await seedSource(client, 'src-other-gym-owned', {
+        sourceType: 'peer_reviewed',
+        organizationId: OTHER_ORG_ID,
+        ownsDocument: false,
+      });
+      await seedSource(client, 'src-gym-cited', { sourceType: 'peer_reviewed', ownsDocument: false });
+      await seedDocument(client, 'doc-gym-other-owner', 'src-other-gym-owned');
+      await seedChunk(client, 'chunk-gym-other-owner', 'doc-gym-other-owner', 'src-gym-cited', {
+        text: "Gym text filed under another gym's source.",
+      });
+
+      const rows = await listApprovedGlobalEvidenceForResearchBridge({ organizationId: ORG_ID });
+
+      expect(rows).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 // F-136 (Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)"): one paper filed under

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
+import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
@@ -299,6 +300,9 @@ export default function CoachAssessmentsPage() {
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record one athlete&apos;s jump and your 1-5 rating for each skill family, and see their own
             history by date. Nothing here is added up, ranked or compared with anyone else.
+          </p>
+          <p className="t-body mt-[var(--s2)]">
+            <Link href="/coach/test-day" className="underline">Test day: record the group&apos;s height, jumps and 20-m shuttle</Link>
           </p>
         </header>
 

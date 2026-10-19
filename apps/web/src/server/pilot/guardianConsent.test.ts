@@ -34,11 +34,14 @@ jest.mock('./intake', () => ({
 import { query, withTransaction } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient } from './intake';
+import { lockConsentSet } from './consentSetLock';
 import {
   ADULT_CONSENT_NEEDED_MESSAGE,
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
-  assertNotAdultForNewPublication,
+  assertNewPublicationConsentPath,
+  ATHLETE_SELF_SIGNED_BY_ROLE,
+  readAdultOwnMediaConsent,
   callerParentIdSet,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
@@ -482,7 +485,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
   });
 });
 
-describe('assertNotAdultForNewPublication (OD-2026-10-08-015)', () => {
+describe('assertNewPublicationConsentPath (OD-2026-10-08-015)', () => {
   const mockQuery = query as jest.Mock;
   // Dates relative to now: the REAL guardianLinkEnded decides, on the gym's day.
   function dobYearsAgo(years: number, extraDays = 0): string {
@@ -491,59 +494,137 @@ describe('assertNotAdultForNewPublication (OD-2026-10-08-015)', () => {
     d.setUTCDate(d.getUTCDate() - extraDays);
     return d.toISOString().slice(0, 10);
   }
+  const ownRow = (over: Record<string, unknown> = {}) => ({
+    status: 'signed',
+    covers_video: true,
+    public_use_allowed: false,
+    created_at: '2026-10-01T00:00:00Z',
+    recorded_by_own_login: true,
+    ...over,
+  });
 
   beforeEach(() => mockQuery.mockReset());
 
-  test('an athlete who is 18 or older is refused, with the adult reason', async () => {
-    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(18, 2) }]);
-    const error = await assertNotAdultForNewPublication('org-a', 'ath-1').catch((e: unknown) => e);
+  test('an adult with no consent of their own is refused, with the adult reason', async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(18, 2) }]).mockResolvedValueOnce([]);
+    const error = await assertNewPublicationConsentPath('org-a', 'ath-1').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GuardianConsentMissingError);
     expect((error as GuardianConsentMissingError).athleteIsAdult).toBe(true);
     expect((error as Error).message).toBe(ADULT_CONSENT_NEEDED_MESSAGE);
     expect(mockQuery).toHaveBeenCalledWith(expect.stringMatching(/from pilot\.athletes/), ['org-a', 'ath-1']);
   });
 
-  test('a minor passes', async () => {
+  test("an adult's own signed video consent, recorded by their own login, passes on the adult path", async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(19) }]).mockResolvedValueOnce([ownRow()]);
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('adult_own_consent');
+    const [sql, params] = mockQuery.mock.calls[1];
+    // Only the adult's own rows: no guardian row, and not a legacy register
+    // row filed with signed_by_role 'athlete'.
+    expect(sql).toMatch(/parent_id is null/);
+    expect(sql).toMatch(/signed_by_role = \$4/);
+    expect(sql).toMatch(/order by w\.created_at desc/);
+    expect(params).toEqual(['org-a', 'ath-1', 'photo_media', ATHLETE_SELF_SIGNED_BY_ROLE]);
+    expect(ATHLETE_SELF_SIGNED_BY_ROLE).toBe('athlete_self');
+  });
+
+  test('a signature recorded untidily still counts, as every media gate reads it', async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(19) }]).mockResolvedValueOnce([ownRow({ status: ' Signed ' })]);
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('adult_own_consent');
+  });
+
+  test.each([
+    ['photo only', { covers_video: false }],
+    ['withdrawn', { status: 'withdrawn', covers_video: false }],
+    ['declined', { status: 'declined' }],
+    ['not recorded by their own login', { recorded_by_own_login: false }],
+  ])("an adult whose own latest consent is %s is refused", async (_label, over) => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(25) }]).mockResolvedValueOnce([ownRow(over)]);
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).rejects.toMatchObject({ athleteIsAdult: true });
+  });
+
+  test('a minor takes the guardian path, and their own rows are never read', async () => {
     mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(17) }]);
-    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('guardian_consent');
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
-  test('an unknown date of birth reads as a minor and passes', async () => {
+  test('an unknown date of birth reads as a minor: the guardian path', async () => {
     mockQuery.mockResolvedValueOnce([{ dob: null }]);
-    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('guardian_consent');
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
-  test('a missing athlete row is left to the caller', async () => {
+  test('a missing athlete row is left to the guardian path', async () => {
     mockQuery.mockResolvedValueOnce([]);
-    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('guardian_consent');
   });
 
   describe("on the gym's calendar day (America/New_York), not the server's", () => {
     afterEach(() => jest.useRealTimers());
 
-    test('8:01pm on Aug 3 at the gym (already Aug 4 in UTC): an Aug 4 2008 birthday is still 17 and passes', async () => {
+    test('8:01pm on Aug 3 at the gym (already Aug 4 in UTC): an Aug 4 2008 birthday is still 17', async () => {
       jest.useFakeTimers({ now: new Date('2026-08-04T00:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
       mockQuery.mockResolvedValueOnce([{ dob: '2008-08-04' }]);
-      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+      await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).resolves.toBe('guardian_consent');
     });
 
-    test('18th birthday today at the gym is refused', async () => {
+    test('18th birthday today at the gym, no own consent: refused', async () => {
       jest.useFakeTimers({ now: new Date('2026-08-04T00:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
-      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-03' }]);
-      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
+      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-03' }]).mockResolvedValueOnce([]);
+      await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
     });
 
-    test('12:01am on Aug 4 at the gym: the same Aug 4 2008 birthday is now 18 and refused', async () => {
+    test('12:01am on Aug 4 at the gym: the same Aug 4 2008 birthday is now 18, no own consent: refused', async () => {
       jest.useFakeTimers({ now: new Date('2026-08-04T04:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
-      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-04' }]);
-      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
+      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-04' }]).mockResolvedValueOnce([]);
+      await expect(assertNewPublicationConsentPath('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
     });
   });
 
-  test('with a client it reads through that client (inside the caller transaction)', async () => {
-    const client = { query: jest.fn().mockResolvedValue({ rows: [{ dob: dobYearsAgo(19) }] }) };
-    await expect(assertNotAdultForNewPublication('org-a', 'ath-1', client)).rejects.toBeInstanceOf(GuardianConsentMissingError);
-    expect(client.query).toHaveBeenCalledTimes(1);
+  test('with a client it takes the consent-set lock SHARED first, then reads through that client', async () => {
+    const mockLock = jest.mocked(lockConsentSet);
+    mockLock.mockClear();
+    const client = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ dob: dobYearsAgo(19) }] })
+        .mockResolvedValueOnce({ rows: [ownRow()] }),
+    };
+    await expect(assertNewPublicationConsentPath('org-a', 'ath-1', client)).resolves.toBe('adult_own_consent');
+    expect(mockLock).toHaveBeenCalledWith(client, 'org-a', 'ath-1', 'shared');
+    expect(mockLock.mock.invocationCallOrder[0]).toBeLessThan(client.query.mock.invocationCallOrder[0]);
+    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(client.query.mock.calls[0][0]).toMatch(/from pilot\.athletes/);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('readAdultOwnMediaConsent (OD-2026-10-08-015)', () => {
+  const mockQuery = query as jest.Mock;
+  beforeEach(() => mockQuery.mockReset());
+  const row = { status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-10-01T00:00:00Z', recorded_by_own_login: true };
+
+  test("an adult's own row is returned", async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: '2000-01-01' }]).mockResolvedValueOnce([row]);
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1')).resolves.toMatchObject({ status: 'signed', coversVideo: true, recordedByOwnLogin: true });
+  });
+
+  test.each([
+    ['a minor', [{ dob: '2015-01-01' }]],
+    ['an unknown date of birth', [{ dob: null }]],
+    ['a missing athlete', []],
+  ])('%s gets null, and their own rows are not read', async (_label, athleteRows) => {
+    mockQuery.mockResolvedValueOnce(athleteRows);
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1')).resolves.toBeNull();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('with a client both reads go through it, and it takes no lock itself', async () => {
+    const mockLock = jest.mocked(lockConsentSet);
+    mockLock.mockClear();
+    const client = { query: jest.fn().mockResolvedValueOnce({ rows: [{ dob: '2000-01-01' }] }).mockResolvedValueOnce({ rows: [] }) };
+    await expect(readAdultOwnMediaConsent('org-a', 'ath-1', client)).resolves.toBeNull();
+    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(mockLock).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });

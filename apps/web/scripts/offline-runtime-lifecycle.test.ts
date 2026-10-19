@@ -4,6 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Fake PID for injected lookups. 4194309 is above Linux PID_MAX_LIMIT (2^22) and odd, so it can never be
+// the spawned child's own PID (Windows PIDs are multiples of 4). With 4242, a CI child that was itself
+// PID 4242 had the PID dropped by uniquePids() (it skips process.pid) and the ownership tests failed.
+const FAKE_PID = 4194309;
+
 const moduleUrl = pathToFileURL(
   path.resolve(__dirname, 'lib/offline-runtime-lifecycle.mjs'),
 ).href;
@@ -134,40 +139,40 @@ describe('recorded PID ownership on Windows', () => {
 
   test('a verified offline-runtime process for this worktree is eligible for termination', () => {
     expect(evaluate(`m.isOwnedOfflineProcess(${JSON.stringify(worktreeLauncher)}, ${JSON.stringify(worktree)})`)).toBe(true);
-    expect(stopWithLookup(4242, worktreeLauncher)).toEqual([{ pid: 4242, signal: null }]);
+    expect(stopWithLookup(FAKE_PID, worktreeLauncher)).toEqual([{ pid: FAKE_PID, signal: null }]);
   });
 
   test('a process from another checkout is rejected', () => {
     expect(evaluate(`m.isOwnedOfflineProcess(${JSON.stringify(otherCheckoutLauncher)}, ${JSON.stringify(worktree)})`)).toBe(false);
-    expect(stopWithLookup(4242, otherCheckoutLauncher)).toEqual([]);
+    expect(stopWithLookup(FAKE_PID, otherCheckoutLauncher)).toEqual([]);
   });
 
   test('an unrelated process is rejected', () => {
     expect(evaluate(`m.isOwnedOfflineProcess(${JSON.stringify(unrelated)}, ${JSON.stringify(worktree)})`)).toBe(false);
-    expect(stopWithLookup(4242, unrelated)).toEqual([]);
+    expect(stopWithLookup(FAKE_PID, unrelated)).toEqual([]);
   });
 
   test('a reused or stale recorded PID is rejected when current metadata does not prove ownership', () => {
     expect(evaluate(`m.isOwnedOfflineProcess(${JSON.stringify(reused)}, ${JSON.stringify(worktree)})`)).toBe(false);
-    expect(stopWithLookup(4242, reused)).toEqual([]);
+    expect(stopWithLookup(FAKE_PID, reused)).toEqual([]);
   });
 
   test('a dead or missing PID is skipped without failure', () => {
     expect(evaluate('m.isOwnedOfflineProcess(null, "C:\\\\Dev_WORKTREES\\\\sl01-runtime-lifecycle")')).toBe(false);
-    expect(stopWithLookup(4242, null)).toEqual([]);
+    expect(stopWithLookup(FAKE_PID, null)).toEqual([]);
   });
 
   test('Windows process query names one PID and does not hardcode a checkout path', () => {
-    const command = evaluate('m.windowsProcessQueryCommand(4242)');
-    expect(command).toContain('ProcessId=4242');
+    const command = evaluate(`m.windowsProcessQueryCommand(${FAKE_PID})`);
+    expect(command).toContain(`ProcessId=${FAKE_PID}`);
     expect(command).not.toContain('C:\\Dev\\ppbf-platform');
     expect(evaluate('m.parseWindowsProcessQuery("")')).toBe(null);
     expect(evaluate(`m.parseWindowsProcessQuery(${JSON.stringify(JSON.stringify({
-      ProcessId: 4242,
+      ProcessId: FAKE_PID,
       CommandLine: `${worktree}\\apps\\web\\scripts\\offline-runtime.mjs`,
       ExecutablePath: 'node.exe',
     }))})`)).toEqual({
-      pid: 4242,
+      pid: FAKE_PID,
       commandLine: `${worktree}\\apps\\web\\scripts\\offline-runtime.mjs`,
       executablePath: 'node.exe',
     });
@@ -181,13 +186,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: 99,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid === 4242) {
+          if (pid === ${FAKE_PID}) {
             return ${JSON.stringify(worktreeLauncher)};
           }
           if (pid === 99) {
@@ -196,13 +201,13 @@ describe('recorded PID ownership on Windows', () => {
           return null;
         },
         signalProcess: (pid, signal) => signaled.push({ pid, signal: signal ?? null }),
-        waitUntilDead: async (pids) => pids.filter((pid) => pid === 4242),
+        waitUntilDead: async (pids) => pids.filter((pid) => pid === ${FAKE_PID}),
       });
       process.stdout.write(JSON.stringify(signaled));
     `);
     expect(signaled).toEqual([
-      { pid: 4242, signal: null },
-      { pid: 4242, signal: 'SIGKILL' },
+      { pid: FAKE_PID, signal: null },
+      { pid: FAKE_PID, signal: 'SIGKILL' },
     ]);
   });
 
@@ -237,32 +242,32 @@ describe('recorded PID ownership on Windows', () => {
   }
 
   test('SIGKILL is permitted only after a second live ownership proof', () => {
-    expect(stopAcrossGrace(4242, worktreeLauncher, worktreeLauncher)).toEqual({
+    expect(stopAcrossGrace(FAKE_PID, worktreeLauncher, worktreeLauncher)).toEqual({
       signaled: [
-        { pid: 4242, signal: null },
-        { pid: 4242, signal: 'SIGKILL' },
+        { pid: FAKE_PID, signal: null },
+        { pid: FAKE_PID, signal: 'SIGKILL' },
       ],
       lookups: 2,
     });
   });
 
   test('a PID reused by an unrelated process during the grace window is not SIGKILLed', () => {
-    expect(stopAcrossGrace(4242, worktreeLauncher, unrelated)).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+    expect(stopAcrossGrace(FAKE_PID, worktreeLauncher, unrelated)).toEqual({
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
 
   test('a process that disappears during the grace window is not SIGKILLed', () => {
-    expect(stopAcrossGrace(4242, worktreeLauncher, null)).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+    expect(stopAcrossGrace(FAKE_PID, worktreeLauncher, null)).toEqual({
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
 
   test('a second lookup failure fails safe and does not SIGKILL', () => {
-    expect(stopAcrossGrace(4242, worktreeLauncher, 'throw')).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+    expect(stopAcrossGrace(FAKE_PID, worktreeLauncher, 'throw')).toEqual({
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
@@ -275,13 +280,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: null,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid !== 4242) return null;
+          if (pid !== ${FAKE_PID}) return null;
           lookups += 1;
           return ${JSON.stringify(worktreeLauncher)};
         },
@@ -292,8 +297,8 @@ describe('recorded PID ownership on Windows', () => {
     `);
     expect(result).toEqual({
       signaled: [
-        { pid: 4242, signal: null },
-        { pid: 4242, signal: 'SIGKILL' },
+        { pid: FAKE_PID, signal: null },
+        { pid: FAKE_PID, signal: 'SIGKILL' },
       ],
       lookups: 2,
     });
@@ -308,13 +313,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: null,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid !== 4242) return null;
+          if (pid !== ${FAKE_PID}) return null;
           lookups += 1;
           return lookups === 1
             ? ${JSON.stringify(worktreeLauncher)}
@@ -326,7 +331,7 @@ describe('recorded PID ownership on Windows', () => {
       process.stdout.write(JSON.stringify({ signaled, lookups }));
     `);
     expect(result).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
@@ -340,13 +345,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: null,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid !== 4242) return null;
+          if (pid !== ${FAKE_PID}) return null;
           lookups += 1;
           return lookups === 1 ? ${JSON.stringify(worktreeLauncher)} : null;
         },
@@ -356,7 +361,7 @@ describe('recorded PID ownership on Windows', () => {
       process.stdout.write(JSON.stringify({ signaled, lookups }));
     `);
     expect(result).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
@@ -370,13 +375,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: null,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid !== 4242) return null;
+          if (pid !== ${FAKE_PID}) return null;
           lookups += 1;
           if (lookups === 1) return ${JSON.stringify(worktreeLauncher)};
           throw new Error('simulated lookup failure');
@@ -387,7 +392,7 @@ describe('recorded PID ownership on Windows', () => {
       process.stdout.write(JSON.stringify({ signaled, lookups }));
     `);
     expect(result).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
@@ -401,13 +406,13 @@ describe('recorded PID ownership on Windows', () => {
         repoDir: ${JSON.stringify(worktree)},
         appPort: 3111,
         databasePort: 1,
-        launcherPid: 4242,
+        launcherPid: ${FAKE_PID},
         nextPid: null,
         postgresPid: null,
       }, null, {
         platform: 'win32',
         lookupProcess: async (pid) => {
-          if (pid !== 4242) return null;
+          if (pid !== ${FAKE_PID}) return null;
           lookups += 1;
           return lookups === 1
             ? ${JSON.stringify(worktreeLauncher)}
@@ -419,7 +424,7 @@ describe('recorded PID ownership on Windows', () => {
       process.stdout.write(JSON.stringify({ signaled, lookups }));
     `);
     expect(result).toEqual({
-      signaled: [{ pid: 4242, signal: null }],
+      signaled: [{ pid: FAKE_PID, signal: null }],
       lookups: 2,
     });
   });
@@ -430,30 +435,30 @@ describe('recorded PID ownership on POSIX', () => {
   const otherPosixCheckout = '/home/dev/ppbf-other';
 
   const ownedNext = {
-    pid: 4242,
+    pid: FAKE_PID,
     commandLine: `node ${posixWorktree}/node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3111`,
     executablePath: '',
   };
   const otherCheckoutNext = {
-    pid: 4242,
+    pid: FAKE_PID,
     commandLine: `node ${otherPosixCheckout}/node_modules/next/dist/bin/next dev`,
     executablePath: '',
   };
   const ownedPostgres = {
-    pid: 4242,
+    pid: FAKE_PID,
     commandLine: `/opt/pg/bin/postgres -D ${posixWorktree}/.ppbf-offline/postgres -p 5432`,
     executablePath: '',
   };
   const foreignPostgres = {
-    pid: 4242,
+    pid: FAKE_PID,
     commandLine: '/usr/lib/postgresql/16/bin/postgres -D /var/lib/postgresql/16/main -p 5432',
     executablePath: '',
   };
-  const unrelated = { pid: 4242, commandLine: '/usr/sbin/cron -f', executablePath: '' };
+  const unrelated = { pid: FAKE_PID, commandLine: '/usr/sbin/cron -f', executablePath: '' };
   // The real launcher argv: npm runs `node scripts/offline-runtime.mjs` from
   // apps/web, so it carries the runtime marker but never the checkout path.
   const launcherAsActuallyLaunched = {
-    pid: 4242,
+    pid: FAKE_PID,
     commandLine: 'node scripts/offline-runtime.mjs',
     executablePath: '',
   };
@@ -509,61 +514,61 @@ describe('recorded PID ownership on POSIX', () => {
   }
 
   test('a Next process for this checkout is proven and signalled', () => {
-    const out = posixStop({ nextPid: 4242, lookups: { 4242: ownedNext } });
-    expect(out.signaled).toEqual([{ pid: 4242, signal: null }]);
+    const out = posixStop({ nextPid: FAKE_PID, lookups: { [FAKE_PID]: ownedNext } });
+    expect(out.signaled).toEqual([{ pid: FAKE_PID, signal: null }]);
     expect(out.result).toEqual({ unstopped: [], ambiguous: [] });
   });
 
   test('a postgres for this data directory is proven; a foreign postgres is not', () => {
-    expect(posixStop({ postgresPid: 4242, lookups: { 4242: ownedPostgres } }).signaled)
-      .toEqual([{ pid: 4242, signal: null }]);
-    expect(posixStop({ postgresPid: 4242, lookups: { 4242: foreignPostgres } }).signaled)
+    expect(posixStop({ postgresPid: FAKE_PID, lookups: { [FAKE_PID]: ownedPostgres } }).signaled)
+      .toEqual([{ pid: FAKE_PID, signal: null }]);
+    expect(posixStop({ postgresPid: FAKE_PID, lookups: { [FAKE_PID]: foreignPostgres } }).signaled)
       .toEqual([]);
   });
 
   test('a process from another checkout is rejected', () => {
-    expect(posixStop({ nextPid: 4242, lookups: { 4242: otherCheckoutNext } }).signaled).toEqual([]);
+    expect(posixStop({ nextPid: FAKE_PID, lookups: { [FAKE_PID]: otherCheckoutNext } }).signaled).toEqual([]);
   });
 
   test('a failed, empty, or uninformative lookup never authorizes a signal', () => {
-    expect(posixStop({ nextPid: 4242, throwOnLookup: [4242] }).signaled).toEqual([]);
-    expect(posixStop({ nextPid: 4242, lookups: { 4242: null } }).signaled).toEqual([]);
+    expect(posixStop({ nextPid: FAKE_PID, throwOnLookup: [FAKE_PID] }).signaled).toEqual([]);
+    expect(posixStop({ nextPid: FAKE_PID, lookups: { [FAKE_PID]: null } }).signaled).toEqual([]);
     expect(posixStop({
-      nextPid: 4242,
-      lookups: { 4242: { pid: 4242, commandLine: '', executablePath: '' } },
+      nextPid: FAKE_PID,
+      lookups: { [FAKE_PID]: { pid: FAKE_PID, commandLine: '', executablePath: '' } },
     }).signaled).toEqual([]);
   });
 
   test('a live but unproven recorded PID is never signalled and blocks the lifecycle', () => {
     const out = posixStop({
-      launcherPid: 4242,
-      lookups: { 4242: unrelated },
-      alivePids: [4242],
-      survivors: [4242],
+      launcherPid: FAKE_PID,
+      lookups: { [FAKE_PID]: unrelated },
+      alivePids: [FAKE_PID],
+      survivors: [FAKE_PID],
     });
 
     expect(out.signaled).toEqual([]);
-    expect(out.result.ambiguous).toEqual([4242]);
+    expect(out.result.ambiguous).toEqual([FAKE_PID]);
     expect(out.result.unstopped).toEqual([]);
   });
 
   test('the launcher as it is really launched is unproven, so it is never signalled', () => {
     const out = posixStop({
-      launcherPid: 4242,
-      lookups: { 4242: launcherAsActuallyLaunched },
-      alivePids: [4242],
-      survivors: [4242],
+      launcherPid: FAKE_PID,
+      lookups: { [FAKE_PID]: launcherAsActuallyLaunched },
+      alivePids: [FAKE_PID],
+      survivors: [FAKE_PID],
     });
 
     expect(out.signaled).toEqual([]);
-    expect(out.result.ambiguous).toEqual([4242]);
+    expect(out.result.ambiguous).toEqual([FAKE_PID]);
   });
 
   test('an unproven recorded PID that exits during the bounded wait stops blocking', () => {
     const out = posixStop({
-      launcherPid: 4242,
-      lookups: { 4242: launcherAsActuallyLaunched },
-      alivePids: [4242],
+      launcherPid: FAKE_PID,
+      lookups: { [FAKE_PID]: launcherAsActuallyLaunched },
+      alivePids: [FAKE_PID],
       survivors: [],
     });
 
@@ -572,33 +577,33 @@ describe('recorded PID ownership on POSIX', () => {
   });
 
   test('force termination requires a second fresh proof, and a survivor still blocks', () => {
-    const out = posixStop({ nextPid: 4242, lookups: { 4242: ownedNext }, survivors: [4242] });
+    const out = posixStop({ nextPid: FAKE_PID, lookups: { [FAKE_PID]: ownedNext }, survivors: [FAKE_PID] });
 
     expect(out.signaled).toEqual([
-      { pid: 4242, signal: null },
-      { pid: 4242, signal: 'SIGKILL' },
+      { pid: FAKE_PID, signal: null },
+      { pid: FAKE_PID, signal: 'SIGKILL' },
     ]);
-    expect(out.lookupCounts['4242']).toBe(2);
-    expect(out.result.unstopped).toEqual([4242]);
+    expect(out.lookupCounts[FAKE_PID]).toBe(2);
+    expect(out.result.unstopped).toEqual([FAKE_PID]);
   });
 
   test('a PID reused between the two proofs is not force-killed', () => {
     const out = posixStop({
-      nextPid: 4242,
-      lookups: { 4242: ownedNext },
-      secondLookups: { 4242: unrelated },
-      survivors: [4242],
+      nextPid: FAKE_PID,
+      lookups: { [FAKE_PID]: ownedNext },
+      secondLookups: { [FAKE_PID]: unrelated },
+      survivors: [FAKE_PID],
     });
 
-    expect(out.signaled).toEqual([{ pid: 4242, signal: null }]);
-    expect(out.lookupCounts['4242']).toBe(2);
+    expect(out.signaled).toEqual([{ pid: FAKE_PID, signal: null }]);
+    expect(out.lookupCounts[FAKE_PID]).toBe(2);
     expect(out.result.unstopped).toEqual([]);
   });
 
   test('an unproven discovered postmaster PID is never signalled and never blocks', () => {
     const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-f6-postmaster-'));
     try {
-      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), '4242\n');
+      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), `${FAKE_PID}\n`);
       const out = evaluateScript(`
         const signaled = [];
         const result = await m.stopRecordedProcesses({
@@ -629,7 +634,7 @@ describe('recorded PID ownership on POSIX', () => {
   test('a proven-owned discovered PID that survives termination still blocks', () => {
     const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-f6-owned-pg-'));
     try {
-      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), '4242\n');
+      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), `${FAKE_PID}\n`);
       const out = evaluateScript(`
         const signaled = [];
         const result = await m.stopRecordedProcesses({
@@ -651,10 +656,10 @@ describe('recorded PID ownership on POSIX', () => {
       `);
 
       expect(out.signaled).toEqual([
-        { pid: 4242, signal: null },
-        { pid: 4242, signal: 'SIGKILL' },
+        { pid: FAKE_PID, signal: null },
+        { pid: FAKE_PID, signal: 'SIGKILL' },
       ]);
-      expect(out.result.unstopped).toEqual([4242]);
+      expect(out.result.unstopped).toEqual([FAKE_PID]);
     } finally {
       fs.rmSync(databaseDir, { recursive: true, force: true });
     }
@@ -662,15 +667,15 @@ describe('recorded PID ownership on POSIX', () => {
 
   test('POSIX process metadata parsing is fail-closed, and truncation cannot prove ownership', () => {
     const args = `node ${posixWorktree}/node_modules/next/dist/bin/next dev`;
-    expect(evaluate(`m.parsePosixProcessQuery(4242, ${JSON.stringify(`${args}\n`)})`)).toEqual({
-      pid: 4242,
+    expect(evaluate(`m.parsePosixProcessQuery(${FAKE_PID}, ${JSON.stringify(`${args}\n`)})`)).toEqual({
+      pid: FAKE_PID,
       commandLine: args,
       executablePath: '',
     });
 
-    expect(evaluate('m.parsePosixProcessQuery(4242, "")')).toBe(null);
-    expect(evaluate('m.parsePosixProcessQuery(4242, "   ")')).toBe(null);
-    expect(evaluate(`m.parsePosixProcessQuery(4242, ${JSON.stringify('one\ntwo')})`)).toBe(null);
+    expect(evaluate(`m.parsePosixProcessQuery(${FAKE_PID}, "")`)).toBe(null);
+    expect(evaluate(`m.parsePosixProcessQuery(${FAKE_PID}, "   ")`)).toBe(null);
+    expect(evaluate(`m.parsePosixProcessQuery(${FAKE_PID}, ${JSON.stringify('one\ntwo')})`)).toBe(null);
     expect(evaluate('m.parsePosixProcessQuery(0, "node x")')).toBe(null);
 
     // A command line clipped before the checkout path loses evidence; it can
