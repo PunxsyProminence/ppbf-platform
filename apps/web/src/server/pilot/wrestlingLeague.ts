@@ -233,21 +233,26 @@ export async function addLeagueRosterEntry(input: {
   ))[0] ?? null;
   if (!athlete) return null;
 
-  try {
-    const row = (await rowsOn<{ entry_id: string }>(
-      client,
-      `insert into pilot.wrestling_league_roster_entries
-         (organization_id, entry_id, season_id, athlete_id, created_by_account_id)
-       values ($1, $2, $3, $4, $5)
-       returning entry_id`,
-      [input.organizationId, randomUUID(), input.seasonId, input.athleteId, input.createdByAccountId],
-    ))[0] ?? null;
-    if (!row) throw new Error('Unable to add the roster entry.');
-  } catch (error) {
-    if (error instanceof Error && /pilot_wrestling_league_roster_unique/.test(error.message)) {
-      throw new Error('LEAGUE_ROSTER_DUPLICATE_ENTRY: athlete already on this season roster');
-    }
-    throw error;
+  // RE-ADDING an inactive member puts them back on the roster, as a withdrawn
+  // competition entry is re-entered (addCompetitionEntry). The unique key holds
+  // one row per athlete per season, so the re-add flips that row back to
+  // 'active' rather than adding a second; its entry id and history stay. It
+  // reaches here only through the same POST as a first add, so every safety
+  // gate has just run again under the per-athlete lock. A member still active
+  // matches nothing in the update and stays a duplicate.
+  const row = (await rowsOn<{ entry_id: string }>(
+    client,
+    `insert into pilot.wrestling_league_roster_entries
+       (organization_id, entry_id, season_id, athlete_id, created_by_account_id)
+     values ($1, $2, $3, $4, $5)
+     on conflict (organization_id, season_id, athlete_id) do update
+       set status = 'active', created_by_account_id = excluded.created_by_account_id, updated_at = now()
+       where pilot.wrestling_league_roster_entries.status = 'inactive'
+     returning entry_id`,
+    [input.organizationId, randomUUID(), input.seasonId, input.athleteId, input.createdByAccountId],
+  ))[0] ?? null;
+  if (!row) {
+    throw new Error('LEAGUE_ROSTER_DUPLICATE_ENTRY: athlete already on this season roster');
   }
 
   const listed = await listLeagueRoster(input.organizationId, input.seasonId, client);
@@ -260,7 +265,7 @@ export async function addLeagueRosterEntry(input: {
  * in externalCompetition.ts rather than inventing a new status. Only an
  * active entry can withdraw; an already-inactive entry reads as not-found.
  * There is no path back here; re-adding the athlete is addLeagueRosterEntry,
- * which the unique constraint already treats as an update to this row. */
+ * which turns this same row back to 'active'. */
 export async function withdrawLeagueRosterEntry(input: {
   organizationId: string;
   entryId: string;

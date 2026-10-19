@@ -19,7 +19,9 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
-import { Client } from 'pg';
+import { Client, type PoolClient } from 'pg';
+
+import { addLeagueRosterEntry, listLeagueRoster } from './wrestlingLeague';
 
 jest.setTimeout(180_000);
 
@@ -291,6 +293,74 @@ describe('wrestling league migration', () => {
          values ($1, 'entry-2', 'season-1', $2, $3)`,
         [ORG_ID, ATHLETE_ID, ADMIN_ID],
       )).rejects.toMatchObject({ constraint: 'pilot_wrestling_league_roster_unique' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// Re-adding an inactive member (#1449 D1), through the shipped addLeagueRosterEntry on a real
+// database: the unique key holds one row per athlete per season, so the re-add must turn that row
+// back to 'active' -- same entry id, same history -- rather than be refused as a duplicate. An
+// active member is still a duplicate, and another gym's identical ids are untouched.
+describe('re-adding an inactive roster member (real database)', () => {
+  test('turns the same row back to active, refuses an active duplicate, and touches no other gym', async () => {
+    const client = await freshDatabase('league_readd');
+    const tx = client as unknown as PoolClient;
+    try {
+      await client.query(migrationSql);
+      // The one column of the data-retention migration the roster read uses (Scope B), added as
+      // the other pg suites add it.
+      await client.query('alter table pilot.athletes add column if not exists deleted_at timestamptz null');
+      await insertSeason(client, 'season-1');
+      // Another gym holding the very same season and athlete ids, with its member inactive.
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Elsewhere Athlete', '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+        [OTHER_ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+      await insertSeason(client, 'season-1', { organization_id: OTHER_ORG_ID });
+      await client.query(
+        `insert into pilot.wrestling_league_roster_entries
+           (organization_id, entry_id, season_id, athlete_id, status, created_by_account_id)
+         values ($1, 'entry-elsewhere', 'season-1', $2, 'inactive', $3)`,
+        [OTHER_ORG_ID, ATHLETE_ID, ADMIN_ID],
+      );
+
+      const added = await addLeagueRosterEntry(
+        { organizationId: ORG_ID, seasonId: 'season-1', athleteId: ATHLETE_ID, createdByAccountId: ADMIN_ID },
+        tx,
+      );
+      expect(added).toMatchObject({ athlete_id: ATHLETE_ID, status: 'active' });
+
+      // Still active: a second add is a duplicate, and nothing is written.
+      await expect(addLeagueRosterEntry(
+        { organizationId: ORG_ID, seasonId: 'season-1', athleteId: ATHLETE_ID, createdByAccountId: COACH_ID },
+        tx,
+      )).rejects.toThrow('LEAGUE_ROSTER_DUPLICATE_ENTRY');
+
+      await client.query(
+        `update pilot.wrestling_league_roster_entries set status = 'inactive'
+         where organization_id = $1 and entry_id = $2`,
+        [ORG_ID, added!.entry_id],
+      );
+
+      const readded = await addLeagueRosterEntry(
+        { organizationId: ORG_ID, seasonId: 'season-1', athleteId: ATHLETE_ID, createdByAccountId: COACH_ID },
+        tx,
+      );
+      expect(readded).toMatchObject({ entry_id: added!.entry_id, athlete_id: ATHLETE_ID, status: 'active' });
+
+      const rows = await client.query(
+        `select organization_id, entry_id, status, created_by_account_id
+         from pilot.wrestling_league_roster_entries where season_id = 'season-1' order by organization_id`,
+      );
+      expect(rows.rows).toEqual([
+        { organization_id: OTHER_ORG_ID, entry_id: 'entry-elsewhere', status: 'inactive', created_by_account_id: ADMIN_ID },
+        { organization_id: ORG_ID, entry_id: added!.entry_id, status: 'active', created_by_account_id: COACH_ID },
+      ]);
+      expect(await listLeagueRoster(ORG_ID, 'season-1', tx)).toHaveLength(1);
     } finally {
       await client.end();
     }
